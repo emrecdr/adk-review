@@ -1,0 +1,45 @@
+"""What a review is, as types the code can read — and the scale a severity sits on.
+
+`evidence` is a required field: a finding that cannot point at the diff is
+worth nothing, so the model cannot omit it. `output_schema` on a guideline turns
+`Review` into the response schema the provider is asked for, and ADK puts the
+parsed dict — not text — into session state.
+"""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+Severity = Literal["blocker", "major", "minor"]
+#: The scale, low to high: `decide` and `dedupe` key on it, and the command offers it for `--fail-on`.
+RANK = {"minor": 1, "major": 2, "blocker": 3}
+
+
+def at_or_above(severity: str, bar: str) -> bool:
+    """Whether a finding of `severity` sits at or above `bar`: the one test the verdict, the reports and chat's bar
+    read. Spelled apart before, chat and the command once disagreed on a major finding."""
+    return RANK[severity] >= RANK[bar]
+
+
+class Finding(BaseModel):
+    file: str = Field(description="Repository-relative path of the file the finding is about.")
+    line: int | None = Field(default=None, description="Line number in the new file, if it can be named.")
+    severity: Severity = Field(description="blocker: must not merge; major: fix before merge; minor: worth fixing.")
+    title: str = Field(description="One line naming the problem.")
+    evidence: str = Field(description="The exact diff lines this finding is about, quoted verbatim.")
+    suggestion: str = Field(description="What to change, concretely.")
+
+
+class Review(BaseModel):
+    findings: list[Finding] = Field(default_factory=list)
+    summary: str = Field(description="One or two sentences on the change as a whole.")
+
+
+class Checked(BaseModel):
+    """A check's answer, as a `Review` is a guideline's: what it found and, when it could not look at everything,
+    why."""
+
+    findings: list[Finding] = Field(default_factory=list)
+    could_not_look: str | None = None

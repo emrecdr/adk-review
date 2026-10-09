@@ -1,0 +1,24 @@
+# The environment Copilot's cloud agent works in, prepared before it starts: the project installed with its locked
+# dependencies, so the agent can run the lint, the offline suite and the model-free review as a person would. Nothing
+# here calls a model, so no key or login. Copilot reads only the job named copilot-setup-steps.
+name: Copilot setup steps
+
+on:
+  workflow_dispatch:
+  push:
+    paths: [.github/workflows/copilot-setup-steps.yml]
+  pull_request:
+    paths: [.github/workflows/copilot-setup-steps.yml]
+
+jobs:
+  copilot-setup-steps:
+    runs-on: ubuntu-latest
+    # Read-only: the checkout is all the setup needs from the repository.
+    permissions:
+      contents: read
+    timeout-minutes: 15
+    steps:
+      # Pinned by commit, as ci.yml pins them; the tag each was is beside it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --locked

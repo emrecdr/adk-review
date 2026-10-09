@@ -1,0 +1,33 @@
+---
+name: review-a-branch
+description: Run this repository's reviewer on a git repository and branch and read its report — model-free with --profile rules-only, or with the guidelines when a provider is configured — and explain the exit code. Use when asked to review a branch, try the reviewer, or see what its rules and guidelines find.
+---
+
+# Review a branch
+
+The reviewer is a command: `adk-review [repo] [--head B] [--base main | --all | --staged]
+[--path DIR] [--fail-on …] [--verify | --no-verify] [--profile NAME | --check ID] [--json FILE] [--dry-run]
+[--list-checks]`; every flag, with what it does, is in `GUIDE.md`, which a test holds to the command
+itself. With no `repo` it asks a terminal for one and refuses in a pipeline: it assumes no repository, the demo
+`scripts/make_demo_repo.py` builds in the temp folder included. `--dry-run`
+resolves what a run would cover — revisions, files, profile, model, readiness — and runs nothing: the cheapest way to
+catch the wrong branch; `--list-checks` shows every check with its kind, its profiles and its file.
+
+1. Without a model, which needs no key and is safe anywhere:
+   `uv run python -m adk_review.review <repo> --head <branch> --base main --profile default-rules`. The
+   default's rules run, `secrets` and `lint` among them; the guidelines do not. `--profile rules-only` runs every rule
+   in `adk_review/judge/rules/`, the payments rules written for the demo too. In a pipeline name `--head`,
+   since the checkout is a detached commit, and fetch the base branch with its history, or review the whole head
+   with `--all`.
+2. With the guidelines, only when asked and when `.env` names a ready arm (`REVIEW_PROVIDER=copilot` after
+   `scripts/copilot_login.py`, or `gemini` with `GOOGLE_API_KEY`): drop `--profile`. Never print `.env` or a key;
+   the report names the arm and the model that ran.
+3. Read the exit code: 0 approved; 1 a finding at or above `--fail-on` (`blocker` by default); 2 a usage error
+   before any model call, such as a branch that adds nothing, an arm that is not ready, or a `config.toml` or
+   profile that cannot run; 3 a hole — a rule or a guideline failed, a rule could not look (the head's tree not
+   listed, or a file it holds not read whole), a changed file no guideline read whole, or a finding at the bar whose
+   quote the diff does not bear out — which must never be read as "nothing found".
+4. The report lists findings under each check that ran, a section each (`rule.secrets`, `rule.lint`, …, then
+   `guideline.security` and the other guidelines), the blast
+   radius of each changed file, what was not read, and what the run cost. Quote its lines when you report, rather
+   than paraphrasing them.

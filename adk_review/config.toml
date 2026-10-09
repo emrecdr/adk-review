@@ -1,0 +1,38 @@
+# The reviewer's one config file: how it reviews. It is read from this folder alone, never from the repository under
+# review. It is read whole: a key it does not know, or
+# one missing, is refused and named, never ignored. A command-line flag overrides a setting for one run. The provider,
+# the models and the keys are the environment's, or the .env's at the root of the checkout, which is never committed.
+
+[review]
+fail_on = "blocker"  # exit 1 at or above this severity: minor, major or blocker (--fail-on)
+max_tokens = 0       # stop spending past this many tokens; 0 is no ceiling (--max-tokens)
+verify = false       # a second opinion on each guideline's finding no rule already made (--verify, --no-verify)
+diff_cap = 4000      # characters of one file's diff a guideline reads; a file cut there is named "not read" (--diff-cap)
+skip = []            # globs of changed files the guidelines leave to the rules, each named, never a hole (--skip)
+
+# Named lists of the checks a review runs, chosen with --profile NAME; with no --profile a review runs `default`.
+# A check is a rule, decided by code, one file in judge/rules/, or a guideline, judged by a model, one file in
+# judge/guidelines/. A profile names each by its id, rule.<name> or guideline.<name>, as --list-checks prints them,
+# or every check of a kind by the group `rules` or `guidelines`. A check runs only where a profile names it, or alone
+# with --check ID: a new rule joins every profile that names `rules` at once, and `default` when its id is added.
+[profiles]
+# The basics, what a review runs when no --profile names another: the rules every project wants — a credential, by
+# a vendor's shape or by the name it is given, and lint — the two that guard the review itself — against a diff that
+# gives the guidelines orders, and against an encoding that hides code from every rule — and the three guidelines.
+default = [
+    "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
+    "guideline.security", "guideline.tests", "guideline.complexity",
+]
+# The default's rules and no model: what fits any project's every pull request, with no key needed. Kept to the
+# default's rules, a test holds it so; the payments project's own rules are in `rules-only`.
+default-rules = [
+    "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
+]
+# What the pre-push hook reads each commit a push sends with, beside its review of the change with `default-rules`: a
+# credential one commit adds and a later one takes out is still in the history the remote receives. A commit is read
+# line by line and by code alone, so it names line rules only.
+push-history = ["rule.secrets", "rule.named-secrets"]
+# No model at all: every rule, the payments project's own among them, fast enough for every push, and no key needed.
+rules-only = ["rules"]
+# Every check there is: every rule and every guideline.
+full = ["rules", "guidelines"]

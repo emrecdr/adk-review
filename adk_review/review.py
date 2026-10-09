@@ -1,0 +1,933 @@
+"""The command: evidence first, guidelines judge, code decides.
+
+    uv run python -m adk_review.review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [...]
+
+Every flag, and what it does, is in `GUIDE.md` beside this file, which a test holds to this parser.
+
+A review runs in four steps, a package each: `core/` is the domain and imports
+nothing that runs a process or calls a model, `collect/` gathers the evidence,
+`judge/` applies the checks — every rule in `judge/rules/`, every guideline in
+`judge/guidelines/`, one file each — and `deliver/` writes the report.
+`config.toml` holds the profiles and the review policy, and this file is the
+driver that fixes the order of the steps. Each package may import only itself
+and the packages before it; `tests/test_layering.py` keeps it that way. Around
+the steps:
+
+1. Retries on both arms (`judge/config.py`), set once on the request both clients read:
+   `RETRY_ATTEMPTS` on Gemini, one on Copilot, whose SDK retries twice itself.
+2. A token ceiling (`--max-tokens`) that ends the spending, never the report:
+   the call that would pass it is refused, the guideline is named, exit 3.
+3. An outside tool for a rule that names one: ruff for `lint`
+   (`judge/rules/lint.py`), run by `collect/ruff.py` through `collect/tools.py`
+   over the changed Python files at the head.
+4. A second opinion (`--verify`): another model judges each guideline finding
+   before the fold — one verifier per finding, a second graph run like the
+   first; refuted findings are dropped and named, unjudged ones kept and
+   named, the rules' findings never asked, nor a guideline's that only says again
+   what a rule found.
+5. A blast radius (`core/blast.py`): what at the head depends on each changed
+   file, read from the syntax tree, told to the guidelines beside the diff and
+   heading the report; the verdict never reads it.
+6. Every check one file (`judge/catalog.py`): a rule in `judge/rules/` —
+   over each added line, each changed file, or the head — and a guideline in
+   `judge/guidelines/`, each named after its file, and named profiles of which
+   checks run, chosen with `--profile`; `--list-checks` shows them all. Every
+   definition is read from the reviewer's own folders; nothing is read from
+   the repository under review.
+7. What a review covers: the change against a base; `--path` keeps it to a
+   folder of the change, the rest counted and named; `--all` reviews every
+   file at the head; `--staged`, the index against `HEAD`. With neither a base
+   nor `--all`, a person at a terminal is asked which; a pipeline gets the
+   change against `main`, or `master`, or the branch `origin/HEAD` names. The
+   repository is never assumed: named first on the command line, or asked for
+   at a terminal; a pipeline that names none is a usage error.
+8. The rules as a node (`judge/checks.py`): every rule runs in one
+   `FunctionNode` before the guidelines, in this graph and in chat's, its
+   answer left in state as each guideline's is.
+9. Reports beside the text one, under its safety rules: JSON for a pipeline
+   (`--json FILE`) and a hand-off for a coding agent (`--handoff FILE`), both
+   written whenever a review is decided, so never on exit 2.
+
+The order is the architecture: deterministic evidence and rules first, model
+judgement second, deterministic decision last; a model never decides
+whether the build passes. `main` reads as that order, and so does the graph.
+"""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import hashlib
+import json
+import logging
+import os
+import signal
+import sys
+import tempfile
+import tomllib
+import warnings
+from collections.abc import Callable, Collection, Mapping, Sequence
+from importlib import metadata
+from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import TYPE_CHECKING
+
+#: Why the reviewer could not load, if it could not: a broken install is one sentence and exit 3 like every other
+#: failure, never Python's own exit 1, which reads as a blocker. Measured before: a package that would not import
+#: ended the command in a traceback and exit 1 before `main` ran. The engine — ADK, and the judge's agents, graph,
+#: plugins and verifier — is imported where a review starts, never here: the modes that read the checks alone,
+#: `--list-checks`, `--explain` and `--try`, and a usage error, never wait for it.
+UNLOADED: str | None = None
+try:
+    from dotenv import load_dotenv
+
+    from .collect.git import MAX_FILE_BYTES, GitError, checked_out, collect_evidence, default_base, is_repository
+    from .core.findings import RANK, Checked, Review
+    from .core.health import measured
+    from .core.profiles import DEFAULT, state_key
+    from .core.rules import AnyRule
+    from .core.verdict import (
+        EXIT_CLEAN,
+        EXIT_DEGRADED,
+        EXIT_FINDINGS,
+        EXIT_INTERRUPTED,
+        EXIT_TERMINATED,
+        EXIT_USAGE,
+        Outcome,
+        Sourced,
+        decide,
+        dedupe,
+        drop_ungrounded,
+        to_verify,
+        where_quoted,
+    )
+    from .deliver.report import (
+        SCHEMA,
+        as_data,
+        render,
+        render_checks,
+        render_dry_run,
+        render_explained,
+        render_handoff,
+        render_tried,
+        safe_line,
+        safe_value,
+    )
+    from .judge.catalog import (
+        CONFIG,
+        REVIEW,
+        Selection,
+        catalog,
+        explained,
+        load_config,
+        select,
+        table,
+    )
+    from .judge.checks import NAME as CHECKS
+    from .judge.checks import run_rules
+    from .judge.rule_helpers.testing import as_change
+except Exception as exc:  # noqa: BLE001 -- a broken install's own words, whatever it raised
+    UNLOADED = f"{type(exc).__name__}: {exc}"
+
+if TYPE_CHECKING:
+    from google.adk.plugins.base_plugin import BasePlugin
+
+    from .judge.run import Run
+
+ROOT = Path(__file__).resolve().parents[1]
+#: The distribution `adk-review` is installed from, whose version a run names.
+DISTRIBUTION = "adk-review"
+
+
+def setting(key: str) -> Callable[[str], int]:
+    """The type of the flag that overrides the `[review]` setting `key`: a whole number held to the config's own test
+    and named by its sentence, so a flag takes no value the config would refuse. Measured before: `--max-tokens -5`
+    was taken, printed as a ceiling, and would have refused every call."""
+    fits, what = REVIEW[key]
+
+    def parsed(value: str) -> int:
+        try:
+            number: int | None = int(value)
+        except ValueError:
+            number = None
+        if number is None or not fits(number):
+            raise argparse.ArgumentTypeError(f"{value!r} is not {what}")
+        return number
+
+    return parsed
+
+
+def _previous(path: str) -> tuple[dict[str, dict], dict | None]:
+    """A previous review's findings by fingerprint, from the report its `--json` wrote, and its `health`, None where it
+    has none; a sentence for anything else, before the review runs."""
+    try:
+        data = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or data.get("schema") != SCHEMA or not isinstance(data.get("findings"), list):
+            raise ValueError(f"not a review's JSON report of schema {SCHEMA}, as --json writes one")
+        findings = [f for f in data["findings"] if isinstance(f, dict) and isinstance(f.get("fingerprint"), str)]
+        # Each finding made safe whole, keys and nested values too, where it comes in: `resolved` gives it back, and
+        # a kept report can be edited. One a review wrote reads the same, a cut's run of spaces aside.
+        kept = {f["fingerprint"]: f for f in map(safe_value, findings)}
+    except RecursionError:  # measured by review: nested 1,100 deep, which no report `--json` writes, it ended as a hole
+        raise ValueError(f"--previous {path}: nested deeper than a report --json writes") from None
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"--previous {path}: {getattr(exc, 'strerror', None) or exc}") from None
+    health = data.get("health")
+    return kept, health if isinstance(health, dict) else None
+
+
+#: Where a review's results go, which no result depends on: left out of what keys a kept review.
+OUTPUTS = {"json", "handoff", "cache", "record", "trace", "debug_log", "progress"}
+#: The modes besides a review, by their flags' dests: each stops before a review would start.
+MODES = {"dry_run": "--dry-run", "list_checks": "--list-checks", "try_paths": "--try", "explain": "--explain"}
+#: What only a review reads, by dest: what it writes, keeps, records and compares against.
+REVIEW_ONLY = {
+    "json": "--json",
+    "handoff": "--handoff",
+    "cache": "--cache",
+    "previous": "--previous",
+    "record": "--record",
+    "trace": "--trace",
+    "debug_log": "--debug-log",
+}
+
+
+def _try(paths: Sequence[str], chosen: Selection, fail_on: str) -> int:
+    """`--try PATH…`: the chosen rules over files on disk, each read as wholly added, the head these files alone, as
+    a rule's own tests read it: one command where seeing a rule fire took four, and two more an edit. Exit 1 at the
+    bar, 3 for a rule that could not look, decided as a review's is."""
+    files, skipped = _on_disk(paths)
+    for path, why in skipped:
+        _say(f"--try leaves out {path}: {why}")
+    if not files:
+        _say("--try found no text file to read")
+        return EXIT_USAGE
+    entries, tree = as_change(files)
+    answers = run_rules({"files": entries, "tree": tree}, chosen.rules)
+    print(render_tried(paths, answers, [g.check_id for g in chosen.guidelines]))
+    found, holes = from_rules(answers)
+    return decide(Outcome(kept=found, errors=holes), fail_on)[1]
+
+
+def _on_disk(paths: Sequence[str]) -> tuple[dict[str, str], list[tuple[str, str]]]:
+    """Each file under `paths` and its text: a file by its path as given, a folder's files by their paths inside it,
+    as a project's own head names them, `/`-separated, and never a `.git`. A file that is not UTF-8 text, or past
+    the size a review reads, is left out and named."""
+    found: dict[str, str] = {}
+    skipped: list[tuple[str, str]] = []
+    for given in paths:
+        root = Path(given).expanduser()
+        if not root.exists():
+            skipped.append((given, "no such file or folder"))
+            continue
+        files = (
+            [root] if root.is_file() else sorted(p for p in root.rglob("*") if p.is_file() and ".git" not in p.parts)
+        )
+        for file in files:
+            name = file.as_posix() if file == root else file.relative_to(root).as_posix()
+            if file.stat().st_size > MAX_FILE_BYTES:
+                skipped.append((name, f"over {MAX_FILE_BYTES:,} bytes"))
+                continue
+            try:
+                found[name] = file.read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError):
+                skipped.append((name, "not UTF-8 text"))
+    return found, skipped
+
+
+def _traced(path: str) -> None:
+    """ADK's spans recorded to a local SQLite file, through ADK's own exporter: a provider of the run's own, never
+    `maybe_set_otel_providers`, which also exports to any `OTEL_EXPORTER_OTLP_*` endpoint the environment names, and
+    the spans would leave the machine. Each span is written as it ends, so a run stopped midway keeps what it did."""
+    from google.adk.telemetry.sqlite_span_exporter import SqliteSpanExporter
+    from opentelemetry import trace
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+
+    provider = TracerProvider()
+    provider.add_span_processor(SimpleSpanProcessor(SqliteSpanExporter(db_path=os.path.abspath(path))))
+    trace.set_tracer_provider(provider)
+
+
+def build_parser(review: dict) -> argparse.ArgumentParser:
+    """The command's flags, each setting's default taken from `config.toml`'s `[review]`: a flag wins for one run."""
+    parser = argparse.ArgumentParser(
+        prog="review", description="Review a branch: rules in Python, guidelines judge, code decides."
+    )
+    parser.add_argument(
+        "repo",
+        nargs="?",
+        help="path to the repository under review; asked for at a terminal when not given, and required in a pipeline",
+    )
+    parser.add_argument("--head", help="the branch under review (default: the one checked out)")
+    what = parser.add_mutually_exclusive_group()
+    what.add_argument(
+        "--base",
+        help="the branch the change will be merged into; with neither this nor --all, a person at a terminal is "
+        "asked, and anything else reviews the change against main, or master where there is no main, or else the "
+        "branch origin/HEAD names",
+    )
+    what.add_argument("--all", action="store_true", help="review every file at the head, not what it changes")
+    what.add_argument(
+        "--staged",
+        action="store_true",
+        help="review what is staged — the index, as the next commit would hold it — against HEAD; nothing is written, "
+        "and a change not staged is not reviewed",
+    )
+    parser.add_argument(
+        "--path",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="review only what lies under this folder of the repository; repeat it for more than one",
+    )
+    parser.add_argument(
+        "--fail-on",
+        choices=list(RANK),
+        default=review["fail_on"],
+        help=f"exit 1 at or above this severity (config.toml: {review['fail_on']}); what is below stays in the report",
+    )
+    parser.add_argument(
+        "--max-tokens",
+        type=setting("max_tokens"),
+        default=review["max_tokens"],
+        help="stop spending past this many tokens, 0 for no ceiling (config.toml: "
+        f"{review['max_tokens']}); what was found by then is still reported, refused guidelines named",
+    )
+    parser.add_argument(
+        "--diff-cap",
+        type=setting("diff_cap"),
+        default=review["diff_cap"],
+        metavar="N",
+        help=f"characters of one file's diff a guideline reads (config.toml: {review['diff_cap']:,}); a file cut "
+        "there is named under not read, and the review ends in exit 3",
+    )
+    parser.add_argument(
+        "--skip",
+        action="append",
+        default=list(review["skip"]),
+        metavar="GLOB",
+        help="a glob of changed files the guidelines leave to the rules, as the config's skip list does; each one "
+        "named, never a hole; repeat it for more than one",
+    )
+    parser.add_argument(
+        "--verify",
+        action=argparse.BooleanOptionalAction,
+        default=review["verify"],
+        help="ask a second model whether each guideline finding that says more than a rule holds, refuted ones named "
+        f"(config.toml: {'on' if review['verify'] else 'off'})",
+    )
+    which = parser.add_mutually_exclusive_group()
+    which.add_argument(
+        "--profile",
+        default=DEFAULT,
+        help=f"the checks to run, as config.toml's [profiles] names them; its {DEFAULT} profile when not given",
+    )
+    which.add_argument(
+        "--check",
+        action="append",
+        default=[],
+        metavar="ID",
+        help="run only this check this once — rule.<name>, guideline.<name>, or the groups rules and guidelines; "
+        "repeat it for more than one. How a check's author tries a check on a repository, with no profile edited",
+    )
+    parser.add_argument(
+        "--json",
+        metavar="FILE",
+        help="also write the review to FILE as JSON, for a pipeline: the verdict, its exit code and every finding "
+        "with its place; written whenever a review is decided, so never on exit 2",
+    )
+    parser.add_argument(
+        "--handoff",
+        metavar="FILE",
+        help="also write each kept finding to FILE as a short instruction for a coding agent: where, the lines "
+        "quoted, what to change, and what must hold afterwards; nothing is applied",
+    )
+    parser.add_argument(
+        "--cache",
+        metavar="DIR",
+        help="keep each decided review in DIR, keyed by the reviewer's code and config, the commits, the checks, every "
+        "setting and each model; a review of the same inputs is served from it, with no model call; a hole is never "
+        "kept",
+    )
+    parser.add_argument(
+        "--previous",
+        metavar="FILE",
+        help="a previous review's --json report: mark each finding new or seen before, by its fingerprint, and list "
+        "what is no longer found; a review with a hole resolves nothing",
+    )
+    parser.add_argument(
+        "--debug-log",
+        metavar="FILE",
+        help="write every model request and answer to FILE, secrets redacted, the session's state left out: for "
+        "seeing what a guideline was asked and said",
+    )
+    parser.add_argument(
+        "--trace",
+        metavar="FILE",
+        help="record ADK's OpenTelemetry spans, with their timings and token counts, to FILE, a local SQLite "
+        "database; never sent anywhere",
+    )
+    parser.add_argument(
+        "--record",
+        metavar="DIR",
+        help="keep each model answer in DIR under a hash of the request as the model read it, secrets redacted: a "
+        "live run's answers, which a fake replays offline to measure a change to an instruction",
+    )
+    parser.add_argument(
+        "--progress",
+        action="store_true",
+        help="tell on stderr as the change is read and as each guideline starts and finishes; on at a terminal",
+    )
+    # A review, or one of four modes besides it, each stopping before a review would start: one at a time.
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="resolve what would be reviewed — the revisions, the files, the profile, the model and whether it is "
+        "ready — print it and stop: no rule, no guideline, no model call",
+    )
+    mode.add_argument(
+        "--list-checks",
+        action="store_true",
+        help="print every check — every rule and every guideline — with its kind, its severity and the profiles that "
+        "run it, then stop: no repository, no model, no key",
+    )
+    mode.add_argument(
+        "--try",
+        dest="try_paths",
+        nargs="+",
+        metavar="PATH",
+        help="run the profile's rules, or --check's, over these files or folders on disk, each read as wholly added: "
+        "how a rule's author sees a rule fire, with no repository, no commit and no model",
+    )
+    mode.add_argument(
+        "--explain",
+        metavar="ID",
+        help="print one check whole — what it reads, its severity, the profiles that run it, its file and its own "
+        "examples — then stop",
+    )
+    parser.add_argument("--version", action="version", version=f"%(prog)s {version()}")
+    return parser
+
+
+def version() -> str:
+    """The reviewer's version: the installed distribution's, as `adk-review` is installed, else the project's own
+    `pyproject.toml`'s, as a clone runs it. What a pipeline that pins the reviewer names in its log, and the JSON
+    beside each review."""
+    try:
+        return metadata.version(DISTRIBUTION)
+    except metadata.PackageNotFoundError:
+        pass
+    try:
+        return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    except (OSError, KeyError, tomllib.TOMLDecodeError):
+        return "unknown"
+
+
+def scope_of(folders: Sequence[str]) -> tuple[str, ...]:
+    """Each --path as git spells a folder: `/` between names, no `./`, no trailing `/`; `.` is the whole repository.
+    One that starts at a root or a drive, or climbs out with `..`, is refused: git names nothing there."""
+    scope = []
+    for folder in folders:
+        path = PurePosixPath(folder.replace("\\", "/"))
+        if ".." in path.parts or PureWindowsPath(folder).anchor:  # a root or a drive, `/` or `\` alike
+            raise ValueError(f"--path {folder!r} must name a folder inside the repository")
+        if path.parts:
+            scope.append(path.as_posix())
+    return tuple(scope)
+
+
+def target(repo: str, base: str | None, head: str | None, whole: bool) -> tuple[str | None, str]:
+    """What to review, `(base, head)`, a base of None meaning every file at the head. With no --head, the branch
+    checked out. With neither --base nor --all, a person at a terminal is asked; anything else, CI or a script, which
+    nothing can ask, gets what the command always did: the change against `main`, or `master` where there is none,
+    or else the branch `origin/HEAD` names.
+    `_a_terminal` says when a question can be asked."""
+    if not is_repository(repo):
+        return base, head or "HEAD"  # the collector names what is missing
+    head = head or checked_out(repo)
+    if head is None:
+        raise ValueError(f"no branch is checked out in {repo}: name the one to review with --head")
+    if base is not None or whole:
+        return base, head
+    default = default_base(repo)
+    if _a_terminal():
+        return _ask(head, default), head
+    if default is None:
+        why = "no main or master branch, and no origin/HEAD naming one"
+        raise ValueError(f"{repo} has {why}: name the base with --base, or review it all with --all")
+    return default, head
+
+
+def repository(given: str | None) -> str:
+    """The repository to review: the one named, else the one a person at a terminal names when asked, on stderr, as
+    the base is asked for. Never assumed: at the user's request, a tool that judges code reviews what it is told to,
+    and no repository is a default here, a demo's included. A pipeline, which nothing can ask, names it or is
+    refused."""
+    if given is not None:
+        return os.path.abspath(os.path.expanduser(given))  # the report names it whole: `.` once printed as `.`
+    answer = _answer("review: which repository should be reviewed? Its path: ") if _a_terminal() else ""
+    if not (path := answer.strip().strip("\"'")):  # a path pasted with its quotes is the path
+        raise ValueError("no repository named: give its path as the first argument")
+    return os.path.abspath(os.path.expanduser(path))
+
+
+def _a_terminal() -> bool:
+    """Whether a question can be asked: stdin and stderr are both the terminal, the answer's end and the question's.
+    Measured with stderr sent to a file: the question went there, and the command waited on a terminal that showed
+    nothing."""
+    return sys.stdin.isatty() and sys.stderr.isatty()
+
+
+def _answer(prompt: str) -> str:
+    """The line a person types after `prompt`, the prompt on stderr so a report sent to a file is still only the
+    report; "" at the end of the input, or on Ctrl-C."""
+    print(prompt, end="", file=sys.stderr, flush=True)
+    try:
+        return sys.stdin.readline()
+    except KeyboardInterrupt:
+        return ""
+
+
+def _ask(head: str, default: str | None) -> str | None:
+    """The base to compare with, or None for the whole project, asked as `repository` asks for the repository. Asked
+    again until answered; no answer is a usage error."""
+    choices: dict[str, str | None] = {"1": default} if default else {}
+    choices["2"] = None
+    print(f"review: no --base given. What should be reviewed at {head!r}?", file=sys.stderr)
+    if default:
+        print(f"  1  what it changes against {default!r} (--base {default})", file=sys.stderr)
+    print("  2  every file, the whole project (--all)", file=sys.stderr)
+    while True:
+        answer = _answer(f"choose {' or '.join(choices)}: ")
+        if not answer:  # the end of the input, or Ctrl-C: no choice was made
+            raise ValueError("no choice was made: name --base or --all")
+        if (choice := answer.strip()) in choices:
+            return choices[choice]
+
+
+def from_rules(answers: Mapping[str, Checked]) -> tuple[list[Sourced], dict[str, str]]:
+    """The rules' answers as the verdict reads them, a review's and `--try`'s alike: each finding under its check's id
+    where the diff places it — its one line, or nowhere for one at a path, as a tree rule's is — and why each rule
+    that could not look did not."""
+    found = [
+        Sourced(check, f, None if f.line is None else (f.line, f.line))
+        for check, answer in answers.items()
+        for f in answer.findings
+    ]
+    return found, {check: answer.could_not_look for check, answer in answers.items() if answer.could_not_look}
+
+
+def read_checks(run: Run, rules: Sequence[AnyRule]) -> tuple[list[Sourced], dict[str, str]]:
+    """What the checks node left in state, read back as each guideline's review is: each rule's answer, or, as a
+    guideline that did not answer is, why there is none."""
+    from .judge.agents import read_back
+
+    answers = {}
+    for rule in rules:
+        answer = read_back(run.state, state_key(rule.check_id), Checked, run.why(CHECKS, "the check left no answer"))
+        answers[rule.check_id] = Checked(could_not_look=answer) if isinstance(answer, str) else answer
+    return from_rules(answers)
+
+
+def not_read(files: list[dict], guidelines: Collection[str]) -> dict[str, str]:
+    """What no one could read, by path with why. A cut is the guidelines' limit: with none on, the rules
+    read every added line, and only what no one can read — binary, a submodule, nothing shown — is a hole."""
+    return {f["path"]: f["unread"] for f in files if f["unread"] and (guidelines or not f["cut"])}
+
+
+def postprocess(run: Run, files: list[dict], guidelines: tuple[str, ...], holes: dict[str, str]) -> Outcome:
+    """The guidelines' answers read back and grounded, each narrowing counted: what a model said that the diff bears
+    out. `holes` are the checks that could not look before any model ran, named beside the guidelines that could not.
+
+    A guideline that wrote nothing is named with why: the error event it ended
+    with — its provider raised or timed out, the ceiling refused its call, the
+    redaction plugin refused it — or, failing that, what escaped the engine,
+    which names every guideline that wrote nothing.
+    """
+    from .judge.agents import read_back
+
+    outcome = Outcome(unread=not_read(files, guidelines), errors=dict(holes))
+    quotable = {f["path"]: f["quotable"] for f in files}
+    for check in guidelines:  # a guideline the profile left off did not fail: it was never asked
+        key = state_key(check)
+        answer = read_back(run.state, key, Review, run.why(key, "the guideline produced no output"))
+        if isinstance(answer, str):
+            outcome.errors[check] = answer
+            continue
+        kept, dropped = drop_ungrounded(answer, quotable)
+        outcome.kept += [Sourced(check, f, where_quoted(f, quotable)) for f in kept]
+        outcome.dropped += [Sourced(check, f) for f in dropped]
+    return outcome
+
+
+def second_opinion(outcome: Outcome, rules: list[Sourced], diff: str, plugins: list[BasePlugin]) -> None:
+    """`--verify`: each guideline finding that says more than a rule judged once more — refuted ones out and named,
+    unjudged ones kept and named.
+
+    Before the fold, so the rules' findings — facts — are never asked about, and
+    a rule's reading of a line stands whatever the verifier says of a guideline's.
+    Nor is a guideline's finding that only says again what a rule found: the fold
+    folds it into the rule's, as without `--verify`, so a verifier that holds
+    everything leaves the report it would have been. Measured live on Copilot,
+    2 of 5 verifier calls judged a guideline's reading of a key the secrets rule had found. Each finding is judged
+    beside the whole change, as its guideline judged it.
+    """
+    import asyncio
+
+    from .judge.verify import judge_findings
+
+    outcome.verified = True
+    asked = to_verify(outcome.kept, rules)
+    judged = asyncio.run(judge_findings([item.finding for item in asked], diff, plugins))
+    refuted: set[int] = set()  # by identity: two guidelines can file the same finding
+    for item, judgement in zip(asked, judged, strict=True):
+        if isinstance(judgement, str):
+            outcome.unverified.append((item, judgement))
+        elif not judgement.holds:
+            outcome.refuted.append((item, judgement.reason))
+            refuted.add(id(item))
+    outcome.kept = [item for item in outcome.kept if id(item) not in refuted]
+
+
+def fold(outcome: Outcome, rules: list[Sourced], order: Sequence[str]) -> None:
+    """One finding per span of the diff, the first check on a tie: `order` is the report's, the rules before the
+    guidelines, so the fold and the report never disagree on which check a line belongs to."""
+    kept = sorted(rules + outcome.kept, key=lambda item: order.index(item.source))  # stable: each check's own order
+    outcome.kept, outcome.folded = dedupe(kept)
+
+
+class Terminated(Exception):  # noqa: N818 -- named for what happened to the run, as KeyboardInterrupt is
+    """A job stopped the run with SIGTERM: raised in the run's place, so what it holds is let go as on Ctrl-C."""
+
+
+def _terminated(_signal: int, _frame: object) -> None:
+    raise Terminated
+
+
+def _cleared(flag: str, given: str) -> None:
+    """`--json FILE` or `--handoff FILE` made ready before the review: a missing folder or a folder refused, and an
+    earlier file of that name removed, a link itself and never what it points to, so a run that ends in exit 2 leaves
+    no report a pipeline could take for its own. Measured before: an earlier file outlived exit 2, and a link was
+    written through."""
+    path = Path(given).expanduser()
+    if not path.resolve().parent.is_dir():
+        raise ValueError(f"{flag} {given}: there is no such folder to write it in")
+    if path.is_dir():
+        raise ValueError(f"{flag} {path}: that is a folder; name a file in it")
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:
+        raise ValueError(f"{flag} {path}: the earlier file could not be removed: {exc.strerror or exc}") from None
+
+
+def _written(path: Path, text: str) -> None:
+    """`text` written beside `path` and moved over it: a reader never sees half a report, and the file is the
+    operator's alone, as a temporary file is made."""
+    with tempfile.NamedTemporaryFile(
+        "w", encoding="utf-8", newline="\n", dir=path.parent, prefix=f".{path.name}.", delete=False
+    ) as handle:
+        handle.write(text)
+    try:
+        os.replace(handle.name, path)
+    except OSError:
+        Path(handle.name).unlink(missing_ok=True)
+        raise
+
+
+def _say(sentence: str) -> None:
+    """A sentence on stderr, made safe as the report's prose is: git's or an exception's words can be the branch's."""
+    print(f"review: {safe_line(sentence)}", file=sys.stderr)
+
+
+def _review(argv: list[str] | None = None) -> int:
+    try:
+        load_dotenv(ROOT / ".env")
+    except UnicodeDecodeError:
+        _say("the central .env is not UTF-8; save it as UTF-8 (Windows PowerShell 5.1's `>` writes UTF-16)")
+        return EXIT_USAGE
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # a Windows console is not UTF-8 by default
+    try:  # before anything runs: the config, the rules and the profiles read whole, or a sentence and exit 2
+        # The config first, since every flag's default is one of its settings.
+        config = load_config(CONFIG)
+        args = build_parser(config["review"]).parse_args(argv)
+        found = catalog()
+        # One run's `--check` list is held to what a profile is, and named in the report as the flag.
+        chosen = select(found, config["profiles"], args.profile, args.check)
+        scope = scope_of(args.path)
+        # A mode besides a review reads none of a review's own flags: measured, `--explain` beside `--json` cleared the
+        # file, then wrote nothing and exited 0.
+        if stops := next((flag for dest, flag in MODES.items() if getattr(args, dest)), None):
+            if given := [flag for dest, flag in REVIEW_ONLY.items() if getattr(args, dest)]:
+                raise ValueError(f"{given[0]} is a review's, and {stops} runs no review")
+            if stops == "--try" and args.repo is not None:
+                raise ValueError("--try reads files on disk: it takes no repository")
+        explanation = explained(found, config["profiles"], args.explain) if args.explain else None
+        previous, previous_health = _previous(args.previous) if args.previous else (None, None)
+        for flag, given in (("--json", args.json), ("--handoff", args.handoff)):
+            if given:
+                _cleared(flag, given)
+    except ValueError as exc:
+        _say(str(exc))
+        return EXIT_USAGE
+    if args.list_checks:
+        print(render_checks(table(found, config["profiles"])))
+        return EXIT_CLEAN
+    if explanation is not None:
+        print(render_explained(explanation), end="")
+        return EXIT_CLEAN
+    if args.try_paths:
+        return _try(args.try_paths, chosen, args.fail_on)
+    # A review from here on, and the engine with it, which the modes above never import: measured, best of seven,
+    # `--list-checks` started in 0.75 s with it imported first and 0.13 s without, `--try` in 0.73 s and 0.15 s.
+    import asyncio
+
+    from google.adk.runners import InMemoryRunner
+
+    from .judge.agents import DIFF
+    from .judge.config import require_ready, served
+    from .judge.graph import build_app, skipped_by
+    from .judge.plugins import Progress, RedactSecretsPlugin, UsageLedger
+    from .judge.run import run_seeded
+    from .judge.verify import VERIFIER
+
+    guidelines = tuple(guideline.check_id for guideline in chosen.guidelines)
+    # Only a guideline calls a model: a profile without one needs no key, and the verifier has no guideline finding to
+    # judge.
+    verify = args.verify and bool(guidelines)
+    # The verifier's own model under --verify, beside everyone's: every model the run would build, checked before
+    # anything is spent, and named in the report where it is not everyone's.
+    roles = (VERIFIER,) if verify else ()
+    why = require_ready(roles=roles) if guidelines else None
+    if why is not None and not args.dry_run:  # a dry run reports an arm that is not ready; a review stops at it
+        _say(why)
+        return EXIT_USAGE
+    try:
+        repo = repository(args.repo)
+        if args.cache and Path(args.cache).expanduser().resolve().is_relative_to(Path(repo).resolve()):
+            raise ValueError(f"--cache {args.cache} lies in the repository under review: nothing is written into it")
+        if args.staged and args.head:
+            raise ValueError("--staged reviews the index; it takes no --head")
+        base, head = ("HEAD", "the index") if args.staged else target(repo, args.base, args.head, args.all)
+    except (ValueError, GitError) as exc:
+        _say(str(exc))
+        return EXIT_USAGE
+    # Told at a terminal, where a person waits, or when asked; a pipeline's log stays the report alone.
+    say = _say if args.progress or sys.stderr.isatty() else None
+    if say is not None:
+        say(f"reading {head} against {base or 'the empty tree'}")
+    # The head read whole only where a check reads it: a tree rule, or a guideline, which is shown the radius.
+    whole_head = bool(guidelines) or any(rule.kind == "tree" for rule in chosen.rules)
+    evidence = collect_evidence(
+        repo,
+        base,
+        head,
+        scope,
+        staged=args.staged,
+        whole_head=whole_head,
+        diff_cap=args.diff_cap,
+        skipped=skipped_by(args.skip),
+    )
+    if evidence["status"] != "success":
+        _say(evidence["error_message"])
+        return EXIT_USAGE
+    files = evidence["files"]
+    # What every report says of the review itself, a dry run's too: with no guideline there is no model to name.
+    model = (
+        served(roles) if guidelines and why is None else ""
+    )  # an arm that is not ready names no model: `why` says why
+    shown = {"model": model, "profile": chosen.name, "off": chosen.off, "checks": chosen.ids()}
+    if args.dry_run:
+        unread = not_read(files, guidelines)
+        print(
+            render_dry_run(
+                evidence, **shown, guidelines=guidelines, ready=why or "ready", unread=unread, config=str(CONFIG)
+            )
+        )
+        return EXIT_CLEAN
+    cached = _cached_at(args, chosen, evidence, model) if args.cache else None
+    if cached is not None and (hit := _from_cache(cached)) is not None:
+        _say(f"served from the cache: {cached.name}, a review of these commits with these checks and models")
+        return _delivered(args, hit["report"], hit["handoff"], hit["data"], hit["code"])
+    # Under --all the files are the project: its measures, read before the checks node lets the texts and tree go.
+    health = measured(evidence["files"], evidence["tree"]) if evidence["whole"] else None
+    # The checks node drops the tree and the texts once the rules have read them; a ceiling of 0 is none.
+    ceiling = args.max_tokens or None
+    app = build_app(
+        chat=False,
+        checks=chosen,
+        evidence=evidence,
+        ceiling=ceiling,
+        say=say,
+        debug_log=args.debug_log,
+        record=args.record,
+    )
+    if args.trace:
+        _traced(args.trace)
+    redactor = next(p for p in app.plugins if isinstance(p, RedactSecretsPlugin))
+    ledger = next(p for p in app.plugins if isinstance(p, UsageLedger))
+    progress = next(p for p in app.plugins if isinstance(p, Progress))
+    # The rules, then the guidelines, over a session that starts with the change they read, in no event a log could
+    # carry; every guideline finishes, whatever one of them does.
+    runner = InMemoryRunner(app=app)
+    run = asyncio.run(run_seeded(runner, session_id="run", state={DIFF: evidence["diff"]}, prompt="review"))
+
+    rules, holes = read_checks(run, chosen.rules)
+    outcome = postprocess(run, files, guidelines, holes)
+    if verify:
+        second_opinion(outcome, rules, evidence["diff"], app.plugins)
+    outcome.redacted = redactor.redacted  # read after the verifiers, whose calls the same plugin scrubs
+    fold(outcome, rules, chosen.ids())
+    verdict, code = decide(outcome, args.fail_on)
+    report = render(
+        evidence,
+        outcome,
+        verdict=verdict,
+        spend=ledger.render(),
+        fail_on=args.fail_on,
+        previous=previous,
+        health=health,
+        previous_health=previous_health,
+        **shown,
+    )
+    keep = cached is not None and code in (EXIT_CLEAN, EXIT_FINDINGS)  # a hole is never kept: the next run looks again
+    # The hand-off and the JSON only where asked for, or kept: measured, both cost three times the report's own time.
+    handoff = render_handoff(evidence, outcome, verdict=verdict, fail_on=args.fail_on) if args.handoff or keep else ""
+    data = (
+        as_data(
+            evidence,
+            outcome,
+            verdict=verdict,
+            code=code,
+            usage=ledger.summary(),
+            fail_on=args.fail_on,
+            **shown,
+            version=version(),
+            seconds=progress.summary(),
+            previous=previous,
+            health=health,
+        )
+        if args.json or keep
+        else {}
+    )
+    if keep:
+        stored = {"report": report, "handoff": handoff, "data": data, "code": code}
+        with contextlib.suppress(OSError):  # a cache that cannot be written costs the next run, never this one
+            cached.parent.mkdir(mode=0o700, parents=True, exist_ok=True)  # the operator's alone: it quotes the code
+            _written(cached, json.dumps(stored, ensure_ascii=False))
+    return _delivered(args, report, handoff, data, code)
+
+
+def _delivered(args: argparse.Namespace, report: str, handoff: str, data: dict, code: int) -> int:
+    """The review's outputs: the report on stdout, the hand-off and the JSON where asked for; exit 3 where a file
+    asked for cannot be written."""
+    print(report)
+    for flag, written, text in (
+        ("hand-off", args.handoff, handoff),
+        ("JSON report", args.json, json.dumps(data, indent=2, ensure_ascii=False) + "\n"),
+    ):
+        if not written:
+            continue
+        try:
+            _written(Path(written).expanduser(), text)
+        except OSError as exc:  # the folder was there when the review began; a full or read-only disk is not
+            _say(f"the {flag} could not be written to {written}: {exc.strerror or exc}")
+            return EXIT_DEGRADED
+    return code
+
+
+def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: dict, model: str) -> Path:
+    """Where a decided review of these inputs is kept: a file named by a hash of everything its result depends on —
+    the reviewer's own code and its config, whatever their version says, the commits, what of them is covered,
+    the checks and every setting, and each model a call would go to. A missing input would serve a stale approval."""
+    from .judge.config import fallback_name
+
+    digest = hashlib.sha256()
+    here = Path(__file__).parent
+    for path in sorted(here.rglob("*")):
+        if path.suffix in (".py", ".toml") and "__pycache__" not in path.parts:
+            digest.update(path.relative_to(here).as_posix().encode() + b"\0" + path.read_bytes())
+    pre = evidence["preflight"]
+    said = {
+        **{key: pre.get(key) for key in ("repo", "head", "head_sha", "base", "base_sha", "merge_base")},
+        "scope": evidence["scope"],
+        "whole": evidence["whole"],
+        "profile": chosen.name,
+        "checks": list(chosen.ids()),
+        # Everything the run was asked but where its outputs go: a flag added later is in the key from the start.
+        "asked": {key: value for key, value in sorted(vars(args).items()) if key not in OUTPUTS},
+        "untracked": evidence.get("untracked"),  # `--staged`'s note: a new untracked file is a new report
+        "models": [model, fallback_name()],  # the verifier's among `model`'s roles under --verify
+        "previous": Path(args.previous).expanduser().read_bytes().hex() if args.previous else "",
+        # What was read, byte for byte: the index has no commit to name it by, and a hash of a commit's diffs costs
+        # nothing beside the review it would spare.
+        "diffs": hashlib.sha256("\0".join(f["diff"] for f in evidence["files"]).encode()).hexdigest(),
+    }
+    digest.update(json.dumps(said, sort_keys=True, default=str).encode())
+    return Path(args.cache).expanduser() / f"{digest.hexdigest()[:32]}.json"
+
+
+def _from_cache(path: Path) -> dict | None:
+    """A kept review, or None: nothing kept, or a file that is not one, which is reviewed afresh, never trusted."""
+    try:
+        hit = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, RecursionError):  # RecursionError: nested past what `json.loads` reads
+        return None
+    shape = {"report": str, "handoff": str, "data": dict, "code": int}
+    fits = isinstance(hit, dict) and all(isinstance(hit.get(key), kind) for key, kind in shape.items())
+    return hit if fits and hit["code"] in (EXIT_CLEAN, EXIT_FINDINGS) else None
+
+
+def main(argv: list[str] | None = None) -> int:
+    """The command, with a last resort: an error nothing above named ends as one sentence and exit 3, a review that
+    did not finish, never Python's own exit 1, which is the code for "a blocker was found". Measured before: errors
+    found and named one at a time, six recorded in the design record and a seventh by review, each ended so. Ctrl-C
+    ends as one sentence and the shell's own code for it, 130; a reader that closes the pipe early, as `| head` does,
+    as one sentence and exit 3, the report undelivered. Measured before: a traceback and 130, and exit 3 or Python's
+    own 120 for a closed pipe. A reviewer that could not load says so, exit 3."""
+    if UNLOADED is not None:
+        print(f"review: the reviewer could not load ({UNLOADED}); reinstall it with `uv sync`", file=sys.stderr)
+        return 3  # EXIT_DEGRADED, which the imports that failed would have named
+    try:
+        return _review(argv)
+    except KeyboardInterrupt:
+        _say("interrupted: the review did not finish")
+        return EXIT_INTERRUPTED
+    except Terminated:
+        _say("terminated: the review did not finish")
+        return EXIT_TERMINATED
+    except BrokenPipeError:
+        with contextlib.suppress(OSError, ValueError):  # Python flushes stdout at exit, into the same closed pipe
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        _say("the report's reader closed it before its end: the verdict was not delivered")
+        return EXIT_DEGRADED
+    except Exception as exc:  # noqa: BLE001 -- a crash must never read as a verdict
+        _say(f"the review did not finish: {type(exc).__name__}: {exc}")
+        return EXIT_DEGRADED
+
+
+def settle() -> None:
+    """A review's process-wide settings, once a process, for each command that runs one: `run`, and the pre-push
+    hook's."""
+    warnings.filterwarnings("ignore", message=".*EXPERIMENTAL.*")  # ADK announces a flag on every tool declaration
+    # ADK logs a failed node with its whole traceback through Python's last-resort stderr handler. The report
+    # names the guideline and the reason, so that logger gets a handler that prints nothing; configured logging
+    # (an operator's basicConfig) still receives every record.
+    logging.getLogger("google_adk").addHandler(logging.NullHandler())
+    # genai warns, on every Gemini call ADK makes, that it would rather be called another way; the same handler.
+    logging.getLogger("google_genai").addHandler(logging.NullHandler())
+    # A job stops a run with SIGTERM, which would end the process where it stands: ruff's copies of the branch's files
+    # stayed in the temporary folder. Raised as an exception, the run lets go of what it holds, as on Ctrl-C.
+    signal.signal(signal.SIGTERM, _terminated)
+
+
+def run() -> int:
+    """The process boundary, for `python -m adk_review.review` and the installed `adk-review` alike: the
+    process-wide settings, once, then `main`, which stays a function of its arguments."""
+    settle()
+    return main()
+
+
+if __name__ == "__main__":
+    raise SystemExit(run())

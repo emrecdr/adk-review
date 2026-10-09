@@ -1,0 +1,37 @@
+# The offline suite and the lint on the three platforms the reviewer runs on. Windows is proven here, not argued:
+# no model is called, so no key or login is needed.
+name: ci
+
+on:
+  push:
+  pull_request:
+
+# Read-only: the workflow checks, and writes nothing back.
+permissions:
+  contents: read
+
+# A push that supersedes a run cancels it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    # A hung git once hung a review, and GitHub's default is six hours.
+    timeout-minutes: 20
+    steps:
+      # Pinned by commit, the only immutable reference an action has; the tag it was is beside it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: git --version
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run pytest -q

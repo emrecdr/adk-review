@@ -1,0 +1,67 @@
+[project]
+name = "adk-review"
+version = "0.1.0"
+description = "A git-branch code reviewer on Google ADK: rules decided by code, guidelines judged by a model, on Copilot and on Gemini."
+requires-python = ">=3.13"
+dependencies = [
+    # `extensions` brings litellm, which is the Copilot arm. Pinned: every measurement in the docs was taken on it.
+    "google-adk[extensions]==2.9.2",
+    "python-dotenv>=1.0",
+    # Certificates verified through the operating system's own store: a company proxy's root the machine trusts,
+    # Python trusts too. judge/config.py injects it before any client is built, and so does the login.
+    "truststore>=0.10",
+    # The lint rule runs ruff; installed with the reviewer, it is found beside the interpreter.
+    "ruff>=0.12.8",
+]
+
+# `adk-review`: the command, installed where it is needed — `uv tool install <this repository>` — and run from any
+# folder, with `adk-review-push`, its pre-push hook.
+[project.scripts]
+adk-review = "adk_review.review:run"
+adk-review-push = "adk_review.push:run"
+
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["adk_review"]
+
+[dependency-groups]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+testpaths = ["tests"]
+pythonpath = ["."]
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore:.*EXPERIMENTAL.*:UserWarning",
+    # pydantic on a TypedDict litellm declares with ReadOnly: litellm's own types, woken by the first litellm error built
+    "ignore:Item 'summary' on TypedDict class 'ChatCompletionReasoningItem':UserWarning",
+]
+
+[tool.uv]
+# A release is taken three days after it is published, never sooner: measured, LiteLLM 1.82.7 and 1.82.8 shipped a
+# credential stealer on PyPI for 2 h 32 min, and the registry's own advice after it was a cooldown beside the lock.
+# The lock records the span, not a date, so `uv sync --locked` holds day after day.
+exclude-newer = "P3D"
+# The uv that reads the lock's span; an older one stops with this sentence instead of misreading the file.
+required-version = ">=0.12"
+
+[tool.ruff]
+line-length = 120
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "ARG", "ASYNC", "RUF", "BLE001", "S607", "SIM", "RET", "C4", "PIE", "PT"]
+# SIM112 would upper-case Windows' own `SystemRoot` and `NoDefaultCurrentDirectoryInExePath`; PT018 would split
+# asserts that read as one sentence.
+ignore = ["SIM112", "PT018"]
+
+[tool.ruff.lint.per-file-ignores]
+# The demo's builder and the fixtures run the developer's own git in folders they made; the reviewer, which may run
+# inside a checkout under review, finds git by its full path and is held to S607.
+"scripts/make_demo_repo.py" = ["S607"]
+"scripts/measure.py" = ["S607"]
+"tests/*" = ["S607"]

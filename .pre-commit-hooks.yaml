@@ -1,0 +1,19 @@
+# pre-commit's hook for a repository this reviewer guards: `adk-review-push`, the reviewer's pre-push hook, which
+# reviews what a push sends with default-rules, no model and no key, and reads each of its commits for credentials. It
+# takes no `args:`. pre-commit hands its hook one ref of a push, so a push of several refs is reviewed whole by git's
+# own hook alone (GUIDE.md, "Before a push").
+# pre-commit installs the reviewer from its own repository, at the commit named, with the Python pre-commit runs on:
+# 3.13 or newer, or name one with `language_version`. In that repository's .pre-commit-config.yaml, with pre-commit's
+# pre-push hook installed (`pre-commit install --hook-type pre-push`):
+#   - repo: https://github.com/emrecdr/adk-review
+#     rev: <a commit of the reviewer>
+#     hooks:
+#       - id: adk-review
+- id: adk-review
+  name: adk-review (default-rules)
+  description: Reviews what a push sends, by code alone, before it leaves the machine.
+  entry: adk-review-push
+  language: python
+  pass_filenames: false
+  always_run: true
+  stages: [pre-push]
