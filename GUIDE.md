@@ -42,8 +42,8 @@ checkout, `uv run adk-review` is the same command.
 | `--skip` | A glob of changed files the guidelines leave to the rules: each is named, never a hole. Adds to the config's `skip`. Repeat it for more than one. |
 | `--verify` | Ask a second model about each guideline finding a rule did not already make. `--no-verify` turns it off. Default: the config's `verify`. |
 | `--json` | Also write the review to this file as JSON. |
-| `--handoff` | Also write each kept finding to this file as a short instruction for a coding agent: where, the quoted lines, what to change, and what must hold afterwards. Nothing is applied. |
-| `--cache` | Keep each decided review in this folder, keyed by the reviewer's code and config, the commits, the checks, every setting and each model; the same review again is served from it, with no model call. A review with a hole is never kept. Never a folder inside the repository under review. |
+| `--handoff` | Also write each kept finding to this file as a short instruction for a coding agent: where, the quoted lines, what to change, and what must hold afterwards, with each finding folded into it named under it. Nothing is applied. |
+| `--cache` | Keep each decided review in this folder, keyed by the reviewer's code and config, the commits, the checks, every setting and each model; the same review again is served from it, with no model call. A review with a hole is never kept. Never a folder inside the repository under review. A file in the folder is served as the review's verdict, so whoever can write the folder can write a verdict: keep it the operator's own, and in CI never restore it from a cache a job running untrusted code can write. |
 | `--previous` | Compare with a previous review's JSON: mark each finding new or seen before, by its fingerprint, and list what is no longer found. A review with a hole resolves nothing. |
 | `--progress` | Tell on stderr as the change is read and as each guideline starts and finishes. On at a terminal. |
 | `--debug-log` | Write every model request and answer to this file, secrets redacted, the session's state left out. Keep the file as you keep the code it quotes. |
@@ -97,11 +97,13 @@ a project replaces with its own. The checks, as `--list-checks` prints them:
 | `rule.encoding-declaration` | file rule | blocker | default, default-rules, rules-only, full | an encoding that rewrites the code every rule reads | `judge/rules/encoding_declaration.py` |
 | `rule.hidden-text` | line rule | major | rules-only, full | text a reader cannot see: tag characters or bidirectional controls | `judge/rules/hidden_text.py` |
 | `rule.lint` | file rule | minor | default, default-rules, rules-only, full | what ruff reports, at a severity for each code | `judge/rules/lint.py` |
+| `rule.lockfile-sources` | file rule | minor | default, default-rules, rules-only, full | a lockfile fetches a package from outside its public registry | `judge/rules/lockfile_sources.py` |
 | `rule.module-defines` | tree rule | major | rules-only, full | a module no longer defines a name the project relies on | `judge/rules/module_defines.py` |
 | `rule.money-in-cents` | line rule | major | rules-only, full | cents divided into a float | `judge/rules/money_in_cents.py` |
 | `rule.named-secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full | a value assigned to a name that says secret | `judge/rules/named_secrets.py` |
 | `rule.no-print` | line rule | minor | rules-only, full | print() left in library code | `judge/rules/no_print.py` |
 | `rule.parameters` | tree rule | major | rules-only, full | a function no longer takes a parameter its callers pass | `judge/rules/parameters.py` |
+| `rule.pinned-actions` | file rule | major | default, default-rules, rules-only, full | a workflow runs an action at a tag, a branch or a short SHA, not its full commit SHA | `judge/rules/pinned_actions.py` |
 | `rule.private-patch` | line rule | minor | rules-only, full | a test patches a private name | `judge/rules/private_patch.py` |
 | `rule.required-paths` | tree rule | major | rules-only, full | a file or folder the project needs is missing | `judge/rules/required_paths.py` |
 | `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full | text that tries to instruct the reviewing model | `judge/rules/reviewer_instructions.py` |
@@ -123,7 +125,13 @@ exit 3, rather than a finding: no rule read the code Python would run. `--explai
 `diff_cap` and `skip`, each a flag's default — and the profiles under `[profiles]`. It is read whole: a section or a
 setting it does not know, one missing, one of the wrong kind, a profile that names an unknown check or turns none on,
 or no `default` profile is exit 2. It is the one config: nothing of the policy is read from the repository under
-review, and `--dry-run` names the file read. Another policy is a change to this file, or a flag for one run.
+review, and `--dry-run` names the file read. Another policy is a change to this file, or a flag for one run. An
+installed command reads the copy it was installed with: installed from your own checkout with `uv tool install
+--editable <checkout>`, a change there applies at once, as to `uv run`; otherwise reinstall after one. A pre-commit
+hook reads the config of the commit it pins, so a policy of your own is a commit of your own fork, pinned instead. The
+shipped `skip` names images and fonts, in either case, which no rule or model reads, so a branch adding a logo is not
+a hole, and lockfiles, which the rules read whole and no guideline judges; an archive, a keystore or a document can
+carry a credential, and stays a hole until the list names it. A text file a glob names is still read by every rule.
 
 The model is set in the environment, or in the `.env` at the root of the reviewer's checkout; a variable set in the
 shell wins over the file:
@@ -131,17 +139,22 @@ shell wins over the file:
 | Variable | What it sets |
 |---|---|
 | `REVIEW_PROVIDER` | The arm: `copilot` or `gemini`. Default: `copilot`. |
-| `REVIEW_MODEL` | The model. Blank: `gpt-4.1` on Copilot, `gemini-2.5-flash` on Gemini. |
+| `REVIEW_MODEL` | The model. Blank: `gpt-4.1` on Copilot, `gemini-2.5-flash` on Gemini. On the Gemini arm, a model ADK sends to another provider, `gpt-*` or `claude-*`, is refused, exit 2; on Copilot, one that cannot judge at temperature 0, `gpt-5` or the o-series, as LiteLLM says before any call. |
 | `REVIEW_VERIFIER_MODEL` | The model `--verify` asks. Blank: `REVIEW_MODEL`. |
 | `REVIEW_FALLBACK_MODEL` | A second model behind every role's first, tried on a 429 or a 5xx. Blank: none. |
 | `GOOGLE_API_KEY` | The Gemini arm's key. |
 | `GOOGLE_GENAI_USE_ENTERPRISE` | `true` sends the Gemini arm through Vertex AI. |
+| `GOOGLE_CLOUD_PROJECT` | Vertex AI's project, signed in with Application Default Credentials (`gcloud auth application-default login`); no `GOOGLE_API_KEY` is needed, a key being Vertex AI's express mode. Blank: the project the credentials name, gcloud's own or a service account's, as on Cloud Run or GKE. |
+| `GOOGLE_CLOUD_LOCATION` | Vertex AI's region. Blank: `global`. |
 | `GITHUB_COPILOT_TOKEN_DIR` | Where the Copilot login caches its token. Default: `~/.config/litellm/github_copilot`. |
+| `GITHUB_COPILOT_ACCESS_TOKEN_FILE` | The token's file in that folder. Default: `access-token`. |
+| `GITHUB_COPILOT_API_BASE` | A GitHub Enterprise tenant's own Copilot endpoint, which the report names beside the model. Blank: github.com's. |
 
-The Copilot arm needs a one-time `uv run python scripts/copilot_login.py`. A GitHub Enterprise tenant with its own
-endpoints sets them in `GITHUB_COPILOT_API_BASE` and the login's `GITHUB_COPILOT_*_URL` variables, as `.env.example`
-shows. Certificates are verified through the operating system's own store, so a company proxy's root the machine
-trusts, the reviewer trusts too.
+Copilot and Gemini are both first-class arms; `copilot` is only the default. The Copilot arm needs a one-time
+`uv run python scripts/copilot_login.py`. A GitHub Enterprise tenant with its own endpoints sets them in
+`GITHUB_COPILOT_API_BASE` and the login's `GITHUB_COPILOT_*_URL` variables, as `.env.example` shows. Certificates are
+verified through the operating system's own store, so a company proxy's root the machine trusts, the reviewer trusts
+too.
 
 ## The report
 
@@ -175,7 +188,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | `checks` | Every check that ran, in report order. |
 | `summary` | How many kept findings sit at each severity. |
 | `health` | Under `--all`, the project's measures: files read whole, source and tests in files and lines, maintainability's grade (A to E, SIG's rating of the complexity profile, null with why where under ten or under 90% of the source files parsed), the source's function lines by McCabe complexity band, counted as ruff's C901 counts it, the source files that do not parse, the most complex functions, and each rule's findings in source and in tests by severity. Null for a review of a change. Security and correctness are counted, never graded; the verdict never reads any of it. |
-| `findings` | Each kept finding: its fingerprint, check, file, line, the lines the diff places it on, whether one of them is a line the change added (null for a finding with no line), severity, title, evidence and suggestion. A fingerprint is built from the check, the file and the quote, never the line, so a finding keeps it when lines move. With `--previous`, `since_previous` says `new` or `seen`. |
+| `findings` | Each kept finding: its fingerprint, check, file, line, the lines the diff places it on, whether one of them is a line the change added (null for a finding with no line), severity, title, evidence and suggestion. A guideline's finding's evidence is the lines of the diff its quote stands on, as the file reads them. A fingerprint is built from the check, the file and the evidence, never the line, so a finding keeps it when lines move. With `--previous`, `since_previous` says `new` or `seen`. |
 | `resolved` | With `--previous`, the earlier findings no longer found, as that report wrote them; null without it, or where this review has a hole. |
 | `could_not_look` | Each check that failed or could not look, and why. |
 | `not_read` | Each changed file no check read whole, and why. |
@@ -194,7 +207,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 
 | What | Limit | Where |
 |---|---|---|
-| One file's diff a guideline reads, unless `diff_cap` or `--diff-cap` names another | 4,000 characters | `collect/git.py`, `DIFF_CAP_CHARS` |
+| One file's diff a guideline reads, unless `diff_cap` or `--diff-cap` names another | 16,000 characters | `collect/git.py`, `DIFF_CAP_CHARS` |
 | All the diffs the guidelines read | 250,000 characters | `collect/git.py`, `BLOCK_CAP_CHARS` |
 | The most complex functions the health section names | 5 | `core/health.py`, `WORST_SHOWN` |
 | Python source files parsed before maintainability is graded | 10 | `core/health.py`, `FILES_AT_LEAST` |
@@ -261,7 +274,8 @@ What the hook cannot see, or stops on:
   true`). Pushed to a URL rather than a remote's name, no branch of it is known here, and a new ref is reviewed as a
   whole project.
 - A file no rule can read — a binary one, a submodule — is a hole and stops the push, unless `[review] skip` in
-  `config.toml` names it: then the report names it as skipped, and it stops nothing. A text file past the size limits
+  `config.toml` names it, as the shipped list names images and fonts ("Configuration" above): then the report names
+  it as skipped, and it stops nothing. A text file past the size limits
   above, a lock file say, is read as far as its diff shows it, which is all `reviewer-instructions` reads; a Python
   file past them is a hole for `lint` and `encoding-declaration`, which read a file whole, and stops the push.
 - A repository with no `.git` folder of its own, a bare one or one used through `--git-dir`, and a tag of a tree or a

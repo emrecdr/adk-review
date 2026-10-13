@@ -17,9 +17,11 @@ Path-specific rules sit in `.github/instructions/`, the recurring tasks in `.git
   and report what they printed.
 - `uv run python scripts/make_demo_repo.py` builds the demo repository with its planted defects (`--fix` commits its
   two fixes); `uv run adk-review <demo repo> --head feature/payments --base main --profile rules-only` reviews it with
-  no model call, and `--check ID`, `--dry-run` and `--list-checks` make none either. Every other review or chat
-  command calls a provider — `adk web`, `adk run`, `scripts/measure.py`, `scripts/injection_suite.py` and
-  `scripts/labelled_set.py` — so run one only when the task says so.
+  no model call, and `--check rule.<name>`, `--dry-run` and `--list-checks` make none either. Every other review or
+  chat command calls a provider — `--check guideline.<name>`, `adk web`, `adk run`, `scripts/measure.py`,
+  `scripts/injection_suite.py` and `scripts/labelled_set.py` — so run one only when the task says so.
+- `[tool.uv]` in `pyproject.toml` takes a release only three days after it is published (`exclude-newer`), so a
+  dependency released since does not resolve yet; the comment there says why the span stays.
 
 ## Rules the tests enforce
 
@@ -30,8 +32,9 @@ Path-specific rules sit in `.github/instructions/`, the recurring tasks in `.git
   module at the package's root, and `GUIDE.md` holds every flag, check, JSON field and limit as the code has them.
 - `root_agent.name` equals the folder name, `adk_review`. Never name a sub-package module `agent.py`: ADK's nested
   loader would take it for an agent. `adk_review/judge/config.py` is the only file that names a provider (Gemini a
-  plain model string, Copilot `LiteLlm("github_copilot/…")`); every change must work on both arms, and judging agents
-  run at temperature zero.
+  plain model string, Copilot `LiteLlm("github_copilot/…")`). Both arms are first-class: every change works, is
+  tested and is measured live on each, `copilot` being only the default; and judging agents run at temperature zero,
+  a model that cannot being refused before any call.
 - A provider error is the agent's own answer, and so is a reply that does not fit its schema (`SCHEMA_MISMATCH`); "did
   not look" must never read as "found nothing".
 - Tools return a `{status: …}` dict and never raise at the model. Git runs by its full path from `PATH`'s absolute

@@ -71,7 +71,8 @@ To run it from any folder, install it as a command: `uv tool install <path or gi
 `adk-review` and its pre-push hook, `adk-review-push`, on `PATH`: the reviewer alone, with ruff beside it.
 `adk-review <repo> --base main` is the same command, and inside the checkout, `uv run adk-review` is too. An installed
 reviewer reads the model's settings from the environment and its config from beside itself: a team that wants another
-policy changes `config.toml` in its checkout and installs from there, or passes flags.
+policy changes `config.toml` in its checkout and installs from there, `--editable` so a change applies at once, or
+passes flags.
 
 In this repository, `uv run python scripts/make_demo_repo.py` builds a throwaway repository to try the reviewer on,
 and prints its path: `main`, and a branch `feature/payments` holding planted defects. With
@@ -79,11 +80,15 @@ and prints its path: `main`, and a branch `feature/payments` holding planted def
 and a float division of cents, with no model.
 
 Chat runs the same checks: `uv run adk web .` at the root of the checkout, then pick `adk_review`. An intake
-agent confirms the repository and the commits through read-only tools and asks for what is missing; the checks node
-gathers the evidence the command would for those commits, runs the rules and writes the change the guidelines read,
-the command's own block under the same cap and skip list; the guidelines judge; and a verdict agent writes the
-verdict for a person to read. Chat runs the `default` profile under `[review]`'s `fail_on`, `max_tokens`, `diff_cap`
-and `skip`. Its verdict is a model's prose: the exit code and the second opinion are the command's.
+agent confirms the repository and the commits through read-only tools and asks for what is missing, told the
+repository its conversation already confirmed; the checks node gathers the evidence the command would for those
+commits, runs the rules and writes the change the guidelines read, the command's own block under the same cap and
+skip list; the guidelines judge; and a verdict agent writes the verdict for a person to read. A turn reviews only
+the commits its own intake confirmed: a greeting, a question or a thanks after a review ends at the intake's answer,
+one model call. Chat runs the `default` profile under `[review]`'s `fail_on`, `max_tokens`, `diff_cap`
+and `skip`. Its verdict is a model's prose: the exit code and the second opinion are the command's. Chat asks
+whether its arm can run once a turn, as the command asks before it starts, and answers the same sentence where it
+cannot: on Copilot with no token cached, no login is begun on the server's console.
 
 The tests run offline, on a fake model registered with ADK: `uv run pytest -q`.
 
@@ -97,7 +102,7 @@ points the wrong way.
 |---|---|---|
 | `core/` | nothing else | `findings.py` (`Finding`, `Review`, `Checked`, the severity scale), `rules.py` (what a rule is: the `Rule`, the `FileRule` and the `TreeRule`, the `ChangedFile` and the `Tree` they read, `Hit`, `UnreadError`, and `run_rule`, which runs any of them the same way), `guidelines.py` (what a guideline is), `health.py` (a whole project's measures under `--all`: what was read, size, McCabe complexity bands, each rule's findings in source and tests), `profiles.py` (a check's id and its state key, and the checks a profile turns on), `blast.py` (what at the head depends on each changed file, read from the syntax tree), `secrets.py` (the credential shapes: what redaction hides and what the secrets rules ask), `text.py` (flat whitespace, a cut that names itself, lines as git numbers them), `verdict.py` (grounding, folding, deciding, `Outcome`, the exit codes) |
 | `collect/` | `core` | `git.py` (read-only git: what a review covers, each file's diff and its text at the head, the head's tree, `collect_evidence`, and what a push sends, commit by commit), `ruff.py` (ruff over the changed Python files' texts, in a folder of its own), `tools.py` (each outside tool a rule may name, and the adapter that runs it: ruff's) |
-| `judge/` | `core`, `collect` | `rules/` (every rule, one file each, and nothing else), `guidelines/` (every guideline, one file each, and nothing else), `rule_helpers/` (the one door a rule imports: the contract, passed on from `core`, and helpers named after what they read), `catalog.py` (finds every check, reads `config.toml`, chooses what a profile runs, for the command and chat alike), `checks.py` (every rule as one node before the guidelines, in both shapes), `agents.py` (a guideline as an agent: the instruction around its role, the fences, the state keys spelled once, the read-back), `config.py` (the provider, each role's model, and the request every call carries: temperature zero, a deadline, retries; readiness), `plugins.py` (redaction, the ledger and its ceiling, provider errors, progress, the recorder), `graph.py` (the graph and the `App` in both shapes; not `agent.py`, since `adk web` lists any folder holding one as an agent), `run.py` (one seeded run through the engine, guarded), `tools.py` (chat's model-facing tools and the guardrail in front of them), `verify.py` (the second opinion) |
+| `judge/` | `core`, `collect` | `rules/` (every rule, one file each, and nothing else), `guidelines/` (every guideline, one file each, and nothing else), `rule_helpers/` (the one door a rule imports: the contract, passed on from `core`, and helpers named after what they read), `catalog.py` (finds every check, reads `config.toml`, chooses what a profile runs, for the command and chat alike), `checks.py` (every rule as one node before the guidelines, in both shapes), `agents.py` (a guideline as an agent: the instruction around its role, the fences, the state keys spelled once, the read-back), `config.py` (the provider, each role's model, and the request every call carries: temperature zero, a deadline, retries; readiness), `plugins.py` (redaction, the ledger and its ceiling, provider errors, progress, the recorder, and in chat the readiness check and the judging agents' one turn), `graph.py` (the graph and the `App` in both shapes; not `agent.py`, since `adk web` lists any folder holding one as an agent), `run.py` (one seeded run through the engine, guarded), `tools.py` (chat's model-facing tools and the guardrail in front of them), `verify.py` (the second opinion) |
 | `deliver/` | `core` alone: the driver hands it the rest | `report.py` (the text report, the JSON, the hand-off, what `--dry-run`, `--list-checks`, `--explain` and `--try` print, and the rules that keep the branch's text from forging any of them) |
 | the root | everything | `review.py` (the command: the driver that fixes the order of the steps), `push.py` (the pre-push hook: what a push sends, reviewed with `default-rules`, and each of its commits read with `push-history`, the credential rules, for git's hook and pre-commit's alike), `agent.py` (the chat `App` for ADK's loader, `adk web` and `adk run`, the one place that wants it), `__init__.py` (answers `agent` without loading it, so `core/` imports alone), `config.toml` (the one config file), `GUIDE.md` (the user's guide) |
 
@@ -120,7 +125,10 @@ The model comes from the environment, or from the `.env` at the root of the chec
 shell. `REVIEW_PROVIDER` picks the arm: `copilot`, when unset, or `gemini`. `REVIEW_MODEL` names the model, blank for
 `gpt-4.1` or `gemini-2.5-flash`, for every guideline. `REVIEW_VERIFIER_MODEL` gives `--verify` a model of its own,
 which the report names beside everyone's. `REVIEW_FALLBACK_MODEL` puts a
-second model behind every role's first. The Gemini arm needs `GOOGLE_API_KEY`; the Copilot arm needs a one-time
+second model behind every role's first. Both arms are first-class; `copilot` is only the default. The Gemini arm
+needs `GOOGLE_API_KEY`, or through Vertex AI a project, `GOOGLE_CLOUD_PROJECT` or the one Application Default
+Credentials name, which readiness asks google-genai for rather than copying its rules; a model ADK would send to
+another provider, `gpt-*` or `claude-*`, is refused there. The Copilot arm needs a one-time
 `uv run python scripts/copilot_login.py`. Every certificate is verified through the operating system's own store, so
 a company proxy's root the machine trusts, the reviewer trusts too. "Configuration" in `GUIDE.md` lists each variable.
 
@@ -149,8 +157,13 @@ The rules shipped with the reviewer are written as a project writes its own:
   each code), `reviewer-instructions` (text that tries to instruct the reviewing model, read as a model reads it:
   across wrapped lines, through hidden and full-width characters, and in a file's name), `encoding-declaration` (a
   source encoding that turns plain text into other code: a hole, since no rule read the code Python would run),
-  `hidden-text` (tag characters and bidirectional controls, in any file) and `steering-files` (a change to a file
-  another tool or agent obeys: a coding agent's instructions, a CI workflow, a hook, a `.pth` file);
+  `lockfile-sources` (a lockfile fetching a package from outside its package manager's public registry, the one
+  check of a lockfile's sources, since the shipped skip list leaves lockfiles to the rules), `pinned-actions` (a
+  workflow or an action running another action at a tag, a branch or a short SHA, which can be moved to other code
+  after review, not its full commit SHA), `hidden-text` (tag
+  characters and bidirectional controls, in any file) and `steering-files` (a change to a file another tool or agent
+  obeys: a coding agent's instructions or settings, Copilot's and Gemini CLI's among them, a CI workflow, a hook, a
+  `.pth` file);
 - a project's own conventions, as examples: `no-print`, `private-patch` and `tests-offline`;
 - one small payments project's own rules, written for the demo repository: `money-in-cents`, and the tree rules
   `required-paths`, `module-defines`, `parameters` and `derives-from`. A project replaces them with its own.
@@ -160,8 +173,8 @@ The guidelines are `security`, `tests`, `complexity` and `correctness`.
 A profile is a list in `config.toml`, and a check runs only where a profile names it, or alone with `--check ID`:
 
 - `default` runs when no `--profile` names another, and the file must hold it: the basics, `rule.secrets`,
-  `rule.named-secrets`, `rule.lint`, `rule.reviewer-instructions` and `rule.encoding-declaration`, and the guidelines
-  `security`, `tests` and `complexity`;
+  `rule.named-secrets`, `rule.lint`, `rule.reviewer-instructions`, `rule.encoding-declaration`,
+  `rule.lockfile-sources` and `rule.pinned-actions`, and the guidelines `security`, `tests` and `complexity`;
 - `default-rules` is the default's rules and no model, so it needs no key and fits any project's every pull request;
   a test keeps it to the default's rules;
 - `push-history` is what the pre-push hook reads each commit a push sends with, line by line: the credential rules;
@@ -404,10 +417,11 @@ line by line. Beside it:
   an earlier file of that name is removed before the review, so a pipeline never reads a stale one, and the new one
   is written beside the path and moved into place, the operator's alone.
 - `--handoff FILE` writes each kept finding as a short instruction for a coding agent: where, the lines quoted, what
-  to change, and the fingerprint that must be gone afterwards. Nothing is applied.
+  to change, and the fingerprint that must be gone afterwards, with each finding folded into it named under it,
+  since another reading of the same lines can be a second defect. Nothing is applied.
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint:
-  its check, its file and its quote, never its line, so a finding keeps it when lines move. It lists what is no
-  longer found; a review with a hole resolves nothing.
+  its check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line,
+  so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.
 - `--cache DIR` keeps each decided review under a hash of everything its result depends on — the reviewer's own code
   and config, the commits, what is covered, the checks, every setting and each model — and serves the same review
   again with no model call. A review with a hole is never kept, so the next run looks again.
@@ -559,7 +573,23 @@ To review each push before it leaves a developer's machine, see "Before a push" 
   the guideline saw them: secrets redacted, diff markers gone, whitespace not counted. Each hunk is read as git
   prints it, as the new file reads and as the old file read. A finding's line is read off the diff, never taken from
   the model: measured on Copilot, the guidelines named a wrong line for 4 of 5 findings. A finding at the bar whose
-  quote the diff does not bear out is a hole, since a real blocker dropped would approve.
+  quote the diff does not bear out is a hole, since a real blocker dropped would approve. A quote carrying the framing
+  its file was shown in — the heading, the fence, git's header lines and each hunk's `@@`, git's
+  `\ No newline at end of file`, the cap's cut — grounds as the lines inside it: measured live on Gemini, the
+  injection on the labelled set's `sql-from-input` came quoted inside its fence, and the blocker was dropped, the
+  review a hole; with the framing looked past, two runs more, three of five blocker quotes carried a fence or git's
+  header and both runs kept the blocker. The collector records each file's framing beside its lines as it renders
+  them, so only that file's own is looked past: measured by review with a list of such lines kept by hand instead, a
+  file with no final newline and a file cut at the cap, each quoted whole, were dropped. Measured live with the
+  framing recorded, on both arms, no quote was dropped: Gemini quoted `sql-from-input`'s blocker under git's whole
+  header, down to the hunk's `@@` and the function git named there, and four quotes on the planted branch inside
+  fences, and each was kept. A kept finding's evidence is
+  then the lines its quote stands on, as the file reads them: the report, the JSON, the hand-off, the verifier and the
+  fingerprint read the diff's own text, never a model's framing of it; measured by review, the same two lines quoted
+  plain and inside their fence had two fingerprints, so `--previous` named one finding resolved and new at once. What
+  was measured not to help: told to quote whole lines and, for a missing test, the lines that lack one, Copilot's
+  guidelines quoted whole files under their `@@` headers, and 14 of 27 findings were dropped where 5 of 21 had been;
+  that sentence was taken out.
 - **One finding per span of lines.** Rules and guidelines can all find one line; the report carries it once: the most
   severe reading first, whole, the first check on a tie — the rules, then the guidelines, each in the order the
   profile names them, which is the report's order too — and any finding one kept already holds folds into it. A
@@ -573,9 +603,11 @@ To review each push before it leaves a developer's machine, see "Before a push" 
   twice on its own: asked for three, the two made seven. ADK's node `retry_config` would re-run a whole guideline,
   and with the error plugin turning errors into answers it would never see one. A quota window outlasts any retry:
   `REVIEW_FALLBACK_MODEL` puts a second model behind every role's first, through ADK's `FallbackModel`, each model
-  tried once on a 429 or a 5xx, since on a free tier the quota is per model. Seen live on Gemini's free tier: five
+  tried once on a 429 or a 5xx, since Gemini's free tier counts its quota per model and Copilot's rate limits differ
+  by model. Seen live on Gemini's free tier: five
   requests a minute per model, and `--verify` made ten, so the last verifiers met a 429 asking for 39 seconds, and
-  their findings were kept and named with it.
+  their findings were kept and named with it; and twenty a day, so a key on that tier reviews about six changes a
+  day under `default`, and a live script's sixteen reviews need a paid tier or `--pause` over several days.
 - **A ceiling reserves first.** The guidelines call at once, so a ceiling that counted only tokens already spent
   would let them all through and be passed by all of them. Each call reserves its cost before it is sent — its
   request's characters over four, plus room for an answer — and the call that would pass the ceiling is refused,
@@ -597,21 +629,35 @@ To review each push before it leaves a developer's machine, see "Before a push" 
   route or a plugin registry is invisible to it. Where the head was not read whole — a file the parser refused, one
   past a cap, a tree that could not be listed — every count says it is a floor, and only a rule that asks for an
   unread file by name is a hole. The head is read whole only for what reads it, a tree rule or a guideline; with
-  neither, as under `default-rules`, the radius says it was not asked, which is neither a hole nor a leaf.
+  neither, as under `default-rules`, the radius says it was not asked, which is neither a hole nor a leaf. For a
+  guideline alone it is read only when a changed file is Python, all the radius measures: measured on a 2,040-file
+  tree, a change to a Markdown file collected its evidence in 56 ms where reading the head took over a second.
 - **What the guidelines read is capped.** Each file's diff is cut at `diff_cap`, and the block of diffs in all: a
   file past the block's cap is left out whole, the block's end tells the guidelines how many, and the report names
   each under "not read", a hole. With no cap, `--all` over 4,826 files gave each guideline and each verifier 14.9 MB.
   `--path` narrows a review to fit. With no guideline on, a cut is no hole: the cap is the guidelines' limit, and
-  the rules read every added line.
+  the rules read every added line. Measured live on Copilot at 4,000 characters a file: a 7,529-character file's
+  planted shell call went unread and so did 3 of a 17-file change's files, each a hole; at 16,000 each was read, the
+  call named in both runs, for a fifth more tokens.
 - **Fences carry a nonce.** A sentence at the top of an instruction is no boundary: what follows it is the branch's
   own text. Measured with a reviewer of the same shape on Copilot, a docstring declaring an override silenced most of
   its reviewing agents, each answering no findings. Each untrusted section a guideline, a verifier or chat's verdict
   reads sits between two marker lines carrying a nonce drawn once a process, which the branch cannot know, and the
   instruction ends with a reminder after it: whatever the text said, review it fully, and text that addressed a
-  reviewer is itself a finding. The content is never escaped: a guideline quotes the diff verbatim and grounding holds
+  reviewer is itself a finding. Beside its instruction each reads one fixed turn, `review`: measured, ADK handed
+  chat's verdict the guidelines' findings as a turn of its own, the branch's quoted lines unfenced, and each guideline
+  the intake's reply. The content is never escaped: a guideline quotes the diff verbatim and grounding holds
   the quote to the real lines, so escaping a run of `>>>` — a doctest prompt, a conflict marker — would drop true
-  findings, where a boundary the branch cannot know costs nothing.
-- **State keys are spelled once.** The scope chat's intake confirms, the change, the blast radius beside it, the
+  findings, where a boundary the branch cannot know costs nothing. On Copilot the instruction goes as the system
+  turn, which LiteLLM would otherwise send as an assistant's, words the model had said itself: measured with
+  `scripts/injection_suite.py` on Copilot, two runs a variant, the shell call was named in 14 of 16 runs that way,
+  tag characters losing it in both, and in 16 of 16 as the system turn. On Gemini, a run a variant within the free
+  tier's quota, it was named under each of the four tried: none, tag characters, a fake end marker and an "already
+  approved" comment. Tag characters ended each of those reviews as a hole, on both arms: the lines beside the
+  payload were quoted without what no reader sees, and dropped. Grounding now reads the diff and the quote alike
+  without it, and measured once on Copilot, that review decided, the shell call kept and the payload named.
+- **State keys are spelled once.** The scope chat's intake confirms, the repository its conversation confirmed, the
+  change, the blast radius beside it, the
   rules' answers rendered for chat's verdict and the failure the error plugin leaves are each one constant in
   `judge/agents.py`, which the command's seed, the checks node, the chat tools and every instruction use; an
   instruction reads a key through `placeholder`, and a check's key is its id through `state_key`. A misspelt optional

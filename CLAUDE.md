@@ -13,7 +13,7 @@ user's: every flag, check, JSON field and limit, held to the code by tests.
 ## Commands
 
 ```bash
-uv sync                                    # install (make sync)
+uv sync --locked                           # install what the lock pins (make sync)
 uv run pytest -q                           # full offline suite, no key needed (make test)
 uv run pytest -q tests/test_hardened.py    # one file
 uv run ruff check . && uv run ruff format --check .   # lint (make lint); `make format` fixes; `make ci` = lint + test
@@ -42,17 +42,31 @@ the diff does not bear out, any error nothing else names (`main` wraps the comma
 1, which would read as a blocker), a reader that closes the pipe early, and a reviewer that cannot load (a broken
 install). Ctrl-C is one sentence and 130, the shell's own code for it.
 
+A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
+guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so.
+A review under `default` makes three calls at once: Gemini's free tier allows five a minute and twenty a day, so a
+live script's sixteen reviews on it need `--pause` and more than a day, and Copilot rate-limits a model after some
+hundreds of calls in an afternoon; a run that met a 429 names it under `could_not_look` and measures nothing there.
+Run each side of a before-and-after comparison from its own copy of the tree, since a review imports the checkout.
+The suite, `--profile rules-only` or `default-rules`, `--check rule.<name>`, `--dry-run`, `--list-checks`, `--explain`
+and `--try` make none. `[tool.uv]` in `pyproject.toml` takes a release only three days after it is published
+(`exclude-newer`), so a dependency released since does not resolve yet; the comment there says why the span stays.
+
 ## Configuration
 
 One `.env` at the root (copy `.env.example`). `REVIEW_PROVIDER=copilot|gemini` picks the arm, `copilot` when unset;
 `REVIEW_MODEL` blank means `gpt-4.1` / `gemini-2.5-flash`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` are read
-too. Copilot needs a one-time `uv run python scripts/copilot_login.py`; Gemini needs `GOOGLE_API_KEY`. Copilot is the
-first-class arm: live measurements run there first. `adk_review/judge/config.py` injects `truststore` before any client
+too. Copilot needs a one-time `uv run python scripts/copilot_login.py`; Gemini needs `GOOGLE_API_KEY`, or through
+Vertex AI a project, `GOOGLE_CLOUD_PROJECT` or the one Application Default Credentials name — `require_ready` asks
+google-genai itself, never a copy of its rules, and on the Gemini arm refuses a model ADK sends to another provider
+(`gpt-*`, `claude-*`). Both arms are first-class: a change works, is tested and is measured live on each, and
+`copilot` is only the default. `adk_review/judge/config.py` injects `truststore` before any client
 is built, so certificates are verified through the operating system's store (a company proxy's root the machine
 trusts, Python trusts too), with `SSL_CERT_FILE` still read where set; `scripts/copilot_login.py` does the same and
 reads the `GITHUB_COPILOT_*` endpoints from `.env`. The shell wins over `.env` at every entry point: ADK 2.9.2 restores
-the variables set before it loads the file, and the command loads it without overriding. The report names the model
-and the arm that ran.
+the variables set before it loads the file, and the command loads it without overriding. The report names the model,
+the arm that ran, and Vertex AI or a GitHub Enterprise tenant's host where the arm goes through one. Never read,
+print or quote `.env`, a key or the Copilot token.
 
 ## Architecture
 
@@ -104,14 +118,20 @@ Load-bearing rules the tests enforce:
   review starts, never at its top, so `--list-checks`, `--explain`, `--try`, a usage error and the pre-push hook start
   without them; a test runs those modes with `google` unimportable.
 - **Providers.** `judge/config.py` is the only file that names a provider: Gemini is a plain model string, Copilot is
-  `LiteLlm("github_copilot/…")`. Every change must work on both arms. Judging agents run at temperature zero.
+  `LiteLlm("github_copilot/…")`. Every change must work on both arms. Judging agents run at temperature zero; a model
+  that cannot, Copilot's `gpt-5` or o-series as LiteLLM says offline, is refused by `require_ready`, exit 2. Copilot
+  is sent the instruction as its system turn (`litellm.disable_copilot_system_to_assistant`), as Gemini reads it.
 - **Shape.** `agent.py` exports both `app` and `root_agent` (the loader prefers `app`, and a bare `root_agent` would
   lose the plugins). `build_app(chat=True)` adds an intake agent before the same middle and a verdict after it; the
-  command uses `chat=False` over seeded state. In chat the checks node gathers its own evidence from the scope the
-  intake confirmed and writes the change the guidelines read, where the command seeds the change at the session's
-  start, in no event a debug log could carry. Plugins: `RedactSecretsPlugin`, `UsageLedger`, `ReportProviderErrors`,
-  and `Progress`, which times each agent and, at a terminal or with `--progress`, tells each guideline's start and
-  finish on stderr.
+  command uses `chat=False` over seeded state. In chat a gate after the intake goes on only for a scope this turn's
+  intake confirmed — the intake clears the last one first — so a turn that confirms none ends at the intake's
+  answer; the checks node gathers its own evidence from that scope and writes the change the guidelines read, where
+  the command seeds the change at the session's start, in no event a debug log could carry. Plugins:
+  `RedactSecretsPlugin`, `UsageLedger`, `ReportProviderErrors`, and `Progress`, which times each agent and, at a
+  terminal or with `--progress`, tells each guideline's start and finish on stderr; in chat, first, `RefuseUnready`,
+  which asks `require_ready` once a turn, as the command asks before it builds anything, and answers its sentence in
+  each model call's place while the arm cannot run, then `OneTurn`, which gives each judging agent one fixed turn,
+  `review`, as the command's read: ADK would hand the verdict the guidelines' findings unfenced as a turn.
 - **Layering** (`tests/test_layering.py`): `core` → `collect` → `judge` → `deliver`, with imports pointing one way
   only, never spelled from the top (`adk_review.…`), `deliver/` importing `core` alone, a guideline importing `core`
   alone, and a rule importing one door, `judge/rule_helpers/`, alone, which imports `core` alone and lists in `__all__`
@@ -147,23 +167,34 @@ Conventions:
 - Every `subprocess.run` that decodes passes `encoding=`; no source under `adk_review/` or `scripts/` spells `/tmp/`
   (use `tempfile.gettempdir()`). Every file a script or a fixture commits is written with `newline="\n"`, a `.env`
   that is not UTF-8 is a sentence and exit 2, and `.github/workflows/ci.yml` and `azure-pipelines.yml` run lint and
-  the suite on Windows, Linux and macOS.
+  the suite on Windows, Linux and macOS. Every action a workflow uses is pinned by its full commit SHA, the same
+  commit in every workflow (`tests/test_copilot.py`).
 
 ## Tests
 
 The suite is fully offline. `tests/conftest.py` registers a `FakeModel` in ADK's `LLMRegistry` for `fake.*`.
 `load_agent(monkeypatch)` sets `REVIEW_MODEL=fake` and imports `adk_review.agent` fresh, so the real `build_model()`,
-Runner, `Workflow`, callbacks and plugins all run; the `cli` fixture is the command's module loaded that way. The fake
+Runner, `Workflow`, callbacks and plugins all run; the `cli` fixture is the command's module loaded that way. Both
+run on the Gemini arm, where the fake registers, unless a test names another: `load_agent(monkeypatch, "copilot",
+"gpt-4.1")`, or `load_command` for the command, with LiteLLM's network client replaced, runs the Copilot arm's own
+path offline (`test_the_planted_review_runs_end_to_end_on_the_copilot_arm`); a change to that path needs a test
+there. The fake
 answers whatever canned payload the request's response schema accepts, or a sentence when there is no schema. The
-`fake_provider` fixture's `raises_when(text, exc)` / `answers_when(text, payload)` key on text in the system
-instruction, to simulate a provider failing or a verifier refuting. `demo_repo` is a session-scoped real repository
+`fake_provider` fixture's `raises_when(text, exc)` / `answers_when(text, payload)` / `calls_when(text, call)` key on
+text in the system instruction, to simulate a provider failing, a verifier refuting or an agent calling a tool;
+`confirms(fake_provider, repo)` makes chat's intake confirm a scope with its tool, as a model would, `Chat(module)`
+holds one conversation over several turns, and the `asked` fixture records each request as it was sent. `demo_repo` is a session-scoped real repository
 from `scripts/make_demo_repo.py`, and `hostile_repo` a branch per way a change once hid from the review.
-`asyncio_mode = "strict"`, so async tests need `@pytest.mark.asyncio`. Tests live only in `tests/`.
+`asyncio_mode = "strict"`, so async tests need `@pytest.mark.asyncio`. A test still running after
+`faulthandler_timeout` prints every thread's stack and ends the run. Tests live only in `tests/`. A test is named as
+the sentence it proves (`test_the_gate_runs_before_any_model`), and a helper several tests need goes into
+`tests/conftest.py`, never into the package.
 
 ## The docs are tested, so update them with the code
 
-`tests/test_docs.py` reads the docs the way a reader does: every guide (this file, `README.md`, `GUIDE.md` and those
-under `.github/`) names only paths in the working tree; `README.md` names each module at the package's root; and
+`tests/test_docs.py` reads the docs the way a reader does: every guide (this file, `GUIDE.md` and the Markdown under
+`.github/`; not `README.md`, which names other repositories' paths) names only backticked paths with a folder in them
+that the working tree holds; `README.md` names each module at the package's root; and
 `GUIDE.md` holds every flag the parser takes and no other, the checks as `--list-checks` prints them, every JSON field
 in order, and each limit the number its constant holds. A new flag, check, field or limit fails the suite until the
 guide says it. The docs state no static counts of the repository's current state and carry no dates.
@@ -174,6 +205,12 @@ guide says it. The docs state no static counts of the repository's current state
 `.github/instructions/`, skills for the recurring tasks in `.github/skills/`, a custom agent in `.github/agents/` and
 the cloud agent's setup in `.github/workflows/copilot-setup-steps.yml`. A rule that changes here changes there too;
 `tests/test_copilot.py` holds those files to their format.
+
+Claude Code loads none of them by itself, and they hold procedures this file does not repeat. Before adding a rule,
+read `.github/skills/new-rule/SKILL.md` and `.github/instructions/reviewer.instructions.md` (a rule's constants,
+examples and helpers); before adding a guideline, `.github/skills/new-guideline/SKILL.md` (the tests that count the
+guidelines, and the phrases that find every doc naming them); before running a review,
+`.github/skills/review-a-branch/SKILL.md`.
 
 ## History
 

@@ -365,6 +365,7 @@ def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(t
     clean branch's finding at major or above is a false one. The live runs are the owner's to ask for."""
     import labelled_set as labelled
 
+    assert len(labelled.LONG) > labelled.CAP, "the long file's defect past the cap its reviews run under"
     made = labelled.branches(tmp_path / "repo")
     assert list(made) == list(labelled.BRANCHES)
     markers = {

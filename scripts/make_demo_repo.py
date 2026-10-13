@@ -27,6 +27,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+from collections.abc import Mapping
 from pathlib import Path
 
 ENV = {
@@ -189,7 +190,7 @@ def _git(root: Path, *args: str, check: bool = True) -> int:
     ).returncode
 
 
-def _write(root: Path, files: dict[str, str]) -> None:
+def _write(root: Path, files: Mapping[str, str]) -> None:
     for name, text in files.items():
         target = root / name
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -202,7 +203,7 @@ def _writable(function, path: str, _error: BaseException) -> None:
     function(path)
 
 
-def branch(root: Path, name: str, start: str, files: dict[str, str], message: str) -> None:
+def branch(root: Path, name: str, start: str, files: Mapping[str, str], message: str) -> None:
     """A branch `name` off `start`, holding `files` in one commit."""
     _git(root, "checkout", "-q", "-b", name, start)
     _write(root, files)

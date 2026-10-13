@@ -7,8 +7,22 @@
 fail_on = "blocker"  # exit 1 at or above this severity: minor, major or blocker (--fail-on)
 max_tokens = 0       # stop spending past this many tokens; 0 is no ceiling (--max-tokens)
 verify = false       # a second opinion on each guideline's finding no rule already made (--verify, --no-verify)
-diff_cap = 4000      # characters of one file's diff a guideline reads; a file cut there is named "not read" (--diff-cap)
-skip = []            # globs of changed files the guidelines leave to the rules, each named, never a hole (--skip)
+diff_cap = 16000     # characters of a file's diff a guideline reads; a file cut there is named "not read" (--diff-cap)
+# Globs of changed files the guidelines leave to the rules, each named, never a hole; --skip adds more for one run.
+# Images and fonts, in either case: no rule and no model reads one, and measured, a branch adding a logo alone ended
+# in exit 3 and its push stopped, which only --no-verify, skipping the credential rules too, let through. Not an
+# archive, a keystore or a document, which can carry a credential, nor an SVG, which is text the guidelines read.
+# And lockfiles, each written whole by its package manager: no guideline judges a resolved version or a hash, and
+# measured, a dependency bump cut `uv.lock` at the cap and ended in exit 3. The rules still read every line, a
+# credential in a registry's URL among what they find. Not bun's binary `bun.lockb`, which no rule can read.
+skip = [
+    "*.png", "*.PNG", "*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.gif", "*.GIF", "*.webp", "*.WEBP", "*.ico", "*.ICO",
+    "*.bmp", "*.BMP", "*.tif", "*.TIF", "*.tiff", "*.TIFF", "*.avif", "*.AVIF", "*.heic", "*.HEIC", "*.heif", "*.HEIF",
+    "*.woff", "*.WOFF", "*.woff2", "*.WOFF2", "*.ttf", "*.TTF", "*.otf", "*.OTF", "*.eot", "*.EOT",
+    "uv.lock", "poetry.lock", "Pipfile.lock", "pdm.lock", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock",
+    "pnpm-lock.yaml", "bun.lock", "deno.lock", "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock", "mix.lock",
+    "pubspec.lock", "Podfile.lock", "Package.resolved", "packages.lock.json", "gradle.lockfile", "flake.lock",
+]
 
 # Named lists of the checks a review runs, chosen with --profile NAME; with no --profile a review runs `default`.
 # A check is a rule, decided by code, one file in judge/rules/, or a guideline, judged by a model, one file in
@@ -18,15 +32,18 @@ skip = []            # globs of changed files the guidelines leave to the rules,
 [profiles]
 # The basics, what a review runs when no --profile names another: the rules every project wants — a credential, by
 # a vendor's shape or by the name it is given, and lint — the two that guard the review itself — against a diff that
-# gives the guidelines orders, and against an encoding that hides code from every rule — and the three guidelines.
+# gives the guidelines orders, and against an encoding that hides code from every rule — where a lockfile, which
+# the skip list leaves to the rules, fetches from, an action a workflow runs at a ref that can be moved, and the three
+# guidelines.
 default = [
     "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
-    "guideline.security", "guideline.tests", "guideline.complexity",
+    "rule.lockfile-sources", "rule.pinned-actions", "guideline.security", "guideline.tests", "guideline.complexity",
 ]
 # The default's rules and no model: what fits any project's every pull request, with no key needed. Kept to the
 # default's rules, a test holds it so; the payments project's own rules are in `rules-only`.
 default-rules = [
     "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
+    "rule.lockfile-sources", "rule.pinned-actions",
 ]
 # What the pre-push hook reads each commit a push sends with, beside its review of the change with `default-rules`: a
 # credential one commit adds and a later one takes out is still in the history the remote receives. A commit is read

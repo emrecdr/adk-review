@@ -498,7 +498,7 @@ class TestWhatNoLaneCouldRead:
         assert "no change to review" in err and "Traceback" not in err, err
 
     @pytest.mark.parametrize(
-        ("branch", "path", "why"), [("binary", "logo.png", "binary"), ("long", "pay.py", "cut at")]
+        ("branch", "path", "why"), [("binary", "data.bin", "binary"), ("long", "pay.py", "cut at")]
     )
     def test_a_file_the_lanes_could_not_read_whole_is_named_and_degrades(
         self, branch: str, path: str, why: str, hostile_repo: Path, cli, capsys
@@ -553,7 +553,7 @@ class TestWhereGitLooks:
 class TestWhatIsNotAChangeToRead:
     """Nothing a branch did not add is "not read". Measured after the guard above landed, each DEGRADED, exit 3,
     where the review had approved: a pure rename of a long file, diffed by its new path alone as all added past
-    the cap; a pure rename of a PNG, "binary"; and a long file deleted, its removed lines past the cap."""
+    the cap; a pure rename of a binary file, "binary"; and a long file deleted, its removed lines past the cap."""
 
     @pytest.mark.parametrize("branch", ["moved", "moved-binary", "deleted"])
     def test_a_rename_or_a_deletion_is_read(self, branch: str, hostile_repo: Path, cli, capsys) -> None:

@@ -17,11 +17,13 @@ from conftest import (
     REVIEW_REQUEST,
     ROOT,
     SPACES,
+    _cached_copilot_token,
     _committed,
     _file_url,
     _git_in,
     _pushed_from,
     _with_profiles,
+    confirms,
     judge_module,
     load_agent,
     model_check,
@@ -50,24 +52,36 @@ async def test_when_every_call_fails_the_answer_names_the_error_and_nothing_rais
     fake_provider.raises_when("", quota())  # every instruction contains the empty string: every call fails
     final, state = await run_turn(module, REVIEW_REQUEST)
     assert QUOTA_TEXT in final, final
-    assert all(v["findings"] == [] for v in _guidelines(state).values()), "nothing was judged"
+    assert not _guidelines(state) and "verdict" not in state, "the turn ended at the intake's error: nothing judged"
     assert not [k for k in state if k.startswith("temp:")], "the note lives for one invocation, not the session"
 
 
 @pytest.mark.asyncio
-async def test_when_the_gatherer_fails_no_reviewer_judges_and_each_says_why(monkeypatch, fake_provider):
-    """The gatherer's answer is a sentence, not a diff: a reviewer run over it would find nothing, and "did not
-    look" must never read as "found nothing". Measured before the guard: `KeyError` on the missing `diff`."""
+async def test_when_the_intake_fails_the_turn_ends_at_its_error_and_nothing_is_judged(monkeypatch, fake_provider):
+    """An intake that fails confirms no scope: a reviewer run over nothing would find nothing, and "did not look" must
+    never read as "found nothing". Measured before the gate: the graph went on, each guideline answered that nothing
+    was gathered, and the verdict agent called its model to report it; the turn now ends at the intake's error."""
     module = load_agent(monkeypatch)
     fake_provider.raises_when("you never judge it", quota())  # the intake's words
     final, state = await run_turn(module, REVIEW_REQUEST)
-    assert final, "the last agent answered"
-    guidelines = _guidelines(state)
-    assert guidelines and all(
-        v["findings"] == [] and "Nothing was gathered" in v["summary"] and QUOTA_TEXT in v["summary"]
-        for v in guidelines.values()
-    ), "nothing judged, and each says why"
-    assert state["verdict"]
+    assert QUOTA_TEXT in final, final
+    assert not _guidelines(state) and "verdict" not in state, "nothing judged, and no verdict on nothing"
+
+
+def test_a_guideline_with_nothing_gathered_or_a_failure_before_it_says_so_and_why() -> None:
+    """The guidelines' guard: no change, or a failure earlier in the turn, and the guideline is skipped with a
+    `Review` saying it did not look, and why, which the verdict is told never to approve on; with the change and no
+    failure it runs."""
+    agents = importlib.import_module(judge_module("agents"))
+
+    def guarded(**state) -> str | None:
+        answer = agents.without_evidence(SimpleNamespace(state=state))
+        return None if answer is None else answer.parts[0].text
+
+    assert guarded(**{agents.DIFF: "+x = 1"}) is None
+    assert "Nothing was gathered, so nothing was judged against this guideline." in guarded(**{agents.DIFF: ""})
+    said = guarded(**{agents.DIFF: "+x = 1", agents.FAILURE: f"intake: {QUOTA_TEXT}"})
+    assert "Nothing was gathered" in said and QUOTA_TEXT in said, said
 
 
 @pytest.mark.asyncio
@@ -76,13 +90,11 @@ async def test_when_one_lane_fails_the_others_finish_and_the_verdict_still_answe
 ):
     """The one agent that runs after a failed guideline must not die on its missing key: the plugin answers nothing
     for a guideline, so the key is a hole the command names — in chat, the verdict reads it as an empty section. The
-    checks node gathers the change from the scope the intake confirms; the fake intake calls no tool, so the scope is
-    given."""
+    checks node gathers the change from the scope the intake confirms, here by the fake intake's own tool call."""
     module = load_agent(monkeypatch)
     fake_provider.raises_when("tests are honest", quota())
-    git = importlib.import_module("adk_review.collect.git")
-    given = {"review_scope": git.preflight(str(demo_repo), "main", "feature/payments")}
-    final, state = await run_turn(module, REVIEW_REQUEST, given)
+    confirms(fake_provider, demo_repo)
+    final, state = await run_turn(module, REVIEW_REQUEST)
     assert final and state["verdict"], "the verdict agent answered"
     assert state[model_key("security")]["findings"], "the other guidelines finished"
     assert model_key("tests") not in state, "a hole, for the code that decides"
@@ -153,6 +165,30 @@ def test_a_providers_error_is_one_readable_line() -> None:
     assert describe(limited) == "429: Rate limit reached", "the class prefix goes, the code stays"
     assert describe(RuntimeError("x\n y")) == "x y", "no code, so the text alone; the caller adds the class"
     assert describe(RuntimeError("z" * 1000)).endswith("[… cut at 400 characters]")
+
+
+def test_each_arms_error_reads_as_its_reason_not_its_body() -> None:
+    """Measured by review: Copilot's error, as LiteLLM's own mapping raises it, read as its raw JSON body behind a
+    second class name, where Gemini's reads as its sentence; and a Gemini call past its deadline raised a bare
+    `TimeoutError`, named with no reason at all."""
+    from litellm.litellm_core_utils.exception_mapping_utils import exception_type
+    from litellm.llms.github_copilot.chat.transformation import GithubCopilotConfig
+
+    from adk_review.judge.plugins import describe
+
+    body = '{"error": {"message": "The requested model is not supported.", "code": "model_not_supported"}}'
+    raw = GithubCopilotConfig().get_error_class(error_message=body, status_code=400, headers={})
+    with pytest.raises(litellm.exceptions.BadRequestError) as mapped:
+        exception_type(model="gpt-5", original_exception=raw, custom_llm_provider="github_copilot")
+    assert describe(mapped.value) == "400: model_not_supported: The requested model is not supported."
+    assert "deadline" in describe(TimeoutError()), "the one error that says nothing of itself"
+    # Measured live, Copilot's rate limit: a body of plain text, read as "RateLimitError: 429: RateLimitError:
+    # Github_copilotException - Sorry, …", the class named twice and the provider's own once.
+    said = "Sorry, you've exceeded your rate limit."
+    raw = GithubCopilotConfig().get_error_class(error_message=said, status_code=429, headers={})
+    with pytest.raises(litellm.exceptions.RateLimitError) as limited:
+        exception_type(model="gpt-4.1", original_exception=raw, custom_llm_provider="github_copilot")
+    assert describe(limited.value) == f"429: {said}"
 
 
 def test_an_error_nothing_named_is_a_sentence_and_exit_3_never_a_verdict(monkeypatch, capsys) -> None:
@@ -245,9 +281,15 @@ def test_a_misspelt_provider_is_a_sentence_and_exit_2_from_every_command() -> No
 
 def test_the_report_names_the_model_that_ran(monkeypatch) -> None:
     """Every entry point lets the shell's variables win over `.env`, so a stale export picks the arm or the model
-    unseen: the report names both, and Vertex AI when the environment sends the Gemini arm there."""
+    unseen: the report names both, and Vertex AI when the environment sends the Gemini arm there. Measured by review:
+    a GitHub Enterprise tenant's own Copilot endpoint went unnamed, in the report and in the cache's key, which reads
+    this line, so one tenant's review was served for another's."""
     load_agent(monkeypatch)
-    config = importlib.import_module("adk_review.judge.config")
+    config = importlib.import_module(judge_module("config"))
+    monkeypatch.setenv("REVIEW_PROVIDER", "copilot")
+    assert config.serving() == "fake on copilot"
+    monkeypatch.setenv("GITHUB_COPILOT_API_BASE", "https://copilot-api.my-company.ghe.com")
+    assert config.serving() == "fake on copilot through copilot-api.my-company.ghe.com"
     monkeypatch.setenv("REVIEW_PROVIDER", "gemini")
     assert config.serving() == "fake on gemini"
     monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
@@ -259,12 +301,110 @@ def test_the_report_names_the_model_that_ran(monkeypatch) -> None:
     assert config.serving() == "fake on gemini through Vertex AI"
 
 
+def test_vertex_ai_is_ready_wherever_the_sdk_finds_its_project(monkeypatch) -> None:
+    """Measured by review: the Gemini arm sent through Vertex AI was refused for want of an API key, and once fixed,
+    for want of `GOOGLE_CLOUD_PROJECT`, while google-genai also takes the project Application Default Credentials name —
+    a service account's file, gcloud's own project, the metadata server Cloud Run and GKE answer from. Readiness asks
+    the SDK rather than a copy of its rules; whether the credentials sign a call, only a call tells."""
+    load_agent(monkeypatch)
+    config = importlib.import_module(judge_module("config"))
+    auth, auth_errors = importlib.import_module("google.auth"), importlib.import_module("google.auth.exceptions")
+    monkeypatch.delenv("GOOGLE_API_KEY")  # the key `load_agent` gives the fake
+    monkeypatch.setenv("GOOGLE_GENAI_USE_ENTERPRISE", "true")
+
+    def signed_in_nowhere(*_args, **_kwargs):
+        raise auth_errors.DefaultCredentialsError("no Application Default Credentials were found")
+
+    monkeypatch.setattr(auth, "default", signed_in_nowhere)  # offline, and the same on every machine
+    why = config.require_ready()
+    assert why and "GOOGLE_CLOUD_PROJECT" in why and "application-default login" in why, why
+    monkeypatch.setattr(auth, "default", lambda *_args, **_kwargs: (object(), "named-by-adc"))
+    assert config.require_ready() is None, "the project Application Default Credentials name"
+    monkeypatch.setattr(auth, "default", signed_in_nowhere)
+    monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "a-project")
+    assert config.require_ready() is None, "a project named outright, its credentials read at the first call"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("arm", "model", "said"),
+    [("copilot", "gpt-4.1", "needs a cached token"), ("gemini", "gemini-2.5-flash", "needs GOOGLE_API_KEY")],
+)
+async def test_chat_on_an_arm_that_cannot_run_says_why_and_calls_no_model(
+    arm: str, model: str, said: str, monkeypatch, tmp_path
+) -> None:
+    """Measured by review: only the command asked whether its arm could run. Chat on Copilot with no token cached let
+    LiteLLM start its own device login on the server's console, three minutes of polling no one saw, and keep the
+    token it got readable by whoever can read its folder, where the login script keeps it to its owner. Chat asks
+    once a turn, on both arms, and every model call of the turn answers the command's sentence in the call's place:
+    the intake's, the one the turn makes, since an intake that could not run confirmed nothing to review."""
+    from google.adk.models.google_llm import Gemini
+    from google.adk.models.lite_llm import LiteLlm
+
+    called: list[str] = []
+
+    async def no_call(self, *_args, **_kwargs):
+        called.append(type(self).__name__)
+        raise AssertionError("a model was called")
+        yield  # an async generator, as each model's own is
+
+    for model_class in (LiteLlm, Gemini):
+        monkeypatch.setattr(model_class, "generate_content_async", no_call)
+    agent = load_agent(monkeypatch, arm, model)
+    _cached_copilot_token(monkeypatch, tmp_path, None)
+    monkeypatch.delenv("GOOGLE_API_KEY")  # the key `load_agent` gives the fake
+    final, state = await run_turn(agent, "Review /nowhere, feature against main.")
+    assert said in final and called == [], (final, called)
+    assert not _guidelines(state) and "verdict" not in state, "the turn ended at the intake's answer"
+
+
+def test_copilot_refuses_a_model_that_cannot_judge_at_temperature_zero(monkeypatch, tmp_path) -> None:
+    """Measured by review: LiteLLM refuses temperature 0, at which every judging agent runs, for Copilot's `gpt-5`,
+    `gpt-5-mini`, `o3-mini` and `o4-mini`, before any call, so a review on one ended in exit 3, every guideline a
+    hole. It is said before anything is spent, exit 2, of each role's model, as LiteLLM itself says it offline."""
+    load_agent(monkeypatch, "copilot", "gpt-5-mini")
+    _cached_copilot_token(monkeypatch, tmp_path)
+    config = importlib.import_module(judge_module("config"))
+    why = config.require_ready()
+    assert why and why.startswith("REVIEW_MODEL=gpt-5-mini") and "temperature" in why, why
+    monkeypatch.setenv("REVIEW_MODEL", "gpt-4.1")
+    monkeypatch.setenv("REVIEW_VERIFIER_MODEL", "o4-mini")
+    why = config.require_ready(roles=("verifier",))
+    assert why and why.startswith("REVIEW_VERIFIER_MODEL=o4-mini"), why
+    monkeypatch.setenv("REVIEW_VERIFIER_MODEL", "claude-sonnet-4")  # served by Copilot, and takes it
+    assert config.require_ready(roles=("verifier",)) is None
+
+
+def test_the_copilot_default_judges_at_temperature_zero_as_litellm_says() -> None:
+    """Readiness does not ask LiteLLM about the Copilot arm's own default: importing LiteLLM took two seconds of every
+    dry run and every usage error. This holds the default to LiteLLM's answer instead, asked as readiness asks every
+    other model, so an upgrade that refused it fails here, not in every guideline of every review."""
+    config = importlib.import_module(judge_module("config"))
+    assert config._refuses_temperature_zero(config.DEFAULTS["copilot"]) is None
+
+
+def test_the_gemini_arm_runs_no_model_adk_sends_to_another_provider(monkeypatch) -> None:
+    """Measured by review: `REVIEW_PROVIDER=gemini` beside `REVIEW_MODEL=gpt-4.1`, Copilot's default left in `.env`,
+    was ready, and ADK sends `gpt-*` to its own OpenAI class: the diff would have gone to OpenAI's API under a report
+    naming gemini. On the Gemini arm every role's model and the fallback is one ADK sends to Gemini."""
+    load_agent(monkeypatch)
+    config = importlib.import_module(judge_module("config"))
+    monkeypatch.setenv("REVIEW_MODEL", "gpt-4.1")
+    why = config.require_ready()
+    assert why and why.startswith("REVIEW_MODEL=gpt-4.1") and "OpenAILlm" in why, why
+    monkeypatch.setenv("REVIEW_MODEL", "gemini-2.5-flash")
+    monkeypatch.setenv("REVIEW_VERIFIER_MODEL", "claude-sonnet-4")
+    why = config.require_ready(roles=("verifier",))
+    assert why and why.startswith("REVIEW_VERIFIER_MODEL=claude-sonnet-4"), why
+    monkeypatch.setenv("REVIEW_VERIFIER_MODEL", "gemma-3-27b-it")  # Gemma, served by the Gemini API
+    assert config.require_ready(roles=("verifier",)) is None
+
+
 def test_an_empty_copilot_token_is_no_token(monkeypatch, tmp_path) -> None:
     """Measured before: an empty token file passed the readiness check, and LiteLLM began its own device login
     inside the first model call, three minutes, its code printed where no one was looking."""
     load_agent(monkeypatch)
-    (tmp_path / "access-token").write_text("", encoding="utf-8")
-    monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", str(tmp_path))
+    _cached_copilot_token(monkeypatch, tmp_path, "")
     monkeypatch.setenv("REVIEW_PROVIDER", "copilot")
     why = importlib.import_module(judge_module("config")).require_ready()
     assert why and "needs a cached token" in why, why
@@ -289,8 +429,7 @@ def test_the_copilot_login_reads_an_empty_token_file_as_none(tmp_path, monkeypat
     import copilot_login
     from litellm.llms.github_copilot import authenticator
 
-    (tmp_path / "access-token").write_text("", encoding="utf-8")
-    monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", str(tmp_path))
+    _cached_copilot_token(monkeypatch, tmp_path, "")
     monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
 
     def began(_self):  # the device flow's first request: no network in the suite
@@ -333,7 +472,7 @@ def test_the_copilot_login_caches_no_token_for_an_account_without_copilot(tmp_pa
     from litellm.llms.github_copilot import authenticator
     from litellm.llms.github_copilot.common_utils import GetAPIKeyError
 
-    monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", str(tmp_path))
+    _cached_copilot_token(monkeypatch, tmp_path, None)
     monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
     monkeypatch.setattr(copilot_login.time, "sleep", lambda _s: None)
     code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
@@ -418,7 +557,7 @@ def test_an_arm_that_cannot_run_is_a_sentence(arm: str, said: str, monkeypatch, 
     load_agent(monkeypatch)
     monkeypatch.setenv("REVIEW_PROVIDER", arm)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-    monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", str(tmp_path))
+    _cached_copilot_token(monkeypatch, tmp_path, None)
     why = importlib.import_module(judge_module("config")).require_ready()
     assert why and said in why, why
 

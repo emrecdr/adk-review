@@ -13,15 +13,21 @@ measurement is wanted; `--build-only` builds the branches and calls nothing.
 from __future__ import annotations
 
 import tempfile
+import tomllib
 from pathlib import Path
 
 from make_demo_repo import BASE_REF, CHARGE, _git, branch, build
-from measure import judged, options, reviewed
+from measure import ROOT, judged, options, reviewed
 
+#: The characters of a file's diff a guideline reads, as the shipped config sets them: each review here runs the
+#: command as it ships.
+CAP = tomllib.loads((ROOT / "adk_review" / "config.toml").read_text(encoding="utf-8"))["review"]["diff_cap"]
+#: Functions enough that the long file's defect lies past that cap, some fifty characters and four lines each.
+STEPS = CAP // 32
+LONG = "".join(f"def step_{n}(value: int) -> int:\n    return value + {n}\n\n\n" for n in range(STEPS))
 #: Each branch: the files it writes over the demo's `main`, and its label — the file and the lines of its one
 #: defect, or None for a clean change. A guideline names the defect when a finding of its stands on those lines.
-LONG = "".join(f"def step_{n}(value: int) -> int:\n    return value + {n}\n\n\n" for n in range(120))
-BRANCHES = {
+BRANCHES: dict[str, tuple[dict[str, str], tuple[str, range] | None]] = {
     "sql-from-input": (
         {"src/payments/charge.py": CHARGE + '''
 
@@ -59,7 +65,7 @@ def refund(amount_cents: int, refunded_cents: int) -> int:
 
     return subprocess.run(command, shell=True, check=False).returncode
 '''},
-        ("src/payments/steps.py", range(484, 488)),
+        ("src/payments/steps.py", range(4 + 4 * STEPS, 8 + 4 * STEPS)),  # past the docstring, two blanks and the steps
     ),
     "privileged-container": (
         {"deploy/pod.yaml": '''apiVersion: v1

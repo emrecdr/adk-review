@@ -7,8 +7,9 @@ and wrote none, as a person reads the text. Per planted defect, in how many runs
 a model's check named it, kept or folded into another source's finding, and at what severity; the model's findings on
 no planted defect, an upper bound on its false ones; the model's own blockers, the rules' set aside, since the rules
 find the planted key every run; the verdicts across runs; the findings dropped for a quote the diff does not bear out;
-the tokens and the time. Each run calls the model: on Copilot, the first-class arm, about 5,000 tokens. The report names
-the reviewer's commit it measured. `--all` reviews the planted branch as a whole project, every file at its head, as
+the tokens and the time. Each run calls the model of the arm `.env` names, on Copilot about 5,000 tokens, and each
+run's line names the model and its arm, since a measurement holds for the arm it ran on. The report names the
+reviewer's commit it measured. `--all` reviews the planted branch as a whole project, every file at its head, as
 `--all` does: a file's line there is its line at the head, as on the diff's new side, so the planted lines
 are read the same way.
 
@@ -127,7 +128,9 @@ def reviewed(
                 done = subprocess.run(command, cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace")
                 data = json.loads(report.read_text(encoding="utf-8")) if report.is_file() else None
                 report.unlink(missing_ok=True)
-                print(f"{name} run {number + 1}: exit {done.returncode}", flush=True)
+                # The model and its arm, as the report names them: a measurement holds for the arm it ran on.
+                on = f", {data['model']}" if data and data.get("model") else ""
+                print(f"{name} run {number + 1}: exit {done.returncode}{on}", flush=True)
                 yield name, done.returncode, data
 
 

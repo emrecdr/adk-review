@@ -64,8 +64,8 @@ applyTo: "adk_review/**"
   `judge/agents.py`: two marker lines carrying `BOUNDARY`, a nonce drawn once a process, and the instruction ends with
   a reminder, `REMINDER` for the guidelines and the verifiers. Never escape or rewrite the content itself: a guideline
   quotes the diff verbatim, and grounding holds the quote to the real lines.
-- A state key more than one module uses is a constant in `judge/agents.py` (`SCOPE`, `DIFF`, `BLAST`, `RULES`,
-  `FAILURE`), and an instruction reads a key through `placeholder(key)`; `tests/test_hardened.py` holds every
+- A state key more than one module uses is a constant in `judge/agents.py` (`SCOPE`, `REPOSITORY`, `DIFF`, `BLAST`,
+  `RULES`, `FAILURE`), and an instruction reads a key through `placeholder(key)`; `tests/test_hardened.py` holds every
   placeholder an instruction reads to a key something writes.
 - Every rule runs the same way, through `run_rule`, in one `FunctionNode` (`judge/checks.py`) before the guidelines,
   in both shapes; each rule's answer, a `Checked`, is left in state under its check's key. The node also writes the
@@ -75,14 +75,18 @@ applyTo: "adk_review/**"
   raises ends the whole run, every guideline with it.
 - `--json FILE` writes the review as data (`as_data` in `deliver/report.py`): every string through the text report's
   own safety steps, `one_line` then `inert`, evidence cut where the report cuts it. Raise `SCHEMA` when a field
-  changes its meaning or goes; add a field freely. A finding's `fingerprint` is built from its check, file and quote,
-  never its line, and `--previous FILE` compares by it; a review with a hole resolves nothing.
+  changes its meaning or goes; add a field freely. A finding's `fingerprint` is built from its check, file and evidence,
+  never its line — a guideline's evidence is the lines its quote stands on, which grounding sets — and `--previous FILE`
+  compares by it; a review with a hole resolves nothing.
 - `GUIDE.md` is held to the code by `tests/test_docs.py`: a new flag, check, JSON field or limit
   fails the suite until the guide says it. Regenerate its check table from `--list-checks`.
 - The plugins are `RedactSecretsPlugin`, then the optional `DebugLoggingPlugin` (`--debug-log`, never the session's
   state) and `Recorder` (`--record`), then `UsageLedger`, `ReportProviderErrors` and `Progress`, which times each
   agent and, at a terminal or with `--progress`, tells each guideline's start and finish on stderr; the first plugin
-  to answer short-circuits the rest.
+  to answer short-circuits the rest. Chat puts `RefuseUnready` and `OneTurn` first: each judging agent reads its
+  instruction and one fixed turn, never a turn ADK would make of another agent's output.
+- In chat the intake clears the last scope at each turn's start and a gate after it goes on only for a scope that
+  turn confirmed; the intake is told the repository its conversation confirmed (`{review_repo?}`).
 - Under `--all` the report adds a Health section, `core/health.py`: what was read, the source and the tests apart,
   McCabe complexity as ruff's C901 counts it (a nested function on its own) in the SIG bands, maintainability graded
   A to E by SIG's published risk-profile rating only where ten or more source files parsed and nine in ten of those

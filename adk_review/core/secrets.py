@@ -59,6 +59,34 @@ _VENDOR = (
     ("slack_webhook", re.compile(r"https://hooks\.slack\.com/services/[A-Za-z0-9_/]+"), "[REDACTED:slack_webhook]"),
     ("stripe_key", re.compile(r"\b[rs]k_live_[A-Za-z0-9]{16,}"), "[REDACTED:stripe_key]"),
     ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}"), "[REDACTED:google_api_key]"),
+    # Measured by review: a key of each vendor below, held by a name that says no secret, was found by no rule and
+    # reached the model unredacted. Each is known by its vendor's own prefix: measured over 7.6 million lines of this
+    # repository and its installed packages, the OpenAI, Anthropic and LiteLLM SDKs among them, none matched.
+    ("anthropic_api_key", re.compile(r"\bsk-ant-[a-z]{2,10}\d{2}-[A-Za-z0-9_-]{80,}"), "[REDACTED:anthropic_api_key]"),
+    (
+        "openai_api_key",
+        re.compile(r"\bsk-(?:(?:proj|svcacct|admin)-[A-Za-z0-9_-]{40,}|[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}\b)"),
+        "[REDACTED:openai_api_key]",
+    ),
+    ("huggingface_token", re.compile(r"\bhf_[A-Za-z0-9]{34}\b"), "[REDACTED:huggingface_token]"),
+    ("npm_token", re.compile(r"\bnpm_[A-Za-z0-9]{36}\b"), "[REDACTED:npm_token]"),
+    ("pypi_token", re.compile(r"\bpypi-AgE[A-Za-z0-9_-]{50,}"), "[REDACTED:pypi_token]"),
+    # Its last segment may end in `-`, after which `\b` finds no edge before a quote.
+    (
+        "sendgrid_api_key",
+        re.compile(r"\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}(?![\w-])"),
+        "[REDACTED:sendgrid_api_key]",
+    ),
+    # As each vendor documents its prefix: Shopify's access tokens and shared secret, 32 hex digits on; Stripe's
+    # webhook signing secret, of more than one length; Tailscale's keys, a kind, an id and the secret. Measured over
+    # the same 7.6 million lines, none matched.
+    ("shopify_token", re.compile(r"\bshp(?:at|ca|pa|ss)_[a-fA-F0-9]{32}\b"), "[REDACTED:shopify_token]"),
+    ("stripe_webhook_secret", re.compile(r"\bwhsec_[A-Za-z0-9]{32,}"), "[REDACTED:stripe_webhook_secret]"),
+    (
+        "tailscale_key",
+        re.compile(r"\btskey-(?:auth|api|client|scim|webhook)-[A-Za-z0-9]{6,}-[A-Za-z0-9]{16,}"),
+        "[REDACTED:tailscale_key]",
+    ),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{8,2000}\.eyJ[A-Za-z0-9_-]{8,2000}\.[A-Za-z0-9_-]{8,}"), "[REDACTED:jwt]"),
     (
         "url_credentials",
@@ -105,21 +133,44 @@ _GENERIC = (
 )
 #: Every shape, a vendor's first: what redaction scrubs, and what a cut never falls inside.
 _PATTERNS = (*_VENDOR, *_GENERIC)
+#: The vendors' shapes that open on a word's edge and a prefix of their own, read first as one pattern: a text none of
+#: them is in holds none, and the other shapes alone read it. Measured by review: each took a search of every added
+#: line and of every diff past its cap, `vendor_shape` over a million lines 2.22 s and `spans` over 35.7 million
+#: characters 5.44 s, read first as one 1.04 s and 2.91 s, every answer the same. Only a shape that reads the same
+#: inside an alternation joins: no flag, no group referred back to.
+_PREFIXED = tuple(
+    shape
+    for shape in _VENDOR
+    if shape[1].pattern.startswith(r"\b")
+    and shape[1].flags == re.UNICODE
+    and not re.search(r"\\[1-9]|\(\?P[<=]", shape[1].pattern)
+)
+_ANY_PREFIXED = re.compile("|".join(f"(?:{pattern.pattern})" for _kind, pattern, _ in _PREFIXED))
+_VENDOR_REST = tuple(shape for shape in _VENDOR if shape not in _PREFIXED)
+_PATTERNS_REST = (*_VENDOR_REST, *_GENERIC)
 
 
 def scrub(text: str) -> tuple[str, int]:
-    """`text` with every known secret shape replaced, and how many were."""
+    """`text` with every known secret shape replaced, and how many were. A prefixed shape none of which is in the text
+    is passed over until a shape rewrites it, since a rewrite can make one: `[REDACTED…]` is the word's edge a token
+    glued to the value before it opens on. Measured by review: nine prefixed shapes more took scrubbing a request at
+    the block cap from 36 ms to 54, every request of every review, each on the event loop; passed over, 23."""
     total = 0
-    for _kind, pattern, replacement in _PATTERNS:
-        text, count = pattern.subn(replacement, text)
+    unprefixed = not _ANY_PREFIXED.search(text)
+    for shape in _PATTERNS:
+        if unprefixed and shape in _PREFIXED:
+            continue
+        text, count = shape[1].subn(shape[2], text)
         total += count
+        unprefixed = unprefixed and not count
     return text, total
 
 
 def spans(text: str) -> list[tuple[int, int]]:
     """Where each known secret shape sits in `text`, as `(start, end)`: what a cut must never fall inside, since half a
     credential no longer matches its shape and would be sent unredacted."""
-    return [match.span() for _kind, pattern, _replacement in _PATTERNS for match in pattern.finditer(text)]
+    table = _PATTERNS if _ANY_PREFIXED.search(text) else _PATTERNS_REST
+    return [match.span() for _kind, pattern, _replacement in table for match in pattern.finditer(text)]
 
 
 def scrub_value(value: Any) -> tuple[Any, int]:
@@ -145,13 +196,15 @@ def scrub_value(value: Any) -> tuple[Any, int]:
 def shape_of(text: str) -> str | None:
     """The kind of the first known secret shape `text` holds, or None. A vendor's shape comes first, so a line holding
     one and a named value is the vendor's: `generic_secret` is a named value alone, what `named-secrets` weighs."""
-    return next((kind for kind, pattern, _ in _PATTERNS if pattern.search(text)), None)
+    table = _PATTERNS if _ANY_PREFIXED.search(text) else _PATTERNS_REST
+    return next((kind for kind, pattern, _ in table if pattern.search(text)), None)
 
 
 def vendor_shape(text: str) -> str | None:
     """The kind of the first vendor's shape `text` holds, or None: what the secrets rule asks of an added line. A
     named value's shapes are never searched, nearly every line holds no vendor's, and they cost the most."""
-    return next((kind for kind, pattern, _ in _VENDOR if pattern.search(text)), None)
+    table = _VENDOR if _ANY_PREFIXED.search(text) else _VENDOR_REST
+    return next((kind for kind, pattern, _ in table if pattern.search(text)), None)
 
 
 def _may_name(text: str) -> bool:

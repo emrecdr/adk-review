@@ -24,10 +24,8 @@ from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 
 from ..collect.git import GitError, list_changed, preflight, same_folder
-from .agents import SCOPE
+from .agents import REPOSITORY, SCOPE
 
-#: The repository a conversation first confirmed: its only one, as the guardrail reads it.
-REPOSITORY = "review_repo"
 #: The list a model reads of what the change touched, capped as every string a model reads is: a change of thousands
 #: of files filled its context with paths. The cut is named, and the count stays whole.
 LISTED_MAX_CHARS = 20_000

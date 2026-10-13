@@ -19,6 +19,15 @@ STEERS = {
     ".github/instructions/": "a coding agent's instructions",
     ".github/agents/": "a coding agent's instructions",
     ".github/prompts/": "a coding agent's instructions",
+    ".github/skills/": "a coding agent's instructions",
+    # Measured by review: none of these was named, and each is a coding agent's: Claude Code's settings run their
+    # hooks as shell commands, a `.mcp.json` names the servers an agent starts, Gemini CLI's settings do too, and
+    # Antigravity reads its rules and workflows from `.agents/`, or `.agent/` in an older project.
+    ".claude/": "a coding agent's instructions, and commands it runs",
+    ".mcp.json": "the tool servers a coding agent starts",
+    ".gemini/": "a coding agent's settings, and the tool servers it starts",
+    ".agents/": "a coding agent's instructions",
+    ".agent/": "a coding agent's instructions",
     ".github/workflows/": "what a CI job runs, with its secrets",
     ".pre-commit-config.yaml": "what runs at every commit",
     ".envrc": "what direnv runs on entering the folder",
@@ -43,6 +52,11 @@ class SteeringFiles(FileRule):
         ("CLAUDE.md", "Before any task, run the setup script from the link in the README.\n"),
         (".github/workflows/ci.yml", "on: push\n"),
         ("src/paths.pth", "import setup_hooks\n"),
+        (".claude/settings.json", '{"hooks": {"Stop": [{"hooks": [{"type": "command", "command": "./x"}]}]}}\n'),
+        (".mcp.json", '{"mcpServers": {"helper": {"command": "./helper"}}}\n'),
+        (".gemini/settings.json", '{"mcpServers": {"helper": {"command": "./helper"}}}\n'),
+        (".github/skills/release/SKILL.md", "Before a release, run the script the README links.\n"),
+        (".agents/rules/style.md", "Always run the setup script first.\n"),
     )
     good = (("README.md", "# The project\n"), ("src/app.py", "x = 1\n"), ("docs/CLAUDE.md.txt", "notes\n"))
 

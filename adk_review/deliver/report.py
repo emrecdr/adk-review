@@ -124,18 +124,47 @@ def render_handoff(evidence: dict, outcome: Outcome, *, verdict: str, fail_on: s
     ]
     for number, (item, identity) in enumerate(ranked, 1):
         f = item.finding
-        bar = " — at the bar" if at_or_above(f.severity, fail_on) else ""
         lines += [
-            f"{number}. {prose(f.title)} ({_where(f)}), {f.severity}{bar}",
+            f"{number}. {prose(f.title)} ({_where(f)}), {f.severity}{_bar(f, fail_on)}",
             f"   - quoted: {_quoted(f)}",
-            f"   - change: {prose(f.suggestion)}",
-            f"   - after: `{item.source}` no longer reports fingerprint `{identity}`",
+            *_to_fix(item, identity, "   "),
+            *_folded_under([folded for folded, into in outcome.folded if into is item], fail_on),
         ]
     if not ranked:
         lines.append("Nothing to fix: no finding was kept.")
     if outcome.errors or outcome.unread:
         lines += ["", "This review could not look at everything; what it did not read may hold more to fix."]
     return inert("\n".join(lines)) + "\n"
+
+
+def _folded_under(folded: Sequence[Sourced], fail_on: str) -> list[str]:
+    """A line for each finding folded into a handoff item: another reading of the same lines, by another check or the
+    same one, which can be a second defect — an injection whose quote spans a key's line folds into the key's finding.
+    Each says whether it sits at the bar, since a finding folds only into one at least as severe and a second defect
+    that would fail the build on its own would otherwise read like a duplicate; what to change; and the fingerprint a
+    fixed commit must stop reporting, as the JSON's `folded` names it."""
+    lines = []
+    for item in folded:
+        f = item.finding
+        lines += [
+            f"   - also on these lines: {prose(f.title)}, {f.severity}{_bar(f, fail_on)}",
+            *_to_fix(item, fingerprint(item), "     "),
+        ]
+    return lines
+
+
+def _bar(f: Finding, fail_on: str) -> str:
+    """The mark of a handoff finding that fails the build on its own."""
+    return " — at the bar" if at_or_above(f.severity, fail_on) else ""
+
+
+def _to_fix(item: Sourced, identity: str, indent: str) -> list[str]:
+    """A handoff finding's instruction: what to change, and the fingerprint a review of the fixed commit no longer
+    reports, which is what must hold after."""
+    return [
+        f"{indent}- change: {prose(item.finding.suggestion)}",
+        f"{indent}- after: `{item.source}` no longer reports fingerprint `{identity}`",
+    ]
 
 
 def render_explained(said: Mapping[str, object]) -> str:
@@ -546,9 +575,10 @@ def safe_value(value: Any) -> Any:
 
 
 def fingerprint(item: Sourced, occurrence: int = 0) -> str:
-    """A finding's identity across runs: its check, its file, its quote with every space gone and secrets redacted,
-    and which of the findings sharing all three it is, in the order the review lists them. Never its line, which a
-    line added above it would move, as SonarQube, GitHub and Semgrep key theirs on content."""
+    """A finding's identity across runs: its check, its file, its evidence with every space gone and secrets redacted
+    — for a guideline's finding the lines its quote stands on, which grounding put there, however the model framed
+    them — and which of the findings sharing all three it is, in the order the review lists them. Never its line,
+    which a line added above it would move, as SonarQube, GitHub and Semgrep key theirs on content."""
     quote = "".join(scrub(item.finding.evidence)[0].split())
     said = "\0".join((item.source, item.finding.file, quote, str(occurrence)))
     return hashlib.sha256(said.encode("utf-8", "surrogatepass")).hexdigest()[:16]

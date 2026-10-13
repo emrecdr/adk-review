@@ -66,10 +66,10 @@ import sys
 import tempfile
 import tomllib
 import warnings
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Coroutine, Mapping, Sequence
 from importlib import metadata
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 #: Why the reviewer could not load, if it could not: a broken install is one sentence and exit 3 like every other
 #: failure, never Python's own exit 1, which reads as a blocker. Measured before: a package that would not import
@@ -98,7 +98,6 @@ try:
         dedupe,
         drop_ungrounded,
         to_verify,
-        where_quoted,
     )
     from .deliver.report import (
         SCHEMA,
@@ -548,22 +547,28 @@ def postprocess(run: Run, files: list[dict], guidelines: tuple[str, ...], holes:
     from .judge.agents import read_back
 
     outcome = Outcome(unread=not_read(files, guidelines), errors=dict(holes))
-    quotable = {f["path"]: f["quotable"] for f in files}
+    quotable, framing = ({f["path"]: f[key] for f in files} for key in ("quotable", "framing"))
     for check in guidelines:  # a guideline the profile left off did not fail: it was never asked
         key = state_key(check)
         answer = read_back(run.state, key, Review, run.why(key, "the guideline produced no output"))
         if isinstance(answer, str):
             outcome.errors[check] = answer
             continue
-        kept, dropped = drop_ungrounded(answer, quotable)
-        outcome.kept += [Sourced(check, f, where_quoted(f, quotable)) for f in kept]
+        kept, dropped = drop_ungrounded(answer, quotable, framing)
+        outcome.kept += [Sourced(check, f, lines) for f, lines in kept]
         outcome.dropped += [Sourced(check, f) for f in dropped]
     return outcome
 
 
-def second_opinion(outcome: Outcome, rules: list[Sourced], diff: str, plugins: list[BasePlugin]) -> None:
+def second_opinion(
+    outcome: Outcome,
+    rules: list[Sourced],
+    diff: str,
+    plugins: list[BasePlugin],
+    run: Callable[[Coroutine], Any] | None = None,
+) -> None:
     """`--verify`: each guideline finding that says more than a rule judged once more — refuted ones out and named,
-    unjudged ones kept and named.
+    unjudged ones kept and named. `run` is the loop the review's run used, so both share it; a loop of its own if none.
 
     Before the fold, so the rules' findings — facts — are never asked about, and
     a rule's reading of a line stands whatever the verifier says of a guideline's.
@@ -579,7 +584,7 @@ def second_opinion(outcome: Outcome, rules: list[Sourced], diff: str, plugins: l
 
     outcome.verified = True
     asked = to_verify(outcome.kept, rules)
-    judged = asyncio.run(judge_findings([item.finding for item in asked], diff, plugins))
+    judged = (run or asyncio.run)(judge_findings([item.finding for item in asked], diff, plugins))
     refuted: set[int] = set()  # by identity: two guidelines can file the same finding
     for item, judgement in zip(asked, judged, strict=True):
         if isinstance(judgement, str):
@@ -597,8 +602,11 @@ def fold(outcome: Outcome, rules: list[Sourced], order: Sequence[str]) -> None:
     outcome.kept, outcome.folded = dedupe(kept)
 
 
-class Terminated(Exception):  # noqa: N818 -- named for what happened to the run, as KeyboardInterrupt is
-    """A job stopped the run with SIGTERM: raised in the run's place, so what it holds is let go as on Ctrl-C."""
+class Terminated(BaseException):  # named for what happened to the run, as KeyboardInterrupt is
+    """A job stopped the run with SIGTERM: raised in the run's place, so what it holds is let go as on Ctrl-C. A
+    `BaseException`, as `KeyboardInterrupt` is, for the same reason: the handler raises in whatever frame runs, and a
+    model call's own code catches every `Exception` to name a failed guideline and go on. Measured before: raised
+    there, the stop read as that guideline's failure, and the review called the other models and ended in exit 3."""
 
 
 def _terminated(_signal: int, _frame: object) -> None:
@@ -717,15 +725,13 @@ def _review(argv: list[str] | None = None) -> int:
     say = _say if args.progress or sys.stderr.isatty() else None
     if say is not None:
         say(f"reading {head} against {base or 'the empty tree'}")
-    # The head read whole only where a check reads it: a tree rule, or a guideline, which is shown the radius.
-    whole_head = bool(guidelines) or any(rule.kind == "tree" for rule in chosen.rules)
     evidence = collect_evidence(
         repo,
         base,
         head,
         scope,
         staged=args.staged,
-        whole_head=whole_head,
+        **chosen.head_reading(),
         diff_cap=args.diff_cap,
         skipped=skipped_by(args.skip),
     )
@@ -769,14 +775,16 @@ def _review(argv: list[str] | None = None) -> int:
     ledger = next(p for p in app.plugins if isinstance(p, UsageLedger))
     progress = next(p for p in app.plugins if isinstance(p, Progress))
     # The rules, then the guidelines, over a session that starts with the change they read, in no event a log could
-    # carry; every guideline finishes, whatever one of them does.
+    # carry; every guideline finishes, whatever one of them does. One event loop for the run and its second opinion:
+    # `asyncio.run` makes a loop and closes it, and a client a library kept from the guidelines' calls met a closed
+    # loop at the verifiers', as ADK's cached Gemini client did (google/adk-python#5538).
     runner = InMemoryRunner(app=app)
-    run = asyncio.run(run_seeded(runner, session_id="run", state={DIFF: evidence["diff"]}, prompt="review"))
-
-    rules, holes = read_checks(run, chosen.rules)
-    outcome = postprocess(run, files, guidelines, holes)
-    if verify:
-        second_opinion(outcome, rules, evidence["diff"], app.plugins)
+    with asyncio.Runner() as loop:
+        run = loop.run(run_seeded(runner, session_id="run", state={DIFF: evidence["diff"]}, prompt="review"))
+        rules, holes = read_checks(run, chosen.rules)
+        outcome = postprocess(run, files, guidelines, holes)
+        if verify:
+            second_opinion(outcome, rules, evidence["diff"], app.plugins, loop.run)
     outcome.redacted = redactor.redacted  # read after the verifiers, whose calls the same plugin scrubs
     fold(outcome, rules, chosen.ids())
     verdict, code = decide(outcome, args.fail_on)

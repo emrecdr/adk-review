@@ -10,16 +10,21 @@ first, and `adk web` before it imports this module.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
 from pathlib import Path
+from types import ModuleType
+from urllib.parse import urlsplit
 
 import truststore
 from google.adk.models import FallbackModel
 from google.adk.models.base_llm import BaseLlm
+from google.adk.models.google_llm import Gemini
 from google.adk.models.registry import LLMRegistry
 from google.adk.planners import BasePlanner, BuiltInPlanner
+from google.auth.exceptions import GoogleAuthError
 from google.genai import types
 
 # Certificates are verified through the operating system's own store, as a browser does, before any client is
@@ -29,6 +34,8 @@ from google.genai import types
 truststore.inject_into_ssl()
 
 DEFAULTS = {"gemini": "gemini-2.5-flash", "copilot": "gpt-4.1"}
+#: The Copilot arm's provider, as LiteLLM names it.
+COPILOT = "github_copilot"
 
 
 #: A bearer token in a log line. LiteLLM's debug dump masks a request's headers but prints its body whole, and the
@@ -88,12 +95,17 @@ def model_name(role: str = "") -> str:
 
 
 def serving() -> str:
-    """What a run's model calls go to, for the report: the model, its arm, and Vertex AI when the environment sends
-    the Gemini arm there. Every entry point lets the shell's variables win over `.env` — ADK restores what was set
-    before it loads the file — so a stale export picked the arm or the model unseen."""
+    """What a run's model calls go to, for the report and the cache's key: the model, its arm, and where the
+    environment sends the arm past its own default — Vertex AI for Gemini, a GitHub Enterprise tenant's endpoint for
+    Copilot. Every entry point lets the shell's variables win over `.env` — ADK restores what was set before it loads
+    the file — so a stale export picked the arm or the model unseen."""
     arm = provider()
-    vertex = arm == "gemini" and _through_vertex()
-    return f"{model_name()} on {arm}" + (" through Vertex AI" if vertex else "")
+    if arm == "gemini":
+        where = "Vertex AI" if _through_vertex() else ""
+    else:
+        base = os.environ.get("GITHUB_COPILOT_API_BASE", "").strip()
+        where = urlsplit(base).hostname or base
+    return f"{model_name()} on {arm}" + (f" through {where}" if where else "")
 
 
 def _through_vertex() -> bool:
@@ -131,19 +143,29 @@ def build_model(*, role: str = "") -> str | BaseLlm:
     names = [model_name(role)] + ([fallback] if (fallback := fallback_name()) else [])
     if provider() == "gemini":
         return names[0] if len(names) == 1 else FallbackModel(models=names)
-    # Imported here: LiteLLM is the Copilot arm's alone. At the top of the command it cost about a second of every
-    # start, `--help` included, and on its own import it read `.env` unless told it runs in production, as ADK tells
-    # it, and fetched a price list unless `LITELLM_LOCAL_MODEL_COST_MAP` is set.
-    os.environ.setdefault("LITELLM_MODE", "PRODUCTION")
-    import litellm
+    litellm = _litellm()
     from google.adk.models.lite_llm import LiteLlm
 
     litellm.suppress_debug_info = True  # else a red "Give Feedback" banner on stdout with every error
+    # The instruction as Copilot's system turn. Measured by review: LiteLLM sent it as an assistant turn unless told
+    # not to, so the fences and the reminder after them reached Copilot as words it had said itself; LiteLLM's own
+    # note says Copilot now takes a system turn for every model it serves.
+    litellm.disable_copilot_system_to_assistant = True
 
     # Copilot authenticates with a cached device-flow token, not a key: `uv run python scripts/copilot_login.py`, once.
     logging.getLogger("LiteLLM").addFilter(_HIDE_BEARER)  # once: a filter already there is not added again
-    models = [LiteLlm(model=f"github_copilot/{name}") for name in names]
+    models = [LiteLlm(model=f"{COPILOT}/{name}") for name in names]
     return models[0] if len(models) == 1 else FallbackModel(models=models)
+
+
+def _litellm() -> ModuleType:
+    """LiteLLM, imported where the Copilot arm needs it and nowhere else. At the top of the command it cost about a
+    second of every start, `--help` included, and on its own import it read `.env` unless told it runs in production,
+    as ADK tells it, and fetched a price list unless `LITELLM_LOCAL_MODEL_COST_MAP` is set."""
+    os.environ.setdefault("LITELLM_MODE", "PRODUCTION")
+    import litellm
+
+    return litellm
 
 
 def guideline_planner(thinking_budget: int) -> BasePlanner | None:
@@ -208,21 +230,93 @@ def require_ready(*, roles: tuple[str, ...] = ()) -> str | None:
         arm = provider()
     except ValueError as exc:
         return str(exc)
-    if arm == "copilot":
-        if (token := copilot_token()).is_file() and token.stat().st_size:  # an empty file is no token
-            return None  # LiteLLM takes any model name and fails at the call, which is that guideline's own answer
-        return (
-            f"REVIEW_PROVIDER=copilot needs a cached token at {token}; "
-            f"run `uv run python scripts/copilot_login.py` once"
-        )
-    if not os.environ.get("GOOGLE_API_KEY", "").strip():
-        return "REVIEW_PROVIDER=gemini needs GOOGLE_API_KEY in the central .env"
     named = [(model_var(role), model_name(role)) for role in ("", *roles)]
     if fallback := fallback_name():
         named.append(("REVIEW_FALLBACK_MODEL", fallback))
+    if arm == "copilot":
+        if not ((token := copilot_token()).is_file() and token.stat().st_size):  # an empty file is no token
+            return (
+                f"REVIEW_PROVIDER=copilot needs a cached token at {token}; "
+                f"run `uv run python scripts/copilot_login.py` once"
+            )
+        # LiteLLM takes any model name and fails at the call, which is that guideline's own answer; but a model it
+        # knows cannot judge at temperature zero it refuses before any call, so that is said here, as LiteLLM says it.
+        # The arm's own default is not asked: LiteLLM took two seconds to import, which every dry run and every usage
+        # error then waited out, and a test holds the default to LiteLLM's answer.
+        for var, name in named:
+            if name != DEFAULTS["copilot"] and (why := _refuses_temperature_zero(name)) is not None:
+                return f"{var}={name} cannot judge at temperature 0, at which every review runs: {why}"
+        return None
+    if (why := _gemini_refused()) is not None:
+        return why
     for var, name in named:
         try:
-            LLMRegistry.resolve(name)
+            model = LLMRegistry.resolve(name)
         except ValueError as exc:  # the arm that resolves names up front, so it can say so up front
             return f"{var}: {exc}"
+        if not issubclass(model, Gemini):
+            # Measured by review: `gpt-4.1`, Copilot's default left in `.env`, was ready here, and ADK sends `gpt-*`
+            # to OpenAI's API. ADK resolves a name to the class that will serve it: on this arm, a Gemini model's.
+            return f"{var}={name} is no Gemini model: ADK sends it to {model.__name__}, another provider's class"
+    return None
+
+
+def _refuses_temperature_zero(name: str) -> str | None:
+    """Why LiteLLM will not send Copilot's `name` the temperature every judging agent runs at, or None; it decides
+    offline, before any call. Measured by review: it refused `gpt-5`, `gpt-5-mini`, `o3-mini` and `o4-mini`, so a
+    review on one failed every guideline, exit 3, where readiness had said nothing."""
+    litellm = _litellm()
+    from litellm.utils import get_optional_params
+
+    try:
+        get_optional_params(model=name, custom_llm_provider=COPILOT, temperature=request_config().temperature)
+    except litellm.UnsupportedParamsError as exc:
+        return said(exc).split(". ")[0]
+    return None
+
+
+#: LiteLLM's wrapping of a provider's error body: its own class again, then the provider's, as Copilot's comes —
+#: `RateLimitError: Github_copilotException - Sorry, …`, or a JSON body, `Github_copilotException - {"error": {…}}`.
+_WRAPPED = re.compile(r"(?:\w+Error: )?\w+Exception - (.*)", re.DOTALL)
+
+
+def said(error: Exception) -> str:
+    """A provider's error in its own words: genai's `.message`, the sentence its `str` wraps in JSON; LiteLLM's with
+    the class it puts before them gone and the provider's body unwrapped, a JSON body read as its code and the
+    sentence it holds. Measured by review on Copilot: a JSON body read raw, and live, a rate limit read
+    "RateLimitError: 429: RateLimitError: Github_copilotException - Sorry, …"."""
+    message = str(getattr(error, "message", None) or error).removeprefix(f"litellm.{type(error).__name__}: ")
+    wrapped = _WRAPPED.fullmatch(message)
+    if wrapped is None:
+        return message
+    try:
+        body = json.loads(wrapped[1])["error"]
+    except (ValueError, KeyError, TypeError):
+        return wrapped[1]
+    if not isinstance(body, dict) or not body.get("message"):
+        return wrapped[1]
+    kind = body.get("code") or body.get("type")
+    return f"{kind}: {body['message']}" if kind else str(body["message"])
+
+
+def _gemini_refused() -> str | None:
+    """Why google-genai will not build the Gemini arm's client as ADK builds it for each call, or None.
+
+    Asked of the SDK, which reads a key, a project, a region and Application
+    Default Credentials its own way. Measured by review: a copy of those rules
+    here refused, twice, what the SDK accepts — Vertex AI by a project, then
+    by the project the credentials name, as on Cloud Run and GKE. With neither
+    a key nor a project set, the SDK asks the credentials, which can run gcloud
+    or ask a metadata server; with one, nothing is read until the first call,
+    which alone tells whether the credentials sign it.
+    """
+    try:
+        Gemini(model=model_name()).api_client.close()  # built for what building it refuses, and let go
+    except (ValueError, GoogleAuthError) as exc:
+        if not _through_vertex():
+            return "REVIEW_PROVIDER=gemini needs GOOGLE_API_KEY in the central .env, or Vertex AI and its project"
+        return (
+            "REVIEW_PROVIDER=gemini through Vertex AI finds no project: set GOOGLE_CLOUD_PROJECT, or sign in with "
+            f"Application Default Credentials that name one (`gcloud auth application-default login`) ({exc})"
+        )
     return None

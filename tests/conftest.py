@@ -28,7 +28,7 @@ from types import SimpleNamespace
 
 import pytest
 from google.adk.apps.app import App
-from google.adk.models.base_llm import BaseLlm
+from google.adk.models.google_llm import Gemini
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.adk.models.registry import LLMRegistry
@@ -130,6 +130,11 @@ class FakeProvider:
         itself: a prose agent told what to say."""
         self.rules.append((text, payload))
 
+    def calls_when(self, text: str, call: types.FunctionCall) -> None:
+        """`call` in place of the answer, until the tool's reply is back, then the fake's own sentence: an agent that
+        calls a tool, as chat's intake calls `inspect_repository` to confirm a scope."""
+        self.rules.append((text, call))
+
     def replays(self, folder: Path) -> None:
         """Answer every request a recording holds with the answer kept for it, by the request's hash, as `--record`
         kept it: a live run replayed offline."""
@@ -155,8 +160,9 @@ class FakeProvider:
 PROVIDER = FakeProvider()  # process-wide, like the registry below; the fixture clears it around each test
 
 
-class FakeModel(BaseLlm):
-    """Answers instantly and offline: what a rule says, else the canned answer the schema accepts, else a sentence."""
+class FakeModel(Gemini):
+    """Answers instantly and offline: what a rule says, else the canned answer the schema accepts, else a sentence. A
+    Gemini model, as the Gemini arm, where it runs, requires one."""
 
     model: str = "fake"
 
@@ -170,6 +176,12 @@ class FakeModel(BaseLlm):
         stream: bool = False,  # noqa: ARG002 -- the BaseLlm contract
     ) -> AsyncGenerator[LlmResponse]:
         payload = PROVIDER.answer(llm_request)
+        if isinstance(payload, types.FunctionCall):
+            last = llm_request.contents[-1].parts or () if llm_request.contents else ()
+            if not any(part.function_response for part in last):  # the call, once; then its reply is answered
+                yield LlmResponse(content=types.Content(role="model", parts=[types.Part(function_call=payload)]))
+                return
+            payload = None
         schema = llm_request.config.response_schema
         if payload is None and schema is not None:
             payload = canned_for(schema)
@@ -206,11 +218,18 @@ def pytest_configure() -> None:
 
 @pytest.fixture(autouse=True)
 def _nothing_from_the_shell(monkeypatch: pytest.MonkeyPatch) -> None:
-    """No test inherits a provider or a model: a developer's `REVIEW_PROVIDER=copilot` or `REVIEW_VERIFIER_MODEL`
-    would send it to a real one. Each test sets what it runs on."""
+    """No test inherits a provider, a model, a key or where an arm's calls go: a developer's `REVIEW_PROVIDER=copilot`,
+    `REVIEW_VERIFIER_MODEL` or Vertex AI project would send it to a real one, or change what readiness says. Each test
+    sets what it runs on."""
     for name in [name for name in os.environ if name.startswith("REVIEW_")] + [
         "GOOGLE_GENAI_USE_ENTERPRISE",
         "GOOGLE_GENAI_USE_VERTEXAI",
+        "GOOGLE_API_KEY",
+        "GEMINI_API_KEY",
+        "GOOGLE_CLOUD_PROJECT",
+        "GOOGLE_CLOUD_LOCATION",
+        "GITHUB_COPILOT_API_BASE",
+        "GITHUB_COPILOT_ACCESS_TOKEN_FILE",
     ]:
         monkeypatch.delenv(name, raising=False)
 
@@ -287,9 +306,15 @@ def _branch_off_empty(repo: Path, branch: str, base: str = BASE) -> Path:
     return repo
 
 
-def _committed(repo: Path, name: str, text: str = "x = 1\n", message: str = "") -> str:
-    """`name` written with `text` in `repo` and committed, by `message` or its name: the commit's id."""
-    (repo / name).write_text(text, encoding="utf-8", newline="\n")
+def _committed(repo: Path, name: str, text: str | bytes = "x = 1\n", message: str = "") -> str:
+    """`name` written with `text` in `repo`, its folder made, and committed, by `message` or its name: the commit's
+    id. Bytes are written as they are, for a file git reads as binary."""
+    path = repo / name
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(text, bytes):
+        path.write_bytes(text)
+    else:
+        path.write_text(text, encoding="utf-8", newline="\n")
     _git_in(repo, "add", "-A")
     _git_in(repo, "commit", "-qm", message or name)
     return _git_in(repo, "rev-parse", "HEAD")
@@ -424,6 +449,11 @@ SEPARATED = ("line" + chr(0x2028) + "break", "next" + chr(0x85) + "line", "ends"
 SPACES = (chr(0x2028), chr(0x85), chr(0xA0))
 
 
+def in_tags(text: str) -> str:
+    """`text` spelled in Unicode's tag characters: read by every model, shown by no editor."""
+    return "".join(chr(0xE0000 + ord(letter)) for letter in text)
+
+
 @pytest.fixture(scope="session")
 def hostile_repo(tmp_path_factory) -> Path:
     """`main`, a branch per way a change once hid from the review, and the shapes of which no line can be read: a
@@ -458,10 +488,14 @@ def hostile_repo(tmp_path_factory) -> Path:
         _git_in(repo, "commit", "-qm", name)
         _git_in(repo, "checkout", "-q", "-f", BASE)  # the worktree never held these: back to what it does hold
 
+    from adk_review.collect.git import DIFF_CAP_CHARS  # sized from it, so a cap raised leaves them past it still
+
     _git_in(repo, "init", "-q", "-b", BASE)
     (repo / "settings.py").write_bytes(b"A = 1\n\nB = 2\n")
-    (repo / "rates.py").write_bytes(b"".join(b"RATE_%d = %d\n" % (i, i) for i in range(600)))  # past the cap
-    (repo / "icon.png").write_bytes(b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR")
+    rates = b"".join(b"RATE_%d = %d\n" % (i, i) for i in range(DIFF_CAP_CHARS // 8))
+    assert len(rates) > DIFF_CAP_CHARS, "past the cap"
+    (repo / "rates.py").write_bytes(rates)
+    (repo / "table.bin").write_bytes(b"\x00\x01\x02 a table no line of which git prints\n")
     (repo / "notes.md").write_bytes(b"# Notes\n\n```\nx = 1\n```\n")
     _git_in(repo, "add", ".")
     _git_in(repo, "commit", "-qm", "base")
@@ -472,8 +506,9 @@ def hostile_repo(tmp_path_factory) -> Path:
     through_the_index("command", {FORGING["command"]: "x = 1\n"})
     through_the_index("collide", {"x.py": "import os\n", "X.py/y.py": "import sys\n"})
     branch("carriage", {HIDDEN["carriage"]: b'REGION = "eu"\r' + KEY_LINE.encode()})
-    branch("binary", {"logo.png": b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR"})
-    helpers = b"".join(b"def helper_%d():\n    return %d\n\n\n" % (i, i) for i in range(200))
+    branch("binary", {"data.bin": b"\x00\x01\x02 data no line of which git prints\n"})
+    helpers = b"".join(b"def helper_%d():\n    return %d\n\n\n" % (i, i) for i in range(DIFF_CAP_CHARS // 16))
+    assert len(helpers) > DIFF_CAP_CHARS, "the shell call past the cap"
     branch("long", {"pay.py": helpers + b"import subprocess\n\nsubprocess.run(cmd, shell=True)\n"})
     _git_in(repo, "branch", "empty", BASE)
     for name in ("twin", *SEPARATED):
@@ -487,7 +522,7 @@ def hostile_repo(tmp_path_factory) -> Path:
     branch("spaced", {f"s{ord(space):x}.py": f"x = 1{space}\n".encode() for space in SPACES})
     branch("crlf", {".env": b"TOKEN_EXPIRY_MS=86400000\r\n", "z.py": b"x = 1\n"})
     _git_in(repo, "tag", "release/base", BASE)  # a name that is only a tag, as a fork's `origin/main` can be
-    for name, moves in (("moved", ("rates.py", "money/rates.py")), ("moved-binary", ("icon.png", "img/icon.png"))):
+    for name, moves in (("moved", ("rates.py", "money/rates.py")), ("moved-binary", ("table.bin", "blobs/table.bin"))):
         _git_in(repo, "checkout", "-q", "-b", name, BASE)
         (repo / moves[1]).parent.mkdir(exist_ok=True)
         _git_in(repo, "mv", *moves)
@@ -571,23 +606,49 @@ def run_review(module, repo: Path, *extra: str) -> int:
     return module.main([str(repo), *PLANTED, *extra])
 
 
-def load_agent(monkeypatch: pytest.MonkeyPatch):
-    """Import `adk_review.agent` fresh, with the real `build_model()` naming the fake on the gemini arm."""
-    monkeypatch.setenv("REVIEW_PROVIDER", "gemini")
-    monkeypatch.setenv("REVIEW_MODEL", "fake")
+def load_agent(monkeypatch: pytest.MonkeyPatch, provider: str = "gemini", model: str = "fake"):
+    """Import `adk_review.agent` fresh, with the real `build_model()` naming `model` on `provider`'s arm: the fake on
+    the Gemini arm, where it registers, unless a test names another; with a key present, which the command and chat
+    both ask for before a model is called."""
+    monkeypatch.setenv("REVIEW_PROVIDER", provider)
+    monkeypatch.setenv("REVIEW_MODEL", model)
+    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     for name in [m for m in sys.modules if m == "adk_review" or m.startswith("adk_review.")]:
         del sys.modules[name]
     return importlib.import_module("adk_review.agent")
 
 
-@pytest.fixture
-def cli(monkeypatch: pytest.MonkeyPatch):
-    """The command's module, loaded on the fake with a key present, so a test runs it end to end."""
-    monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
-    load_agent(monkeypatch)
+def _cached_copilot_token(monkeypatch: pytest.MonkeyPatch, folder: Path, text: str | None = "a token") -> None:
+    """The Copilot arm's token cache in `folder`, holding `text`, or holding no token where `text` is None."""
+    if text is not None:
+        (folder / "access-token").write_text(text, encoding="utf-8")
+    monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", str(folder))
+
+
+def load_command(monkeypatch: pytest.MonkeyPatch, provider: str = "gemini", model: str = "fake"):
+    """The command's module, loaded as `load_agent` loads the package, on `provider`'s arm, never reading the
+    developer's `.env`."""
+    load_agent(monkeypatch, provider, model)
     module = importlib.import_module("adk_review.review")
     monkeypatch.setattr(module, "load_dotenv", lambda *_args, **_kwargs: False)  # never the developer's `.env`
     return module
+
+
+@pytest.fixture
+def cli(monkeypatch: pytest.MonkeyPatch):
+    """The command's module, loaded on the fake with a key present, so a test runs it end to end."""
+    return load_command(monkeypatch)
+
+
+@pytest.fixture
+def head_reads(cli, monkeypatch: pytest.MonkeyPatch) -> list[int]:
+    """A 1 each time the head is read whole: `tree_at_head` wrapped in the package `cli` loaded fresh, whose module the
+    command and chat's gathering call."""
+    git = importlib.import_module(f"{cli.__package__}.collect.git")
+    read: list[int] = []
+    whole = git.tree_at_head
+    monkeypatch.setattr(git, "tree_at_head", lambda *args, **kwargs: (read.append(1), whole(*args, **kwargs))[1])
+    return read
 
 
 def tool_context(**state):
@@ -595,14 +656,57 @@ def tool_context(**state):
     return SimpleNamespace(state=dict(state))
 
 
+class Chat:
+    """One conversation with an agent module's app through the real Runner: each `say` a user turn, in one session."""
+
+    def __init__(self, module, state: dict | None = None) -> None:
+        self.app = getattr(module, "app", None) or App(name=module.root_agent.name, root_agent=module.root_agent)
+        self.runner = InMemoryRunner(app=self.app)
+        self.state = state or {}
+        self.ids = {"app_name": self.app.name, "user_id": "t", "session_id": "t"}
+        self.started = False
+
+    async def say(self, message: str) -> tuple[str, dict]:
+        """One user turn; the final text and the session's state after it."""
+        if not self.started:
+            await self.runner.session_service.create_session(**self.ids, state=self.state)
+            self.started = True
+        final = ""
+        turn = types.UserContent(message)
+        async for event in self.runner.run_async(user_id="t", session_id="t", new_message=turn):
+            if event.is_final_response() and event.content and event.content.parts:
+                final = event.content.parts[0].text or final
+        session = await self.runner.session_service.get_session(**self.ids)
+        return final, dict(session.state)
+
+
 async def run_turn(module, message: str, state: dict | None = None) -> tuple[str, dict]:
-    """One user turn through the real Runner; returns the final text and the session state."""
-    app = getattr(module, "app", None) or App(name=module.root_agent.name, root_agent=module.root_agent)
-    runner = InMemoryRunner(app=app)
-    await runner.session_service.create_session(app_name=app.name, user_id="t", session_id="t", state=state or {})
-    final = ""
-    async for event in runner.run_async(user_id="t", session_id="t", new_message=types.UserContent(message)):
-        if event.is_final_response() and event.content and event.content.parts:
-            final = event.content.parts[0].text or final
-    session = await runner.session_service.get_session(app_name=app.name, user_id="t", session_id="t")
-    return final, dict(session.state)
+    """One user turn through the real Runner, in a session of its own; the final text and the session's state."""
+    return await Chat(module, state).say(message)
+
+
+#: Words of chat's intake's instruction alone: how a rule of the fake's finds the intake's requests.
+INTAKE = "you never judge it"
+
+
+def confirms(fake_provider: FakeProvider, repo: Path, head: str = "feature/payments", base: str = "main") -> None:
+    """Chat's intake confirms `head` against `base` in `repo`, by calling its tool, as a model does when asked."""
+    args = {"repo": str(repo), "base": base, "head": head}
+    fake_provider.calls_when(INTAKE, types.FunctionCall(name="inspect_repository", args=args))
+
+
+@pytest.fixture
+def asked(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, list[str]]]:
+    """Each request the fake was sent, in order: its instruction and the text of each turn, as the model read them,
+    after every plugin."""
+    sent: list[tuple[str, list[str]]] = []
+    answer = FakeModel.generate_content_async
+
+    async def recorded(self, llm_request: LlmRequest, stream: bool = False) -> AsyncGenerator[LlmResponse]:
+        turns = [part.text for content in llm_request.contents for part in content.parts or () if part.text]
+        sent.append((str(llm_request.config.system_instruction or ""), turns))
+        async for response in answer(self, llm_request, stream):
+            yield response
+
+    monkeypatch.setattr(FakeModel, "generate_content_async", recorded)
+    return sent

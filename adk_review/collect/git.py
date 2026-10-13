@@ -21,13 +21,15 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from ..core.blast import Blast, blast_radius
+from ..core.blast import Blast, Radius, blast_radius
 from ..core.rules import Tree
 from ..core.text import cut_at, lines_of, squash
 
 GIT_TIMEOUT_S = 30
-#: Every string the model reads is capped in characters, and the cut is named.
-DIFF_CAP_CHARS = 4_000
+#: Every string the model reads is capped in characters, and the cut is named. Measured live on Copilot at 4,000: a
+#: 7,529-character file's planted shell call went unread, a hole, and so did 3 of a 17-file change's files; at 16,000
+#: each was read, the call named in both runs, for a fifth more tokens.
+DIFF_CAP_CHARS = 16_000
 #: And the block of diffs the guidelines read, in all: a file past it is left out whole, and named. Measured with none,
 #: `--all` over 4,826 files gave each guideline and each verifier 14.9 MB; this repository's whole project, 275,688
 #: characters, was 80,000 tokens a guideline, answered on Copilot; the planted branch is 2,205.
@@ -774,9 +776,9 @@ def _fence(text: str) -> str:
     return "`" * max(3, 1 + max((len(run) for run in re.findall(r"`+", text)), default=0))
 
 
-def _hunks(diff: str) -> Iterator[list[tuple[int, str]]]:
+def _hunks(diff: str, aside: list[str] | None = None) -> Iterator[list[tuple[int, str]]]:
     """Each hunk of the diff, as `(new line number, line)` for every line inside it — added, removed or context,
-    marker kept.
+    marker kept — and every line no hunk holds into `aside`, where one is given.
 
     The one place unified-diff syntax is read. Git's file headers come before
     the first `@@`, and inside a hunk anything that is not a change or context
@@ -797,8 +799,20 @@ def _hunks(diff: str) -> Iterator[list[tuple[int, str]]]:
             if raw[:1] != "-":  # a removed line is not in the new file
                 new_line += 1
             hunk.append((new_line, raw))
+            continue
+        if aside is not None:
+            aside.append(raw)
     if hunk:
         yield hunk
+
+
+def _around_hunks(diff: str) -> list[str]:
+    """The lines of `diff` no hunk holds, as git printed them, and each hunk's header again without git's guess at the
+    function around it, which a quote may leave off."""
+    aside: list[str] = []
+    for _hunk in _hunks(diff, aside):  # read through for what it sets aside
+        pass
+    return aside + [line[: line.index(" @@", 2) + 3] for line in aside if _HUNK_START.match(line) and " @@ " in line]
 
 
 def _hunk_lines(diff: str) -> Iterator[tuple[int, str]]:
@@ -820,6 +834,17 @@ def quotable(diff: str) -> list[list[tuple[int, str]]]:
     return list(_hunks(diff))
 
 
+def framed(path: str, shown: str) -> tuple[str, list[str]]:
+    """A file's diff as each guideline reads it — under its heading, in a fence its own backticks cannot close — and
+    the lines it was framed in there: the heading, the fence, and what git and the cap wrote around and inside its
+    hunks. A guideline quotes a file as it was shown it, so grounding looks past these, and only these: measured by
+    review with a list of such lines kept by hand beside this rendering, a file with no final newline and a file cut at
+    the cap, each quoted whole, were dropped, git's `\\ No newline at end of file` and the cut's marker on no list."""
+    fence = _fence(shown)
+    heading, opening = f"### {squash(path)}", f"{fence}diff"
+    return f"{heading}\n{opening}\n{shown}\n{fence}", [heading, opening, *_around_hunks(shown), fence]
+
+
 def capped(diff: str, cap: int = DIFF_CAP_CHARS) -> tuple[str, bool]:
     """The diff as a model may read it: cut at the cap, with the cut named on a line of its own, and never inside a
     credential, as `cut_at` never cuts. The cut comes before the scrub, and half a credential no longer matches its
@@ -835,7 +860,8 @@ def collect_evidence(
     scope: Sequence[str] = (),
     *,
     staged: bool = False,
-    whole_head: bool = True,
+    tree_rules: bool = True,
+    radius: bool = True,
     diff_cap: int = DIFF_CAP_CHARS,
     skipped: Callable[[str], str | None] | None = None,
 ) -> dict:
@@ -864,14 +890,15 @@ def collect_evidence(
     resolved = preflight_staged(repo) if staged else preflight(repo, base, head)
     if resolved["status"] != "success":
         return resolved
-    return gather(resolved, scope, whole_head=whole_head, diff_cap=diff_cap, skipped=skipped)
+    return gather(resolved, scope, tree_rules=tree_rules, radius=radius, diff_cap=diff_cap, skipped=skipped)
 
 
 def gather(
     resolved: dict,
     scope: Sequence[str] = (),
     *,
-    whole_head: bool = True,
+    tree_rules: bool = True,
+    radius: bool = True,
     diff_cap: int = DIFF_CAP_CHARS,
     skipped: Callable[[str], str | None] | None = None,
 ) -> dict:
@@ -891,7 +918,15 @@ def gather(
                 diffs = list(pool.map(lambda entry: diff_of(resolved, entry["path"], entry.get("old", "")), entries))
         room, left_out, excluded = BLOCK_CAP_CHARS, 0, {}
         for entry, diff in zip(entries, diffs, strict=True):
-            file = {**entry, "diff": diff, "added": added_lines(diff), "quotable": [], "unread": "", "cut": False}
+            file = {
+                **entry,
+                "diff": diff,
+                "added": added_lines(diff),
+                "quotable": [],
+                "framing": [],
+                "unread": "",
+                "cut": False,
+            }
             files.append(file)
             # A file the operator's skip list names: the rules read it as any other, the guidelines are not shown it,
             # and it is named and counted, never a hole. The operator chose it, in the tool's own config: a branch
@@ -900,12 +935,12 @@ def gather(
                 excluded[entry["path"]] = glob
                 continue
             shown, cut = capped(diff, diff_cap)
-            block = f"### {squash(entry['path'])}\n{_fence(shown)}diff\n{shown}\n{_fence(shown)}"
+            block, framing = framed(entry["path"], shown)
             fits = len(block) <= room
             # The guidelines' limits alone: the rules read every added line.
             file.update(unread=unread(entry, diff, cut, fits, diff_cap), cut=cut or not fits)
             if fits:  # a file no guideline read, none may quote
-                file["quotable"] = quotable(shown)
+                file.update(quotable=quotable(shown), framing=framing)
                 blocks.append(block)
                 room -= len(block) + 2  # and the blank line joining it to the next
             else:
@@ -922,13 +957,20 @@ def gather(
     if not files:  # measured: a branch already merged, or a base equal to its head, approved a review of nothing
         return {"status": "error", "error_message": _nothing(head, base, scope if listed else ())}
     listing = head_listing(resolved)
-    # The head read whole, every Python file parsed, only for what reads it: a tree rule, the radius a guideline is
-    # shown. The changed files' own texts are read either way, for the file rules.
-    tree = tree_at_head(resolved, listing) if whole_head else None
+    # The head read whole, every Python file parsed, only for what reads it: a tree rule, or the radius a guideline
+    # is shown, which measures changed Python files alone. The changed files' own texts are read either way, for the
+    # file rules.
+    read = tree_rules or (radius and any(Radius(entry["path"]).measured for entry in files))
+    tree = tree_at_head(resolved, listing) if read else None
     read_texts(resolved, files, listing)
     for entry in files:  # the added lines' numbers, which the report reads after the rules have let the lines go
         entry["added_at"] = frozenset(number for number, _text in entry["added"] or ())
-    blast = radius_of(tree, files) if whole_head else Blast((), (), 0, asked=False)
+    if read:
+        blast = radius_of(tree, files)
+    elif radius:  # asked of files it does not measure, it names each one with no tree to read
+        blast = blast_radius({}, files)
+    else:
+        blast = Blast((), (), 0, asked=False)
     return {
         "status": "success",
         "preflight": resolved,

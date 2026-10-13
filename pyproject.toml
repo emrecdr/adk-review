@@ -32,6 +32,11 @@ dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
+# A test still running after five minutes prints every thread's stack and ends the run; the slowest takes seconds.
+# Measured: one full run stalled about half way, ten minutes and more, and never again in five; CI would have cancelled
+# it at its twenty-minute limit with nothing to read.
+faulthandler_timeout = 300
+faulthandler_exit_on_timeout = true
 testpaths = ["tests"]
 pythonpath = ["."]
 filterwarnings = [
@@ -65,3 +70,10 @@ ignore = ["SIM112", "PT018"]
 "scripts/make_demo_repo.py" = ["S607"]
 "scripts/measure.py" = ["S607"]
 "tests/*" = ["S607"]
+
+[tool.pyrefly]
+search-path = [".", "scripts"]
+
+[tool.pyright]
+extraPaths = ["scripts"]
+

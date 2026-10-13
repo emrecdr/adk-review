@@ -3,7 +3,8 @@
 In chat (`adk web`) an intake agent confirms the repository and the commits
 with the tools, the checks node gathers the change from that scope as the
 command does and runs the rules, the guidelines judge, and a verdict agent
-writes something readable. From the command (`review.py`) the driver has
+writes something readable. A turn whose intake confirms no scope ends at the
+intake's answer: a greeting, a question, a thanks after a review. From the command (`review.py`) the driver has
 already gathered the evidence in plain Python and seeded state with it, so the
 graph is the checks node, the guidelines and the join and nothing else: code,
 not a model, decides the verdict. The two shapes share that middle and differ
@@ -22,26 +23,59 @@ where it could not load.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from functools import partial
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from google.adk.agents import LlmAgent
 from google.adk.apps.app import App
+from google.adk.events import Event
 from google.adk.plugins.debug_logging_plugin import DebugLoggingPlugin
-from google.adk.workflow import JoinNode, Workflow
+from google.adk.workflow import FunctionNode, JoinNode, Workflow
 
 from ..collect.git import gather
 from ..core.findings import RANK, at_or_above
 from ..core.guidelines import Guideline
 from ..core.profiles import state_key
-from .agents import RULES, build_guideline, fenced, placeholder
+from .agents import REPOSITORY, RULES, SCOPE, build_guideline, fenced, placeholder
 from .catalog import Catalog
 from .checks import build_checks
 from .config import CONCURRENCY, build_model, request_config
-from .plugins import Progress, Recorder, RedactSecretsPlugin, ReportProviderErrors, UsageLedger
+from .plugins import (
+    OneTurn,
+    Progress,
+    Recorder,
+    RedactSecretsPlugin,
+    RefuseUnready,
+    ReportProviderErrors,
+    UsageLedger,
+)
 from .rule_helpers import matches
 from .tools import changed_files, inspect_repository, one_repository
 
+if TYPE_CHECKING:
+    from google.adk.agents.context import Context
+
 NAME = "adk_review"
+#: Chat's verdict agent: its name, and the key it writes the verdict under.
+VERDICT = "verdict"
+
+
+def _forget_scope(callback_context: Context) -> None:
+    """The intake's first step each turn: the scope a turn reviews is the one its own intake confirms. Measured before:
+    a scope stayed in the session, so every later turn, a "thanks!" among them, gathered and judged it again."""
+    callback_context.state[SCOPE] = None
+
+
+def _scoped(ctx: Context) -> Event:
+    """The gate after the intake: on to the checks when this turn's intake confirmed a scope, and the turn ends at the
+    intake's answer otherwise. Measured before: "hello" ran the graph through, and the verdict agent called its model to
+    report a review of nothing."""
+    return Event(route=bool(ctx.state.get(SCOPE)))
+
+
+def _asked() -> None:
+    """Where a turn with no scope ends: a node of its own, so ADK finds the gate's route taken and logs no warning."""
 
 
 def _intake() -> LlmAgent:
@@ -52,12 +86,15 @@ def _intake() -> LlmAgent:
         instruction=(
             "You confirm what a code review covers; you never judge it. You need the absolute path of a git "
             "repository, the base branch (assume 'main' if the person does not say) and the branch under "
-            "review; ask for anything missing.\n\n"
+            "review; ask for anything missing. The repository this conversation has confirmed, blank until one is: "
+            f"{placeholder(REPOSITORY, optional=True)}. When the person names only branches, that is the repository "
+            "they mean.\n\n"
             "Call inspect_repository, then changed_files. Your final reply is short: the repository, the base and "
             "the head, how many commits the head adds, and how many files the change touched. The review that "
             "follows reads the change itself. If a tool answers with an error, repeat its message and stop."
         ),
         tools=[inspect_repository, changed_files],
+        before_agent_callback=_forget_scope,
         before_tool_callback=[one_repository],
     )
 
@@ -72,7 +109,7 @@ def _verdict(guidelines: Sequence[Guideline], fail_on: str) -> LlmAgent:
     findings = f"{placeholder(RULES, optional=True)}\n\n{sections}"
     return LlmAgent(
         model=build_model(),
-        name="verdict",
+        name=VERDICT,
         description="Combines the rules' and the guidelines' findings into one readable verdict, for chat.",
         instruction=(
             "Rules and guidelines have judged one change. Write the verdict as markdown: a one-line verdict "
@@ -89,7 +126,7 @@ def _verdict(guidelines: Sequence[Guideline], fail_on: str) -> LlmAgent:
         ),
         include_contents="none",  # only the instruction, which carries every answer: the conversation would repeat them
         generate_content_config=request_config(),
-        output_key="verdict",
+        output_key=VERDICT,
     )
 
 
@@ -103,8 +140,7 @@ def skipped_by(globs: Sequence[str]) -> Callable[[str], str | None] | None:
 def gathering(diff_cap: int, skip: Sequence[str]) -> Callable[[dict], dict]:
     """How chat gathers the evidence for the scope its intake confirmed: the command's own gathering, under the
     config's cap and skip list, bound once where chat's policy is read, so no builder carries a setting of it."""
-    skipped = skipped_by(skip)
-    return lambda resolved: gather(resolved, diff_cap=diff_cap, skipped=skipped)
+    return partial(gather, diff_cap=diff_cap, skipped=skipped_by(skip))
 
 
 def _bar(fail_on: str) -> str:
@@ -121,19 +157,28 @@ def build_workflow(
     fail_on: str = "",
     gathered: Callable[[dict], dict] = gather,
 ) -> Workflow:
-    """The graph: intake → checks → guidelines → join → verdict for chat; checks → guidelines → join for the driver,
-    which seeds state itself. The checks node runs first in both, as the command always ran the rules: evidence and
-    rules, then judgement. `checks` is what the profile turns on; `evidence` is the command's, gathered before the
-    graph, and None in chat, where the node gathers its own; `fail_on` is chat's bar, `[review] fail_on`.
+    """The graph: intake → gate → checks → guidelines → join → verdict for chat, the gate going on only for a scope
+    this turn's intake confirmed; checks → guidelines → join for the driver, which seeds state itself. The checks node
+    runs first in both, as the command always ran the rules: evidence and rules, then judgement. `checks` is what the
+    profile turns on; `evidence` is the command's, gathered before the graph, and None in chat, where the node gathers
+    its own; `fail_on` is chat's bar, `[review] fail_on`.
 
     Agents are built per call: an agent object belongs to one parent. With no guideline the fan-out is left out and
     the graph runs and calls no model — measured: ADK refuses an empty fan-out.
     """
     agents = tuple(build_guideline(guideline) for guideline in checks.guidelines)
-    rules = build_checks(checks.rules, evidence, gathered)
+    # In chat, the head read whole only where the checks this graph runs read it, as the command reads it.
+    rules = build_checks(checks.rules, evidence, partial(gathered, **checks.head_reading()))
     middle = (rules, *((agents,) if agents else ()), JoinNode(name="join_guidelines"))
-    edge = ("START", _intake(), *middle, _verdict(checks.guidelines, fail_on)) if chat else ("START", *middle)
-    return Workflow(name=NAME, edges=[edge], max_concurrency=CONCURRENCY)
+    if not chat:
+        return Workflow(name=NAME, edges=[("START", *middle)], max_concurrency=CONCURRENCY)
+    gate, asked = FunctionNode(func=_scoped, name="scoped"), FunctionNode(func=_asked, name="asked")
+    edges = [
+        ("START", _intake(), gate),
+        (gate, {True: rules, False: asked}),
+        (*middle, _verdict(checks.guidelines, fail_on)),
+    ]
+    return Workflow(name=NAME, edges=edges, max_concurrency=CONCURRENCY)
 
 
 def build_app(
@@ -158,6 +203,10 @@ def build_app(
     debug = [DebugLoggingPlugin(output_path=debug_log, include_session_state=False)] if debug_log else []
     kept = [Recorder(Path(record).expanduser())] if record else []  # the same place: the model's own answers
     plugins = [
+        # Chat alone: the command asks before it builds anything, and stops at exit 2. First, so a call that cannot
+        # be made is neither logged nor counted. Then each judging agent's one turn, the command's, before the
+        # redaction, the log and the recorder, so each records the request as it is sent.
+        *([RefuseUnready(), OneTurn(frozenset({*named, VERDICT}))] if chat else []),
         RedactSecretsPlugin(),
         *debug,
         *kept,

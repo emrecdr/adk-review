@@ -6,7 +6,9 @@ what was removed and why. Nothing here calls a model or a process.
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Iterator
+import re
+import unicodedata
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 
@@ -59,8 +61,7 @@ def as_seen(text: str) -> str:
     verifier's choice compare each finding's quote with others on its file.
     """
     redacted, _count = scrub(text)
-    stripped = [line[1:] if line[:1] in "+- " else line for line in redacted.splitlines()]
-    return squash("\n".join(stripped))
+    return squash("\n".join(_unmarked(line) for line in redacted.splitlines()))
 
 
 @lru_cache(maxsize=512)
@@ -74,15 +75,39 @@ def seen_lines(text: str, markers: bool = True) -> tuple[str, ...]:
 
 
 def _flat(text: str, markers: bool = True) -> tuple[str, ...]:
-    """Each line of `text` with its diff marker gone and every space gone, blank lines left out; nothing redacted."""
-    lines = ("".join((line[1:] if markers and line[:1] in "+- " else line).split()) for line in text.splitlines())
+    """Each line of `text` with its diff marker gone, what no reader sees gone and every space gone, blank lines left
+    out; nothing redacted."""
+    lines = ("".join(_unmarked(line, markers).split()) for line in text.splitlines())
     return tuple(line for line in lines if line)
+
+
+def _unmarked(line: str, markers: bool = True) -> str:
+    """A line of a diff as a reader sees it, the fold and grounding alike: its marker gone where `markers` says so,
+    and what no reader sees gone."""
+    return _visible(line[1:] if markers and line[:1] in "+- " else line)
+
+
+#: The variation selectors, which pick a glyph's form and are no character a reader sees.
+_SELECTORS = frozenset((*range(0xFE00, 0xFE10), *range(0xE0100, 0xE01F0)))
+
+
+def _visible(text: str) -> str:
+    """`text` as a model can quote it, without what no reader sees: Unicode's format characters, the tag characters a
+    whole sentence can hide in among them, and the variation selectors. Measured live on Gemini: a payload in tag
+    characters left its comment quoted as `#`, and the quote of the shell call beside it dropped, the review a hole.
+    A text in ASCII alone, nearly every line of a diff, is passed over."""
+    if text.isascii():
+        return text
+    return "".join(ch for ch in text if unicodedata.category(ch) != "Cf" and ord(ch) not in _SELECTORS)
 
 
 def _whole_lines(quote: str, lines: tuple[str, ...]) -> Iterator[tuple[int, int]]:
     """Each place `quote` starts and ends as a run of consecutive `lines`, each whole: it starts where one begins and
-    ends where one ends."""
+    ends where one ends. Measured by review at the 16,000-character cap: a framed 100-line quote took 30 ms to place
+    with a run built from every line, and 6 ms with none built where the quote cannot start."""
     for start in range(len(lines)):
+        if not quote.startswith(lines[start]):  # no line is empty: a run from this one is never the quote
+            continue
         run, end = "", start
         for end in range(start, len(lines)):
             run += lines[end]
@@ -92,12 +117,44 @@ def _whole_lines(quote: str, lines: tuple[str, ...]) -> Iterator[tuple[int, int]
             yield start, end
 
 
+#: A fence a model wraps a quote in of its own accord, ```` ```python ```` or `~~~`, read as grounding reads a line:
+#: every space gone.
+_OWN_FENCE = re.compile(r"(?:`{3,}|~{3,}).*")
+
+
+def _quotes(evidence: str, around: Sequence[str]) -> set[str]:
+    """`evidence` each way grounding reads it, its lines joined with every space gone: as given, since a Markdown
+    file's diff holds fences and headings of its own; and without the lines its file was framed in as the guidelines
+    were shown it — `around`, wherever the quote carries one — nor a fence of the model's own at either end. Each read
+    with a line's leading `+`, `-` or space as a diff marker, and as the line's own text: measured, `- run: …` and
+    `++i;` quoted as the file has them lost their first character.
+
+    Measured live on Gemini: the injection on `sql-from-input` quoted inside its fence, the blocker dropped and the
+    review a hole where it should have stopped the change; on Copilot, 2 of 5 findings dropped quoted their lines under
+    the hunk's `@@` header. What is left must still be whole lines of the diff: the framing goes, and alone grounds
+    nothing, and only the file's own goes, never another file's heading."""
+    quotes = set()
+    for markers in (True, False):
+        lines = seen_lines(evidence, markers)
+        shown = set(seen_lines("\n".join(around), markers))
+        inside = [line for line in lines if line not in shown]
+        while inside and _OWN_FENCE.fullmatch(inside[0]):
+            del inside[0]
+        while inside and _OWN_FENCE.fullmatch(inside[-1]):
+            del inside[-1]
+        quotes |= {"".join(lines), "".join(inside)}
+    return quotes - {""}
+
+
 def drop_ungrounded(
-    review: Review, quotable: dict[str, list[list[tuple[int, str]]]]
-) -> tuple[list[Finding], list[Finding]]:
+    review: Review,
+    quotable: dict[str, list[list[tuple[int, str]]]],
+    framing: Mapping[str, Sequence[str]] | None = None,
+) -> tuple[list[tuple[Finding, Lines]], list[Finding]]:
     """Split findings into those that quote their own file's diff — whole lines, in order, as the guideline saw them,
-    whatever whitespace joined them — and the rest. `quotable` is each changed file's hunks, their lines numbered,
-    from `collect_evidence`.
+    whatever whitespace joined them — and the rest, each kept one with the lines the diff places it on. `quotable` is
+    each changed file's hunks, their lines numbered, and `framing` the lines each was framed in as the guidelines were
+    shown it, both from `collect_evidence`.
 
     Measured with the rule it replaced, a substring of the whole rendered
     block: a `### <path>` heading, the fence, a hunk header, git's
@@ -107,15 +164,22 @@ def drop_ungrounded(
     Measured live on both arms against the planted branch: every guideline quote
     is grounded by it. A kept finding's line is where its quote starts, read
     off the diff: measured live on Copilot, the guidelines named a wrong line for
-    4 of 5 findings.
+    4 of 5 findings. And its evidence is the lines its quote stands on, as the
+    file reads them, secrets redacted: measured by review, the same two lines
+    quoted plain and inside their fence under their `@@` header were two
+    fingerprints, and `--previous` named one finding resolved and new at once.
     """
-    kept: list[Finding] = []
+    kept: list[tuple[Finding, Lines]] = []
     dropped: list[Finding] = []
     for finding in review.findings:
-        if (where := where_quoted(finding, quotable)) is None:
+        if (placed := _placed(finding, quotable, framing)) is None:
             dropped.append(finding)
-        else:
-            kept.append(finding.model_copy(update={"file": meant(finding.file, quotable), "line": where[0]}))
+            continue
+        lines, stood = placed
+        update = {"file": meant(finding.file, quotable), "line": lines[0]}
+        if stood is not None:  # where the redaction joined lines, the model's quote is all there is
+            update["evidence"] = scrub(stood)[0]
+        kept.append((finding.model_copy(update=update), lines))
     return kept, dropped
 
 
@@ -127,40 +191,58 @@ def meant(path: str, quotable: dict[str, list[list[tuple[int, str]]]]) -> str:
     return path
 
 
-def where_quoted(finding: Finding, quotable: dict[str, list[list[tuple[int, str]]]]) -> Lines:
+def where_quoted(
+    finding: Finding,
+    quotable: dict[str, list[list[tuple[int, str]]]],
+    framing: Mapping[str, Sequence[str]] | None = None,
+) -> Lines:
+    """The first and last line of `finding`'s quote in its own file's diff, as `drop_ungrounded` places it."""
+    placed = _placed(finding, quotable, framing)
+    return None if placed is None else placed[0]
+
+
+def _placed(
+    finding: Finding,
+    quotable: dict[str, list[list[tuple[int, str]]]],
+    framing: Mapping[str, Sequence[str]] | None,
+) -> tuple[Lines, str | None] | None:
     """The first and last line of `finding`'s quote in its own file's diff, where it is whole lines of one hunk, in
-    order, as the guideline saw them; `(None, None)` where the redaction joined lines, so no line is named rather than a
-    wrong one; None where the diff does not bear the quote out.
+    order, as the guideline saw them, and those lines as the file reads them; `(None, None)` where the redaction joined
+    lines, so no line is named rather than a wrong one, and no text but the quote; None where the diff does not bear
+    the quote out.
 
     Each hunk is read three ways: as git prints it, as the new file reads it (its context and added lines) and as
     the old file read it (its context and removed lines). Measured before, the hunk as git prints it alone: a correct
     quote of the new code, running from a context line into a new one across a replaced line, was dropped, and as a
     blocker the run degraded. Never across two hunks: measured before, the last line of one hunk joined to the first
     of the next, twenty lines apart, grounded as one span, and a finding on the lines between folded into it."""
-    # Read both ways: measured, `- run: …` and `++i;` quoted as the file has them lost their first character.
-    quotes = {"".join(seen_lines(finding.evidence, markers)) for markers in (True, False)}
-    placed: list[tuple[int, int]] = []
+    path = meant(finding.file, quotable)
+    quotes = _quotes(finding.evidence, (framing or {}).get(path, ()))
+    placed: list[tuple[tuple[int, int], str]] = []
     joined = False
-    for hunk in quotable.get(meant(finding.file, quotable), []):
+    for hunk in quotable.get(path, []):
         for kept in ("+- ", "+ ", "- "):  # as git prints it, as the new file reads, as the old file read
             view = [(number, raw) for number, raw in hunk if raw[:1] in kept]
             lines = seen_lines("\n".join(raw for _number, raw in view))
             runs = {run for quote in quotes for run in _whole_lines(quote, lines)}
             if not runs:
                 continue
-            # Each seen line's number, counted unredacted: a redaction never adds or removes a line of its own. Where
-            # the redaction joined lines, a private key's block one line as the guideline saw it, the counts differ.
-            numbers = [number for number, raw in view for _line in _flat(raw)]
-            if len(numbers) != len(lines):
+            # Each seen line's number and the line of the view it is, counted unredacted: a redaction never adds or
+            # removes a line of its own. Where the redaction joined lines, a private key's block one line as the
+            # guideline saw it, the counts differ.
+            at = [(number, index) for index, (number, raw) in enumerate(view) for _line in _flat(raw)]
+            if len(at) != len(lines):
                 joined = True
                 continue
-            placed += [(numbers[start], numbers[end]) for start, end in runs]
+            for start, end in runs:
+                (first, since), (last, until) = at[start], at[end]
+                placed.append(((first, last), "\n".join(raw[1:] for _number, raw in view[since : until + 1])))
     if not placed:
-        return (None, None) if joined else None
+        return ((None, None), None) if joined else None
     # A short quote can stand in several places: measured by review, `return None` at lines 2 and 22, a guideline naming
     # 22 was placed at 2. The diff decides where a quote can stand; the guideline's line only picks among those places,
     # the first where it named none and on a tie.
-    return min(placed, key=lambda span: (abs(span[0] - finding.line) if finding.line else 0, span))
+    return min(placed, key=lambda place: (abs(place[0][0] - finding.line) if finding.line else 0, place))
 
 
 def _overlaps(x: str, x_lines: Lines, y: str, y_lines: Lines) -> bool:

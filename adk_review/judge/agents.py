@@ -27,12 +27,14 @@ from ..core.text import EVIDENCE_MAX_CHARS, cut_at, squash
 from .config import build_model, guideline_planner, request_config
 
 #: The state keys more than one module spells: the scope the intake's first tool confirms and the checks node gathers
-#: from; the change, which the command seeds and in chat the checks node writes; the blast radius beside it, which the
-#: checks node writes in both shapes; every rule's answer rendered for the chat's verdict, which it writes in chat; and
-#: the failure the error plugin leaves for the guidelines' guard. A misspelt placeholder reads as empty when it is
+#: from; the repository a conversation confirmed first, its only one, which the guard holds the tools to and the intake
+#: is told; the change, which the command seeds and in chat the checks node writes; the blast radius beside it, which
+#: the checks node writes in both shapes; every rule's answer rendered for the chat's verdict, which it writes in chat;
+#: and the failure the error plugin leaves for the guidelines' guard. A misspelt placeholder reads as empty when it is
 #: optional, as the radius is: the guidelines would judge without it and nothing would say so. A test holds every
 #: placeholder an instruction reads to a key something writes.
 SCOPE = "review_scope"
+REPOSITORY = "review_repo"
 DIFF = "diff"
 BLAST = "blast"
 RULES = "rules"
@@ -73,9 +75,10 @@ def without_evidence(callback_context: CallbackContext) -> types.Content | None:
     """A guideline judges evidence and does not run without it: skipped, answering its schema, when there is none.
 
     In chat the checks node gathers the change from the scope the intake
-    confirmed; when the intake's provider fails, the error plugin answers a
-    sentence in its place, leaves it under `temp:failure` for this invocation,
-    and the graph goes on to the guidelines. Measured with `{diff}` required: each raised
+    confirmed, and writes no change where it gathered none; when a provider
+    fails earlier in the turn — the intake's, after its tool confirmed the
+    scope — the error plugin answers a sentence in its place and leaves it
+    under `temp:failure` for this invocation. Measured with `{diff}` required: each raised
     `KeyError` — a traceback after all; and an optional `{diff?}` is the
     wrong fix, because a guideline run over nothing, or over an apology, answers
     "no findings", and "did not look" must never read as "found nothing".

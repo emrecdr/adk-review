@@ -11,6 +11,7 @@ secret shapes themselves live in `core/secrets.py`, shared with the rule.
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
@@ -27,6 +28,7 @@ from pydantic import BaseModel, ValidationError
 from ..core.secrets import scrub, scrub_value
 from ..core.text import REASON_MAX_CHARS, cut_at, squash
 from .agents import BOUNDARY, FAILURE, mismatch
+from .config import REQUEST_TIMEOUT_S, require_ready, said
 
 #: Room reserved for an answer on top of a request's own size, in tokens; a guideline's typed review is well under it.
 ANSWER_ALLOWANCE = 1_000
@@ -43,11 +45,14 @@ def describe(error: Exception) -> str:
     genai raises a `ClientError` whose `str` is the whole JSON body and whose
     `.message` is the sentence a person wants — "You exceeded your current
     quota … Please retry in 19s"; LiteLLM's errors carry `.status_code` and a
-    `.message` that begins with their own class name, dropped here so the
-    class is named once. One line, cut at `REASON_MAX_CHARS`, the cut named.
+    `.message` that wraps the provider's own; `config.said` reads both, the one
+    place that knows a provider's format. One line, cut at `REASON_MAX_CHARS`,
+    the cut named.
     """
     code = getattr(error, "code", None) or getattr(error, "status_code", None)
-    message = str(getattr(error, "message", None) or error).removeprefix(f"litellm.{type(error).__name__}: ")
+    message = said(error)
+    if not message.strip() and isinstance(error, TimeoutError):  # Gemini's past its deadline says nothing of itself
+        message = f"no answer within the call's deadline, {REQUEST_TIMEOUT_S:.0f} s"
     return cut_at(squash(f"{code}: {message}" if code else message), REASON_MAX_CHARS)
 
 
@@ -147,22 +152,82 @@ class ReportProviderErrors(BasePlugin):
     async def on_model_error_callback(
         self, *, callback_context: Any, llm_request: Any, error: Exception
     ) -> LlmResponse | None:
-        """Two answers. An agent that answers in a schema — a guideline — answers nothing: its key stays unwritten, a
-        hole the code that decides names and never approves over, where a review with no findings would read as an
-        approval. An agent that answers in prose — the intake or the verdict, in chat — answers the sentence, as an
-        agent's own hook did before, and leaves it under `temp:failure` for the guidelines' guard: ADK's invocation
-        lifetime, so a later turn starts clean. The schema is read off the request; an agent given tools beside an
-        `output_schema` gets a tool instead of a response schema on some models, and would count as prose."""
-        why = describe(error)
         status = getattr(error, "status", None)
         kind = status if isinstance(status, str) else type(error).__name__  # ADK's own rule for an error that escapes
-        if llm_request.config.response_schema is not None:
-            return LlmResponse(error_code=kind, error_message=why)
-        reason = f"{kind}: {why}"
-        callback_context.state[FAILURE] = f"{callback_context.agent_name}: {reason}"
-        return LlmResponse(
-            content=types.ModelContent(f"I could not reach the model: {reason}"), error_code=kind, error_message=why
-        )
+        return _failed(callback_context, llm_request, kind, describe(error))
+
+
+def _failed(callback_context: Any, llm_request: Any, kind: str, why: str) -> LlmResponse:
+    """A call that failed, or could not be made, answered in the model's place. Two answers. An agent that answers in
+    a schema — a guideline — answers nothing: its key stays unwritten, a hole the code that decides names and never
+    approves over, where a review with no findings would read as an approval. An agent that answers in prose — the
+    intake or the verdict, in chat — answers the sentence, as an agent's own hook did before, and leaves it under
+    `temp:failure` for the guidelines' guard: ADK's invocation lifetime, so a later turn starts clean. The schema is
+    read off the request; an agent given tools beside an `output_schema` gets a tool instead of a response schema on
+    some models, and would count as prose."""
+    if llm_request.config.response_schema is not None:
+        return LlmResponse(error_code=kind, error_message=why)
+    reason = f"{kind}: {why}"
+    callback_context.state[FAILURE] = f"{callback_context.agent_name}: {reason}"
+    return LlmResponse(
+        content=types.ModelContent(f"I could not reach the model: {reason}"), error_code=kind, error_message=why
+    )
+
+
+#: Why the arm cannot run this turn, "" where it can: ADK's `temp:` state, which lasts one turn and is never saved.
+NOT_READY = "temp:not_ready"
+
+
+class RefuseUnready(BasePlugin):
+    """Chat's readiness check, the one the command makes before it builds anything: while the arm cannot run, each
+    model call of a turn is answered with `require_ready`'s sentence in the call's place, as a provider's error is.
+
+    Measured by review: only the command asked. Chat on Copilot with no token
+    cached let LiteLLM start its own device login on the server's console —
+    three minutes of polling no one saw — and keep the token it got readable
+    by whoever can read its folder, where the login script keeps it to its
+    owner. Asked once a turn, so a login made meanwhile counts at the next, and
+    in a thread: the Gemini arm's answer can run gcloud or ask a metadata
+    server, and a client google-genai could not build, let go of where a loop
+    runs, schedules a close that fails on what it never made.
+    """
+
+    def __init__(self, name: str = "refuse_unready") -> None:
+        super().__init__(name=name)
+
+    @override
+    async def before_model_callback(self, *, callback_context: Any, llm_request: Any) -> LlmResponse | None:
+        if NOT_READY not in callback_context.state:
+            callback_context.state[NOT_READY] = await asyncio.to_thread(require_ready) or ""
+        why = callback_context.state[NOT_READY]
+        return _failed(callback_context, llm_request, "NOT_READY", why) if why else None
+
+
+#: The one turn a judging agent reads beside its instruction: the command's own, which starts its run.
+ONE_TURN = "review"
+
+
+class OneTurn(BasePlugin):
+    """Chat's judging agents read their instruction and one fixed turn, as the command's do: every untrusted text they
+    judge or report sits inside the instruction's fences, never in a turn of its own.
+
+    Measured before: ADK hands a node in a workflow its predecessor's output as
+    a user turn, and keeps the turn's other agents' replies as context, so
+    chat's verdict read every guideline's findings as raw JSON, the branch's
+    quoted lines among them, outside the fences its instruction holds them in,
+    and each guideline read the intake's reply. Set before the redaction, the
+    debug log and the recorder, so each records the request as it is sent.
+    """
+
+    def __init__(self, agents: frozenset[str], name: str = "one_turn") -> None:
+        super().__init__(name=name)
+        self.agents = agents
+
+    @override
+    async def before_model_callback(self, *, callback_context: Any, llm_request: Any) -> LlmResponse | None:
+        if callback_context.agent_name in self.agents:
+            llm_request.contents = [types.UserContent(ONE_TURN)]
+        return None
 
 
 #: A code fence around a whole structured reply, which ADK strips before it validates the reply.
@@ -284,10 +349,14 @@ class UsageLedger(BasePlugin):
 
     @staticmethod
     def _estimate(llm_request: Any) -> int:
-        """What a request will cost, before it is sent: its text over four, plus an answer's worth."""
+        """What a request will cost, before it is sent: its text over four, an answer's worth, and the thinking its
+        budget allows, which Gemini bills and the provider's total counts. Measured by review: without it, `default`'s
+        three guidelines in flight could pass the ceiling by about 7,000 tokens. A budget left to the model, -1, is
+        no number to reserve."""
         chars = len(str(llm_request.config.system_instruction or ""))
         chars += sum(len(part.text) for part in _text_parts(llm_request))
-        return chars // 4 + ANSWER_ALLOWANCE
+        thinking = getattr(llm_request.config.thinking_config, "thinking_budget", None) or 0
+        return chars // 4 + ANSWER_ALLOWANCE + max(thinking, 0)
 
     @override
     async def before_model_callback(self, *, callback_context: Any, llm_request: Any) -> LlmResponse | None:
