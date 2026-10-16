@@ -264,6 +264,30 @@ class TestTheTokenCeiling:
         assert await ledger.before_model_callback(callback_context=security, llm_request=plain) is None
 
     @pytest.mark.asyncio
+    async def test_in_chat_each_turn_has_the_whole_ceiling_and_the_command_one_for_its_run(self, monkeypatch) -> None:
+        """Measured by review: built once for the server's life, chat's ledger refused every turn past the ceiling's
+        worth, in any session, until a restart. A turn is chat's one review; the command's ceiling holds its run and its
+        verifiers' together."""
+        chat = load_agent(monkeypatch).app  # first: it imports the package afresh, the ledger's class with it
+        from google.adk.models.llm_request import LlmRequest
+        from google.adk.models.llm_response import LlmResponse
+        from google.genai import types
+
+        from adk_review.judge.plugins import UsageLedger
+
+        assert next(p for p in chat.plugins if isinstance(p, UsageLedger)).per_turn, "chat's ceiling is each turn's"
+        request = LlmRequest(config=types.GenerateContentConfig(system_instruction="x" * 400))
+        billed = LlmResponse(usage_metadata=types.GenerateContentResponseUsageMetadata(total_token_count=10_000))
+        for per_turn in (True, False):
+            ledger = UsageLedger(ceiling=UsageLedger._estimate(request) * 2, per_turn=per_turn)
+            intake = SimpleNamespace(agent_name="intake", state={})
+            assert await ledger.before_model_callback(callback_context=intake, llm_request=request) is None
+            await ledger.after_model_callback(callback_context=intake, llm_response=billed)
+            await ledger.before_run_callback(invocation_context=None)  # chat's next turn, or the verifiers' run
+            fits = await ledger.before_model_callback(callback_context=intake, llm_request=request) is None
+            assert fits is per_turn, "a turn starts afresh; a run and its verifiers share one ceiling"
+
+    @pytest.mark.asyncio
     async def test_a_prose_agent_the_ceiling_refuses_answers_why_as_a_provider_error_does(self) -> None:
         """Measured before: a chat turn whose intake the ceiling refused ended with no answer at all, where a provider's
         error answers its sentence and leaves it for the guidelines' guard. The ceiling's refusal answers the same way;

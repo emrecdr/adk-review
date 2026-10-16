@@ -148,7 +148,7 @@ shell wins over the file:
 | `GOOGLE_CLOUD_LOCATION` | Vertex AI's region. Blank: `global`. |
 | `GITHUB_COPILOT_TOKEN_DIR` | Where the Copilot login caches its token. Default: `~/.config/litellm/github_copilot`. |
 | `GITHUB_COPILOT_ACCESS_TOKEN_FILE` | The token's file in that folder. Default: `access-token`. |
-| `GITHUB_COPILOT_API_BASE` | A GitHub Enterprise tenant's own Copilot endpoint, which the report names beside the model. Blank: github.com's. |
+| `GITHUB_COPILOT_API_BASE` | A GitHub Enterprise tenant's own Copilot endpoint. Blank: github.com's. LiteLLM sends the calls to the endpoint the cached API key names before this one, and the report names the host they go to, never github.com's own. |
 
 Copilot and Gemini are both first-class arms; `copilot` is only the default. The Copilot arm needs a one-time
 `uv run python scripts/copilot_login.py`. A GitHub Enterprise tenant with its own endpoints sets them in
@@ -267,8 +267,8 @@ What the hook cannot see, or stops on:
 
 - pre-commit reads git's lines itself and hands its hook one ref: the first not deleted, passing over a new ref whose
   commits the remote already holds. A push of several refs is reviewed whole by git's own hook alone.
-- In a commit before the last, only a credential stops the push. What a merge's own resolution adds and a later
-  commit takes out is read in no commit, and a binary file only an earlier commit holds is read by no rule.
+- In a commit before the last, only a credential stops the push, or a binary file no rule can read, unless
+  `[review] skip` names it. What a merge's own resolution adds and a later commit takes out is read in no commit.
 - The remote's branches are as this clone last fetched them: one deleted or rewritten there still counts as held
   here, so fetch before a push that follows a rewrite, and let a fetch prune deleted ones (`git config fetch.prune
   true`). Pushed to a URL rather than a remote's name, no branch of it is known here, and a new ref is reviewed as a

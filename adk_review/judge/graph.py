@@ -200,7 +200,7 @@ def build_app(
         RedactSecretsPlugin(),
         *debug,
         *kept,
-        UsageLedger(ceiling=ceiling, named=named),
+        UsageLedger(ceiling=ceiling, named=named, per_turn=chat),
         ReportProviderErrors(),
         progress,
     ]

@@ -224,10 +224,10 @@ def pytest_configure() -> None:
 
 
 @pytest.fixture(autouse=True)
-def _nothing_from_the_shell(monkeypatch: pytest.MonkeyPatch) -> None:
+def _nothing_from_the_shell(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
     """No test inherits a provider, a model, a key or where an arm's calls go: a developer's `REVIEW_PROVIDER=copilot`,
     `REVIEW_VERIFIER_MODEL` or Vertex AI project would send it to a real one, or change what readiness says. Each test
-    sets what it runs on."""
+    sets what it runs on. Nor reads the developer's Copilot login: its folder is one no test made."""
     for name in [name for name in os.environ if name.startswith("REVIEW_")] + [
         "GOOGLE_GENAI_USE_ENTERPRISE",
         "GOOGLE_GENAI_USE_VERTEXAI",
@@ -237,8 +237,10 @@ def _nothing_from_the_shell(monkeypatch: pytest.MonkeyPatch) -> None:
         "GOOGLE_CLOUD_LOCATION",
         "GITHUB_COPILOT_API_BASE",
         "GITHUB_COPILOT_ACCESS_TOKEN_FILE",
+        "GITHUB_COPILOT_API_KEY_FILE",
     ]:
         monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", str(tmp_path_factory.getbasetemp() / "no-copilot-login"))
 
 
 @pytest.fixture(scope="session")

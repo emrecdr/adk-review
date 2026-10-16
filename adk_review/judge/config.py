@@ -107,9 +107,22 @@ def serving() -> str:
         # that went there.
         where = "Vertex AI" if is_enterprise_mode_enabled() else ""
     else:
-        base = os.environ.get("GITHUB_COPILOT_API_BASE", "").strip()
-        where = urlsplit(base).hostname or base
+        host = urlsplit(base := _copilot_api()).hostname or base
+        where = "" if host.endswith(".githubcopilot.com") else host  # github.com's own, an individual's or a business's
     return f"{model_name()} on {arm}" + (f" through {where}" if where else "")
+
+
+def _copilot_api() -> str:
+    """Where the Copilot arm's calls go, in LiteLLM 1.103.1's own order (`github_copilot/chat/transformation.py`): the
+    endpoint its cached API key was issued for, else `GITHUB_COPILOT_API_BASE`. Traced in its source by review: read
+    from the variable alone, the report could name a host the calls never reached, and named none for a tenant whose
+    key named its own. Of that file, which holds the key, only `endpoints.api` is read, and nothing else of it kept."""
+    issued = _copilot_dir() / os.environ.get("GITHUB_COPILOT_API_KEY_FILE", "api-key.json")
+    try:
+        endpoint = json.loads(issued.read_text(encoding="utf-8"))["endpoints"]["api"]
+    except (OSError, ValueError, KeyError, TypeError):  # none issued yet, or of another shape: LiteLLM reads on too
+        endpoint = ""
+    return str(endpoint or os.environ.get("GITHUB_COPILOT_API_BASE", "")).strip()
 
 
 def fallback_name() -> str:
@@ -208,8 +221,12 @@ def copilot_token() -> Path:
     The same two variables and defaults `scripts/copilot_login.py` reads; a
     copy rather than an import: the reviewer imports nothing from `scripts/`.
     """
-    token_dir = os.environ.get("GITHUB_COPILOT_TOKEN_DIR", "~/.config/litellm/github_copilot")
-    return Path(token_dir).expanduser() / os.environ.get("GITHUB_COPILOT_ACCESS_TOKEN_FILE", "access-token")
+    return _copilot_dir() / os.environ.get("GITHUB_COPILOT_ACCESS_TOKEN_FILE", "access-token")
+
+
+def _copilot_dir() -> Path:
+    """LiteLLM's Copilot folder, where the login keeps its token and LiteLLM the API key it is issued."""
+    return Path(os.environ.get("GITHUB_COPILOT_TOKEN_DIR", "~/.config/litellm/github_copilot")).expanduser()
 
 
 def require_ready(*, roles: tuple[str, ...] = ()) -> str | None:

@@ -313,10 +313,16 @@ class UsageLedger(BasePlugin):
     """
 
     def __init__(
-        self, name: str = "usage_ledger", ceiling: int | None = None, named: Mapping[str, str] | None = None
+        self,
+        name: str = "usage_ledger",
+        ceiling: int | None = None,
+        named: Mapping[str, str] | None = None,
+        per_turn: bool = False,
     ) -> None:
         super().__init__(name=name)
         self.ceiling = ceiling
+        #: Chat's: a turn is chat's one review, so its count starts afresh each turn, as each command's run does.
+        self.per_turn = per_turn
         #: An agent's name to the check id a row and the JSON use, as `Progress` holds it; a verifier keeps its own.
         self.named = dict(named or {})
         self.rows: dict[str, dict[str, int]] = {}
@@ -324,6 +330,15 @@ class UsageLedger(BasePlugin):
 
     def _row(self, context: Any) -> dict[str, int]:
         return self.rows.setdefault(context.agent_name, {"attempted": 0, "calls": 0, "tokens": 0})
+
+    @override
+    async def before_run_callback(self, *, invocation_context: Any) -> None:
+        """In chat, each turn counted afresh. Measured by review: built once for the server's life, the ledger refused
+        every turn past the ceiling's worth, in any session, until a restart. The command's ledger holds its run and
+        its verifiers' together, under the one `--max-tokens`."""
+        if self.per_turn:
+            self.rows.clear()
+            self.reserved.clear()
 
     @property
     def spent(self) -> int:

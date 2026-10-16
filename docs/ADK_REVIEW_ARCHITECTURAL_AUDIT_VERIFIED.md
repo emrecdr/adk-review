@@ -651,8 +651,17 @@ it: with the key kept in the session, the "thanks!" test fails again.
 
 **Not done:**
 - **Item 9 (NEW-7).** Measured on Copilot and not adopted; §4.7 has the numbers.
-- **A live `--verify` review on Gemini.** The free tier's daily requests were spent on the chat check. It is due after
-  the 09:00 CEST reset.
+- **A live `--verify` review on Gemini.** Not that day: the free tier's daily requests were spent on the chat check.
+  Run on 2026-10-17 instead, on the demo branch:
+  - The first run was a hole that was the provider's: one guideline met a 503 ("high demand"), and the retries and
+    three verifiers passed the free tier's five requests a minute. The verifiers' calls reached Google and came back
+    429, with no call failing on a closed loop.
+  - Rerun after a minute: all three guidelines and 8 of the 9 verifiers completed in the one loop, the ninth a 429.
+    Item 8 holds on Gemini.
+  - The same review on Copilot that day: three guidelines and four verifiers, all completed, exit 1.
+  - The rerun also dropped one finding as ungrounded: `guideline.tests` quoted the planted credential lines with the
+    placeholder `[REDACTED:secret_access_key]` where it had been shown `[REDACTED:aws_secret_access_key]`. Grounding
+    held the quote to what the model was shown; the commit before also drops it.
 - **The redundant `[tool.pyright]` section.** Kept: it is harmless, and the audit's author added it.
 
 ---

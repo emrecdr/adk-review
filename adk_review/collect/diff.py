@@ -134,12 +134,34 @@ def capped(diff: str, cap: int = DIFF_CAP_CHARS) -> tuple[str, bool]:
 
 def file_added(diff: str) -> dict | None:
     """One file's part of a commit's patch as `{"path", "added"}`, or None where it adds no line: a deleted file, a
-    binary one, a rename or a mode alone. The path is the new one, as its `+++` line spells it, quoted or not."""
+    rename or a mode alone. The path is the new one, as its `+++` line spells it, quoted or not. A binary file it
+    writes is `{"path", "added": [], "binary": True}`: no line of it can be read, and the history holding it is pushed
+    all the same. Measured by review: a key store one commit added and the next took out passed the pre-push hook
+    unnamed, where the same file in the change was a hole."""
+    if (written := _binary_written(header(diff))) is not None:
+        return {"path": written, "added": [], "binary": True}
     to = next((line[4:] for line in header(diff).split("\n") if line.startswith("+++ ")), "/dev/null")
     added = added_lines(diff)
     if to == "/dev/null" or not added:
         return None
     return {"path": _unquoted(to.removesuffix("\t")).removeprefix("b/"), "added": added}
+
+
+def _binary_written(top: str) -> str | None:
+    """The path a binary file's header says its patch writes, or None: no binary file, or one deleted. Git writes no
+    `+++` line for one, only `Binary files <was> and <is> differ`: <is> follows `/dev/null and ` for a file added, the
+    path `rename to` names for one moved, and else is the line's latter half, an unmoved file named alike on both
+    sides."""
+    lines = top.split("\n")
+    said = next((line for line in lines if BINARY.fullmatch(line)), None)
+    if said is None or said.endswith(" and /dev/null differ"):
+        return None
+    if moved := next((line.removeprefix("rename to ") for line in lines if line.startswith("rename to ")), None):
+        return _unquoted(moved)
+    sides = said.removeprefix("Binary files ").removesuffix(" differ")
+    added = sides.startswith("/dev/null and ")
+    spelled = sides.removeprefix("/dev/null and ") if added else sides[(len(sides) + len(" and ")) // 2 :]
+    return _unquoted(spelled).removeprefix("b/")
 
 
 def _unquoted(spelled: str) -> str:

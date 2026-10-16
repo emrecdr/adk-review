@@ -4,6 +4,7 @@ what was never gathered."""
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import subprocess
 import sys
@@ -289,17 +290,26 @@ def test_a_misspelt_provider_is_a_sentence_and_exit_2_from_every_command() -> No
     assert "Traceback" not in done.stderr, done.stderr[-400:]
 
 
-def test_the_report_names_the_model_that_ran(monkeypatch) -> None:
+def test_the_report_names_the_model_that_ran(monkeypatch, tmp_path: Path) -> None:
     """Every entry point lets the shell's variables win over `.env`, so a stale export picks the arm or the model
     unseen: the report names both, and Vertex AI when the environment sends the Gemini arm there. Measured by review:
     a GitHub Enterprise tenant's own Copilot endpoint went unnamed, in the report and in the cache's key, which reads
-    this line, so one tenant's review was served for another's."""
+    this line, so one tenant's review was served for another's. And traced in LiteLLM's source: the calls go where the
+    cached API key's endpoint says before the variable, so the report reads the two in that order."""
     load_agent(monkeypatch)
     config = importlib.import_module(judge_module("config"))
     monkeypatch.setenv("REVIEW_PROVIDER", "copilot")
     assert config.serving() == "fake on copilot"
     monkeypatch.setenv("GITHUB_COPILOT_API_BASE", "https://copilot-api.my-company.ghe.com")
     assert config.serving() == "fake on copilot through copilot-api.my-company.ghe.com"
+    _cached_copilot_token(monkeypatch, tmp_path)
+    issued = tmp_path / "api-key.json"
+    for endpoint, said in (
+        ("api.individual.githubcopilot.com", "fake on copilot"),  # github.com's own, the variable's tenant passed over
+        ("copilot-api.other.ghe.com", "fake on copilot through copilot-api.other.ghe.com"),
+    ):
+        issued.write_text(json.dumps({"token": "a key", "endpoints": {"api": f"https://{endpoint}"}}), encoding="utf-8")
+        assert config.serving() == said, "the cached key's endpoint before the variable, as LiteLLM reads them"
     monkeypatch.setenv("REVIEW_PROVIDER", "gemini")
     assert config.serving() == "fake on gemini"
     monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
@@ -814,6 +824,22 @@ def test_the_pre_push_hook_reads_each_commit_a_push_sends_for_credentials(tmp_pa
     _git_in(work, "merge", "-q", "--no-ff", "--no-edit", "f3")
     assert pushed("main", _git_in(work, "rev-parse", "origin/main")) == 0, "a branch it held, merged into main"
     assert capsys.readouterr() == ("", "")
+
+
+def test_a_binary_file_one_commit_adds_and_a_later_takes_out_stops_the_push(tmp_path) -> None:
+    """Measured by review: a key store one commit added and the next took out passed the hook unnamed, where the same
+    file in the change was a hole. An image the skip list names passes, as it does in a review of the change."""
+    push = importlib.import_module("adk_review.push")
+    _remote, work = _pushed_from(tmp_path)
+    _committed(work, "a.py")
+    _git_in(work, "push", "-q", "origin", "main")
+    _git_in(work, "checkout", "-q", "-b", "undone")
+    stored = _committed(work, "prod.p12", b"\x00\x01keystore\x00" * 64, "add a key store")
+    _committed(work, "logo.png", b"\x89PNG\x00" * 64, "add a logo")
+    _git_in(work, "rm", "-q", "prod.p12", "logo.png")
+    _git_in(work, "commit", "-qm", "take them out")
+    found = push.in_history(str(work), "origin", "HEAD", None, [])
+    assert found == [f"{push._named(stored)}, prod.p12: a binary file, which no rule can read"], found
 
 
 def test_the_history_a_push_sends_is_read_with_the_push_history_profile(tmp_path, monkeypatch) -> None:

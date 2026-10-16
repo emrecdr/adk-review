@@ -44,6 +44,7 @@ from .core.text import lines_of
 from .core.verdict import EXIT_INTERRUPTED, EXIT_USAGE
 from .deliver.report import safe_line
 from .judge.catalog import CONFIG, catalog, load_config, select
+from .judge.rule_helpers import matches
 from .review import main as review
 from .review import settle
 
@@ -130,11 +131,11 @@ def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, s
     return stopped
 
 
-def history_rules() -> tuple[AnyRule, ...]:
+def history_rules(config: dict | None = None) -> tuple[AnyRule, ...]:
     """The rules `push-history` names, as the review finds and holds them, at or past the review's bar. A commit is
     read line by line and by code alone: a file or tree rule, or a guideline, is `ValueError`, refused rather than
-    passed over."""
-    config = load_config(CONFIG)
+    passed over. `config` is `config.toml` read, where the caller has read it."""
+    config = config or load_config(CONFIG)
     chosen = select(catalog(), config["profiles"], HISTORY)
     wider = [rule.check_id for rule in chosen.rules if rule.kind != "line"] + [g.check_id for g in chosen.guidelines]
     if wider:
@@ -146,12 +147,17 @@ def history_rules() -> tuple[AnyRule, ...]:
 def in_history(repository: str, remote: str | None, head: str, held: str | None, read: Sequence[str]) -> list[str]:
     """Each place the history rules find in the commits a push of `head` sends — the lines each adds, what each says,
     and what a pushed tag says — named by its commit, none that a head in `read`, read already, reaches; a rule that
-    could not look is named the same way, a hole."""
-    rules = history_rules()  # first: a profile that cannot read a commit is refused before git runs
+    could not look is named the same way, a hole, and so is a binary file a commit writes, which no rule can read,
+    unless the operator's skip list names it, as a review of the change names one."""
+    config = load_config(CONFIG)
+    rules = history_rules(config)  # first: a profile that cannot read a commit is refused before git runs
+    skip = config["review"]["skip"]
     tag = tag_message(repository, head)
     said = [(head, tag, [])] if tag is not None else []  # a tag's words are in no commit
     found = []
     for commit, message, files in itertools.chain(said, sent(repository, remote, head, held, read)):
+        unread = [f["path"] for f in files if f.get("binary") and not matches(f["path"], *skip)]
+        found += [f"{_named(commit)}, {path}: a binary file, which no rule can read" for path in unread]
         entries = [{"path": MESSAGE, "added": list(enumerate(lines_of(message), 1))}, *files]
         for rule in rules:
             answer = run_rule(rule, entries, None)
@@ -232,7 +238,7 @@ def _passes(repository: str, remote: str | None, head: str, held: str | None, do
         return False
     done.heads.append(head)
     if found:
-        _say(f"the history {_named(head)} sends holds a credential, read commit by commit:")
+        _say(f"the history {_named(head)} sends holds a credential, or a file no rule can read, commit by commit:")
         for place in found:
             _say(place, lead="  ")
         _say(
