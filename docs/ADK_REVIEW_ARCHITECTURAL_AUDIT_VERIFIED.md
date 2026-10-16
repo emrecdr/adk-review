@@ -661,7 +661,9 @@ it: with the key kept in the session, the "thanks!" test fails again.
   - The same review on Copilot that day: three guidelines and four verifiers, all completed, exit 1.
   - The rerun also dropped one finding as ungrounded: `guideline.tests` quoted the planted credential lines with the
     placeholder `[REDACTED:secret_access_key]` where it had been shown `[REDACTED:aws_secret_access_key]`. Grounding
-    held the quote to what the model was shown; the commit before also drops it.
+    held the quote to what the model was shown; the commit before also drops it. Since then any placeholder stands
+    for any other in grounding, and that quote grounds; three recorded Copilot reviews regrounded the same, finding
+    for finding.
 - **The redundant `[tool.pyright]` section.** Kept: it is harmless, and the audit's author added it.
 
 ---

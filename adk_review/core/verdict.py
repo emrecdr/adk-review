@@ -64,14 +64,21 @@ def as_seen(text: str) -> str:
     return squash("\n".join(_unmarked(line) for line in redacted.splitlines()))
 
 
+#: A redaction's placeholder, its label or none: to grounding one stand-in, since the label is the scrubber's, never
+#: the code's. Measured live on Gemini: shown `[REDACTED:aws_secret_access_key]`, a guideline quoted the key's lines
+#: with `[REDACTED:secret_access_key]`, and its finding dropped, the review a hole.
+_PLACEHOLDER = re.compile(r"\[REDACTED(?::[^\]\n]*)?\]")
+
+
 @lru_cache(maxsize=512)
 def seen_lines(text: str, markers: bool = True) -> tuple[str, ...]:
-    """`as_seen` line by line, with every space gone rather than flattened: secrets redacted, a diff marker gone,
-    blank lines left out. Measured on Gemini: a guideline quoted three whole lines with the breaks between them lost,
-    joined by a space or by nothing, so where a line ends is read off the file, never off the quote. `markers`
-    off keeps a line's leading `+` or `-`: in a quote it may be the line's own text, a YAML item's dash."""
+    """`as_seen` line by line, with every space gone rather than flattened: secrets redacted, each placeholder one,
+    a diff marker gone, blank lines left out. Measured on Gemini: a guideline quoted three whole lines with the breaks
+    between them lost, joined by a space or by nothing, so where a line ends is read off the file, never off the
+    quote. `markers` off keeps a line's leading `+` or `-`: in a quote it may be the line's own text, a YAML item's
+    dash."""
     redacted, _count = scrub(text)
-    return _flat(redacted, markers)
+    return _flat(_PLACEHOLDER.sub("[REDACTED]", redacted), markers)
 
 
 def _flat(text: str, markers: bool = True) -> tuple[str, ...]:

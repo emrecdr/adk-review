@@ -570,8 +570,10 @@ To review each push before it leaves a developer's machine, see "Before a push" 
   where `python -O` strips it, and minor in a test, where it is how pytest checks. Without ruff, or with one that
   fails, the rule did not look and says so, exit 3.
 - **Grounding.** A guideline's finding must quote, verbatim, whole lines of its own file's diff, within one hunk, as
-  the guideline saw them: secrets redacted, diff markers gone, whitespace not counted. Each hunk is read as git
-  prints it, as the new file reads and as the old file read. A finding's line is read off the diff, never taken from
+  the guideline saw them: secrets redacted, diff markers gone, whitespace not counted. A redaction's placeholder
+  stands for any other, its label the scrubber's and never the code's: measured live on Gemini, a guideline quoted
+  the planted key's lines with the label renamed, and the finding dropped. Each hunk is read as git prints it, as the
+  new file reads and as the old file read. A finding's line is read off the diff, never taken from
   the model: measured on Copilot, the guidelines named a wrong line for 4 of 5 findings. A finding at the bar whose
   quote the diff does not bear out is a hole, since a real blocker dropped would approve. A quote carrying the framing
   its file was shown in — the heading, the fence, git's header lines and each hunk's `@@`, git's

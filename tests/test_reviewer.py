@@ -542,6 +542,16 @@ class TestWhatGroundingKeeps:
         assert not dropped and [f.evidence for f, _at in kept] == [lines] * len(quotes)
         assert len({fingerprint(rule.Sourced("guideline.security", f, at)) for f, at in kept}) == 1
 
+    def test_a_quote_that_renames_a_redactions_placeholder_still_grounds(self) -> None:
+        """Measured live on Gemini: shown `[REDACTED:aws_secret_access_key]`, a guideline quoted the planted key's two
+        lines with `[REDACTED:secret_access_key]`, and the finding dropped, the review a hole. The label is the
+        scrubber's, never the code's: any placeholder stands for any other. Where the diff holds plain text, a
+        placeholder quoted in its place is no quote of it."""
+        key = 'AWS_SECRET_ACCESS_KEY = "' + "aB3dE5gH7j" * 4 + '"'
+        assert _grounds([f"+{key}"], 'AWS_SECRET_ACCESS_KEY = "[REDACTED:secret_access_key]"')
+        assert _grounds([f"+{key}"], 'AWS_SECRET_ACCESS_KEY = "[REDACTED]"')
+        assert not _grounds(['+name = "alice"'], 'name = "[REDACTED:name]"'), "plain text is no placeholder"
+
     def test_a_quote_without_what_no_reader_sees_grounds(self) -> None:
         """Measured live on Gemini: beside the injection suite's payload in tag characters, the guidelines quoted the
         comment that holds it as `#` and the shell call under it, both dropped, and the review was a hole where it had
