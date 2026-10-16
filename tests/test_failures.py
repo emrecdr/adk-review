@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import litellm
 import pytest
 from conftest import (
+    INTAKE,
     QUOTA_TEXT,
     REVIEW_REQUEST,
     ROOT,
@@ -62,7 +63,7 @@ async def test_when_the_intake_fails_the_turn_ends_at_its_error_and_nothing_is_j
     never read as "found nothing". Measured before the gate: the graph went on, each guideline answered that nothing
     was gathered, and the verdict agent called its model to report it; the turn now ends at the intake's error."""
     module = load_agent(monkeypatch)
-    fake_provider.raises_when("you never judge it", quota())  # the intake's words
+    fake_provider.raises_when(INTAKE, quota())
     final, state = await run_turn(module, REVIEW_REQUEST)
     assert QUOTA_TEXT in final, final
     assert not _guidelines(state) and "verdict" not in state, "nothing judged, and no verdict on nothing"

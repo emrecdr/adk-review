@@ -149,7 +149,7 @@ def _quotes(evidence: str, around: Sequence[str]) -> set[str]:
 def drop_ungrounded(
     review: Review,
     quotable: dict[str, list[list[tuple[int, str]]]],
-    framing: Mapping[str, Sequence[str]] | None = None,
+    framing: Mapping[str, Sequence[str]],
 ) -> tuple[list[tuple[Finding, Lines]], list[Finding]]:
     """Split findings into those that quote their own file's diff — whole lines, in order, as the guideline saw them,
     whatever whitespace joined them — and the rest, each kept one with the lines the diff places it on. `quotable` is
@@ -191,20 +191,10 @@ def meant(path: str, quotable: dict[str, list[list[tuple[int, str]]]]) -> str:
     return path
 
 
-def where_quoted(
-    finding: Finding,
-    quotable: dict[str, list[list[tuple[int, str]]]],
-    framing: Mapping[str, Sequence[str]] | None = None,
-) -> Lines:
-    """The first and last line of `finding`'s quote in its own file's diff, as `drop_ungrounded` places it."""
-    placed = _placed(finding, quotable, framing)
-    return None if placed is None else placed[0]
-
-
 def _placed(
     finding: Finding,
     quotable: dict[str, list[list[tuple[int, str]]]],
-    framing: Mapping[str, Sequence[str]] | None,
+    framing: Mapping[str, Sequence[str]],
 ) -> tuple[Lines, str | None] | None:
     """The first and last line of `finding`'s quote in its own file's diff, where it is whole lines of one hunk, in
     order, as the guideline saw them, and those lines as the file reads them; `(None, None)` where the redaction joined
@@ -217,7 +207,7 @@ def _placed(
     blocker the run degraded. Never across two hunks: measured before, the last line of one hunk joined to the first
     of the next, twenty lines apart, grounded as one span, and a finding on the lines between folded into it."""
     path = meant(finding.file, quotable)
-    quotes = _quotes(finding.evidence, (framing or {}).get(path, ()))
+    quotes = _quotes(finding.evidence, framing.get(path, ()))
     placed: list[tuple[tuple[int, int], str]] = []
     joined = False
     for hunk in quotable.get(path, []):

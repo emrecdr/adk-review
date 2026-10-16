@@ -85,8 +85,8 @@ applyTo: "adk_review/**"
   agent and, at a terminal or with `--progress`, tells each guideline's start and finish on stderr; the first plugin
   to answer short-circuits the rest. Chat puts `RefuseUnready` and `OneTurn` first: each judging agent reads its
   instruction and one fixed turn, never a turn ADK would make of another agent's output.
-- In chat the intake clears the last scope at each turn's start and a gate after it goes on only for a scope that
-  turn confirmed; the intake is told the repository its conversation confirmed (`{review_repo?}`).
+- In chat the scope is a `temp:` key, which ADK keeps for one turn, and a gate after the intake goes on only for a
+  scope that turn confirmed; the intake is told the repository its conversation confirmed (`{review_repo?}`).
 - Under `--all` the report adds a Health section, `core/health.py`: what was read, the source and the tests apart,
   McCabe complexity as ruff's C901 counts it (a nested function on its own) in the SIG bands, maintainability graded
   A to E by SIG's published risk-profile rating only where ten or more source files parsed and nine in ten of those

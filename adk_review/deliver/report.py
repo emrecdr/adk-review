@@ -36,7 +36,7 @@ def one_line(text: str) -> str:
     holding a newline forged a second `## Verdict` heading, a newline in a
     suggestion forged a bullet, and `ESC[2J` cleared the terminal. A credential
     in it is hidden too: the report never prints one. Presentation
-    only: grounding (`core.verdict.where_quoted`) reads a quote its own way, so
+    only: grounding (`core.verdict.drop_ungrounded`) reads a quote its own way, so
     what counts as grounded cannot move when the report's safety rule does.
     """
     return squash(_CONTROL.sub(" ", scrub(text)[0]))

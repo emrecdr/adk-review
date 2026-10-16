@@ -27,13 +27,14 @@ from ..core.text import EVIDENCE_MAX_CHARS, cut_at, squash
 from .config import build_model, guideline_planner, request_config
 
 #: The state keys more than one module spells: the scope the intake's first tool confirms and the checks node gathers
-#: from; the repository a conversation confirmed first, its only one, which the guard holds the tools to and the intake
-#: is told; the change, which the command seeds and in chat the checks node writes; the blast radius beside it, which
-#: the checks node writes in both shapes; every rule's answer rendered for the chat's verdict, which it writes in chat;
-#: and the failure the error plugin leaves for the guidelines' guard. A misspelt placeholder reads as empty when it is
-#: optional, as the radius is: the guidelines would judge without it and nothing would say so. A test holds every
-#: placeholder an instruction reads to a key something writes.
-SCOPE = "review_scope"
+#: from, `temp:` so it lasts only the turn that confirmed it; the repository a conversation confirmed first, its only
+#: one, which the guard holds the tools to and the intake is told; the change, which the command seeds and in chat the
+#: checks node writes; the blast radius beside it, which the checks node writes in both shapes; every rule's answer
+#: rendered for the chat's verdict, which it writes in chat; and the failure the error plugin leaves for the guidelines'
+#: guard. A misspelt placeholder reads as empty when it is optional, as the radius is: the guidelines would judge
+#: without it and nothing would say so. A test holds every placeholder an instruction reads to a key something writes.
+#: Measured with the scope kept in the session: every later turn, a "thanks!" among them, gathered and judged it again.
+SCOPE = "temp:review_scope"
 REPOSITORY = "review_repo"
 DIFF = "diff"
 BLAST = "blast"

@@ -68,7 +68,7 @@ def _run(
         argv += ["--select", ",".join(select), *(["--ignore", ",".join(ignore)] if ignore else [])]
         argv += ["--line-length", str(line_length)] if line_length else []
         argv += ["--output-format", "json", *targets]
-        return _parsed(_ruff(argv, tmp), list(texts), sources)
+        return _parsed(_ruff(argv, tmp), sources)
 
 
 def _laid_out(folder: str, texts: dict[str, str]) -> tuple[list[str], dict[str, list[str]]]:
@@ -112,15 +112,17 @@ def _ruff(argv: list[str], cwd: str) -> str:
     return done.stdout
 
 
-def _parsed(stdout: str, paths: list[str], sources: dict[str, list[str]]) -> dict[str, list[Diagnostic]]:
-    """Ruff's JSON read back: each hit under the path whose index names its folder, with the line it names as the
-    file holds it; `ValueError`, `KeyError` or `TypeError` for an answer of another shape."""
+def _parsed(stdout: str, sources: dict[str, list[str]]) -> dict[str, list[Diagnostic]]:
+    """Ruff's JSON read back: each hit under the path whose index names its folder, `sources` in the order `_laid_out`
+    numbered them, with the line it names as the file holds it; `ValueError`, `KeyError` or `TypeError` for an answer
+    of another shape."""
+    paths = list(sources)
     found: dict[str, list[Diagnostic]] = {}
     for hit in json.loads(stdout):
         path = paths[int(PurePath(hit["filename"]).parts[-2])]  # `<index>/<name>`, however ruff spells the root
         row = hit["location"]["row"]
         code = hit["code"] or "invalid-syntax"  # ruff 0.12.0 to 0.12.7 name a file that does not parse with null
-        lines = sources.get(path, [])
+        lines = sources[path]
         line = lines[row - 1] if 0 < row <= len(lines) else ""
         offered = hit.get("fix") or {}
         fix, label = offered.get("message"), offered.get("applicability")

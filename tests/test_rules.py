@@ -415,7 +415,7 @@ class TestTheLintRule:
             {"filename": "/x/1/module.py", "location": {"row": 2}, "code": "F401", "message": "unused", "fix": None},
             {"filename": "0/__init__.py", "location": {"row": 9}, "code": None, "message": "parse", "fix": None},
         ]
-        found = ruff._parsed(json.dumps(hits), ["pkg/__init__.py", "app.py"], {"app.py": ["", "import os"]})
+        found = ruff._parsed(json.dumps(hits), {"pkg/__init__.py": [], "app.py": ["", "import os"]})
         ((one,), (two,)) = found["app.py"], found["pkg/__init__.py"]
         assert (one.line, one.source, one.code) == (2, "import os", "F401"), one
         assert (two.line, two.source, two.code) == (9, "", "invalid-syntax"), two

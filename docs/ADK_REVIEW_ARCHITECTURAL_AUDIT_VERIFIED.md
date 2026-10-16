@@ -18,9 +18,14 @@ ends with one plan of verified changes.
   - A whole-tree review was timed and profiled on a 723-file repository.
   - Pyrefly 1.3.2 and Pyright ran on a two-file reproduction.
   - External claims were checked on the web, from primary sources, cited where used.
-- **What was not done:**
+- **What the verification did not do:**
   - No live model call was made.
   - No source file was changed: only this report was added.
+  - The live measurement in §4.7 and the implementation in §6 came after it, on the branch
+    `hardening-from-the-audits`.
+- **Line numbers** in the project's files are the branch's as committed, so each can be opened. §3 and §4 describe
+  the code as it was verified, before the fixes, and §6 says what each fix changed. A library's line numbers are its
+  installed version's, above.
 
 ---
 
@@ -40,7 +45,9 @@ ends with one plan of verified changes.
 | LLM-01 | Add Anthropic, OpenAI and Ollama arms | Fact correct; **not recommended** | P2 → declined | It conflicts with the stated direction: Copilot and Gemini first-class, each change measured on both. |
 | PERF-01 | Process-pool AST health scan | **Refuted** (measured) | P2 → none | Health took 0.30 s of a 4 s whole-tree review over 723 files and 6.3 MB. A pool costs more than it saves. |
 | LLM-02 | Give verifiers only their file's diff | Cost arithmetic right; **the recommendation is refuted** | P2 → declined | It reverses a documented design decision. Less context means more refutations, and a refuted finding is dropped. A cheaper option without that risk is a candidate (§4.7). |
-| DEV-01 | Type-checker search paths for `scripts/` | **Partly confirmed**; already applied | P1 → P3 | Pyrefly needs `search-path` (run). Pyright resolves sibling imports with no config (run). Both sections are already in the uncommitted `pyproject.toml`. |
+| DEV-01 | Type-checker search paths for `scripts/` | **Partly confirmed**; already applied | P1 → P3 | Pyrefly needs `search-path` (run). Pyright resolves sibling imports with no config (run). Both sections were already in `pyproject.toml`, then uncommitted. |
+
+The audit gave its §5.5 no ID; LLM-02 is this report's name for it.
 
 **New findings from the verification** (§4), each reproduced offline:
 
@@ -63,16 +70,18 @@ The audit's description of the system holds. Each claim was checked:
 - **Layering**: `core` → `collect` → `judge` → `deliver`, held by `tests/test_layering.py`. Holds.
 - **Core**: `core/`, the checks and `rule_helpers/` import no network, subprocess, `os` or `asyncio`. Holds.
 - **Git**: read-only verbs and the sanitised `GIT_CONFIG_COUNT` environment. Holds.
-  - On Windows a timeout kills the whole process tree with `taskkill /F /T` (`collect/git.py:123`).
-  - The model chooses the branch names, and they reach git only behind `--end-of-options` (`collect/git.py:181`).
+  - On Windows a timeout kills the whole process tree with `taskkill /F /T` (`collect/git.py:131`).
+  - The model chooses the branch names, and they reach git only behind `--end-of-options` (`collect/git.py:189`).
 - **Grounding**: every guideline finding's quote is checked against the diff. Holds, and is now stricter: a quote must
   read in the framing each file was actually shown in.
 
 **Corrections:**
-- The suite now has 504 passing tests, not 500.
-- Several line numbers have moved: `review.py:582` is now `:581`, and `:773` is now `:771`.
-- The audit's `docs/` file itself fails `ruff format --check .`, the `make lint` gate: ruff 0.16 formats the Python
-  blocks inside Markdown. It is untracked, so CI is unaffected until it is committed.
+- The suite had 504 passing tests, not 500.
+- The audit's line numbers had moved: `review.py:582` to `:581`, and `:773` to `:771`. The two `asyncio.run` calls
+  they name are now one `asyncio.Runner` (`review.py:801`, §6 item 8).
+- The audit's `docs/` file itself failed `ruff format --check .`, the `make lint` gate: ruff 0.16 formats the Python
+  blocks inside Markdown. It was formatted before it was committed, whitespace only: with every space and line break
+  removed, its text is unchanged.
 
 ---
 
@@ -166,7 +175,7 @@ review on each arm.
 ### 3.3 SEC-01: redaction count across sessions: refuted; the proposed fix is broken
 
 **What the counter is.**
-- `RedactSecretsPlugin.redacted` is read in one place: `review.py:777`, after the verifiers.
+- `RedactSecretsPlugin.redacted` is read in one place: `review.py:808`, after the verifiers.
 - The command builds one App per process, for one review.
 - In chat nothing reads it: it reaches no state, no event and no UI. No data crosses sessions; it is an integer
   nobody reads.
@@ -207,7 +216,7 @@ review on each arm.
   the guideline is lost as `SCHEMA_MISMATCH`, a hole.
 
 **`frozen=True` and the `id()` it would replace.**
-- `second_opinion` tracks refutations by identity on purpose (`review.py:582`: "by identity: two guidelines can file
+- `second_opinion` tracks refutations by identity on purpose (`review.py:589`: "by identity: two guidelines can file
   the same finding").
 - Hashing by value would conflate equal findings.
 
@@ -220,7 +229,7 @@ Probed with `type Severity = Literal["blocker", "major", "minor"]`:
 - **Copilot:** ADK's strict pass strips every `$ref` sibling, so the description is **gone**.
 - **Gemini:** genai's transformer inlines the enum and also drops the description.
 - **Today** both arms receive the description, and it is the scale every guideline is told to use.
-- **A test breaks:** `tests/test_hardened.py:1362` reads `Severity.__args__`, and a `TypeAliasType` has none:
+- **A test breaks:** `tests/test_catalog.py:182` reads `Severity.__args__`, and a `TypeAliasType` has none:
   `AttributeError`.
 - **Lint gain: none.** Ruff's UP040 fires only on `X: TypeAlias = …` and `TypeAliasType(...)`, not on a plain
   assignment, so no rule asks for the change. `Lines`, `Example` and `Pushed` are annotation-only and gain nothing.
@@ -230,11 +239,11 @@ Probed with `type Severity = Literal["blocker", "major", "minor"]`:
 - **No shared default folder.** `--cache DIR` is opt-in with no default. The audit's `~/.cache/adk-review` does not
   exist in the code.
 - **Readers never see half a file.** `_written` writes a temporary file and then `os.replace`s it
-  (`review.py:623-634`).
+  (`review.py:633-644`).
 - **The reader trusts nothing.** `_from_cache` returns `None` for any file that does not parse or does not fit the
-  shape, and the review runs afresh (`review.py:868-875`).
+  shape, and the review runs afresh (`review.py:920-927`).
 - **A failed write costs only the next run.** The cache write sits under `contextlib.suppress(OSError)`
-  (`review.py:813`): "a cache that cannot be written costs the next run, never this one". That also covers Windows'
+  (`review.py:865`): "a cache that cannot be written costs the next run, never this one". That also covers Windows'
   `PermissionError` when a reader holds the file open.
 - **Concurrent writers are harmless.** Two writers of one key wrote a review of the same inputs, and the last one
   wins.
@@ -245,7 +254,7 @@ Probed with `type Severity = Literal["blocker", "major", "minor"]`:
 ### 3.7 ASYNC-02: cancellation and the session read: refuted
 
 - `get_session` is a read of an in-memory session, not a cleanup. On cancellation nothing needs releasing.
-- A cancelled run must propagate. Ctrl-C already ends as one sentence and exit 130 (`review.py:891`).
+- A cancelled run must propagate. Ctrl-C already ends as one sentence and exit 130 (`review.py:943`).
 - The proposed `finally` would await a read during cancellation and then discard it, since the exception
   propagates past the `return`. If the read raised, it would mask the original exception.
 
@@ -342,7 +351,7 @@ class PinnedActions(FileRule):
 
 ### 3.10 LLM-01: more provider arms: not recommended
 
-- The fact is right: `REVIEW_PROVIDER` takes `copilot` or `gemini` (`judge/config.py:76`).
+- The fact is right: `REVIEW_PROVIDER` takes `copilot` or `gemini` (`judge/config.py:77`).
 - The project's direction is that **GitHub Copilot and Gemini are first-class**: every change works, is tested and is
   measured live on each.
 - Each new arm multiplies that cost, and dilutes the two arms that matter: its temperature-zero check,
@@ -383,8 +392,8 @@ Run on a two-file reproduction: `scripts/labelled.py` doing `from measure import
 | Pyrefly 1.3.2 | `ERROR Cannot find module 'measure' [missing-import]` | 0 errors with `[tool.pyrefly] search-path = [".", "scripts"]` |
 | Pyright | **0 errors**: its last fallback imports from the importing file's own folder | 0 errors |
 
-- Both sections are already in the working tree's `pyproject.toml`, uncommitted. Pyrefly reports 0 errors on the
-  three scripts with them.
+- Both sections were already in the working tree's `pyproject.toml`, then uncommitted. Pyrefly reports 0 errors on
+  the three scripts with them.
 - The `[tool.pyright]` section is redundant. It is harmless, and can be dropped or kept for explicitness.
 
 ---
@@ -394,7 +403,7 @@ Run on a two-file reproduction: `scripts/labelled.py` doing `from measure import
 ### 4.1 NEW-1: chat re-reviews on every turn after a scope (P1)
 
 **The cause.**
-- `inspect_repository` leaves the confirmed scope in session state (`judge/tools.py:55`), and nothing clears it.
+- `inspect_repository` leaves the confirmed scope in session state (`judge/tools.py:53`), and nothing clears it.
 - Each new message restarts the workflow at `START`. After one confirmed review, every later turn finds the scope
   again: "thanks!", "what does that mean?", anything.
 
@@ -461,7 +470,7 @@ request contents are exactly `["review"]`, and that no finding's evidence appear
 ### 4.3 NEW-3: a SIGTERM can be swallowed, so the run never stops (P2)
 
 **The cause.**
-- `Terminated` subclasses `Exception` (`review.py:599`). A signal handler raises it in whatever Python frame is
+- `Terminated` subclasses `Exception` (`review.py:606`). A signal handler raises it in whatever Python frame is
   running.
 - When that frame sits inside one of the broad handlers that keep the engine fail-closed, the handler catches it:
   ADK's node error handling, `ReportProviderErrors`, `run_seeded`, or the checks node.
@@ -474,7 +483,7 @@ request contents are exactly `["review"]`, and that no finding's evidence appear
 **Why it matters.**
 - A CI cancel sends signals with a short grace period before `SIGKILL`.
 - A run that ignores SIGTERM is killed mid-flight, which leaves behind the temporary files the handler exists to
-  clean up (`review.py:917-919`).
+  clean up (`review.py:969-971`).
 - The window is the time the main thread spends running Python, not waiting on the network: small, but real.
 
 **Fix: one line.** `KeyboardInterrupt` and `SystemExit` are `BaseException`s for this reason. No `except
@@ -634,6 +643,11 @@ that, and the guard's own contract has a direct test:
 
 The chat tests that seeded a scope now drive the intake's tool through the fake, using `calls_when` and `confirms`.
 `Chat`, `asked` and the tool-calling fake are new in `tests/conftest.py`.
+
+**Since then (2026-10-16).** Row 2's callback is gone. The scope is now `temp:review_scope`, a key ADK 2.9.2 keeps
+for the one turn that wrote it and never saves, as `temp:failure` already was. Probed offline: a tool in the intake
+writes it, the gate and the checks node read it in that turn, and the next turn starts without it. The same tests hold
+it: with the key kept in the session, the "thanks!" test fails again.
 
 **Not done:**
 - **Item 9 (NEW-7).** Measured on Copilot and not adopted; §4.7 has the numbers.

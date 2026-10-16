@@ -375,7 +375,7 @@ class UsageLedger(BasePlugin):
         return None
 
     def summary(self) -> dict:
-        """The spend as data, for the JSON report: the totals, each agent's row and the ceiling, if any, each row under
+        """The spend as data, for both reports: the totals, each agent's row and the ceiling, if any, each row under
         the name the report uses, a check's id for its agent, since ADK names an agent by an identifier and the report
         by an id."""
         return {

@@ -22,7 +22,7 @@ import os
 import subprocess
 import sys
 import tempfile
-from collections.abc import AsyncGenerator, Callable
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -121,13 +121,13 @@ class FakeProvider:
 
     def __init__(self) -> None:
         self.rules: list[tuple[str, Exception | dict | str | types.FunctionCall]] = []
-        #: A recording's answers by the hash of the request each was kept for, and that hash, as `replays` read them.
-        self.recorded: tuple[Callable[[LlmRequest], str], dict[str, str]] | None = None
+        #: A recording's answers by the hash of the request each was kept for, as `replays` read them.
+        self.recorded: dict[str, str] = {}
 
     def clear(self) -> None:
         """Forget every rule and any recording: what each test starts and ends with."""
         self.rules.clear()
-        self.recorded = None
+        self.recorded = {}
 
     def raises_when(self, text: str, exc: Exception) -> None:
         self.rules.append((text, exc))
@@ -145,17 +145,16 @@ class FakeProvider:
     def replays(self, folder: Path) -> None:
         """Answer every request a recording holds with the answer kept for it, by the request's hash, as `--record`
         kept it: a live run replayed offline."""
-        from adk_review.judge.plugins import request_hash
-
         kept = [json.loads(path.read_text(encoding="utf-8")) for path in folder.glob("*.json")]
-        self.recorded = (request_hash, {entry["request"]: entry["answer"] for entry in kept})
+        self.recorded = {entry["request"]: entry["answer"] for entry in kept}
 
     def answer(self, llm_request: LlmRequest) -> dict | str | types.FunctionCall | None:
         """A recorded answer for this very request, else what the first rule whose text the instruction holds says:
         raised when it is an exception, returned when it is an answer."""
-        if self.recorded is not None:
-            hashed, answers = self.recorded
-            if (found := answers.get(hashed(llm_request))) is not None:
+        if self.recorded:
+            from adk_review.judge.plugins import request_hash
+
+            if (found := self.recorded.get(request_hash(llm_request))) is not None:
                 return found
         instruction = str(llm_request.config.system_instruction or "")
         for text, rule in self.rules:

@@ -568,10 +568,10 @@ def second_opinion(
     rules: list[Sourced],
     diff: str,
     plugins: list[BasePlugin],
-    run: Callable[[Coroutine], Any] | None = None,
+    run: Callable[[Coroutine], Any],
 ) -> None:
     """`--verify`: each guideline finding that says more than a rule judged once more — refuted ones out and named,
-    unjudged ones kept and named. `run` is the loop the review's run used, so both share it; a loop of its own if none.
+    unjudged ones kept and named. `run` is the loop the review's run used, so both share it.
 
     Before the fold, so the rules' findings — facts — are never asked about, and
     a rule's reading of a line stands whatever the verifier says of a guideline's.
@@ -581,13 +581,11 @@ def second_opinion(
     2 of 5 verifier calls judged a guideline's reading of a key the secrets rule had found. Each finding is judged
     beside the whole change, as its guideline judged it.
     """
-    import asyncio
-
     from .judge.verify import judge_findings
 
     outcome.verified = True
     asked = to_verify(outcome.kept, rules)
-    judged = (run or asyncio.run)(judge_findings([item.finding for item in asked], diff, plugins))
+    judged = run(judge_findings([item.finding for item in asked], diff, plugins))
     refuted: set[int] = set()  # by identity: two guidelines can file the same finding
     for item, judgement in zip(asked, judged, strict=True):
         if isinstance(judgement, str):
@@ -796,12 +794,12 @@ def _judged(app: App, evidence: dict, chosen: Selection, guidelines: tuple[str, 
     from google.adk.runners import InMemoryRunner
 
     from .judge.agents import DIFF
-    from .judge.plugins import RedactSecretsPlugin
+    from .judge.plugins import ONE_TURN, RedactSecretsPlugin
     from .judge.run import run_seeded
 
     runner = InMemoryRunner(app=app)
     with asyncio.Runner() as loop:
-        run = loop.run(run_seeded(runner, session_id="run", state={DIFF: evidence["diff"]}, prompt="review"))
+        run = loop.run(run_seeded(runner, session_id="run", state={DIFF: evidence["diff"]}, prompt=ONE_TURN))
         rules, holes = read_checks(run, chosen.rules)
         outcome = postprocess(run, evidence["files"], guidelines, holes)
         if verify:
@@ -828,13 +826,14 @@ def _reported(
 
     ledger = next(p for p in app.plugins if isinstance(p, UsageLedger))
     progress = next(p for p in app.plugins if isinstance(p, Progress))
+    usage = ledger.summary()
     seen, seen_health = previous
     verdict, code = decide(outcome, args.fail_on)
     report = render(
         evidence,
         outcome,
         verdict=verdict,
-        usage=ledger.summary(),
+        usage=usage,
         fail_on=args.fail_on,
         previous=seen,
         health=health,
@@ -850,7 +849,7 @@ def _reported(
             outcome,
             verdict=verdict,
             code=code,
-            usage=ledger.summary(),
+            usage=usage,
             fail_on=args.fail_on,
             **shown,
             version=version(),

@@ -61,12 +61,6 @@ NAME = "adk_review"
 VERDICT = "verdict"
 
 
-def _forget_scope(callback_context: Context) -> None:
-    """The intake's first step each turn: the scope a turn reviews is the one its own intake confirms. Measured before:
-    a scope stayed in the session, so every later turn, a "thanks!" among them, gathered and judged it again."""
-    callback_context.state[SCOPE] = None
-
-
 def _scoped(ctx: Context) -> Event:
     """The gate after the intake: on to the checks when this turn's intake confirmed a scope, and the turn ends at the
     intake's answer otherwise. Measured before: "hello" ran the graph through, and the verdict agent called its model to
@@ -94,7 +88,6 @@ def _intake() -> LlmAgent:
             "follows reads the change itself. If a tool answers with an error, repeat its message and stop."
         ),
         tools=[inspect_repository, changed_files],
-        before_agent_callback=_forget_scope,
         before_tool_callback=[one_repository],
     )
 

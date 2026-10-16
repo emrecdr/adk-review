@@ -39,7 +39,8 @@ def _listed_and_shown(repo: Path, head: str, path: str) -> tuple[list[dict], str
     context = tool_context()
     model_tools.inspect_repository(str(repo), BASE, head, context)
     listed = model_tools.changed_files(context)["files"]
-    evidence = importlib.import_module("adk_review.collect.git").gather(context.state["review_scope"])
+    scope = context.state[importlib.import_module("adk_review.judge.agents").SCOPE]
+    evidence = importlib.import_module("adk_review.collect.git").gather(scope)
     return listed, next(f["diff"] for f in evidence["files"] if f["path"] == path)
 
 
@@ -169,11 +170,11 @@ class TestTheScopeLivesInState:
     def test_a_failed_call_clears_the_scope_never_the_conversations_repository(self, demo_repo: Path) -> None:
         """The guardrail holds a conversation to the repository it first confirmed; a call that fails after it must
         not free the model to name another."""
-        model_tools = importlib.import_module("adk_review.judge.tools")
+        model_tools, agents = (importlib.import_module(f"adk_review.judge.{name}") for name in ("tools", "agents"))
         context = tool_context()
         assert model_tools.inspect_repository(str(demo_repo), BASE, HEAD, context)["status"] == "success"
         assert model_tools.inspect_repository(str(demo_repo), BASE, "no-such-branch", context)["status"] == "error"
-        assert context.state["review_scope"] is None and context.state["review_repo"] == str(demo_repo)
+        assert context.state[agents.SCOPE] is None and context.state[agents.REPOSITORY] == str(demo_repo)
 
     def test_a_renamed_file_is_read_as_the_lines_it_moved_and_changed(self, hostile_repo: Path) -> None:
         """Measured before: `show_diff` read a rename by its new path alone, so a renamed file with one change read

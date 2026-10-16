@@ -41,10 +41,9 @@ class TestDecision:
         the two marked as carried over, which it dropped too: order and adjacency survive the change. A kept
         finding is named at the line its quote starts, never the model's: measured live on Copilot, the models named
         a wrong line for 4 of 5 findings, `charge.py:9` for a quote of lines 27 and 28."""
-        rule, collect, schema = _grounding_of()
+        _rule, collect, schema = _grounding_of()
         files = {f["path"]: f for f in collect.collect_evidence(str(demo_repo), BASE, HEAD)["files"]}
-        quotable, framing = ({path: f[key] for path, f in files.items()} for key in ("quotable", "framing"))
-        lines = [line for hunk in quotable[CHARGE] for _number, line in hunk if line[1:].strip()]
+        lines = [line for hunk in files[CHARGE]["quotable"] for _number, line in hunk if line[1:].strip()]
         hunk = next(line for line in files[CHARGE]["diff"].splitlines() if line.startswith("@@"))
         command = "    command = f\"lp -d {printer} <<< '{format_amount(charge.amount_cents, charge.currency)}'\""
         shell = "    return subprocess.run(command, shell=True, check=False).returncode"
@@ -72,7 +71,7 @@ class TestDecision:
             schema.Finding(file=file, line=9, severity="major", title=str(n), evidence=quote, suggestion="s")
             for n, (file, quote) in enumerate(cases)
         ]
-        kept, _dropped = rule.drop_ungrounded(schema.Review(findings=findings, summary="s"), quotable, framing)
+        kept, _dropped = _grounded_in(files.values(), findings)
         grounded = {int(f.title) for f, _at in kept}
         wrong = [case for n, (case, want) in enumerate(cases.items()) if (n in grounded) != want]
         assert wrong == [], wrong
@@ -435,6 +434,20 @@ def _grounds(quotable: list[str], quote: str, around: Sequence[str] = ()) -> boo
     return bool(kept)
 
 
+def _placed_at(finding, quotable: dict[str, list[list[tuple[int, str]]]]):
+    """The first and last line `drop_ungrounded` places `finding`'s quote on, or None where it drops it."""
+    rule, _collect, schema = _grounding_of()
+    kept, _dropped = rule.drop_ungrounded(schema.Review(summary="", findings=[finding]), quotable, {})
+    return kept[0][1] if kept else None
+
+
+def _grounded_in(files, findings: list):
+    """`findings` grounded against each changed file as `collect_evidence` lists it, as the command grounds them."""
+    rule, _collect, schema = _grounding_of()
+    quotable, framing = ({f["path"]: f[key] for f in files} for key in ("quotable", "framing"))
+    return rule.drop_ungrounded(schema.Review(summary="", findings=findings), quotable, framing)
+
+
 class TestWhatGroundingKeeps:
     """A quote grounds as the file has it, and a finding at the bar no quote bears out is no approval. Measured
     before: a YAML list item `- run: …` and `++i;`, quoted as the file has them, were dropped, their
@@ -492,15 +505,13 @@ class TestWhatGroundingKeeps:
         fence, git's header lines, git's `\\ No newline at end of file`, the cap's cut. A file quoted whole as a
         guideline was shown it grounds. Measured by review, with a list of such lines kept by hand beside the
         rendering: a file with no final newline, and a file cut at the cap, quoted so, were each dropped."""
-        rule, git, schema = _grounding_of()
+        _rule, git, schema = _grounding_of()
         repo = _branch_off_empty(tmp_path / "repo", "feature", base="main")
         _committed(repo, "app.py", text)
         evidence = git.collect_evidence(str(repo), "main", "feature", **({"diff_cap": cap} if cap else {}))
         shown = evidence["diff"]  # the one file's block, as each guideline reads it
         finding = schema.Finding(file="app.py", severity="blocker", title="t", evidence=shown, suggestion="s")
-        files = evidence["files"]
-        quotable, framing = ({f["path"]: f[key] for f in files} for key in ("quotable", "framing"))
-        kept, dropped = rule.drop_ungrounded(schema.Review(summary="", findings=[finding]), quotable, framing)
+        kept, dropped = _grounded_in(evidence["files"], [finding])
         assert kept and not dropped, shown
 
     def test_a_finding_quoted_any_way_it_was_shown_keeps_one_evidence_and_one_fingerprint(self, tmp_path: Path) -> None:
@@ -514,7 +525,6 @@ class TestWhatGroundingKeeps:
         repo = _branch_off_empty(tmp_path / "repo", "feature", base="main")
         _committed(repo, "app.py", "def find(db, who):\n    return db.execute(f'SELECT {who}')\n")
         files = git.collect_evidence(str(repo), "main", "feature")["files"]
-        quotable, framing = ({f["path"]: f[key] for f in files} for key in ("quotable", "framing"))
         lines = "def find(db, who):\n    return db.execute(f'SELECT {who}')"
         quotes = (
             lines,
@@ -526,7 +536,7 @@ class TestWhatGroundingKeeps:
             schema.Finding(file="app.py", severity="blocker", title="SQL", evidence=quote, suggestion="s")
             for quote in quotes
         ]
-        kept, dropped = rule.drop_ungrounded(schema.Review(summary="", findings=found), quotable, framing)
+        kept, dropped = _grounded_in(files, found)
         assert not dropped and [f.evidence for f, _at in kept] == [lines] * len(quotes)
         assert len({fingerprint(rule.Sourced("guideline.security", f, at)) for f, at in kept}) == 1
 
@@ -579,7 +589,7 @@ class TestWhatGroundingKeeps:
             finding = schema.Finding(
                 file=file, line=None, severity="blocker", title="t", evidence=quote, suggestion="s"
             )
-            return rule.where_quoted(finding, hunks)
+            return _placed_at(finding, hunks)
 
         assert placed("def total(price, quantity):\n    amount = eval(price) * quantity\n    return amount") == (1, 3)
         assert placed("def total(price, quantity):\n    amount = price * quantity") == (1, 1), "the old file's"
@@ -591,7 +601,7 @@ class TestWhatGroundingKeeps:
         finding = schema.Finding(
             file="b/orders.py", line=9, severity="major", title="t", evidence="def label(order):", suggestion="s"
         )
-        kept, _dropped = rule.drop_ungrounded(schema.Review(summary="", findings=[finding]), hunks)
+        kept, _dropped = rule.drop_ungrounded(schema.Review(summary="", findings=[finding]), hunks, {})
         assert [(f.file, f.line, at) for f, at in kept] == [("orders.py", 21, (21, 21))]
 
     def test_where_redaction_joined_lines_no_line_is_named_rather_than_a_wrong_one(self) -> None:
@@ -600,7 +610,8 @@ class TestWhatGroundingKeeps:
         rule, _collect, schema = _grounding_of()
         block = ["+-----BEGIN RSA PRIVATE KEY-----", "+MIIEowIBAAKCAQEA", "+-----END RSA PRIVATE KEY-----", "+x = 1"]
         finding = schema.Finding(file="k.py", line=2, severity="major", title="t", evidence="x = 1", suggestion="s")
-        kept, dropped = rule.drop_ungrounded(schema.Review(summary="", findings=[finding]), {"k.py": _numbered(block)})
+        review = schema.Review(summary="", findings=[finding])
+        kept, dropped = rule.drop_ungrounded(review, {"k.py": _numbered(block)}, {})
         assert [(f.line, f.evidence, at) for f, at in kept] == [(None, "x = 1", (None, None))] and not dropped
 
 
@@ -622,7 +633,7 @@ def test_a_short_quote_elsewhere_in_the_file_is_no_duplicate() -> None:
     quote = "\n".join(lines[3:])
     blocker = schema.Finding(file="a.py", severity="blocker", title="shell injection", evidence=quote, suggestion="s")
     found = [(model_check("complexity"), minor), (model_check("security"), blocker)]
-    kept, _folded = verdict.dedupe([verdict.Sourced(key, f, verdict.where_quoted(f, quotable)) for key, f in found])
+    kept, _folded = verdict.dedupe([verdict.Sourced(key, f, _placed_at(f, quotable)) for key, f in found])
     assert sorted((s.finding.title, s.finding.severity) for s in kept) == [
         ("early return", "minor"),
         ("shell injection", "blocker"),
@@ -644,10 +655,10 @@ def test_a_quote_the_diff_holds_twice_is_placed_nearest_the_line_the_lane_named(
             file="m.py", line=line, severity="major", title="t", evidence="return None", suggestion="s"
         )
 
-    placed = [verdict.where_quoted(said(line), quotable) for line in (22, 2, 15, 12, None)]
+    placed = [_placed_at(said(line), quotable) for line in (22, 2, 15, 12, None)]
     assert placed == [(22, 22), (2, 2), (22, 22), (2, 2), (2, 2)]
     found = [(model_check("security"), said(22)), (model_check("tests"), said(2))]
-    kept, _folded = verdict.dedupe([verdict.Sourced(key, f, verdict.where_quoted(f, quotable)) for key, f in found])
+    kept, _folded = verdict.dedupe([verdict.Sourced(key, f, _placed_at(f, quotable)) for key, f in found])
     assert len(kept) == 2
 
 

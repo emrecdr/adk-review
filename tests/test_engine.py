@@ -3,6 +3,7 @@ second opinion, the fences every judging agent reads in, the state keys and the 
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import json
 import re
@@ -301,7 +302,7 @@ class TestTheSecondOpinion:
         without, verified = Outcome(kept=list(guidelines)), Outcome(kept=list(guidelines))
         order = ["rule.lint", "guideline.security", "guideline.tests"]
         cli.fold(without, rules, order)
-        cli.second_opinion(verified, rules, "", [])
+        cli.second_opinion(verified, rules, "", [], asyncio.run)
         cli.fold(verified, rules, order)
         assert (
             [s.source for s in verified.kept]
@@ -460,14 +461,21 @@ class TestTheChecksNode:
 
     @staticmethod
     async def _run(rules, state: dict, evidence: dict | None = None):
+        """The checks node alone, over a session seeded with `state`; a `temp:` key in it is written in the turn, by a
+        node before the checks, as chat's intake writes the scope: a session keeps none."""
         from google.adk.apps.app import App
         from google.adk.runners import InMemoryRunner
-        from google.adk.workflow import Workflow
+        from google.adk.workflow import FunctionNode, Workflow
 
         from adk_review.judge.checks import build_checks
         from adk_review.judge.run import run_seeded
 
-        graph = Workflow(name="checks_only", edges=[("START", build_checks(rules, evidence))])
+        def confirmed(ctx) -> None:
+            for key in [key for key in state if key.startswith("temp:")]:
+                ctx.state[key] = state[key]
+
+        seed = FunctionNode(func=confirmed, name="confirmed")
+        graph = Workflow(name="checks_only", edges=[("START", seed, build_checks(rules, evidence))])
         runner = InMemoryRunner(app=App(name="checks_only", root_agent=graph))
         return await run_seeded(runner, session_id="s", state=state, prompt="check")
 

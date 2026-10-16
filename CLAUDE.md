@@ -124,7 +124,7 @@ Load-bearing rules the tests enforce:
 - **Shape.** `agent.py` exports both `app` and `root_agent` (the loader prefers `app`, and a bare `root_agent` would
   lose the plugins). `build_app(chat=True)` adds an intake agent before the same middle and a verdict after it; the
   command uses `chat=False` over seeded state. In chat a gate after the intake goes on only for a scope this turn's
-  intake confirmed — the intake clears the last one first — so a turn that confirms none ends at the intake's
+  intake confirmed — a `temp:` key, which ADK keeps for one turn — so a turn that confirms none ends at the intake's
   answer; the checks node gathers its own evidence from that scope and writes the change the guidelines read, where
   the command seeds the change at the session's start, in no event a debug log could carry. Plugins:
   `RedactSecretsPlugin`, `UsageLedger`, `ReportProviderErrors`, and `Progress`, which times each agent and, at a

@@ -30,6 +30,7 @@ from conftest import (
     as_json,
     catalog,
     confirms,
+    profiles_of,
     run_review,
     run_turn,
 )
@@ -236,15 +237,7 @@ class TestWhatAReviewCovers:
         """Measured before: reading and parsing every Python file at the head took 88% of evidence collection on a
         625-file tree, whatever ran. With no tree rule and no guideline, only the changed files are read; the radius
         says it was not asked, never a hole and never a leaf; and the line and file rules find what they found."""
-        rules = (
-            "rule.secrets",
-            "rule.named-secrets",
-            "rule.lint",
-            "rule.reviewer-instructions",
-            "rule.encoding-declaration",
-            "rule.lockfile-sources",
-            "rule.pinned-actions",
-        )
+        rules = profiles_of()["default-rules"]
 
         assert run_review(cli, demo_repo, "--profile", "default-rules") in (0, 1)
         alone = capsys.readouterr().out
@@ -878,8 +871,7 @@ class TestAStoppedReview:
             f"sys.argv = {argv!r}\n"
             "sys.exit(review.run())\n"
         )
-        env = {name: value for name, value in os.environ.items() if not name.startswith("REVIEW_")}
-        env.update(REVIEW_PROVIDER="gemini", REVIEW_MODEL="fake", GOOGLE_API_KEY="test-key")
+        env = {**os.environ, "REVIEW_PROVIDER": "gemini", "REVIEW_MODEL": "fake", "GOOGLE_API_KEY": "test-key"}
         child = subprocess.Popen(
             [sys.executable, "-c", code], cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )

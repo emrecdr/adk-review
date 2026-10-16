@@ -24,6 +24,7 @@ from google.adk.models.base_llm import BaseLlm
 from google.adk.models.google_llm import Gemini
 from google.adk.models.registry import LLMRegistry
 from google.adk.planners import BasePlanner, BuiltInPlanner
+from google.adk.utils.env_utils import is_enterprise_mode_enabled
 from google.auth.exceptions import GoogleAuthError
 from google.genai import types
 
@@ -101,21 +102,14 @@ def serving() -> str:
     the file — so a stale export picked the arm or the model unseen."""
     arm = provider()
     if arm == "gemini":
-        where = "Vertex AI" if _through_vertex() else ""
+        # Read by ADK's own reader: `GOOGLE_GENAI_USE_ENTERPRISE` where it is set, else `GOOGLE_GENAI_USE_VERTEXAI`,
+        # which 2.9.2 deprecates. Measured before: with only the new one set, the report named no Vertex AI for calls
+        # that went there.
+        where = "Vertex AI" if is_enterprise_mode_enabled() else ""
     else:
         base = os.environ.get("GITHUB_COPILOT_API_BASE", "").strip()
         where = urlsplit(base).hostname or base
     return f"{model_name()} on {arm}" + (f" through {where}" if where else "")
-
-
-def _through_vertex() -> bool:
-    """Whether the Gemini arm goes through Vertex AI, read as ADK 2.9.2 reads it: `GOOGLE_GENAI_USE_ENTERPRISE` where
-    it is set, else `GOOGLE_GENAI_USE_VERTEXAI`, which 2.9.2 deprecates. Measured before: with only the new one set,
-    the report named no Vertex AI for calls that went there."""
-    for name in ("GOOGLE_GENAI_USE_ENTERPRISE", "GOOGLE_GENAI_USE_VERTEXAI"):
-        if name in os.environ:
-            return os.environ[name].strip().lower() in {"1", "true"}
-    return False
 
 
 def fallback_name() -> str:
@@ -321,7 +315,7 @@ def _gemini_refused() -> str | None:
     try:
         Gemini(model=model_name()).api_client.close()  # built for what building it refuses, and let go
     except (ValueError, GoogleAuthError) as exc:
-        if not _through_vertex():
+        if not is_enterprise_mode_enabled():
             return "REVIEW_PROVIDER=gemini needs GOOGLE_API_KEY in the central .env, or Vertex AI and its project"
         return (
             "REVIEW_PROVIDER=gemini through Vertex AI finds no project: set GOOGLE_CLOUD_PROJECT, or sign in with "
