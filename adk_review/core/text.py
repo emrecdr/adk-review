@@ -8,6 +8,8 @@ and `deliver` cuts a quote before a person does.
 
 from __future__ import annotations
 
+import re
+
 from .secrets import spans
 
 #: A reason is read by a person: a verifier's prose, a raw exception that escaped the engine; 400 characters say it.
@@ -30,6 +32,12 @@ def lines_of(text: str) -> list[str]:
     the guidelines."""
     lines = text.replace("\r\n", "\n").split("\n")
     return lines[:-1] if lines and lines[-1] == "" else lines
+
+
+def backticks(text: str) -> int:
+    """The longest run of backticks in `text`, 0 for none: a fence or a code span one longer is one the text's own
+    backticks cannot close, for a diff the guidelines read and a quote the report prints alike."""
+    return max((len(run) for run in re.findall(r"`+", text)), default=0)
 
 
 def cut_at(text: str, limit: int, *, sep: str = " ") -> str:

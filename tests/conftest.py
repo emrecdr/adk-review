@@ -488,7 +488,7 @@ def hostile_repo(tmp_path_factory) -> Path:
         _git_in(repo, "commit", "-qm", name)
         _git_in(repo, "checkout", "-q", "-f", BASE)  # the worktree never held these: back to what it does hold
 
-    from adk_review.collect.git import DIFF_CAP_CHARS  # sized from it, so a cap raised leaves them past it still
+    from adk_review.collect.diff import DIFF_CAP_CHARS  # sized from it, so a cap raised leaves them past it still
 
     _git_in(repo, "init", "-q", "-b", BASE)
     (repo / "settings.py").write_bytes(b"A = 1\n\nB = 2\n")

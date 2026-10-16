@@ -234,21 +234,29 @@ def require_ready(*, roles: tuple[str, ...] = ()) -> str | None:
     if fallback := fallback_name():
         named.append(("REVIEW_FALLBACK_MODEL", fallback))
     if arm == "copilot":
-        if not ((token := copilot_token()).is_file() and token.stat().st_size):  # an empty file is no token
-            return (
-                f"REVIEW_PROVIDER=copilot needs a cached token at {token}; "
-                f"run `uv run python scripts/copilot_login.py` once"
-            )
-        # LiteLLM takes any model name and fails at the call, which is that guideline's own answer; but a model it
-        # knows cannot judge at temperature zero it refuses before any call, so that is said here, as LiteLLM says it.
-        # The arm's own default is not asked: LiteLLM took two seconds to import, which every dry run and every usage
-        # error then waited out, and a test holds the default to LiteLLM's answer.
-        for var, name in named:
-            if name != DEFAULTS["copilot"] and (why := _refuses_temperature_zero(name)) is not None:
-                return f"{var}={name} cannot judge at temperature 0, at which every review runs: {why}"
-        return None
-    if (why := _gemini_refused()) is not None:
-        return why
+        return _copilot_refused(named)
+    return _gemini_refused() or _not_gemini(named)
+
+
+def _copilot_refused(named: list[tuple[str, str]]) -> str | None:
+    """Why the Copilot arm cannot run with the models `named`, each by the variable that names it, or None."""
+    if not ((token := copilot_token()).is_file() and token.stat().st_size):  # an empty file is no token
+        return (
+            f"REVIEW_PROVIDER=copilot needs a cached token at {token}; "
+            f"run `uv run python scripts/copilot_login.py` once"
+        )
+    # LiteLLM takes any model name and fails at the call, which is that guideline's own answer; but a model it
+    # knows cannot judge at temperature zero it refuses before any call, so that is said here, as LiteLLM says it.
+    # The arm's own default is not asked: LiteLLM took two seconds to import, which every dry run and every usage
+    # error then waited out, and a test holds the default to LiteLLM's answer.
+    for var, name in named:
+        if name != DEFAULTS["copilot"] and (why := _refuses_temperature_zero(name)) is not None:
+            return f"{var}={name} cannot judge at temperature 0, at which every review runs: {why}"
+    return None
+
+
+def _not_gemini(named: list[tuple[str, str]]) -> str | None:
+    """Why a model `named` on the Gemini arm is one ADK would send elsewhere, or no class claims, or None."""
     for var, name in named:
         try:
             model = LLMRegistry.resolve(name)

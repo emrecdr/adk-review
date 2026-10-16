@@ -114,15 +114,15 @@ def test_a_tools_docstring_speaks_to_the_model_in_words() -> None:
     diff was "capped at DIFF_CAP_CHARS", a name only the code knows; the cap is a number the model can use."""
     import re
 
-    model_tools, git = (
+    model_tools, diff = (
         importlib.import_module("adk_review.judge.tools"),
-        importlib.import_module("adk_review.collect.git"),
+        importlib.import_module("adk_review.collect.diff"),
     )
     for name in ("inspect_repository", "changed_files", "show_diff"):
         doc = getattr(getattr(model_tools, name, None), "__doc__", None) or ""
         assert not re.findall(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b", doc), (name, doc[:120])
     if hasattr(model_tools, "show_diff"):
-        assert f"{git.DIFF_CAP_CHARS:,} characters" in model_tools.show_diff.__doc__
+        assert f"{diff.DIFF_CAP_CHARS:,} characters" in model_tools.show_diff.__doc__
 
 
 class TestInspectRepository:
@@ -609,3 +609,30 @@ class TestWhatAPathCannotForge:
             "review: the review did not finish: RuntimeError: x ::add-mask::APPROVED ## [error]forged "
             "# #vso[task.prependpath]y"
         ], err
+
+
+class TestWhatTheGuidelinesAreShown:
+    """The block the guidelines read, decided from the diffs alone: no repository, no git."""
+
+    @staticmethod
+    def _diff(path: str, *added: str) -> str:
+        body = "".join(f"+{line}\n" for line in added)
+        return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -0,0 +1,{len(added)} @@\n{body}"
+
+    def test_each_file_is_shown_until_the_block_is_full_and_the_rest_named(self, monkeypatch) -> None:
+        from adk_review.collect import diff, git
+
+        entries = [{"path": p, "status": "A"} for p in ("a.py", "b.py", "logo.png")]
+        diffs = [self._diff("a.py", "x = 1"), self._diff("b.py", "y = 2"), self._diff("logo.png", "binary")]
+        first, _ = diff.framed("a.py", diffs[0])
+        monkeypatch.setattr(git, "BLOCK_CAP_CHARS", len(first))  # room for `a.py` alone
+        files, block, excluded = git.shown_to_guidelines(
+            entries, diffs, diff.DIFF_CAP_CHARS, lambda path: "*.png" if path.endswith(".png") else None
+        )
+        shown, past, skipped = files
+        assert shown["quotable"] and not shown["cut"] and shown["unread"] == "", shown
+        assert past["quotable"] == [] and past["cut"] and past["unread"].startswith("past the"), past
+        assert skipped["unread"] == "" and not skipped["cut"] and excluded == {"logo.png": "*.png"}, skipped
+        assert block.startswith(first) and "b.py" not in block.split("\n\n[…")[0], block
+        assert "[… 1 more file(s) not shown: past" in block and "the operator's skip list leaves them out" in block
+        assert [sorted(f["added_at"]) for f in files] == [[1], [1], [1]], "every file's added lines, shown or not"

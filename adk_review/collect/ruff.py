@@ -60,23 +60,7 @@ def _run(
     path, or it raises — ruff failing, or past its timeout — for `diagnose` to name. Under `--exit-zero` a diagnostic
     never fails ruff, so any other exit is a ruff that could not run."""
     with tempfile.TemporaryDirectory() as tmp:
-        paths = list(texts)
-        sources: dict[str, list[str]] = {}
-        targets = []
-        for index, (path, text) in enumerate(texts.items()):
-            # Each in a folder of its own, under a name of the rule's own, never the branch's: `x.py` beside
-            # `X.py/y.py` collided on a case-insensitive disk, `../../x.py` was written outside the folder, and
-            # Windows holds no `nul.py`, `a:b.py` or control character. Ruff, `--isolated`, reads only the name
-            # `__init__.py` and a stub's suffix from a file's path, so those are kept.
-            name = "__init__.py" if PurePosixPath(path).name == "__init__.py" else "module" + _suffix(path)
-            target = f"{index}/{name}"
-            written = Path(tmp, target)
-            written.parent.mkdir()
-            written.write_text(text, encoding="utf-8", newline="")
-            targets.append(target)
-            # Split where ruff counts a row: `str.splitlines` breaks at a form feed or U+2028 too, and measured, the
-            # quote after one was the line above ruff's.
-            sources[path] = re.split(r"\r\n?|\n", text)
+        targets, sources = _laid_out(tmp, texts)
         # Every file by name, never a folder: ruff's default excludes skipped a `.venv/` or `node_modules/` a branch
         # had changed, never a file it is named. `--ignore-noqa`: an inline noqa comment in the branch silenced it.
         # `--no-cache`: nothing is written beside the files, which Windows could hold open when the folder goes.
@@ -84,29 +68,63 @@ def _run(
         argv += ["--select", ",".join(select), *(["--ignore", ",".join(ignore)] if ignore else [])]
         argv += ["--line-length", str(line_length)] if line_length else []
         argv += ["--output-format", "json", *targets]
-        # The caller's environment with every `RUFF_*` variable left out, as git's runs without `GIT_*`: measured,
-        # `RUFF_OUTPUT_FILE`, set for another step of a pipeline, sent the report to that file, and stdout read empty.
-        env = {name: value for name, value in os.environ.items() if not name.startswith("RUFF_")}
-        done = subprocess.run(
-            argv,
-            cwd=tmp,
-            env=env,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=RUFF_TIMEOUT_S,
-            check=True,
-        )
-        found: dict[str, list[Diagnostic]] = {}
-        for hit in json.loads(done.stdout):
-            path = paths[int(PurePath(hit["filename"]).parts[-2])]  # `<index>/<name>`, however ruff spells the root
-            row = hit["location"]["row"]
-            code = hit["code"] or "invalid-syntax"  # ruff 0.12.0 to 0.12.7 name a file that does not parse with null
-            lines = sources.get(path, [])
-            line = lines[row - 1] if 0 < row <= len(lines) else ""
-            offered = hit.get("fix") or {}
-            fix, label = offered.get("message"), offered.get("applicability")
-            found.setdefault(path, []).append(Diagnostic(row, line, code, hit["message"], fix, label))
+        return _parsed(_ruff(argv, tmp), list(texts), sources)
+
+
+def _laid_out(folder: str, texts: dict[str, str]) -> tuple[list[str], dict[str, list[str]]]:
+    """Each file written into `folder`, and the names ruff is given for them, with each file's lines as ruff counts
+    them, by path."""
+    sources: dict[str, list[str]] = {}
+    targets = []
+    for index, (path, text) in enumerate(texts.items()):
+        # Each in a folder of its own, under a name of the rule's own, never the branch's: `x.py` beside
+        # `X.py/y.py` collided on a case-insensitive disk, `../../x.py` was written outside the folder, and
+        # Windows holds no `nul.py`, `a:b.py` or control character. Ruff, `--isolated`, reads only the name
+        # `__init__.py` and a stub's suffix from a file's path, so those are kept.
+        name = "__init__.py" if PurePosixPath(path).name == "__init__.py" else "module" + _suffix(path)
+        target = f"{index}/{name}"
+        written = Path(folder, target)
+        written.parent.mkdir()
+        written.write_text(text, encoding="utf-8", newline="")
+        targets.append(target)
+        # Split where ruff counts a row: `str.splitlines` breaks at a form feed or U+2028 too, and measured, the
+        # quote after one was the line above ruff's.
+        sources[path] = re.split(r"\r\n?|\n", text)
+    return targets, sources
+
+
+def _ruff(argv: list[str], cwd: str) -> str:
+    """The one place ruff runs, as `git._run` is git's: its JSON on stdout, or `CalledProcessError` or
+    `TimeoutExpired`. The caller's environment with every `RUFF_*` variable left out, as git's runs without `GIT_*`:
+    measured, `RUFF_OUTPUT_FILE`, set for another step of a pipeline, sent the report to that file, and stdout read
+    empty."""
+    env = {name: value for name, value in os.environ.items() if not name.startswith("RUFF_")}
+    done = subprocess.run(
+        argv,
+        cwd=cwd,
+        env=env,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=RUFF_TIMEOUT_S,
+        check=True,
+    )
+    return done.stdout
+
+
+def _parsed(stdout: str, paths: list[str], sources: dict[str, list[str]]) -> dict[str, list[Diagnostic]]:
+    """Ruff's JSON read back: each hit under the path whose index names its folder, with the line it names as the
+    file holds it; `ValueError`, `KeyError` or `TypeError` for an answer of another shape."""
+    found: dict[str, list[Diagnostic]] = {}
+    for hit in json.loads(stdout):
+        path = paths[int(PurePath(hit["filename"]).parts[-2])]  # `<index>/<name>`, however ruff spells the root
+        row = hit["location"]["row"]
+        code = hit["code"] or "invalid-syntax"  # ruff 0.12.0 to 0.12.7 name a file that does not parse with null
+        lines = sources.get(path, [])
+        line = lines[row - 1] if 0 < row <= len(lines) else ""
+        offered = hit.get("fix") or {}
+        fix, label = offered.get("message"), offered.get("applicability")
+        found.setdefault(path, []).append(Diagnostic(row, line, code, hit["message"], fix, label))
     return found
 
 

@@ -23,18 +23,26 @@ from pathlib import Path
 
 from ..core.blast import Blast, Radius, blast_radius
 from ..core.rules import Tree
-from ..core.text import cut_at, lines_of, squash
+from ..core.text import lines_of
+from .diff import (
+    BINARY,
+    DIFF_CAP_CHARS,
+    SUBMODULE,
+    added_lines,
+    capped,
+    file_added,
+    framed,
+    header,
+    hunk_lines,
+    quotable,
+    readable,
+)
 
 GIT_TIMEOUT_S = 30
-#: Every string the model reads is capped in characters, and the cut is named. Measured live on Copilot at 4,000: a
-#: 7,529-character file's planted shell call went unread, a hole, and so did 3 of a 17-file change's files; at 16,000
-#: each was read, the call named in both runs, for a fifth more tokens.
-DIFF_CAP_CHARS = 16_000
 #: And the block of diffs the guidelines read, in all: a file past it is left out whole, and named. Measured with none,
 #: `--all` over 4,826 files gave each guideline and each verifier 14.9 MB; this repository's whole project, 275,688
 #: characters, was 80,000 tokens a guideline, answered on Copilot; the planted branch is 2,205.
 BLOCK_CAP_CHARS = 250_000
-_HUNK_START = re.compile(r"^@@ -\S+ \+(\d+)(,0\b)?")
 #: The tree the blast radius reads is bounded, and what is not read is counted: over a partial tree a count is a
 #: floor, and says so. Measured at 80 to 142 ms a megabyte to parse and resolve (ADK's 6.3 MB, LiteLLM's 32.3);
 #: a file cap alone let a branch of 5,000 one-megabyte files in. The largest real file seen was 0.8 MB.
@@ -367,8 +375,6 @@ def _commit(repo: str, ref: str) -> str:
 #: How many commits one `diff-tree` reads of a push's history: measured over a long real history, 2,000 commits took
 #: 1.6 s and 26.7 MB of patch, so a batch stays well inside a call's timeout and its memory, whatever the push.
 HISTORY_BATCH = 500
-#: The escapes git writes in a path it quotes, beside a byte's three octal digits.
-_ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
 _A_COMMIT = re.compile(rb"^([0-9a-f]{40}|[0-9a-f]{64})\n", re.MULTILINE)
 
 
@@ -407,34 +413,9 @@ def _added_by(repo: str, commits: Sequence[str], attributes: str) -> dict[str, l
     for commit, body in zip(parts[1::2], parts[2::2], strict=True):
         files = found.setdefault(commit.decode(), [])
         for piece in body.split(b"\ndiff --git "):
-            if (file := _file_added(readable(_text(piece)))) is not None:
+            if (file := file_added(readable(_text(piece)))) is not None:
                 files.append(file)
     return found
-
-
-def _file_added(diff: str) -> dict | None:
-    """One file's part of a commit's patch as `{"path", "added"}`, or None where it adds no line: a deleted file, a
-    binary one, a rename or a mode alone. The path is the new one, as its `+++` line spells it, quoted or not."""
-    to = next((line[4:] for line in _header(diff).split("\n") if line.startswith("+++ ")), "/dev/null")
-    added = added_lines(diff)
-    if to == "/dev/null" or not added:
-        return None
-    return {"path": _unquoted(to.removesuffix("\t")).removeprefix("b/"), "added": added}
-
-
-def _unquoted(spelled: str) -> str:
-    """A path as git spells it in a patch's header: in double quotes, C's escapes inside, where a byte needs one."""
-    if not (len(spelled) > 1 and spelled.startswith('"') and spelled.endswith('"')):
-        return spelled
-    out, chars = bytearray(), iter(spelled[1:-1])
-    for char in chars:
-        if char != "\\":
-            out += char.encode()
-        elif (escaped := next(chars, "")) in _ESCAPES:
-            out.append(_ESCAPES[escaped])
-        else:  # a byte, in three octal digits
-            out.append(int(escaped + next(chars, "") + next(chars, ""), 8))
-    return out.decode("utf-8", "replace")
 
 
 def tag_message(repo: str, ref: str) -> str | None:
@@ -712,7 +693,7 @@ def read_texts(resolved: dict, files: list[dict], listing: list[tuple[str, str, 
             entry["unread_text"] = "was not read: the head's tree could not be listed"
     else:
         blobs = {path: (sha, size) for path, sha, size in _plain(listing)}
-        changed = [entry for entry in files if entry["path"] in blobs and not _BINARY.search(_header(entry["diff"]))]
+        changed = [entry for entry in files if entry["path"] in blobs and not BINARY.search(header(entry["diff"]))]
         texts, _unread = _texts(resolved, ((entry["path"], *blobs[entry["path"]]) for entry in changed))
         unread = []
         for entry in changed:
@@ -721,7 +702,7 @@ def read_texts(resolved: dict, files: list[dict], listing: list[tuple[str, str, 
                 entry["unread_text"] = "was not read whole"
                 unread.append(entry)
     for entry in unread:
-        entry["shown"] = {number: line[1:] for number, line in _hunk_lines(entry["diff"]) if line[:1] != "-"}
+        entry["shown"] = {number: line[1:] for number, line in hunk_lines(entry["diff"]) if line[:1] != "-"}
 
 
 def radius_of(tree: Tree | None, files: list[dict]) -> Blast:
@@ -732,25 +713,6 @@ def radius_of(tree: Tree | None, files: list[dict]) -> Blast:
     return blast_radius(tree.parsed, files, len(tree.unread))
 
 
-#: What a reader, or `str.splitlines`, breaks a line at besides "\n": a lone `\r`, a form feed, U+2028 among them.
-_BREAKS = re.compile("[\r\x0b\x0c\x1c-\x1e\x85\u2028\u2029]")
-_BINARY = re.compile(r"^Binary files .* differ$", re.MULTILINE)
-_SUBMODULE = re.compile(r"^(?:new file mode|index \S+) 160000$", re.MULTILINE)
-
-
-def readable(diff: str) -> str:
-    """The diff with "\\n" its only line break: a CRLF file's `\\r` dropped, every other break shown as its escape.
-    Measured: a lone `\\r` in an added line split it, so the key after it was no added line for the rule; and text
-    after a form feed, with no diff marker, read as the prompt's own."""
-    return _BREAKS.sub(lambda m: m.group().encode("unicode_escape").decode(), diff.replace("\r\n", "\n"))
-
-
-def _header(diff: str) -> str:
-    """A file's diff before its first hunk, where git prints a submodule's mode and "Binary files … differ": measured,
-    searching whole diffs for them took 600 ms over a 66 MB `--all`, the headers alone 12."""
-    return diff.partition("\n@@")[0]
-
-
 def unread(entry: dict, diff: str, cut: bool, fits: bool, cap: int) -> str:
     """Why the guidelines could not read all of a changed file, or "" when they could: named, never read as "found
     nothing". A deleted file adds nothing: what it removes was reviewed when it came in. `fits` is False for a
@@ -759,98 +721,15 @@ def unread(entry: dict, diff: str, cut: bool, fits: bool, cap: int) -> str:
         return ""
     if not diff.strip():
         return "git showed none of it"
-    if _SUBMODULE.search(header := _header(diff)):
+    if SUBMODULE.search(top := header(diff)):
         return "a submodule: its commits are another repository's, not read here"
-    if _BINARY.search(header):
+    if BINARY.search(top):
         return "binary: no line of it can be read or quoted"
     if not fits:
         return f"past the {BLOCK_CAP_CHARS:,} characters the guidelines read in all; --path narrows a review"
     if cut:
         return f"cut at {cap:,} characters: the guidelines read only its start"
     return ""
-
-
-def _fence(text: str) -> str:
-    """A code fence longer than any run of backticks in `text`: measured, a markdown file's own fence of three,
-    a context line of the change, closed the fence of three the change was written in."""
-    return "`" * max(3, 1 + max((len(run) for run in re.findall(r"`+", text)), default=0))
-
-
-def _hunks(diff: str, aside: list[str] | None = None) -> Iterator[list[tuple[int, str]]]:
-    """Each hunk of the diff, as `(new line number, line)` for every line inside it — added, removed or context,
-    marker kept — and every line no hunk holds into `aside`, where one is given.
-
-    The one place unified-diff syntax is read. Git's file headers come before
-    the first `@@`, and inside a hunk anything that is not a change or context
-    line — the next hunk's header, git's `\\ No newline at end of file`, the
-    cap's cut marker — is not a line of the file. A removed line carries the
-    number of the new line before it, 0 when there is none. Git names an empty
-    range by the line before it: measured, `+0,0`, a deleted file's hunk, read
-    as the line after it numbered every removed line -1.
-    """
-    hunk: list[tuple[int, str]] | None = None
-    new_line = 0
-    for raw in diff.split("\n"):  # git's line break, and no other
-        if match := _HUNK_START.match(raw):
-            if hunk:
-                yield hunk
-            new_line, hunk = int(match.group(1)) - (match.group(2) is None), []
-        elif hunk is not None and raw[:1] in ("+", "-", " "):
-            if raw[:1] != "-":  # a removed line is not in the new file
-                new_line += 1
-            hunk.append((new_line, raw))
-            continue
-        if aside is not None:
-            aside.append(raw)
-    if hunk:
-        yield hunk
-
-
-def _around_hunks(diff: str) -> list[str]:
-    """The lines of `diff` no hunk holds, as git printed them, and each hunk's header again without git's guess at the
-    function around it, which a quote may leave off."""
-    aside: list[str] = []
-    for _hunk in _hunks(diff, aside):  # read through for what it sets aside
-        pass
-    return aside + [line[: line.index(" @@", 2) + 3] for line in aside if _HUNK_START.match(line) and " @@ " in line]
-
-
-def _hunk_lines(diff: str) -> Iterator[tuple[int, str]]:
-    """`(new line number, line)` for every line inside the diff's hunks, one hunk after another."""
-    for hunk in _hunks(diff):
-        yield from hunk
-
-
-def added_lines(diff: str) -> list[tuple[int, str]]:
-    """`(new line number, text)` for every line the change added: a rule that needs "what was added, and where"
-    takes this list, never the diff."""
-    return [(number, raw[1:]) for number, raw in _hunk_lines(diff) if raw[:1] == "+"]
-
-
-def quotable(diff: str) -> list[list[tuple[int, str]]]:
-    """Each hunk's `(new line number, line)` pairs, the lines a guideline may quote from one file's diff as it read it,
-    markers kept, hunk by hunk, since a quote stands in one hunk and never across two: nothing git or the cap wrote
-    around them, which a finding could otherwise quote and pass as grounded."""
-    return list(_hunks(diff))
-
-
-def framed(path: str, shown: str) -> tuple[str, list[str]]:
-    """A file's diff as each guideline reads it — under its heading, in a fence its own backticks cannot close — and
-    the lines it was framed in there: the heading, the fence, and what git and the cap wrote around and inside its
-    hunks. A guideline quotes a file as it was shown it, so grounding looks past these, and only these: measured by
-    review with a list of such lines kept by hand beside this rendering, a file with no final newline and a file cut at
-    the cap, each quoted whole, were dropped, git's `\\ No newline at end of file` and the cut's marker on no list."""
-    fence = _fence(shown)
-    heading, opening = f"### {squash(path)}", f"{fence}diff"
-    return f"{heading}\n{opening}\n{shown}\n{fence}", [heading, opening, *_around_hunks(shown), fence]
-
-
-def capped(diff: str, cap: int = DIFF_CAP_CHARS) -> tuple[str, bool]:
-    """The diff as a model may read it: cut at the cap, with the cut named on a line of its own, and never inside a
-    credential, as `cut_at` never cuts. The cut comes before the scrub, and half a credential no longer matches its
-    shape: measured with the cut at the cap whatever it split, 30 of an AWS secret's 40 characters and four lines of a
-    key's body reached every guideline."""
-    return cut_at(diff, cap, sep="\n"), len(diff) > cap
 
 
 def collect_evidence(
@@ -906,51 +785,10 @@ def gather(
     for the commits the intake confirmed, never resolving their names again — measured, a head given as a sha resolved
     through no ref, and the rules reviewed nothing while the guidelines reviewed the change."""
     base, head = resolved["base"] or None, resolved["head"]
-    files: list[dict] = []
-    blocks: list[str] = []
     try:
         listed = list_changed(resolved)
         entries = [entry for entry in listed if in_scope(entry["path"], scope)]
-        if base is None:  # every file is added: one call reads them all
-            diffs = whole_diffs(resolved, entries, scope)
-        else:
-            with ThreadPoolExecutor(max_workers=GIT_WORKERS) as pool:  # git processes to wait on: threads suffice
-                diffs = list(pool.map(lambda entry: diff_of(resolved, entry["path"], entry.get("old", "")), entries))
-        room, left_out, excluded = BLOCK_CAP_CHARS, 0, {}
-        for entry, diff in zip(entries, diffs, strict=True):
-            file = {
-                **entry,
-                "diff": diff,
-                "added": added_lines(diff),
-                "quotable": [],
-                "framing": [],
-                "unread": "",
-                "cut": False,
-            }
-            files.append(file)
-            # A file the operator's skip list names: the rules read it as any other, the guidelines are not shown it,
-            # and it is named and counted, never a hole. The operator chose it, in the tool's own config: a branch
-            # cannot, and code it hides behind such a name is still every rule's to read.
-            if skipped is not None and (glob := skipped(entry["path"])):
-                excluded[entry["path"]] = glob
-                continue
-            shown, cut = capped(diff, diff_cap)
-            block, framing = framed(entry["path"], shown)
-            fits = len(block) <= room
-            # The guidelines' limits alone: the rules read every added line.
-            file.update(unread=unread(entry, diff, cut, fits, diff_cap), cut=cut or not fits)
-            if fits:  # a file no guideline read, none may quote
-                file.update(quotable=quotable(shown), framing=framing)
-                blocks.append(block)
-                room -= len(block) + 2  # and the blank line joining it to the next
-            else:
-                left_out += 1
-        notes = []
-        if left_out:  # named to the guidelines too: a test left out is no test missing
-            notes.append(f"[… {left_out} more file(s) not shown: past {BLOCK_CAP_CHARS:,} characters in all]")
-        if excluded:
-            notes.append(f"[… {len(excluded)} more file(s) not shown: the operator's skip list leaves them out]")
-        blocks.extend(notes)
+        files, block, excluded = shown_to_guidelines(entries, _diffs(resolved, entries, scope), diff_cap, skipped)
         away = untracked(resolved) if resolved.get("staged") else None
     except GitError as exc:  # the change half read is not the change: named, never reviewed as it stands
         return {"status": "error", "error_message": str(exc)}
@@ -963,20 +801,12 @@ def gather(
     read = tree_rules or (radius and any(Radius(entry["path"]).measured for entry in files))
     tree = tree_at_head(resolved, listing) if read else None
     read_texts(resolved, files, listing)
-    for entry in files:  # the added lines' numbers, which the report reads after the rules have let the lines go
-        entry["added_at"] = frozenset(number for number, _text in entry["added"] or ())
-    if read:
-        blast = radius_of(tree, files)
-    elif radius:  # asked of files it does not measure, it names each one with no tree to read
-        blast = blast_radius({}, files)
-    else:
-        blast = Blast((), (), 0, asked=False)
     return {
         "status": "success",
         "preflight": resolved,
         "files": files,
-        "diff": "\n\n".join(blocks),
-        "blast": blast,
+        "diff": block,
+        "blast": _radius(tree, files, read=read, asked=radius),
         "tree": tree,
         "whole": base is None,
         "scope": list(scope),
@@ -984,6 +814,74 @@ def gather(
         "untracked": away,
         "outside": len(listed) - len(entries),
     }
+
+
+def _diffs(resolved: dict, entries: list[dict], scope: Sequence[str]) -> list[str]:
+    """Each entry's whole diff, in order: under `--all` one call for them all, else one call a file, `GIT_WORKERS` at
+    a time."""
+    if not resolved["base"]:  # every file is added: one call reads them all
+        return whole_diffs(resolved, entries, scope)
+    with ThreadPoolExecutor(max_workers=GIT_WORKERS) as pool:  # git processes to wait on: threads suffice
+        return list(pool.map(lambda entry: diff_of(resolved, entry["path"], entry.get("old", "")), entries))
+
+
+def shown_to_guidelines(
+    entries: list[dict], diffs: list[str], diff_cap: int, skipped: Callable[[str], str | None] | None
+) -> tuple[list[dict], str, dict[str, str]]:
+    """Each changed file with its whole diff and its added lines, for the rules, and what the guidelines are shown of
+    it; the block they read, each file capped at `diff_cap` and the block at `BLOCK_CAP_CHARS`, what it leaves out
+    counted at its end; and the files the operator's skip list left out, by path with the glob. Decided from the
+    diffs alone: no git runs here."""
+    files: list[dict] = []
+    blocks: list[str] = []
+    room, left_out, excluded = BLOCK_CAP_CHARS, 0, {}
+    for entry, diff in zip(entries, diffs, strict=True):
+        added = added_lines(diff)
+        # The added lines' numbers too, which the report reads after the rules have let the lines go.
+        at = frozenset(number for number, _text in added)
+        file = {
+            **entry,
+            "diff": diff,
+            "added": added,
+            "added_at": at,
+            "quotable": [],
+            "framing": [],
+            "unread": "",
+            "cut": False,
+        }
+        files.append(file)
+        # A file the operator's skip list names: the rules read it as any other, the guidelines are not shown it,
+        # and it is named and counted, never a hole. The operator chose it, in the tool's own config: a branch
+        # cannot, and code it hides behind such a name is still every rule's to read.
+        if skipped is not None and (glob := skipped(entry["path"])):
+            excluded[entry["path"]] = glob
+            continue
+        shown, cut = capped(diff, diff_cap)
+        block, framing = framed(entry["path"], shown)
+        fits = len(block) <= room
+        # The guidelines' limits alone: the rules read every added line.
+        file.update(unread=unread(entry, diff, cut, fits, diff_cap), cut=cut or not fits)
+        if fits:  # a file no guideline read, none may quote
+            file.update(quotable=quotable(shown), framing=framing)
+            blocks.append(block)
+            room -= len(block) + 2  # and the blank line joining it to the next
+        else:
+            left_out += 1
+    if left_out:  # named to the guidelines too: a test left out is no test missing
+        blocks.append(f"[… {left_out} more file(s) not shown: past {BLOCK_CAP_CHARS:,} characters in all]")
+    if excluded:
+        blocks.append(f"[… {len(excluded)} more file(s) not shown: the operator's skip list leaves them out]")
+    return files, "\n\n".join(blocks), excluded
+
+
+def _radius(tree: Tree | None, files: list[dict], *, read: bool, asked: bool) -> Blast:
+    """What at the head depends on each changed file, where the head was read; else, asked of files it does not
+    measure, each one named with no tree to read; else not asked."""
+    if read:
+        return radius_of(tree, files)
+    if asked:
+        return blast_radius({}, files)
+    return Blast((), (), 0, asked=False)
 
 
 def _nothing(head: str, base: str | None, scope: Sequence[str]) -> str:

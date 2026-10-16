@@ -14,7 +14,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import re
 import time
 from collections.abc import Callable, Iterator, Mapping
 from pathlib import Path
@@ -22,6 +21,8 @@ from typing import Any, override
 
 from google.adk.models.llm_response import LlmResponse
 from google.adk.plugins.base_plugin import BasePlugin
+from google.adk.utils._schema_utils import validate_schema
+from google.adk.utils.content_utils import extract_text_from_content
 from google.genai import types
 from pydantic import BaseModel, ValidationError
 
@@ -90,13 +91,6 @@ class RedactSecretsPlugin(BasePlugin):
         return scrubbed if count else None
 
 
-def _answer(content: Any) -> str:
-    """A reply's text as ADK reads it, and as a recording keeps it to serve again: every part that is not a thought,
-    joined. One reading for both, so a replay serves what the schema was checked against."""
-    parts = getattr(content, "parts", None) or ()
-    return "".join(part.text for part in parts if part.text and not part.thought)
-
-
 class ReportProviderErrors(BasePlugin):
     """A provider error is the guideline's own answer, not the graph's death.
 
@@ -130,13 +124,15 @@ class ReportProviderErrors(BasePlugin):
         is. Measured on ADK 2.9.2 without this: ADK validated the reply and raised, the run ended, every guideline
         still in flight was lost, and each was named with the first one's error. A cut reply counts too: ADK's LiteLLM
         wrapper marks one with an error code and keeps its text, and ADK validates that text all the same. The text is
-        read as ADK reads it: every part that is not a thought, a code fence around the whole of it stripped."""
+        read and validated by ADK's own two functions, the ones its agent and its workflow node use: every part that
+        is not a thought, a code fence around the whole of it stripped. `_schema_utils` is marked as ADK's own; the
+        pinned ADK holds it, and an upgrade that moved it would fail this module's import, and the suite, at once."""
         schema = self.schemas.get(callback_context.agent_name)
-        text = _answer(llm_response.content) if schema is not None else ""
+        text = extract_text_from_content(llm_response.content) if schema is not None else ""
         if not text.strip():
             return None  # nothing ADK would validate
         try:
-            schema.model_validate_json(_unfenced(text))
+            validate_schema(schema, text)
         except ValidationError as exc:
             reason = llm_response.finish_reason
             cut = reason not in (None, types.FinishReason.STOP)
@@ -230,16 +226,6 @@ class OneTurn(BasePlugin):
         return None
 
 
-#: A code fence around a whole structured reply, which ADK strips before it validates the reply.
-_FENCED = re.compile(r"```\w*\s*(.*?)\s*```", re.DOTALL)
-
-
-def _unfenced(text: str) -> str:
-    """`text` as ADK validates it: the payload of a code fence wrapping the whole of it, or the text as it is."""
-    match = _FENCED.fullmatch(text.strip())
-    return match.group(1).strip() if match else text
-
-
 def request_hash(llm_request: Any) -> str:
     """A request as the model read it, secrets redacted, as one hash: its instruction, with the fences' nonce, drawn
     once a process, read as a placeholder, and the text of every turn. What a recorded answer is kept under and a
@@ -272,7 +258,7 @@ class Recorder(BasePlugin):
         content = getattr(llm_response, "content", None)
         if asked is None or content is None:  # an error, or a refusal before the call: no answer to keep
             return None
-        answer = _answer(content)
+        answer = extract_text_from_content(content)  # what ADK reads of the reply, so a replay serves it
         kept = {"request": asked[0], "model": asked[1], "agent": callback_context.agent_name, "answer": answer}
         self.folder.mkdir(mode=0o700, parents=True, exist_ok=True)  # the operator's alone: answers quote the code
         (self.folder / f"{asked[0][:24]}.json").write_text(json.dumps(kept, ensure_ascii=False), encoding="utf-8")
@@ -399,15 +385,3 @@ class UsageLedger(BasePlugin):
             "ceiling": self.ceiling,
             "by_agent": {self.named.get(name, name): dict(row) for name, row in sorted(self.rows.items())},
         }
-
-    def render(self) -> str:
-        """The spend as the text report prints it, from the same numbers the JSON report carries."""
-        spend = self.summary()
-        calls, attempted, tokens = spend["calls"], spend["attempted"], spend["tokens"]
-        lines = [f"- spend: {calls} model call(s) completed of {attempted} attempted, {tokens:,} tokens"]
-        lines += [
-            f"  - `{name}`: {r['calls']} call(s), {r['tokens']:,} tokens" for name, r in spend["by_agent"].items()
-        ]
-        if spend["ceiling"] is not None:
-            lines.append(f"- ceiling: {spend['ceiling']:,} tokens")
-        return "\n".join(lines)

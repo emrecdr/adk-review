@@ -660,25 +660,33 @@ class TestTheLintRule:
         from adk_review.collect import git, ruff
 
         evidence = git.collect_evidence(str(demo_repo), BASE, HEAD)
-        real = ruff.subprocess.run
+        real = ruff._ruff
 
-        def nulled(argv, **kwargs):
-            done = real(argv, **kwargs)
-            done.stdout = json.dumps([{**hit, "code": None} for hit in json.loads(done.stdout)])
-            return done
+        def nulled(argv: list[str], cwd: str) -> str:
+            return json.dumps([{**hit, "code": None} for hit in json.loads(real(argv, cwd))])
 
-        monkeypatch.setattr(ruff.subprocess, "run", nulled)
+        monkeypatch.setattr(ruff, "_ruff", nulled)
         found = lint_findings(evidence)
         assert found and {(f.title.split()[1], f.severity) for f in found} == {("invalid-syntax", "major")}, found
 
-        def garbled(argv, **kwargs):
-            done = real(argv, **kwargs)
-            done.stdout = "not json"
-            return done
-
-        monkeypatch.setattr(ruff.subprocess, "run", garbled)
+        monkeypatch.setattr(ruff, "_ruff", lambda *_args: "not json")
         said = lint_findings(evidence)
         assert said == "ruff's answer could not be read (JSONDecodeError), so the rule did not look", said
+
+    def test_ruffs_answer_is_read_back_to_each_files_own_path_and_lines(self) -> None:
+        """Read from ruff's JSON alone, no ruff run: each hit under the path its folder's index names, however ruff
+        spells the root, the line it names as the file holds it, none past the file's end, and ruff 0.12's null code
+        for a file that does not parse read as the parse failure it is."""
+        from adk_review.collect import ruff
+
+        hits = [
+            {"filename": "/x/1/module.py", "location": {"row": 2}, "code": "F401", "message": "unused", "fix": None},
+            {"filename": "0/__init__.py", "location": {"row": 9}, "code": None, "message": "parse", "fix": None},
+        ]
+        found = ruff._parsed(json.dumps(hits), ["pkg/__init__.py", "app.py"], {"app.py": ["", "import os"]})
+        ((one,), (two,)) = found["app.py"], found["pkg/__init__.py"]
+        assert (one.line, one.source, one.code) == (2, "import os", "F401"), one
+        assert (two.line, two.source, two.code) == (9, "", "invalid-syntax"), two
 
     def test_a_ruff_that_fails_did_not_look_and_says_so(self, demo_repo: Path) -> None:
         """Measured before: a ruff that could not run exited 2 with nothing on stdout, and the rule read the empty
@@ -1186,7 +1194,7 @@ class TestWhatTheBranchCannotTellTheRules:
         def refuse(*_args, **_kwargs):
             raise OSError(22, "Invalid argument")
 
-        monkeypatch.setattr(ruff.Path, "write_text", refuse)
+        monkeypatch.setattr(ruff, "_laid_out", refuse)
         said = "a changed file could not be written to lint (Invalid argument), so the rule did not look"
         assert lint_findings(evidence) == said
 
@@ -1234,14 +1242,14 @@ class TestWhatTheBranchCannotTellTheRules:
     def test_each_commit_a_push_sends_reads_its_files_as_diff_of_does(self, hostile_repo) -> None:
         """Measured by review: a file a commit holds before another kept its CRLF last line's `\\r`, and the pre-push
         hook flagged `TOKEN_EXPIRY_MS=86400000` in `.env` as a password where the branch's review let it go."""
-        from adk_review.collect import git
+        from adk_review.collect import diff, git
 
         for branch in ("carriage", "spaced", "crlf", "renamed"):
             resolved = git.preflight(str(hostile_repo), BASE, branch)
             shown = {
                 entry["path"]: added
                 for entry in git.list_changed(resolved)
-                if (added := git.added_lines(git.diff_of(resolved, entry["path"], entry.get("old", ""))))
+                if (added := diff.added_lines(git.diff_of(resolved, entry["path"], entry.get("old", ""))))
             }
             sent = git.sent(str(hostile_repo), None, branch, BASE)
             assert {file["path"]: file["added"] for _, _, files in sent for file in files} == shown, branch
@@ -1254,30 +1262,20 @@ class TestWhatTheBranchCannotTellTheRules:
         found = lint_findings(git.collect_evidence(str(hostile_repo), BASE, "broken"))
         assert [f.severity for f in found if f.title.startswith("lint: invalid-syntax")][:1] == ["major"], found
 
-    def test_a_changed_path_never_names_a_file_on_disk(self, tmp_path, monkeypatch) -> None:
+    def test_a_changed_path_never_names_a_file_on_disk(self, tmp_path) -> None:
         """The rule writes each file under a name of its own, `module.py` or `__init__.py`, in a folder of its own,
         never the branch's path. Windows cannot hold `nul.py` (the null device), `a:b.py` or a control character, and
         the forged path made the rule a hole there; and `../../escape.py` was once written beside the rule's folder."""
         from adk_review.collect import ruff
 
-        folder = tmp_path / "outer" / "rule"
-        folder.mkdir(parents=True)
-
-        class Here:
-            def __init__(self, *_args, **_kwargs) -> None: ...
-
-            def __enter__(self) -> str:
-                return str(folder)
-
-            def __exit__(self, *_exc) -> bool:
-                return False
-
-        monkeypatch.setattr(ruff.tempfile, "TemporaryDirectory", Here)
         names = ["../../escape.py", "nul.py", "a:b.py", "x\n## Verdict.py", "pkg/__init__.py"]
         found = lint_findings({"files": [_entry(name, "import os\n") for name in names], "tree": None})
         assert sorted(f.file for f in found if f.title.startswith("lint: F401")) == sorted(names), found
+        folder = tmp_path / "outer" / "rule"
+        folder.mkdir(parents=True)
+        targets, _lines = ruff._laid_out(str(folder), dict.fromkeys(names, "import os\n"))
         written = sorted(path.relative_to(folder).as_posix() for path in folder.rglob("*.py"))
-        assert written == ["0/module.py", "1/module.py", "2/module.py", "3/module.py", "4/__init__.py"], written
+        assert written == targets == ["0/module.py", "1/module.py", "2/module.py", "3/module.py", "4/__init__.py"]
         assert not (tmp_path / "outer" / "escape.py").exists(), "written outside the rule's folder"
 
 

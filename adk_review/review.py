@@ -128,6 +128,7 @@ except Exception as exc:  # noqa: BLE001 -- a broken install's own words, whatev
     UNLOADED = f"{type(exc).__name__}: {exc}"
 
 if TYPE_CHECKING:
+    from google.adk.apps.app import App
     from google.adk.plugins.base_plugin import BasePlugin
 
     from .judge.run import Run
@@ -174,6 +175,8 @@ def _previous(path: str) -> tuple[dict[str, dict], dict | None]:
     return kept, health if isinstance(health, dict) else None
 
 
+#: A previous review's findings by fingerprint and its health, as `--previous` reads them, or none.
+Previous = tuple[dict[str, dict] | None, dict | None]
 #: Where a review's results go, which no result depends on: left out of what keys a kept review.
 OUTPUTS = {"json", "handoff", "cache", "record", "trace", "debug_log", "progress"}
 #: The modes besides a review, by their flags' dests: each stops before a review would start.
@@ -664,15 +667,9 @@ def _review(argv: list[str] | None = None) -> int:
         # One run's `--check` list is held to what a profile is, and named in the report as the flag.
         chosen = select(found, config["profiles"], args.profile, args.check)
         scope = scope_of(args.path)
-        # A mode besides a review reads none of a review's own flags: measured, `--explain` beside `--json` cleared the
-        # file, then wrote nothing and exited 0.
-        if stops := next((flag for dest, flag in MODES.items() if getattr(args, dest)), None):
-            if given := [flag for dest, flag in REVIEW_ONLY.items() if getattr(args, dest)]:
-                raise ValueError(f"{given[0]} is a review's, and {stops} runs no review")
-            if stops == "--try" and args.repo is not None:
-                raise ValueError("--try reads files on disk: it takes no repository")
+        _mode_alone(args)
         explanation = explained(found, config["profiles"], args.explain) if args.explain else None
-        previous, previous_health = _previous(args.previous) if args.previous else (None, None)
+        previous = _previous(args.previous) if args.previous else (None, None)
         for flag, given in (("--json", args.json), ("--handoff", args.handoff)):
             if given:
                 _cleared(flag, given)
@@ -687,17 +684,38 @@ def _review(argv: list[str] | None = None) -> int:
         return EXIT_CLEAN
     if args.try_paths:
         return _try(args.try_paths, chosen, args.fail_on)
-    # A review from here on, and the engine with it, which the modes above never import: measured, best of seven,
-    # `--list-checks` started in 0.75 s with it imported first and 0.13 s without, `--try` in 0.73 s and 0.15 s.
-    import asyncio
+    return _reviewed(args, chosen, scope, previous)
 
-    from google.adk.runners import InMemoryRunner
 
-    from .judge.agents import DIFF
+def _mode_alone(args: argparse.Namespace) -> None:
+    """A mode besides a review reads none of a review's own flags: measured, `--explain` beside `--json` cleared the
+    file, then wrote nothing and exited 0. `--try` reads files on disk, and takes no repository either."""
+    stops = next((flag for dest, flag in MODES.items() if getattr(args, dest)), None)
+    if stops is None:
+        return
+    if given := [flag for dest, flag in REVIEW_ONLY.items() if getattr(args, dest)]:
+        raise ValueError(f"{given[0]} is a review's, and {stops} runs no review")
+    if stops == "--try" and args.repo is not None:
+        raise ValueError("--try reads files on disk: it takes no repository")
+
+
+def _compared(args: argparse.Namespace) -> tuple[str, str | None, str]:
+    """The repository, and the base and head compared in it, as the flags name them or a person at a terminal
+    answers; `ValueError` or `GitError` for what cannot be reviewed."""
+    repo = repository(args.repo)
+    if args.cache and Path(args.cache).expanduser().resolve().is_relative_to(Path(repo).resolve()):
+        raise ValueError(f"--cache {args.cache} lies in the repository under review: nothing is written into it")
+    if args.staged and args.head:
+        raise ValueError("--staged reviews the index; it takes no --head")
+    base, head = ("HEAD", "the index") if args.staged else target(repo, args.base, args.head, args.all)
+    return repo, base, head
+
+
+def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...], previous: Previous) -> int:
+    """A review, and the engine with it, which the modes above never import: measured, best of seven, `--list-checks`
+    started in 0.75 s with it imported first and 0.13 s without, `--try` in 0.73 s and 0.15 s."""
     from .judge.config import require_ready, served
     from .judge.graph import build_app, skipped_by
-    from .judge.plugins import Progress, RedactSecretsPlugin, UsageLedger
-    from .judge.run import run_seeded
     from .judge.verify import VERIFIER
 
     guidelines = tuple(guideline.check_id for guideline in chosen.guidelines)
@@ -712,12 +730,7 @@ def _review(argv: list[str] | None = None) -> int:
         _say(why)
         return EXIT_USAGE
     try:
-        repo = repository(args.repo)
-        if args.cache and Path(args.cache).expanduser().resolve().is_relative_to(Path(repo).resolve()):
-            raise ValueError(f"--cache {args.cache} lies in the repository under review: nothing is written into it")
-        if args.staged and args.head:
-            raise ValueError("--staged reviews the index; it takes no --head")
-        base, head = ("HEAD", "the index") if args.staged else target(repo, args.base, args.head, args.all)
+        repo, base, head = _compared(args)
     except (ValueError, GitError) as exc:
         _say(str(exc))
         return EXIT_USAGE
@@ -738,14 +751,12 @@ def _review(argv: list[str] | None = None) -> int:
     if evidence["status"] != "success":
         _say(evidence["error_message"])
         return EXIT_USAGE
-    files = evidence["files"]
-    # What every report says of the review itself, a dry run's too: with no guideline there is no model to name.
-    model = (
-        served(roles) if guidelines and why is None else ""
-    )  # an arm that is not ready names no model: `why` says why
+    # What every report says of the review itself, a dry run's too: with no guideline there is no model to name; an
+    # arm that is not ready names no model either: `why` says why.
+    model = served(roles) if guidelines and why is None else ""
     shown = {"model": model, "profile": chosen.name, "off": chosen.off, "checks": chosen.ids()}
     if args.dry_run:
-        unread = not_read(files, guidelines)
+        unread = not_read(evidence["files"], guidelines)
         print(
             render_dry_run(
                 evidence, **shown, guidelines=guidelines, ready=why or "ready", unread=unread, config=str(CONFIG)
@@ -759,44 +770,75 @@ def _review(argv: list[str] | None = None) -> int:
     # Under --all the files are the project: its measures, read before the checks node lets the texts and tree go.
     health = measured(evidence["files"], evidence["tree"]) if evidence["whole"] else None
     # The checks node drops the tree and the texts once the rules have read them; a ceiling of 0 is none.
-    ceiling = args.max_tokens or None
     app = build_app(
         chat=False,
         checks=chosen,
         evidence=evidence,
-        ceiling=ceiling,
+        ceiling=args.max_tokens or None,
         say=say,
         debug_log=args.debug_log,
         record=args.record,
     )
     if args.trace:
         _traced(args.trace)
-    redactor = next(p for p in app.plugins if isinstance(p, RedactSecretsPlugin))
-    ledger = next(p for p in app.plugins if isinstance(p, UsageLedger))
-    progress = next(p for p in app.plugins if isinstance(p, Progress))
-    # The rules, then the guidelines, over a session that starts with the change they read, in no event a log could
-    # carry; every guideline finishes, whatever one of them does. One event loop for the run and its second opinion:
-    # `asyncio.run` makes a loop and closes it, and a client a library kept from the guidelines' calls met a closed
-    # loop at the verifiers', as ADK's cached Gemini client did (google/adk-python#5538).
+    outcome = _judged(app, evidence, chosen, guidelines, verify)
+    return _reported(args, evidence, outcome, app, shown, previous, health, cached)
+
+
+def _judged(app: App, evidence: dict, chosen: Selection, guidelines: tuple[str, ...], verify: bool) -> Outcome:
+    """The rules, then the guidelines, over a session that starts with the change they read, in no event a log could
+    carry; every guideline finishes, whatever one of them does; then the second opinion and the fold. One event loop
+    for the run and its second opinion: `asyncio.run` makes a loop and closes it, and a client a library kept from
+    the guidelines' calls met a closed loop at the verifiers', as ADK's cached Gemini client did
+    (google/adk-python#5538)."""
+    import asyncio
+
+    from google.adk.runners import InMemoryRunner
+
+    from .judge.agents import DIFF
+    from .judge.plugins import RedactSecretsPlugin
+    from .judge.run import run_seeded
+
     runner = InMemoryRunner(app=app)
     with asyncio.Runner() as loop:
         run = loop.run(run_seeded(runner, session_id="run", state={DIFF: evidence["diff"]}, prompt="review"))
         rules, holes = read_checks(run, chosen.rules)
-        outcome = postprocess(run, files, guidelines, holes)
+        outcome = postprocess(run, evidence["files"], guidelines, holes)
         if verify:
             second_opinion(outcome, rules, evidence["diff"], app.plugins, loop.run)
-    outcome.redacted = redactor.redacted  # read after the verifiers, whose calls the same plugin scrubs
+    # Read after the verifiers, whose calls the same plugin scrubs.
+    outcome.redacted = next(p for p in app.plugins if isinstance(p, RedactSecretsPlugin)).redacted
     fold(outcome, rules, chosen.ids())
+    return outcome
+
+
+def _reported(
+    args: argparse.Namespace,
+    evidence: dict,
+    outcome: Outcome,
+    app: App,
+    shown: dict,
+    previous: Previous,
+    health: dict | None,
+    cached: Path | None,
+) -> int:
+    """The verdict, decided by code, and the review's reports: the text one always, the hand-off and the JSON where
+    asked for or kept, and the whole kept where a cache is named and the review has no hole."""
+    from .judge.plugins import Progress, UsageLedger
+
+    ledger = next(p for p in app.plugins if isinstance(p, UsageLedger))
+    progress = next(p for p in app.plugins if isinstance(p, Progress))
+    seen, seen_health = previous
     verdict, code = decide(outcome, args.fail_on)
     report = render(
         evidence,
         outcome,
         verdict=verdict,
-        spend=ledger.render(),
+        usage=ledger.summary(),
         fail_on=args.fail_on,
-        previous=previous,
+        previous=seen,
         health=health,
-        previous_health=previous_health,
+        previous_health=seen_health,
         **shown,
     )
     keep = cached is not None and code in (EXIT_CLEAN, EXIT_FINDINGS)  # a hole is never kept: the next run looks again
@@ -813,7 +855,7 @@ def _review(argv: list[str] | None = None) -> int:
             **shown,
             version=version(),
             seconds=progress.summary(),
-            previous=previous,
+            previous=seen,
             health=health,
         )
         if args.json or keep

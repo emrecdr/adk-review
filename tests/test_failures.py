@@ -126,6 +126,11 @@ async def test_a_reply_the_schema_refuses_is_that_agents_own_error() -> None:
     assert cut.error_message == "the reply did not match the schema: the reply was cut short (MAX_TOKENS)"
     assert await answer('{"findings": []}') is None
     assert await answer('```json\n{"findings": []}\n```') is None, "a fence ADK strips is no mismatch"
+    thinking = types.Part(text="Let me think it through.", thought=True)
+    thought = LlmResponse(content=types.ModelContent([thinking, types.Part(text='{"findings": []}')]))
+    assert await plugin.after_model_callback(callback_context=judging, llm_response=thought) is None, (
+        "a thought skipped"
+    )
     assert await answer("   ") is None, "nothing ADK would validate"
     assert await answer("Hello.", context=prose) is None, "an agent that answers in prose has no schema to fit"
 

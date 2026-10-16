@@ -59,10 +59,15 @@ line-length = 120
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP", "N", "ARG", "ASYNC", "RUF", "BLE001", "S607", "SIM", "RET", "C4", "PIE", "PT"]
+select = ["E", "F", "W", "I", "B", "UP", "N", "ARG", "ASYNC", "RUF", "BLE001", "S607", "SIM", "RET", "C4", "PIE", "PT", "C90"]
 # SIM112 would upper-case Windows' own `SystemRoot` and `NoDefaultCurrentDirectoryInExePath`; PT018 would split
 # asserts that read as one sentence.
 ignore = ["SIM112", "PT018"]
+
+[tool.ruff.lint.mccabe]
+# No function past McCabe complexity 10, the bar of the Health section's lowest band. Measured when it was set: three
+# functions past it held the package to a B by its own Health section, each split along its own steps, and it read A.
+max-complexity = 10
 
 [tool.ruff.lint.per-file-ignores]
 # The demo's builder and the fixtures run the developer's own git in folders they made; the reviewer, which may run
@@ -70,6 +75,8 @@ ignore = ["SIM112", "PT018"]
 "scripts/make_demo_repo.py" = ["S607"]
 "scripts/measure.py" = ["S607"]
 "tests/*" = ["S607"]
+# The Copilot login's `main`, one device-flow conversation read top to bottom, is the one function past the bar.
+"scripts/copilot_login.py" = ["C901"]
 
 [tool.pyrefly]
 search-path = [".", "scripts"]

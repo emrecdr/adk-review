@@ -146,6 +146,7 @@ class ChangedFile:
     def __init__(
         self,
         path: str,
+        *,
         text: str | None,
         added: Iterable[int],
         module: ast.Module | str | None,
@@ -268,7 +269,16 @@ class FileRule(AnyRule):
             # Ruff's diagnostics ride on an entry only for the rule that named its codes; every other rule gets none.
             unread = entry["unread_text"] or ""
             diagnostics, shown = entry.get("diagnostics", ()), entry.get("shown") or {}
-            file = ChangedFile(path, entry["text"], added, module, diagnostics, unread, changed, shown)
+            file = ChangedFile(
+                path,
+                text=entry["text"],
+                added=added,
+                module=module,
+                diagnostics=diagnostics,
+                unread=unread,
+                changed=changed,
+                shown=shown,
+            )
             try:
                 found += [self._hit(file, item) for item in _each(self.check(file), "file", returns)]
             except UnreadError:

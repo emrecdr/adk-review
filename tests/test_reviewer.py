@@ -386,7 +386,7 @@ class TestWhatTheSecretsGateKnows:
         30 of an AWS secret's 40 characters reached every lane, and four lines of a key's body. The cut moves to before
         a credential it would split, and still names where it fell."""
         scrub, _gate = _secrets_of()
-        from adk_review.collect.git import DIFF_CAP_CHARS, capped
+        from adk_review.collect.diff import DIFF_CAP_CHARS, capped
 
         key = '+aws_secret_access_key = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"\n'
         block = "+-----BEGIN RSA PRIVATE KEY-----\n" + "+MIIEowIBAAKCAQEA7yn3bRHQ5abcdefghij\n" * 8
@@ -465,10 +465,11 @@ class TestWhatGroundingKeeps:
         findings dropped quoted their lines under the hunk's `@@` header, and, told to quote whole lines, 14 of 14. The
         framing is no line of the diff: the lines inside it ground, still whole lines, and it grounds nothing alone;
         and only the file's own framing is looked past, as it was shown, never another file's heading."""
-        _rule, git, _schema = _grounding_of()
+        from adk_review.collect import diff
+
         code = ["+def find(db, who):", "+    return db.execute(f'SELECT * FROM t WHERE who = {who}')"]
         headers = "diff --git a/x b/x\nnew file mode 100644\nindex 0000000..1111111\n--- /dev/null\n+++ b/x\n"
-        _block, around = git.framed("x", headers + "@@ -0,0 +1,2 @@ def context(self):\n" + "\n".join(code))
+        _block, around = diff.framed("x", headers + "@@ -0,0 +1,2 @@ def context(self):\n" + "\n".join(code))
         assert _grounds(code, "\n".join([*before, *code, *after]), around)
         assert not _grounds(code, "\n".join([*before, *after]), around), "the framing alone grounds nothing"
         assert not _grounds(code, "\n".join([*before, "+def find(db, whom):", *after]), around), "still whole lines"
@@ -551,8 +552,8 @@ class TestWhatGroundingKeeps:
     def test_a_removed_line_carries_the_new_line_before_it(self) -> None:
         """Measured by review: `@@ -1,2 +0,0 @@`, a deleted file's one hunk, numbered its lines -1, and the report
         named `old.py:-1`. Git names an empty range by the line before it: a deleted file's lines carry 0, no line."""
-        _rule, git, _schema = _grounding_of()
-        quotable = git.quotable
+        from adk_review.collect.diff import quotable
+
         assert quotable("@@ -1,2 +0,0 @@\n-x = 1\n-y = 2") == [[(0, "-x = 1"), (0, "-y = 2")]]
         assert quotable("@@ -5,2 +4,0 @@\n-a = 1") == [[(4, "-a = 1")]]
         assert quotable("@@ -5,2 +5,3 @@\n a\n-b\n+c\n+d") == [[(5, " a"), (5, "-b"), (6, "+c"), (7, "+d")]]
@@ -563,8 +564,9 @@ class TestWhatGroundingKeeps:
         degraded; the last line of one hunk joined to the first of the next grounded as one span, twenty lines
         apart, and a finding between them folded into it. A file named as the diff's header spells it, `b/…`, is the
         changed file it means."""
-        rule, git, schema = _grounding_of()
-        quotable = git.quotable
+        from adk_review.collect.diff import quotable
+
+        rule, _collect, schema = _grounding_of()
         diff = (
             "@@ -1,4 +1,4 @@\n def total(price, quantity):\n-    amount = price * quantity\n"
             "+    amount = eval(price) * quantity\n     return amount\n"

@@ -14,7 +14,7 @@ from ..core.blast import Blast, describe
 from ..core.findings import RANK, Checked, Finding, at_or_above
 from ..core.health import Health, found_by_rule, grade
 from ..core.secrets import scrub
-from ..core.text import EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, cut_at, squash
+from ..core.text import EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, squash
 from ..core.verdict import Outcome, Sourced, at_bar
 
 #: What a terminal runs or reorders, and what a reader cannot see: escape sequences, C0 and C1 controls (U+009B is
@@ -69,7 +69,7 @@ def prose(text: str) -> str:
 def code_span(text: str) -> str:
     """`text` as a markdown code span fenced to beat its own backticks: a guideline quotes source, and source has
     them."""
-    longest = max((len(run) for run in re.findall(r"`+", text)), default=0)
+    longest = backticks(text)
     if not longest:
         return f"`{text}`"
     fence = "`" * (longest + 1)
@@ -353,12 +353,22 @@ def _resolved(identities: Sequence[str], verdict: str, previous: Mapping[str, di
     return [found for identity, found in previous.items() if identity not in found_now]
 
 
+def _spent(usage: dict) -> str:
+    """The spend as the text report prints it, from the numbers the JSON report carries: the usage ledger's summary."""
+    calls, attempted, tokens = usage["calls"], usage["attempted"], usage["tokens"]
+    lines = [f"- spend: {calls} model call(s) completed of {attempted} attempted, {tokens:,} tokens"]
+    lines += [f"  - `{name}`: {r['calls']} call(s), {r['tokens']:,} tokens" for name, r in usage["by_agent"].items()]
+    if usage["ceiling"] is not None:
+        lines.append(f"- ceiling: {usage['ceiling']:,} tokens")
+    return "\n".join(lines)
+
+
 def render(
     evidence: dict,
     outcome: Outcome,
     *,
     verdict: str,
-    spend: str,
+    usage: dict,
     fail_on: str,
     model: str,
     profile: str,
@@ -428,7 +438,7 @@ def render(
     lines += [
         f"- duplicates across rules and guidelines folded into one finding: {len(outcome.folded)}",
         f"- secrets redacted before any model call: {outcome.redacted}",
-        spend,
+        _spent(usage),
         "",
     ]
     return inert("\n".join(lines))  # once over the whole: no two fields side by side spell one
