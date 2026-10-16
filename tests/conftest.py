@@ -22,7 +22,7 @@ import os
 import subprocess
 import sys
 import tempfile
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -120,7 +120,14 @@ class FakeProvider:
     """What the fake does for a request whose instruction contains a text, per test: raise, or answer as told."""
 
     def __init__(self) -> None:
-        self.rules: list[tuple[str, Exception | dict | str]] = []
+        self.rules: list[tuple[str, Exception | dict | str | types.FunctionCall]] = []
+        #: A recording's answers by the hash of the request each was kept for, and that hash, as `replays` read them.
+        self.recorded: tuple[Callable[[LlmRequest], str], dict[str, str]] | None = None
+
+    def clear(self) -> None:
+        """Forget every rule and any recording: what each test starts and ends with."""
+        self.rules.clear()
+        self.recorded = None
 
     def raises_when(self, text: str, exc: Exception) -> None:
         self.rules.append((text, exc))
@@ -141,16 +148,18 @@ class FakeProvider:
         from adk_review.judge.plugins import request_hash
 
         kept = [json.loads(path.read_text(encoding="utf-8")) for path in folder.glob("*.json")]
-        self.rules.append((request_hash, {entry["request"]: entry["answer"] for entry in kept}))
+        self.recorded = (request_hash, {entry["request"]: entry["answer"] for entry in kept})
 
-    def answer(self, llm_request: LlmRequest) -> dict | str | None:
-        """What the first matching rule says: raised when it is an exception, returned when it is an answer."""
-        for hashed, answers in [(rule, kept) for rule, kept in self.rules if callable(rule)]:
+    def answer(self, llm_request: LlmRequest) -> dict | str | types.FunctionCall | None:
+        """A recorded answer for this very request, else what the first rule whose text the instruction holds says:
+        raised when it is an exception, returned when it is an answer."""
+        if self.recorded is not None:
+            hashed, answers = self.recorded
             if (found := answers.get(hashed(llm_request))) is not None:
                 return found
         instruction = str(llm_request.config.system_instruction or "")
         for text, rule in self.rules:
-            if not callable(text) and text in instruction:
+            if text in instruction:
                 if isinstance(rule, Exception):
                     raise rule
                 return rule
@@ -203,9 +212,9 @@ LLMRegistry.register(FakeModel)  # process-wide, once; `fake.*` matches nothing 
 @pytest.fixture
 def fake_provider():
     """The fake's behaviour for one test; whatever a test sets is gone before the next."""
-    PROVIDER.rules.clear()
+    PROVIDER.clear()
     yield PROVIDER
-    PROVIDER.rules.clear()
+    PROVIDER.clear()
 
 
 def pytest_configure() -> None:
@@ -710,3 +719,53 @@ def asked(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, list[str]]]:
 
     monkeypatch.setattr(FakeModel, "generate_content_async", recorded)
     return sent
+
+
+def run_rule(rule, files: list[dict], tree):
+    """`core/rules.py`'s `run_rule` of the package as it is loaded now, for the same reason."""
+    return importlib.import_module("adk_review.core.rules").run_rule(rule, files, tree)
+
+
+def _entry(path: str, text: str | None, unread: str | None = None) -> dict:
+    """A changed file as the collector lists one, for a rule run over a fixture: added whole, its text at the head
+    numbered as git numbers lines, or why the head holds it unread."""
+    lines_of = importlib.import_module("adk_review.core.text").lines_of
+    added = list(enumerate(lines_of(text), 1)) if text else []
+    return {"path": path, "status": "A", "text": text, "unread_text": unread, "added": added, "diff": ""}
+
+
+#: The guidelines a review runs with no --profile: the default's, as the shipped config names them. `full` runs every
+#: one there is, `guideline.correctness` among them, which the default leaves off until a live measurement.
+GUIDELINE_NAMES = tuple(
+    check.removeprefix("guideline.") for check in profiles_of()["default"] if check.startswith("guideline.")
+)
+
+
+def _broken(error: BaseException | None = None, kind: type | None = None):
+    """A rule of either kind whose own code fails: the project's code, run in the review's process."""
+    from adk_review.core.rules import Rule
+
+    class Broken(kind or Rule):
+        id, severity, title, fix = "broken", "minor", "t", "f"
+
+        def check(self, *_: object) -> bool:
+            raise error or RuntimeError("no")
+
+    return Broken()
+
+
+#: Some checks by id, for the tests that choose among them without the folders.
+SOME_CHECKS = ("rule.secrets", "rule.lint", "guideline.security", "guideline.tests", "guideline.complexity")
+
+
+#: A whole `config.toml` with no profiles, for the tests that spoil one setting of it.
+WHOLE_CONFIG = '[review]\nfail_on = "blocker"\nmax_tokens = 0\nverify = false\ndiff_cap = 4000\nskip = []\n'
+
+
+#: Profiles as `config.toml`'s `[profiles]` holds them, for tests that choose among them: a `default`, as the file must
+#: hold one, and two narrowings no shipped profile is called.
+PROFILES = {
+    "default": list(SOME_CHECKS),
+    "no-guidelines": ["rule.secrets", "rule.lint"],
+    "no-secrets": list(SOME_CHECKS[1:]),
+}

@@ -172,7 +172,7 @@ class TestTheReport:
         first, second = tmp_path / "first.json", tmp_path / "second.json"
         fake_provider.answers_when(EVERY_GUIDELINE, {**CANNED_REVIEW, "findings": [plain]})
         assert run_review(cli, demo_repo, "--json", str(first)) == 1
-        fake_provider.rules.clear()  # the first rule that matches answers
+        fake_provider.clear()  # the first rule that matches answers
         fake_provider.answers_when(EVERY_GUIDELINE, {**CANNED_REVIEW, "findings": [framed]})
         assert run_review(cli, demo_repo, "--previous", str(first), "--json", str(second)) == 1
         capsys.readouterr()

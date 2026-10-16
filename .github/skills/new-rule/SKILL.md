@@ -26,11 +26,11 @@ The shape of a rule — the three kinds, the constants it names, what it may imp
    `rule.<name>` to `default` only when every review should run it, since `default` holds the basics.
 4. See it fire on files on disk, no repository, no model and no key: `uv run python -m adk_review.review --try
    <files or folder> --check rule.<name>`, and `--explain rule.<name>` prints it whole. Then try it alone on a branch:
-   `uv run python -m adk_review.review <repo> --base main --check rule.<name>` on the demo repository or any other. Then test it in `tests/test_hardened.py` beside the other rules'
-   tests (`TestRulesAndProfiles`, `TestTreeRules`, `TestTheRuleKinds`): what it flags and what it leaves alone through
+   `uv run python -m adk_review.review <repo> --base main --check rule.<name>` on the demo repository or any other. Then test it in `tests/test_rules.py` beside the other rules'
+   tests (`TestTheShippedRules`, `TestTreeRules`; a new kind's contract in `tests/test_catalog.py`): what it flags and what it leaves alone through
    `try_rule(rule, {path: text})` and `lines_hit(rule, path, text)` from `adk_review.judge.rule_helpers`,
    what its examples do not already say, and a run on
    the demo repository with `--profile rules-only` when the planted branch should trip it.
 5. Check `uv run python -m adk_review.review --list-checks` shows it with its kind, its profiles and its
-   file, and that `GUIDE.md`'s check table matches it, and run `uv run pytest -q tests/test_docs.py tests/test_hardened.py
-   tests/test_layering.py`, then the whole suite and the lint.
+   file, and that `GUIDE.md`'s check table matches it, and run `uv run pytest -q tests/test_docs.py tests/test_rules.py
+   tests/test_catalog.py tests/test_layering.py`, then the whole suite and the lint.

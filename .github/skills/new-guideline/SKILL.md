@@ -14,8 +14,8 @@ the catalog finds the file, and the fan-out, its state key, the chat verdict's s
    a thinking budget, which Copilot ignores.
 2. Profiles in `adk_review/config.toml`: `full` runs it at once, through the group `guidelines`; add
    `guideline.<name>` to `default` to run it in every review. `rules-only` runs no guideline and stays as it is.
-3. Tests: `tests/test_reviewer.py` and `tests/test_hardened.py` count the guidelines in places; run them, and extend
-   each assertion the new one breaks rather than loosening it.
+3. Tests: `tests/test_reviewer.py`, `tests/test_engine.py`, `tests/test_rules.py` and `tests/test_command.py` count
+   the guidelines in places; run them, and extend each assertion the new one breaks rather than loosening it.
 4. Docs: `GUIDE.md`'s check table is held to `--list-checks`, so the docs test names what to add; a case-insensitive
    search for `three guidelines` and `security, tests, complexity` finds every place that names or counts them.
    Update each, except a measured number, which is history.

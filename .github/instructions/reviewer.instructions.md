@@ -65,7 +65,7 @@ applyTo: "adk_review/**"
   a reminder, `REMINDER` for the guidelines and the verifiers. Never escape or rewrite the content itself: a guideline
   quotes the diff verbatim, and grounding holds the quote to the real lines.
 - A state key more than one module uses is a constant in `judge/agents.py` (`SCOPE`, `REPOSITORY`, `DIFF`, `BLAST`,
-  `RULES`, `FAILURE`), and an instruction reads a key through `placeholder(key)`; `tests/test_hardened.py` holds every
+  `RULES`, `FAILURE`), and an instruction reads a key through `placeholder(key)`; `tests/test_engine.py` holds every
   placeholder an instruction reads to a key something writes.
 - Every rule runs the same way, through `run_rule`, in one `FunctionNode` (`judge/checks.py`) before the guidelines,
   in both shapes; each rule's answer, a `Checked`, is left in state under its check's key. The node also writes the

@@ -180,7 +180,7 @@ async def test_a_later_turn_reviews_again_only_when_its_own_intake_confirms(
     confirms(fake_provider, demo_repo)
     _final, state = await chat.say("Review feature/payments against main.")
     assert _intakes(asked) == [True, True, False, False, False, False] and state["verdict"], asked
-    fake_provider.rules.clear()
+    fake_provider.clear()
     asked.clear()
     final, _state = await chat.say("thanks!")
     assert final and _intakes(asked) == [True], asked
@@ -211,7 +211,7 @@ async def test_the_intake_is_told_the_repository_its_conversation_confirmed(
     confirms(fake_provider, demo_repo)
     _final, state = await chat.say("Review feature/payments against main.")
     assert state["review_repo"] not in asked[0][0], "none confirmed yet"
-    fake_provider.rules.clear()
+    fake_provider.clear()
     asked.clear()
     await chat.say("Now review feature/other.")
     assert state["review_repo"] in asked[0][0] and len(asked[0][1]) == 1, asked

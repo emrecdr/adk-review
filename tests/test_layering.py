@@ -216,3 +216,15 @@ def test_the_modes_that_read_the_checks_alone_start_without_the_engine(tmp_path:
     done = subprocess.run([sys.executable, "-c", probe], cwd=ROOT, capture_output=True, encoding="utf-8", check=False)
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == "[0, 0, 0, 0, 2] []", done.stdout
+
+
+def test_a_command_loads_no_litellm_until_the_copilot_arm_is_built() -> None:
+    """Measured before: `import litellm` at the top of each command cost about a second of every start, `--help`
+    included, and on its own import LiteLLM read `.env` and fetched a price list over the network. It is the
+    Copilot arm's alone; a fresh interpreter proves the command's import does not load it."""
+    probe = (
+        "import sys; import adk_review.review\nprint(sorted(m for m in sys.modules if m.split('.')[0] == 'litellm'))\n"
+    )
+    done = subprocess.run([sys.executable, "-c", probe], cwd=ROOT, capture_output=True, encoding="utf-8", check=False)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "[]", done.stdout[:200]

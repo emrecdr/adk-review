@@ -15,7 +15,7 @@ user's: every flag, check, JSON field and limit, held to the code by tests.
 ```bash
 uv sync --locked                           # install what the lock pins (make sync)
 uv run pytest -q                           # full offline suite, no key needed (make test)
-uv run pytest -q tests/test_hardened.py    # one file
+uv run pytest -q tests/test_rules.py       # one file
 uv run ruff check . && uv run ruff format --check .   # lint (make lint); `make format` fixes; `make ci` = lint + test
 
 uv run python scripts/make_demo_repo.py          # build <tmp>/adk-demo-repo: main + feature/payments with 4 planted defects
