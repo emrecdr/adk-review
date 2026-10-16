@@ -425,27 +425,29 @@ def _grounding_of():
     )
 
 
+def _grounded(findings: list, quotable: dict[str, list[list[tuple[int, str]]]], framing: dict | None = None):
+    """`drop_ungrounded` over `findings` as one guideline's answer: the kept, each with its lines, and the dropped."""
+    rule, _collect, schema = _grounding_of()
+    return rule.drop_ungrounded(schema.Review(summary="", findings=findings), quotable, framing or {})
+
+
 def _grounds(quotable: list[str], quote: str, around: Sequence[str] = ()) -> bool:
     """Whether a finding quoting `quote` is kept against one hunk of `quotable` lines, its file shown in `around`."""
-    rule, _collect, schema = _grounding_of()
+    _rule, _collect, schema = _grounding_of()
     finding = schema.Finding(file="x", line=1, severity="blocker", title="t", evidence=quote, suggestion="s")
-    review = schema.Review(summary="", findings=[finding])
-    kept, _dropped = rule.drop_ungrounded(review, {"x": _numbered(quotable)}, {"x": around})
+    kept, _dropped = _grounded([finding], {"x": _numbered(quotable)}, {"x": around})
     return bool(kept)
 
 
 def _placed_at(finding, quotable: dict[str, list[list[tuple[int, str]]]]):
     """The first and last line `drop_ungrounded` places `finding`'s quote on, or None where it drops it."""
-    rule, _collect, schema = _grounding_of()
-    kept, _dropped = rule.drop_ungrounded(schema.Review(summary="", findings=[finding]), quotable, {})
+    kept, _dropped = _grounded([finding], quotable)
     return kept[0][1] if kept else None
 
 
 def _grounded_in(files, findings: list):
     """`findings` grounded against each changed file as `collect_evidence` lists it, as the command grounds them."""
-    rule, _collect, schema = _grounding_of()
-    quotable, framing = ({f["path"]: f[key] for f in files} for key in ("quotable", "framing"))
-    return rule.drop_ungrounded(schema.Review(summary="", findings=findings), quotable, framing)
+    return _grounded(findings, *({f["path"]: f[key] for f in files} for key in ("quotable", "framing")))
 
 
 class TestWhatGroundingKeeps:
@@ -576,7 +578,7 @@ class TestWhatGroundingKeeps:
         changed file it means."""
         from adk_review.collect.diff import quotable
 
-        rule, _collect, schema = _grounding_of()
+        _rule, _collect, schema = _grounding_of()
         diff = (
             "@@ -1,4 +1,4 @@\n def total(price, quantity):\n-    amount = price * quantity\n"
             "+    amount = eval(price) * quantity\n     return amount\n"
@@ -601,17 +603,16 @@ class TestWhatGroundingKeeps:
         finding = schema.Finding(
             file="b/orders.py", line=9, severity="major", title="t", evidence="def label(order):", suggestion="s"
         )
-        kept, _dropped = rule.drop_ungrounded(schema.Review(summary="", findings=[finding]), hunks, {})
+        kept, _dropped = _grounded([finding], hunks)
         assert [(f.file, f.line, at) for f, at in kept] == [("orders.py", 21, (21, 21))]
 
     def test_where_redaction_joined_lines_no_line_is_named_rather_than_a_wrong_one(self) -> None:
         """The lane saw a private key's block as one redacted line, so its quote still grounds, but a seen line no
         longer counts one line of the file."""
-        rule, _collect, schema = _grounding_of()
+        _rule, _collect, schema = _grounding_of()
         block = ["+-----BEGIN RSA PRIVATE KEY-----", "+MIIEowIBAAKCAQEA", "+-----END RSA PRIVATE KEY-----", "+x = 1"]
         finding = schema.Finding(file="k.py", line=2, severity="major", title="t", evidence="x = 1", suggestion="s")
-        review = schema.Review(summary="", findings=[finding])
-        kept, dropped = rule.drop_ungrounded(review, {"k.py": _numbered(block)}, {})
+        kept, dropped = _grounded([finding], {"k.py": _numbered(block)})
         assert [(f.line, f.evidence, at) for f, at in kept] == [(None, "x = 1", (None, None))] and not dropped
 
 

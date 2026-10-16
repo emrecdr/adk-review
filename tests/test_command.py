@@ -727,6 +727,17 @@ class TestWhatAReviewKeeps:
         with contextlib.closing(sqlite3.connect(db)) as connection:
             assert connection.execute("select count(*) from spans").fetchone()[0] > 0
 
+    def test_a_kept_review_is_not_served_after_another_ruff(self, cli, demo_repo: Path, tmp_path: Path, monkeypatch):
+        """Measured by review: a review `--cache` kept with one ruff was served after another that found a major in the
+        change, its key the same. Every tool a rule may name is in the key, as it would run."""
+        tools = importlib.import_module("adk_review.collect.tools")
+        cache = tmp_path / "cache"
+        assert run_review(cli, demo_repo, "--profile", "default-rules", "--cache", str(cache)) in (0, 1)
+        monkeypatch.setitem(tools.IDENTITIES, "ruff", lambda: "another ruff 9.9.9")
+        assert run_review(cli, demo_repo, "--profile", "default-rules", "--cache", str(cache)) in (0, 1)
+        assert len(list(cache.iterdir())) == 2, "another ruff, another key"
+        assert set(tools.IDENTITIES) == set(tools.ADAPTERS), "every tool a rule may name is in the key"
+
     def test_a_decided_review_is_served_from_the_cache_and_a_hole_never_is(
         self, cli, demo_repo: Path, tmp_path: Path, monkeypatch, capsys
     ) -> None:

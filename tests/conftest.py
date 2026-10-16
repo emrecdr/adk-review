@@ -27,7 +27,6 @@ from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
-from google.adk.apps.app import App
 from google.adk.models.google_llm import Gemini
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
@@ -668,7 +667,7 @@ class Chat:
     """One conversation with an agent module's app through the real Runner: each `say` a user turn, in one session."""
 
     def __init__(self, module, state: dict | None = None) -> None:
-        self.app = getattr(module, "app", None) or App(name=module.root_agent.name, root_agent=module.root_agent)
+        self.app = module.app
         self.runner = InMemoryRunner(app=self.app)
         self.state = state or {}
         self.ids = {"app_name": self.app.name, "user_id": "t", "session_id": "t"}
@@ -697,7 +696,7 @@ async def run_turn(module, message: str, state: dict | None = None) -> tuple[str
 INTAKE = "you never judge it"
 
 
-def confirms(fake_provider: FakeProvider, repo: Path, head: str = "feature/payments", base: str = "main") -> None:
+def confirms(fake_provider: FakeProvider, repo: Path, head: str = HEAD, base: str = BASE) -> None:
     """Chat's intake confirms `head` against `base` in `repo`, by calling its tool, as a model does when asked."""
     args = {"repo": str(repo), "base": base, "head": head}
     fake_provider.calls_when(INTAKE, types.FunctionCall(name="inspect_repository", args=args))
@@ -721,7 +720,8 @@ def asked(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, list[str]]]:
 
 
 def run_rule(rule, files: list[dict], tree):
-    """`core/rules.py`'s `run_rule` of the package as it is loaded now, for the same reason."""
+    """`core/rules.py`'s `run_rule` of the package as it is loaded now, for `catalog`'s reason: `load_agent` imports
+    the package afresh, and a `run_rule` imported once would know kinds no rule derives from any more."""
     return importlib.import_module("adk_review.core.rules").run_rule(rule, files, tree)
 
 

@@ -66,7 +66,7 @@ import sys
 import tempfile
 import tomllib
 import warnings
-from collections.abc import Callable, Collection, Coroutine, Mapping, Sequence
+from collections.abc import Callable, Coroutine, Sequence
 from importlib import metadata
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import TYPE_CHECKING, Any
@@ -82,7 +82,7 @@ try:
 
     from .collect.git import MAX_FILE_BYTES, GitError, checked_out, collect_evidence, default_base, is_repository
     from .core.findings import RANK, Checked, Review
-    from .core.health import measured
+    from .core.health import Health, measured
     from .core.profiles import DEFAULT, state_key
     from .core.rules import AnyRule
     from .core.verdict import (
@@ -95,8 +95,10 @@ try:
         Outcome,
         Sourced,
         decide,
-        dedupe,
         drop_ungrounded,
+        fold,
+        from_rules,
+        not_read,
         to_verify,
     )
     from .deliver.report import (
@@ -508,18 +510,6 @@ def _ask(head: str, default: str | None) -> str | None:
             return choices[choice]
 
 
-def from_rules(answers: Mapping[str, Checked]) -> tuple[list[Sourced], dict[str, str]]:
-    """The rules' answers as the verdict reads them, a review's and `--try`'s alike: each finding under its check's id
-    where the diff places it — its one line, or nowhere for one at a path, as a tree rule's is — and why each rule
-    that could not look did not."""
-    found = [
-        Sourced(check, f, None if f.line is None else (f.line, f.line))
-        for check, answer in answers.items()
-        for f in answer.findings
-    ]
-    return found, {check: answer.could_not_look for check, answer in answers.items() if answer.could_not_look}
-
-
 def read_checks(run: Run, rules: Sequence[AnyRule]) -> tuple[list[Sourced], dict[str, str]]:
     """What the checks node left in state, read back as each guideline's review is: each rule's answer, or, as a
     guideline that did not answer is, why there is none."""
@@ -530,12 +520,6 @@ def read_checks(run: Run, rules: Sequence[AnyRule]) -> tuple[list[Sourced], dict
         answer = read_back(run.state, state_key(rule.check_id), Checked, run.why(CHECKS, "the check left no answer"))
         answers[rule.check_id] = Checked(could_not_look=answer) if isinstance(answer, str) else answer
     return from_rules(answers)
-
-
-def not_read(files: list[dict], guidelines: Collection[str]) -> dict[str, str]:
-    """What no one could read, by path with why. A cut is the guidelines' limit: with none on, the rules
-    read every added line, and only what no one can read — binary, a submodule, nothing shown — is a hole."""
-    return {f["path"]: f["unread"] for f in files if f["unread"] and (guidelines or not f["cut"])}
 
 
 def postprocess(run: Run, files: list[dict], guidelines: tuple[str, ...], holes: dict[str, str]) -> Outcome:
@@ -594,13 +578,6 @@ def second_opinion(
             outcome.refuted.append((item, judgement.reason))
             refuted.add(id(item))
     outcome.kept = [item for item in outcome.kept if id(item) not in refuted]
-
-
-def fold(outcome: Outcome, rules: list[Sourced], order: Sequence[str]) -> None:
-    """One finding per span of the diff, the first check on a tie: `order` is the report's, the rules before the
-    guidelines, so the fold and the report never disagree on which check a line belongs to."""
-    kept = sorted(rules + outcome.kept, key=lambda item: order.index(item.source))  # stable: each check's own order
-    outcome.kept, outcome.folded = dedupe(kept)
 
 
 class Terminated(BaseException):  # named for what happened to the run, as KeyboardInterrupt is
@@ -817,7 +794,7 @@ def _reported(
     app: App,
     shown: dict,
     previous: Previous,
-    health: dict | None,
+    health: Health | None,
     cached: Path | None,
 ) -> int:
     """The verdict, decided by code, and the review's reports: the text one always, the hand-off and the JSON where
@@ -889,10 +866,13 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, data: dict, 
 def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: dict, model: str) -> Path:
     """Where a decided review of these inputs is kept: a file named by a hash of everything its result depends on —
     the reviewer's own code and its config, whatever their version says, the commits, what of them is covered,
-    the checks and every setting, and each model a call would go to. A missing input would serve a stale approval."""
+    the checks and every setting, each model a call would go to, and each outside tool a rule runs. A missing input
+    would serve a stale approval."""
+    from .collect.tools import IDENTITIES
     from .judge.config import fallback_name
 
     digest = hashlib.sha256()
+    tools = sorted({getattr(rule, "tool", None) for rule in chosen.rules} - {None})
     here = Path(__file__).parent
     for path in sorted(here.rglob("*")):
         if path.suffix in (".py", ".toml") and "__pycache__" not in path.parts:
@@ -908,6 +888,8 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: dict, mode
         "asked": {key: value for key, value in sorted(vars(args).items()) if key not in OUTPUTS},
         "untracked": evidence.get("untracked"),  # `--staged`'s note: a new untracked file is a new report
         "models": [model, fallback_name()],  # the verifier's among `model`'s roles under --verify
+        # Each outside tool a rule that runs reads, as it would run: a newer ruff finds what an older one did not.
+        "tools": {tool: IDENTITIES[tool]() for tool in tools},
         "previous": Path(args.previous).expanduser().read_bytes().hex() if args.previous else "",
         # What was read, byte for byte: the index has no commit to name it by, and a hash of a commit's diffs costs
         # nothing beside the review it would spare.

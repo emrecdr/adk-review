@@ -388,7 +388,7 @@ class TestTheLintRule:
     def test_a_ruff_hit_with_no_code_is_the_parse_failure_it_reports(self, demo_repo: Path, monkeypatch) -> None:
         """ruff 0.12.0 to 0.12.7 report a file that does not parse with `"code": null`. Measured by review: the rule
         read that code's first letter and ended in a TypeError traceback, exit 1. And an answer that is no JSON at
-        all is a rule that did not look, named."""
+        all is a rule that did not look, named, as is a hit under a path outside the folders ruff was given."""
         from adk_review.collect import git, ruff
 
         evidence = git.collect_evidence(str(demo_repo), BASE, HEAD)
@@ -404,6 +404,10 @@ class TestTheLintRule:
         monkeypatch.setattr(ruff, "_ruff", lambda *_args: "not json")
         said = lint_findings(evidence)
         assert said == "ruff's answer could not be read (JSONDecodeError), so the rule did not look", said
+
+        monkeypatch.setattr(ruff, "_ruff", lambda *_args: json.dumps([{"filename": "module.py"}]))
+        said = lint_findings(evidence)
+        assert said == "ruff's answer could not be read (IndexError), so the rule did not look", said
 
     def test_ruffs_answer_is_read_back_to_each_files_own_path_and_lines(self) -> None:
         """Read from ruff's JSON alone, no ruff run: each hit under the path its folder's index names, however ruff

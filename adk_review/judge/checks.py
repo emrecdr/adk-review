@@ -27,6 +27,8 @@ from ..core.profiles import state_key
 from ..core.rules import AnyRule, FileRule, run_rule
 
 if TYPE_CHECKING:
+    import threading
+
     from google.adk.agents.context import Context
     from google.adk.workflow import FunctionNode
 
@@ -41,14 +43,28 @@ def _hole(why: str) -> Checked:
     return Checked(could_not_look=why + DID_NOT_LOOK)
 
 
-def run_rules(evidence: dict, rules: Sequence[AnyRule]) -> dict[str, Checked]:
+def _diagnosed(rule: FileRule, evidence: dict) -> dict | str:
+    """What the rule's outside tool says of the change, by path, or why it could not look. An adapter that raises past
+    its own answers is its rule's hole alone, as `run_rule` keeps a rule's own failure to it: measured, an
+    `IndexError` out of ruff's answer reached the node's catch-all and every rule answered with it, the planted key's
+    finding gone."""
+    try:
+        return ADAPTERS[rule.tool](evidence, **rule.tool_settings)  # the catalog refused a tool none runs
+    except Exception as exc:  # noqa: BLE001 -- the tool's failure, named for its rule
+        return f"{rule.tool} raised {type(exc).__name__}: {exc}"
+
+
+def run_rules(evidence: dict, rules: Sequence[AnyRule], stop: threading.Event | None = None) -> dict[str, Checked]:
     """Every rule over what it reads, each the same way, by its check id: what it found, or why it could not look. A
-    rule that names ruff codes is given ruff's diagnostics on each changed Python file, beside the file."""
+    rule that names ruff codes is given ruff's diagnostics on each changed Python file, beside the file. `stop`, once
+    set, ends the run before the next rule: the rules run in a thread, which no cancel reaches."""
     answers: dict[str, Checked] = {}
     for rule in rules:
+        if stop is not None and stop.is_set():
+            break
         files = evidence["files"]
         if isinstance(rule, FileRule) and rule.tool:
-            found = ADAPTERS[rule.tool](evidence, **rule.tool_settings)  # the catalog refused a tool none runs
+            found = _diagnosed(rule, evidence)
             if isinstance(found, str):
                 answers[rule.check_id] = _hole(found)
                 continue
@@ -86,12 +102,17 @@ def build_checks(
     ADK, asyncio and the agents' keys are imported here, where a graph is built: `run_rules`, which `--try` runs
     alone, needs none of them."""
     import asyncio
+    import threading
 
     from google.adk.workflow import FunctionNode
 
     from .agents import BLAST, DIFF, RULES, SCOPE, for_the_guidelines, for_the_verdict
 
     async def run(ctx: Context) -> None:
+        # A stopped review stops here too: measured, a SIGTERM one second into the rules of a 2,683-file `--all`
+        # ended the review 6.5 s later, the loop's close waiting on the thread for every rule still to run; told to
+        # stop, the thread ends at its next rule, and the review 2.6 to 3.1 s later.
+        stop = threading.Event()
         try:
             found = (
                 evidence if evidence is not None else await asyncio.to_thread(_gather, ctx.state.get(SCOPE), gathered)
@@ -99,7 +120,10 @@ def build_checks(
             if isinstance(found, str):
                 answers = {rule.check_id: _hole(found) for rule in rules}
             else:
-                answers = await asyncio.to_thread(run_rules, found, rules)
+                answers = await asyncio.to_thread(run_rules, found, rules, stop)
+        except asyncio.CancelledError:
+            stop.set()
+            raise
         except Exception as exc:  # noqa: BLE001 -- a node that raises ends the run, every guideline with it
             found = f"{type(exc).__name__}: {exc}"
             answers = {rule.check_id: _hole(found) for rule in rules}

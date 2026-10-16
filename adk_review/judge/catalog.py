@@ -166,10 +166,10 @@ class Catalog:
     guidelines: tuple[Guideline, ...]
 
     def head_reading(self) -> dict[str, bool]:
-        """What gathering reads of the head for these checks, as `gather` takes it: the head whole for a tree rule,
-        and the radius for a guideline, which reads the head only where a changed file is Python. The command and chat
-        both ask here, so the two cannot read the head differently."""
-        return {"tree_rules": any(rule.kind == "tree" for rule in self.rules), "radius": bool(self.guidelines)}
+        """What gathering reads for these checks, as `gather` takes it: the head whole for a tree rule, and for a
+        guideline the view it is shown and the radius, which reads the head only where a changed file is Python. The
+        command and chat both ask here, so the two cannot gather differently."""
+        return {"tree_rules": any(rule.kind == "tree" for rule in self.rules), "guidelines": bool(self.guidelines)}
 
     def ids(self) -> tuple[str, ...]:
         """Every check's id, the rules and then the guidelines: the report's order, so on a tie the fold keeps the

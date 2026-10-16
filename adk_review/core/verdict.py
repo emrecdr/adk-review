@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 
-from .findings import RANK, Finding, Review, at_or_above
+from .findings import RANK, Checked, Finding, Review, at_or_above
 from .secrets import scrub
 from .text import squash
 
@@ -172,18 +172,19 @@ def drop_ungrounded(
     kept: list[tuple[Finding, Lines]] = []
     dropped: list[Finding] = []
     for finding in review.findings:
-        if (placed := _placed(finding, quotable, framing)) is None:
+        path = _meant(finding.file, quotable)
+        if (placed := _placed(finding, quotable.get(path, []), framing.get(path, ()))) is None:
             dropped.append(finding)
             continue
         lines, stood = placed
-        update = {"file": meant(finding.file, quotable), "line": lines[0]}
+        update = {"file": path, "line": lines[0]}
         if stood is not None:  # where the redaction joined lines, the model's quote is all there is
             update["evidence"] = scrub(stood)[0]
         kept.append((finding.model_copy(update=update), lines))
     return kept, dropped
 
 
-def meant(path: str, quotable: dict[str, list[list[tuple[int, str]]]]) -> str:
+def _meant(path: str, quotable: dict[str, list[list[tuple[int, str]]]]) -> str:
     """The changed file a finding names: as given, or with git's `b/` taken off where only that names one, as the
     diff's own header spells the path."""
     if path not in quotable and path.startswith("b/") and path[2:] in quotable:
@@ -192,9 +193,7 @@ def meant(path: str, quotable: dict[str, list[list[tuple[int, str]]]]) -> str:
 
 
 def _placed(
-    finding: Finding,
-    quotable: dict[str, list[list[tuple[int, str]]]],
-    framing: Mapping[str, Sequence[str]],
+    finding: Finding, hunks: list[list[tuple[int, str]]], around: Sequence[str]
 ) -> tuple[Lines, str | None] | None:
     """The first and last line of `finding`'s quote in its own file's diff, where it is whole lines of one hunk, in
     order, as the guideline saw them, and those lines as the file reads them; `(None, None)` where the redaction joined
@@ -206,11 +205,10 @@ def _placed(
     quote of the new code, running from a context line into a new one across a replaced line, was dropped, and as a
     blocker the run degraded. Never across two hunks: measured before, the last line of one hunk joined to the first
     of the next, twenty lines apart, grounded as one span, and a finding on the lines between folded into it."""
-    path = meant(finding.file, quotable)
-    quotes = _quotes(finding.evidence, framing.get(path, ()))
+    quotes = _quotes(finding.evidence, around)
     placed: list[tuple[tuple[int, int], str]] = []
     joined = False
-    for hunk in quotable.get(path, []):
+    for hunk in hunks:
         for kept in ("+- ", "+ ", "- "):  # as git prints it, as the new file reads, as the old file read
             view = [(number, raw) for number, raw in hunk if raw[:1] in kept]
             lines = seen_lines("\n".join(raw for _number, raw in view))
@@ -243,6 +241,24 @@ def _overlaps(x: str, x_lines: Lines, y: str, y_lines: Lines) -> bool:
         (a, b), (c, d) = x_lines, y_lines
         return (a <= c and d <= b) or (c <= a and b <= d)
     return bool(x and y) and (x in y or y in x)
+
+
+def from_rules(answers: Mapping[str, Checked]) -> tuple[list[Sourced], dict[str, str]]:
+    """The rules' answers as the verdict reads them, a review's and `--try`'s alike: each finding under its check's id
+    where the diff places it — its one line, or nowhere for one at a path, as a tree rule's is — and why each rule
+    that could not look did not."""
+    found = [
+        Sourced(check, f, None if f.line is None else (f.line, f.line))
+        for check, answer in answers.items()
+        for f in answer.findings
+    ]
+    return found, {check: answer.could_not_look for check, answer in answers.items() if answer.could_not_look}
+
+
+def not_read(files: list[dict], guidelines: Collection[str]) -> dict[str, str]:
+    """What no one could read, by path with why. A cut is the guidelines' limit: with none on, the rules
+    read every added line, and only what no one can read — binary, a submodule, nothing shown — is a hole."""
+    return {f["path"]: f["unread"] for f in files if f["unread"] and (guidelines or not f["cut"])}
 
 
 def to_verify(guidelines: list[Sourced], rules: list[Sourced]) -> list[Sourced]:
@@ -296,6 +312,13 @@ def dedupe(kept: list[Sourced]) -> tuple[list[Sourced], list[tuple[Sourced, Sour
     return [item for index, item in enumerate(kept) if index not in into], [
         (kept[i], kept[into[i]]) for i in sorted(into)
     ]
+
+
+def fold(outcome: Outcome, rules: list[Sourced], order: Sequence[str]) -> None:
+    """One finding per span of the diff, the first check on a tie: `order` is the report's, the rules before the
+    guidelines, so the fold and the report never disagree on which check a line belongs to."""
+    kept = sorted(rules + outcome.kept, key=lambda item: order.index(item.source))  # stable: each check's own order
+    outcome.kept, outcome.folded = dedupe(kept)
 
 
 def at_bar(items: Iterable[Sourced], fail_on: str) -> int:

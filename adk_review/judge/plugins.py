@@ -154,8 +154,9 @@ class ReportProviderErrors(BasePlugin):
 
 
 def _failed(callback_context: Any, llm_request: Any, kind: str, why: str) -> LlmResponse:
-    """A call that failed, or could not be made, answered in the model's place. Two answers. An agent that answers in
-    a schema — a guideline — answers nothing: its key stays unwritten, a hole the code that decides names and never
+    """A call that failed, or that the token ceiling refused to send, answered in the model's place. Measured before:
+    a chat turn whose intake the ceiling refused ended with no answer at all. Two answers. An agent that answers in a
+    schema — a guideline — answers nothing: its key stays unwritten, a hole the code that decides names and never
     approves over, where a review with no findings would read as an approval. An agent that answers in prose — the
     intake or the verdict, in chat — answers the sentence, as an agent's own hook did before, and leaves it under
     `temp:failure` for the guidelines' guard: ADK's invocation lifetime, so a later turn starts clean. The schema is
@@ -170,13 +171,10 @@ def _failed(callback_context: Any, llm_request: Any, kind: str, why: str) -> Llm
     )
 
 
-#: Why the arm cannot run this turn, "" where it can: ADK's `temp:` state, which lasts one turn and is never saved.
-NOT_READY = "temp:not_ready"
-
-
 class RefuseUnready(BasePlugin):
-    """Chat's readiness check, the one the command makes before it builds anything: while the arm cannot run, each
-    model call of a turn is answered with `require_ready`'s sentence in the call's place, as a provider's error is.
+    """Chat's readiness check, the one the command makes before it builds anything: while the arm cannot run, the turn
+    is answered with `require_ready`'s sentence before any agent runs. ADK asks `before_run_callback` once a turn,
+    and a Content it returns ends the turn as its answer.
 
     Measured by review: only the command asked. Chat on Copilot with no token
     cached let LiteLLM start its own device login on the server's console —
@@ -192,11 +190,9 @@ class RefuseUnready(BasePlugin):
         super().__init__(name=name)
 
     @override
-    async def before_model_callback(self, *, callback_context: Any, llm_request: Any) -> LlmResponse | None:
-        if NOT_READY not in callback_context.state:
-            callback_context.state[NOT_READY] = await asyncio.to_thread(require_ready) or ""
-        why = callback_context.state[NOT_READY]
-        return _failed(callback_context, llm_request, "NOT_READY", why) if why else None
+    async def before_run_callback(self, *, invocation_context: Any) -> types.Content | None:
+        why = await asyncio.to_thread(require_ready)
+        return types.ModelContent(f"I could not reach the model: NOT_READY: {why}") if why else None
 
 
 #: The one turn a judging agent reads beside its instruction: the command's own, which starts its run.
@@ -351,13 +347,11 @@ class UsageLedger(BasePlugin):
             return None
         estimate, in_flight = self._estimate(llm_request), sum(self.reserved.values())
         if self.spent + in_flight + estimate > self.ceiling:
-            return LlmResponse(
-                error_code="TOKEN_CEILING",
-                error_message=(
-                    f"the ceiling of {self.ceiling:,} tokens would be passed: {self.spent:,} spent, "
-                    f"{in_flight:,} in flight, this call about {estimate:,}; concluding with what was found"
-                ),
+            why = (
+                f"the ceiling of {self.ceiling:,} tokens would be passed: {self.spent:,} spent, "
+                f"{in_flight:,} in flight, this call about {estimate:,}; concluding with what was found"
             )
+            return _failed(callback_context, llm_request, "TOKEN_CEILING", why)
         self.reserved[callback_context.agent_name] = estimate
         return None
 

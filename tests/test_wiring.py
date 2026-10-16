@@ -165,8 +165,10 @@ def _intakes(asked: list[tuple[str, list[str]]]) -> list[bool]:
 async def test_a_turn_whose_intake_confirms_no_scope_ends_at_its_answer(monkeypatch, asked) -> None:
     """Measured before: "hello" ran the whole graph, the guidelines skipped for want of a change, and the verdict agent
     called its model to report a review of nothing beside the intake's own question: two calls, one wasted, a turn."""
+    from adk_review.judge.graph import VERDICT
+
     final, state = await run_turn(load_agent(monkeypatch), "hello")
-    assert final and _intakes(asked) == [True] and "verdict" not in state, asked
+    assert final and _intakes(asked) == [True] and VERDICT not in state, asked
 
 
 @pytest.mark.asyncio
@@ -176,10 +178,12 @@ async def test_a_later_turn_reviews_again_only_when_its_own_intake_confirms(
     """Measured before: the scope an intake confirmed stayed in the session, so every later turn, a "thanks!" among
     them, gathered the repository again and judged it again: five model calls, and another verdict that could differ.
     A turn reviews the scope its own intake confirmed, or none."""
+    from adk_review.judge.graph import VERDICT
+
     chat = Chat(load_agent(monkeypatch))
     confirms(fake_provider, demo_repo)
     _final, state = await chat.say("Review feature/payments against main.")
-    assert _intakes(asked) == [True, True, False, False, False, False] and state["verdict"], asked
+    assert _intakes(asked) == [True, True, False, False, False, False] and state[VERDICT], asked
     fake_provider.clear()
     asked.clear()
     final, _state = await chat.say("thanks!")
@@ -194,10 +198,12 @@ async def test_in_chat_each_judging_agent_reads_its_instruction_and_one_fixed_tu
     node its predecessor's output as a turn of its own, so chat's verdict read every guideline's findings as raw JSON,
     the branch's quoted lines among them, outside the fences its instruction holds them in, and each guideline read
     the intake's reply. The command's read one turn, `review`; in chat each judging agent reads the same."""
+    from adk_review.judge.plugins import ONE_TURN
+
     confirms(fake_provider, demo_repo)
     await run_turn(load_agent(monkeypatch), "Review feature/payments against main.")
     judging = [turns for instruction, turns in asked if INTAKE not in instruction]
-    assert len(judging) == 4 and all(turns == ["review"] for turns in judging), judging
+    assert len(judging) == 4 and all(turns == [ONE_TURN] for turns in judging), judging
 
 
 @pytest.mark.asyncio
@@ -207,14 +213,16 @@ async def test_the_intake_is_told_the_repository_its_conversation_confirmed(
     """Measured before: as a node of the graph the intake reads its turn's message alone, so a person who had named the
     repository once named it again with every branch. Its instruction carries the one its conversation confirmed,
     the one the guard holds it to."""
+    from adk_review.judge.agents import REPOSITORY
+
     chat = Chat(load_agent(monkeypatch))
     confirms(fake_provider, demo_repo)
     _final, state = await chat.say("Review feature/payments against main.")
-    assert state["review_repo"] not in asked[0][0], "none confirmed yet"
+    assert state[REPOSITORY] not in asked[0][0], "none confirmed yet"
     fake_provider.clear()
     asked.clear()
     await chat.say("Now review feature/other.")
-    assert state["review_repo"] in asked[0][0] and len(asked[0][1]) == 1, asked
+    assert state[REPOSITORY] in asked[0][0] and len(asked[0][1]) == 1, asked
 
 
 def _said(message: dict) -> str:
@@ -229,6 +237,9 @@ async def test_the_chat_gate_and_the_one_turn_hold_on_the_copilot_arm(monkeypatc
     from LiteLLM's reply, only the network client replaced. A greeting is the intake's one call; a review turn's
     judging agents each read one turn, `review`, beside the instruction LiteLLM sends as the system turn."""
     from google.adk.models.lite_llm import LiteLLMClient
+
+    from adk_review.judge.graph import VERDICT
+    from adk_review.judge.plugins import ONE_TURN
 
     sent: list[tuple[str, list[str]]] = []
     scope = {"repo": str(demo_repo), "base": "main", "head": "feature/payments"}
@@ -259,4 +270,4 @@ async def test_the_chat_gate_and_the_one_turn_hold_on_the_copilot_arm(monkeypatc
     sent.clear()
     _final, state = await chat.say("Review feature/payments against main.")
     judging = [turns for system, turns in sent if INTAKE not in system]
-    assert state["verdict"] and len(judging) == 4 and all(turns == ["review"] for turns in judging), judging
+    assert state[VERDICT] and len(judging) == 4 and all(turns == [ONE_TURN] for turns in judging), judging

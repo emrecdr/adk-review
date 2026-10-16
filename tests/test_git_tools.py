@@ -115,15 +115,9 @@ def test_a_tools_docstring_speaks_to_the_model_in_words() -> None:
     diff was "capped at DIFF_CAP_CHARS", a name only the code knows; the cap is a number the model can use."""
     import re
 
-    model_tools, diff = (
-        importlib.import_module("adk_review.judge.tools"),
-        importlib.import_module("adk_review.collect.diff"),
-    )
-    for name in ("inspect_repository", "changed_files", "show_diff"):
-        doc = getattr(getattr(model_tools, name, None), "__doc__", None) or ""
-        assert not re.findall(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b", doc), (name, doc[:120])
-    if hasattr(model_tools, "show_diff"):
-        assert f"{diff.DIFF_CAP_CHARS:,} characters" in model_tools.show_diff.__doc__
+    model_tools = importlib.import_module("adk_review.judge.tools")
+    for tool in (model_tools.inspect_repository, model_tools.changed_files):
+        assert not re.findall(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b", tool.__doc__), (tool.__name__, tool.__doc__[:120])
 
 
 class TestInspectRepository:
@@ -228,12 +222,8 @@ class TestGitPastItsTimeout:
         scope = (str(demo_repo), BASE, HEAD, context)
         assert model_tools.inspect_repository(*scope)["status"] == "success"
         monkeypatch.setattr(git, "GIT_TIMEOUT_S", NO_TIME)
-        answers = []
-        if hasattr(model_tools, "changed_files"):  # before the preflight below, which clears the scope it fails
-            answers.append(model_tools.changed_files(context))
-        if hasattr(model_tools, "show_diff"):
-            answers.append(model_tools.show_diff("src/payments/charge.py", context))
-        answers.append(model_tools.inspect_repository(*scope))
+        # `changed_files` before the preflight, which clears the scope it fails.
+        answers = [model_tools.changed_files(context), model_tools.inspect_repository(*scope)]
         assert all(a["status"] == "error" and "did not answer within" in a["error_message"] for a in answers), answers
 
     def test_every_command_names_a_timeout_and_exits_2_before_any_model(
@@ -281,7 +271,7 @@ class TestGitPastItsTimeout:
         monkeypatch.chdir(tmp_path)
         monkeypatch.setenv("PATH", os.pathsep.join([".", "", "bin", os.environ.get("PATH", "")]))
         git._found.cache_clear()
-        found = Path((getattr(git, "on_path", None) or git._on_path)("git"))
+        found = Path(git.on_path("git"))
         assert found.is_absolute() and found.parent != tmp_path, found
 
     def test_a_folder_whose_git_is_no_repository_is_refused_never_its_parent_reviewed(self, tmp_path) -> None:
@@ -474,7 +464,24 @@ class TestWhatABranchCannotHide:
         git = importlib.import_module("adk_review.collect.git")
         evidence = git.collect_evidence(str(hostile_repo), BASE, "carriage")
         assert evidence["diff"].splitlines() == evidence["diff"].split("\n"), "a line break the lanes would see"
-        assert '+REGION = "eu"\\rAWS_ACCESS_KEY_ID' in evidence["diff"], "the escape, on the line it was on"
+        assert '+REGION = "eu"\\r AWS_ACCESS_KEY_ID' in evidence["diff"], "the escape, on the line it was on"
+
+    @pytest.mark.parametrize("brk", ["\r", "\u2028"], ids=["lone CR", "U+2028"])
+    def test_a_key_opening_a_line_after_a_lone_break_is_found_and_never_sent(self, brk: str, tmp_path: Path) -> None:
+        """Measured by review: a file broken at a lone `\\r` or U+2028, shown as the break's escape glued to the key
+        that opened the next line, matched no shape that opens on a word's edge: no rule found it, and redaction let it
+        through to the model."""
+        from adk_review.collect.git import collect_evidence
+        from adk_review.core.secrets import scrub
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.secrets import Secrets
+
+        token = "ghp_" + "a1B2" * 9
+        repo = _branch_off_empty(tmp_path / "repo", HEAD)
+        _committed(repo, "deploy-keys.txt", f"# deploy keys{brk}{token}\n".encode())
+        evidence = collect_evidence(str(repo), BASE, HEAD)
+        assert token not in scrub(evidence["diff"])[0], "never sent to a model"
+        assert run_rules(evidence, [Secrets()])["rule.secrets"].findings, "found"
 
     @pytest.mark.usefixtures("reviewers_git_config")
     def test_the_reviewers_git_config_moves_no_line(self, hostile_repo: Path, cli, capsys) -> None:
@@ -509,6 +516,48 @@ class TestWhatNoLaneCouldRead:
         assert "## Verdict: DEGRADED" in out, out
         named = [line for line in out.splitlines() if line.startswith("- not read") and f"`{path}`" in line]
         assert named and why in named[0], out
+
+    @pytest.mark.parametrize("made", ["binary", "submodule"])
+    def test_a_file_a_type_change_makes_binary_or_a_submodule_is_named_unread(self, made: str, tmp_path: Path) -> None:
+        """git prints a type change as the file it was and then the file it is, two headers, the binary file or the
+        submodule named in the second. Measured by review: read by the first alone, a link made a binary file, and a
+        file made a submodule, were named as no hole and approved."""
+        from adk_review.collect.git import collect_evidence
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        if made == "binary":  # a link at the base, written to the index alone: no system's symlinks needed
+            target = _git_in(repo, "hash-object", "-w", "--stdin", stdin="README.md")
+            _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{target},vault")
+            _git_in(repo, "commit", "-qm", "a link")
+        else:
+            _committed(repo, "vault", "a file\n")
+        _git_in(repo, "checkout", "-q", "-b", HEAD)
+        _git_in(repo, "rm", "-q", "--cached", "vault")
+        (repo / "vault").unlink(missing_ok=True)
+        if made == "binary":
+            _committed(repo, "vault", b"\x00\x01keystore\x00" * 64)
+        else:
+            commit = _git_in(repo, "rev-parse", "HEAD")
+            _git_in(repo, "update-index", "--add", "--cacheinfo", f"160000,{commit},vault")
+            _git_in(repo, "commit", "-qm", "a submodule")
+        (vault,) = collect_evidence(str(repo), BASE, HEAD)["files"]
+        assert vault["status"] == "T" and vault["unread"].startswith("binary" if made == "binary" else "a submodule")
+
+    def test_a_submodule_under_a_name_the_skip_list_holds_is_never_skipped(self, tmp_path: Path) -> None:
+        """The branch names a submodule as it likes, and no rule reads one. Measured by review: one named `logo.png`
+        was skipped as an image and approved."""
+        from adk_review.collect.git import collect_evidence
+
+        repo = _branch_off_empty(tmp_path / "repo", HEAD)
+        commit = _git_in(repo, "rev-parse", "HEAD")
+        _git_in(repo, "update-index", "--add", "--cacheinfo", f"160000,{commit},assets/logo.png")
+        _git_in(repo, "commit", "-qm", "a submodule")
+        images = lambda path: "*.png" if path.endswith(".png") else None  # noqa: E731 -- the skip list's own shape
+        evidence = collect_evidence(str(repo), BASE, HEAD, skipped=images)
+        assert evidence["skipped"] == {}, evidence["skipped"]
+        assert evidence["files"][0]["unread"].startswith("a submodule"), evidence["files"]
 
 
 @pytest.fixture(params=["replace", "graft"])
@@ -572,7 +621,7 @@ class TestWhatIsNotAChangeToRead:
         """The intake agent assembled the diff from `show_diff`, which read git's raw output: a lone `\\r` reached the
         model as a line break. The chat reads it as the command does."""
         _files, diff = _listed_and_shown(hostile_repo, "carriage", HIDDEN["carriage"])
-        assert "\r" not in diff and '"eu"\\rAWS_ACCESS_KEY_ID' in diff, diff
+        assert "\r" not in diff and '"eu"\\r AWS_ACCESS_KEY_ID' in diff, diff
 
 
 class TestWhatAPathCannotForge:
@@ -637,3 +686,20 @@ class TestWhatTheGuidelinesAreShown:
         assert block.startswith(first) and "b.py" not in block.split("\n\n[…")[0], block
         assert "[… 1 more file(s) not shown: past" in block and "the operator's skip list leaves them out" in block
         assert [sorted(f["added_at"]) for f in files] == [[1], [1], [1]], "every file's added lines, shown or not"
+
+    def test_with_no_guideline_no_file_is_capped_or_shown_and_what_no_one_reads_is_still_named(self) -> None:
+        """Measured: the view cost 2.3 s of a 10.5 s `default-rules` review of 2,683 files, the pre-push hook's
+        profile, and nothing read it. The rules read every added line, so only what no one can read is named."""
+        from adk_review.collect import git
+
+        binary = "diff --git a/logo.png b/logo.png\nBinary files /dev/null and b/logo.png differ\n"
+        entries = [{"path": p, "status": "A"} for p in ("a.py", "logo.png", "vendor.png")]
+        diffs = [self._diff("a.py", "x" * 50), binary, binary]
+        files, block, excluded = git.shown_to_guidelines(
+            entries, diffs, 10, lambda path: "vendor*" if path.startswith("vendor") else None, shown=False
+        )
+        code, image, _vendor = files
+        assert code["quotable"] == [] and not code["cut"] and code["unread"] == "", "past the cap, cut for no one"
+        assert image["unread"].startswith("binary"), "what no one can read is still named"
+        assert excluded == {"vendor.png": "vendor*"} and "### " not in block, block
+        assert [sorted(f["added_at"]) for f in files] == [[1], [], []], "every file's added lines, for the rules"

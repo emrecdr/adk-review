@@ -282,6 +282,22 @@ class TestTheRuleKinds:
         assert answers["rule.loud"].could_not_look.startswith("rule loud raised ValidationError"), answers
         assert [f.line for f in answers["rule.no-print"].findings] == [1], "the other rule's findings stand"
 
+    def test_a_tool_that_raises_is_its_rules_hole_and_no_other_rules(self, monkeypatch) -> None:
+        """Measured by review: an `IndexError` out of ruff's answer escaped `run_rules`, the node's catch-all answered
+        every rule with it, and the planted key's finding was gone."""
+        from adk_review.judge import checks
+        from adk_review.judge.rules.lint import Lint
+        from adk_review.judge.rules.no_print import NoPrint
+
+        def broken(_evidence: dict, **_settings) -> dict:
+            raise IndexError("list index out of range")
+
+        monkeypatch.setitem(checks.ADAPTERS, Lint.tool, broken)
+        answers = checks.run_rules({"files": [_entry("src/a.py", "print(1)\n")], "tree": None}, [Lint(), NoPrint()])
+        said = f"{Lint.tool} raised IndexError: list index out of range, so the rule did not look"
+        assert answers["rule.lint"].could_not_look == said, answers
+        assert [f.line for f in answers["rule.no-print"].findings] == [1], "the other rule's findings stand"
+
     def test_a_file_rule_reads_each_changed_file_whole_and_knows_which_lines_the_change_added(self) -> None:
         import ast
 

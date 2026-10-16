@@ -27,16 +27,26 @@ SUBMODULE = re.compile(r"^(?:new file mode|index \S+) 160000$", re.MULTILINE)
 
 
 def readable(diff: str) -> str:
-    """The diff with "\\n" its only line break: a CRLF file's `\\r` dropped, every other break shown as its escape.
-    Measured: a lone `\\r` in an added line split it, so the key after it was no added line for the rule; and text
-    after a form feed, with no diff marker, read as the prompt's own."""
-    return _BREAKS.sub(lambda m: m.group().encode("unicode_escape").decode(), diff.replace("\r\n", "\n"))
+    """The diff with "\\n" its only line break: a CRLF file's `\\r` dropped, every other break shown as its escape and
+    a space, so what follows opens on a word's edge as it does after a line break. Measured: a lone `\\r` in an added
+    line split it, so the key after it was no added line for the rule; text after a form feed, with no diff marker,
+    read as the prompt's own; and by review, a key opening a line of a file broken at a lone `\\r` or U+2028, glued to
+    the escape's last letter, matched no shape that opens on a word's edge: no rule found it, and redaction sent it."""
+    return _BREAKS.sub(lambda m: m.group().encode("unicode_escape").decode() + " ", diff.replace("\r\n", "\n"))
 
 
 def header(diff: str) -> str:
     """A file's diff before its first hunk, where git prints a submodule's mode and "Binary files … differ": measured,
     searching whole diffs for them took 600 ms over a 66 MB `--all`, the headers alone 12."""
     return diff.partition("\n@@")[0]
+
+
+def headers(diff: str) -> str:
+    """Every header a file's diff holds, each before its own first hunk: one, or two where the change made the file
+    another type, git printing the file it was and then the file it is, a binary file or a submodule named in the
+    second. No line inside a hunk opens with `diff --git `: each is marked. Measured by review: a symlink made a binary
+    file, and a file made a submodule, were read by their first header alone, named as no hole, and approved."""
+    return "\n".join(header(part) for part in diff.split("\ndiff --git "))
 
 
 def _fence(text: str) -> str:

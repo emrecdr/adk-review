@@ -20,6 +20,7 @@ import subprocess
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from typing import Any
 
 from ..core.blast import Blast, Radius, blast_radius
 from ..core.rules import Tree
@@ -32,7 +33,7 @@ from .diff import (
     capped,
     file_added,
     framed,
-    header,
+    headers,
     hunk_lines,
     quotable,
     readable,
@@ -223,17 +224,19 @@ def same_folder(one: str, other: str) -> bool:
         return False
 
 
-def _refused(repo: str, root: str) -> dict | None:
-    """Why `repo` is no repository to review, as an error envelope, or None: no `.git` in it, or a `.git` that is no
-    repository's top. Measured: a `.git` that is no repository, an empty folder say, sent git to the repository around
-    it, and a review read the outer repository's commits under the inner folder's name. Raises `GitError` as `_git`
-    does."""
+class _ScopeError(Exception):
+    """A scope `preflight` refuses, and why: answered as the error envelope a `GitError` is, from one place."""
+
+
+def _refused(repo: str, root: str) -> None:
+    """`_ScopeError` where `repo` is no repository to review: no `.git` in it, or a `.git` that is no repository's top.
+    Measured: a `.git` that is no repository, an empty folder say, sent git to the repository around it, and a review
+    read the outer repository's commits under the inner folder's name. Raises `GitError` as `_git` does."""
     if not is_repository(root):
-        return {"status": "error", "error_message": f"{repo} is not a git repository (no .git directory)"}
+        raise _ScopeError(f"{repo} is not a git repository (no .git directory)")
     top = _git(root, "rev-parse", "--show-toplevel", strip=False)[1].removesuffix("\n")
     if not same_folder(top, root):
-        return {"status": "error", "error_message": f"{repo} is no repository's top: git answers for {top}"}
-    return None
+        raise _ScopeError(f"{repo} is no repository's top: git answers for {top}")
 
 
 def _empty_tree(root: str) -> str:
@@ -249,41 +252,22 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
     serves, since no merge base is looked for; so does one whose base is one of the head's own commits."""
     root = os.path.expanduser(repo)  # not Path.expanduser, which raises on a `~name` this machine does not know
     try:
-        if refused := _refused(repo, root):
-            return refused
-        full: dict[str, str] = {}  # the one full ref each name resolved through, if a ref: a report names a tag
-        for label, ref in (("base branch", base), ("head branch", head)):
-            names = _namesakes(root, ref) if ref is not None else []
-            full[label] = names[0] if names else ""
-            if len(names) > 1:
-                why = f"{label} {ref!r} is ambiguous: {' and '.join(names)}; name one in full"
-                return {"status": "error", "error_message": why}
+        _refused(repo, root)
+        base_ref, head_ref = _full_ref(root, "base branch", base), _full_ref(root, "head branch", head)
         base_sha, head_sha = _sha(root, base) if base is not None else "", _sha(root, head)
         if base_sha is None:
-            return {"status": "error", "error_message": f"base branch {base!r} does not exist in {repo}"}
+            raise _ScopeError(f"base branch {base!r} does not exist in {repo}")
         if head_sha is None:
-            return {"status": "error", "error_message": f"head branch {head!r} does not exist in {repo}"}
+            raise _ScopeError(f"head branch {head!r} does not exist in {repo}")
         # From here on git only sees commit hashes, which cannot be mistaken for options.
         if base is None:
             base_sha = merge_base = _empty_tree(root)
             span = head_sha
         else:
-            # Cut at a depth, as CI checks out, a clone can name the wrong merge base, unless the base is one of the
-            # head's own commits: then it is the merge base, whatever lies past the cut. Measured by review: every
-            # push from a shallow clone was stopped, its base always one of the head's commits.
-            if (
-                _git(root, "rev-parse", "--is-shallow-repository")[1] == "true"
-                and _git(root, "merge-base", "--is-ancestor", base_sha, head_sha, ok=(0, 1))[0] != 0
-            ):
-                why = "a merge base found in one can be the wrong one: fetch its history first, git fetch --unshallow"
-                return {"status": "error", "error_message": f"{repo} is a shallow clone, and {why}"}
-            code, merge_base = _git(root, "merge-base", base_sha, head_sha, ok=(0, 1))
-            if code == 1:  # git's answer for two commits with no ancestor in common
-                why = f"{base!r} and {head!r} share no history: no change to review"
-                return {"status": "error", "error_message": why}
+            merge_base = _merge_base(repo, root, (base, base_sha), (head, head_sha))
             span = f"{merge_base}..{head_sha}"
         _, ahead = _git(root, "rev-list", "--count", span)
-    except GitError as exc:
+    except (GitError, _ScopeError) as exc:
         return {"status": "error", "error_message": str(exc)}
     return {
         "status": "success",
@@ -294,9 +278,36 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
         "head_sha": head_sha,
         "merge_base": merge_base,
         "commits_ahead": int(ahead),
-        "base_ref": full["base branch"],
-        "head_ref": full["head branch"],
+        "base_ref": base_ref,
+        "head_ref": head_ref,
     }
+
+
+def _full_ref(root: str, label: str, ref: str | None) -> str:
+    """The one full ref `ref` resolved through, "" where it names none, so a report names a tag; `_ScopeError` where
+    the name could mean more than one."""
+    names = _namesakes(root, ref) if ref is not None else []
+    if len(names) > 1:
+        raise _ScopeError(f"{label} {ref!r} is ambiguous: {' and '.join(names)}; name one in full")
+    return names[0] if names else ""
+
+
+def _merge_base(repo: str, root: str, base: tuple[str, str], head: tuple[str, str]) -> str:
+    """The merge base of `base` and `head`, each `(name, sha)`; `_ScopeError` where none can be trusted."""
+    (base_name, base_sha), (head_name, head_sha) = base, head
+    # Cut at a depth, as CI checks out, a clone can name the wrong merge base, unless the base is one of the head's own
+    # commits: then it is the merge base, whatever lies past the cut. Measured by review: every push from a shallow
+    # clone was stopped, its base always one of the head's commits.
+    if (
+        _git(root, "rev-parse", "--is-shallow-repository")[1] == "true"
+        and _git(root, "merge-base", "--is-ancestor", base_sha, head_sha, ok=(0, 1))[0] != 0
+    ):
+        why = "a merge base found in one can be the wrong one: fetch its history first, git fetch --unshallow"
+        raise _ScopeError(f"{repo} is a shallow clone, and {why}")
+    code, merge_base = _git(root, "merge-base", base_sha, head_sha, ok=(0, 1))
+    if code == 1:  # git's answer for two commits with no ancestor in common
+        raise _ScopeError(f"{base_name!r} and {head_name!r} share no history: no change to review")
+    return merge_base
 
 
 def is_repository(repo: str) -> bool:
@@ -438,10 +449,9 @@ def preflight_staged(repo: str) -> dict:
     tree only, is not in the next commit and not reviewed."""
     root = os.path.expanduser(repo)
     try:
-        if refused := _refused(repo, root):
-            return refused
+        _refused(repo, root)
         head = _sha(root, "HEAD") or _empty_tree(root)  # no commit yet: the index against the empty tree
-    except GitError as exc:
+    except (GitError, _ScopeError) as exc:
         return {"status": "error", "error_message": str(exc)}
     return {
         "status": "success",
@@ -693,7 +703,7 @@ def read_texts(resolved: dict, files: list[dict], listing: list[tuple[str, str, 
             entry["unread_text"] = "was not read: the head's tree could not be listed"
     else:
         blobs = {path: (sha, size) for path, sha, size in _plain(listing)}
-        changed = [entry for entry in files if entry["path"] in blobs and not BINARY.search(header(entry["diff"]))]
+        changed = [entry for entry in files if entry["path"] in blobs and not BINARY.search(headers(entry["diff"]))]
         texts, _unread = _texts(resolved, ((entry["path"], *blobs[entry["path"]]) for entry in changed))
         unread = []
         for entry in changed:
@@ -721,7 +731,7 @@ def unread(entry: dict, diff: str, cut: bool, fits: bool, cap: int) -> str:
         return ""
     if not diff.strip():
         return "git showed none of it"
-    if SUBMODULE.search(top := header(diff)):
+    if SUBMODULE.search(top := headers(diff)):  # each header: a type change prints the new file's second
         return "a submodule: its commits are another repository's, not read here"
     if BINARY.search(top):
         return "binary: no line of it can be read or quoted"
@@ -733,19 +743,10 @@ def unread(entry: dict, diff: str, cut: bool, fits: bool, cap: int) -> str:
 
 
 def collect_evidence(
-    repo: str,
-    base: str | None,
-    head: str,
-    scope: Sequence[str] = (),
-    *,
-    staged: bool = False,
-    tree_rules: bool = True,
-    radius: bool = True,
-    diff_cap: int = DIFF_CAP_CHARS,
-    skipped: Callable[[str], str | None] | None = None,
+    repo: str, base: str | None, head: str, scope: Sequence[str] = (), *, staged: bool = False, **options: Any
 ) -> dict:
     """Everything the rules and the guidelines read, gathered in plain Python before any model runs: `preflight`, or
-    `preflight_staged` for the index, then `gather`, with the options it takes.
+    `preflight_staged` for the index, then `gather`, with the `options` it takes, declared there alone.
 
     `files` carries each changed file with its WHOLE diff and its numbered
     added lines, for the rules, its text at the head, for the file rules, and the lines of its capped diff a guideline
@@ -769,7 +770,7 @@ def collect_evidence(
     resolved = preflight_staged(repo) if staged else preflight(repo, base, head)
     if resolved["status"] != "success":
         return resolved
-    return gather(resolved, scope, tree_rules=tree_rules, radius=radius, diff_cap=diff_cap, skipped=skipped)
+    return gather(resolved, scope, **options)
 
 
 def gather(
@@ -777,7 +778,7 @@ def gather(
     scope: Sequence[str] = (),
     *,
     tree_rules: bool = True,
-    radius: bool = True,
+    guidelines: bool = True,
     diff_cap: int = DIFF_CAP_CHARS,
     skipped: Callable[[str], str | None] | None = None,
 ) -> dict:
@@ -788,7 +789,8 @@ def gather(
     try:
         listed = list_changed(resolved)
         entries = [entry for entry in listed if in_scope(entry["path"], scope)]
-        files, block, excluded = shown_to_guidelines(entries, _diffs(resolved, entries, scope), diff_cap, skipped)
+        diffs = _diffs(resolved, entries, scope)
+        files, block, excluded = shown_to_guidelines(entries, diffs, diff_cap, skipped, shown=guidelines)
         away = untracked(resolved) if resolved.get("staged") else None
     except GitError as exc:  # the change half read is not the change: named, never reviewed as it stands
         return {"status": "error", "error_message": str(exc)}
@@ -798,7 +800,7 @@ def gather(
     # The head read whole, every Python file parsed, only for what reads it: a tree rule, or the radius a guideline
     # is shown, which measures changed Python files alone. The changed files' own texts are read either way, for the
     # file rules.
-    read = tree_rules or (radius and any(Radius(entry["path"]).measured for entry in files))
+    read = tree_rules or (guidelines and any(Radius(entry["path"]).measured for entry in files))
     tree = tree_at_head(resolved, listing) if read else None
     read_texts(resolved, files, listing)
     return {
@@ -806,7 +808,7 @@ def gather(
         "preflight": resolved,
         "files": files,
         "diff": block,
-        "blast": _radius(tree, files, read=read, asked=radius),
+        "blast": _radius(tree, files, read=read, asked=guidelines),
         "tree": tree,
         "whole": base is None,
         "scope": list(scope),
@@ -826,12 +828,19 @@ def _diffs(resolved: dict, entries: list[dict], scope: Sequence[str]) -> list[st
 
 
 def shown_to_guidelines(
-    entries: list[dict], diffs: list[str], diff_cap: int, skipped: Callable[[str], str | None] | None
+    entries: list[dict],
+    diffs: list[str],
+    diff_cap: int,
+    skipped: Callable[[str], str | None] | None,
+    *,
+    shown: bool = True,
 ) -> tuple[list[dict], str, dict[str, str]]:
     """Each changed file with its whole diff and its added lines, for the rules, and what the guidelines are shown of
     it; the block they read, each file capped at `diff_cap` and the block at `BLOCK_CAP_CHARS`, what it leaves out
     counted at its end; and the files the operator's skip list left out, by path with the glob. Decided from the
-    diffs alone: no git runs here."""
+    diffs alone: no git runs here. With no guideline to show it to, `shown` False, no file is capped, framed or
+    shown: measured, the view cost 2.3 s of a 10.5 s `default-rules` review of 2,683 files, the pre-push hook's
+    profile, and nothing read it."""
     files: list[dict] = []
     blocks: list[str] = []
     room, left_out, excluded = BLOCK_CAP_CHARS, 0, {}
@@ -852,17 +861,21 @@ def shown_to_guidelines(
         files.append(file)
         # A file the operator's skip list names: the rules read it as any other, the guidelines are not shown it,
         # and it is named and counted, never a hole. The operator chose it, in the tool's own config: a branch
-        # cannot, and code it hides behind such a name is still every rule's to read.
-        if skipped is not None and (glob := skipped(entry["path"])):
+        # cannot, and code it hides behind such a name is still every rule's to read. Never a submodule, which the
+        # branch names as it likes and no rule reads: measured by review, one named `logo.png` was approved.
+        if skipped is not None and (glob := skipped(entry["path"])) and not SUBMODULE.search(headers(diff)):
             excluded[entry["path"]] = glob
             continue
-        shown, cut = capped(diff, diff_cap)
-        block, framing = framed(entry["path"], shown)
+        if not shown:  # the rules read every added line: what no one can read is all `unread` still names
+            file["unread"] = unread(entry, diff, cut=False, fits=True, cap=diff_cap)
+            continue
+        view, cut = capped(diff, diff_cap)
+        block, framing = framed(entry["path"], view)
         fits = len(block) <= room
         # The guidelines' limits alone: the rules read every added line.
         file.update(unread=unread(entry, diff, cut, fits, diff_cap), cut=cut or not fits)
         if fits:  # a file no guideline read, none may quote
-            file.update(quotable=quotable(shown), framing=framing)
+            file.update(quotable=quotable(view), framing=framing)
             blocks.append(block)
             room -= len(block) + 2  # and the blank line joining it to the next
         else:

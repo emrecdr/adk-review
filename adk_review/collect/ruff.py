@@ -45,7 +45,7 @@ def diagnose(
         return _run(ruff, texts, select, ignore, line_length)
     except OSError as exc:  # a disk that refuses the write: full, or read-only
         return f"a changed file could not be written to lint ({exc.strerror})"
-    except (ValueError, KeyError, TypeError) as exc:  # an answer of another shape than ruff's JSON
+    except (ValueError, KeyError, IndexError, TypeError) as exc:  # an answer of another shape than ruff's JSON
         return f"ruff's answer could not be read ({type(exc).__name__})"
     except subprocess.CalledProcessError as exc:  # ruff's cause sits on no fixed line, so all it said goes, flat
         return f"ruff exited {exc.returncode}: {squash(exc.stderr) or 'no reason given'}"
@@ -114,8 +114,8 @@ def _ruff(argv: list[str], cwd: str) -> str:
 
 def _parsed(stdout: str, sources: dict[str, list[str]]) -> dict[str, list[Diagnostic]]:
     """Ruff's JSON read back: each hit under the path whose index names its folder, `sources` in the order `_laid_out`
-    numbered them, with the line it names as the file holds it; `ValueError`, `KeyError` or `TypeError` for an answer
-    of another shape."""
+    numbered them, with the line it names as the file holds it; `ValueError`, `KeyError`, `IndexError` or `TypeError`
+    for an answer of another shape."""
     paths = list(sources)
     found: dict[str, list[Diagnostic]] = {}
     for hit in json.loads(stdout):
@@ -128,6 +128,17 @@ def _parsed(stdout: str, sources: dict[str, list[str]]) -> dict[str, list[Diagno
         fix, label = offered.get("message"), offered.get("applicability")
         found.setdefault(path, []).append(Diagnostic(row, line, code, hit["message"], fix, label))
     return found
+
+
+def identity() -> str:
+    """The ruff a review would run, as what its result depends on: its path and its own `--version`, or why it said
+    none. Measured by review: a review `--cache` kept with one ruff was served after another that found a major in
+    the change, its key the same."""
+    ruff = beside() or on_path("ruff")
+    try:
+        return f"{ruff} {_ruff([ruff, '--version'], tempfile.gettempdir()).strip()}"
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"{ruff}: {type(exc).__name__}"
 
 
 def beside() -> str | None:

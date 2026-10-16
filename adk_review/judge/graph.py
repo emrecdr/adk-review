@@ -25,9 +25,9 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from functools import partial
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from google.adk.agents import LlmAgent
+from google.adk.agents.context import Context
 from google.adk.apps.app import App
 from google.adk.events import Event
 from google.adk.plugins.debug_logging_plugin import DebugLoggingPlugin
@@ -52,9 +52,6 @@ from .plugins import (
 )
 from .rule_helpers import matches
 from .tools import changed_files, inspect_repository, one_repository
-
-if TYPE_CHECKING:
-    from google.adk.agents.context import Context
 
 NAME = "adk_review"
 #: Chat's verdict agent: its name, and the key it writes the verdict under.
@@ -130,10 +127,11 @@ def skipped_by(globs: Sequence[str]) -> Callable[[str], str | None] | None:
     return lambda path: next((glob for glob in globs if matches(path, glob)), None)
 
 
-def gathering(diff_cap: int, skip: Sequence[str]) -> Callable[[dict], dict]:
-    """How chat gathers the evidence for the scope its intake confirmed: the command's own gathering, under the
-    config's cap and skip list, bound once where chat's policy is read, so no builder carries a setting of it."""
-    return partial(gather, diff_cap=diff_cap, skipped=skipped_by(skip))
+def gathering(checks: Catalog, diff_cap: int, skip: Sequence[str]) -> Callable[[dict], dict]:
+    """How chat gathers the evidence for the scope its intake confirmed: the command's own gathering, reading the head
+    as these checks read it, under the config's cap and skip list, bound once where chat's policy is read, so no
+    builder carries a setting of it."""
+    return partial(gather, **checks.head_reading(), diff_cap=diff_cap, skipped=skipped_by(skip))
 
 
 def _bar(fail_on: str) -> str:
@@ -160,8 +158,7 @@ def build_workflow(
     the graph runs and calls no model — measured: ADK refuses an empty fan-out.
     """
     agents = tuple(build_guideline(guideline) for guideline in checks.guidelines)
-    # In chat, the head read whole only where the checks this graph runs read it, as the command reads it.
-    rules = build_checks(checks.rules, evidence, partial(gathered, **checks.head_reading()))
+    rules = build_checks(checks.rules, evidence, gathered)
     middle = (rules, *((agents,) if agents else ()), JoinNode(name="join_guidelines"))
     if not chat:
         return Workflow(name=NAME, edges=[("START", *middle)], max_concurrency=CONCURRENCY)

@@ -7,6 +7,7 @@ import asyncio
 import importlib
 import json
 import re
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -21,6 +22,7 @@ from conftest import (
     _branch_off_empty,
     _cached_copilot_token,
     _committed,
+    _entry,
     _git_in,
     catalog,
     load_agent,
@@ -227,7 +229,7 @@ class TestTheTokenCeiling:
 
         request = LlmRequest(config=types.GenerateContentConfig(system_instruction="x" * 400))
         ledger = UsageLedger(ceiling=int(UsageLedger._estimate(request) * 1.5))
-        a, b = SimpleNamespace(agent_name="guideline_a"), SimpleNamespace(agent_name="guideline_b")
+        a, b = SimpleNamespace(agent_name="guideline_a", state={}), SimpleNamespace(agent_name="guideline_b", state={})
         assert await ledger.before_model_callback(callback_context=a, llm_request=request) is None
         refused = await ledger.before_model_callback(callback_context=b, llm_request=request)
         assert refused is not None and refused.error_code == "TOKEN_CEILING", "a's reservation holds b back"
@@ -256,10 +258,28 @@ class TestTheTokenCeiling:
         budget = types.ThinkingConfig(thinking_budget=4096)
         thinking = LlmRequest(config=types.GenerateContentConfig(system_instruction="x" * 400, thinking_config=budget))
         ledger = UsageLedger(ceiling=UsageLedger._estimate(plain) + 4095)
-        security = SimpleNamespace(agent_name="guideline_security")
+        security = SimpleNamespace(agent_name="guideline_security", state={})
         refused = await ledger.before_model_callback(callback_context=security, llm_request=thinking)
         assert refused is not None and refused.error_code == "TOKEN_CEILING", "its thinking does not fit"
         assert await ledger.before_model_callback(callback_context=security, llm_request=plain) is None
+
+    @pytest.mark.asyncio
+    async def test_a_prose_agent_the_ceiling_refuses_answers_why_as_a_provider_error_does(self) -> None:
+        """Measured before: a chat turn whose intake the ceiling refused ended with no answer at all, where a provider's
+        error answers its sentence and leaves it for the guidelines' guard. The ceiling's refusal answers the same way;
+        a guideline, which answers in a schema, still answers nothing, a hole."""
+        from google.adk.models.llm_request import LlmRequest
+        from google.genai import types
+
+        from adk_review.judge.agents import FAILURE
+        from adk_review.judge.plugins import UsageLedger
+
+        intake = SimpleNamespace(agent_name="intake", state={})
+        request = LlmRequest(config=types.GenerateContentConfig(system_instruction="x" * 400))
+        refused = await UsageLedger(ceiling=100).before_model_callback(callback_context=intake, llm_request=request)
+        said = "I could not reach the model: TOKEN_CEILING: the ceiling of 100 tokens would be passed"
+        assert refused.content.parts[0].text.startswith(said), refused
+        assert intake.state[FAILURE].startswith("intake: TOKEN_CEILING"), intake.state
 
 
 class TestTheSecondOpinion:
@@ -525,6 +545,43 @@ class TestTheChecksNode:
         quoted = '+AWS_ACCESS_KEY_ID = "[REDACTED:aws_access_key_id]"'
         line = f"- blocker src/payments/config.py:4: secrets: a hard-coded credential — {quoted}"
         assert run.state[RULES].startswith(f"## rule.secrets\n{line}\n"), run.state[RULES]
+
+    @pytest.mark.asyncio
+    async def test_a_cancelled_node_stops_its_rules_at_the_next_rule(self) -> None:
+        """The rules run in a thread, which no cancel reaches. Measured: a SIGTERM one second into the rules of a
+        2,683-file `--all` ended the review 6.5 s later, the loop's close waiting for every rule still to run."""
+        import asyncio
+        import contextlib
+        import threading
+
+        from adk_review.core.rules import ChangedFile, FileRule
+
+        started, release, ran = threading.Event(), threading.Event(), []
+
+        class First(FileRule):
+            id, severity, title, fix = "first", "minor", "t", "f"
+
+            def check(self, _file: ChangedFile) -> list:
+                started.set()
+                release.wait(10)
+                return []
+
+        class Second(FileRule):
+            id, severity, title, fix = "second", "minor", "t", "f"
+
+            def check(self, file: ChangedFile) -> list:
+                ran.append(file.path)
+                return []
+
+        evidence = {"files": [_entry("a.py", "x = 1\n")], "tree": None, "blast": None}
+        run = asyncio.create_task(self._run((First(), Second()), {}, evidence))
+        assert await asyncio.to_thread(started.wait, 10), "the first rule began"
+        run.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await run
+        release.set()
+        await asyncio.to_thread(time.sleep, 0.3)  # the thread's next step, were it to run on
+        assert ran == [], "stopped before the next rule"
 
     @pytest.mark.asyncio
     async def test_with_nothing_gathered_each_check_says_it_did_not_look_and_no_radius_is_kept(self) -> None:

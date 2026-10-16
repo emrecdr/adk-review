@@ -18,11 +18,12 @@ from .judge.graph import build_app, gathering
 # --fail-on does: in chat no flag chooses another.
 config = load_config(CONFIG)
 policy = config["review"]
+checks = select(catalog(), config["profiles"], DEFAULT)
 app = build_app(
     chat=True,
-    checks=select(catalog(), config["profiles"], DEFAULT),
+    checks=checks,
     fail_on=policy["fail_on"],
-    gathered=gathering(policy["diff_cap"], policy["skip"]),
+    gathered=gathering(checks, policy["diff_cap"], policy["skip"]),
     ceiling=policy["max_tokens"] or None,  # the config's ceiling, as the command's default is
 )
 root_agent = app.root_agent

@@ -17,6 +17,10 @@ from ..rule_helpers import ChangedFile, FileRule, UnreadError, is_python
 
 #: PEP 263's declaration: a comment on the first or second line naming a codec.
 DECLARATION = re.compile(r"^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)")
+#: A line break as Python reads source, a lone CR among them: git, and the file's lines, break at "\n" alone.
+#: Measured by review: a lone CR ending a blank first line put the declaration on Python's second line and on no
+#: line of the file's own, and code Python ran as UTF-7 was approved.
+PYTHON_BREAK = re.compile(r"\r\n?|\n")
 #: Plain text no codec Python accepts for code may change, and what the codecs that rewrite code read as other
 #: characters: a UTF-7 shift and three backslash escapes. A backslash on its own is left out: an escape it does not
 #: start is deprecated.
@@ -39,13 +43,17 @@ class EncodingDeclaration(FileRule):
     severity = "blocker"
     title = "an encoding that rewrites the code every rule reads"
     fix = "Save the file as UTF-8 and remove the encoding declaration."
-    bad = ("# -*- coding: utf_7 -*-\nx = 1\n", "#!/usr/bin/env python\n# coding=raw_unicode_escape\n")
+    bad = (
+        "# -*- coding: utf_7 -*-\nx = 1\n",
+        "#!/usr/bin/env python\n# coding=raw_unicode_escape\n",
+        "\r# -*- coding: utf_7 -*-\nx = 1\n",
+    )
     good = ("# -*- coding: utf-8 -*-\nx = 1\n", "# coding: latin-1\nx = 1\n", ("notes.txt", "# coding: utf_7\n"))
 
     def check(self, file: ChangedFile) -> list[tuple[int | None, str]]:
         if not is_python(file.path, lambda: file.line(1)):
             return []
-        for line in file.lines[:2]:
+        for line in PYTHON_BREAK.split("\n".join(file.lines[:2]))[:2]:  # Python's first two lines
             if (found := DECLARATION.match(line)) and rewrites(found.group(1)):
                 raise UnreadError(f"{file.path} declares {found.group(1)}: Python runs code no rule read")
         return []

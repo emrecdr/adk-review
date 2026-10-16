@@ -13,6 +13,7 @@ from types import SimpleNamespace
 import litellm
 import pytest
 from conftest import (
+    GUIDELINE_NAMES,
     INTAKE,
     QUOTA_TEXT,
     REVIEW_REQUEST,
@@ -38,12 +39,13 @@ from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 from pydantic import BaseModel
 
-SENTENCE = f"I could not reach the model: RuntimeError: {QUOTA_TEXT}"
 
+def _judged(state: dict) -> set[str]:
+    """The judging agents that left an answer in state, each by its own key: every guideline `default` runs, and chat's
+    verdict. Spelled by hand, a renamed key would leave a check that nothing was judged passing on nothing."""
+    from adk_review.judge.graph import VERDICT
 
-def _guidelines(state: dict) -> dict:
-    """What every guideline left in state."""
-    return {k: v for k, v in state.items() if k.startswith("guideline_")}
+    return {key for key in (*map(model_key, GUIDELINE_NAMES), VERDICT) if key in state}
 
 
 @pytest.mark.asyncio
@@ -53,7 +55,7 @@ async def test_when_every_call_fails_the_answer_names_the_error_and_nothing_rais
     fake_provider.raises_when("", quota())  # every instruction contains the empty string: every call fails
     final, state = await run_turn(module, REVIEW_REQUEST)
     assert QUOTA_TEXT in final, final
-    assert not _guidelines(state) and "verdict" not in state, "the turn ended at the intake's error: nothing judged"
+    assert not _judged(state), "the turn ended at the intake's error: nothing judged"
     assert not [k for k in state if k.startswith("temp:")], "the note lives for one invocation, not the session"
 
 
@@ -66,7 +68,7 @@ async def test_when_the_intake_fails_the_turn_ends_at_its_error_and_nothing_is_j
     fake_provider.raises_when(INTAKE, quota())
     final, state = await run_turn(module, REVIEW_REQUEST)
     assert QUOTA_TEXT in final, final
-    assert not _guidelines(state) and "verdict" not in state, "nothing judged, and no verdict on nothing"
+    assert not _judged(state), "nothing judged, and no verdict on nothing"
 
 
 def test_a_guideline_with_nothing_gathered_or_a_failure_before_it_says_so_and_why() -> None:
@@ -92,11 +94,13 @@ async def test_when_one_lane_fails_the_others_finish_and_the_verdict_still_answe
     """The one agent that runs after a failed guideline must not die on its missing key: the plugin answers nothing
     for a guideline, so the key is a hole the command names — in chat, the verdict reads it as an empty section. The
     checks node gathers the change from the scope the intake confirms, here by the fake intake's own tool call."""
+    from adk_review.judge.graph import VERDICT
+
     module = load_agent(monkeypatch)
     fake_provider.raises_when("tests are honest", quota())
     confirms(fake_provider, demo_repo)
     final, state = await run_turn(module, REVIEW_REQUEST)
-    assert final and state["verdict"], "the verdict agent answered"
+    assert final and state[VERDICT], "the verdict agent answered"
     assert state[model_key("security")]["findings"], "the other guidelines finished"
     assert model_key("tests") not in state, "a hole, for the code that decides"
 
@@ -361,7 +365,7 @@ async def test_chat_on_an_arm_that_cannot_run_says_why_and_calls_no_model(
     monkeypatch.delenv("GOOGLE_API_KEY")  # the key `load_agent` gives the fake
     final, state = await run_turn(agent, "Review /nowhere, feature against main.")
     assert said in final and called == [], (final, called)
-    assert not _guidelines(state) and "verdict" not in state, "the turn ended at the intake's answer"
+    assert not _judged(state), "the turn ended at the intake's answer"
 
 
 def test_copilot_refuses_a_model_that_cannot_judge_at_temperature_zero(monkeypatch, tmp_path) -> None:

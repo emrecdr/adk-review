@@ -70,15 +70,15 @@ The audit's description of the system holds. Each claim was checked:
 - **Layering**: `core` → `collect` → `judge` → `deliver`, held by `tests/test_layering.py`. Holds.
 - **Core**: `core/`, the checks and `rule_helpers/` import no network, subprocess, `os` or `asyncio`. Holds.
 - **Git**: read-only verbs and the sanitised `GIT_CONFIG_COUNT` environment. Holds.
-  - On Windows a timeout kills the whole process tree with `taskkill /F /T` (`collect/git.py:131`).
-  - The model chooses the branch names, and they reach git only behind `--end-of-options` (`collect/git.py:189`).
+  - On Windows a timeout kills the whole process tree with `taskkill /F /T` (`collect/git.py:132`).
+  - The model chooses the branch names, and they reach git only behind `--end-of-options` (`collect/git.py:190`).
 - **Grounding**: every guideline finding's quote is checked against the diff. Holds, and is now stricter: a quote must
   read in the framing each file was actually shown in.
 
 **Corrections:**
 - The suite had 504 passing tests, not 500.
 - The audit's line numbers had moved: `review.py:582` to `:581`, and `:773` to `:771`. The two `asyncio.run` calls
-  they name are now one `asyncio.Runner` (`review.py:801`, §6 item 8).
+  they name are now one `asyncio.Runner` (`review.py:778`, §6 item 8).
 - The audit's `docs/` file itself failed `ruff format --check .`, the `make lint` gate: ruff 0.16 formats the Python
   blocks inside Markdown. It was formatted before it was committed, whitespace only: with every space and line break
   removed, its text is unchanged.
@@ -93,7 +93,7 @@ The audit's description of the system holds. Each claim was checked:
 - Inside a `Workflow`, an `LlmAgent` with no `mode` is made `single_turn`
   (`google/adk/workflow/_llm_agent_wrapper.py:391-394`). A single-turn node answers once, and the graph moves on.
 - So the intake asks for the repository, and the edge continues to `checks`.
-- `checks` finds no scope and writes "nothing was gathered" as every rule's hole (`judge/checks.py:60-65`).
+- `checks` finds no scope and writes "nothing was gathered" as every rule's hole (`judge/checks.py:76-81`).
 - Every guideline's guard skips it, so no model call is made there.
 - The verdict agent then makes a model call that says nothing was reviewed.
 
@@ -175,7 +175,7 @@ review on each arm.
 ### 3.3 SEC-01: redaction count across sessions: refuted; the proposed fix is broken
 
 **What the counter is.**
-- `RedactSecretsPlugin.redacted` is read in one place: `review.py:808`, after the verifiers.
+- `RedactSecretsPlugin.redacted` is read in one place: `review.py:785`, after the verifiers.
 - The command builds one App per process, for one review.
 - In chat nothing reads it: it reaches no state, no event and no UI. No data crosses sessions; it is an integer
   nobody reads.
@@ -216,7 +216,7 @@ review on each arm.
   the guideline is lost as `SCHEMA_MISMATCH`, a hole.
 
 **`frozen=True` and the `id()` it would replace.**
-- `second_opinion` tracks refutations by identity on purpose (`review.py:589`: "by identity: two guidelines can file
+- `second_opinion` tracks refutations by identity on purpose (`review.py:573`: "by identity: two guidelines can file
   the same finding").
 - Hashing by value would conflate equal findings.
 
@@ -239,11 +239,11 @@ Probed with `type Severity = Literal["blocker", "major", "minor"]`:
 - **No shared default folder.** `--cache DIR` is opt-in with no default. The audit's `~/.cache/adk-review` does not
   exist in the code.
 - **Readers never see half a file.** `_written` writes a temporary file and then `os.replace`s it
-  (`review.py:633-644`).
+  (`review.py:610-621`).
 - **The reader trusts nothing.** `_from_cache` returns `None` for any file that does not parse or does not fit the
-  shape, and the review runs afresh (`review.py:920-927`).
+  shape, and the review runs afresh (`review.py:902-909`).
 - **A failed write costs only the next run.** The cache write sits under `contextlib.suppress(OSError)`
-  (`review.py:865`): "a cache that cannot be written costs the next run, never this one". That also covers Windows'
+  (`review.py:842`): "a cache that cannot be written costs the next run, never this one". That also covers Windows'
   `PermissionError` when a reader holds the file open.
 - **Concurrent writers are harmless.** Two writers of one key wrote a review of the same inputs, and the last one
   wins.
@@ -254,7 +254,7 @@ Probed with `type Severity = Literal["blocker", "major", "minor"]`:
 ### 3.7 ASYNC-02: cancellation and the session read: refuted
 
 - `get_session` is a read of an in-memory session, not a cleanup. On cancellation nothing needs releasing.
-- A cancelled run must propagate. Ctrl-C already ends as one sentence and exit 130 (`review.py:943`).
+- A cancelled run must propagate. Ctrl-C already ends as one sentence and exit 130 (`review.py:925`).
 - The proposed `finally` would await a read during cancellation and then discard it, since the exception
   propagates past the `return`. If the read raised, it would mask the original exception.
 
@@ -470,7 +470,7 @@ request contents are exactly `["review"]`, and that no finding's evidence appear
 ### 4.3 NEW-3: a SIGTERM can be swallowed, so the run never stops (P2)
 
 **The cause.**
-- `Terminated` subclasses `Exception` (`review.py:606`). A signal handler raises it in whatever Python frame is
+- `Terminated` subclasses `Exception` (`review.py:583`). A signal handler raises it in whatever Python frame is
   running.
 - When that frame sits inside one of the broad handlers that keep the engine fail-closed, the handler catches it:
   ADK's node error handling, `ReportProviderErrors`, `run_seeded`, or the checks node.
@@ -483,7 +483,7 @@ request contents are exactly `["review"]`, and that no finding's evidence appear
 **Why it matters.**
 - A CI cancel sends signals with a short grace period before `SIGKILL`.
 - A run that ignores SIGTERM is killed mid-flight, which leaves behind the temporary files the handler exists to
-  clean up (`review.py:969-971`).
+  clean up (`review.py:951-953`).
 - The window is the time the main thread spends running Python, not waiting on the network: small, but real.
 
 **Fix: one line.** `KeyboardInterrupt` and `SystemExit` are `BaseException`s for this reason. No `except

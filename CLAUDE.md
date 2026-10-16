@@ -129,9 +129,9 @@ Load-bearing rules the tests enforce:
   the command seeds the change at the session's start, in no event a debug log could carry. Plugins:
   `RedactSecretsPlugin`, `UsageLedger`, `ReportProviderErrors`, and `Progress`, which times each agent and, at a
   terminal or with `--progress`, tells each guideline's start and finish on stderr; in chat, first, `RefuseUnready`,
-  which asks `require_ready` once a turn, as the command asks before it builds anything, and answers its sentence in
-  each model call's place while the arm cannot run, then `OneTurn`, which gives each judging agent one fixed turn,
-  `review`, as the command's read: ADK would hand the verdict the guidelines' findings unfenced as a turn.
+  which asks `require_ready` once a turn, as the command asks before it builds anything, and while the arm cannot
+  run answers the turn with its sentence before any agent runs, then `OneTurn`, which gives each judging agent one
+  fixed turn, `review`, as the command's read: ADK would hand the verdict the guidelines' findings unfenced as a turn.
 - **Layering** (`tests/test_layering.py`): `core` → `collect` → `judge` → `deliver`, with imports pointing one way
   only, never spelled from the top (`adk_review.…`), `deliver/` importing `core` alone, a guideline importing `core`
   alone, and a rule importing one door, `judge/rule_helpers/`, alone, which imports `core` alone and lists in `__all__`

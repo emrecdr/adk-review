@@ -8,8 +8,11 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from ..core.rules import Diagnostic
-from .ruff import diagnose
+from .ruff import diagnose, identity
 
 #: Each tool a rule may name, and its adapter: the evidence and the rule's settings in, each changed file's
 #: diagnostics by path out, or, as a string, why the tool could not look.
 ADAPTERS: dict[str, Callable[..., dict[str, list[Diagnostic]] | str]] = {"ruff": diagnose}
+#: Each tool by the name a rule gives it, and which one would run, its version among it: what a rule's findings
+#: depend on beside the change, so a review kept under one tool is never served under another.
+IDENTITIES: dict[str, Callable[[], str]] = {"ruff": identity}
