@@ -23,9 +23,10 @@ ends with one plan of verified changes.
   - No source file was changed: only this report was added.
   - The live measurement in §4.7 and the implementation in §6 came after it, on the branch
     `hardening-from-the-audits`.
-- **Line numbers** in the project's files are the branch's as committed, so each can be opened. §3 and §4 describe
-  the code as it was verified, before the fixes, and §6 says what each fix changed. A library's line numbers are its
-  installed version's, above.
+- **Line numbers** in the project's files resolve in commit `c9cd863`, the last tree this report was checked
+  against, so each can be opened: `git show c9cd863:adk_review/review.py`. The code has moved since. §3 and §4
+  describe the code as it was verified, before the fixes, and §6 says what each fix changed. A library's line numbers
+  are its installed version's, above.
 
 ---
 
@@ -77,8 +78,8 @@ The audit's description of the system holds. Each claim was checked:
 
 **Corrections:**
 - The suite had 504 passing tests, not 500.
-- The audit's line numbers had moved: `review.py:582` to `:581`, and `:773` to `:771`. The two `asyncio.run` calls
-  they name are now one `asyncio.Runner` (`review.py:778`, §6 item 8).
+- The audit's line numbers had moved. The two `asyncio.run` calls it names, at `review.py:582` and `:773` in its own
+  tree, are now one `asyncio.Runner` (`review.py:778`, §6 item 8).
 - The audit's `docs/` file itself failed `ruff format --check .`, the `make lint` gate: ruff 0.16 formats the Python
   blocks inside Markdown. It was formatted before it was committed, whitespace only: with every space and line break
   removed, its text is unchanged.
