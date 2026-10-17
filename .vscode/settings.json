@@ -1,0 +1,25 @@
+{
+  "sonarlint.connectedMode.connections.sonarqube": [
+    {
+      "connectionId": "local-sonarqube",
+      "serverUrl": "http://localhost:9000"
+    }
+  ],
+  "sonarlint.connectedMode.project": {
+    "connectionId": "local-sonarqube",
+    "projectKey": "adk-review"
+  },
+  "sonarlint.analyzerProperties": {
+    "sonar.exclusions": "**/.venv/**,**/__pycache__/**,**/.pytest_cache/**,**/.ruff_cache/**,**/.git/**"
+  },
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["tests"],
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+      "source.organizeImports": "explicit"
+    }
+  }
+}

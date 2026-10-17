@@ -2,7 +2,7 @@
 
     uv run python -m adk_review.review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [...]
 
-Every flag, and what it does, is in `GUIDE.md` beside this file, which a test holds to this parser.
+Every flag, and what it does, is in `GUIDE.md` beside the package, which a test holds to this parser.
 
 A review runs in four steps, a package each: `core/` is the domain and imports
 nothing that runs a process or calls a model, `collect/` gathers the evidence,

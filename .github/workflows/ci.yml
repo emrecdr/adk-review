@@ -1,5 +1,5 @@
-# The offline suite and the lint on the three platforms the reviewer runs on. Windows is proven here, not argued:
-# no model is called, so no key or login is needed.
+# The lint, the type check and the offline suite on the three platforms the reviewer runs on. Windows is proven here,
+# not argued: no model is called, so no key or login is needed.
 name: ci
 
 on:

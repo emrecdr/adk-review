@@ -32,16 +32,17 @@ uv run python scripts/labelled_set.py --runs 3 [--build-only]      # live: one k
 uv run python scripts/measure.py --runs 5 [--all] # live: per planted defect, how often a guideline names it (--all: as a whole project)
 ```
 
-`uv tool install .` puts `adk-review`, `adk-review-push` and `adk-review-login` on `PATH` anywhere. With no `repo`, the command assumes
-none: a terminal is asked for the path, a pipeline is refused with exit 2. Exit codes: 0 approved, 1 a blocker, 2 a
-usage error before any model call (an arm that is not ready, a branch that adds nothing: "no change to review", a
-`config.toml`, profile or rule file that cannot run, nothing under `--path`, or no choice made at the question asked
-when neither `--base` nor `--all` is given), 3 a hole: a rule or a guideline failed, a rule could not look (the head's
-tree not listed, or a file it holds not read whole), a changed file no guideline read whole — binary, a submodule, cut
-at the diff cap or past the guidelines' block cap — named under "not read", a finding at the `--fail-on` bar whose quote
-the diff does not bear out, any error nothing else names (`main` wraps the command: a sentence, never Python's own exit
-1, which would read as a blocker), a reader that closes the pipe early, and a reviewer that cannot load (a broken
-install). Ctrl-C is one sentence and 130, the shell's own code for it.
+`uv tool install .` puts `adk-review`, `adk-review-push` and `adk-review-login` on `PATH` anywhere. With no `repo`, the
+command assumes none: a terminal is asked for the path, a pipeline is refused with exit 2. Exit codes: 0 approved, 1 a
+finding at the `--fail-on` bar (`blocker` unless set), 2 a usage error before any model call (an arm that is not ready,
+a branch that adds nothing: "no change to review", a `config.toml`, profile or rule file that cannot run, nothing under
+`--path`, or no choice made at the question asked when neither `--base` nor `--all` is given), 3 a hole: a rule or a
+guideline failed, a rule could not look (the head's tree not listed, or a file it holds not read whole), a changed file
+no guideline read whole — binary, a submodule, cut at the diff cap or past the guidelines' block cap — named under "not
+read", a finding at the `--fail-on` bar whose quote the diff does not bear out, a call the token ceiling refused, a
+`--json` or `--handoff` file that cannot be written, any error nothing else names (`main` wraps the command: a sentence,
+never Python's own exit 1, which would read as a blocker), a reader that closes the pipe early, and a reviewer that
+cannot load (a broken install). Ctrl-C is one sentence and 130, the shell's own code for it, and a job's SIGTERM 143.
 
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so.
@@ -79,9 +80,11 @@ diagnostics where it names the tool (`lint` names ruff, whose adapter `collect/t
 `collect/ruff.py`); a `TreeRule`, `check(tree)` over the head's paths and parsed modules, naming a line where it knows
 one. A guideline is a class naming its role and a thinking budget (`core/guidelines.py`), built into an agent by
 `judge/agents.py`. `judge/catalog.py` finds every check, reads `config.toml` and resolves what runs, for the command and
-the chat alike. A rule imports one door, `judge/rule_helpers/`: the contract, passed on from `core/rules.py`, and
-helpers named after what they read (`lines.py`, `syntax.py`) and try a rule with (`testing.py`), and `matches`,
-passed on from `core/paths.py`, the skip list's matcher too. A rule carries `bad` and `good` examples, which the catalog holds it to at every start with its own source, a rule failing
+the chat alike. A rule imports one door, `judge/rule_helpers/`: the contract, passed on from `core/` (`rules.py`'s
+kinds, `Hit` and `Diagnostic`, `findings.py`'s `Severity` and `RANK`), helpers named after what they read (`lines.py`,
+`syntax.py`) and try a rule with (`testing.py`), and what a review reads too, passed on from `core/`: `matches`, the
+skip list's matcher, a test's path and a credential's shape. A rule may carry `bad` and `good` examples (`lint`
+carries none), which the catalog holds it to at every start with its own source, a rule failing
 either being exit 2; `try_rule`, `lines_hit` and `self_check` try a rule with no repository, `--list-checks` lists every
 check with its kind, its profiles and its file, `--check ID` runs one check alone. Each check has one id,
 `rule.<name>` or `guideline.<name>` (`core/profiles.py`), in the config, on the command line and as its own report
@@ -132,7 +135,8 @@ Load-bearing rules the tests enforce:
   intake confirmed — a `temp:` key, which ADK keeps for one turn — so a turn that confirms none ends at the intake's
   answer; the checks node gathers its own evidence from that scope and writes the change the guidelines read, where
   the command seeds the change at the session's start, in no event a debug log could carry. Plugins:
-  `RedactSecretsPlugin`, `UsageLedger`, `ReportProviderErrors`, and `Progress`, which times each agent and, at a
+  `RedactSecretsPlugin`, ADK's `DebugLoggingPlugin` and `Recorder` where `--debug-log` and `--record` ask,
+  `UsageLedger`, `ReportProviderErrors`, and `Progress`, which times each agent and, at a
   terminal or with `--progress`, tells each guideline's start and finish on stderr; in chat, first, `RefuseUnready`,
   which asks `require_ready` once a turn, as the command asks before it builds anything, and while the arm cannot
   run answers the turn with its sentence before any agent runs, then `OneTurn`, which gives each judging agent one
@@ -151,18 +155,18 @@ Load-bearing rules the tests enforce:
 Conventions:
 
 - Tools return a `{status: …}` dict and never raise at the model.
-- Git runs by its full path from `PATH`'s absolute entries, never from the current directory (Windows searches it
-  first, an empty or relative entry names it, and it can be the checkout under review), as an argv list with a timeout
-  that stops the whole command (Git for Windows' `git.exe` starts the real git as its child), read-only verbs only, and
+- Git runs by its full path from `PATH`'s absolute entries, never from the current directory (Windows searches it first,
+  an empty or relative entry names it, and it can be the checkout under review), as an argv list with a timeout that
+  stops the whole command (Git for Windows' `git.exe` starts the real git as its child), read-only verbs only, and
   nothing ever writes into the repository under review, not even the lazy fetch a partial clone would make. Every call
-  runs in `_environment(repo)`: no inherited `GIT_*` variable, no global or system config and no attributes file but
-  the repository's, `safe.directory` for the one repository named, no lazy fetch, no replace refs or grafts,
+  runs in `_environment(repo)`: no inherited `GIT_*` variable, no global or system config and no attributes file but the
+  repository's, `safe.directory` for the one repository named, no lazy fetch, no replace refs or grafts,
   `core.precomposeUnicode`, `diff.suppressBlankEmpty` and `core.fsmonitor` fixed through `GIT_CONFIG_COUNT`. A file's
-  diff is read as git prints it for no one's settings, through plumbing (`diff-tree -r -p`): each path as
-  `:(top,literal)` pathspec magic, the merge base's attributes (`--attr-source`, git 2.41; under `--all`, the empty
-  tree's), `--no-color --no-ext-diff --no-textconv`. A call that fails, cannot start or runs past its timeout raises
-  `GitError`, turned into an error envelope only where envelopes are built; never answer it as an empty result.
-  `_git(..., ok=(0, 1))` is only for calls whose exit code 1 is an answer.
+  diff is read as git prints it for no one's settings, through plumbing (`diff-tree -r -p`, or `diff-index --cached -p`
+  under `--staged`): each path as `:(top,literal)` pathspec magic, the merge base's attributes (`--attr-source`, git
+  2.41; under `--all`, the empty tree's), `--no-color --no-ext-diff --no-textconv`. A call that fails, cannot start or
+  runs past its timeout raises `GitError`, turned into an error envelope only where envelopes are built; never answer it
+  as an empty result. `_git(..., ok=(0, 1))` is only for calls whose exit code 1 is an answer.
 - Every string a model reads is capped in characters, with the cut named in the text, and the cut never falls inside a
   credential. The report cuts each finding's evidence the same way, after the scrub, and breaks CI runners' command
   openers (`##[`, `##vso[`) and HTML comments' (`<!--`) in all it prints, every character a reader cannot see printed
@@ -170,10 +174,10 @@ Conventions:
 - State moves between agents via `output_key` and `{placeholder}` (`{key?}` where the key may be missing). Each key
   more than one module uses is spelled once, in `judge/agents.py`; a check's key is its id through `state_key`.
 - Every `subprocess.run` that decodes passes `encoding=`; no source under `adk_review/` or `scripts/` spells `/tmp/`
-  (use `tempfile.gettempdir()`). Every file a script or a fixture commits is written with `newline="\n"`, a `.env`
-  that is not UTF-8 is a sentence and exit 2, and `.github/workflows/ci.yml` and `azure-pipelines.yml` run lint,
-  the type check and the suite on Windows, Linux and macOS. Every action a workflow uses is pinned by its full commit
-  SHA, the same commit in every workflow (`tests/test_copilot.py`).
+  (use `tempfile.gettempdir()`). Every file a script or a fixture commits is written with `newline="\n"`, a `.env` that
+  is not UTF-8 is a sentence and exit 2 (1 from the login), and `.github/workflows/ci.yml` and `azure-pipelines.yml` run
+  lint, the type check and the suite on Windows, Linux and macOS. Every action a workflow uses is pinned by its full
+  commit SHA, the same commit in every workflow (`tests/test_copilot.py`).
 
 ## Tests
 

@@ -1,6 +1,7 @@
-# The checks of .github/workflows/ci.yml for the Azure DevOps copy of this repository: the lint and the offline
-# suite on the three platforms the reviewer runs on. No model is called, so the pipeline needs no key, no login and no
-# variable group. A pull request in Azure Repos runs it through a branch policy (build validation), not from here.
+# The checks of .github/workflows/ci.yml for the Azure DevOps copy of this repository: the lint, the type check and the
+# offline suite on the three platforms the reviewer runs on. No model is called, so the pipeline needs no key, no login
+# and no variable group. A pull request in Azure Repos runs it through a branch policy (build validation), not from
+# here.
 
 trigger:
   branches:

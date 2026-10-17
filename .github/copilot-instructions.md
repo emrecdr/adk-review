@@ -12,15 +12,17 @@ Path-specific rules sit in `.github/instructions/`, the recurring tasks in `.git
 
 ## Commands
 
-- `uv sync` installs. `uv run ruff check . && uv run ruff format --check .` lints (`make lint`); `uv run pyrefly check`
-  checks the types of the package and the scripts, held to no error (`make typecheck`); `uv run pytest -q` runs the
-  whole offline suite, no key needed (`make test`; `make ci` is all three). Run all three before calling anything
+- `uv sync --locked` installs what the lock pins. `uv run ruff check . && uv run ruff format --check .` lints
+  (`make lint`); `uv run pyrefly check` checks the types of the package and the scripts, held to no error
+  (`make typecheck`); `uv run pytest -q` runs the whole offline suite, no key needed (`make test`; `make ci` is all
+  three). Run all three before calling anything
   done, and report what they printed.
 - `uv run python scripts/make_demo_repo.py` builds the demo repository with its planted defects (`--fix` commits its
   two fixes); `uv run adk-review <demo repo> --head feature/payments --base main --profile rules-only` reviews it with
-  no model call, and `--check rule.<name>`, `--dry-run` and `--list-checks` make none either. Every other review or
-  chat command calls a provider — `--check guideline.<name>`, `adk web`, `adk run`, `scripts/measure.py`,
-  `scripts/injection_suite.py` and `scripts/labelled_set.py` — so run one only when the task says so.
+  no model call, and `--profile default-rules`, `--check rule.<name>`, `--dry-run`, `--list-checks`, `--explain` and
+  `--try` make none either. A review whose profile names a guideline calls a provider, and so do
+  `--check guideline.<name>`, `adk web`, `adk run`, `scripts/measure.py`, `scripts/injection_suite.py` and
+  `scripts/labelled_set.py`, so run one only when the task says so.
 - `[tool.uv]` in `pyproject.toml` takes a release only three days after it is published (`exclude-newer`), so a
   dependency released since does not resolve yet; the comment there says why the span stays.
 

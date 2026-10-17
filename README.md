@@ -21,7 +21,7 @@ uv run adk-review <that path> --head feature/payments --base main --profile rule
 ```
 
 The rules find the demo's hard-coded key pair, its shell call and a float division of cents: exit 1, a blocker.
-`make demo` runs the three. On a repository of your own, `uv run adk-review <repo> --base main --profile
+`make demo` runs the last two. On a repository of your own, `uv run adk-review <repo> --base main --profile
 default-rules` runs the default profile's rules alone, still with no model.
 
 The guidelines need a model, on one of two arms. Set it in the shell, or in `.env` at the root of this checkout
@@ -117,11 +117,11 @@ points the wrong way.
 
 | Package | May import | Holds |
 |---|---|---|
-| `core/` | nothing else | `findings.py` (`Finding`, `Review`, `Checked`, the severity scale), `rules.py` (what a rule is: the `Rule`, the `FileRule` and the `TreeRule`, the `ChangedFile` and the `Tree` they read, `Hit`, `UnreadError`, and `run_rule`, which runs any of them the same way), `guidelines.py` (what a guideline is), `health.py` (a whole project's measures under `--all`: what was read, size, McCabe complexity bands, each rule's findings in source and tests), `profiles.py` (a check's id and its state key, and the checks a profile turns on), `blast.py` (what at the head depends on each changed file, read from the syntax tree), `evidence.py` (what a review reads, each key spelled once: the evidence, and each changed file in it), `paths.py` (whether a glob names a path, as `.gitignore` reads one: the skip list's question, and a rule's), `secrets.py` (the credential shapes: what redaction hides and what the secrets rules ask), `text.py` (flat whitespace, a cut that names itself, lines as git numbers them), `verdict.py` (grounding, folding, deciding, `Outcome`, the exit codes) |
+| `core/` | nothing else | `findings.py` (`Finding`, `Review`, `Checked`, the severity scale), `rules.py` (what a rule is: the `Rule`, the `FileRule` and the `TreeRule`, the `ChangedFile` and the `Tree` they read, the `Diagnostic` an outside tool hands a file rule, `Hit`, `UnreadError`, and `run_rule`, which runs any of them the same way), `guidelines.py` (what a guideline is), `health.py` (a whole project's measures under `--all`: what was read, size, McCabe complexity bands, each rule's findings in source and tests), `profiles.py` (a check's id and its state key, and the checks a profile turns on), `blast.py` (what at the head depends on each changed file, read from the syntax tree), `evidence.py` (what a review reads, each key spelled once: the `Evidence`, the `Change` of it the rules read, the `Failure` in its place, and each changed file in it, an `Entry`), `paths.py` (whether a glob names a path, as `.gitignore` reads one: the skip list's question, and a rule's), `secrets.py` (the credential shapes: what redaction hides and what the secrets rules ask), `text.py` (flat whitespace, a cut that names itself, lines as git numbers them), `verdict.py` (grounding, folding, deciding, `Outcome`, the exit codes) |
 | `collect/` | `core` | `git.py` (read-only git: what a review covers, each file's diff and its text at the head, the head's tree, `collect_evidence`), `change.py` (the change as the evidence holds it, decided from the diffs alone: what the guidelines are shown of each file and the block they read, what no one could read, the blast radius), `history.py` (what a push sends, commit by commit, for the pre-push hook), `diff.py` (a unified diff read without git: the lines it adds, the cap, the fence each guideline reads it in), `ruff.py` (ruff over the changed Python files' texts, in a folder of its own), `tools.py` (each outside tool a rule may name, and the adapter that runs it: ruff's) |
-| `judge/` | `core`, `collect` | `rules/` (every rule, one file each, and nothing else), `guidelines/` (every guideline, one file each, and nothing else), `rule_helpers/` (the one door a rule imports: the contract, passed on from `core`, and helpers named after what they read), `catalog.py` (finds every check, reads `config.toml`, chooses what a profile runs, for the command and chat alike), `checks.py` (every rule as one node before the guidelines, in both shapes), `agents.py` (a guideline as an agent: the instruction around its role, the fences, the state keys spelled once, the read-back), `settings.py` (what the environment says: the arm, each role's model name, the fallback, Copilot's token path; read, nothing built, so the login and a rules-only review's cache key import no engine), `config.py` (the models built from it, and the request every call carries: temperature zero, a deadline, retries; readiness), `plugins.py` (redaction, the ledger and its ceiling, provider errors, progress, the recorder, and in chat the readiness check and the judging agents' one turn), `graph.py` (the graph and the `App` in both shapes; not `agent.py`, since `adk web` lists any folder holding one as an agent), `run.py` (one seeded run through the engine, guarded, and what it left in state read back), `tools.py` (chat's model-facing tools and the guardrail in front of them), `verify.py` (the second opinion) |
+| `judge/` | `core`, `collect` | `rules/` (every rule, one file each, and nothing else), `guidelines/` (every guideline, one file each, and nothing else), `rule_helpers/` (the one door a rule imports: the contract, passed on from `core`, and helpers named after what they read), `catalog.py` (finds every check, reads `config.toml`, chooses what a profile runs, for the command and chat alike), `checks.py` (`run_rules`, every rule over a `Change`, and the node that runs it before the guidelines, in both shapes), `agents.py` (a guideline as an agent: the instruction around its role, the fences, the state keys spelled once, the read-back), `settings.py` (what the environment says: the arm, each role's model name, the fallback, Copilot's token path; read, nothing built, so the login and a rules-only review's cache key import no engine), `config.py` (the models built from it, and the request every call carries: temperature zero, a deadline, retries; readiness), `plugins.py` (redaction, the ledger and its ceiling, provider errors, progress, the recorder, and in chat the readiness check and the judging agents' one turn), `graph.py` (the graph and the `App` in both shapes; not `agent.py`, since `adk web` lists any folder holding one as an agent), `run.py` (one seeded run through the engine, guarded, and what it left in state read back), `tools.py` (chat's model-facing tools and the guardrail in front of them), `verify.py` (the second opinion) |
 | `deliver/` | `core` alone: the driver hands it the rest | `report.py` (the text report, the JSON, the hand-off, a previous report read back for `--previous`, what `--dry-run`, `--list-checks`, `--explain` and `--try` print, and the rules that keep the branch's text from forging any of them) |
-| the root | everything | `review.py` (the command: the driver that fixes the order of the steps; a profile with no guideline runs the rules as `--try` does, the engine never imported), `push.py` (the pre-push hook: what a push sends, reviewed with `default-rules`, and each of its commits read with `push-history`, the credential rules, for git's hook and pre-commit's alike), `login.py` (the Copilot arm's one-time login, `adk-review-login`: GitHub's device flow, the token cached where LiteLLM reads it), `agent.py` (the chat `App` for ADK's loader, `adk web` and `adk run`, the one place that wants it), `__init__.py` (answers `agent` without loading it, so `core/` imports alone), `config.toml` (the one config file), `GUIDE.md` (the user's guide) |
+| the root | everything | `review.py` (the command: the driver that fixes the order of the steps; a profile with no guideline runs the rules as `--try` does, the engine never imported), `push.py` (the pre-push hook: what a push sends, reviewed with `default-rules`, and each of its commits read with `push-history`, the credential rules, for git's hook and pre-commit's alike), `login.py` (the Copilot arm's one-time login, `adk-review-login`: GitHub's device flow, the token cached where LiteLLM reads it), `agent.py` (the chat `App` for ADK's loader, `adk web` and `adk run`, the one place that wants it), `__init__.py` (answers `agent` without loading it, so `core/` imports alone), `config.toml` (the one config file) |
 
 `core/`, the checks and `judge/rule_helpers/` import nothing that calls a model or runs a process — no `google`,
 `litellm`, `subprocess`, `httpx`, `asyncio`, `os`, `socket`, `urllib`, `http` or `ssl` — and a test imports them with
@@ -337,9 +337,10 @@ class RequiredPaths(TreeRule):
    profile, add `rule.no-todo` to `default`, and to `default-rules`, which a test keeps to the default's rules.
 
 The door passes on the contract — `Rule`, `FileRule`, `TreeRule`, `ChangedFile`, `Diagnostic`, `Tree`, `Hit`,
-`UnreadError` and the severity scale, `Severity` and `RANK` — and the helpers, each in a module named after what it
-reads (`lines.py`, `syntax.py`), or tries a rule with (`testing.py`), and `matches` and `matching` from
-`core/paths.py`:
+`UnreadError` and the severity scale, `Severity` and `RANK` — and the helpers: each in a module named after what it
+reads (`lines.py`, `syntax.py`) or tries a rule with (`testing.py`), or passed on from `core/` where a review reads it
+too — `matches` and `matching` from `paths.py`, `is_test` from `blast.py`, `is_python` from `rules.py`, and a
+credential's shape from `secrets.py`:
 
 | Helper | What it answers |
 |---|---|
@@ -541,6 +542,47 @@ simulated checkout, the base as a full remote ref and as a commit; neither servi
 
 To review each push before it leaves a developer's machine, see "Before a push" in `GUIDE.md`.
 
+## SonarQube in the IDE
+
+SonarQube is optional and runs on your own machine: a second reader beside the gate, never part of it. CI holds the
+code to ruff, pyrefly and the suite, and nothing here changes what a review does. The checkout carries what it needs:
+`docker-compose.yml` runs a SonarQube server and its PostgreSQL database, and the scanner under the `scanner` profile,
+each image pinned by its digest as the workflows pin an action by its commit; `sonar-project.properties` names the
+project, `adk-review`, its sources, the package and the scripts, and its tests; and `.vscode/` recommends the SonarQube
+for IDE extension (SonarLint, as it was called) beside Ruff and Pyrefly, the editor's lint and type check the same as
+CI's, and binds this folder to that project on the local server.
+
+1. **Start the server**, with Docker running: `docker compose up -d` starts SonarQube and its database and leaves the
+   scanner out. The first start takes a while; the server is ready when `http://localhost:9000` shows its login page.
+   It listens on this machine alone. Sign in as `admin`, password `admin`, and SonarQube asks for a new password at
+   once.
+2. **Make a token** under *My Account → Security*: a user token, since the extension takes only a user's, and the same
+   token runs the scanner. SonarQube shows it once. Keep it in your shell or a password manager, never in a file the
+   repository holds; `.env` is the reviewer's, and the scanner never reads it.
+3. **Run the first analysis**, which creates the project on the server: the extension binds only to a project that
+   exists.
+
+   ```bash
+   export SONAR_TOKEN=<your token>                   # PowerShell: $env:SONAR_TOKEN = "<your token>"
+   docker compose --profile scanner run --rm sonar-scanner
+   ```
+
+   The compose file hands the shell's `SONAR_TOKEN` to the scanner, which reads `sonar-project.properties` from the
+   checkout mounted at `/usr/src` and reaches the server by its name inside the compose network. The scanner is
+   published for amd64 alone, so an arm64 machine, an Apple silicon Mac among them, runs it emulated and slower. The
+   result is the project's page on the server, `http://localhost:9000/dashboard?id=adk-review`; run the scanner again to
+   see it after a change.
+4. **Connect the IDE.** Open this folder in VS Code and install the extensions it recommends. The SonarQube extension
+   lists the connection `local-sonarqube`, which `.vscode/settings.json` declares at `http://localhost:9000`; edit it
+   and give it the token, which the extension keeps in VS Code's secret storage rather than in the settings file. The
+   folder is already bound to `adk-review`, so each open Python file is read as you type under the server's quality
+   profile, a rule turned off on the server turned off in the editor too, and what it finds is in the Problems panel.
+   In another editor the same extension, for JetBrains IDEs or Visual Studio, asks for the same three things by hand:
+   the server `http://localhost:9000`, the token, and the project key `adk-review`.
+
+`docker compose stop` stops the server and keeps its data; `docker compose down -v` removes the server, its database
+and every analysis. The scanner writes `.scannerwork/` into the checkout, which git ignores.
+
 ## Design notes
 
 - **The grouping is the architecture.** What each file may know is what a test says. `core/` can be read, and
@@ -577,7 +619,8 @@ To review each push before it leaves a developer's machine, see "Before a push" 
   chat's, which gathers the same evidence for the commits its intake confirmed. Each rule's answer is left in state
   under its check's key, as each guideline's review is, and the node writes the blast radius the guidelines read.
   It never raises: measured, a node that raises ends the whole run, every guideline with it. Once the rules have read
-  them, it lets go of the tree and each file's text, diff and added lines, before the model calls. A profile with no
+  them, it lets go of the tree and each file's text, diff and added lines, and the lines shown of one not read whole,
+  before the model calls. A profile with no
   guideline runs the same `run_rules` straight from the driver, the engine never imported: measured by the installed
   command, the demo's rules-only review took 0.87 to 0.94 s through a graph holding no agent, 0.41 s of it the
   engine's import, and 0.16 to 0.17 s without it, the pre-push hook paying the difference on every push; `--trace`,
@@ -634,11 +677,11 @@ To review each push before it leaves a developer's machine, see "Before a push" 
   requests a minute per model, and `--verify` made ten, so the last verifiers met a 429 asking for 39 seconds, and
   their findings were kept and named with it; and twenty a day, so a key on that tier reviews about six changes a
   day under `default`, and a live script's sixteen reviews need a paid tier or `--pause` over several days.
-- **A ceiling reserves first.** The guidelines call at once, so a ceiling that counted only tokens already spent
-  would let them all through and be passed by all of them. Each call reserves its cost before it is sent — its
-  request's characters over four, plus room for an answer — and the call that would pass the ceiling is refused,
-  through the same plugin hook the redaction uses. The refused guideline is named, everything found is reported,
-  exit 3: the ceiling ends the spending, never the report.
+- **A ceiling reserves first.** The guidelines call at once, so a ceiling that counted only tokens already spent would
+  let them all through and be passed by all of them. Each call reserves its cost before it is sent — its request's
+  characters over four, room for an answer and the thinking its budget allows — and the call that would pass the ceiling
+  is refused, through the same plugin hook the redaction uses. The refused guideline is named, everything found is
+  reported, exit 3: the ceiling ends the spending, never the report.
 - **The second opinion never removes silently.** `--verify` is the one place a model can remove a finding, so the
   reason is in the report, and a verifier that fails leaves the finding in place, named with why. It runs before the
   fold, on the guidelines' findings alone: a rule's findings are facts and are never asked about, nor is a

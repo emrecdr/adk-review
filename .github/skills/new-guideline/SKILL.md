@@ -14,10 +14,12 @@ the catalog finds the file, and the fan-out, its state key, the chat verdict's s
    a thinking budget, which Copilot ignores.
 2. Profiles in `adk_review/config.toml`: `full` runs it at once, through the group `guidelines`; add
    `guideline.<name>` to `default` to run it in every review. `rules-only` runs no guideline and stays as it is.
-3. Tests: `tests/test_reviewer.py`, `tests/test_engine.py`, `tests/test_rules.py` and `tests/test_command.py` count
-   the guidelines in places; run them, and extend each assertion the new one breaks rather than loosening it.
+3. Tests: `tests/test_reviewer.py`, `tests/test_engine.py`, `tests/test_rules.py`, `tests/test_command.py` and
+   `tests/test_catalog.py` count the guidelines in places; run them, and extend each assertion the new one breaks rather
+   than loosening it.
 4. Docs: `GUIDE.md`'s check table is held to `--list-checks`, so the docs test names what to add; a case-insensitive
-   search for `three guidelines` and `security, tests, complexity` finds every place that names or counts them.
+   search for `correctness` finds each other place that names them all, and one for `three calls` the place that
+   counts `default`'s, which changes only if the new one joins `default`.
    Update each, except a measured number, which is history.
 5. Run the whole suite, the lint and the type check. Measure the guideline live only when asked —
    `uv run python scripts/measure.py --runs 5` calls a provider.
