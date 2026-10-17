@@ -54,6 +54,10 @@ class TestDecision:
             (CHARGE, f"{command}\n\n{shell}"): True,  # a blank line between quoted lines is no line
             (CHARGE, f"{command.strip()} {shell.strip()}"): True,  # measured on Gemini: the line breaks lost
             (CHARGE, f"{command.strip()}{shell.strip()}"): True,  # and joined by nothing at all
+            (CHARGE, f"```-{command}-{shell}```"): True,  # measured on Gemini: its marker and fence kept, inline
+            (CHARGE, f"```{command}{shell}```"): True,
+            (CHARGE, f"{command}-{shell.replace('subprocess', '-subprocess')}"): False,  # a marker only starts a line
+            (CHARGE, f"```-{command}-return subprocess.run(command```"): False,  # inline, part of a line is still none
             (CHARGE, f"{shell}\n{command}"): False,  # carried over: both whole lines, out of order
             (CHARGE, f"{lines[0]}\n{lines[2]}"): False,  # carried over: both whole lines, one skipped between
             (CHARGE, "subprocess.run(command, shell=True, check=False)"): False,  # part of a line

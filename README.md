@@ -570,7 +570,10 @@ To review each push before it leaves a developer's machine, see "Before a push" 
   where `python -O` strips it, and minor in a test, where it is how pytest checks. Without ruff, or with one that
   fails, the rule did not look and says so, exit 3.
 - **Grounding.** A guideline's finding must quote, verbatim, whole lines of its own file's diff, within one hunk, as
-  the guideline saw them: secrets redacted, diff markers gone, whitespace not counted. A redaction's placeholder
+  the guideline saw them: secrets redacted, diff markers gone, whitespace not counted. Where a quote's line breaks
+  were lost, its lines begin and end where the file's do, a diff marker or a fence run into them or not: measured live
+  on Gemini, a guideline quoted each run of lines as one, its `-` markers and its fence left in, and every finding it
+  made dropped, the review a hole. A redaction's placeholder
   stands for any other, its label the scrubber's and never the code's: measured live on Gemini, a guideline quoted
   the planted key's lines with the label renamed, and the finding dropped. Each hunk is read as git prints it, as the
   new file reads and as the old file read. A finding's line is read off the diff, never taken from

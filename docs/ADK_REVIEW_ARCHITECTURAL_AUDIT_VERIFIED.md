@@ -664,6 +664,12 @@ it: with the key kept in the session, the "thanks!" test fails again.
     held the quote to what the model was shown; the commit before also drops it. Since then any placeholder stands
     for any other in grounding, and that quote grounds; three recorded Copilot reviews regrounded the same, finding
     for finding.
+  - Three recorded Gemini reviews of the demo branch followed that day: nine calls, none refused. With the commit
+    before and the placeholder change, they regrounded the same, finding for finding, since no label was renamed in
+    them. In one, though, `guideline.tests` sent every quote on one line, the line breaks lost and each line's `-` and
+    the fence left in, and all five of its findings dropped, a hole. Grounding now reads a marker and a fence run into
+    a quote where the file's lines begin and end: all 36 findings of the three reviews ground, those five on the lines
+    the same findings stood on in the other two, and the Copilot recordings reground the same.
 - **The redundant `[tool.pyright]` section.** Kept: it is harmless, and the audit's author added it.
 
 ---

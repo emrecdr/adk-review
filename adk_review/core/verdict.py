@@ -110,23 +110,35 @@ def _visible(text: str) -> str:
 
 def _whole_lines(quote: str, lines: tuple[str, ...]) -> Iterator[tuple[int, int]]:
     """Each place `quote` starts and ends as a run of consecutive `lines`, each whole: it starts where one begins and
-    ends where one ends. Measured by review at the 16,000-character cap: a framed 100-line quote took 30 ms to place
-    with a run built from every line, and 6 ms with none built where the quote cannot start."""
+    ends where one ends, each line read with a diff marker before it or without. Measured live on Gemini: a guideline
+    quoted three added lines with the breaks between them lost and each one's `-` left in, `-a-b-c` on one line, and
+    every finding it made dropped, the review a hole. Measured by review at the 16,000-character cap: a framed
+    100-line quote took 30 ms to place with a run built from every line, and 6 ms with none built where the quote
+    cannot start."""
     for start in range(len(lines)):
-        if not quote.startswith(lines[start]):  # no line is empty: a run from this one is never the quote
-            continue
-        run, end = "", start
-        for end in range(start, len(lines)):
-            run += lines[end]
-            if len(run) >= len(quote):
-                break
-        if run == quote:
-            yield start, end
+        at, end = _past(quote, {0}, lines[start]), start  # no line is empty: each place left is past a whole line
+        while at:
+            if len(quote) in at:
+                yield start, end
+            end += 1
+            at = _past(quote, at, lines[end]) if end < len(lines) else set()
+
+
+def _past(quote: str, places: set[int], line: str) -> set[int]:
+    """Where `quote` goes on after `line`, read from each of `places` as it stands or after a `+` or `-` before it."""
+    return {
+        place + skip + len(line)
+        for place in places
+        for skip in (0, 1)
+        if (not skip or quote[place : place + 1] in ("+", "-")) and quote.startswith(line, place + skip)
+    }
 
 
 #: A fence a model wraps a quote in of its own accord, ```` ```python ```` or `~~~`, read as grounding reads a line:
 #: every space gone.
 _OWN_FENCE = re.compile(r"(?:`{3,}|~{3,}).*")
+#: The same fence where the line breaks were lost: run into the quote's first line or its last.
+_FENCE_RUN_IN = re.compile(r"^(?:`{3,}|~{3,})|(?:`{3,}|~{3,})$")
 
 
 def _quotes(evidence: str, around: Sequence[str]) -> set[str]:
@@ -149,7 +161,8 @@ def _quotes(evidence: str, around: Sequence[str]) -> set[str]:
             del inside[0]
         while inside and _OWN_FENCE.fullmatch(inside[-1]):
             del inside[-1]
-        quotes |= {"".join(lines), "".join(inside)}
+        for quote in ("".join(lines), "".join(inside)):
+            quotes |= {quote, _FENCE_RUN_IN.sub("", quote)}
     return quotes - {""}
 
 
