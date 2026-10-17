@@ -36,7 +36,7 @@ review:
 	uv run adk-review $(REPO) $(if $(BASE),--base $(BASE)) --head $(HEAD) $(ARGS)
 
 copilot-login:
-	uv run python scripts/copilot_login.py $(ARGS)
+	uv run adk-review-login $(ARGS)
 
 test:
 	uv run pytest -q

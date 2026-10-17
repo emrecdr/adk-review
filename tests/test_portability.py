@@ -78,7 +78,8 @@ def test_every_command_that_prints_a_report_writes_utf8_whatever_the_console() -
     reconfigure stdout. Measured before: the docs named the wrong ones, and no test read any of them."""
     printers = [
         ROOT / "adk_review" / "review.py",
-        *(ROOT / "scripts" / name for name in ("make_demo_repo.py", "copilot_login.py")),
+        ROOT / "adk_review" / "login.py",
+        ROOT / "scripts" / "make_demo_repo.py",
     ]
     missing = [
         str(path.relative_to(ROOT))
@@ -131,8 +132,9 @@ def test_the_reviewer_and_the_login_trust_the_operating_systems_certificates(mon
     import truststore
     from conftest import load_agent
 
-    for path in (ROOT / "adk_review" / "judge" / "config.py", ROOT / "scripts" / "copilot_login.py"):
-        assert "truststore.inject_into_ssl()" in path.read_text(encoding="utf-8"), path.relative_to(ROOT)
+    config, login = (ROOT / "adk_review" / name for name in (Path("judge") / "config.py", Path("login.py")))
+    assert "truststore.inject_into_ssl()" in config.read_text(encoding="utf-8")
+    assert "from .judge.config import" in login.read_text(encoding="utf-8"), "the login takes it from there"
     load_agent(monkeypatch)
     assert ssl.SSLContext is truststore.SSLContext, "importing the package puts the system store into ssl"
 
@@ -213,7 +215,7 @@ def test_the_fix_run_twice_is_the_fix_once_and_before_a_build_is_a_sentence(tmp_
 def test_the_copilot_login_says_how_to_use_it_and_logs_in_to_nothing(monkeypatch, tmp_path: Path, capsys) -> None:
     """Measured by review: with no token cached, `copilot_login.py --help` began a real device login, the trap the
     demo script's parser was built to close."""
-    import copilot_login
+    from adk_review import login as copilot_login
 
     monkeypatch.setattr(copilot_login, "token_path", lambda: tmp_path / "none")
     with pytest.raises(SystemExit) as stopped:
@@ -391,3 +393,21 @@ def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(t
     assert labelled.scored("clean-docs", report(("guideline.tests", "README.md", 3, "major")))
     assert not labelled.scored("clean-docs", report(("guideline.tests", "README.md", 3, "minor")))
     assert labelled.table({"sql-from-input": [True, False]})[-1] == "| sql-from-input | its defect named | 1 of 2 |"
+
+
+def test_the_copilot_login_is_a_command_of_the_install(monkeypatch, tmp_path: Path) -> None:
+    """Measured by walking a first run: the Copilot refusal told an installed user to run `scripts/copilot_login.py`,
+    which `uv tool install` never installs and `uv run` needs the checkout for, so the default arm had no way in. The
+    login is a console script beside `adk-review`, and the refusal names it."""
+    import tomllib
+
+    from adk_review import login
+    from adk_review.judge.config import copilot_token, require_ready
+
+    scripts = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["scripts"]
+    assert scripts["adk-review-login"] == "adk_review.login:run" and callable(login.run)
+    assert login.token_path is copilot_token, "one token path, the reviewer's"
+    monkeypatch.setenv("REVIEW_PROVIDER", "copilot")
+    monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", str(tmp_path))
+    why = require_ready()
+    assert why and "run `adk-review-login` once" in why and "scripts/" not in why, why

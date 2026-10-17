@@ -21,8 +21,8 @@ guidelines: they need a model, set as "Configuration" below says. `uv run python
 command spelled long.
 
 To run it from any folder, install it as a command: `uv tool install <path or git URL of this repository>` puts
-`adk-review` and its pre-push hook, `adk-review-push`, on `PATH`: the reviewer alone, with ruff beside it. An
-installed reviewer reads the model's settings from the shell alone, no `.env` being read outside the checkout, and its
+`adk-review`, its pre-push hook, `adk-review-push`, and the Copilot login, `adk-review-login`, on `PATH`: the reviewer
+alone, with ruff beside it. An installed reviewer reads the model's settings from the shell alone, no `.env` being read outside the checkout, and its
 config from beside itself; inside the checkout, `uv run adk-review` is the same command.
 
 ## Flags
@@ -152,7 +152,7 @@ shell wins over the file:
 | `GITHUB_COPILOT_API_BASE` | A GitHub Enterprise tenant's own Copilot endpoint. Blank: github.com's. LiteLLM sends the calls to the endpoint the cached API key names before this one, and the report names the host they go to, never github.com's own. |
 
 Copilot and Gemini are both first-class arms; `copilot` is only the default. The Copilot arm needs a one-time
-`uv run python scripts/copilot_login.py`. A GitHub Enterprise tenant with its own endpoints sets them in
+`uv run adk-review-login`, or `adk-review-login` once installed. A GitHub Enterprise tenant with its own endpoints sets them in
 `GITHUB_COPILOT_API_BASE` and the login's `GITHUB_COPILOT_*_URL` variables, as `.env.example` shows. Certificates are
 verified through the operating system's own store, so a company proxy's root the machine trusts, the reviewer trusts
 too.

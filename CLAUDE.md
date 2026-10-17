@@ -23,7 +23,7 @@ uv run python scripts/make_demo_repo.py --fix    # commit the two fixes on featu
 uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--profile NAME | --check ID] [--json FILE] [--handoff FILE] [--cache DIR] [--previous FILE] [--progress] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
 uv run adk-review <demo repo> --head feature/payments --base main --profile rules-only   # every rule, no model call, no key
 uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # what a review would cover and run, nothing run
-uv run python scripts/copilot_login.py           # one-time GitHub device-flow login for the Copilot arm
+uv run adk-review-login                          # one-time GitHub device-flow login for the Copilot arm
 uv run adk web .                                 # the chat in a browser, over the same graph
 hook="$(git -C <repo> rev-parse --path-format=absolute --git-path hooks)/pre-push" && mkdir -p "${hook%/*}" && printf '#!/bin/sh\nexec adk-review-push "$@"\n' > "$hook" && chmod +x "$hook"   # after `uv tool install .`: default-rules on what a push sends, push-history's credential rules on each commit and message; pre-commit's adk-review hook runs the same; --no-verify skips
 uv run python scripts/injection_suite.py --runs 3 [--build-only]   # live: does a payload make a guideline lose the planted shell call
@@ -31,7 +31,7 @@ uv run python scripts/labelled_set.py --runs 3 [--build-only]      # live: one k
 uv run python scripts/measure.py --runs 5 [--all] # live: per planted defect, how often a guideline names it (--all: as a whole project)
 ```
 
-`uv tool install .` puts `adk-review` and `adk-review-push` on `PATH` anywhere. With no `repo`, the command assumes
+`uv tool install .` puts `adk-review`, `adk-review-push` and `adk-review-login` on `PATH` anywhere. With no `repo`, the command assumes
 none: a terminal is asked for the path, a pipeline is refused with exit 2. Exit codes: 0 approved, 1 a blocker, 2 a
 usage error before any model call (an arm that is not ready, a branch that adds nothing: "no change to review", a
 `config.toml`, profile or rule file that cannot run, nothing under `--path`, or no choice made at the question asked
@@ -56,13 +56,13 @@ and `--try` make none. `[tool.uv]` in `pyproject.toml` takes a release only thre
 
 One `.env` at the root (copy `.env.example`). `REVIEW_PROVIDER=copilot|gemini` picks the arm, `copilot` when unset;
 `REVIEW_MODEL` blank means `gpt-4.1` / `gemini-2.5-flash`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` are read
-too. Copilot needs a one-time `uv run python scripts/copilot_login.py`; Gemini needs `GOOGLE_API_KEY`, or through
+too. Copilot needs a one-time `uv run adk-review-login`; Gemini needs `GOOGLE_API_KEY`, or through
 Vertex AI a project, `GOOGLE_CLOUD_PROJECT` or the one Application Default Credentials name — `require_ready` asks
 google-genai itself, never a copy of its rules, and on the Gemini arm refuses a model ADK sends to another provider
 (`gpt-*`, `claude-*`). Both arms are first-class: a change works, is tested and is measured live on each, and
 `copilot` is only the default. `adk_review/judge/config.py` injects `truststore` before any client
 is built, so certificates are verified through the operating system's store (a company proxy's root the machine
-trusts, Python trusts too), with `SSL_CERT_FILE` still read where set; `scripts/copilot_login.py` does the same and
+trusts, Python trusts too), with `SSL_CERT_FILE` still read where set; the login, `adk_review/login.py`, imports it and
 reads the `GITHUB_COPILOT_*` endpoints from `.env`. The shell wins over `.env` at every entry point: ADK 2.9.2 restores
 the variables set before it loads the file, and the command loads it without overriding. The report names the model,
 the arm that ran, and Vertex AI or a GitHub Enterprise tenant's host where the arm goes through one. Never read,

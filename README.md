@@ -27,8 +27,8 @@ default-rules` runs the default profile's rules alone, still with no model.
 The guidelines need a model, on one of two arms. Set it in the shell, or in `.env` at the root of this checkout
 (copy `.env.example`), which the shell wins over:
 
-- **Copilot**, the arm when nothing is set: no key. Run `uv run python scripts/copilot_login.py` once, GitHub's
-  device flow, and LiteLLM reads the token it caches.
+- **Copilot**, the arm when nothing is set: no key. Run `uv run adk-review-login` once, GitHub's device flow, and
+  LiteLLM reads the token it caches; installed, the command is `adk-review-login`.
 - **Gemini**: `REVIEW_PROVIDER=gemini` and `GOOGLE_API_KEY`, or through Vertex AI a project, as `.env.example` says.
 
 Then drop `--profile`: `uv run adk-review <repo> --base main` runs the rules, then the guidelines. Both arms are
@@ -57,8 +57,8 @@ that names none is refused, exit 2. `--help` prints every flag, and `uv run pyth
 command spelled long.
 
 To run it from any folder, install it as a command: `uv tool install <path or git URL of this repository>` puts
-`adk-review` and its pre-push hook, `adk-review-push`, on `PATH`: the reviewer alone, with ruff beside it. An
-installed reviewer reads the model's settings from the shell alone, no `.env` being read outside the checkout, and its
+`adk-review`, its pre-push hook, `adk-review-push`, and the Copilot login, `adk-review-login`, on `PATH`: the reviewer
+alone, with ruff beside it. An installed reviewer reads the model's settings from the shell alone, no `.env` being read outside the checkout, and its
 config from beside itself: a team that wants another policy changes `config.toml` in its checkout and installs from
 there, `--editable` so a change applies at once, or passes flags.
 
@@ -121,7 +121,7 @@ points the wrong way.
 | `collect/` | `core` | `git.py` (read-only git: what a review covers, each file's diff and its text at the head, the head's tree, `collect_evidence`), `change.py` (the change as the evidence holds it, decided from the diffs alone: what the guidelines are shown of each file and the block they read, what no one could read, the blast radius), `history.py` (what a push sends, commit by commit, for the pre-push hook), `diff.py` (a unified diff read without git: the lines it adds, the cap, the fence each guideline reads it in), `ruff.py` (ruff over the changed Python files' texts, in a folder of its own), `tools.py` (each outside tool a rule may name, and the adapter that runs it: ruff's) |
 | `judge/` | `core`, `collect` | `rules/` (every rule, one file each, and nothing else), `guidelines/` (every guideline, one file each, and nothing else), `rule_helpers/` (the one door a rule imports: the contract, passed on from `core`, and helpers named after what they read), `catalog.py` (finds every check, reads `config.toml`, chooses what a profile runs, for the command and chat alike), `checks.py` (every rule as one node before the guidelines, in both shapes), `agents.py` (a guideline as an agent: the instruction around its role, the fences, the state keys spelled once, the read-back), `config.py` (the provider, each role's model, and the request every call carries: temperature zero, a deadline, retries; readiness), `plugins.py` (redaction, the ledger and its ceiling, provider errors, progress, the recorder, and in chat the readiness check and the judging agents' one turn), `graph.py` (the graph and the `App` in both shapes; not `agent.py`, since `adk web` lists any folder holding one as an agent), `run.py` (one seeded run through the engine, guarded, and what it left in state read back), `tools.py` (chat's model-facing tools and the guardrail in front of them), `verify.py` (the second opinion) |
 | `deliver/` | `core` alone: the driver hands it the rest | `report.py` (the text report, the JSON, the hand-off, a previous report read back for `--previous`, what `--dry-run`, `--list-checks`, `--explain` and `--try` print, and the rules that keep the branch's text from forging any of them) |
-| the root | everything | `review.py` (the command: the driver that fixes the order of the steps; a profile with no guideline runs the rules as `--try` does, the engine never imported), `push.py` (the pre-push hook: what a push sends, reviewed with `default-rules`, and each of its commits read with `push-history`, the credential rules, for git's hook and pre-commit's alike), `agent.py` (the chat `App` for ADK's loader, `adk web` and `adk run`, the one place that wants it), `__init__.py` (answers `agent` without loading it, so `core/` imports alone), `config.toml` (the one config file), `GUIDE.md` (the user's guide) |
+| the root | everything | `review.py` (the command: the driver that fixes the order of the steps; a profile with no guideline runs the rules as `--try` does, the engine never imported), `push.py` (the pre-push hook: what a push sends, reviewed with `default-rules`, and each of its commits read with `push-history`, the credential rules, for git's hook and pre-commit's alike), `login.py` (the Copilot arm's one-time login, `adk-review-login`: GitHub's device flow, the token cached where LiteLLM reads it), `agent.py` (the chat `App` for ADK's loader, `adk web` and `adk run`, the one place that wants it), `__init__.py` (answers `agent` without loading it, so `core/` imports alone), `config.toml` (the one config file), `GUIDE.md` (the user's guide) |
 
 `core/`, the checks and `judge/rule_helpers/` import nothing that calls a model or runs a process — no `google`,
 `litellm`, `subprocess`, `httpx`, `asyncio`, `os`, `socket`, `urllib`, `http` or `ssl` — and a test imports them with
@@ -142,7 +142,7 @@ The model comes from the shell, or from the `.env` at the root of the checkout, 
 `REVIEW_PROVIDER` picks the arm, `copilot` when unset or `gemini`, and `REVIEW_MODEL` the model, blank for `gpt-4.1`
 or `gemini-2.5-flash`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` give `--verify` and every role's fallback a
 model of their own. Both arms are first-class; `copilot` is only the default. Readiness is asked before any call:
-Copilot's cached token, from the one-time `uv run python scripts/copilot_login.py`, or Gemini's `GOOGLE_API_KEY` or
+Copilot's cached token, from the one-time `uv run adk-review-login`, or Gemini's `GOOGLE_API_KEY` or
 Vertex AI project, which google-genai itself answers, never a copy of its rules; on the Gemini arm a model ADK would
 send to another provider, `gpt-*` or `claude-*`, is refused. Every certificate is verified through the operating
 system's own store, so a company proxy's root the machine trusts, the reviewer trusts too. "Configuration" in

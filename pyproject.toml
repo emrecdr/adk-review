@@ -15,10 +15,11 @@ dependencies = [
 ]
 
 # `adk-review`: the command, installed where it is needed — `uv tool install <this repository>` — and run from any
-# folder, with `adk-review-push`, its pre-push hook.
+# folder, with `adk-review-push`, its pre-push hook, and `adk-review-login`, the Copilot arm's one-time login.
 [project.scripts]
 adk-review = "adk_review.review:run"
 adk-review-push = "adk_review.push:run"
+adk-review-login = "adk_review.login:run"
 
 [build-system]
 requires = ["hatchling>=1.27"]
@@ -76,7 +77,7 @@ max-complexity = 10
 "scripts/measure.py" = ["S607"]
 "tests/*" = ["S607"]
 # The Copilot login's `main`, one device-flow conversation read top to bottom, is the one function past the bar.
-"scripts/copilot_login.py" = ["C901"]
+"adk_review/login.py" = ["C901"]
 
 [tool.pyrefly]
 search-path = [".", "scripts"]

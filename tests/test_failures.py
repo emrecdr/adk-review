@@ -446,8 +446,9 @@ def test_the_copilot_token_never_reaches_a_log(monkeypatch, caplog) -> None:
 def test_the_copilot_login_reads_an_empty_token_file_as_none(tmp_path, monkeypatch, capsys) -> None:
     """The reviewer calls an empty token file no token and says to run the login; found by review, the login then
     answered "already authenticated" and logged no one in."""
-    import copilot_login
     from litellm.llms.github_copilot import authenticator
+
+    from adk_review import login as copilot_login
 
     _cached_copilot_token(monkeypatch, tmp_path, "")
     monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
@@ -467,9 +468,10 @@ def test_the_copilot_login_names_a_network_it_cannot_reach_and_the_certificate_f
     """Measured on a company Windows machine: the proxy re-signs HTTPS with a root certificate Python's own list does
     not hold, and the login's first request to GitHub ended in a traceback. Now a sentence names GitHub as unreachable
     and, for a certificate error, the one variable that fixes it."""
-    import copilot_login
     from litellm.llms.github_copilot import authenticator
     from litellm.llms.github_copilot.common_utils import GetDeviceCodeError
+
+    from adk_review import login as copilot_login
 
     monkeypatch.setattr(copilot_login, "token_path", lambda: tmp_path / "none")
 
@@ -488,9 +490,10 @@ def test_the_copilot_login_names_a_network_it_cannot_reach_and_the_certificate_f
 def test_the_copilot_login_caches_no_token_for_an_account_without_copilot(tmp_path, monkeypatch, capsys) -> None:
     """GitHub signs the account in; Copilot serves it no key. Measured before: the token was cached first and the
     exchange raised a traceback after it, so the reviewer read the machine as ready and failed at their first call."""
-    import copilot_login
     from litellm.llms.github_copilot import authenticator
     from litellm.llms.github_copilot.common_utils import GetAPIKeyError
+
+    from adk_review import login as copilot_login
 
     _cached_copilot_token(monkeypatch, tmp_path, None)
     monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
@@ -528,7 +531,7 @@ def test_the_copilot_login_reads_copilots_settings_from_the_central_env(tmp_path
     `GITHUB_COPILOT_*` settings, a variable already set in the shell winning, and nothing else of the file."""
     import os
 
-    import copilot_login
+    from adk_review import login as copilot_login
 
     (tmp_path / "tokens").mkdir()
     (tmp_path / "tokens" / "access-token").write_text("t", encoding="utf-8")
@@ -548,7 +551,7 @@ def test_the_copilot_login_reads_copilots_settings_from_the_central_env(tmp_path
 def test_the_copilot_login_makes_its_files_private_from_the_first_byte(monkeypatch) -> None:
     """Measured before: LiteLLM wrote the token with the default umask, readable by every account until the login's
     own `chmod` ran a network exchange later. The login sets its umask before anything is written."""
-    import copilot_login
+    from adk_review import login as copilot_login
 
     masks: list[int] = []
     monkeypatch.setattr(copilot_login.os, "umask", lambda mask: masks.append(mask) or 0o022)
@@ -560,7 +563,7 @@ def test_the_copilot_login_makes_its_files_private_from_the_first_byte(monkeypat
 @pytest.mark.skipif(sys.platform == "win32", reason="a Windows file has no owner/group/other modes to narrow")
 def test_the_copilot_login_keeps_its_files_to_their_owner(tmp_path) -> None:
     """Measured before: both token files 0644 in a 0755 directory, readable by every account on the machine."""
-    import copilot_login
+    from adk_review import login as copilot_login
 
     (tmp_path / "access-token").write_text("t", encoding="utf-8")
     (tmp_path / "api-key.json").write_text("{}", encoding="utf-8")
@@ -889,7 +892,8 @@ def test_a_push_from_a_shallow_clone_is_reviewed(tmp_path, monkeypatch, capsys, 
 def test_the_reviewer_installs_as_one_command_that_runs_from_any_folder() -> None:
     """`uv build` failed on the flat layout, and the command needed the clone and the right folder. The wheel holds
     the reviewer alone, its config beside it; `adk-review` runs `run`, the process boundary `python -m` runs too, and
-    `adk-review-push`, the pre-push hook pre-commit's hook runs as well, its own; and the lint rule finds the ruff
+    `adk-review-push`, the pre-push hook pre-commit's hook runs as well, its own, and `adk-review-login`, the Copilot
+    arm's one-time login, which a script of the checkout once was; and the lint rule finds the ruff
     installed beside the reviewer's interpreter, whose folder no installed tool puts on PATH. Tried end to end: built,
     installed with `uv tool install`, and run from outside the clone."""
     import tomllib
@@ -901,6 +905,7 @@ def test_the_reviewer_installs_as_one_command_that_runs_from_any_folder() -> Non
     assert project["project"]["scripts"] == {
         "adk-review": "adk_review.review:run",
         "adk-review-push": "adk_review.push:run",
+        "adk-review-login": "adk_review.login:run",
     }
     hooks = (ROOT / ".pre-commit-hooks.yaml").read_text(encoding="utf-8")
     assert "\n  entry: adk-review-push\n" in hooks and "\n  stages: [pre-push]\n" in hooks

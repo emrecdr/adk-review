@@ -1,12 +1,14 @@
-"""One-time GitHub Copilot login: `uv run python scripts/copilot_login.py`.
+"""One-time GitHub Copilot login for the reviewer.
 
-Copilot is the arm with no API key. GitHub's OAuth device flow prints a URL
+`adk-review-login`, or `uv run adk-review-login` in the checkout. Copilot is the arm with no API key. GitHub's OAuth device flow prints a URL
 and a short code; you approve it in a browser; the token is cached on disk,
 after which the reviewer runs unattended. LiteLLM ships this flow but polls
 for only sixty seconds per code, which is shorter than walking to a browser,
 so this script runs the same flow with GitHub's own window (about fifteen
 minutes), using LiteLLM's endpoints, client id, headers and token file so the
-reviewer reads the result exactly as if LiteLLM had written it.
+reviewer reads the result exactly as if LiteLLM had written it. A module of the package, so `uv tool install`
+puts the command on `PATH` beside `adk-review`: measured by walking a first run, the refusal once named a script
+of the checkout, which an installed reviewer has no way to run.
 """
 
 from __future__ import annotations
@@ -17,21 +19,13 @@ import sys
 import time
 from pathlib import Path
 
-import truststore
 from dotenv import dotenv_values
 
-# Certificates through the operating system's store, as the reviewer verifies them (see `adk_review/judge/config.py`).
-truststore.inject_into_ssl()
+# The token's path as the reviewer reads it, one spelling for both; and importing it puts the operating system's
+# certificate store into `ssl` before any request, as the reviewer does before any client is built.
+from .judge.config import copilot_token as token_path
+
 ROOT = Path(__file__).resolve().parents[1]
-
-
-def token_path() -> Path:
-    """Where LiteLLM caches the device-flow token, from the same variables LiteLLM reads.
-
-    `adk_review/judge/config.py` holds a copy: the reviewer imports nothing from `scripts/`.
-    """
-    token_dir = Path(os.getenv("GITHUB_COPILOT_TOKEN_DIR", "~/.config/litellm/github_copilot")).expanduser()
-    return token_dir / os.getenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", "access-token")
 
 
 def keep_private(directory: Path) -> None:
@@ -64,7 +58,7 @@ def main(argv: list[str]) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # a Windows console is not UTF-8 by default
     # A flag it does not know, `--help` among them, stops here, never a login: measured, `--help` began one.
-    parser = argparse.ArgumentParser(prog="copilot_login", description=(__doc__ or "").splitlines()[0])
+    parser = argparse.ArgumentParser(prog="adk-review-login", description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--force", action="store_true", help="log in again although a token is cached")
     args = parser.parse_args(argv)
     try:  # the reviewer reads `.env`; the login reads of it what names Copilot's endpoints, an enterprise tenant's say
@@ -80,7 +74,7 @@ def main(argv: list[str]) -> int:
     token = token_path()
     if token.is_file() and token.stat().st_size and not args.force:  # an empty file is no token, to the reviewer too
         print(f"[copilot] already authenticated: {token}")
-        print("[copilot] re-authenticate with: uv run python scripts/copilot_login.py --force")
+        print("[copilot] re-authenticate with: adk-review-login --force")
         return 0
     import httpx
     from litellm.llms.github_copilot.authenticator import (
@@ -144,5 +138,10 @@ def main(argv: list[str]) -> int:
     return 1
 
 
+def run() -> int:
+    """The process boundary of the installed `adk-review-login`."""
+    return main(sys.argv[1:])
+
+
 if __name__ == "__main__":
-    raise SystemExit(main(sys.argv[1:]))
+    raise SystemExit(run())

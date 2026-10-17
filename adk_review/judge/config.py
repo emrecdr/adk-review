@@ -158,7 +158,7 @@ def build_model(*, role: str = "") -> str | BaseLlm:
     # note says Copilot now takes a system turn for every model it serves.
     litellm.disable_copilot_system_to_assistant = True
 
-    # Copilot authenticates with a cached device-flow token, not a key: `uv run python scripts/copilot_login.py`, once.
+    # Copilot authenticates with a cached device-flow token, not a key: `adk-review-login`, once.
     logging.getLogger("LiteLLM").addFilter(_HIDE_BEARER)  # once: a filter already there is not added again
     models = [LiteLlm(model=f"{COPILOT}/{name}") for name in names]
     return models[0] if len(models) == 1 else FallbackModel(models=models)
@@ -212,8 +212,8 @@ def request_config(thinking_budget: int | None = None) -> types.GenerateContentC
 def copilot_token() -> Path:
     """Where LiteLLM caches the Copilot device-flow token.
 
-    The same two variables and defaults `scripts/copilot_login.py` reads; a
-    copy rather than an import: the reviewer imports nothing from `scripts/`.
+    The login, `login.py` at the package root, imports this: one spelling of the
+    path, and the system's certificate store put into `ssl` on the way.
     """
     return _copilot_dir() / os.environ.get("GITHUB_COPILOT_ACCESS_TOKEN_FILE", "access-token")
 
@@ -248,7 +248,7 @@ def _copilot_refused(named: list[tuple[str, str]]) -> str | None:
     if not ((token := copilot_token()).is_file() and token.stat().st_size):  # an empty file is no token
         return (
             f"REVIEW_PROVIDER=copilot needs a cached token at {token}; "
-            f"run `uv run python scripts/copilot_login.py` once"
+            f"run `adk-review-login` once (`uv run adk-review-login` in the checkout)"
         )
     # LiteLLM takes any model name and fails at the call, which is that guideline's own answer; but a model it
     # knows cannot judge at temperature zero it refuses before any call, so that is said here, as LiteLLM says it.

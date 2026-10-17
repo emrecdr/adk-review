@@ -20,7 +20,7 @@ catch the wrong branch; `--list-checks` shows every check with its kind, its pro
    since the checkout is a detached commit, and fetch the base branch with its history, or review the whole head
    with `--all`.
 2. With the guidelines, only when asked and when `.env` names a ready arm (`REVIEW_PROVIDER=copilot` after
-   `scripts/copilot_login.py`, or `gemini` with `GOOGLE_API_KEY` or a Vertex AI project): drop `--profile`; a
+   `adk-review-login`, or `gemini` with `GOOGLE_API_KEY` or a Vertex AI project): drop `--profile`; a
    `--dry-run` says whether the arm is ready. Never print `.env` or a key;
    the report names the arm and the model that ran.
 3. Read the exit code: 0 approved; 1 a finding at or above `--fail-on` (`blocker` by default); 2 a usage error
