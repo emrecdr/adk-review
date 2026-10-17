@@ -118,7 +118,7 @@ def main(argv: list[str]) -> int:
                 try:
                     auth.get_api_key()  # exchange it once now, so a failure shows here and not in a review
                 except GetAPIKeyError as exc:  # GitHub knows the account; Copilot serves it no key
-                    token.unlink()  # kept, the reviewer would read it as ready and fail at their first call instead
+                    token.unlink()  # kept, the reviewer would read it as ready and fail at its first call instead
                     print(f"[copilot] GitHub signed you in, but Copilot gave no key: {exc}", file=sys.stderr)
                     print(
                         "[copilot] usually that account has no Copilot seat; a proxy that blocks api.github.com reads "
