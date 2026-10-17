@@ -173,9 +173,11 @@ def _to_fix(item: Sourced, identity: str, indent: str) -> list[str]:
 def render_explained(said: Mapping[str, object]) -> str:
     """`--explain ID`: one check whole, as its file documents it, and for a rule its own examples."""
     lines = [f"# {said['id']}", ""]
-    for label in ("kind", "severity", "profiles", "file", "title", "fix"):
-        if label in said:
-            lines.append(f"- {label:<10}{said[label]}")
+    lines.extend(
+        f"- {label:<10}{said[label]}"
+        for label in ("kind", "severity", "profiles", "file", "title", "fix")
+        if label in said
+    )
     lines += ["", str(said["why"]), ""]
     if "role" in said:
         lines += ["## Its role", "", str(said["role"]), ""]

@@ -20,7 +20,7 @@ WORKFLOWS = sorted((GITHUB / "workflows").glob("*.yml"))
 
 def _front_matter(path: Path) -> dict[str, str]:
     """The `key: value` pairs between the `---` fences at the top of `path`."""
-    match = re.match(r"---\n(.*?)\n---\n", path.read_text(encoding="utf-8"), re.S)
+    match = re.match(r"---\n(.*?)\n---\n", path.read_text(encoding="utf-8"), re.DOTALL)
     assert match, f"{path.relative_to(ROOT)}: no front matter"
     pairs = [line.split(":", 1) for line in match.group(1).splitlines() if ":" in line]
     return {key.strip(): value.strip().strip("'\"") for key, value in pairs}

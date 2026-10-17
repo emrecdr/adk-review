@@ -27,7 +27,7 @@ def tokens(line: str) -> list[tokenize.TokenInfo]:
     found: list[tokenize.TokenInfo] = []
     try:
         for token in tokenize.generate_tokens(io.StringIO(line.strip() + "\n").readline):
-            found.append(token)
+            found.append(token)  # noqa: PERF402 -- one at a time: what was read before a TokenError is kept
     except (tokenize.TokenError, SyntaxError):
         pass
     return found

@@ -88,9 +88,11 @@ def self_test(rule: AnyRule) -> list[str]:
     it says: each example under `bad` is flagged, none under `good` is, and a line or a file rule fires on nothing in
     its own source. A rule's first test, with no test written: the catalog asks it of every rule it finds."""
     said: list[str] = []
-    for example in rule.bad:
-        if not _flagged(rule, files_of(example)):
-            said.append(f"flags nothing in its bad example {_shown(example)}")
+    said.extend(
+        f"flags nothing in its bad example {_shown(example)}"
+        for example in rule.bad
+        if not _flagged(rule, files_of(example))
+    )
     for example in rule.good:
         try:
             found = try_rule(rule, files_of(example))

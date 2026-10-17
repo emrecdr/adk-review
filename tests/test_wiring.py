@@ -271,3 +271,19 @@ async def test_the_chat_gate_and_the_one_turn_hold_on_the_copilot_arm(monkeypatc
     _final, state = await chat.say("Review feature/payments against main.")
     judging = [turns for system, turns in sent if INTAKE not in system]
     assert state[VERDICT] and len(judging) == 4 and all(turns == [ONE_TURN] for turns in judging), judging
+
+
+@pytest.mark.parametrize(("arm", "model", "budgeted"), [("gemini", "fake", True), ("copilot", "gpt-4.1", False)])
+def test_a_guidelines_thinking_budget_rides_on_its_request_where_the_arm_has_one(monkeypatch, arm, model, budgeted):
+    """The budget is configuration, not a plan: ADK's `BuiltInPlanner` only copied it onto the request's config, which
+    the request carries itself. Only Gemini honours it; LiteLLM, the Copilot arm, never forwards it, so the reviewer
+    sets none there and says so."""
+    from google.adk.agents import LlmAgent
+
+    entry = load_agent(monkeypatch, arm, model)
+    guidelines = [n for n in entry.root_agent.graph.nodes if isinstance(n, LlmAgent) and n.name.startswith("guideline")]
+    assert guidelines, "the chat's graph holds the guidelines"
+    for agent in guidelines:
+        assert agent.planner is None, agent.name
+        thinking = agent.generate_content_config.thinking_config
+        assert (thinking is not None and thinking.thinking_budget > 0) is budgeted, (agent.name, thinking)

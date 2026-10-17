@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import importlib
 import os
 import re
@@ -37,8 +38,8 @@ def _listed_and_shown(repo: Path, head: str, path: str) -> tuple[list[dict], str
     left in state."""
     model_tools = importlib.import_module("adk_review.judge.tools")
     context = tool_context()
-    model_tools.inspect_repository(str(repo), BASE, head, context)
-    listed = model_tools.changed_files(context)["files"]
+    asyncio.run(model_tools.inspect_repository(str(repo), BASE, head, context))
+    listed = asyncio.run(model_tools.changed_files(context))["files"]
     scope = context.state[importlib.import_module("adk_review.judge.agents").SCOPE]
     evidence = importlib.import_module("adk_review.collect.git").gather(scope)
     return listed, next(f["diff"] for f in evidence["files"] if f["path"] == path)
@@ -106,7 +107,9 @@ class TestNoOnesSettings:
         ours = _git_in(repo, "rev-parse", BASE)  # before the variable: the test's own git inherits it too
         monkeypatch.setenv("GIT_REFERENCE_BACKEND", f"files://{demo_repo}/.git")
         context = tool_context()
-        out = importlib.import_module("adk_review.judge.tools").inspect_repository(str(repo), BASE, "change", context)
+        out = asyncio.run(
+            importlib.import_module("adk_review.judge.tools").inspect_repository(str(repo), BASE, "change", context)
+        )
         assert out["status"] == "success" and out["base_sha"] == ours, out
 
 
@@ -125,13 +128,13 @@ class TestInspectRepository:
         """The commonest typo. Measured by coverage: the reviewer answered it in no test."""
         model_tools = importlib.import_module("adk_review.judge.tools")
         context = (tool_context(),)
-        out = model_tools.inspect_repository(str(demo_repo), "main", "feature/does-not-exist", *context)
+        out = asyncio.run(model_tools.inspect_repository(str(demo_repo), "main", "feature/does-not-exist", *context))
         assert out["status"] == "error" and "feature/does-not-exist" in out["error_message"], out
 
     def test_a_directory_that_is_not_a_repository_is_named(self, tmp_path: Path) -> None:
         model_tools = importlib.import_module("adk_review.judge.tools")
         context = (tool_context(),)
-        out = model_tools.inspect_repository(str(tmp_path), "main", "main", *context)
+        out = asyncio.run(model_tools.inspect_repository(str(tmp_path), "main", "main", *context))
         assert out["status"] == "error" and "not a git repository" in out["error_message"], out
 
     def test_a_home_of_a_user_this_machine_does_not_know_is_an_error_envelope(self) -> None:
@@ -139,7 +142,7 @@ class TestInspectRepository:
         raised here once, and a tool never raises at the model."""
         model_tools = importlib.import_module("adk_review.judge.tools")
         context = (tool_context(),)
-        out = model_tools.inspect_repository(UNKNOWN_USER_REPO, "main", "main", *context)
+        out = asyncio.run(model_tools.inspect_repository(UNKNOWN_USER_REPO, "main", "main", *context))
         assert out["status"] == "error" and UNKNOWN_USER_REPO in out["error_message"], out
 
 
@@ -156,8 +159,8 @@ class TestTheScopeLivesInState:
         model_tools = importlib.import_module("adk_review.judge.tools")
         monkeypatch.setattr(model_tools, "LISTED_MAX_CHARS", len("src/payments/charge.py") + 1)
         context = tool_context()
-        assert model_tools.inspect_repository(str(demo_repo), BASE, HEAD, context)["status"] == "success"
-        out = model_tools.changed_files(context)
+        assert asyncio.run(model_tools.inspect_repository(str(demo_repo), BASE, HEAD, context))["status"] == "success"
+        out = asyncio.run(model_tools.changed_files(context))
         assert [f["path"] for f in out["files"]] == ["src/payments/charge.py"] and out["count"] == 4, out
         assert out["cut"].startswith("3 more file(s) not listed"), out
 
@@ -166,8 +169,11 @@ class TestTheScopeLivesInState:
         not free the model to name another."""
         model_tools, agents = (importlib.import_module(f"adk_review.judge.{name}") for name in ("tools", "agents"))
         context = tool_context()
-        assert model_tools.inspect_repository(str(demo_repo), BASE, HEAD, context)["status"] == "success"
-        assert model_tools.inspect_repository(str(demo_repo), BASE, "no-such-branch", context)["status"] == "error"
+        assert asyncio.run(model_tools.inspect_repository(str(demo_repo), BASE, HEAD, context))["status"] == "success"
+        assert (
+            asyncio.run(model_tools.inspect_repository(str(demo_repo), BASE, "no-such-branch", context))["status"]
+            == "error"
+        )
         assert context.state[agents.SCOPE] is None and context.state[agents.REPOSITORY] == str(demo_repo)
 
     def test_a_renamed_file_is_read_as_the_lines_it_moved_and_changed(self, hostile_repo: Path) -> None:
@@ -220,10 +226,10 @@ class TestGitPastItsTimeout:
         )
         context = tool_context()
         scope = (str(demo_repo), BASE, HEAD, context)
-        assert model_tools.inspect_repository(*scope)["status"] == "success"
+        assert asyncio.run(model_tools.inspect_repository(*scope))["status"] == "success"
         monkeypatch.setattr(git, "GIT_TIMEOUT_S", NO_TIME)
         # `changed_files` before the preflight, which clears the scope it fails.
-        answers = [model_tools.changed_files(context), model_tools.inspect_repository(*scope)]
+        answers = [asyncio.run(model_tools.changed_files(context)), asyncio.run(model_tools.inspect_repository(*scope))]
         assert all(a["status"] == "error" and "did not answer within" in a["error_message"] for a in answers), answers
 
     def test_every_command_names_a_timeout_and_exits_2_before_any_model(
@@ -325,7 +331,7 @@ class TestGitPastItsTimeout:
         model_tools = importlib.import_module("adk_review.judge.tools")
         monkeypatch.setenv("PATH", str(tmp_path))
         scope = (str(demo_repo), BASE, HEAD, tool_context())
-        answer = model_tools.inspect_repository(*scope)
+        answer = asyncio.run(model_tools.inspect_repository(*scope))
         assert answer["status"] == "error" and "git is not on PATH" in answer["error_message"], answer
 
     def test_a_diff_past_its_timeout_after_a_good_preflight_is_named_never_an_empty_change(
@@ -352,7 +358,7 @@ class TestGitThatFails:
     def test_every_tool_names_a_branch_sharing_no_history(self, unrelated_repo: Path) -> None:
         model_tools = importlib.import_module("adk_review.judge.tools")
         scoped = (tool_context(),)
-        out = model_tools.inspect_repository(str(unrelated_repo), BASE, UNRELATED, *scoped)
+        out = asyncio.run(model_tools.inspect_repository(str(unrelated_repo), BASE, UNRELATED, *scoped))
         assert out["status"] == "error" and "share no history" in out["error_message"], out
 
     @pytest.mark.parametrize("clone", ["shallow_clone", "misled_clone"])
@@ -361,7 +367,7 @@ class TestGitThatFails:
         the misled clone it answers with the wrong commit."""
         model_tools = importlib.import_module("adk_review.judge.tools")
         scoped = (tool_context(),)
-        out = model_tools.inspect_repository(str(request.getfixturevalue(clone)), BASE, HEAD, *scoped)
+        out = asyncio.run(model_tools.inspect_repository(str(request.getfixturevalue(clone)), BASE, HEAD, *scoped))
         assert out["status"] == "error" and "shallow clone" in out["error_message"], out
         assert "share no history" not in out["error_message"], out
 
@@ -399,7 +405,7 @@ class TestWhatARefNames:
             spelling = _git_in(hostile_repo, "rev-parse", "carriage")[:7]
         model_tools = importlib.import_module("adk_review.judge.tools")
         scoped = (tool_context(),)
-        out = model_tools.inspect_repository(str(hostile_repo), BASE, spelling, *scoped)
+        out = asyncio.run(model_tools.inspect_repository(str(hostile_repo), BASE, spelling, *scoped))
         assert out["status"] == "error" and f"{spelling!r} is ambiguous" in out["error_message"], out
 
     def test_every_command_refuses_an_ambiguous_base(self, hostile_repo: Path, cli, capsys) -> None:
@@ -411,7 +417,7 @@ class TestWhatARefNames:
         """Measured before: the head's sha was the tag object's, a sha no reader of the report could check out."""
         model_tools = importlib.import_module("adk_review.judge.tools")
         scoped = (tool_context(),)
-        out = model_tools.inspect_repository(str(hostile_repo), BASE, "v1", *scoped)
+        out = asyncio.run(model_tools.inspect_repository(str(hostile_repo), BASE, "v1", *scoped))
         assert out["status"] == "success" and out["head_sha"] == _git_in(hostile_repo, "rev-parse", "carriage"), out
 
     def test_a_name_that_is_only_a_tag_is_named_as_one(self, hostile_repo: Path, cli, capsys) -> None:
@@ -699,3 +705,19 @@ class TestWhatTheGuidelinesAreShown:
         assert image["unread"].startswith("binary"), "what no one can read is still named"
         assert excluded == {"vendor.png": "vendor*"} and "### " not in block, block
         assert [sorted(f["added_at"]) for f in files] == [[1], [], []], "every file's added lines, for the rules"
+
+
+def test_the_intakes_tools_run_git_off_the_loop(demo_repo: Path) -> None:
+    """ADK awaits an async tool but calls a sync one inline on the event loop unless a thread pool is configured,
+    which `adk web` never does, so git ran on the one loop that serves every session: each tool is a coroutine, and
+    its git runs in a thread."""
+    import asyncio
+    import inspect
+
+    from adk_review.judge import tools as model_tools
+
+    context = tool_context()
+    assert inspect.iscoroutinefunction(model_tools.inspect_repository)
+    assert inspect.iscoroutinefunction(model_tools.changed_files)
+    assert asyncio.run(model_tools.inspect_repository(str(demo_repo), BASE, HEAD, context))["status"] == "success"
+    assert asyncio.run(model_tools.changed_files(context))["count"] == 4

@@ -59,7 +59,7 @@ line-length = 120
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "B", "UP", "N", "ARG", "ASYNC", "RUF", "BLE001", "S607", "SIM", "RET", "C4", "PIE", "PT", "C90"]
+select = ["E", "F", "W", "I", "B", "UP", "N", "ARG", "ASYNC", "RUF", "BLE001", "S607", "SIM", "RET", "C4", "PIE", "PT", "C90", "PERF", "FURB"]
 # SIM112 would upper-case Windows' own `SystemRoot` and `NoDefaultCurrentDirectoryInExePath`; PT018 would split
 # asserts that read as one sentence.
 ignore = ["SIM112", "PT018"]

@@ -1,7 +1,7 @@
 """A guideline as an ADK agent: the instruction around its role, the fences around the change, the answer read back.
 
 Every guideline is built here the same way, from its file in `judge/guidelines/`: its role opens the instruction,
-its thinking budget sets the planner, and the rest — the severity scale, the quoting rule, the fenced change and the
+its thinking budget rides on its request, and the rest — the severity scale, the quoting rule, the fenced change and the
 reminder after it — is shared. `read_back` is the other half of `output_key`: the dict ADK put in state, validated
 back into the schema, or a named reason it could not be, for a guideline's `Review` and a verifier's `Judgement`
 alike. The agent's name and its `output_key` are its check's `state_key`. The state keys more than one module spells
@@ -24,7 +24,7 @@ from ..core.findings import Checked, Review
 from ..core.guidelines import Guideline
 from ..core.profiles import state_key
 from ..core.text import EVIDENCE_MAX_CHARS, cut_at, squash
-from .config import build_model, guideline_planner, request_config
+from .config import build_model, request_config
 
 #: The state keys more than one module spells: the scope the intake's first tool confirms and the checks node gathers
 #: from, `temp:` so it lasts only the turn that confirmed it; the repository a conversation confirmed first, its only
@@ -112,7 +112,7 @@ def for_the_guidelines(blast: Blast) -> str:
     lines = [f"- {squash(r.path)}: {squash(describe(r, blast.floor))}" for r in blast.radii if r.measured]
     if not lines:
         return ""
-    return f"## Blast radius\n{fenced('blast radius', cut_at(chr(10).join(lines), BLAST_CAP_CHARS, sep=chr(10)))}\n\n"
+    return f"## Blast radius\n{fenced('blast radius', cut_at('\n'.join(lines), BLAST_CAP_CHARS, sep='\n'))}\n\n"
 
 
 def for_the_verdict(answers: Mapping[str, Checked]) -> str:
@@ -159,11 +159,10 @@ def build_guideline(guideline: Guideline) -> LlmAgent:
             f"{placeholder(BLAST, optional=True)}## The change\n"
             f"{fenced('change', placeholder(DIFF))}\n\n{REMINDER}"
         ),
-        planner=guideline_planner(guideline.thinking_budget),
         before_agent_callback=without_evidence,
         # Only the instruction, which carries `{diff}`: the conversation would repeat it.
         include_contents="none",
-        generate_content_config=request_config(),
+        generate_content_config=request_config(guideline.thinking_budget),
         output_schema=Review,
         output_key=key,
     )

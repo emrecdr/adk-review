@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Iterator, Sequence
+from itertools import batched
 
 from .diff import file_added, readable
 from .git import _PLAIN, GitError, _empty_tree, _git, _git_raw, _sha, _text
@@ -86,8 +87,7 @@ def sent(
     fields = listed.split("\0")[1:]
     said = dict(zip(fields[::2], (message.rstrip("\n") for message in fields[1::2]), strict=True))
     commits, attributes = list(said), f"--attr-source={_empty_tree(repo)}"
-    for start in range(0, len(commits), HISTORY_BATCH):
-        batch = commits[start : start + HISTORY_BATCH]
+    for batch in batched(commits, HISTORY_BATCH, strict=False):
         added = _added_by(repo, batch, attributes)
         yield from ((commit, said[commit], added.get(commit, [])) for commit in batch)
 

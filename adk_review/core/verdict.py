@@ -25,7 +25,7 @@ EXIT_TERMINATED = 143
 #: Where the diff places a finding: its first and last line, None when a line is not known. Never half known: measured
 #: by a type checker, grounding kept `(None, None)` where a redaction joined lines, and the JSON report, reading it as
 #: two numbers, raised after every model call, the review printing no report.
-Lines = tuple[int, int] | None
+type Lines = tuple[int, int] | None
 
 
 @dataclass

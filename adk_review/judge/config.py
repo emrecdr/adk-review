@@ -23,7 +23,6 @@ from google.adk.models import FallbackModel
 from google.adk.models.base_llm import BaseLlm
 from google.adk.models.google_llm import Gemini
 from google.adk.models.registry import LLMRegistry
-from google.adk.planners import BasePlanner, BuiltInPlanner
 from google.adk.utils.env_utils import is_enterprise_mode_enabled
 from google.auth.exceptions import GoogleAuthError
 from google.genai import types
@@ -175,22 +174,9 @@ def _litellm() -> ModuleType:
     return litellm
 
 
-def guideline_planner(thinking_budget: int) -> BasePlanner | None:
-    """A thinking budget where the provider has one; nothing where it does not.
-
-    `BuiltInPlanner` is configuration only: it sets the budget on the request
-    and adds no prompt text, and only Gemini honours it. ADK's alternative for
-    other models is `PlanReActPlanner` — prompt engineering that runs anywhere —
-    but it collides with `output_schema`, so the reviewer keeps the schema and
-    states plainly that the reasoning lever is absent on Copilot.
-    """
-    if provider() == "gemini":
-        return BuiltInPlanner(thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget))
-    return None
-
-
-def request_config() -> types.GenerateContentConfig:
-    """What every judging call carries, on both arms: temperature zero, a deadline, and retries.
+def request_config(thinking_budget: int | None = None) -> types.GenerateContentConfig:
+    """What every judging call carries, on both arms: temperature zero, a deadline, and retries; and a guideline's
+    thinking budget, where the provider has one.
 
     A severity is a decision, and a demo that gives a different verdict on
     every run teaches the wrong lesson. The deadline and the retries are one
@@ -204,13 +190,21 @@ def request_config() -> types.GenerateContentConfig:
     SDK's own two retries make its three. A call past its deadline or its
     retries is a model error like any other, which `ReportProviderErrors` turns
     into that guideline's own answer.
+
+    The budget is configuration, not a plan: ADK's `BuiltInPlanner` only copied
+    it onto the request's config, which the request carries itself, and the
+    ledger reads it there to reserve the thinking a call allows. Only Gemini
+    honours it; LiteLLM, the Copilot arm, never forwards it, so none is set
+    there, and the reviewer states plainly that the reasoning lever is absent on
+    Copilot.
     """
-    attempts = RETRY_ATTEMPTS if provider() == "gemini" else 1
+    gemini = provider() == "gemini"
     return types.GenerateContentConfig(
         temperature=0.0,
+        thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget) if thinking_budget and gemini else None,
         http_options=types.HttpOptions(
             timeout=int(REQUEST_TIMEOUT_S * 1000),
-            retry_options=types.HttpRetryOptions(attempts=attempts, initial_delay=1.0),
+            retry_options=types.HttpRetryOptions(attempts=RETRY_ATTEMPTS if gemini else 1, initial_delay=1.0),
         ),
     )
 

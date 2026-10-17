@@ -16,6 +16,7 @@ speaks to the model.
 
 from __future__ import annotations
 
+import asyncio
 import os
 from pathlib import Path
 from typing import Any
@@ -31,7 +32,7 @@ from .agents import REPOSITORY, SCOPE
 LISTED_MAX_CHARS = 20_000
 
 
-def inspect_repository(repo: str, base: str, head: str, tool_context: ToolContext) -> dict:
+async def inspect_repository(repo: str, base: str, head: str, tool_context: ToolContext) -> dict:
     """Confirm `repo` is a git repository, that `base` and `head` exist, and find their merge base.
 
     Call this before anything else: the tools after it read the repository
@@ -48,7 +49,9 @@ def inspect_repository(repo: str, base: str, head: str, tool_context: ToolContex
         On success: {"status": "success", "repo", "base", "base_sha", "head", "head_sha",
         "merge_base", "commits_ahead", "base_ref", "head_ref"}. On failure: {"status": "error", "error_message": "..."}.
     """
-    resolved = preflight(repo, base, head)
+    # Off the loop: ADK awaits an async tool but calls a sync one inline, and `adk web` serves every session on one
+    # loop, which git held while it ran.
+    resolved = await asyncio.to_thread(preflight, repo, base, head)
     # A failed preflight clears the scope: nothing later may read a repository this call did not confirm.
     tool_context.state[SCOPE] = resolved if resolved["status"] == "success" else None
     if resolved["status"] == "success":  # the conversation's one repository, kept when a later call fails
@@ -56,7 +59,7 @@ def inspect_repository(repo: str, base: str, head: str, tool_context: ToolContex
     return resolved
 
 
-def changed_files(tool_context: ToolContext) -> dict:
+async def changed_files(tool_context: ToolContext) -> dict:
     """List the files the branch under review changed, with a status letter each.
 
     Call this after inspect_repository: it lists the change inspect_repository
@@ -71,7 +74,7 @@ def changed_files(tool_context: ToolContext) -> dict:
     if not scope:
         return {"status": "error", "error_message": "call inspect_repository first; changed_files lists its change"}
     try:
-        files = list_changed(scope)
+        files = await asyncio.to_thread(list_changed, scope)
     except GitError as exc:
         return {"status": "error", "error_message": str(exc)}
     listed, room = [], LISTED_MAX_CHARS
