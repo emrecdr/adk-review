@@ -9,20 +9,21 @@ holds its flags, checks, JSON fields and limits to the code.
 ## First run
 
 ```bash
-uv sync                                    # once: the reviewer, its Python and its locked dependencies
-uv run python -m adk_review.review <repo> --base main --profile default-rules
+uv sync --locked                             # once: the reviewer, its Python and its locked dependencies
+uv run python scripts/make_demo_repo.py      # a throwaway repository with planted defects; prints its path
+uv run adk-review <that path> --head feature/payments --base main --profile rules-only
+uv run adk-review <repo> --base main --profile default-rules    # a repository of your own: the default's rules
 ```
 
-`<repo>` is the path of the repository to review, and `--head` defaults to its branch checked out. `default-rules`
-calls no model, so it needs no key. Drop `--profile` to run the `default` profile, which adds the guidelines: they
-need a model, set as "Configuration" below says. In this repository, `uv run python scripts/make_demo_repo.py`
-builds a throwaway repository to try it on, with a branch `feature/payments` holding planted defects, and prints its
-path.
+`<repo>` is the path of the repository to review, and `--head` defaults to its branch checked out. `rules-only` and
+`default-rules` call no model, so they need no key. Drop `--profile` to run the `default` profile, which adds the
+guidelines: they need a model, set as "Configuration" below says. `uv run python -m adk_review.review` is the same
+command spelled long.
 
 To run it from any folder, install it as a command: `uv tool install <path or git URL of this repository>` puts
 `adk-review` and its pre-push hook, `adk-review-push`, on `PATH`: the reviewer alone, with ruff beside it. An
-installed reviewer reads the model's settings from the environment and its config from beside itself; inside the
-checkout, `uv run adk-review` is the same command.
+installed reviewer reads the model's settings from the shell alone, no `.env` being read outside the checkout, and its
+config from beside itself; inside the checkout, `uv run adk-review` is the same command.
 
 ## Flags
 

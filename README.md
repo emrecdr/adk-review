@@ -6,8 +6,75 @@ verdict and the exit code: a model never decides whether a build passes. The rep
 through read-only git: none of its code runs, no setting of the review comes from it, and nothing is written into it.
 
 `GUIDE.md`, beside this file, is the user's guide: every flag, exit code, check, setting, JSON field and limit, held
-to the code by a test. This file says how a review runs, how to install and run the reviewer, how its code is laid
+to the code by a test. This file starts with a first review, then says how a review runs, how its code is laid
 out and configured, and how to write a rule or a guideline of your own.
+
+## Quick start
+
+The reviewer needs Python 3.13, uv, and git 2.41 or later on `PATH`. Ruff, which the lint rule runs, is installed
+with it. Three commands from the root of this checkout give a first review, with no model and no key:
+
+```bash
+uv sync --locked                             # once: the reviewer and its locked dependencies
+uv run python scripts/make_demo_repo.py      # a throwaway repository with planted defects; prints its path
+uv run adk-review <that path> --head feature/payments --base main --profile rules-only
+```
+
+The rules find the demo's hard-coded key pair, its shell call and a float division of cents: exit 1, a blocker.
+`make demo` runs the three. On a repository of your own, `uv run adk-review <repo> --base main --profile
+default-rules` runs the default profile's rules alone, still with no model.
+
+The guidelines need a model, on one of two arms. Set it in the shell, or in `.env` at the root of this checkout
+(copy `.env.example`), which the shell wins over:
+
+- **Copilot**, the arm when nothing is set: no key. Run `uv run python scripts/copilot_login.py` once, GitHub's
+  device flow, and LiteLLM reads the token it caches.
+- **Gemini**: `REVIEW_PROVIDER=gemini` and `GOOGLE_API_KEY`, or through Vertex AI a project, as `.env.example` says.
+
+Then drop `--profile`: `uv run adk-review <repo> --base main` runs the rules, then the guidelines. Both arms are
+first-class; "Configuration" in `GUIDE.md` lists every variable.
+
+Every mode is the same command:
+
+```bash
+uv run adk-review <repo> --base main                            # the default profile: the rules, then the guidelines
+uv run adk-review <repo> --base main --profile default-rules    # the default's rules: no model, no key
+uv run adk-review <repo> --head <branch> --base main --verify   # a second model judges each guideline finding
+uv run adk-review <repo> --base main --max-tokens 20000         # the call that would pass the ceiling is refused
+uv run adk-review <repo> --base main --profile rules-only       # every rule: no model, no key
+uv run adk-review <repo> --base main --path <folder>            # one folder of the change, the rest counted
+uv run adk-review <repo> --all --profile rules-only             # every file at the head, not a change
+uv run adk-review <repo> --staged --profile default-rules       # what is staged, against HEAD
+uv run adk-review <repo> --base main --check rule.secrets       # one check alone, this once
+uv run adk-review <repo> --base main --json review.json         # the report, and the same review as JSON
+uv run adk-review <repo> --base main --dry-run                  # what a review would cover and run; nothing runs
+uv run adk-review --list-checks                                 # every check: its kind, severity, profiles and file
+uv run adk-review --explain rule.lint                           # one check whole, a rule with its own examples
+```
+
+`<repo>` is the path of the repository to review. A command that names none asks for it at a terminal, and a pipeline
+that names none is refused, exit 2. `--help` prints every flag, and `uv run python -m adk_review.review` is the same
+command spelled long.
+
+To run it from any folder, install it as a command: `uv tool install <path or git URL of this repository>` puts
+`adk-review` and its pre-push hook, `adk-review-push`, on `PATH`: the reviewer alone, with ruff beside it. An
+installed reviewer reads the model's settings from the shell alone, no `.env` being read outside the checkout, and its
+config from beside itself: a team that wants another policy changes `config.toml` in its checkout and installs from
+there, `--editable` so a change applies at once, or passes flags.
+
+Chat runs the same checks: `uv run adk web .` at the root of the checkout, pick `adk_review`, and say what to
+review, the repository's absolute path and its branches: "review /home/me/shop, branch feature/payments against
+main". An intake agent confirms the repository and the commits through read-only tools and asks for what is
+missing, told the repository its conversation already confirmed; the checks node gathers the evidence the command would for those
+commits, runs the rules and writes the change the guidelines read, the command's own block under the same cap and
+skip list; the guidelines judge; and a verdict agent writes the verdict for a person to read. A turn reviews only
+the commits its own intake confirmed: a greeting, a question or a thanks after a review ends at the intake's answer,
+one model call. Chat runs the `default` profile under `[review]`'s `fail_on`, `max_tokens`, `diff_cap`
+and `skip`. Its verdict is a model's prose: the exit code and the second opinion are the command's. Chat asks
+whether its arm can run once a turn, as the command asks before it starts, and answers the same sentence where it
+cannot: on Copilot with no token cached, no login is begun on the server's console.
+
+The tests run offline, on a fake model registered with ADK: `uv run pytest -q`.
 
 ## How a review runs
 
@@ -42,56 +109,6 @@ The order is the architecture: evidence and rules first, the guidelines' judgeme
 Exit 0 approves; 1 is a finding at the bar; 2 a usage error before any model call; 3 a hole; 130 and 143 a run
 stopped by Ctrl-C or by a job. "Exit codes" in `GUIDE.md` says what each covers.
 
-## Install and run
-
-The reviewer needs Python 3.13, uv, and git 2.41 or later on `PATH`. Ruff, which the lint rule runs, is installed
-with it. From the root of this checkout:
-
-```bash
-uv sync                                                                                # once: the reviewer and its locked dependencies
-uv run python -m adk_review.review <repo> --base main --profile default-rules    # the default's rules: no model, no key
-uv run python -m adk_review.review <repo> --base main                            # the default profile: the rules, then the guidelines
-uv run python -m adk_review.review <repo> --head <branch> --base main --verify   # a second model judges each guideline finding
-uv run python -m adk_review.review <repo> --base main --max-tokens 20000         # the call that would pass the ceiling is refused
-uv run python -m adk_review.review <repo> --base main --profile rules-only       # every rule: no model, no key
-uv run python -m adk_review.review <repo> --base main --path <folder>            # one folder of the change, the rest counted
-uv run python -m adk_review.review <repo> --all --profile rules-only             # every file at the head, not a change
-uv run python -m adk_review.review <repo> --staged --profile default-rules       # what is staged, against HEAD
-uv run python -m adk_review.review <repo> --base main --check rule.secrets       # one check alone, this once
-uv run python -m adk_review.review <repo> --base main --json review.json         # the report, and the same review as JSON
-uv run python -m adk_review.review <repo> --base main --dry-run                  # what a review would cover and run; nothing runs
-uv run python -m adk_review.review --list-checks                                 # every check: its kind, severity, profiles and file
-uv run python -m adk_review.review --explain rule.lint                           # one check whole, a rule with its own examples
-```
-
-`<repo>` is the path of the repository to review. A command that names none asks for it at a terminal, and a pipeline
-that names none is refused, exit 2. `--help` prints every flag.
-
-To run it from any folder, install it as a command: `uv tool install <path or git URL of this repository>` puts
-`adk-review` and its pre-push hook, `adk-review-push`, on `PATH`: the reviewer alone, with ruff beside it.
-`adk-review <repo> --base main` is the same command, and inside the checkout, `uv run adk-review` is too. An installed
-reviewer reads the model's settings from the environment and its config from beside itself: a team that wants another
-policy changes `config.toml` in its checkout and installs from there, `--editable` so a change applies at once, or
-passes flags.
-
-In this repository, `uv run python scripts/make_demo_repo.py` builds a throwaway repository to try the reviewer on,
-and prints its path: `main`, and a branch `feature/payments` holding planted defects. With
-`--head feature/payments --base main --profile rules-only`, the rules find its hard-coded key pair, its shell call
-and a float division of cents, with no model.
-
-Chat runs the same checks: `uv run adk web .` at the root of the checkout, then pick `adk_review`. An intake
-agent confirms the repository and the commits through read-only tools and asks for what is missing, told the
-repository its conversation already confirmed; the checks node gathers the evidence the command would for those
-commits, runs the rules and writes the change the guidelines read, the command's own block under the same cap and
-skip list; the guidelines judge; and a verdict agent writes the verdict for a person to read. A turn reviews only
-the commits its own intake confirmed: a greeting, a question or a thanks after a review ends at the intake's answer,
-one model call. Chat runs the `default` profile under `[review]`'s `fail_on`, `max_tokens`, `diff_cap`
-and `skip`. Its verdict is a model's prose: the exit code and the second opinion are the command's. Chat asks
-whether its arm can run once a turn, as the command asks before it starts, and answers the same sentence where it
-cannot: on Copilot with no token cached, no login is begun on the server's console.
-
-The tests run offline, on a fake model registered with ADK: `uv run pytest -q`.
-
 ## Layout
 
 The code is grouped by the steps of a review, and each package may import only the packages before it: `core` →
@@ -121,16 +138,15 @@ it does not know, one missing, or one of the wrong kind is a sentence and exit 2
 another value. It is the one place the review policy lives: nothing of it is read from the repository under review,
 and `--dry-run` names the file read.
 
-The model comes from the environment, or from the `.env` at the root of the checkout, which never wins over the
-shell. `REVIEW_PROVIDER` picks the arm: `copilot`, when unset, or `gemini`. `REVIEW_MODEL` names the model, blank for
-`gpt-4.1` or `gemini-2.5-flash`, for every guideline. `REVIEW_VERIFIER_MODEL` gives `--verify` a model of its own,
-which the report names beside everyone's. `REVIEW_FALLBACK_MODEL` puts a
-second model behind every role's first. Both arms are first-class; `copilot` is only the default. The Gemini arm
-needs `GOOGLE_API_KEY`, or through Vertex AI a project, `GOOGLE_CLOUD_PROJECT` or the one Application Default
-Credentials name, which readiness asks google-genai for rather than copying its rules; a model ADK would send to
-another provider, `gpt-*` or `claude-*`, is refused there. The Copilot arm needs a one-time
-`uv run python scripts/copilot_login.py`. Every certificate is verified through the operating system's own store, so
-a company proxy's root the machine trusts, the reviewer trusts too. "Configuration" in `GUIDE.md` lists each variable.
+The model comes from the shell, or from the `.env` at the root of the checkout, which never wins over the shell:
+`REVIEW_PROVIDER` picks the arm, `copilot` when unset or `gemini`, and `REVIEW_MODEL` the model, blank for `gpt-4.1`
+or `gemini-2.5-flash`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` give `--verify` and every role's fallback a
+model of their own. Both arms are first-class; `copilot` is only the default. Readiness is asked before any call:
+Copilot's cached token, from the one-time `uv run python scripts/copilot_login.py`, or Gemini's `GOOGLE_API_KEY` or
+Vertex AI project, which google-genai itself answers, never a copy of its rules; on the Gemini arm a model ADK would
+send to another provider, `gpt-*` or `claude-*`, is refused. Every certificate is verified through the operating
+system's own store, so a company proxy's root the machine trusts, the reviewer trusts too. "Configuration" in
+`GUIDE.md` lists each variable with its default, and `.env.example` shows each arm's block.
 
 ## Checks and profiles
 
