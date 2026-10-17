@@ -247,8 +247,8 @@ class TestWhatAReviewCovers:
         assert run_review(cli, demo_repo, *picked) in (0, 1)
         beside = capsys.readouterr().out
         assert head_reads == [1] and "not asked" not in beside
-        found = alone[alone.index("### rule.secrets") : alone.index("- findings dropped")].rstrip()
-        assert found == beside[beside.index("### rule.secrets") : beside.index("### rule.required-paths")].rstrip()
+        secrets = [out.split("### rule.secrets", 1)[1].split("\n### ", 1)[0] for out in (alone, beside)]
+        assert secrets[0] == secrets[1], "the secrets rule read the same change either way"
 
     def test_with_no_python_file_changed_a_guideline_reads_no_head_for_the_radius(
         self, cli, tmp_path: Path, head_reads: list[int], capsys
@@ -596,8 +596,15 @@ class TestTheJsonReport:
         out, written = capsys.readouterr().out, path.read_text(encoding="utf-8")
         data = json.loads(written)
         assert data["schema"] == 2 and data["exit_code"] == code and f"## Verdict: {data['verdict']}" in out
-        sections = [line[4:].split(" — ")[0] for line in out.splitlines() if line.startswith("### ")]
-        assert data["checks"] == sections, "every check the report names, in its order"
+        headed = [
+            line[4:].split(" — ")[0]
+            for line in out.splitlines()
+            if line.startswith("### ") and "no findings" not in line
+        ]
+        quiet = [name.strip("`") for name in out.split("### no findings from ", 1)[1].split("\n")[1].split(", ")]
+        sections = [*headed, *quiet]
+        assert [c for c in data["checks"] if c in headed] == headed, "every check with a section, in its order"
+        assert sorted(data["checks"]) == sorted(sections), "and every other one named as having found nothing"
         assert data["findings"] and all(f["title"] in out and f["check"] in sections for f in data["findings"])
         assert data["reviewed"]["head_sha"] == _git_in(demo_repo, "rev-parse", HEAD) and data["usage"]["attempted"]
         assert "AKIAIOSFODNN7EXAMPLE" not in written, "a credential is never written, as it is never printed"
@@ -657,7 +664,8 @@ class TestTheJsonReport:
         assert decide(outcome, "blocker") == ("DEGRADED", 3)
         assert _beside("DEGRADED", outcome, "blocker") == ", and 1 finding at or above `--fail-on blocker`"
         assert _beside("DEGRADED", outcome, "major") == ", and 2 findings at or above `--fail-on major`"
-        assert _beside("REQUEST_CHANGES", outcome, "blocker") == "", "said only where the verdict outranks them"
+        assert _beside("REQUEST_CHANGES", outcome, "blocker") == ", 1 finding at or above `--fail-on blocker`"
+        assert _beside("APPROVED", Outcome(), "blocker") == ""
         assert _beside("DEGRADED", Outcome(errors={"rule.lint": "x"}), "blocker") == ""
         data = as_json(outcome, [{"path": "a.py"}], verdict="DEGRADED", code=3, checks=("rule.secrets",))
         assert data["findings_at_fail_on"] == 1 and data["schema"] == 2
@@ -687,7 +695,7 @@ class TestTheJsonReport:
         assert capsys.readouterr().err == "", "a pipeline's log stays the report alone"
         with pytest.raises(SystemExit) as stopped:
             cli.main(["--version"])
-        assert stopped.value.code == 0 and capsys.readouterr().out == f"review {cli.version()}\n"
+        assert stopped.value.code == 0 and capsys.readouterr().out == f"adk-review {cli.version()}\n"
 
 
 class TestWhatAReviewKeeps:
@@ -940,3 +948,38 @@ class TestWhatTheReportPrints:
         (found,) = data["findings"]
         assert "\n" not in found["title"] and "\x1b" not in found["suggestion"] and found["lines"] == [1, 1]
         assert len(found["evidence"]) < EVIDENCE_MAX_CHARS + 40 and "cut at" in found["evidence"]
+
+
+class TestWhatANewcomerReads:
+    """The first run, walked as a newcomer walks it: measured on the demo's rules-only review, fourteen of seventeen
+    rule sections said "no findings", the verdict line gave no count, `--help` named the command `review`, a check
+    named without its kind was answered with every id, and a path that does not exist was "not a git repository"."""
+
+    def test_checks_that_found_nothing_share_one_line_and_the_verdict_counts_whats_at_the_bar(
+        self, demo_repo: Path, cli, capsys
+    ) -> None:
+        assert run_review(cli, demo_repo, "--profile", "rules-only") == 1
+        out = capsys.readouterr().out
+        assert "## Verdict: REQUEST_CHANGES, 2 findings at or above `--fail-on blocker`\n" in out, out
+        assert out.count("- no findings") == 0 and "### rule.secrets\n" in out and "### rule.no-print" not in out
+        silent = out.split("### no findings from ", 1)[1].split("\n", 1)[0]
+        assert silent.startswith("14 checks"), silent
+        assert "`rule.no-print`" in out.split("### no findings from ", 1)[1].split("\n\n", 1)[0]
+
+    def test_a_check_named_without_its_kind_is_pointed_at_the_nearest_id(self, demo_repo: Path, cli, capsys) -> None:
+        assert run_review(cli, demo_repo, "--check", "secrets") == 2
+        said = capsys.readouterr().err
+        assert "did you mean rule.secrets?" in said and "known:" not in said, said
+
+    def test_a_path_that_does_not_exist_is_said_so(self, tmp_path: Path, cli, capsys) -> None:
+        assert cli.main([str(tmp_path / "nowhere"), "--base", BASE, "--profile", "rules-only"]) == 2
+        said = capsys.readouterr().err
+        assert "does not exist" in said and "not a git repository" not in said, said
+
+    def test_help_names_the_installed_command_the_typical_run_and_the_exit_codes(self, cli, capsys) -> None:
+        with pytest.raises(SystemExit) as stopped:
+            cli.main(["--help"])
+        out = capsys.readouterr().out
+        assert stopped.value.code == 0 and out.startswith("usage: adk-review ")
+        assert "adk-review <repo> --base main --profile default-rules" in out and "exit codes:  0 approved" in out
+        assert "GUIDE.md" in out

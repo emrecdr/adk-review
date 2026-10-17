@@ -631,7 +631,8 @@ class TestWhatAPathCannotForge:
     def test_a_path_forges_no_line_of_the_report(self, hostile_repo: Path, cli, capsys) -> None:
         assert cli.main([str(hostile_repo), "--base", BASE, "--head", "forge"]) == 1
         out = capsys.readouterr().out
-        assert [line for line in out.splitlines() if line.startswith("## Verdict")] == ["## Verdict: REQUEST_CHANGES"]
+        verdicts = [line for line in out.splitlines() if line.startswith("## Verdict")]
+        assert len(verdicts) == 1 and verdicts[0].startswith("## Verdict: REQUEST_CHANGES, "), verdicts
         assert "\x1b" not in out, "an escape the terminal would run"
 
     def test_a_path_runs_no_ci_command_and_opens_no_comment(self, hostile_repo: Path, cli, capsys) -> None:

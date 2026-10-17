@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
+from difflib import get_close_matches
 
 #: The profile a review runs when none is named; `config.toml` must hold it, as it holds every other.
 DEFAULT = "default"
@@ -67,8 +68,10 @@ def expand(ids: object, known: Sequence[str], groups: Mapping[str, Sequence[str]
     if not isinstance(ids, list):
         raise ValueError(f"{what} must be a list of check ids")
     if strangers := [check for check in ids if check not in known and check not in groups]:
+        nearest = get_close_matches(strangers[0], [*known, *groups], n=1)
+        hint = f"did you mean {nearest[0]}?" if nearest else f"known: {', '.join(known)}"
         raise ValueError(
-            f"{what} names {strangers[0]!r}, which no check or group is; known: {', '.join(known)}"
+            f"{what} names {strangers[0]!r}, which no check or group is; {hint}"
             + (f"; groups: {', '.join(groups)}" if groups else "")
         )
     expanded = list(dict.fromkeys(check for named in ids for check in groups.get(named, [named])))

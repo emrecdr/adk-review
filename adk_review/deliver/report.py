@@ -333,12 +333,15 @@ def render_dry_run(
 
 
 def _beside(verdict: str, outcome: Outcome, fail_on: str) -> str:
-    """What a degraded verdict also holds: the findings at the bar, which it outranks. Measured before: a pipeline
-    that let exit 3 through let a kept blocker through with it, and the verdict line never named it."""
+    """What the verdict line also says: the findings at the bar, counted beside a request for changes, and beside a
+    degraded verdict, which outranks them. Measured before: a pipeline that let exit 3 through let a kept blocker
+    through with it, and the verdict line never named it; and a request for changes gave no count at all, the
+    reader scrolling the sections for it."""
     held = at_bar(outcome.kept, fail_on)
-    if verdict != "DEGRADED" or not held:
+    if not held:
         return ""
-    return f", and {held} finding{'s' * (held != 1)} at or above `--fail-on {fail_on}`"
+    count = f"{held} finding{'s' * (held != 1)} at or above `--fail-on {fail_on}`"
+    return f", and {count}" if verdict == "DEGRADED" else f", {count}"
 
 
 def _since(identity: str, previous: Mapping[str, dict] | None) -> str | None:
@@ -400,25 +403,7 @@ def render(
     ]
     # Read against a previous review alone: with none, no finding is fingerprinted.
     identities = _identified(outcome.kept) if previous is not None else [""] * len(outcome.kept)
-    for check in checks:
-        findings = [
-            (identity, item.finding)
-            for identity, item in zip(identities, outcome.kept, strict=True)
-            if item.source == check
-        ]
-        failed = outcome.errors.get(check)
-        lines.append(_heading(check, failed))
-        for identity, f in findings:
-            mark = " — new since the previous review" if _since(identity, previous) == "new" else ""
-            lines += [*_listed(f, mark), f"  - fix: {prose(f.suggestion)}"]
-        # Named under its own source: measured live, ruff's every hit folded into a guideline's blocker on the same
-        # lines, and its section read "no findings" under a rule that had found `shell=True`.
-        folded = [(item.finding, into.source) for item, into in outcome.folded if item.source == check]
-        for f, into in folded:
-            lines.append(f"- folded into `{into}`'s finding on the same lines: {prose(f.title)} ({_where(f)})")
-        if not findings and not folded and not failed:
-            lines.append("- no findings")
-        lines.append("")
+    lines += _sections(checks, outcome, identities, previous)
     resolved = _resolved(identities, verdict, previous)
     if previous is not None and resolved is None:
         lines.append("- resolved since the previous review: none counted, since this review could not look at all")
@@ -445,6 +430,43 @@ def render(
         "",
     ]
     return inert("\n".join(lines))  # once over the whole: no two fields side by side spell one
+
+
+def _sections(
+    checks: Sequence[str], outcome: Outcome, identities: Sequence[str], previous: Mapping[str, dict] | None
+) -> list[str]:
+    """Each check that found something, failed, or had a finding folded into another's, a section of its own; the
+    checks that found nothing, one line naming them all, so each is still seen to have looked. Measured on the demo's
+    rules-only review: fourteen of seventeen sections said "no findings", and the three that mattered sat among them."""
+    lines: list[str] = []
+    silent: list[str] = []
+    for check in checks:
+        findings = [
+            (identity, item.finding)
+            for identity, item in zip(identities, outcome.kept, strict=True)
+            if item.source == check
+        ]
+        failed = outcome.errors.get(check)
+        # Named under its own source: measured live, ruff's every hit folded into a guideline's blocker on the same
+        # lines, and its section read "no findings" under a rule that had found `shell=True`.
+        folded = [(item.finding, into.source) for item, into in outcome.folded if item.source == check]
+        if not findings and not folded and not failed:
+            silent.append(check)
+            continue
+        lines.append(_heading(check, failed))
+        for identity, f in findings:
+            mark = " — new since the previous review" if _since(identity, previous) == "new" else ""
+            lines += [*_listed(f, mark), f"  - fix: {prose(f.suggestion)}"]
+        for f, into in folded:
+            lines.append(f"- folded into `{into}`'s finding on the same lines: {prose(f.title)} ({_where(f)})")
+        lines.append("")
+    if silent:
+        lines += [
+            f"### no findings from {len(silent)} check{'s' * (len(silent) != 1)}",
+            ", ".join(map(code_span, silent)),
+            "",
+        ]
+    return lines
 
 
 def _share(lines: int, of: int) -> str:

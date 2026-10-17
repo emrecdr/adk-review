@@ -226,6 +226,8 @@ def _refused(repo: str, root: str) -> None:
     """`_ScopeError` where `repo` is no repository to review: no `.git` in it, or a `.git` that is no repository's top.
     Measured: a `.git` that is no repository, an empty folder say, sent git to the repository around it, and a review
     read the outer repository's commits under the inner folder's name. Raises `GitError` as `_git` does."""
+    if not os.path.exists(root):
+        raise _ScopeError(f"{repo} does not exist")
     if not is_repository(root):
         raise _ScopeError(f"{repo} is not a git repository (no .git directory)")
     top = _git(root, "rev-parse", "--show-toplevel", strip=False)[1].removesuffix("\n")

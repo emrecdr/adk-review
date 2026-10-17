@@ -223,7 +223,17 @@ def _traced(path: str) -> None:
 def build_parser(review: dict) -> argparse.ArgumentParser:
     """The command's flags, each setting's default taken from `config.toml`'s `[review]`: a flag wins for one run."""
     parser = argparse.ArgumentParser(
-        prog="review", description="Review a branch: rules in Python, guidelines judge, code decides."
+        prog="adk-review",
+        description="Review a branch: rules in Python, guidelines judge, code decides.",
+        # Kept as written: argparse would reflow the typical command across two lines.
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=(
+            "typical:     adk-review <repo> --base main --profile default-rules   (the default's rules, no model)\n"
+            "             drop --profile for its guidelines too\n"
+            "exit codes:  0 approved, 1 a finding at --fail-on, 2 a usage error before any model call,\n"
+            "             3 a hole: a check that failed or could not look\n"
+            "every flag, check and limit: GUIDE.md beside the package"
+        ),
     )
     parser.add_argument(
         "repo",

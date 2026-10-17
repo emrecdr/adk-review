@@ -412,7 +412,7 @@ one no rule already made.
 ## Reports
 
 The text report goes to stdout: the verdict under the title, what was reviewed, under `--all` the project's health,
-the blast radius, a section for each check that ran, and then what was dropped, refuted, folded, redacted and spent. "The report" in `GUIDE.md` lists it
+the blast radius, a section for each check that found something or failed, one line for those that found nothing, and then what was dropped, refuted, folded, redacted and spent. "The report" in `GUIDE.md` lists it
 line by line. Beside it:
 
 - Under `--all`, where the files are the project, a Health section measures it by code alone: the files read whole,

@@ -333,7 +333,10 @@ def _gemini_refused() -> str | None:
         Gemini(model=model_name()).api_client.close()  # built for what building it refuses, and let go
     except (ValueError, GoogleAuthError) as exc:
         if not is_enterprise_mode_enabled():
-            return "REVIEW_PROVIDER=gemini needs GOOGLE_API_KEY in the central .env, or Vertex AI and its project"
+            return (
+                "REVIEW_PROVIDER=gemini needs GOOGLE_API_KEY, set in the shell or in .env at the checkout's root, or "
+                "Vertex AI and its project"
+            )
         return (
             "REVIEW_PROVIDER=gemini through Vertex AI finds no project: set GOOGLE_CLOUD_PROJECT, or sign in with "
             f"Application Default Credentials that name one (`gcloud auth application-default login`) ({exc})"

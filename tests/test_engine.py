@@ -366,7 +366,7 @@ class TestTheSecondOpinion:
         assert code == 1, out  # the rules' blockers still stand
         assert f"findings refuted by the verifier: {len(GUIDELINE_NAMES)}" in out
         assert "- `guideline.security`: shell=True with request-controlled input — the lines do not show it" in out
-        assert "### guideline.security\n- no findings" in out
+        assert "`guideline.security`" in out.split("### no findings from ", 1)[1], "it looked, and found nothing"
         # The rules' findings are facts: never asked, so never refuted, and a rule's reading of the line stands
         # whatever the verifier said of a guideline's.
         assert "secrets: a hard-coded credential (src/payments/config.py:4)" in out

@@ -458,7 +458,7 @@ class TestTheLintRule:
         assert f"duplicates across rules and guidelines folded into one finding: {1 + len(GUIDELINE_NAMES)}" in out, (
             "S105 into the secrets rule's finding, each guideline's into S602"
         )
-        assert "- profile      default (off: " in out and "### rule.reviewer-instructions" in out, "the default"
+        assert "- profile      default (off: " in out and "`rule.reviewer-instructions`" in out, "the default ran it"
 
     def test_lint_names_a_bidirectional_control_and_a_look_alike_name(self) -> None:
         """Ruff reads both in Python code: a control that reorders a line is major, a letter that is not ASCII in a name
@@ -778,9 +778,8 @@ class TestTreeRules:
         assert "- **major** required-paths: a file or folder the project needs is missing (CHANGELOG.md)" in out, out
         assert "  - evidence: `not at the head`" in out
         assert out.count("required-paths:") == 1, out
-        assert all(
-            f"### rule.{rule}\n- no findings" in out for rule in ("module-defines", "derives-from", "parameters")
-        ), out
+        quiet = out.split("### no findings from ", 1)[1]
+        assert all(f"`rule.{rule}`" in quiet for rule in ("module-defines", "derives-from", "parameters")), out
 
 
 class TestTheShippedRules:
