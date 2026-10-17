@@ -184,6 +184,23 @@ class TestTheReport:
         assert data["dropped"] == [] and said, data["dropped"]
         assert {(f["evidence"], f["since_previous"]) for f in said} == {(line, "seen")}, said
 
+    def test_a_quote_grounded_where_redaction_joined_lines_is_reported_without_one(
+        self, cli, fake_provider, tmp_path: Path, capsys
+    ) -> None:
+        """Through the whole command: a guideline quotes a line below a private key's block, which the guidelines saw
+        redacted into one line, so its quote grounds and no line is named. Measured by a type checker, then by this
+        test: the JSON report read the lines grounding kept, `(None, None)`, as two numbers, and raised after every
+        model call was spent; the pipeline had no report, and the review ended in exit 3."""
+        repo = _branch_off_empty(tmp_path / "repo", HEAD)
+        key = ["-----BEGIN RSA PRIVATE KEY-----", "MIIEowIBAAKCAQEA7yn3bRHQ5", "-----END RSA PRIVATE KEY-----"]
+        _committed(repo, "deploy/key.txt", "\n".join([*key, "x = 1", ""]))
+        quoted = {**CANNED_REVIEW["findings"][0], "file": "deploy/key.txt", "evidence": "x = 1"}
+        fake_provider.answers_when(EVERY_GUIDELINE, {**CANNED_REVIEW, "findings": [quoted]})
+        data = tmp_path / "review.json"
+        assert run_review(cli, repo, "--json", str(data)) == 1, capsys.readouterr()  # the key's own blocker
+        said = [f for f in json.loads(data.read_text(encoding="utf-8"))["findings"] if f["check"].startswith("guide")]
+        assert {(f["file"], f["line"], f["lines"]) for f in said} == {("deploy/key.txt", None, None)}, said
+
 
 def test_the_gate_runs_before_any_model(cli, demo_repo: Path, monkeypatch) -> None:
     """Evidence and code's checks first, then the models: every rule runs as a node of the graph before the
@@ -627,7 +644,7 @@ class TestWhatGroundingKeeps:
         block = ["+-----BEGIN RSA PRIVATE KEY-----", "+MIIEowIBAAKCAQEA", "+-----END RSA PRIVATE KEY-----", "+x = 1"]
         finding = schema.Finding(file="k.py", line=2, severity="major", title="t", evidence="x = 1", suggestion="s")
         kept, dropped = _grounded([finding], {"k.py": _numbered(block)})
-        assert [(f.line, f.evidence, at) for f, at in kept] == [(None, "x = 1", (None, None))] and not dropped
+        assert [(f.line, f.evidence, at) for f, at in kept] == [(None, "x = 1", None)] and not dropped
 
 
 def test_a_short_quote_elsewhere_in_the_file_is_no_duplicate() -> None:

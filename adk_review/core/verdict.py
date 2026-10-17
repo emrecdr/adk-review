@@ -21,8 +21,10 @@ EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_DEGRADED = 0, 1, 2, 3
 EXIT_INTERRUPTED = 130
 #: And for one a job stopped: 128 and SIGTERM's 15.
 EXIT_TERMINATED = 143
-#: Where the diff places a finding: its first and last line, None when a line is not known.
-Lines = tuple[int | None, int | None] | None
+#: Where the diff places a finding: its first and last line, None when a line is not known. Never half known: measured
+#: by a type checker, grounding kept `(None, None)` where a redaction joined lines, and the JSON report, reading it as
+#: two numbers, raised after every model call, the review printing no report.
+Lines = tuple[int, int] | None
 
 
 @dataclass
@@ -197,7 +199,7 @@ def drop_ungrounded(
             dropped.append(finding)
             continue
         lines, stood = placed
-        update = {"file": path, "line": lines[0]}
+        update = {"file": path, "line": lines[0] if lines else None}
         if stood is not None:  # where the redaction joined lines, the model's quote is all there is
             update["evidence"] = scrub(stood)[0]
         kept.append((finding.model_copy(update=update), lines))
@@ -246,7 +248,7 @@ def _placed(
                 (first, since), (last, until) = at[start], at[end]
                 placed.append(((first, last), "\n".join(raw[1:] for _number, raw in view[since : until + 1])))
     if not placed:
-        return ((None, None), None) if joined else None
+        return (None, None) if joined else None
     # A short quote can stand in several places: measured by review, `return None` at lines 2 and 22, a guideline naming
     # 22 was placed at 2. The diff decides where a quote can stand; the guideline's line only picks among those places,
     # the first where it named none and on a tie.
@@ -257,7 +259,7 @@ def _overlaps(x: str, x_lines: Lines, y: str, y_lines: Lines) -> bool:
     """Two findings about the same lines. Where the diff places both, one's lines hold the other's: measured by
     review, folded by text alone, a minor quoting `return None` at line 2 held a blocker whose quote ends in another
     `return None` at line 6, and took it. Where either is not placed, one quote, neither empty, contains the other."""
-    if x_lines and y_lines and None not in (*x_lines, *y_lines):
+    if x_lines and y_lines:
         (a, b), (c, d) = x_lines, y_lines
         return (a <= c and d <= b) or (c <= a and b <= d)
     return bool(x and y) and (x in y or y in x)
