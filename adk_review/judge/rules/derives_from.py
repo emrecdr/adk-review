@@ -1,4 +1,4 @@
-"""The demo project's own conventions, as a project writes its own: what a class named like this derives from."""
+"""The payments project's own conventions: what a class named like this derives from."""
 
 from __future__ import annotations
 
@@ -6,9 +6,9 @@ from collections.abc import Iterator
 
 from ..rule_helpers import Tree, TreeRule, classes
 
-#: A class whose name ends with the key derives from one of the parents named, or from a class whose own name ends
-#: the same way: `LookupError` is an `Exception`, `MyModel` a `BaseModel`, an `AdminUser` a `BaseUser` through a
-#: `StaffUser`, as far as a name can say. A parent named here is its kind's base, and promises nothing of itself.
+#: A class whose name ends with the key derives from one of the parents named, or from a class whose own name
+#: promises the same kind: `LookupError` is an `Exception`, `MyModel` a `BaseModel`, an `AdminUser` a `BaseUser`
+#: through a `StaffUser`, as far as a name can say.
 PARENTS = {
     "Model": ("BaseModel",),
     "Error": ("Exception",),
@@ -22,8 +22,8 @@ PREFIXES = ("Model",)
 
 class DerivesFrom(TreeRule):
     """A name promises a kind: a `UserModel` is read and validated as a model, a `PaymentError` is caught as an
-    exception, an `AdminUser` is handed what every user is, an `OrderRepository` is used as every repository is, so
-    each must be one. Read as written, in every Python file at the head, with no import followed."""
+    exception, an `OrderRepository` is used as any repository is, so each must be one. Read as written, in every
+    Python file at the head, with no import followed."""
 
     id = "derives-from"
     severity = "major"
@@ -36,8 +36,10 @@ class DerivesFrom(TreeRule):
     )
     good = (
         {"k.py": "class PaymentError(Exception):\n    pass\n\n\nclass UserModel(pydantic.BaseModel):\n    pass\n"},
-        {"k.py": "class BaseUser:\n    pass\n\n\nclass AdminUser(BaseUser):\n    pass\n"},
-        {"k.py": "class BaseRepository(ABC):\n    pass\n\n\nclass OrderRepository(BaseRepository):\n    pass\n"},
+        {
+            "k.py": "class BaseUser:\n    pass\n\n\nclass StaffUser(BaseUser):\n    pass\n\n\n"
+            "class AdminUser(StaffUser):\n    pass\n\n\nclass OrderRepository(BaseRepository):\n    pass\n"
+        },
     )
 
     def check(self, tree: Tree) -> list[tuple[str, str]]:
@@ -52,17 +54,18 @@ def _classes_at(tree: Tree) -> Iterator[tuple[str, str, list[str]]]:
 
 
 def _promised(name: str) -> str | None:
-    """The kind a class name promises: the key it ends with, else the key among `PREFIXES` it starts with."""
+    """The kind a class name promises: the key it ends with, else the key among `PREFIXES` it starts with; none for a
+    kind's own base, which promises nothing of itself. Measured: with `User` among the kinds, `class BaseUser:` was
+    flagged for not deriving from itself."""
     ending = next((key for key in PARENTS if name.endswith(key)), None)
-    return ending or next((key for key in PARENTS if key in PREFIXES and name.startswith(key)), None)
+    key = ending or next((key for key in PARENTS if key in PREFIXES and name.startswith(key)), None)
+    return None if key is None or name in PARENTS[key] else key
 
 
 def _broken(name: str, bases: list[str]) -> str | None:
-    """What is wrong with one class, or None: its name promises a kind, it is not that kind's base, and no written
-    parent is that kind. Measured: with `User` among the kinds, `class BaseUser:` was flagged for not deriving from
-    itself."""
+    """What is wrong with one class, or None: its name promises a kind and no written parent is that kind."""
     key = _promised(name)
-    if key is None or name in PARENTS[key] or any(_is(base, key) for base in bases):
+    if key is None or any(_is(base, key) for base in bases):
         return None
     return f"class {name} derives from {', '.join(bases) or 'nothing'}, not {' or '.join(PARENTS[key])}"
 
