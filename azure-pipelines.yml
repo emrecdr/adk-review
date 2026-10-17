@@ -35,4 +35,5 @@ jobs:
       - script: uv sync --locked
       - script: uv run ruff check .
       - script: uv run ruff format --check .
+      - script: uv run pyrefly check
       - script: uv run pytest -q

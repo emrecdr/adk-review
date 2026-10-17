@@ -12,5 +12,5 @@ developer's guide, and the part of `GUIDE.md` the change touches.
 2. Make the change there and bring the docs along: `GUIDE.md` for a flag, a check, a JSON field or a limit, `README.md`
    for a module at the package's root. A new rule follows the `new-rule` skill, a new guideline `new-guideline`, and a
    run of the reviewer on a branch `review-a-branch`.
-3. Finish as the instructions say: the lint and the suite green, their real results reported, failures included; no
-   provider called and no `.env` read unless the task says so.
+3. Finish as the instructions say: the lint, the type check and the suite green, their real results reported,
+   failures included; no provider called and no `.env` read unless the task says so.

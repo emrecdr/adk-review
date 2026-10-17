@@ -1,4 +1,4 @@
-.PHONY: help sync web demo demo-repo demo-fix review copilot-login test lint format ci
+.PHONY: help sync web demo demo-repo demo-fix review copilot-login test lint typecheck format ci
 
 REPO ?=  # blank: make demo-repo builds into the temp dir; the command assumes no repository and asks for one
 BASE ?= main
@@ -16,7 +16,7 @@ help:
 	@echo "make demo-fix                                - commit the two fixes on the demo branch, then make review: exit 0"
 	@echo "make review REPO=<path> [BASE= HEAD= ARGS=]  - review a branch (HEAD defaults to feature/payments, the demo's); ARGS='--profile rules-only' calls no model"
 	@echo "make copilot-login                           - one-time GitHub device-flow login for the copilot arm"
-	@echo "make test / lint / format / ci"
+	@echo "make test / lint / typecheck / format / ci"
 
 sync:
 	uv sync --locked
@@ -46,7 +46,10 @@ test:
 lint:
 	uv run ruff check . && uv run ruff format --check .
 
+typecheck:
+	uv run pyrefly check
+
 format:
 	uv run ruff check --fix . && uv run ruff format .
 
-ci: lint test
+ci: lint typecheck test

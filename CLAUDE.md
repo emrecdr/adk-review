@@ -16,7 +16,8 @@ user's: every flag, check, JSON field and limit, held to the code by tests.
 uv sync --locked                           # install what the lock pins (make sync)
 uv run pytest -q                           # full offline suite, no key needed (make test)
 uv run pytest -q tests/test_rules.py       # one file
-uv run ruff check . && uv run ruff format --check .   # lint (make lint); `make format` fixes; `make ci` = lint + test
+uv run ruff check . && uv run ruff format --check .   # lint (make lint); `make format` fixes
+uv run pyrefly check                                  # types: the package and scripts, no error (make typecheck); `make ci` = lint + typecheck + test
 
 uv run python scripts/make_demo_repo.py          # build <tmp>/adk-demo-repo: main + feature/payments with 4 planted defects
 uv run python scripts/make_demo_repo.py --fix    # commit the two fixes on feature/payments
@@ -170,9 +171,9 @@ Conventions:
   more than one module uses is spelled once, in `judge/agents.py`; a check's key is its id through `state_key`.
 - Every `subprocess.run` that decodes passes `encoding=`; no source under `adk_review/` or `scripts/` spells `/tmp/`
   (use `tempfile.gettempdir()`). Every file a script or a fixture commits is written with `newline="\n"`, a `.env`
-  that is not UTF-8 is a sentence and exit 2, and `.github/workflows/ci.yml` and `azure-pipelines.yml` run lint and
-  the suite on Windows, Linux and macOS. Every action a workflow uses is pinned by its full commit SHA, the same
-  commit in every workflow (`tests/test_copilot.py`).
+  that is not UTF-8 is a sentence and exit 2, and `.github/workflows/ci.yml` and `azure-pipelines.yml` run lint,
+  the type check and the suite on Windows, Linux and macOS. Every action a workflow uses is pinned by its full commit
+  SHA, the same commit in every workflow (`tests/test_copilot.py`).
 
 ## Tests
 

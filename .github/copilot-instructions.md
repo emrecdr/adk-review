@@ -12,9 +12,10 @@ Path-specific rules sit in `.github/instructions/`, the recurring tasks in `.git
 
 ## Commands
 
-- `uv sync` installs. `uv run ruff check . && uv run ruff format --check .` lints (`make lint`); `uv run pytest -q`
-  runs the whole offline suite, no key needed (`make test`; `make ci` is both). Run both before calling anything done,
-  and report what they printed.
+- `uv sync` installs. `uv run ruff check . && uv run ruff format --check .` lints (`make lint`); `uv run pyrefly check`
+  checks the types of the package and the scripts, held to no error (`make typecheck`); `uv run pytest -q` runs the
+  whole offline suite, no key needed (`make test`; `make ci` is all three). Run all three before calling anything
+  done, and report what they printed.
 - `uv run python scripts/make_demo_repo.py` builds the demo repository with its planted defects (`--fix` commits its
   two fixes); `uv run adk-review <demo repo> --head feature/payments --base main --profile rules-only` reviews it with
   no model call, and `--check rule.<name>`, `--dry-run` and `--list-checks` make none either. Every other review or
@@ -61,9 +62,9 @@ system's store; keep that line where it is.
 ## Style
 
 Ruff, line length 120, Python 3.13. Comments and docstrings are plain prose that says why; commit subjects are
-plain-prose sentences stating what changed and what was learned. A pull request comes with lint and the suite green
-on the three platforms CI runs (`.github/workflows/ci.yml`, `azure-pipelines.yml`), and a workflow action is pinned
-by its commit SHA.
+plain-prose sentences stating what changed and what was learned. A pull request comes with lint, the type check and
+the suite green on the three platforms CI runs (`.github/workflows/ci.yml`, `azure-pipelines.yml`), and a workflow
+action is pinned by its commit SHA.
 
 ## When reviewing a pull request
 

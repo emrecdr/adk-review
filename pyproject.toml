@@ -29,7 +29,11 @@ build-backend = "hatchling.build"
 packages = ["adk_review"]
 
 [dependency-groups]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+dev = [
+    "pyrefly>=1.3.2",
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
@@ -80,6 +84,9 @@ max-complexity = 10
 "adk_review/login.py" = ["C901"]
 
 [tool.pyrefly]
+# The tests are not type checked, in `make typecheck`, CI or an editor: they hand the code partial and wrong values on
+# purpose, an entry of two keys or a severity off the scale. An editor still resolves, hovers and completes in them.
+project-excludes = ["tests/**"]
 search-path = [".", "scripts"]
 
 [tool.pyrefly.errors]
