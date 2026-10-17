@@ -10,6 +10,8 @@ from collections.abc import Iterator, Sequence
 from itertools import batched
 
 from .diff import file_added, readable
+
+# git.py's own verbs: this module was its push half, split off for its weight, and reads git as it does.
 from .git import _PLAIN, GitError, _empty_tree, _git, _git_raw, _sha, _text
 
 

@@ -20,7 +20,7 @@ from typing import Any
 
 from ..core.findings import RANK
 from ..core.guidelines import Guideline
-from ..core.profiles import NAME, chosen, expand, expanded
+from ..core.profiles import NAME, chosen, expand, expanded, nearest
 from ..core.rules import TOOLS, AnyRule, FileRule, Rule, TreeRule, raised_line
 from ..core.text import squash
 from .rule_helpers import self_test
@@ -204,7 +204,7 @@ def explained(found: Catalog, profiles: dict, check: str) -> dict:
     has."""
     one = next((c for c in (*found.rules, *found.guidelines) if c.check_id == check), None)
     if one is None:
-        raise ValueError(f"--explain names {check!r}, which no check is; known: {', '.join(found.ids())}")
+        raise ValueError(f"--explain names {check!r}, which no check is; {nearest(check, found.ids())}")
     return _described(one, running(found, profiles))
 
 

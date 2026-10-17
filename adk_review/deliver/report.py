@@ -334,16 +334,13 @@ def render_dry_run(
     return inert("\n".join(lines))  # the paths are the branch's, here as in the review
 
 
-def _beside(verdict: str, outcome: Outcome, fail_on: str) -> str:
+def _beside(outcome: Outcome, fail_on: str) -> str:
     """What the verdict line also says: the findings at the bar, counted beside a request for changes, and beside a
     degraded verdict, which outranks them. Measured before: a pipeline that let exit 3 through let a kept blocker
     through with it, and the verdict line never named it; and a request for changes gave no count at all, the
     reader scrolling the sections for it."""
     held = at_bar(outcome.kept, fail_on)
-    if not held:
-        return ""
-    count = f"{held} finding{'s' * (held != 1)} at or above `--fail-on {fail_on}`"
-    return f", and {count}" if verdict == "DEGRADED" else f", {count}"
+    return f", {held} finding{'s' * (held != 1)} at or above `--fail-on {fail_on}`" if held else ""
 
 
 def _since(identity: str, previous: Mapping[str, dict] | None) -> str | None:
@@ -393,7 +390,7 @@ def render(
         f"# Review: {what(evidence)}",
         "",
         # First, under the title: measured before, the verdict sat below the whole blast radius, a screen down.
-        f"## Verdict: {verdict}{_beside(verdict, outcome, fail_on)}",
+        f"## Verdict: {verdict}{_beside(outcome, fail_on)}",
         "",
         *header(evidence, model=model, profile=profile, off=off, unread=outcome.unread),
         "",
@@ -463,11 +460,7 @@ def _sections(
             lines.append(f"- folded into `{into}`'s finding on the same lines: {prose(f.title)} ({_where(f)})")
         lines.append("")
     if silent:
-        lines += [
-            f"### no findings from {len(silent)} check{'s' * (len(silent) != 1)}",
-            ", ".join(map(code_span, silent)),
-            "",
-        ]
+        lines += [f"### no findings from {len(silent)} check{'s' * (len(silent) != 1)}", _spans(silent), ""]
     return lines
 
 
@@ -703,7 +696,7 @@ def as_data(
     pre, whole = evidence["preflight"], evidence["whole"]
     identities = _identified(outcome.kept)
     # The added lines' numbers, kept when the rules let the lines go; a deleted or binary file has none.
-    added = {f["path"]: f.get("added_at", frozenset()) for f in evidence["files"]}
+    added = {f["path"]: f["added_at"] for f in evidence["files"]}
     return {
         "schema": SCHEMA,
         "verdict": verdict,

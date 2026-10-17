@@ -12,7 +12,7 @@ import inspect
 from collections.abc import Mapping
 from pathlib import Path
 
-from ...core.evidence import Entry
+from ...core.evidence import Entry, entry
 from ...core.rules import AnyRule, Example, Hit, Tree, TreeRule, UnreadError
 from ...core.text import lines_of
 
@@ -24,25 +24,9 @@ def as_change(files: Mapping[str, str]) -> tuple[list[Entry], Tree]:
     """`files`, each a path and its text, as the collector would hand them to the rules: a change that adds every
     line of every file, each entry whole as `core/evidence.py` spells one, and the head that holds these files and
     nothing else."""
-    entries: list[Entry] = []
-    for path, text in files.items():
-        added = list(enumerate(lines_of(text), 1))
-        at = frozenset(number for number, _line in added)
-        entries.append(
-            {
-                "path": path,
-                "status": "A",
-                "diff": None,
-                "added": added,
-                "added_at": at,
-                "quotable": [],
-                "framing": [],
-                "unread": "",
-                "cut": False,
-                "text": text,
-                "unread_text": None,
-            }
-        )
+    entries: list[Entry] = [
+        entry(path, "A", None, list(enumerate(lines_of(text), 1)), text=text) for path, text in files.items()
+    ]
     return entries, Tree(files, {path: text for path, text in files.items() if path.endswith(".py")})
 
 

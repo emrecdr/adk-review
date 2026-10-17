@@ -10,7 +10,7 @@ key. The node writes the blast radius the guidelines read too, in both shapes, f
 names the ruff codes it reads is given ruff's diagnostics first, gathered by `collect/ruff.py` over the texts the
 collector read. The rules run off the event loop, since ruff and git are processes, and the node never raises:
 measured, a node that raises ends the whole run, every guideline with it. Once the rules have read it, the node lets
-go of what no one reads after them — the tree, each file's text, diff and added lines — before the model calls:
+go of what no one reads after them — the tree, each file's text, diff, added and shown lines — before the model calls:
 measured, the tree weighs about thirty times the source's bytes, and under `--all` the diffs and added lines four
 times the texts.
 """
@@ -40,8 +40,9 @@ DID_NOT_LOOK = ", so the rule did not look"
 
 
 def unspent(ceiling: int | None) -> dict:
-    """The spend of a review that called no model, as the usage ledger would sum it: every count zero, the ceiling as
-    asked. One shape for both reports, whether the engine ran or the rules alone."""
+    """The spend of a review that called no model: the shape `UsageLedger.summary` in `plugins.py` gives, every count
+    zero, the ceiling as asked. Spelled here, where the rules run with no engine imported, because `plugins.py`
+    imports it and the driver reads this module without it; a change to one is a change to both."""
     return {"calls": 0, "attempted": 0, "tokens": 0, "ceiling": ceiling, "by_agent": {}}
 
 
@@ -89,10 +90,11 @@ def _gather(resolved: dict | None, gathered: Callable[[dict], Evidence]) -> Evid
 
 
 def _release(evidence: Evidence) -> None:
-    """What the rules alone read, let go of before the model calls: the tree, and each file's text, diff and added
-    lines. The command holds the same dict for the report, which reads of these only the added lines' numbers, kept
-    apart as `added_at`: measured, the JSON read the lines after they were gone, and no finding of a real review stood
-    on an added line. Runs after a failure too, over whatever shape the evidence had."""
+    """What the rules alone read, let go of before the model calls: the tree, and each file's text, diff, added
+    lines, and the lines shown of one not read whole. The command holds the same dict for the report, which reads of
+    these only the added lines' numbers, kept apart as `added_at`: measured, the JSON read the lines after they were
+    gone, and no finding of a real review stood on an added line. Runs after a failure too, over whatever shape the
+    evidence had."""
     evidence["tree"] = None
     for entry in evidence.get("files", ()):
         entry["text"] = entry["added"] = entry["diff"] = entry["shown"] = None

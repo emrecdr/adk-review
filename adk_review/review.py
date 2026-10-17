@@ -43,7 +43,8 @@ the steps:
    at a terminal; a pipeline that names none is a usage error.
 8. The rules as a node (`judge/checks.py`): every rule runs in one
    `FunctionNode` before the guidelines, in this graph and in chat's, its
-   answer left in state as each guideline's is.
+   answer left in state as each guideline's is; a profile with no guideline
+   runs them straight from here, as `--try` does, the engine never imported.
 9. Reports beside the text one, under its safety rules: JSON for a pipeline
    (`--json FILE`) and a hand-off for a coding agent (`--handoff FILE`), both
    written whenever a review is decided, so never on exit 2.
@@ -149,6 +150,8 @@ def setting(key: str) -> Callable[[str], int]:
 
 #: Where a review's results go, which no result depends on: left out of what keys a kept review.
 OUTPUTS = {"json", "handoff", "cache", "record", "trace", "debug_log", "progress"}
+#: The engine's own outputs, by dest: a review with no guideline still runs the engine where one is asked for.
+ENGINE = ("trace", "debug_log", "record")
 #: The modes besides a review, by their flags' dests: each stops before a review would start.
 MODES = {"dry_run": "--dry-run", "list_checks": "--list-checks", "try_paths": "--try", "explain": "--explain"}
 #: What only a review reads, by dest: what it writes, keeps, records and compares against.
@@ -634,7 +637,7 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
             )
         )
         return EXIT_CLEAN
-    return _decided(args, chosen, evidence, shown, guidelines, verify, previous, say)
+    return _decided(args, chosen, evidence, shown, previous, say)
 
 
 def _arm(verify: bool) -> tuple[str | None, str]:
@@ -654,8 +657,6 @@ def _decided(
     chosen: Selection,
     evidence: Evidence,
     shown: dict,
-    guidelines: tuple[str, ...],
-    verify: bool,
     previous: Previous,
     say: Callable[[str], None] | None,
 ) -> int:
@@ -667,12 +668,12 @@ def _decided(
         return _delivered(args, hit["report"], hit["handoff"], hit["data"], hit["code"])
     # Under --all the files are the project: its measures, read before the checks node lets the texts and tree go.
     health = measured(evidence["files"], evidence["tree"]) if evidence["whole"] else None
-    engine = bool(guidelines) or any((args.trace, args.debug_log, args.record))
-    judged = _judged(args, evidence, chosen, guidelines, verify, say) if engine else _ruled(args, evidence, chosen)
+    engine = bool(chosen.guidelines) or any(getattr(args, flag) for flag in ENGINE)
+    judged = _judged(args, chosen, evidence, say) if engine else _ruled(args, chosen, evidence)
     return _reported(args, evidence, *judged, shown, previous, health, cached)
 
 
-def _ruled(args: argparse.Namespace, evidence: Evidence, chosen: Selection) -> tuple[Outcome, dict, dict[str, float]]:
+def _ruled(args: argparse.Namespace, chosen: Selection, evidence: Evidence) -> tuple[Outcome, dict, dict[str, float]]:
     """A profile with no guideline: every rule run as `--try` runs them, no engine imported, no model to name, nothing
     spent, and no agent timed, as the report says of such a review either way."""
     rules, holes = from_rules(run_rules(evidence, chosen.rules))
@@ -682,12 +683,7 @@ def _ruled(args: argparse.Namespace, evidence: Evidence, chosen: Selection) -> t
 
 
 def _judged(
-    args: argparse.Namespace,
-    evidence: Evidence,
-    chosen: Selection,
-    guidelines: tuple[str, ...],
-    verify: bool,
-    say: Callable[[str], None] | None,
+    args: argparse.Namespace, chosen: Selection, evidence: Evidence, say: Callable[[str], None] | None
 ) -> tuple[Outcome, dict, dict[str, float]]:
     """The rules, then the guidelines, over a session that starts with the change they read, in no event a log could
     carry; every guideline finishes, whatever one of them does; then the second opinion and the fold. The checks node
@@ -705,6 +701,8 @@ def _judged(
     from .judge.run import read_checks, read_guidelines, run_seeded
     from .judge.verify import second_opinion
 
+    guidelines = tuple(guideline.check_id for guideline in chosen.guidelines)
+    verify = args.verify and bool(guidelines)  # the verifier has no guideline finding to judge without one
     app = build_app(
         chat=False,
         checks=chosen,
@@ -806,7 +804,7 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
     the checks and every setting, each model a call would go to, and each outside tool a rule runs. A missing input
     would serve a stale approval."""
     from .collect.tools import IDENTITIES
-    from .judge.config import fallback_name
+    from .judge.settings import fallback_name
 
     digest = hashlib.sha256()
     tools = sorted({getattr(rule, "tool", None) for rule in chosen.rules} - {None})

@@ -4,7 +4,9 @@ REPO ?=  # blank: make demo-repo builds into the temp dir; the command assumes n
 BASE ?= main
 HEAD ?= feature/payments
 # Where `make demo` builds the demo repository: the script's own default, adk-demo-repo in the temp folder.
-DEMO ?= $(shell uv run python -c "import os, tempfile; print(os.path.join(tempfile.gettempdir(), 'adk-demo-repo'))")
+ifndef DEMO
+DEMO := $(shell uv run python -c "import os, tempfile; print(os.path.join(tempfile.gettempdir(), 'adk-demo-repo'))")
+endif
 
 help:
 	@echo "make sync                                    - install (uv)"

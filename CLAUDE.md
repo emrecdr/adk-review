@@ -62,8 +62,9 @@ google-genai itself, never a copy of its rules, and on the Gemini arm refuses a 
 (`gpt-*`, `claude-*`). Both arms are first-class: a change works, is tested and is measured live on each, and
 `copilot` is only the default. `adk_review/judge/config.py` injects `truststore` before any client
 is built, so certificates are verified through the operating system's store (a company proxy's root the machine
-trusts, Python trusts too), with `SSL_CERT_FILE` still read where set; the login, `adk_review/login.py`, imports it and
-reads the `GITHUB_COPILOT_*` endpoints from `.env`. The shell wins over `.env` at every entry point: ADK 2.9.2 restores
+trusts, Python trusts too), with `SSL_CERT_FILE` still read where set; the login, `adk_review/login.py`, does the same
+and reads the `GITHUB_COPILOT_*` endpoints from `.env`. `adk_review/judge/settings.py` reads the environment and builds
+nothing, so a rules-only review's cache key and the login import no engine. The shell wins over `.env` at every entry point: ADK 2.9.2 restores
 the variables set before it loads the file, and the command loads it without overriding. The report names the model,
 the arm that ran, and Vertex AI or a GitHub Enterprise tenant's host where the arm goes through one. Never read,
 print or quote `.env`, a key or the Copilot token.
@@ -120,8 +121,8 @@ Load-bearing rules the tests enforce:
   without them; a profile with no guideline runs the rules as `--try` does and imports none of them either, unless
   `--trace`, `--debug-log` or `--record`, the engine's own flags, asks for its run; a test runs those modes and such a
   review with `google` unimportable.
-- **Providers.** `judge/config.py` is the only file that names a provider: Gemini is a plain model string, Copilot is
-  `LiteLlm("github_copilot/…")`. Every change must work on both arms. Judging agents run at temperature zero; a model
+- **Providers.** `judge/config.py` is the only file that builds a provider's model: Gemini is a plain model string,
+  Copilot is `LiteLlm("github_copilot/…")`; `judge/settings.py` only reads which arm and which names the environment sets. Every change must work on both arms. Judging agents run at temperature zero; a model
   that cannot, Copilot's `gpt-5` or o-series as LiteLLM says offline, is refused by `require_ready`, exit 2. Copilot
   is sent the instruction as its system turn (`litellm.disable_copilot_system_to_assistant`), as Gemini reads it.
 - **Shape.** `agent.py` exports both `app` and `root_agent` (the loader prefers `app`, and a bare `root_agent` would

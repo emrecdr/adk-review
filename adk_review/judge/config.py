@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import re
-from pathlib import Path
 from types import ModuleType
 from urllib.parse import urlsplit
 
@@ -27,13 +26,14 @@ from google.adk.utils.env_utils import is_enterprise_mode_enabled
 from google.auth.exceptions import GoogleAuthError
 from google.genai import types
 
+from .settings import DEFAULTS, copilot_dir, copilot_token, fallback_name, model_name, model_var, provider
+
 # Certificates are verified through the operating system's own store, as a browser does, before any client is
 # built. Measured on a company Windows machine: its proxy re-signed HTTPS with a root the machine trusted and
 # Python's bundled list did not, so the Copilot login failed, and every token refresh would have. `SSL_CERT_FILE`
 # still names a bundle where one is set.
 truststore.inject_into_ssl()
 
-DEFAULTS = {"gemini": "gemini-2.5-flash", "copilot": "gpt-4.1"}
 #: The Copilot arm's provider, as LiteLLM names it.
 COPILOT = "github_copilot"
 
@@ -66,34 +66,6 @@ RUN_DEADLINE_S = 600.0
 CONCURRENCY = 3
 
 
-def provider() -> str:
-    """The arm `REVIEW_PROVIDER` names, validated once for every function below.
-
-    Validated here and nowhere else: three functions read the variable, and
-    when each read it for itself a typo in the central `.env` surfaced as a
-    `ValueError` from whichever ran first — at import, before argparse.
-    """
-    arm = os.environ.get("REVIEW_PROVIDER", "").strip().lower() or "copilot"
-    if arm not in DEFAULTS:
-        raise ValueError(f"REVIEW_PROVIDER must be one of {sorted(DEFAULTS)}, not {arm!r}")
-    return arm
-
-
-def model_var(role: str = "") -> str:
-    """The variable naming a role's model: its own `REVIEW_<ROLE>_MODEL` when set, else everyone's `REVIEW_MODEL`:
-    the verifier's role is `verifier`, so `REVIEW_VERIFIER_MODEL` gives `--verify` a model of its own."""
-    own = f"REVIEW_{role.upper()}_MODEL"
-    return own if role and os.environ.get(own, "").strip() else "REVIEW_MODEL"
-
-
-def model_name(role: str = "") -> str:
-    """The model a role runs on: what its variable names, else the arm's default.
-
-    The model is chosen per agent, so a role may run on a stricter or a cheaper one; the verifier does.
-    """
-    return os.environ.get(model_var(role), "").strip() or DEFAULTS[provider()]
-
-
 def serving() -> str:
     """What a run's model calls go to, for the report and the cache's key: the model, its arm, and where the
     environment sends the arm past its own default — Vertex AI for Gemini, a GitHub Enterprise tenant's endpoint for
@@ -116,17 +88,12 @@ def _copilot_api() -> str:
     endpoint its cached API key was issued for, else `GITHUB_COPILOT_API_BASE`. Traced in its source by review: read
     from the variable alone, the report could name a host the calls never reached, and named none for a tenant whose
     key named its own. Of that file, which holds the key, only `endpoints.api` is read, and nothing else of it kept."""
-    issued = _copilot_dir() / os.environ.get("GITHUB_COPILOT_API_KEY_FILE", "api-key.json")
+    issued = copilot_dir() / os.environ.get("GITHUB_COPILOT_API_KEY_FILE", "api-key.json")
     try:
         endpoint = json.loads(issued.read_text(encoding="utf-8"))["endpoints"]["api"]
     except (OSError, ValueError, KeyError, TypeError):  # none issued yet, or of another shape: LiteLLM reads on too
         endpoint = ""
     return str(endpoint or os.environ.get("GITHUB_COPILOT_API_BASE", "")).strip()
-
-
-def fallback_name() -> str:
-    """The model `REVIEW_FALLBACK_MODEL` names, to stand behind every role's model; blank means none."""
-    return os.environ.get("REVIEW_FALLBACK_MODEL", "").strip()
 
 
 def served(roles: tuple[str, ...]) -> str:
@@ -207,20 +174,6 @@ def request_config(thinking_budget: int | None = None) -> types.GenerateContentC
             retry_options=types.HttpRetryOptions(attempts=RETRY_ATTEMPTS if gemini else 1, initial_delay=1.0),
         ),
     )
-
-
-def copilot_token() -> Path:
-    """Where LiteLLM caches the Copilot device-flow token.
-
-    The login, `login.py` at the package root, imports this: one spelling of the
-    path, and the system's certificate store put into `ssl` on the way.
-    """
-    return _copilot_dir() / os.environ.get("GITHUB_COPILOT_ACCESS_TOKEN_FILE", "access-token")
-
-
-def _copilot_dir() -> Path:
-    """LiteLLM's Copilot folder, where the login keeps its token and LiteLLM the API key it is issued."""
-    return Path(os.environ.get("GITHUB_COPILOT_TOKEN_DIR", "~/.config/litellm/github_copilot")).expanduser()
 
 
 def require_ready(*, roles: tuple[str, ...] = ()) -> str | None:

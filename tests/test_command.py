@@ -662,11 +662,11 @@ class TestTheJsonReport:
 
         outcome = Outcome(kept=[held("blocker"), held("major")], errors={"rule.lint": "ruff exited 2"})
         assert decide(outcome, "blocker") == ("DEGRADED", 3)
-        assert _beside("DEGRADED", outcome, "blocker") == ", and 1 finding at or above `--fail-on blocker`"
-        assert _beside("DEGRADED", outcome, "major") == ", and 2 findings at or above `--fail-on major`"
-        assert _beside("REQUEST_CHANGES", outcome, "blocker") == ", 1 finding at or above `--fail-on blocker`"
-        assert _beside("APPROVED", Outcome(), "blocker") == ""
-        assert _beside("DEGRADED", Outcome(errors={"rule.lint": "x"}), "blocker") == ""
+        assert _beside(outcome, "blocker") == ", 1 finding at or above `--fail-on blocker`"
+        assert _beside(outcome, "major") == ", 2 findings at or above `--fail-on major`"
+        assert _beside(outcome, "blocker") == ", 1 finding at or above `--fail-on blocker`"
+        assert _beside(Outcome(), "blocker") == ""
+        assert _beside(Outcome(errors={"rule.lint": "x"}), "blocker") == ""
         data = as_json(outcome, [{"path": "a.py"}], verdict="DEGRADED", code=3, checks=("rule.secrets",))
         assert data["findings_at_fail_on"] == 1 and data["schema"] == 2
 

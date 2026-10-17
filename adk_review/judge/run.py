@@ -1,5 +1,5 @@
-"""One seeded run through ADK's engine, guarded, and what it left in state read back: what the guidelines' graph and
-the verifiers' share.
+"""One seeded run through ADK's engine, guarded, which the guidelines' graph and the verifiers' share; and the
+command's reading back of what the guidelines' run left in state.
 
 A session is created with the state the agents' instructions read, one user
 message starts the run, every event is drained, and the state is read back

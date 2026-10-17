@@ -132,9 +132,8 @@ def test_the_reviewer_and_the_login_trust_the_operating_systems_certificates(mon
     import truststore
     from conftest import load_agent
 
-    config, login = (ROOT / "adk_review" / name for name in (Path("judge") / "config.py", Path("login.py")))
-    assert "truststore.inject_into_ssl()" in config.read_text(encoding="utf-8")
-    assert "from .judge.config import" in login.read_text(encoding="utf-8"), "the login takes it from there"
+    for path in (ROOT / "adk_review" / "judge" / "config.py", ROOT / "adk_review" / "login.py"):
+        assert "truststore.inject_into_ssl()" in path.read_text(encoding="utf-8"), path.relative_to(ROOT)
     load_agent(monkeypatch)
     assert ssl.SSLContext is truststore.SSLContext, "importing the package puts the system store into ssl"
 
@@ -402,7 +401,8 @@ def test_the_copilot_login_is_a_command_of_the_install(monkeypatch, tmp_path: Pa
     import tomllib
 
     from adk_review import login
-    from adk_review.judge.config import copilot_token, require_ready
+    from adk_review.judge.config import require_ready
+    from adk_review.judge.settings import copilot_token
 
     scripts = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["scripts"]
     assert scripts["adk-review-login"] == "adk_review.login:run" and callable(login.run)

@@ -31,8 +31,9 @@ Path-specific rules sit in `.github/instructions/`, the recurring tasks in `.git
 - The docs are tested (`tests/test_docs.py`): every guide names only paths the working tree has, `README.md` names each
   module at the package's root, and `GUIDE.md` holds every flag, check, JSON field and limit as the code has them.
 - `root_agent.name` equals the folder name, `adk_review`. Never name a sub-package module `agent.py`: ADK's nested
-  loader would take it for an agent. `adk_review/judge/config.py` is the only file that names a provider (Gemini a
-  plain model string, Copilot `LiteLlm("github_copilot/…")`). Both arms are first-class: every change works, is
+  loader would take it for an agent. `adk_review/judge/config.py` is the only file that builds a provider's model
+  (Gemini a plain model string, Copilot `LiteLlm("github_copilot/…")`); `adk_review/judge/settings.py` only reads the
+  environment. Both arms are first-class: every change works, is
   tested and is measured live on each, `copilot` being only the default; and judging agents run at temperature zero,
   a model that cannot being refused before any call.
 - A provider error is the agent's own answer, and so is a reply that does not fit its schema (`SCHEMA_MISMATCH`); "did

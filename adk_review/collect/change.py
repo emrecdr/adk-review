@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from ..core.blast import Blast, blast_radius
-from ..core.evidence import Entry
+from ..core.evidence import Entry, entry
 from ..core.paths import matches
 from ..core.rules import Tree
 from .diff import BINARY, SUBMODULE, added_lines, capped, framed, headers, quotable
@@ -68,36 +68,24 @@ def shown_to_guidelines(
     files: list[Entry] = []
     blocks: list[str] = []
     room, left_out, excluded = BLOCK_CAP_CHARS, 0, {}
-    for entry, diff in zip(entries, diffs, strict=True):
-        added = added_lines(diff)
-        # The added lines' numbers too, which the report reads after the rules have let the lines go.
-        at = frozenset(number for number, _text in added)
-        file: Entry = {
-            **entry,
-            "diff": diff,
-            "added": added,
-            "added_at": at,
-            "quotable": [],
-            "framing": [],
-            "unread": "",
-            "cut": False,
-        }
+    for listed, diff in zip(entries, diffs, strict=True):
+        file = entry(listed["path"], listed["status"], diff, added_lines(diff), old=listed.get("old"))
         files.append(file)
         # A file the operator's skip list names: the rules read it as any other, the guidelines are not shown it,
         # and it is named and counted, never a hole. The operator chose it, in the tool's own config: a branch
         # cannot, and code it hides behind such a name is still every rule's to read. Never a submodule, which the
         # branch names as it likes and no rule reads: measured by review, one named `logo.png` was approved.
-        if (glob := _skipped(entry["path"], skip)) and not SUBMODULE.search(headers(diff)):
-            excluded[entry["path"]] = glob
+        if (glob := _skipped(file["path"], skip)) and not SUBMODULE.search(headers(diff)):
+            excluded[file["path"]] = glob
             continue
         if not shown:  # the rules read every added line: what no one can read is all `unread` still names
-            file["unread"] = unread(entry, diff, cut=False, fits=True, cap=diff_cap)
+            file["unread"] = unread(file, diff, cut=False, fits=True, cap=diff_cap)
             continue
         view, cut = capped(diff, diff_cap)
-        block, framing = framed(entry["path"], view)
+        block, framing = framed(file["path"], view)
         fits = len(block) <= room
         # The guidelines' limits alone: the rules read every added line.
-        file.update(unread=unread(entry, diff, cut, fits, diff_cap), cut=cut or not fits)
+        file.update(unread=unread(file, diff, cut, fits, diff_cap), cut=cut or not fits)
         if fits:  # a file no guideline read, none may quote
             file.update(quotable=quotable(view), framing=framing)
             blocks.append(block)

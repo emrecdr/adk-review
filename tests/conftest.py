@@ -276,8 +276,11 @@ def as_json(outcome, files=(), **said) -> dict:
     """The JSON report of `outcome` over a review of `h` against `b` that touched `files`: what a test of the
     report varies is the outcome, the files and a setting or two, each given as `as_data` names it."""
     as_data = importlib.import_module("adk_review.deliver.report").as_data
+    entry = importlib.import_module("adk_review.core.evidence").entry
     pre = {"repo": "r", "head": "h", "head_sha": "0" * 40, "base": "b", "base_sha": "1" * 40, "merge_base": "2" * 40}
-    evidence = {"preflight": pre, "whole": False, "scope": (), "files": list(files)}
+    # Each file whole, as the collector hands one over, with what the test gives laid over it.
+    whole = [{**entry(f["path"], f.get("status", "M"), f.get("diff"), f.get("added", [])), **f} for f in files]
+    evidence = {"preflight": pre, "whole": False, "scope": (), "files": whole}
     shown = {"verdict": "APPROVED", "code": 0, "usage": {}, "fail_on": "blocker", "model": "", "profile": "default"}
     return as_data(evidence, outcome, **{**shown, "off": (), "checks": (), **said})
 

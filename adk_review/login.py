@@ -20,11 +20,15 @@ import sys
 import time
 from pathlib import Path
 
+import truststore
 from dotenv import dotenv_values
 
-# The token's path as the reviewer reads it, one spelling for both; and importing it puts the operating system's
-# certificate store into `ssl` before any request, as the reviewer does before any client is built.
-from .judge.config import copilot_token as token_path
+# The token's path as the reviewer reads it, one spelling for both, from the module that reads the environment and
+# builds nothing: the engine is not imported for a one-time login.
+from .judge.settings import copilot_token as token_path
+
+# Certificates through the operating system's store, as the reviewer verifies them (see `judge/config.py`).
+truststore.inject_into_ssl()
 
 ROOT = Path(__file__).resolve().parents[1]
 

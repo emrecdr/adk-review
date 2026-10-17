@@ -31,8 +31,40 @@ class Entry(TypedDict):
     cut: bool  # whether the guidelines' view of it is cut: at the diff cap, or past the block's
     text: str | None  # its text at the head, for the file rules; None where not read, or once let go
     unread_text: str | None  # why its text was not read whole, a hole for a rule that reads it whole; None otherwise
-    shown: NotRequired[dict[int, str] | None]  # the lines its diff shows, by number, where its text was not read
+    shown: NotRequired[
+        dict[int, str] | None
+    ]  # the lines its diff shows, by number, where its text was not read; None once let go
     diagnostics: NotRequired["Sequence[Diagnostic]"]  # an outside tool's, on the copy a rule naming the tool reads
+
+
+def entry(
+    path: str,
+    status: str,
+    diff: str | None,
+    added: list[tuple[int, str]],
+    *,
+    old: str | None = None,
+    text: str | None = None,
+) -> Entry:
+    """One changed file as it first stands, before the guidelines' view and the head's text are added: every key
+    spelled once, `added_at` derived once. Measured before it was spelled: the collector and `--try` each built the
+    dict by hand, and a key added to one went missing from the other."""
+    made: Entry = {
+        "path": path,
+        "status": status,
+        "diff": diff,
+        "added": added,
+        "added_at": frozenset(number for number, _text in added),
+        "quotable": [],
+        "framing": [],
+        "unread": "",
+        "cut": False,
+        "text": text,
+        "unread_text": None,
+    }
+    if old is not None:
+        made["old"] = old
+    return made
 
 
 class Evidence(TypedDict):

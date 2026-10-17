@@ -15,7 +15,7 @@ import asyncio
 import hashlib
 import json
 import time
-from collections.abc import Callable, Iterable, Iterator, Mapping
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any, override
 
@@ -29,7 +29,6 @@ from pydantic import BaseModel, ValidationError
 from ..core.secrets import scrub, scrub_value
 from ..core.text import REASON_MAX_CHARS, cut_at, squash
 from .agents import BOUNDARY, FAILURE, mismatch
-from .checks import unspent
 from .config import REQUEST_TIMEOUT_S, require_ready, said
 
 #: Room reserved for an answer on top of a request's own size, in tokens; a guideline's typed review is well under it.
@@ -389,10 +388,10 @@ class UsageLedger(BasePlugin):
         the name the report uses, a check's id for its agent, since ADK names an agent by an identifier and the report
         by an id."""
         return {
-            **unspent(self.ceiling),
             "calls": sum(r["calls"] for r in self.rows.values()),
             "attempted": sum(r["attempted"] for r in self.rows.values()),
             "tokens": self.spent,
+            "ceiling": self.ceiling,
             "by_agent": {self.named.get(name, name): dict(row) for name, row in sorted(self.rows.items())},
         }
 
@@ -402,10 +401,9 @@ def held[P: BasePlugin](plugins: Iterable[BasePlugin], kind: type[P]) -> P:
     return next(plugin for plugin in plugins if isinstance(plugin, kind))
 
 
-def accounted(plugins: Iterable[BasePlugin]) -> tuple[int, dict, dict[str, float]]:
+def accounted(plugins: Sequence[BasePlugin]) -> tuple[int, dict, dict[str, float]]:
     """What the run's plugins counted, for the reports: the requests redaction touched, the spend, and each agent's
     seconds. Read once the run and its second opinion are over, whose calls the same plugins scrub and count."""
-    plugins = list(plugins)
     return (
         held(plugins, RedactSecretsPlugin).redacted,
         held(plugins, UsageLedger).summary(),

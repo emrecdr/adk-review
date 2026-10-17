@@ -235,10 +235,11 @@ def test_a_review_with_no_guideline_runs_with_the_engine_absent(demo_repo: Path,
     `--try` runs them, and the report reads the same. Measured, best of three by the installed command: the demo's
     rules-only review took 0.87 to 0.94 s, of which 0.41 s imported the judge's engine to run a graph holding no
     agent, and the pre-push hook, whose profile is `default-rules`, paid it on every push. A fresh interpreter makes
-    `google` unimportable and reviews the demo branch; `--trace`, `--debug-log` and `--record` are the engine's own
-    and still bring it."""
-    out = tmp_path / "review.json"
+    `google` unimportable and reviews the demo branch, `--cache` on, whose key once cost 0.24 s of engine import for
+    the fallback model's name; `--trace`, `--debug-log` and `--record` are the engine's own and still bring it."""
+    out, cache = tmp_path / "review.json", tmp_path / "cache"
     argv = [str(demo_repo), "--head", HEAD, "--base", BASE, "--profile", "rules-only", "--json", str(out)]
+    argv += ["--cache", str(cache)]  # measured: the cache's key once imported the engine for one variable's name
     probe = (
         "import contextlib, io, sys\n"
         "sys.modules['google'] = None  # an import of it raises, as it does when ADK is not installed\n"
@@ -275,3 +276,18 @@ def test_every_key_the_evidence_carries_is_spelled_once_in_core(demo_repo: Path)
     spelled, required = set(Entry.__annotations__), Entry.__required_keys__
     for entry in evidence["files"]:
         assert required <= set(entry) <= spelled, (entry["path"], set(entry) ^ spelled)
+
+
+def test_the_login_starts_without_the_engine() -> None:
+    """`adk-review-login` is a one-time command that reads two variables and talks to GitHub: measured, importing the
+    judge's config for the token's path cost it 0.27 s of ADK and google-genai, a start of 0.32 s against 0.05 s. The
+    environment's readers live apart from what is built from them, and the login imports those alone."""
+    probe = (
+        "import sys\n"
+        "sys.modules['google'] = None  # an import of it raises, as it does when ADK is not installed\n"
+        "import adk_review.login\n"
+        "print([m for m in sys.modules if m.startswith('google.')])\n"
+    )
+    done = subprocess.run([sys.executable, "-c", probe], cwd=ROOT, capture_output=True, encoding="utf-8", check=False)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "[]", done.stdout
