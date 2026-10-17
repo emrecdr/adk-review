@@ -1,6 +1,7 @@
 """One-time GitHub Copilot login for the reviewer.
 
-`adk-review-login`, or `uv run adk-review-login` in the checkout. Copilot is the arm with no API key. GitHub's OAuth device flow prints a URL
+`adk-review-login`, or `uv run adk-review-login` in the checkout. Copilot is the arm
+with no API key. GitHub's OAuth device flow prints a URL
 and a short code; you approve it in a browser; the token is cached on disk,
 after which the reviewer runs unattended. LiteLLM ships this flow but polls
 for only sixty seconds per code, which is shorter than walking to a browser,
