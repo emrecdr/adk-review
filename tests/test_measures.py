@@ -116,14 +116,14 @@ class TestTheBlastRadius:
         with the origin there, git fetched them into the repository under review, 4 missing objects to 0; with it
         gone, the listing failed. Fetching nothing, git lists a lacking blob's size as "BAD": the file is unread and
         counted, the rest is read, and every count is a floor, never "a leaf"."""
-        from adk_review.collect import git
+        from adk_review.collect import change, git
         from adk_review.core.blast import describe
         from adk_review.deliver.report import _blast
 
         repo = request.getfixturevalue(clone)
         missing = missing_objects(repo)
         resolved = git.preflight(str(repo), BASE, HEAD)
-        blast = git.radius_of(git.tree_at_head(resolved, git.head_listing(resolved)), git.list_changed(resolved))
+        blast = change.radius_of(git.tree_at_head(resolved, git.head_listing(resolved)), git.list_changed(resolved))
         assert blast.listed and blast.skipped and missing_objects(repo) == missing
         said = [describe(r, blast.floor) for r in blast.radii if r.measured]
         assert said and [s for s in said if "a leaf" in s] == []
@@ -289,7 +289,7 @@ class TestTheBlastRadius:
         """Measured before: `TimeoutExpired` from the listing or the batch rose out of the command as a traceback.
         And with `ls-tree`'s exit code ignored, a failed listing read as an empty tree and every changed file as "a
         leaf", so "did not look" read as "found nothing"."""
-        from adk_review.collect import git
+        from adk_review.collect import change, git
         from adk_review.deliver.report import _blast
 
         resolved = git.preflight(str(demo_repo), BASE, HEAD)
@@ -304,12 +304,12 @@ class TestTheBlastRadius:
             return times_out
 
         monkeypatch.setattr(git, "_run", only("ls-tree"))
-        unlisted = git.radius_of(git.tree_at_head(resolved, git.head_listing(resolved)), files)
+        unlisted = change.radius_of(git.tree_at_head(resolved, git.head_listing(resolved)), files)
         assert git.tree_at_head(resolved, git.head_listing(resolved)) is None and not unlisted.listed and unlisted.floor
         assert "- not read: the head's tree could not be listed; every count above is a floor" in _blast(unlisted)
         monkeypatch.setattr(git, "_run", only("cat-file"))
         tree = git.tree_at_head(resolved, git.head_listing(resolved))
-        assert list(tree.modules()) == [] and tree.unread and git.radius_of(tree, files).floor
+        assert list(tree.modules()) == [] and tree.unread and change.radius_of(tree, files).floor
 
     def test_the_report_opens_with_the_blast_radius_widest_first(self, demo_repo: Path, cli, capsys) -> None:
         assert run_review(cli, demo_repo) == 1, "the radius informs the reader; severity still decides"

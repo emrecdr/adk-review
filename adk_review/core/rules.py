@@ -29,6 +29,7 @@ from types import MappingProxyType
 from typing import ClassVar
 
 from .blast import parse, parsed
+from .evidence import Entry
 from .findings import Checked, Finding, Severity
 from .profiles import rule_id
 from .secrets import scrub
@@ -88,7 +89,7 @@ class AnyRule(ABC):
         return rule_id(self.id)
 
     @abstractmethod
-    def hits(self, files: list[dict], tree: Tree | None) -> list[Hit]:
+    def hits(self, files: list[Entry], tree: Tree | None) -> list[Hit]:
         """Each place the rule finds: on an added line, numbered from git's own hunk headers; in a changed file, at
         the line it names; or over the head, at a line where the rule knows one and else at the path. `UnreadError`
         where it could not look at what it asked for."""
@@ -103,7 +104,7 @@ class Rule(AnyRule):
     def check(self, path: str, line: str) -> bool:
         """True when `line`, added to `path`, breaks the rule."""
 
-    def hits(self, files: list[dict], tree: Tree | None) -> list[Hit]:  # noqa: ARG002 -- a line rule reads no tree
+    def hits(self, files: list[Entry], tree: Tree | None) -> list[Hit]:  # noqa: ARG002 -- a line rule reads no tree
         return [
             Hit(entry["path"], line, f"+{text}")
             for entry in files
@@ -255,7 +256,7 @@ class FileRule(AnyRule):
         the report quotes that line; `(line, what is wrong)` to say more, None for the file as a whole; or a `Hit`
         where one needs its own title, severity or fix. Empty where the rule holds."""
 
-    def hits(self, files: list[dict], tree: Tree | None) -> list[Hit]:
+    def hits(self, files: list[Entry], tree: Tree | None) -> list[Hit]:
         changed = frozenset(entry["path"] for entry in files)
         returns = "a list of line numbers, (line, what is wrong) pairs or Hits"
         found: list[Hit] = []
@@ -334,7 +335,7 @@ def _raised_at(rule: AnyRule, exc: BaseException) -> str:
     return f" ({PurePath(source).name} line {line})" if line and source else ""
 
 
-def run_rule(rule: AnyRule, files: list[dict], tree: Tree | None) -> Checked:
+def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
     """One rule over what it reads, a line rule over the lines a change added and a tree rule over the head: its
     findings, each named at its line or its path, or why it could not look — it raised, the tree was not listed, a
     file the head holds was not read whole, a hit it named badly, with a severity off the scale say. A rule that could
@@ -417,7 +418,7 @@ class TreeRule(AnyRule):
         """Each `(path, what is wrong)` the head breaks — or `(path, line, what)` where the rule knows the line, as one
         over a module's syntax tree does, or a `Hit`; empty where it holds."""
 
-    def hits(self, files: list[dict], tree: Tree | None) -> list[Hit]:  # noqa: ARG002 -- a tree rule reads no lines
+    def hits(self, files: list[Entry], tree: Tree | None) -> list[Hit]:  # noqa: ARG002 -- a tree rule reads no lines
         if tree is None:
             raise UnreadError("the tree at the head was not listed")
         returns = "a list of (path, what is wrong) pairs, (path, line, what) triples or Hits"

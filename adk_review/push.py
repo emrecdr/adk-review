@@ -37,7 +37,8 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import TextIO
 
-from .collect.git import GitError, push_scope, sent, tag_message
+from .collect.git import GitError
+from .collect.history import push_scope, sent, tag_message
 from .core.findings import Finding, at_or_above
 from .core.paths import matches
 from .core.rules import AnyRule, run_rule

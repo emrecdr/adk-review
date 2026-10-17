@@ -80,6 +80,7 @@ try:
     from dotenv import load_dotenv
 
     from .collect.git import MAX_FILE_BYTES, GitError, checked_out, collect_evidence, default_base, is_repository
+    from .core.evidence import Evidence
     from .core.findings import RANK
     from .core.health import Health, measured
     from .core.profiles import DEFAULT
@@ -641,7 +642,7 @@ def _arm(verify: bool) -> tuple[str | None, str]:
 def _decided(
     args: argparse.Namespace,
     chosen: Selection,
-    evidence: dict,
+    evidence: Evidence,
     shown: dict,
     guidelines: tuple[str, ...],
     verify: bool,
@@ -661,7 +662,7 @@ def _decided(
     return _reported(args, evidence, *judged, shown, previous, health, cached)
 
 
-def _ruled(args: argparse.Namespace, evidence: dict, chosen: Selection) -> tuple[Outcome, dict, dict[str, float]]:
+def _ruled(args: argparse.Namespace, evidence: Evidence, chosen: Selection) -> tuple[Outcome, dict, dict[str, float]]:
     """A profile with no guideline: every rule run as `--try` runs them, no engine imported, no model to name, nothing
     spent, and no agent timed, as the report says of such a review either way."""
     rules, holes = from_rules(run_rules(evidence, chosen.rules))
@@ -672,7 +673,7 @@ def _ruled(args: argparse.Namespace, evidence: dict, chosen: Selection) -> tuple
 
 def _judged(
     args: argparse.Namespace,
-    evidence: dict,
+    evidence: Evidence,
     chosen: Selection,
     guidelines: tuple[str, ...],
     verify: bool,
@@ -719,7 +720,7 @@ def _judged(
 
 def _reported(
     args: argparse.Namespace,
-    evidence: dict,
+    evidence: Evidence,
     outcome: Outcome,
     usage: dict,
     seconds: dict[str, float],
@@ -789,7 +790,7 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, data: dict, 
     return code
 
 
-def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: dict, model: str) -> Path:
+def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, model: str) -> Path:
     """Where a decided review of these inputs is kept: a file named by a hash of everything its result depends on —
     the reviewer's own code and its config, whatever their version says, the commits, what of them is covered,
     the checks and every setting, each model a call would go to, and each outside tool a rule runs. A missing input

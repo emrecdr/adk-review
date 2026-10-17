@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.blast import Blast, describe
+from ..core.evidence import Evidence
 from ..core.findings import RANK, Checked, Finding, at_or_above
 from ..core.health import Health, found_by_rule, grade
 from ..core.secrets import scrub
@@ -108,7 +109,7 @@ def _blast(blast: Blast) -> list[str]:
     return [*lines, ""]
 
 
-def render_handoff(evidence: dict, outcome: Outcome, *, verdict: str, fail_on: str) -> str:
+def render_handoff(evidence: Evidence, outcome: Outcome, *, verdict: str, fail_on: str) -> str:
     """`--handoff FILE`: each kept finding, most severe first, as a short instruction for a coding agent — where, the
     lines quoted, what to change, and what must hold afterwards — under the text report's safety rules. Concise
     comments with the code quoted lead to changes more often, as a study of review comments found. Nothing is
@@ -247,14 +248,14 @@ def _where(f: Finding) -> str:
     return prose(f"{f.file}:{f.line}" if f.line else f.file)
 
 
-def what(evidence: dict) -> str:
+def what(evidence: Evidence) -> str:
     """What was reviewed, for a title: the branch against its base, or every file at the head."""
     pre = evidence["preflight"]
     head, base = prose(pre["head"]), prose(pre["base"])  # names the branch's author chose: `<` is a legal ref letter
     return f"every file at {head}" if evidence["whole"] else f"{head} against {base}"
 
 
-def header(evidence: dict, *, model: str, profile: str, off: Sequence[str], unread: Mapping[str, str]) -> list[str]:
+def header(evidence: Evidence, *, model: str, profile: str, off: Sequence[str], unread: Mapping[str, str]) -> list[str]:
     """The lines a review opens with, a dry run too: the repository and the revisions, the model and the profile
     that serve it, what it covers, and what no one could read."""
     pre, files, scope = evidence["preflight"], evidence["files"], evidence["scope"]
@@ -304,7 +305,7 @@ def _untracked(names: Sequence[str] | None) -> list[str]:
 
 
 def render_dry_run(
-    evidence: dict,
+    evidence: Evidence,
     *,
     model: str,
     profile: str,
@@ -366,7 +367,7 @@ def _spent(usage: dict) -> str:
 
 
 def render(
-    evidence: dict,
+    evidence: Evidence,
     outcome: Outcome,
     *,
     verdict: str,
@@ -657,7 +658,7 @@ def _reasoned(judged: Sequence[tuple[Sourced, str]], added: Mapping[str, frozens
 
 
 def as_data(
-    evidence: dict,
+    evidence: Evidence,
     outcome: Outcome,
     *,
     verdict: str,

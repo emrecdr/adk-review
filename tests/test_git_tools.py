@@ -669,13 +669,13 @@ class TestWhatTheGuidelinesAreShown:
         return f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -0,0 +1,{len(added)} @@\n{body}"
 
     def test_each_file_is_shown_until_the_block_is_full_and_the_rest_named(self, monkeypatch) -> None:
-        from adk_review.collect import diff, git
+        from adk_review.collect import change, diff
 
         entries = [{"path": p, "status": "A"} for p in ("a.py", "b.py", "logo.png")]
         diffs = [self._diff("a.py", "x = 1"), self._diff("b.py", "y = 2"), self._diff("logo.png", "binary")]
         first, _ = diff.framed("a.py", diffs[0])
-        monkeypatch.setattr(git, "BLOCK_CAP_CHARS", len(first))  # room for `a.py` alone
-        files, block, excluded = git.shown_to_guidelines(entries, diffs, diff.DIFF_CAP_CHARS, ["*.png"])
+        monkeypatch.setattr(change, "BLOCK_CAP_CHARS", len(first))  # room for `a.py` alone
+        files, block, excluded = change.shown_to_guidelines(entries, diffs, diff.DIFF_CAP_CHARS, ["*.png"])
         shown, past, skipped = files
         assert shown["quotable"] and not shown["cut"] and shown["unread"] == "", shown
         assert past["quotable"] == [] and past["cut"] and past["unread"].startswith("past the"), past
@@ -687,12 +687,12 @@ class TestWhatTheGuidelinesAreShown:
     def test_with_no_guideline_no_file_is_capped_or_shown_and_what_no_one_reads_is_still_named(self) -> None:
         """Measured: the view cost 2.3 s of a 10.5 s `default-rules` review of 2,683 files, the pre-push hook's
         profile, and nothing read it. The rules read every added line, so only what no one can read is named."""
-        from adk_review.collect import git
+        from adk_review.collect import change
 
         binary = "diff --git a/logo.png b/logo.png\nBinary files /dev/null and b/logo.png differ\n"
         entries = [{"path": p, "status": "A"} for p in ("a.py", "logo.png", "vendor.png")]
         diffs = [self._diff("a.py", "x" * 50), binary, binary]
-        files, block, excluded = git.shown_to_guidelines(entries, diffs, 10, ["vendor*"], shown=False)
+        files, block, excluded = change.shown_to_guidelines(entries, diffs, 10, ["vendor*"], shown=False)
         code, image, _vendor = files
         assert code["quotable"] == [] and not code["cut"] and code["unread"] == "", "past the cap, cut for no one"
         assert image["unread"].startswith("binary"), "what no one can read is still named"

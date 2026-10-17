@@ -590,7 +590,8 @@ def test_what_a_push_sends_is_read_from_git(tmp_path) -> None:
     stopped its push; and of a merge's bases one was reviewed alone, whichever git listed first, so a merge of the
     remote's newer `main` into a branch it held was reviewed with `main`'s own changes, and a clean push stopped.
     `sent` reads each of those commits as it was made, and what it says; `tag_message`, what a pushed tag says."""
-    from adk_review.collect.git import GitError, push_scope, sent, tag_message
+    from adk_review.collect.git import GitError
+    from adk_review.collect.history import push_scope, sent, tag_message
 
     _remote, work = _pushed_from(tmp_path)
 

@@ -211,11 +211,11 @@ class TestWhatAReviewCovers:
         `--all` over 4,826 files gave each guideline and each verifier 14.9 MB of diffs and 800,272 characters of
         radius. A file past the block's cap is left out whole, named to the guidelines and to the reader, and quotable
         by none."""
-        from adk_review.collect import git
+        from adk_review.collect import change, git
         from adk_review.judge import agents
 
         first = git.collect_evidence(str(demo_repo), BASE, HEAD)["diff"].split("\n\n### ")[0]
-        monkeypatch.setattr(git, "BLOCK_CAP_CHARS", len(first))  # room for `charge.py` alone
+        monkeypatch.setattr(change, "BLOCK_CAP_CHARS", len(first))  # room for `charge.py` alone
         evidence = git.collect_evidence(str(demo_repo), BASE, HEAD)
         assert evidence["diff"] == f"{first}\n\n[… 3 more file(s) not shown: past {len(first):,} characters in all]"
         left = [f for f in evidence["files"] if f["path"] != "src/payments/charge.py"]

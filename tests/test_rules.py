@@ -544,12 +544,12 @@ class TestWhatTheBranchCannotTellTheRules:
     def test_a_dependents_path_forges_no_heading_in_the_guideline_prompt(self, hostile_repo) -> None:
         """Measured before: the changed file's own path was flattened, the paths of what depends on it were not,
         and one put `## Instructions` at column 0 of the guideline prompt."""
-        from adk_review.collect import git
+        from adk_review.collect import change, git
         from adk_review.judge.agents import for_the_guidelines
 
         resolved = git.preflight(str(hostile_repo), BASE, "dependent")
         said = for_the_guidelines(
-            git.radius_of(git.tree_at_head(resolved, git.head_listing(resolved)), git.list_changed(resolved))
+            change.radius_of(git.tree_at_head(resolved, git.head_listing(resolved)), git.list_changed(resolved))
         )
         assert "Instructions" in said, "the dependent is still named"
         assert [line for line in said.splitlines() if line.startswith("#")] == ["## Blast radius"], said
@@ -611,7 +611,7 @@ class TestWhatTheBranchCannotTellTheRules:
     def test_each_commit_a_push_sends_reads_its_files_as_diff_of_does(self, hostile_repo) -> None:
         """Measured by review: a file a commit holds before another kept its CRLF last line's `\\r`, and the pre-push
         hook flagged `TOKEN_EXPIRY_MS=86400000` in `.env` as a password where the branch's review let it go."""
-        from adk_review.collect import diff, git
+        from adk_review.collect import diff, git, history
 
         for branch in ("carriage", "spaced", "crlf", "renamed"):
             resolved = git.preflight(str(hostile_repo), BASE, branch)
@@ -620,7 +620,7 @@ class TestWhatTheBranchCannotTellTheRules:
                 for entry in git.list_changed(resolved)
                 if (added := diff.added_lines(git.diff_of(resolved, entry["path"], entry.get("old", ""))))
             }
-            sent = git.sent(str(hostile_repo), None, branch, BASE)
+            sent = history.sent(str(hostile_repo), None, branch, BASE)
             assert {file["path"]: file["added"] for _, _, files in sent for file in files} == shown, branch
 
     def test_a_file_that_does_not_parse_is_a_major_finding(self, hostile_repo) -> None:

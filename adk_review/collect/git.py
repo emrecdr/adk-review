@@ -5,8 +5,10 @@ verbs that read, decoded as UTF-8. `preflight` and `collect_evidence` answer
 as envelopes, for the driver and the tools; the helpers between them return
 bare values, for code. `collect_evidence` runs the same calls in plain Python
 so the driver can gather everything the rules and the guidelines read
-before any model is called. Nothing here knows ADK: the model-facing tools
-that wrap these live in `judge/tools.py`.
+before any model is called, the `Evidence` that `core/evidence.py` spells;
+what is decided from the diffs alone is `change.py`'s, and what a push sends,
+commit by commit, `history.py`'s. Nothing here knows ADK: the model-facing
+tools that wrap these live in `judge/tools.py`.
 """
 
 from __future__ import annotations
@@ -22,29 +24,20 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
-from ..core.blast import Blast, Radius, blast_radius
-from ..core.paths import matches
+from ..core.blast import Radius
+from ..core.evidence import Entry, Evidence
 from ..core.rules import Tree
 from ..core.text import lines_of
+from .change import no_change, radius, shown_to_guidelines
 from .diff import (
     BINARY,
     DIFF_CAP_CHARS,
-    SUBMODULE,
-    added_lines,
-    capped,
-    file_added,
-    framed,
     headers,
     hunk_lines,
-    quotable,
     readable,
 )
 
 GIT_TIMEOUT_S = 30
-#: And the block of diffs the guidelines read, in all: a file past it is left out whole, and named. Measured with none,
-#: `--all` over 4,826 files gave each guideline and each verifier 14.9 MB; this repository's whole project, 275,688
-#: characters, was 80,000 tokens a guideline, answered on Copilot; the planted branch is 2,205.
-BLOCK_CAP_CHARS = 250_000
 #: The tree the blast radius reads is bounded, and what is not read is counted: over a partial tree a count is a
 #: floor, and says so. Measured at 80 to 142 ms a megabyte to parse and resolve (ADK's 6.3 MB, LiteLLM's 32.3);
 #: a file cap alone let a branch of 5,000 one-megabyte files in. The largest real file seen was 0.8 MB.
@@ -335,109 +328,6 @@ def default_base(repo: str) -> str | None:
     return remote if named else None
 
 
-def push_scope(repo: str, remote: str | None, head: str, held: str | None) -> tuple[str, list[str]] | None:
-    """What a push of `head` asks a review of, as git answers it: the commit pushed, and the commits the remote holds
-    that its new ones grow from, their bases, none where the remote holds none of the history, so the whole project is
-    new; None where it sends nothing to review — no commit the remote lacks, or commits that change nothing against a
-    base: a change and its revert, or a first commit holding no file. New is what neither `held`, the remote's commit
-    of the ref where this clone has it, nor any of `remote`'s branches hold; with no remote, a range a person named,
-    `held` is the base as named.
-
-    Several bases are a merge's, each holding what it brought: one no other of them holds is reviewed against apart, and
-    a line new to the remote is new to each of them. Measured by review: of a merge of the remote's newer `main` into a
-    branch it already held, and of a branch it held into `main`, one base was reviewed alone, whichever git listed
-    first, and each review covered the other side's own changes, a teammate's token or picture among them, and stopped
-    a clean push. Measured before, a review's own words decided, and a first push, a branch over local commits of
-    `main` and a branch sharing no history went unreviewed, each read as "no change to review". `GitError` where git
-    cannot answer, or where a name is no commit here."""
-    pushed = _commit(repo, head)
-    if remote is None:
-        bases = _held(repo, None, held)
-    else:
-        _code, out = _git(repo, "rev-list", "--boundary", pushed, "--not", *_held(repo, remote, held))
-        listed = out.split()
-        if all(commit.startswith("-") for commit in listed):
-            return None
-        bases = [commit[1:] for commit in listed if commit.startswith("-")]
-        if len(bases) > 1:
-            bases = _git(repo, "merge-base", "--independent", *bases)[1].split()
-    for base in bases or [_empty_tree(repo)]:
-        if _git(repo, "diff-tree", "--quiet", base, pushed, ok=(0, 1))[0] == 0:
-            return None
-    return pushed, bases
-
-
-def _held(repo: str, remote: str | None, held: str | None) -> list[str]:
-    """What the remote holds, as `rev-list` reads it after `--not`: its commit of the ref, where this clone has it,
-    and each of its branches as this clone last fetched them; with no remote, a range a person named, its base as
-    named, or nothing."""
-    if remote is None:
-        return [_commit(repo, held)] if held else []
-    known = _sha(repo, held) if held else None
-    return [*([known] if known else []), f"--remotes={remote}"]
-
-
-def _commit(repo: str, ref: str) -> str:
-    """The commit `ref` names, or `GitError`: a name that is no commit here, a tree's or a blob's, is a hole."""
-    if (sha := _sha(repo, ref)) is None:
-        raise GitError(f"{ref} names no commit in this repository")
-    return sha
-
-
-#: How many commits one `diff-tree` reads of a push's history: measured over a long real history, 2,000 commits took
-#: 1.6 s and 26.7 MB of patch, so a batch stays well inside a call's timeout and its memory, whatever the push.
-HISTORY_BATCH = 500
-_A_COMMIT = re.compile(rb"^([0-9a-f]{40}|[0-9a-f]{64})\n", re.MULTILINE)
-
-
-def sent(
-    repo: str, remote: str | None, head: str, held: str | None, read: Sequence[str] = ()
-) -> Iterator[tuple[str, str, list[dict]]]:
-    """Each commit a push of `head` sends, newest first, as `(commit, message, files)`: what it says, and each file it
-    adds lines to against its first parent, `{"path", "added"}` as a rule reads a change. What one commit adds and a
-    later one takes out is in the history the remote receives, though the change as a whole no longer holds it. The
-    commits are `push_scope`'s new ones, less those a head in `read` reaches, which the same push read for another of
-    its refs; with no remote, those of the range a person named. Read as a review reads a diff: plumbing, no
-    attributes but none, the branch's own `.gitattributes` unread, so no file it marks hides its lines. A merge's patch
-    is no one commit's, so it adds no file here, only its message. Read a batch at a time, and let go of before the
-    next: a first push sends a project's whole history. `GitError` where git cannot answer."""
-    pushed = _commit(repo, head)
-    apart = [*_held(repo, remote, held), *read]
-    _, listed = _git(
-        repo, "rev-list", "--no-commit-header", "--format=%x00%H%x00%B", pushed, "--not", *apart, strip=False
-    )
-    fields = listed.split("\0")[1:]
-    said = dict(zip(fields[::2], (message.rstrip("\n") for message in fields[1::2]), strict=True))
-    commits, attributes = list(said), f"--attr-source={_empty_tree(repo)}"
-    for start in range(0, len(commits), HISTORY_BATCH):
-        batch = commits[start : start + HISTORY_BATCH]
-        added = _added_by(repo, batch, attributes)
-        yield from ((commit, said[commit], added.get(commit, [])) for commit in batch)
-
-
-def _added_by(repo: str, commits: Sequence[str], attributes: str) -> dict[str, list[dict]]:
-    """Each commit's files with the lines it added, a first commit's against the empty tree, in one call:
-    `diff-tree --stdin` names each commit on a line of its own before its patch, and a merge not at all."""
-    found: dict[str, list[dict]] = {}
-    stdin = "".join(f"{commit}\n" for commit in commits).encode()
-    patch = _git_raw(repo, attributes, "diff-tree", "--stdin", "-r", "-p", "--root", *_PLAIN, stdin=stdin).stdout
-    parts = _A_COMMIT.split(patch)  # what came before the first commit's line, then each commit and its patch
-    for commit, body in zip(parts[1::2], parts[2::2], strict=True):
-        files = found.setdefault(commit.decode(), [])
-        for piece in body.split(b"\ndiff --git "):
-            if (file := file_added(readable(_text(piece)))) is not None:
-                files.append(file)
-    return found
-
-
-def tag_message(repo: str, ref: str) -> str | None:
-    """The message of the annotated tag `ref` names, or None where it names no tag: what a pushed tag says, which no
-    commit holds. `GitError` where git cannot answer."""
-    if (named := _sha(repo, ref, "tag")) is None:  # a branch, a commit or a light tag
-        return None
-    return _git(repo, "cat-file", "tag", named, strip=False)[1].partition("\n\n")[2].rstrip("\n")
-
-
 def in_scope(path: str, scope: Sequence[str]) -> bool:
     """Whether a changed file is one of `scope`'s, or lies under one of its folders; no scope holds every file."""
     return not scope or any(path == folder or path.startswith(f"{folder}/") for folder in scope)
@@ -689,7 +579,7 @@ def _texts(resolved: dict, blobs: Iterable[tuple[str, str, str]]) -> tuple[dict[
     return read, unread + [path for path, _sha in wanted if path not in read]
 
 
-def read_texts(resolved: dict, files: list[dict], listing: list[tuple[str, str, str, str, str]] | None) -> None:
+def read_texts(resolved: dict, files: list[Entry], listing: list[tuple[str, str, str, str, str]] | None) -> None:
     """Each changed file's text at the head, for the file rules, set on its entry as `text`: a plain file the head
     holds within the caps, read in one batch. `unread_text` names one the head holds that was not read — over its
     cap, past the tree's budget, a blob the batch did not give back, or a tree that could not be listed — a hole for
@@ -716,57 +606,20 @@ def read_texts(resolved: dict, files: list[dict], listing: list[tuple[str, str, 
         entry["shown"] = {number: line[1:] for number, line in hunk_lines(entry["diff"]) if line[:1] != "-"}
 
 
-def radius_of(tree: Tree | None, files: list[dict]) -> Blast:
-    """What at the head depends on each changed file, from the tree `tree_at_head` gave, so the head is parsed once
-    for the radius and the tree rules alike; None, a tree not listed, is a floor."""
-    if tree is None:
-        return blast_radius({}, files, listed=False)
-    return blast_radius(tree.parsed, files, len(tree.unread))
-
-
-def unread(entry: dict, diff: str, cut: bool, fits: bool, cap: int) -> str:
-    """Why the guidelines could not read all of a changed file, or "" when they could: named, never read as "found
-    nothing". A deleted file adds nothing: what it removes was reviewed when it came in. `fits` is False for a
-    file past the block's cap."""
-    if entry["status"] == "D":
-        return ""
-    if not diff.strip():
-        return "git showed none of it"
-    if SUBMODULE.search(top := headers(diff)):  # each header: a type change prints the new file's second
-        return "a submodule: its commits are another repository's, not read here"
-    if BINARY.search(top):
-        return "binary: no line of it can be read or quoted"
-    if not fits:
-        return f"past the {BLOCK_CAP_CHARS:,} characters the guidelines read in all; --path narrows a review"
-    if cut:
-        return f"cut at {cap:,} characters: the guidelines read only its start"
-    return ""
-
-
 def collect_evidence(
     repo: str, base: str | None, head: str, scope: Sequence[str] = (), *, staged: bool = False, **options: Any
-) -> dict:
+) -> Evidence:
     """Everything the rules and the guidelines read, gathered in plain Python before any model runs: `preflight`, or
     `preflight_staged` for the index, then `gather`, with the `options` it takes, declared there alone.
 
-    `files` carries each changed file with its WHOLE diff and its numbered
-    added lines, for the rules, its text at the head, for the file rules, and the lines of its capped diff a guideline
-    may quote, numbered too, for grounding; `diff` is the rendered block the guidelines read —
-    one `### <path>` heading and a fenced diff per file, in path order, each
-    capped and the block too, what it leaves out counted at its end, each path
-    flattened because a newline in one forged a heading —
-    the same block chat's checks node gathers for the scope its intake
-    confirmed; `blast` is what at the head depends on each changed file, which the
-    guidelines read beside that block and never inside it; `tree` is the head as the tree rules read it, or None where
-    it could not be listed. One `git diff-tree -p` per file
-    of a branch, never one for all of them split afterwards: git documents no reliable way to
-    split a patch by file, and measured, a header can name two paths ambiguously
-    and a type change prints two headers for one file; under `--all`, where every
-    file is added, `whole_diffs` splits one safely. A branch's diffs run
-    `GIT_WORKERS` at a time, which a profile with no guideline, and so no model to
-    wait on, made worth it. With no `base`, every file at the head is the
-    change, and `whole` says so; with a `scope`, only what lies under its folders is, and
-    `outside` counts what was left out, for the report to name.
+    `core/evidence.py` spells what comes back: each changed file, the block the guidelines read, the blast radius and
+    the head's tree, each key once. One `git diff-tree -p` per file of a branch, never one for all of them split
+    afterwards: git documents no reliable way to split a patch by file, and measured, a header can name two paths
+    ambiguously and a type change prints two headers for one file; under `--all`, where every file is added,
+    `whole_diffs` splits one safely. A branch's diffs run `GIT_WORKERS` at a time, which a profile with no guideline,
+    and so no model to wait on, made worth it. With no `base`, every file at the head is the change, and `whole` says
+    so; with a `scope`, only what lies under its folders is, and `outside` counts what was left out, for the report to
+    name.
     """
     resolved = preflight_staged(repo) if staged else preflight(repo, base, head)
     if resolved["status"] != "success":
@@ -782,7 +635,7 @@ def gather(
     guidelines: bool = True,
     diff_cap: int = DIFF_CAP_CHARS,
     skip: Sequence[str] = (),
-) -> dict:
+) -> Evidence:
     """The evidence `collect_evidence` describes, for a scope `preflight` resolved: what the chat's checks node gathers
     for the commits the intake confirmed, never resolving their names again — measured, a head given as a sha resolved
     through no ref, and the rules reviewed nothing while the guidelines reviewed the change."""
@@ -796,7 +649,7 @@ def gather(
     except GitError as exc:  # the change half read is not the change: named, never reviewed as it stands
         return {"status": "error", "error_message": str(exc)}
     if not files:  # measured: a branch already merged, or a base equal to its head, approved a review of nothing
-        return {"status": "error", "error_message": _nothing(head, base, scope if listed else ())}
+        return {"status": "error", "error_message": no_change(head, base, scope if listed else ())}
     listing = head_listing(resolved)
     # The head read whole, every Python file parsed, only for what reads it: a tree rule, or the radius a guideline
     # is shown, which measures changed Python files alone. The changed files' own texts are read either way, for the
@@ -809,7 +662,7 @@ def gather(
         "preflight": resolved,
         "files": files,
         "diff": block,
-        "blast": _radius(tree, files, read=read, asked=guidelines),
+        "blast": radius(tree, files, read=read, asked=guidelines),
         "tree": tree,
         "whole": base is None,
         "scope": list(scope),
@@ -826,84 +679,3 @@ def _diffs(resolved: dict, entries: list[dict], scope: Sequence[str]) -> list[st
         return whole_diffs(resolved, entries, scope)
     with ThreadPoolExecutor(max_workers=GIT_WORKERS) as pool:  # git processes to wait on: threads suffice
         return list(pool.map(lambda entry: diff_of(resolved, entry["path"], entry.get("old", "")), entries))
-
-
-def shown_to_guidelines(
-    entries: list[dict],
-    diffs: list[str],
-    diff_cap: int,
-    skip: Sequence[str],
-    *,
-    shown: bool = True,
-) -> tuple[list[dict], str, dict[str, str]]:
-    """Each changed file with its whole diff and its added lines, for the rules, and what the guidelines are shown of
-    it; the block they read, each file capped at `diff_cap` and the block at `BLOCK_CAP_CHARS`, what it leaves out
-    counted at its end; and the files the operator's skip list left out, by path with the glob. Decided from the
-    diffs alone: no git runs here. With no guideline to show it to, `shown` False, no file is capped, framed or
-    shown: measured, the view cost 2.3 s of a 10.5 s `default-rules` review of 2,683 files, the pre-push hook's
-    profile, and nothing read it."""
-    files: list[dict] = []
-    blocks: list[str] = []
-    room, left_out, excluded = BLOCK_CAP_CHARS, 0, {}
-    for entry, diff in zip(entries, diffs, strict=True):
-        added = added_lines(diff)
-        # The added lines' numbers too, which the report reads after the rules have let the lines go.
-        at = frozenset(number for number, _text in added)
-        file = {
-            **entry,
-            "diff": diff,
-            "added": added,
-            "added_at": at,
-            "quotable": [],
-            "framing": [],
-            "unread": "",
-            "cut": False,
-        }
-        files.append(file)
-        # A file the operator's skip list names: the rules read it as any other, the guidelines are not shown it,
-        # and it is named and counted, never a hole. The operator chose it, in the tool's own config: a branch
-        # cannot, and code it hides behind such a name is still every rule's to read. Never a submodule, which the
-        # branch names as it likes and no rule reads: measured by review, one named `logo.png` was approved.
-        glob = next((glob for glob in skip if matches(entry["path"], glob)), None)
-        if glob and not SUBMODULE.search(headers(diff)):
-            excluded[entry["path"]] = glob
-            continue
-        if not shown:  # the rules read every added line: what no one can read is all `unread` still names
-            file["unread"] = unread(entry, diff, cut=False, fits=True, cap=diff_cap)
-            continue
-        view, cut = capped(diff, diff_cap)
-        block, framing = framed(entry["path"], view)
-        fits = len(block) <= room
-        # The guidelines' limits alone: the rules read every added line.
-        file.update(unread=unread(entry, diff, cut, fits, diff_cap), cut=cut or not fits)
-        if fits:  # a file no guideline read, none may quote
-            file.update(quotable=quotable(view), framing=framing)
-            blocks.append(block)
-            room -= len(block) + 2  # and the blank line joining it to the next
-        else:
-            left_out += 1
-    if left_out:  # named to the guidelines too: a test left out is no test missing
-        blocks.append(f"[… {left_out} more file(s) not shown: past {BLOCK_CAP_CHARS:,} characters in all]")
-    if excluded:
-        blocks.append(f"[… {len(excluded)} more file(s) not shown: the operator's skip list leaves them out]")
-    return files, "\n\n".join(blocks), excluded
-
-
-def _radius(tree: Tree | None, files: list[dict], *, read: bool, asked: bool) -> Blast:
-    """What at the head depends on each changed file, where the head was read; else, asked of files it does not
-    measure, each one named with no tree to read; else not asked."""
-    if read:
-        return radius_of(tree, files)
-    if asked:
-        return blast_radius({}, files)
-    return Blast((), (), 0, asked=False)
-
-
-def _nothing(head: str, base: str | None, scope: Sequence[str]) -> str:
-    """Why there is nothing to review: the head holds no file, adds nothing to the base, or nothing under the scope."""
-    if scope:
-        what = f"no file at {head!r}" if base is None else f"nothing {head!r} changes"
-        return f"{what} lies under {', '.join(scope)}: no change to review"
-    if base is None:
-        return f"{head!r} holds no file: nothing to review"
-    return f"{head!r} adds nothing to {base!r}: no change to review"

@@ -12,6 +12,7 @@ from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
 
+from .evidence import Entry
 from .findings import RANK, Checked, Finding, Review, at_or_above
 from .secrets import scrub
 from .text import squash
@@ -277,7 +278,7 @@ def from_rules(answers: Mapping[str, Checked]) -> tuple[list[Sourced], dict[str,
     return found, {check: answer.could_not_look for check, answer in answers.items() if answer.could_not_look}
 
 
-def not_read(files: list[dict], guidelines: Collection[str]) -> dict[str, str]:
+def not_read(files: list[Entry], guidelines: Collection[str]) -> dict[str, str]:
     """What no one could read, by path with why. A cut is the guidelines' limit: with none on, the rules
     read every added line, and only what no one can read — binary, a submodule, nothing shown — is a hole."""
     return {f["path"]: f["unread"] for f in files if f["unread"] and (guidelines or not f["cut"])}

@@ -209,7 +209,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | What | Limit | Where |
 |---|---|---|
 | One file's diff a guideline reads, unless `diff_cap` or `--diff-cap` names another | 16,000 characters | `collect/diff.py`, `DIFF_CAP_CHARS` |
-| All the diffs the guidelines read | 250,000 characters | `collect/git.py`, `BLOCK_CAP_CHARS` |
+| All the diffs the guidelines read | 250,000 characters | `collect/change.py`, `BLOCK_CAP_CHARS` |
 | The most complex functions the health section names | 5 | `core/health.py`, `WORST_SHOWN` |
 | Python source files parsed before maintainability is graded | 10 | `core/health.py`, `FILES_AT_LEAST` |
 | One file at the head the rules and the radius read, and one file `--try` reads | 1,000,000 bytes | `collect/git.py`, `MAX_FILE_BYTES` |

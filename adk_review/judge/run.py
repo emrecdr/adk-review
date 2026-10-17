@@ -20,6 +20,7 @@ from dataclasses import dataclass
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
+from ..core.evidence import Entry
 from ..core.findings import Checked, Review
 from ..core.profiles import state_key
 from ..core.rules import AnyRule
@@ -75,7 +76,7 @@ def read_checks(run: Run, rules: Sequence[AnyRule]) -> tuple[list[Sourced], dict
     return from_rules(answers)
 
 
-def read_guidelines(run: Run, files: list[dict], guidelines: Sequence[str], holes: Mapping[str, str]) -> Outcome:
+def read_guidelines(run: Run, files: list[Entry], guidelines: Sequence[str], holes: Mapping[str, str]) -> Outcome:
     """The guidelines' answers read back and grounded, each narrowing counted: what a model said that the diff bears
     out. `holes` are the checks that could not look before any model ran, named beside the guidelines that could not.
 

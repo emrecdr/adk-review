@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 from ..collect.git import gather
 from ..collect.tools import ADAPTERS
+from ..core.evidence import Evidence
 from ..core.findings import Checked
 from ..core.profiles import state_key
 from ..core.rules import AnyRule, FileRule, run_rule
@@ -49,7 +50,7 @@ def _hole(why: str) -> Checked:
     return Checked(could_not_look=why + DID_NOT_LOOK)
 
 
-def _diagnosed(rule: FileRule, evidence: dict) -> dict | str:
+def _diagnosed(rule: FileRule, evidence: Evidence) -> dict | str:
     """What the rule's outside tool says of the change, by path, or why it could not look. An adapter that raises past
     its own answers is its rule's hole alone, as `run_rule` keeps a rule's own failure to it: measured, an
     `IndexError` out of ruff's answer reached the node's catch-all and every rule answered with it, the planted key's
@@ -60,7 +61,7 @@ def _diagnosed(rule: FileRule, evidence: dict) -> dict | str:
         return f"{rule.tool} raised {type(exc).__name__}: {exc}"
 
 
-def run_rules(evidence: dict, rules: Sequence[AnyRule], stop: threading.Event | None = None) -> dict[str, Checked]:
+def run_rules(evidence: Evidence, rules: Sequence[AnyRule], stop: threading.Event | None = None) -> dict[str, Checked]:
     """Every rule over what it reads, each the same way, by its check id: what it found, or why it could not look. A
     rule that names ruff codes is given ruff's diagnostics on each changed Python file, beside the file. `stop`, once
     set, ends the run before the next rule: the rules run in a thread, which no cancel reaches."""
@@ -79,7 +80,7 @@ def run_rules(evidence: dict, rules: Sequence[AnyRule], stop: threading.Event | 
     return answers
 
 
-def _gather(resolved: dict | None, gathered: Callable[[dict], dict]) -> dict | str:
+def _gather(resolved: dict | None, gathered: Callable[[dict], Evidence]) -> Evidence | str:
     """In chat: the evidence the command would gather, for the scope the intake confirmed, or why there is none."""
     if not resolved:
         return "nothing was gathered"
@@ -87,20 +88,20 @@ def _gather(resolved: dict | None, gathered: Callable[[dict], dict]) -> dict | s
     return evidence if evidence["status"] == "success" else evidence["error_message"]
 
 
-def _release(evidence: dict) -> None:
+def _release(evidence: Evidence) -> None:
     """What the rules alone read, let go of before the model calls: the tree, and each file's text, diff and added
     lines. The command holds the same dict for the report, which reads of these only the added lines' numbers, kept
     apart as `added_at`: measured, the JSON read the lines after they were gone, and no finding of a real review stood
     on an added line. Runs after a failure too, over whatever shape the evidence had."""
-    evidence.pop("tree", None)
+    evidence["tree"] = None
     for entry in evidence.get("files", ()):
         entry["text"] = entry["added"] = entry["diff"] = entry["shown"] = None
 
 
 def build_checks(
     rules: Sequence[AnyRule],
-    evidence: dict | None,
-    gathered: Callable[[dict], dict] = gather,
+    evidence: Evidence | None,
+    gathered: Callable[[dict], Evidence] = gather,
 ) -> FunctionNode:
     """The node: each rule's answer into state under its check's key, why one could not look its answer; every answer
     rendered for the chat's verdict, and the blast radius for the guidelines. `evidence` is the command's, gathered

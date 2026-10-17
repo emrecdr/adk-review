@@ -23,10 +23,11 @@ Shown for a review of every file at the head, where the files are the project ra
 from __future__ import annotations
 
 import ast
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 
 from .blast import is_test, parse
+from .evidence import Entry
 from .findings import RANK
 from .profiles import rule_id
 from .rules import Tree, is_python_text
@@ -143,7 +144,7 @@ def band(value: int) -> str:
     return next(label for limit, label in BANDS if limit is None or value <= limit)
 
 
-def measured(files: Sequence[Mapping], tree: Tree | None) -> Health:
+def measured(files: Sequence[Entry], tree: Tree | None) -> Health:
     """A project's measures from the files a review read, each as the collector lists it, its text or None for one
     not read whole: each Python file's syntax tree is the head's own parse where the tree read it, else its text is
     parsed here. A test's lines are counted, its complexity is not: the measure is of the code a project ships."""

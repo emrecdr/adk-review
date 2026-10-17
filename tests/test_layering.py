@@ -15,7 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from conftest import ROOT
+from conftest import BASE, HEAD, ROOT
 
 PACKAGE = ROOT / "adk_review"
 GROUPS = ("core", "collect", "judge", "deliver")
@@ -237,8 +237,6 @@ def test_a_review_with_no_guideline_runs_with_the_engine_absent(demo_repo: Path,
     agent, and the pre-push hook, whose profile is `default-rules`, paid it on every push. A fresh interpreter makes
     `google` unimportable and reviews the demo branch; `--trace`, `--debug-log` and `--record` are the engine's own
     and still bring it."""
-    from conftest import BASE, HEAD
-
     out = tmp_path / "review.json"
     argv = [str(demo_repo), "--head", HEAD, "--base", BASE, "--profile", "rules-only", "--json", str(out)]
     probe = (
@@ -258,3 +256,22 @@ def test_a_review_with_no_guideline_runs_with_the_engine_absent(demo_repo: Path,
     data = json.loads(out.read_text(encoding="utf-8"))
     assert data["usage"] == {"calls": 0, "attempted": 0, "tokens": 0, "ceiling": None, "by_agent": {}}
     assert data["seconds"] == {} and data["secrets_redacted"] == 0, data
+
+
+def test_every_key_the_evidence_carries_is_spelled_once_in_core(demo_repo: Path) -> None:
+    """The evidence is one dict, as ADK's state and a kept review hold it, read by `collect`, the checks node, the
+    adapters, the report and the driver: `core/evidence.py` spells each key once, and the collector and the rules
+    fill no other. Measured before it was spelled: a key the checks node blanked after the rules was read by the JSON
+    report, and `added_at` came in to outlive it."""
+    from adk_review.collect.git import collect_evidence
+    from adk_review.core.evidence import Entry, Evidence
+    from adk_review.judge.catalog import catalog
+    from adk_review.judge.checks import run_rules
+
+    evidence = collect_evidence(str(demo_repo), BASE, HEAD)
+    assert evidence["status"] == "success", evidence
+    assert set(evidence) == set(Evidence.__annotations__) - {"error_message"}
+    run_rules(evidence, catalog().rules)  # the lint rule sets `diagnostics` on the copies it reads; none on these
+    spelled, required = set(Entry.__annotations__), Entry.__required_keys__
+    for entry in evidence["files"]:
+        assert required <= set(entry) <= spelled, (entry["path"], set(entry) ^ spelled)
