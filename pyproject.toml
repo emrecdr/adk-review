@@ -82,6 +82,10 @@ max-complexity = 10
 [tool.pyrefly]
 search-path = [".", "scripts"]
 
+[tool.pyrefly.errors]
+# ADK declares LlmAgent(BaseAgent, abc.ABC) with no abstract method; AnyRule is still held by bad-instantiation
+direct-abstract-base-instantiation = "ignore"
+
 [tool.pyright]
 extraPaths = ["scripts"]
 

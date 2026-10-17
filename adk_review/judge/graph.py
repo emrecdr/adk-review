@@ -137,9 +137,9 @@ def build_workflow(
     *,
     chat: bool,
     checks: Catalog,
-    evidence: dict | None = None,
+    evidence: Evidence | None = None,
     fail_on: str = "",
-    gathered: Callable[[dict], dict] = gather,
+    gathered: Callable[[dict], Evidence] = gather,
 ) -> Workflow:
     """The graph: intake → gate → checks → guidelines → join → verdict for chat, the gate going on only for a scope
     this turn's intake confirmed; checks → guidelines → join for the driver, which seeds state itself. The checks node
@@ -168,12 +168,12 @@ def build_app(
     *,
     chat: bool,
     checks: Catalog,
-    evidence: dict | None = None,
+    evidence: Evidence | None = None,
     ceiling: int | None = None,
     fail_on: str = "",
     say: Callable[[str], None] | None = None,
     debug_log: str | None = None,
-    gathered: Callable[[dict], dict] = gather,
+    gathered: Callable[[dict], Evidence] = gather,
     record: str | None = None,
 ) -> App:
     """The graph under the plugins no agent can opt out of; `ceiling` is the run's token budget, if any, `say` where
