@@ -1,5 +1,5 @@
-"""A path, read for a rule: whether a glob names it. Whether it is a test is `core/blast.py`'s `is_test`, which the
-blast radius asks too."""
+"""A path, whether a glob names it: the operator's skip list's question of each changed file, and a rule's of a path,
+through the door. Whether a path is a test is `blast.py`'s `is_test`, which the blast radius asks too."""
 
 from __future__ import annotations
 

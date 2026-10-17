@@ -91,8 +91,8 @@ The order is the architecture: evidence and rules first, the guidelines' judgeme
    added, its text at the head for the file rules and, where a tree rule or a guideline runs, the head's tree and
    each changed file's blast radius. The block of diffs the guidelines read is built here, each diff capped and the
    block capped, every cut named.
-3. **Run every rule**, in one graph node, before any model call. Each rule answers with what it found, or why it
-   could not look.
+3. **Run every rule** before any model call: in one graph node where a guideline follows, straight from the driver
+   where none does. Each rule answers with what it found, or why it could not look.
 4. **Let the guidelines judge the change.** Each is an ADK agent with a role of its own, and they run at once under a
    bound on the calls in flight. Every request is scrubbed of credentials before it is sent, and the branch's text
    sits between two marker lines it cannot forge.
@@ -117,11 +117,11 @@ points the wrong way.
 
 | Package | May import | Holds |
 |---|---|---|
-| `core/` | nothing else | `findings.py` (`Finding`, `Review`, `Checked`, the severity scale), `rules.py` (what a rule is: the `Rule`, the `FileRule` and the `TreeRule`, the `ChangedFile` and the `Tree` they read, `Hit`, `UnreadError`, and `run_rule`, which runs any of them the same way), `guidelines.py` (what a guideline is), `health.py` (a whole project's measures under `--all`: what was read, size, McCabe complexity bands, each rule's findings in source and tests), `profiles.py` (a check's id and its state key, and the checks a profile turns on), `blast.py` (what at the head depends on each changed file, read from the syntax tree), `secrets.py` (the credential shapes: what redaction hides and what the secrets rules ask), `text.py` (flat whitespace, a cut that names itself, lines as git numbers them), `verdict.py` (grounding, folding, deciding, `Outcome`, the exit codes) |
+| `core/` | nothing else | `findings.py` (`Finding`, `Review`, `Checked`, the severity scale), `rules.py` (what a rule is: the `Rule`, the `FileRule` and the `TreeRule`, the `ChangedFile` and the `Tree` they read, `Hit`, `UnreadError`, and `run_rule`, which runs any of them the same way), `guidelines.py` (what a guideline is), `health.py` (a whole project's measures under `--all`: what was read, size, McCabe complexity bands, each rule's findings in source and tests), `profiles.py` (a check's id and its state key, and the checks a profile turns on), `blast.py` (what at the head depends on each changed file, read from the syntax tree), `paths.py` (whether a glob names a path, as `.gitignore` reads one: the skip list's question, and a rule's), `secrets.py` (the credential shapes: what redaction hides and what the secrets rules ask), `text.py` (flat whitespace, a cut that names itself, lines as git numbers them), `verdict.py` (grounding, folding, deciding, `Outcome`, the exit codes) |
 | `collect/` | `core` | `git.py` (read-only git: what a review covers, each file's diff and its text at the head, the head's tree, `collect_evidence`, and what a push sends, commit by commit), `diff.py` (a unified diff read without git: the lines it adds, the cap, the fence each guideline reads it in), `ruff.py` (ruff over the changed Python files' texts, in a folder of its own), `tools.py` (each outside tool a rule may name, and the adapter that runs it: ruff's) |
-| `judge/` | `core`, `collect` | `rules/` (every rule, one file each, and nothing else), `guidelines/` (every guideline, one file each, and nothing else), `rule_helpers/` (the one door a rule imports: the contract, passed on from `core`, and helpers named after what they read), `catalog.py` (finds every check, reads `config.toml`, chooses what a profile runs, for the command and chat alike), `checks.py` (every rule as one node before the guidelines, in both shapes), `agents.py` (a guideline as an agent: the instruction around its role, the fences, the state keys spelled once, the read-back), `config.py` (the provider, each role's model, and the request every call carries: temperature zero, a deadline, retries; readiness), `plugins.py` (redaction, the ledger and its ceiling, provider errors, progress, the recorder, and in chat the readiness check and the judging agents' one turn), `graph.py` (the graph and the `App` in both shapes; not `agent.py`, since `adk web` lists any folder holding one as an agent), `run.py` (one seeded run through the engine, guarded), `tools.py` (chat's model-facing tools and the guardrail in front of them), `verify.py` (the second opinion) |
-| `deliver/` | `core` alone: the driver hands it the rest | `report.py` (the text report, the JSON, the hand-off, what `--dry-run`, `--list-checks`, `--explain` and `--try` print, and the rules that keep the branch's text from forging any of them) |
-| the root | everything | `review.py` (the command: the driver that fixes the order of the steps), `push.py` (the pre-push hook: what a push sends, reviewed with `default-rules`, and each of its commits read with `push-history`, the credential rules, for git's hook and pre-commit's alike), `agent.py` (the chat `App` for ADK's loader, `adk web` and `adk run`, the one place that wants it), `__init__.py` (answers `agent` without loading it, so `core/` imports alone), `config.toml` (the one config file), `GUIDE.md` (the user's guide) |
+| `judge/` | `core`, `collect` | `rules/` (every rule, one file each, and nothing else), `guidelines/` (every guideline, one file each, and nothing else), `rule_helpers/` (the one door a rule imports: the contract, passed on from `core`, and helpers named after what they read), `catalog.py` (finds every check, reads `config.toml`, chooses what a profile runs, for the command and chat alike), `checks.py` (every rule as one node before the guidelines, in both shapes), `agents.py` (a guideline as an agent: the instruction around its role, the fences, the state keys spelled once, the read-back), `config.py` (the provider, each role's model, and the request every call carries: temperature zero, a deadline, retries; readiness), `plugins.py` (redaction, the ledger and its ceiling, provider errors, progress, the recorder, and in chat the readiness check and the judging agents' one turn), `graph.py` (the graph and the `App` in both shapes; not `agent.py`, since `adk web` lists any folder holding one as an agent), `run.py` (one seeded run through the engine, guarded, and what it left in state read back), `tools.py` (chat's model-facing tools and the guardrail in front of them), `verify.py` (the second opinion) |
+| `deliver/` | `core` alone: the driver hands it the rest | `report.py` (the text report, the JSON, the hand-off, a previous report read back for `--previous`, what `--dry-run`, `--list-checks`, `--explain` and `--try` print, and the rules that keep the branch's text from forging any of them) |
+| the root | everything | `review.py` (the command: the driver that fixes the order of the steps; a profile with no guideline runs the rules as `--try` does, the engine never imported), `push.py` (the pre-push hook: what a push sends, reviewed with `default-rules`, and each of its commits read with `push-history`, the credential rules, for git's hook and pre-commit's alike), `agent.py` (the chat `App` for ADK's loader, `adk web` and `adk run`, the one place that wants it), `__init__.py` (answers `agent` without loading it, so `core/` imports alone), `config.toml` (the one config file), `GUIDE.md` (the user's guide) |
 
 `core/`, the checks and `judge/rule_helpers/` import nothing that calls a model or runs a process — no `google`,
 `litellm`, `subprocess`, `httpx`, `asyncio`, `os`, `socket`, `urllib`, `http` or `ssl` — and a test imports them with
@@ -337,8 +337,8 @@ class RequiredPaths(TreeRule):
    profile, add `rule.no-todo` to `default`, and to `default-rules`, which a test keeps to the default's rules.
 
 The door passes on the contract — `Rule`, `FileRule`, `TreeRule`, `ChangedFile`, `Tree`, `Hit`, `UnreadError` and the
-severity scale, `RANK` — and the helpers, each in a module named after what it reads (`paths.py`, `lines.py`,
-`syntax.py`) or tries a rule with (`testing.py`):
+severity scale, `RANK` — and the helpers, each in a module named after what it reads (`lines.py`, `syntax.py`), or
+tries a rule with (`testing.py`), and `matches` and `matching` from `core/paths.py`:
 
 | Helper | What it answers |
 |---|---|
@@ -576,7 +576,11 @@ To review each push before it leaves a developer's machine, see "Before a push" 
   chat's, which gathers the same evidence for the commits its intake confirmed. Each rule's answer is left in state
   under its check's key, as each guideline's review is, and the node writes the blast radius the guidelines read.
   It never raises: measured, a node that raises ends the whole run, every guideline with it. Once the rules have read
-  them, it lets go of the tree and each file's text, diff and added lines, before the model calls.
+  them, it lets go of the tree and each file's text, diff and added lines, before the model calls. A profile with no
+  guideline runs the same `run_rules` straight from the driver, the engine never imported: measured by the installed
+  command, the demo's rules-only review took 0.87 to 0.94 s through a graph holding no agent, 0.41 s of it the
+  engine's import, and 0.16 to 0.17 s without it, the pre-push hook paying the difference on every push; `--trace`,
+  `--debug-log` and `--record` are the engine's own and still bring its run.
 - **Lint reads a copy, never the checkout.** The changed Python files, as the collector read them at the head, are
   written into a temporary folder, each in a folder of its own under a name of the rule's own — `module.py`,
   `module.pyi` for a stub, or `__init__.py` where the branch's is one — and named to ruff one by one: a `.venv/` the

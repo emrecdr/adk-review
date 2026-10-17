@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import functools
 import hashlib
+import json
 import re
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from ..core.blast import Blast, describe
@@ -559,6 +561,29 @@ def _health_data(health: Health, outcome: Outcome) -> dict:
 #: The JSON report's version: raised when a field changes its meaning or goes, so a pipeline reading it can tell. 2:
 #: a finding names its `check` by its id, `rule.secrets` or `guideline.security`, where 1 named a `source`.
 SCHEMA = 2
+
+
+#: A previous review's findings by fingerprint and its health, as `--previous` reads them, or none.
+type Previous = tuple[dict[str, dict] | None, dict | None]
+
+
+def read_previous(path: str) -> tuple[dict[str, dict], dict | None]:
+    """A previous review's findings by fingerprint, from the report its `--json` wrote, and its `health`, None where it
+    has none; a sentence for anything else, before the review runs."""
+    try:
+        data = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+        if not isinstance(data, dict) or data.get("schema") != SCHEMA or not isinstance(data.get("findings"), list):
+            raise ValueError(f"not a review's JSON report of schema {SCHEMA}, as --json writes one")
+        findings = [f for f in data["findings"] if isinstance(f, dict) and isinstance(f.get("fingerprint"), str)]
+        # Each finding made safe whole, keys and nested values too, where it comes in: `resolved` gives it back, and
+        # a kept report can be edited. One a review wrote reads the same, a cut's run of spaces aside.
+        kept = {f["fingerprint"]: f for f in map(safe_value, findings)}
+    except RecursionError:  # measured by review: nested 1,100 deep, which no report `--json` writes, it ended as a hole
+        raise ValueError(f"--previous {path}: nested deeper than a report --json writes") from None
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"--previous {path}: {getattr(exc, 'strerror', None) or exc}") from None
+    health = data.get("health")
+    return kept, health if isinstance(health, dict) else None
 
 
 # Cached: a report's strings repeat, its keys, checks, files and fixes. Measured over 18,296 findings: a previous

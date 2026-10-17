@@ -554,8 +554,7 @@ class TestWhatNoLaneCouldRead:
         commit = _git_in(repo, "rev-parse", "HEAD")
         _git_in(repo, "update-index", "--add", "--cacheinfo", f"160000,{commit},assets/logo.png")
         _git_in(repo, "commit", "-qm", "a submodule")
-        images = lambda path: "*.png" if path.endswith(".png") else None  # noqa: E731 -- the skip list's own shape
-        evidence = collect_evidence(str(repo), BASE, HEAD, skipped=images)
+        evidence = collect_evidence(str(repo), BASE, HEAD, skip=["*.png"])
         assert evidence["skipped"] == {}, evidence["skipped"]
         assert evidence["files"][0]["unread"].startswith("a submodule"), evidence["files"]
 
@@ -676,9 +675,7 @@ class TestWhatTheGuidelinesAreShown:
         diffs = [self._diff("a.py", "x = 1"), self._diff("b.py", "y = 2"), self._diff("logo.png", "binary")]
         first, _ = diff.framed("a.py", diffs[0])
         monkeypatch.setattr(git, "BLOCK_CAP_CHARS", len(first))  # room for `a.py` alone
-        files, block, excluded = git.shown_to_guidelines(
-            entries, diffs, diff.DIFF_CAP_CHARS, lambda path: "*.png" if path.endswith(".png") else None
-        )
+        files, block, excluded = git.shown_to_guidelines(entries, diffs, diff.DIFF_CAP_CHARS, ["*.png"])
         shown, past, skipped = files
         assert shown["quotable"] and not shown["cut"] and shown["unread"] == "", shown
         assert past["quotable"] == [] and past["cut"] and past["unread"].startswith("past the"), past
@@ -695,9 +692,7 @@ class TestWhatTheGuidelinesAreShown:
         binary = "diff --git a/logo.png b/logo.png\nBinary files /dev/null and b/logo.png differ\n"
         entries = [{"path": p, "status": "A"} for p in ("a.py", "logo.png", "vendor.png")]
         diffs = [self._diff("a.py", "x" * 50), binary, binary]
-        files, block, excluded = git.shown_to_guidelines(
-            entries, diffs, 10, lambda path: "vendor*" if path.startswith("vendor") else None, shown=False
-        )
+        files, block, excluded = git.shown_to_guidelines(entries, diffs, 10, ["vendor*"], shown=False)
         code, image, _vendor = files
         assert code["quotable"] == [] and not code["cut"] and code["unread"] == "", "past the cap, cut for no one"
         assert image["unread"].startswith("binary"), "what no one can read is still named"

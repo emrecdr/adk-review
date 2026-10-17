@@ -9,7 +9,8 @@ applyTo: "adk_review/**"
   `core/`, the checks and `judge/rule_helpers/` must import with ADK absent and never import `google`, `litellm`,
   `subprocess`, `httpx`, `asyncio`, `os`, `socket`, `urllib`, `http` or `ssl`. `review.py` imports ADK and the
   judge's engine modules where a review starts, never at its top, so the modes that read the checks alone and the
-  pre-push hook start without them; keep a new engine import there.
+  pre-push hook start without them, and a profile with no guideline runs the rules with none of them; keep a new
+  engine import there.
 - Every check is one file, named after the check it holds, in a folder that holds checks and nothing else: a rule,
   decided by code, in `judge/rules/`; a guideline, judged by a model, in `judge/guidelines/`. No `__init__.py`, guide
   or template goes in either folder: the guides and the templates are "Write a rule" and "Write a guideline" in
@@ -68,7 +69,7 @@ applyTo: "adk_review/**"
   `RULES`, `FAILURE`), and an instruction reads a key through `placeholder(key)`; `tests/test_engine.py` holds every
   placeholder an instruction reads to a key something writes.
 - Every rule runs the same way, through `run_rule`, in one `FunctionNode` (`judge/checks.py`) before the guidelines,
-  in both shapes; each rule's answer, a `Checked`, is left in state under its check's key. The node also writes the
+  in both shapes, or straight from the driver through the same `run_rules` where no guideline runs; each rule's answer, a `Checked`, is left in state under its check's key. The node also writes the
   blast radius the guidelines read and, under `RULES`, every answer rendered and capped for the chat's verdict; in
   chat it gathers the evidence for the commits the intake confirmed, never their names again; and once the rules have
   read them it lets go of the tree, the texts, the diffs and the added lines. The node never raises: a node that

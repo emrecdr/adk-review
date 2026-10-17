@@ -39,12 +39,12 @@ from typing import TextIO
 
 from .collect.git import GitError, push_scope, sent, tag_message
 from .core.findings import Finding, at_or_above
+from .core.paths import matches
 from .core.rules import AnyRule, run_rule
 from .core.text import lines_of
 from .core.verdict import EXIT_INTERRUPTED, EXIT_USAGE
 from .deliver.report import safe_line
 from .judge.catalog import CONFIG, catalog, load_config, select
-from .judge.rule_helpers import matches
 from .review import main as review
 from .review import settle
 

@@ -511,8 +511,7 @@ class TestThePreviousReportAndTheHandoff:
     def test_a_previous_report_is_made_safe_whole_where_it_is_read(self, tmp_path: Path) -> None:
         """An edited `--previous` is read back through `resolved`: measured by review, a runner's command as a finding's
         key, in a list or in a nested value was written as it came."""
-        from adk_review.deliver.report import SCHEMA
-        from adk_review.review import _previous
+        from adk_review.deliver.report import SCHEMA, read_previous
 
         crafted = {
             "fingerprint": "f" * 16,
@@ -523,7 +522,7 @@ class TestThePreviousReportAndTheHandoff:
         }
         path = tmp_path / "previous.json"
         path.write_text(json.dumps({"schema": SCHEMA, "findings": [crafted]}), encoding="utf-8")
-        findings, _health = _previous(str(path))
+        findings, _health = read_previous(str(path))
         written = json.dumps(findings, ensure_ascii=False)
         assert list(findings) == ["f" * 16] and "##vso[" not in written and "##[" not in written, written
         assert "<!--" not in written, written
@@ -531,15 +530,15 @@ class TestThePreviousReportAndTheHandoff:
     def test_a_previous_report_nested_past_what_can_be_read_is_a_sentence(self, tmp_path: Path) -> None:
         """Measured by review: a finding nested 1,100 deep passed `json.loads`, the walk that makes it safe ran out of
         stack, and the review ended as a hole, exit 3, where a file it cannot read is a sentence and exit 2."""
-        from adk_review.deliver.report import SCHEMA
-        from adk_review.review import _from_cache, _previous
+        from adk_review.deliver.report import SCHEMA, read_previous
+        from adk_review.review import _from_cache
 
         for depth in (2_000, 100_000):  # past the walk's stack, and past `json.loads`' own
             path = tmp_path / f"deep{depth}.json"
             finding = '{"fingerprint": "f", "x": ' + "[" * depth + "]" * depth + "}"
             path.write_text(f'{{"schema": {SCHEMA}, "findings": [{finding}]}}', encoding="utf-8")
             with pytest.raises(ValueError, match="nested deeper than a report --json writes"):
-                _previous(str(path))
+                read_previous(str(path))
             assert _from_cache(path) is None, "a kept review nested so is reviewed afresh, never a hole"
 
 

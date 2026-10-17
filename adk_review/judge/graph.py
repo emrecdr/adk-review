@@ -50,7 +50,6 @@ from .plugins import (
     ReportProviderErrors,
     UsageLedger,
 )
-from .rule_helpers import matches
 from .tools import changed_files, inspect_repository, one_repository
 
 NAME = "adk_review"
@@ -120,18 +119,11 @@ def _verdict(guidelines: Sequence[Guideline], fail_on: str) -> LlmAgent:
     )
 
 
-def skipped_by(globs: Sequence[str]) -> Callable[[str], str | None] | None:
-    """The operator's skip list as the collector asks it: the glob that names a path, or None; None for no list."""
-    if not globs:
-        return None
-    return lambda path: next((glob for glob in globs if matches(path, glob)), None)
-
-
 def gathering(checks: Catalog, diff_cap: int, skip: Sequence[str]) -> Callable[[dict], dict]:
     """How chat gathers the evidence for the scope its intake confirmed: the command's own gathering, reading the head
     as these checks read it, under the config's cap and skip list, bound once where chat's policy is read, so no
     builder carries a setting of it."""
-    return partial(gather, **checks.head_reading(), diff_cap=diff_cap, skipped=skipped_by(skip))
+    return partial(gather, **checks.head_reading(), diff_cap=diff_cap, skip=skip)
 
 
 def _bar(fail_on: str) -> str:

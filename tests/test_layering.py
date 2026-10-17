@@ -228,3 +228,33 @@ def test_a_command_loads_no_litellm_until_the_copilot_arm_is_built() -> None:
     done = subprocess.run([sys.executable, "-c", probe], cwd=ROOT, capture_output=True, encoding="utf-8", check=False)
     assert done.returncode == 0, done.stderr
     assert done.stdout.strip() == "[]", done.stdout[:200]
+
+
+def test_a_review_with_no_guideline_runs_with_the_engine_absent(demo_repo: Path, tmp_path: Path) -> None:
+    """A profile that names no guideline calls no model, and imports none of the engine either: the rules run as
+    `--try` runs them, and the report reads the same. Measured, best of three by the installed command: the demo's
+    rules-only review took 0.87 to 0.94 s, of which 0.41 s imported the judge's engine to run a graph holding no
+    agent, and the pre-push hook, whose profile is `default-rules`, paid it on every push. A fresh interpreter makes
+    `google` unimportable and reviews the demo branch; `--trace`, `--debug-log` and `--record` are the engine's own
+    and still bring it."""
+    from conftest import BASE, HEAD
+
+    out = tmp_path / "review.json"
+    argv = [str(demo_repo), "--head", HEAD, "--base", BASE, "--profile", "rules-only", "--json", str(out)]
+    probe = (
+        "import contextlib, io, sys\n"
+        "sys.modules['google'] = None  # an import of it raises, as it does when ADK is not installed\n"
+        "import adk_review.review as review\n"
+        "review.load_dotenv = lambda *args, **kwargs: False  # the central .env left unread, as every test leaves it\n"
+        "with contextlib.redirect_stdout(io.StringIO()):\n"
+        f"    code = review.main({argv!r})\n"
+        "print(code, [m for m in sys.modules if m.startswith('google.')])\n"
+    )
+    done = subprocess.run([sys.executable, "-c", probe], cwd=ROOT, capture_output=True, encoding="utf-8", check=False)
+    assert done.returncode == 0, done.stderr
+    assert done.stdout.strip() == "1 []", done.stdout + done.stderr
+    import json
+
+    data = json.loads(out.read_text(encoding="utf-8"))
+    assert data["usage"] == {"calls": 0, "attempted": 0, "tokens": 0, "ceiling": None, "by_agent": {}}
+    assert data["seconds"] == {} and data["secrets_redacted"] == 0, data

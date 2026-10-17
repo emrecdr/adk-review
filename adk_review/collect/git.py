@@ -17,12 +17,13 @@ import re
 import shutil
 import string
 import subprocess
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 from ..core.blast import Blast, Radius, blast_radius
+from ..core.paths import matches
 from ..core.rules import Tree
 from ..core.text import lines_of
 from .diff import (
@@ -780,7 +781,7 @@ def gather(
     tree_rules: bool = True,
     guidelines: bool = True,
     diff_cap: int = DIFF_CAP_CHARS,
-    skipped: Callable[[str], str | None] | None = None,
+    skip: Sequence[str] = (),
 ) -> dict:
     """The evidence `collect_evidence` describes, for a scope `preflight` resolved: what the chat's checks node gathers
     for the commits the intake confirmed, never resolving their names again — measured, a head given as a sha resolved
@@ -790,7 +791,7 @@ def gather(
         listed = list_changed(resolved)
         entries = [entry for entry in listed if in_scope(entry["path"], scope)]
         diffs = _diffs(resolved, entries, scope)
-        files, block, excluded = shown_to_guidelines(entries, diffs, diff_cap, skipped, shown=guidelines)
+        files, block, excluded = shown_to_guidelines(entries, diffs, diff_cap, skip, shown=guidelines)
         away = untracked(resolved) if resolved.get("staged") else None
     except GitError as exc:  # the change half read is not the change: named, never reviewed as it stands
         return {"status": "error", "error_message": str(exc)}
@@ -831,7 +832,7 @@ def shown_to_guidelines(
     entries: list[dict],
     diffs: list[str],
     diff_cap: int,
-    skipped: Callable[[str], str | None] | None,
+    skip: Sequence[str],
     *,
     shown: bool = True,
 ) -> tuple[list[dict], str, dict[str, str]]:
@@ -863,7 +864,8 @@ def shown_to_guidelines(
         # and it is named and counted, never a hole. The operator chose it, in the tool's own config: a branch
         # cannot, and code it hides behind such a name is still every rule's to read. Never a submodule, which the
         # branch names as it likes and no rule reads: measured by review, one named `logo.png` was approved.
-        if skipped is not None and (glob := skipped(entry["path"])) and not SUBMODULE.search(headers(diff)):
+        glob = next((glob for glob in skip if matches(entry["path"], glob)), None)
+        if glob and not SUBMODULE.search(headers(diff)):
             excluded[entry["path"]] = glob
             continue
         if not shown:  # the rules read every added line: what no one can read is all `unread` still names

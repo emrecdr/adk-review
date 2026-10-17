@@ -78,8 +78,8 @@ diagnostics where it names the tool (`lint` names ruff, whose adapter `collect/t
 one. A guideline is a class naming its role and a thinking budget (`core/guidelines.py`), built into an agent by
 `judge/agents.py`. `judge/catalog.py` finds every check, reads `config.toml` and resolves what runs, for the command and
 the chat alike. A rule imports one door, `judge/rule_helpers/`: the contract, passed on from `core/rules.py`, and
-helpers named after what they read (`paths.py`, `lines.py`, `syntax.py`) and try a rule with (`testing.py`). A rule
-carries `bad` and `good` examples, which the catalog holds it to at every start with its own source, a rule failing
+helpers named after what they read (`lines.py`, `syntax.py`) and try a rule with (`testing.py`), and `matches`,
+passed on from `core/paths.py`, the skip list's matcher too. A rule carries `bad` and `good` examples, which the catalog holds it to at every start with its own source, a rule failing
 either being exit 2; `try_rule`, `lines_hit` and `self_check` try a rule with no repository, `--list-checks` lists every
 check with its kind, its profiles and its file, `--check ID` runs one check alone. Each check has one id,
 `rule.<name>` or `guideline.<name>` (`core/profiles.py`), in the config, on the command line and as its own report
@@ -96,7 +96,8 @@ git's empty tree; `--head` defaults to the branch checked out; with neither `--b
 pipeline reviews the change against `main`, or `master`, or else the branch `origin/HEAD` names.
 
 Evidence is gathered in Python first, the rules run as one `FunctionNode` before the guidelines in both shapes
-(`judge/checks.py`, every rule through `run_rule`), and code decides the verdict. Around them: retries, a token
+(`judge/checks.py`, every rule through `run_rule`), or straight from the driver through the same `run_rules` where no
+guideline follows, and code decides the verdict. Around them: retries, a token
 ceiling, a `--verify` second opinion, a JSON report a pipeline reads (`--json FILE`, schema 2, written for every
 decided review, under the text report's safety rules), under `--all` a Health section (`core/health.py`: what was read,
 source and tests apart, McCabe complexity counted as ruff's C901 counts it, in bands graded A to E by SIG's published
@@ -116,7 +117,9 @@ Load-bearing rules the tests enforce:
   `python -m adk_review.review` imports the package before `main` reads `.env`, and `agent.py` builds its agents at
   import. `review.py` imports ADK and the judge's engine modules (agents, config, graph, plugins, run, verify) where a
   review starts, never at its top, so `--list-checks`, `--explain`, `--try`, a usage error and the pre-push hook start
-  without them; a test runs those modes with `google` unimportable.
+  without them; a profile with no guideline runs the rules as `--try` does and imports none of them either, unless
+  `--trace`, `--debug-log` or `--record`, the engine's own flags, asks for its run; a test runs those modes and such a
+  review with `google` unimportable.
 - **Providers.** `judge/config.py` is the only file that names a provider: Gemini is a plain model string, Copilot is
   `LiteLlm("github_copilot/…")`. Every change must work on both arms. Judging agents run at temperature zero; a model
   that cannot, Copilot's `gpt-5` or o-series as LiteLLM says offline, is refused by `require_ready`, exit 2. Copilot

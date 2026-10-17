@@ -15,6 +15,9 @@ could not see.
 
 from __future__ import annotations
 
+from collections.abc import Callable, Coroutine
+from typing import Any
+
 from google.adk.agents import LlmAgent
 from google.adk.apps.app import App
 from google.adk.plugins.base_plugin import BasePlugin
@@ -23,6 +26,7 @@ from google.adk.workflow import JoinNode, Workflow
 from pydantic import BaseModel, Field
 
 from ..core.findings import Finding
+from ..core.verdict import Outcome, Sourced, to_verify
 from .agents import DIFF, REMINDER, fenced, placeholder, read_back
 from .config import CONCURRENCY, build_model, request_config
 from .run import run_seeded
@@ -85,3 +89,34 @@ async def judge_findings(findings: list[Finding], diff: str, plugins: list[BaseP
         read_back(run.state, keys(n)[1], Judgement, run.why(f"{VERIFIER}_{n}", "the verifier produced no output"))
         for n in range(len(findings))
     ]
+
+
+def second_opinion(
+    outcome: Outcome,
+    rules: list[Sourced],
+    diff: str,
+    plugins: list[BasePlugin],
+    run: Callable[[Coroutine], Any],
+) -> None:
+    """`--verify`: each guideline finding that says more than a rule judged once more — refuted ones out and named,
+    unjudged ones kept and named. `run` is the loop the review's run used, so both share it.
+
+    Before the fold, so the rules' findings — facts — are never asked about, and
+    a rule's reading of a line stands whatever the verifier says of a guideline's.
+    Nor is a guideline's finding that only says again what a rule found: the fold
+    folds it into the rule's, as without `--verify`, so a verifier that holds
+    everything leaves the report it would have been. Measured live on Copilot,
+    2 of 5 verifier calls judged a guideline's reading of a key the secrets rule had found. Each finding is judged
+    beside the whole change, as its guideline judged it.
+    """
+    outcome.verified = True
+    asked = to_verify(outcome.kept, rules)
+    judged = run(judge_findings([item.finding for item in asked], diff, plugins))
+    refuted: set[int] = set()  # by identity: two guidelines can file the same finding
+    for item, judgement in zip(asked, judged, strict=True):
+        if isinstance(judgement, str):
+            outcome.unverified.append((item, judgement))
+        elif not judgement.holds:
+            outcome.refuted.append((item, judgement.reason))
+            refuted.add(id(item))
+    outcome.kept = [item for item in outcome.kept if id(item) not in refuted]

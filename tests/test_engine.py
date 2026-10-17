@@ -342,11 +342,12 @@ class TestTheSecondOpinion:
         async def holds(findings, _diff, _plugins):
             return [Judgement(holds=True, reason="r") for _finding in findings]
 
-        monkeypatch.setattr(importlib.import_module("adk_review.judge.verify"), "judge_findings", holds)
+        verify = importlib.import_module("adk_review.judge.verify")
+        monkeypatch.setattr(verify, "judge_findings", holds)
         without, verified = Outcome(kept=list(guidelines)), Outcome(kept=list(guidelines))
         order = ["rule.lint", "guideline.security", "guideline.tests"]
         cli.fold(without, rules, order)
-        cli.second_opinion(verified, rules, "", [], asyncio.run)
+        verify.second_opinion(verified, rules, "", [], asyncio.run)
         cli.fold(verified, rules, order)
         assert (
             [s.source for s in verified.kept]

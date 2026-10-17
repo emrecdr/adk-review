@@ -38,6 +38,12 @@ NAME = "checks"
 DID_NOT_LOOK = ", so the rule did not look"
 
 
+def unspent(ceiling: int | None) -> dict:
+    """The spend of a review that called no model, as the usage ledger would sum it: every count zero, the ceiling as
+    asked. One shape for both reports, whether the engine ran or the rules alone."""
+    return {"calls": 0, "attempted": 0, "tokens": 0, "ceiling": ceiling, "by_agent": {}}
+
+
 def _hole(why: str) -> Checked:
     """A rule's answer where it could not look, and why: one shape for every hole here."""
     return Checked(could_not_look=why + DID_NOT_LOOK)

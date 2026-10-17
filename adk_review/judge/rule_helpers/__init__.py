@@ -14,6 +14,7 @@ May import `core` alone, and runs nothing: no process, no network, no model. Sta
 
 from ...core.blast import is_test
 from ...core.findings import RANK
+from ...core.paths import matches, matching
 from ...core.rules import ChangedFile, FileRule, Hit, Rule, Tree, TreeRule, UnreadError, is_python
 from ...core.secrets import (
     SECRET_WORDS,
@@ -25,7 +26,6 @@ from ...core.secrets import (
     without_examples,
 )
 from .lines import calls, comment_of, tokens, words
-from .paths import matches, matching
 from .syntax import argument, calls_in, classes, defined, functions_in, imports_in, name_of, nodes_in, parameters
 from .testing import lines_hit, self_check, self_test, try_rule
 
