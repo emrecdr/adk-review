@@ -544,18 +544,17 @@ To review each push before it leaves a developer's machine, see "Before a push" 
 
 ## SonarQube in the IDE
 
-SonarQube is optional and runs on your own machine: a second reader beside the gate, never part of it. CI holds the
-code to ruff, pyrefly and the suite, and nothing here changes what a review does. The checkout carries what it needs:
-`docker-compose.yml` runs a SonarQube server and its PostgreSQL database, and the scanner under the `scanner` profile,
-each image pinned by its digest as the workflows pin an action by its commit; `sonar-project.properties` names the
-project, `adk-review`, its sources, the package and the scripts, and its tests; and `.vscode/` recommends the SonarQube
-for IDE extension (SonarLint, as it was called) beside Ruff and Pyrefly, the editor's lint and type check the same as
-CI's, and binds this folder to that project on the local server.
+SonarQube is optional and runs on your own machine: a second reader beside the gate, never part of it. CI holds the code
+to ruff, pyrefly and the suite, and nothing here changes what a review does. The checkout carries what it needs:
+`docker-compose.yml` runs a SonarQube server on the H2 database it embeds, no database server beside it, and the scanner
+under the `scanner` profile, each image pinned by its digest as the workflows pin an action by its commit;
+`sonar-project.properties` names the project, `adk-review`, its sources, the package and the scripts, and its tests; and
+`.vscode/` recommends the SonarQube for IDE extension (SonarLint, as it was called) beside Ruff and Pyrefly, the
+editor's lint and type check the same as CI's, and binds this folder to that project on the local server.
 
-1. **Start the server**, with Docker running: `docker compose up -d` starts SonarQube and its database and leaves the
-   scanner out. The first start takes a while; the server is ready when `http://localhost:9000` shows its login page.
-   It listens on this machine alone. Sign in as `admin`, password `admin`, and SonarQube asks for a new password at
-   once.
+1. **Start the server**, with Docker running: `docker compose up -d` starts SonarQube alone and leaves the scanner out.
+   The first start takes a while; the server is ready when `http://localhost:9000` shows its login page. It listens on
+   this machine alone. Sign in as `admin`, password `admin`, and SonarQube asks for a new password at once.
 2. **Make a token** under *My Account → Security*: a user token, since the extension takes only a user's, and the same
    token runs the scanner. SonarQube shows it once. Keep it in your shell or a password manager, never in a file the
    repository holds; `.env` is the reviewer's, and the scanner never reads it.
@@ -580,8 +579,10 @@ CI's, and binds this folder to that project on the local server.
    In another editor the same extension, for JetBrains IDEs or Visual Studio, asks for the same three things by hand:
    the server `http://localhost:9000`, the token, and the project key `adk-review`.
 
-`docker compose stop` stops the server and keeps its data; `docker compose down -v` removes the server, its database
-and every analysis. The scanner writes `.scannerwork/` into the checkout, which git ignores.
+`docker compose stop` stops the server and keeps its data; `docker compose down -v` removes the server and every
+analysis with it. H2 is the database SonarQube keeps for development and trials, which this is: should the server not
+start after the image moves to a newer SonarQube, `docker compose down -v` and a new scan rebuild it all from the
+checkout. The scanner writes `.scannerwork/` into the checkout, which git ignores.
 
 ## Claude Code and Copilot
 
