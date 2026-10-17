@@ -25,5 +25,13 @@
       "source.fixAll": "explicit"
     }
   },
-  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python"
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+  "chat.tools.terminal.autoApprove": {
+    "/^uv run (ruff check|ruff format --check|pyrefly check|pytest)(\\s|$)/": true,
+    "/^make (lint|typecheck|test|ci)$/": true,
+    "/\\.env\\b/": {
+      "approve": false,
+      "matchCommandLine": true
+    }
+  }
 }

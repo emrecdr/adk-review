@@ -583,6 +583,22 @@ CI's, and binds this folder to that project on the local server.
 `docker compose stop` stops the server and keeps its data; `docker compose down -v` removes the server, its database
 and every analysis. The scanner writes `.scannerwork/` into the checkout, which git ignores.
 
+## Claude Code and Copilot
+
+Both work on this repository by the same rules. `CLAUDE.md` is the long form, which Claude Code loads and Copilot in VS
+Code and Copilot's cloud agent read as well; `.github/copilot-instructions.md` is its short form, for Copilot wherever
+it runs, and `.github/instructions/` holds the rules that load with the files they name: the package, the tests, the
+docs. The recurring tasks are skills in `.github/skills/`, each a slash command in VS Code's chat — `/new-rule`,
+`/new-guideline`, `/review-a-branch` and `/update-docs` — which `CLAUDE.md` points Claude Code at too, and
+`.github/agents/reviewer-author.agent.md` is a custom agent that implements a change the way the tests demand. On
+GitHub, Copilot's cloud agent starts from `.github/workflows/copilot-setup-steps.yml`, the project installed from its
+lock, so it runs the lint, the type check and the suite as a person would.
+
+In VS Code, `.vscode/` recommends Copilot Chat beside Ruff, Pyrefly and SonarQube for IDE, and lets an agent run the
+offline gate without asking each time: `uv run ruff check`, `ruff format --check`, `pyrefly check` and `pytest`, and
+`make lint`, `typecheck`, `test` and `ci`. Any other command asks first, and one that names `.env` always does, since
+neither assistant may read it. Nothing here calls a model by itself; a review whose profile names a guideline does.
+
 ## Design notes
 
 - **The grouping is the architecture.** What each file may know is what a test says. `core/` can be read, and

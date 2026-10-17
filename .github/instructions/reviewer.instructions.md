@@ -11,6 +11,10 @@ applyTo: "adk_review/**"
   judge's engine modules where a review starts, never at its top, so the modes that read the checks alone and the
   pre-push hook start without them, and a profile with no guideline runs the rules with none of them; keep a new
   engine import there.
+- `adk_review/__init__.py` imports nothing and answers `agent` lazily through PEP 562's `__getattr__`, since
+  `python -m adk_review.review` imports the package before `main` reads `.env`; `agent.py` exports both `app` and
+  `root_agent`, the loader preferring `app`, which carries the plugins. `judge/config.py` sends Copilot the instruction
+  as its system turn (`litellm.disable_copilot_system_to_assistant`), as Gemini reads it.
 - Every check is one file, named after the check it holds, in a folder that holds checks and nothing else: a rule,
   decided by code, in `judge/rules/`; a guideline, judged by a model, in `judge/guidelines/`. No `__init__.py`, guide
   or template goes in either folder: the guides and the templates are "Write a rule" and "Write a guideline" in

@@ -1,5 +1,6 @@
 {
   "recommendations": [
+    "GitHub.copilot-chat",
     "SonarSource.sonarlint-vscode",
     "charliermarsh.ruff",
     "meta.pyrefly",

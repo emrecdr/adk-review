@@ -211,15 +211,19 @@ guide says it. The docs state no static counts of the repository's current state
 ## Copilot's files
 
 `.github/copilot-instructions.md` is the short form of this file for GitHub Copilot, with path-specific rules in
-`.github/instructions/`, skills for the recurring tasks in `.github/skills/`, a custom agent in `.github/agents/` and
-the cloud agent's setup in `.github/workflows/copilot-setup-steps.yml`. A rule that changes here changes there too;
-`tests/test_copilot.py` holds those files to their format.
+`.github/instructions/`, skills for the recurring tasks in `.github/skills/`, each a slash command in VS Code's chat, a
+custom agent in `.github/agents/` and the cloud agent's setup in `.github/workflows/copilot-setup-steps.yml`. Copilot in
+VS Code and the cloud agent read this file too, so a rule that changes here changes there too; `tests/test_copilot.py`
+holds those files to their format. `.vscode/` recommends Copilot Chat beside Ruff, Pyrefly and SonarQube for IDE, and
+lets an agent run the offline gate (`uv run ruff check`, `ruff format --check`, `pyrefly check`, `pytest`, and the
+`make` targets `lint`, `typecheck`, `test` and `ci`) without asking; any command naming `.env` always asks.
 
 Claude Code loads none of them by itself, and they hold procedures this file does not repeat. Before adding a rule,
 read `.github/skills/new-rule/SKILL.md` and `.github/instructions/reviewer.instructions.md` (a rule's constants,
 examples and helpers); before adding a guideline, `.github/skills/new-guideline/SKILL.md` (the tests that count the
 guidelines, and the phrases that find every doc naming them); before running a review,
-`.github/skills/review-a-branch/SKILL.md`.
+`.github/skills/review-a-branch/SKILL.md`; and after a change, `.github/skills/update-docs/SKILL.md` (every guide that
+names what changed, and what no test of the docs reads).
 
 ## History
 
