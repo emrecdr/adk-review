@@ -61,6 +61,13 @@ def chosen(profiles: dict, name: str, known: Sequence[str], groups: Mapping[str,
     return found[name]
 
 
+def _nearest(stranger: str, names: Sequence[str]) -> str:
+    """What to say of a name that is no check's: the one it most resembles, `secrets` for `rule.secrets`, else them
+    all. Measured by walking a first run: `--check secrets` was answered with every id."""
+    nearest = get_close_matches(stranger, names, n=1)
+    return f"did you mean {nearest[0]}?" if nearest else f"known: {', '.join(names)}"
+
+
 def expand(ids: object, known: Sequence[str], groups: Mapping[str, Sequence[str]], what: str) -> list[str]:
     """The check ids a list names — each an id among `known`, or a group's name standing for its ids — spelled out
     once each in the order given. `what` is the list as a sentence refusing it names it: a profile, or the `--check`
@@ -68,10 +75,8 @@ def expand(ids: object, known: Sequence[str], groups: Mapping[str, Sequence[str]
     if not isinstance(ids, list):
         raise ValueError(f"{what} must be a list of check ids")
     if strangers := [check for check in ids if check not in known and check not in groups]:
-        nearest = get_close_matches(strangers[0], [*known, *groups], n=1)
-        hint = f"did you mean {nearest[0]}?" if nearest else f"known: {', '.join(known)}"
         raise ValueError(
-            f"{what} names {strangers[0]!r}, which no check or group is; {hint}"
+            f"{what} names {strangers[0]!r}, which no check or group is; {_nearest(strangers[0], [*known, *groups])}"
             + (f"; groups: {', '.join(groups)}" if groups else "")
         )
     expanded = list(dict.fromkeys(check for named in ids for check in groups.get(named, [named])))

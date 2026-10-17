@@ -46,6 +46,11 @@ def unread(entry: Entry, diff: str, cut: bool, fits: bool, cap: int) -> str:
     return ""
 
 
+def _skipped(path: str, skip: Sequence[str]) -> str | None:
+    """The glob of the operator's skip list that names `path`, or None."""
+    return next((glob for glob in skip if matches(path, glob)), None)
+
+
 def shown_to_guidelines(
     entries: list[dict[str, str]],
     diffs: list[str],
@@ -82,8 +87,7 @@ def shown_to_guidelines(
         # and it is named and counted, never a hole. The operator chose it, in the tool's own config: a branch
         # cannot, and code it hides behind such a name is still every rule's to read. Never a submodule, which the
         # branch names as it likes and no rule reads: measured by review, one named `logo.png` was approved.
-        glob = next((glob for glob in skip if matches(entry["path"], glob)), None)
-        if glob and not SUBMODULE.search(headers(diff)):
+        if (glob := _skipped(entry["path"], skip)) and not SUBMODULE.search(headers(diff)):
             excluded[entry["path"]] = glob
             continue
         if not shown:  # the rules read every added line: what no one can read is all `unread` still names
