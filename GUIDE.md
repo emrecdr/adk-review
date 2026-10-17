@@ -89,7 +89,9 @@ check runs only where a profile names it, or alone with `--check`:
 
 The payments rules — `money-in-cents`, and the tree rules `required-paths`, `module-defines`, `parameters` and
 `derives-from` — are one small project's own, written for the demo repository: examples of a project's rules, which
-a project replaces with its own. The checks, as `--list-checks` prints them:
+a project replaces with its own. `derives-from` holds a class to the base its name promises — a `…Model` to
+`BaseModel`, an `…Error` to `Exception`, a `…User` to `BaseUser`, a `…Repository` to `BaseRepository` — and a
+project names its own kinds in the rule's `PARENTS`. The checks, as `--list-checks` prints them:
 
 <!-- checks: the output of `uv run python -m adk_review.review --list-checks`; a test holds it so -->
 | id | kind | severity | profiles | what | where |

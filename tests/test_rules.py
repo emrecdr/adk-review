@@ -723,6 +723,13 @@ class TestTreeRules:
         assert derives(*kinds) == [("k.py", "class Model derives from Base, not BaseModel")], (
             "an ending decides first, so ModelError is an error; Error is no prefix; Model and ModelBase are models"
         )
+        assert derives("class AdminUser(BaseUser)", "class OrderRepository(BaseRepository)") == []
+        assert derives("class StaffUser(BaseUser)", "class AdminUser(StaffUser)") == [], "a parent named for the kind"
+        assert derives("class BaseUser", "class BaseRepository(ABC)") == [], "the base a kind derives from is no breach"
+        assert derives("class AdminUser", "class OrderRepository(Base)", "class UserRepository(BaseRepository)") == [
+            ("k.py", "class AdminUser derives from nothing, not BaseUser"),
+            ("k.py", "class OrderRepository derives from Base, not BaseRepository"),
+        ], "a user derives from BaseUser and a repository from BaseRepository; the ending decides UserRepository"
         assert ModuleDefines().check(Tree([config], {config: "REGION = ("})) == [
             (charge, "not at the head"),
             (config, "does not parse"),
