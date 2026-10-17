@@ -3,6 +3,7 @@
     "SonarSource.sonarlint-vscode",
     "charliermarsh.ruff",
     "meta.pyrefly",
+    "ms-python.debugpy",
     "ms-python.python"
   ]
 }
