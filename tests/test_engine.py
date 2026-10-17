@@ -134,6 +134,32 @@ class TestRetriesOnBothArms:
         assert run_review(cli, demo_repo) == 3
         assert "the run did not finish within 1e-06 s" in capsys.readouterr().out
 
+    @pytest.mark.asyncio
+    async def test_a_run_whose_session_is_gone_names_why_for_every_answer_still_out(self) -> None:
+        """ADK's session service answers None for a session it does not hold: every check and guideline is then a
+        hole named with why, where `.state` on None would have been an AttributeError."""
+        from adk_review.judge.run import run_seeded
+
+        class Gone:
+            async def create_session(self, **_ids) -> None:
+                return None
+
+            async def get_session(self, **_ids) -> None:
+                return None
+
+        class Runner:
+            app_name, session_service = "gone", Gone()
+
+            async def run_async(self, **_message):
+                for event in ():
+                    yield event
+
+        run = await run_seeded(Runner(), session_id="s", state={}, prompt="check")
+        assert (
+            run.state == {}
+            and run.why("checks", "no answer") == "the run's session was gone when its answers were read"
+        )
+
     def test_a_role_may_choose_its_own_model(self, monkeypatch) -> None:
         from adk_review.judge.config import build_model
 

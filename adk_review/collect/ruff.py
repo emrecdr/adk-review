@@ -18,7 +18,7 @@ import tempfile
 from collections.abc import Sequence
 from pathlib import Path, PurePath, PurePosixPath
 
-from ..core.evidence import Evidence
+from ..core.evidence import Change
 from ..core.rules import Diagnostic, is_python_text
 from ..core.text import squash
 from .git import on_path
@@ -27,7 +27,7 @@ RUFF_TIMEOUT_S = 60
 
 
 def diagnose(
-    evidence: Evidence, select: Sequence[str], ignore: Sequence[str], line_length: int | None = None
+    evidence: Change, select: Sequence[str], ignore: Sequence[str], line_length: int | None = None
 ) -> dict[str, list[Diagnostic]] | str:
     """Ruff's diagnostics on the Python files the change touched, as the collector read them at the head, by path —
     or, as a string, why ruff could not look. `select` and `ignore` are the reading rule's own codes: ruff reads no

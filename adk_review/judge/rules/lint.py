@@ -14,7 +14,7 @@ from collections import Counter
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from ..rule_helpers import RANK, ChangedFile, FileRule, Hit, is_python, is_test
+from ..rule_helpers import RANK, ChangedFile, FileRule, Hit, Severity, is_python, is_test
 
 #: ruff's codes, run --isolated: errors, pyflakes, warnings, bugbear and bandit, then what a reviewer asks for and no
 #: other check here makes, at ruff's own thresholds: complexity (C901: 10; PLR0911, PLR0912, PLR0913, PLR0915: 6
@@ -34,7 +34,7 @@ LINE_LENGTH: int | None = None
 #: and codes, so `S` never reaches `SIM108` and `C90` reaches `C901` but not `C416`; anything else is minor. An
 #: unused import or local is hygiene, not a defect. A file that does not parse is major: ruff reads no other rule
 #: in it, so a `shell=True` inside one went unreported and its one finding read as a nit.
-SEVERITY = {
+SEVERITY: dict[str, Severity] = {
     "F": "major",
     "F401": "minor",
     "F841": "minor",
@@ -50,7 +50,7 @@ SEVERITY = {
 #: A code's severity in a test file, where its pattern is how tests are written: `assert` is pytest's way to check,
 #: while in library code it vanishes under `python -O`. Measured: every test assert was a major S101, 762 of them in
 #: this repository's tests, 99% of its majors.
-IN_TESTS = {"S101": "minor"}
+IN_TESTS: dict[str, Severity] = {"S101": "minor"}
 #: The fix a finding names when ruff offers none: ruff says what is wrong, not what to do. Keyed as `SEVERITY` is:
 #: by family, since a sentence true of every rule in one is worth more than a guess per code, and by code where the
 #: family's would mislead.
@@ -87,14 +87,14 @@ def family(code: str) -> str:
     return code.rstrip("0123456789")
 
 
-def tier(table: Mapping[str, str], code: str) -> str | None:
+def tier[V](table: Mapping[str, V], code: str) -> V | None:
     """The table's entry for `code`: the longest key it begins with inside its own family, so `S` never reaches
     `SIM108`, `C90` reaches `C901` and not `C416`, and `E501` wins over `E`; None where the table has none."""
     keys = [key for key in table if code.startswith(key) and family(key) == family(code)]
     return table[max(keys, key=len)] if keys else None
 
 
-def severity_of(code: str) -> str:
+def severity_of(code: str) -> Severity:
     """The code's tier, else minor."""
     return tier(SEVERITY, code) or "minor"
 
@@ -143,7 +143,7 @@ class Lint(FileRule):
             hits = [hit for hit in hits if hit.line is None or hit.line in file.added]
         if len(hits) > PER_FILE:
             listed = {
-                id(hit) for hit in sorted(hits, key=lambda hit: -RANK[hit.severity])[:PER_FILE]
+                id(hit) for hit in sorted(hits, key=lambda hit: -RANK[hit.severity or self.severity])[:PER_FILE]
             }  # stable: by line
             rest = [hit for hit in hits if id(hit) not in listed]
             tail.insert(0, _counted(file.path, rest, f"{len(rest)} more of ruff's findings in this file, not listed"))
@@ -154,12 +154,12 @@ class Lint(FileRule):
 def _counted(path: str, hits: list[Hit], title: str) -> Hit:
     """`hits` as one finding at the file: how many of each code, at the most severe of them, so no tier is lost and
     the verdict reads the same."""
-    codes = Counter(hit.title.split()[0] for hit in hits)
+    codes = Counter(hit.title.split()[0] for hit in hits if hit.title)  # each of lint's hits titles its code
     return Hit(
         path,
         None,
         ", ".join(f"{code} x{count}" for code, count in codes.most_common()),
         title=title,
-        severity=max((hit.severity for hit in hits), key=RANK.__getitem__),
+        severity=max((hit.severity or Lint.severity for hit in hits), key=RANK.__getitem__),
         fix="Run ruff on the file to see each one.",
     )

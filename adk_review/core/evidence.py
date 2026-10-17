@@ -4,7 +4,9 @@ One dict, not a class, since ADK's session state and a kept review hold it as on
 what no one reads after the rules by blanking keys, never by changing shape. Spelled here once, so each key is read
 as it was written: measured before it was spelled, a key the checks node blanked after the rules was read by the
 JSON report, and `added_at` came in to outlive it. `collect/git.py` gathers it, `collect/change.py` arranges it,
-`judge/checks.py` runs the rules over it and lets go, `deliver/report.py` reads it last.
+`judge/checks.py` runs the rules over it and lets go, `deliver/report.py` reads it last. Where there is nothing to
+review, the collector answers a `Failure` in its place; the rules read the `Change` alone, which `--try` hands them
+too.
 """
 
 from collections.abc import Sequence
@@ -67,21 +69,39 @@ def entry(
     return made
 
 
-class Evidence(TypedDict):
-    """Everything the rules and the guidelines read, gathered in plain Python before any model runs; or, with
-    `status` "error", why there is nothing to review, and no other key."""
+def unreleased[T](value: T | None) -> T:
+    """A file's diff or added lines, read while the evidence still holds them: the checks node lets go of both once
+    the rules have read them, and a read after is a mistake named, never an empty answer read as nothing found."""
+    if value is None:
+        raise LookupError("read after the checks node let it go")
+    return value
 
-    status: Literal["success", "error"]
-    error_message: NotRequired[str]  # under "error" alone: one sentence, the command's exit 2
+
+class Change(TypedDict):
+    """What the rules read of the evidence: each changed file and the head's tree, as `--try` hands them its own."""
+
+    files: list[Entry]  # each changed file, in path order
+    tree: "Tree | None"  # the head as the tree rules read it; None where it could not be listed, or once let go
+
+
+class Failure(TypedDict):
+    """Why there is nothing to review, in the evidence's place."""
+
+    status: Literal["error"]
+    error_message: str  # one sentence, the command's exit 2
+
+
+class Evidence(Change):
+    """Everything the rules and the guidelines read, gathered in plain Python before any model runs."""
+
+    status: Literal["success"]
     preflight: (
         dict  # the scope as `preflight` resolved it: the repository, the base and head, their shas, the merge base
     )
-    files: list[Entry]  # each changed file, in path order
     diff: (
         str  # the block the guidelines read: a `### <path>` heading and a fenced diff per file, capped, each cut named
     )
     blast: "Blast"  # what at the head depends on each changed file, read beside the block, never inside it
-    tree: "Tree | None"  # the head as the tree rules read it; None where it could not be listed, or once let go
     whole: bool  # under --all: every file at the head is the change, diffed against the empty tree
     scope: list[str]  # the folders --path named, as git spells them; [] for the whole change
     skipped: dict[str, str]  # the files the operator's skip list left to the rules, by path with the glob

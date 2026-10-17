@@ -207,6 +207,12 @@ class TestTheRuleKinds:
         got = run_rule(_broken(error), [{"path": "a.py", "added": [(1, "x")]}], None).could_not_look
         assert got.startswith(f"{said} (conftest.py line "), got  # where `_broken` is written
 
+    def test_a_rule_run_after_its_lines_were_let_go_did_not_look(self) -> None:
+        """The checks node lets go of each file's added lines once the rules have read them: a rule run over them
+        after is a hole that says so, never a pass over nothing."""
+        answer = run_rule(_no_subprocess(), [{"path": "pay.py", "added": None}], None)
+        assert answer.findings == [] and "read after the checks node let it go" in answer.could_not_look, answer
+
     @pytest.mark.parametrize(
         ("files", "said"),
         [

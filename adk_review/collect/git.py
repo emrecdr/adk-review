@@ -25,7 +25,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.blast import Radius
-from ..core.evidence import Entry, Evidence
+from ..core.evidence import Entry, Evidence, Failure, unreleased
 from ..core.rules import Tree
 from ..core.text import lines_of
 from .change import no_change, radius, shown_to_guidelines
@@ -596,7 +596,9 @@ def read_texts(resolved: dict, files: list[Entry], listing: list[tuple[str, str,
             entry["unread_text"] = "was not read: the head's tree could not be listed"
     else:
         blobs = {path: (sha, size) for path, sha, size in _plain(listing)}
-        changed = [entry for entry in files if entry["path"] in blobs and not BINARY.search(headers(entry["diff"]))]
+        changed = [
+            entry for entry in files if entry["path"] in blobs and not BINARY.search(headers(unreleased(entry["diff"])))
+        ]
         texts, _unread = _texts(resolved, ((entry["path"], *blobs[entry["path"]]) for entry in changed))
         unread = []
         for entry in changed:
@@ -605,12 +607,12 @@ def read_texts(resolved: dict, files: list[Entry], listing: list[tuple[str, str,
                 entry["unread_text"] = "was not read whole"
                 unread.append(entry)
     for entry in unread:
-        entry["shown"] = {number: line[1:] for number, line in hunk_lines(entry["diff"]) if line[:1] != "-"}
+        entry["shown"] = {number: line[1:] for number, line in hunk_lines(unreleased(entry["diff"])) if line[:1] != "-"}
 
 
 def collect_evidence(
     repo: str, base: str | None, head: str, scope: Sequence[str] = (), *, staged: bool = False, **options: Any
-) -> Evidence:
+) -> Evidence | Failure:
     """Everything the rules and the guidelines read, gathered in plain Python before any model runs: `preflight`, or
     `preflight_staged` for the index, then `gather`, with the `options` it takes, declared there alone.
 
@@ -625,7 +627,7 @@ def collect_evidence(
     """
     resolved = preflight_staged(repo) if staged else preflight(repo, base, head)
     if resolved["status"] != "success":
-        return resolved
+        return {"status": "error", "error_message": resolved["error_message"]}
     return gather(resolved, scope, **options)
 
 
@@ -637,7 +639,7 @@ def gather(
     guidelines: bool = True,
     diff_cap: int = DIFF_CAP_CHARS,
     skip: Sequence[str] = (),
-) -> Evidence:
+) -> Evidence | Failure:
     """The evidence `collect_evidence` describes, for a scope `preflight` resolved: what the chat's checks node gathers
     for the commits the intake confirmed, never resolving their names again — measured, a head given as a sha resolved
     through no ref, and the rules reviewed nothing while the guidelines reviewed the change."""

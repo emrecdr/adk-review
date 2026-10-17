@@ -81,7 +81,7 @@ try:
     from dotenv import load_dotenv
 
     from .collect.git import MAX_FILE_BYTES, GitError, checked_out, collect_evidence, default_base, is_repository
-    from .core.evidence import Evidence
+    from .core.evidence import Evidence, unreleased
     from .core.findings import RANK
     from .core.health import Health, measured
     from .core.profiles import DEFAULT
@@ -804,10 +804,11 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
     the checks and every setting, each model a call would go to, and each outside tool a rule runs. A missing input
     would serve a stale approval."""
     from .collect.tools import IDENTITIES
+    from .core.rules import FileRule
     from .judge.settings import fallback_name
 
     digest = hashlib.sha256()
-    tools = sorted({getattr(rule, "tool", None) for rule in chosen.rules} - {None})
+    tools = sorted({rule.tool for rule in chosen.rules if isinstance(rule, FileRule) and rule.tool})
     here = Path(__file__).parent
     for path in sorted(here.rglob("*")):
         if path.suffix in (".py", ".toml") and "__pycache__" not in path.parts:
@@ -828,7 +829,7 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
         "previous": Path(args.previous).expanduser().read_bytes().hex() if args.previous else "",
         # What was read, byte for byte: the index has no commit to name it by, and a hash of a commit's diffs costs
         # nothing beside the review it would spare.
-        "diffs": hashlib.sha256("\0".join(f["diff"] for f in evidence["files"]).encode()).hexdigest(),
+        "diffs": hashlib.sha256("\0".join(unreleased(f["diff"]) for f in evidence["files"]).encode()).hexdigest(),
     }
     digest.update(json.dumps(said, sort_keys=True, default=str).encode())
     return Path(args.cache).expanduser() / f"{digest.hexdigest()[:32]}.json"

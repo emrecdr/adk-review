@@ -29,7 +29,7 @@ from types import MappingProxyType
 from typing import ClassVar
 
 from .blast import parse, parsed
-from .evidence import Entry
+from .evidence import Entry, unreleased
 from .findings import Checked, Finding, Severity
 from .profiles import rule_id
 from .secrets import scrub
@@ -108,7 +108,7 @@ class Rule(AnyRule):
         return [
             Hit(entry["path"], line, f"+{text}")
             for entry in files
-            for line, text in entry["added"]
+            for line, text in unreleased(entry["added"])
             if self.check(entry["path"], text)
         ]
 
@@ -266,7 +266,7 @@ class FileRule(AnyRule):
                 continue  # deleted, binary, a link, a submodule: nothing at the head for a file rule to read
             path = entry["path"]
             module = tree.module(path) if tree is not None and path in tree.parsed else None  # the tree's one parse
-            added = (line for line, _text in entry["added"])
+            added = (line for line, _text in unreleased(entry["added"]))
             # Ruff's diagnostics ride on an entry only for the rule that named its codes; every other rule gets none.
             unread = entry["unread_text"] or ""
             diagnostics, shown = entry.get("diagnostics", ()), entry.get("shown") or {}
@@ -302,13 +302,13 @@ class FileRule(AnyRule):
             line, what = item, None
         elif isinstance(item, tuple) and len(item) == 2 and _whole(item[0]) and isinstance(item[1], str):
             line, what = item
+            if line is None:
+                return Hit(file.path, None, what)
         else:
             raise TypeError(
                 f"check(file) returned {item!r} among its hits: each is a line number, a (line, what is wrong) pair "
                 "or a Hit"
             )
-        if line is None:
-            return Hit(file.path, None, what)
         # A line the rule can see: its file's, or one its diff shows of a file not read whole, where a line it shows
         # none of is a hole, through `lines`, as any read of that file is.
         if (seen := file.near(line)) is None:

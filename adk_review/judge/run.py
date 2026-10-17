@@ -63,6 +63,8 @@ async def run_seeded(runner: InMemoryRunner, *, session_id: str, state: dict, pr
     except Exception as exc:  # noqa: BLE001 -- the engine itself; an agent's own failure never gets here
         failure = f"{type(exc).__name__}: {exc}"
     session = await runner.session_service.get_session(**ids)
+    if session is None:  # the service lost the session it made: every guideline still out is named with it
+        return Run({}, errors, failure or "the run's session was gone when its answers were read")
     return Run(dict(session.state), errors, failure)
 
 
@@ -86,7 +88,8 @@ def read_guidelines(run: Run, files: list[Entry], guidelines: Sequence[str], hol
     which names every guideline that wrote nothing.
     """
     outcome = Outcome(unread=not_read(files, guidelines), errors=dict(holes))
-    quotable, framing = ({f["path"]: f[key] for f in files} for key in ("quotable", "framing"))
+    quotable = {f["path"]: f["quotable"] for f in files}
+    framing = {f["path"]: f["framing"] for f in files}
     for check in guidelines:  # a guideline the profile left off did not fail: it was never asked
         key = state_key(check)
         answer = read_back(run.state, key, Review, run.why(key, "the guideline produced no output"))

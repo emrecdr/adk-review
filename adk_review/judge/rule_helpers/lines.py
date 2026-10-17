@@ -61,8 +61,9 @@ def comment_of(line: str) -> str:
 @functools.cache
 def _last_word(name: str) -> str:
     """`pdb.set_trace` -> `set_trace`, `*.assert*` -> `assert`: what a line must hold to call the name at all. Cached:
-    a rule asks for the same few names on every added line."""
-    return _LAST_WORD.search(name).group()
+    a rule asks for the same few names on every added line. The pattern matches any name, if only as nothing, which
+    every line holds."""
+    return found.group() if (found := _LAST_WORD.search(name)) else ""
 
 
 def _called(code: list[str]) -> Iterator[str]:

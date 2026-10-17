@@ -183,7 +183,7 @@ def render_explained(said: Mapping[str, object]) -> str:
         lines += ["## Its role", "", str(said["role"]), ""]
     for heading, key in (("It flags", "bad"), ("It leaves alone", "good")):
         examples = said.get(key)
-        if examples is None:
+        if not isinstance(examples, list):  # a guideline has none
             continue
         lines += [f"## {heading}", ""]
         lines += [

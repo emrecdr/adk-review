@@ -296,8 +296,10 @@ def _unless_example(found: re.Match[str]) -> str:
     if vendor_shape(found.group(0)) != "url_credentials":
         return found.group(0)
     password, host = found.group(2), found.group(3)
+    readings = [(password, host)]
     first, at, rest = password.partition("@")
-    readings = [(password, host), *([(first, _HOST_AFTER.match(rest).group(1))] if at else [])]
+    if at and (after := _HOST_AFTER.match(rest)):  # it matches any text: only `at` decides
+        readings.append((first, after.group(1)))
     return _BLANK if all(_example(word, name) for word, name in readings) else found.group(0)
 
 

@@ -56,9 +56,13 @@ import ast
 import functools
 import sys
 from collections import defaultdict
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # for the checker alone: `evidence.py` reads `Blast` back, and a cycle at import would follow
+    from .evidence import Entry
 
 #: A file that depends on a changed one is named; past this many, the rest are counted.
 NAMES_SHOWN = 5
@@ -227,7 +231,7 @@ def _imports(path: str, module: ast.Module, tree: _Tree) -> set[str]:
 
 
 def blast_radius(
-    modules: Mapping[str, ast.Module | None], changed: list[dict[str, str]], skipped: int = 0, *, listed: bool = True
+    modules: Mapping[str, ast.Module | None], changed: Sequence[Entry], skipped: int = 0, *, listed: bool = True
 ) -> Blast:
     """Each changed file's radius over the Python files at the head, `modules` as parsed by path, None for one the
     parser refused; `skipped` were not read, and `listed` is False when the tree could not be listed, so `modules`
@@ -262,9 +266,9 @@ def blast_radius(
                 seen.add(dependent)
                 frontier.append(dependent)
         importers = dependents[path]  # every one also reached, so `direct` is a part of `modules` and `tests`
-        modules, tests = tuple(sorted(seen - test_files)), tuple(sorted(seen & test_files))
+        reached, tested = tuple(sorted(seen - test_files)), tuple(sorted(seen & test_files))
         direct = (*sorted(importers - test_files), *sorted(importers & test_files))
-        radii.append(Radius(path, modules, tests, deleted=path in deleted, direct=direct))
+        radii.append(Radius(path, reached, tested, deleted=path in deleted, direct=direct))
     # Widest first: the most modules importing it themselves, then the most reached. By reach alone, measured on ADK,
     # its `__init__.py`, which 613 modules import, came after 88 files reaching one module more, one imported once.
     radii.sort(key=lambda r: (not r.measured, -len(set(r.direct) - test_files), -len(r.modules), -len(r.tests), r.path))

@@ -39,6 +39,7 @@ from typing import TextIO
 
 from .collect.git import GitError
 from .collect.history import push_scope, sent, tag_message
+from .core.evidence import entry
 from .core.findings import Finding, at_or_above
 from .core.paths import matches
 from .core.rules import AnyRule, run_rule
@@ -159,7 +160,12 @@ def in_history(repository: str, remote: str | None, head: str, held: str | None,
     for commit, message, files in itertools.chain(said, sent(repository, remote, head, held, read)):
         unread = [f["path"] for f in files if f.get("binary") and not matches(f["path"], *skip)]
         found += [f"{_named(commit)}, {path}: a binary file, which no rule can read" for path in unread]
-        entries = [{"path": MESSAGE, "added": list(enumerate(lines_of(message), 1))}, *files]
+        # As a line rule reads a change: a path and the lines added. The message is all added; a file's letter is
+        # not read here.
+        entries = [
+            entry(MESSAGE, "A", None, list(enumerate(lines_of(message), 1))),
+            *(entry(f["path"], "M", None, f["added"]) for f in files),
+        ]
         for rule in rules:
             answer = run_rule(rule, entries, None)
             found += [f"{_named(commit)}, {_where(f)}: {rule.title} ({rule.check_id})" for f in answer.findings]

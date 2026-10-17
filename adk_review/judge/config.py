@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import re
-from types import ModuleType
 from urllib.parse import urlsplit
 
 import truststore
@@ -131,7 +130,7 @@ def build_model(*, role: str = "") -> str | BaseLlm:
     return models[0] if len(models) == 1 else FallbackModel(models=models)
 
 
-def _litellm() -> ModuleType:
+def _litellm():  # unannotated: a checker then knows the module and its typed flags, where `ModuleType` names none
     """LiteLLM, imported where the Copilot arm needs it and nowhere else. At the top of the command it cost about a
     second of every start, `--help` included, and on its own import it read `.env` unless told it runs in production,
     as ADK tells it, and fetched a price list unless `LITELLM_LOCAL_MODEL_COST_MAP` is set."""

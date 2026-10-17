@@ -17,12 +17,12 @@ times the texts.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import TYPE_CHECKING
 
 from ..collect.git import gather
 from ..collect.tools import ADAPTERS
-from ..core.evidence import Evidence
+from ..core.evidence import Change, Entry, Evidence, Failure
 from ..core.findings import Checked
 from ..core.profiles import state_key
 from ..core.rules import AnyRule, FileRule, run_rule
@@ -51,18 +51,18 @@ def _hole(why: str) -> Checked:
     return Checked(could_not_look=why + DID_NOT_LOOK)
 
 
-def _diagnosed(rule: FileRule, evidence: Evidence) -> dict | str:
-    """What the rule's outside tool says of the change, by path, or why it could not look. An adapter that raises past
-    its own answers is its rule's hole alone, as `run_rule` keeps a rule's own failure to it: measured, an
-    `IndexError` out of ruff's answer reached the node's catch-all and every rule answered with it, the planted key's
-    finding gone."""
+def _diagnosed(tool: str, settings: Mapping[str, object], evidence: Change) -> dict | str:
+    """What a rule's outside tool, run with the rule's settings, says of the change, by path, or why it could not
+    look. An adapter that raises past its own answers is its rule's hole alone, as `run_rule` keeps a rule's own
+    failure to it: measured, an `IndexError` out of ruff's answer reached the node's catch-all and every rule answered
+    with it, the planted key's finding gone."""
     try:
-        return ADAPTERS[rule.tool](evidence, **rule.tool_settings)  # the catalog refused a tool none runs
+        return ADAPTERS[tool](evidence, **settings)  # the catalog refused a tool none runs
     except Exception as exc:  # noqa: BLE001 -- the tool's failure, named for its rule
-        return f"{rule.tool} raised {type(exc).__name__}: {exc}"
+        return f"{tool} raised {type(exc).__name__}: {exc}"
 
 
-def run_rules(evidence: Evidence, rules: Sequence[AnyRule], stop: threading.Event | None = None) -> dict[str, Checked]:
+def run_rules(evidence: Change, rules: Sequence[AnyRule], stop: threading.Event | None = None) -> dict[str, Checked]:
     """Every rule over what it reads, each the same way, by its check id: what it found, or why it could not look. A
     rule that names ruff codes is given ruff's diagnostics on each changed Python file, beside the file. `stop`, once
     set, ends the run before the next rule: the rules run in a thread, which no cancel reaches."""
@@ -70,9 +70,9 @@ def run_rules(evidence: Evidence, rules: Sequence[AnyRule], stop: threading.Even
     for rule in rules:
         if stop is not None and stop.is_set():
             break
-        files = evidence["files"]
-        if isinstance(rule, FileRule) and rule.tool:
-            found = _diagnosed(rule, evidence)
+        files: list[Entry] = evidence["files"]
+        if isinstance(rule, FileRule) and (tool := rule.tool):
+            found = _diagnosed(tool, rule.tool_settings, evidence)
             if isinstance(found, str):
                 answers[rule.check_id] = _hole(found)
                 continue
@@ -81,7 +81,7 @@ def run_rules(evidence: Evidence, rules: Sequence[AnyRule], stop: threading.Even
     return answers
 
 
-def _gather(resolved: dict | None, gathered: Callable[[dict], Evidence]) -> Evidence | str:
+def _gather(resolved: dict | None, gathered: Callable[[dict], Evidence | Failure]) -> Evidence | str:
     """In chat: the evidence the command would gather, for the scope the intake confirmed, or why there is none."""
     if not resolved:
         return "nothing was gathered"
@@ -103,7 +103,7 @@ def _release(evidence: Evidence) -> None:
 def build_checks(
     rules: Sequence[AnyRule],
     evidence: Evidence | None,
-    gathered: Callable[[dict], Evidence] = gather,
+    gathered: Callable[[dict], Evidence | Failure] = gather,
 ) -> FunctionNode:
     """The node: each rule's answer into state under its check's key, why one could not look its answer; every answer
     rendered for the chat's verdict, and the blast radius for the guidelines. `evidence` is the command's, gathered

@@ -11,7 +11,7 @@ the core is.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from difflib import get_close_matches
 
 #: The profile a review runs when none is named; `config.toml` must hold it, as it holds every other.
@@ -61,7 +61,7 @@ def chosen(profiles: dict, name: str, known: Sequence[str], groups: Mapping[str,
     return found[name]
 
 
-def nearest(stranger: str, known: Sequence[str], groups: Sequence[str] = ()) -> str:
+def nearest(stranger: str, known: Sequence[str], groups: Collection[str] = ()) -> str:
     """What to say of a name that is no check's: the id or group it most resembles, `rule.secrets` for `secrets`,
     else every id and group there is. Measured by walking a first run: `--check secrets` was answered with every id."""
     if close := get_close_matches(stranger, [*known, *groups], n=1):
