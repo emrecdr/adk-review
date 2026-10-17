@@ -18,7 +18,6 @@ from fnmatch import fnmatchcase
 #: The part of a called name that must be in a line's text for the line to be worth reading: its last word, up to the
 #: first `*`. Measured on the rule this came from: tokenizing every added line took 487 ms, and only those holding
 #: the word 12 ms.
-_LAST_WORD = re.compile(r"[^.*?\[]*$|[^.*?\[]*(?=[*?\[][^.]*$)")
 
 
 def tokens(line: str) -> list[tokenize.TokenInfo]:
@@ -61,9 +60,8 @@ def comment_of(line: str) -> str:
 @functools.cache
 def _last_word(name: str) -> str:
     """`pdb.set_trace` -> `set_trace`, `*.assert*` -> `assert`: what a line must hold to call the name at all. Cached:
-    a rule asks for the same few names on every added line. The pattern matches any name, if only as nothing, which
-    every line holds."""
-    return found.group() if (found := _LAST_WORD.search(name)) else ""
+    a rule asks for the same few names on every added line."""
+    return re.split(r"[*?\[]", name.rpartition(".")[2], maxsplit=1)[0]
 
 
 def _called(code: list[str]) -> Iterator[str]:

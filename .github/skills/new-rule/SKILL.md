@@ -33,4 +33,4 @@ The shape of a rule — the three kinds, the constants it names, what it may imp
    the demo repository with `--profile rules-only` when the planted branch should trip it.
 5. Check `uv run python -m adk_review.review --list-checks` shows it with its kind, its profiles and its
    file, and that `GUIDE.md`'s check table matches it, and run `uv run pytest -q tests/test_docs.py tests/test_rules.py
-   tests/test_catalog.py tests/test_layering.py`, then the whole suite and the lint.
+   tests/test_catalog.py tests/test_layering.py`, then the whole suite, the lint and the type check.

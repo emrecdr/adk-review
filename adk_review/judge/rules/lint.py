@@ -14,7 +14,7 @@ from collections import Counter
 from collections.abc import Mapping
 from types import MappingProxyType
 
-from ..rule_helpers import RANK, ChangedFile, FileRule, Hit, Severity, is_python, is_test
+from ..rule_helpers import RANK, ChangedFile, Diagnostic, FileRule, Hit, Severity, is_python, is_test
 
 #: ruff's codes, run --isolated: errors, pyflakes, warnings, bugbear and bandit, then what a reviewer asks for and no
 #: other check here makes, at ruff's own thresholds: complexity (C901: 10; PLR0911, PLR0912, PLR0913, PLR0915: 6
@@ -122,44 +122,47 @@ class Lint(FileRule):
         if not is_python(file.path, lambda: file.line(1)):  # ruff reads Python: another file's text is never asked for
             return []
         tests = is_test(file.path)
-        hits = [
-            Hit(
-                file.path,
-                found.line,
-                found.source,
-                title=f"{found.code} {found.message}",
-                severity=IN_TESTS[found.code] if tests and found.code in IN_TESTS else severity_of(found.code),
-                fix=fix_for(found.code, found.fix, found.applicability),
-            )
+        rated = [
+            (found, IN_TESTS[found.code] if tests and found.code in IN_TESTS else severity_of(found.code))
             for found in file.diagnostics
         ]
         tail: list[Hit] = []
         # What ruff reports on lines the change did not add is counted, one finding a file at the most severe of them,
         # so the verdict reads the same. Measured over this repository's 22 commits: 2,101 of lint's 2,435 findings,
         # 86.3%, sat on lines the commit did not add, and listed one by one they buried the change's own.
-        aside = [hit for hit in hits if hit.line is not None and hit.line not in file.added]
+        aside = [(found, severity) for found, severity in rated if found.line not in file.added]
         if aside:
             tail.append(_counted(file.path, aside, f"{len(aside)} of ruff's findings on lines the change did not add"))
-            hits = [hit for hit in hits if hit.line is None or hit.line in file.added]
-        if len(hits) > PER_FILE:
-            listed = {
-                id(hit) for hit in sorted(hits, key=lambda hit: -RANK[hit.severity or self.severity])[:PER_FILE]
-            }  # stable: by line
-            rest = [hit for hit in hits if id(hit) not in listed]
+            rated = [(found, severity) for found, severity in rated if found.line in file.added]
+        if len(rated) > PER_FILE:
+            ranked = sorted(range(len(rated)), key=lambda at: -RANK[rated[at][1]])  # stable: by line
+            listed = set(ranked[:PER_FILE])
+            rest = [pair for at, pair in enumerate(rated) if at not in listed]
             tail.insert(0, _counted(file.path, rest, f"{len(rest)} more of ruff's findings in this file, not listed"))
-            hits = [hit for hit in hits if id(hit) in listed]
+            rated = [pair for at, pair in enumerate(rated) if at in listed]
+        hits = [
+            Hit(
+                file.path,
+                found.line,
+                found.source,
+                title=f"{found.code} {found.message}",
+                severity=severity,
+                fix=fix_for(found.code, found.fix, found.applicability),
+            )
+            for found, severity in rated
+        ]
         return hits + tail
 
 
-def _counted(path: str, hits: list[Hit], title: str) -> Hit:
-    """`hits` as one finding at the file: how many of each code, at the most severe of them, so no tier is lost and
+def _counted(path: str, rated: list[tuple[Diagnostic, Severity]], title: str) -> Hit:
+    """`rated` as one finding at the file: how many of each code, at the most severe of them, so no tier is lost and
     the verdict reads the same."""
-    codes = Counter(hit.title.split()[0] for hit in hits if hit.title)  # each of lint's hits titles its code
+    codes = Counter(found.code for found, _severity in rated)
     return Hit(
         path,
         None,
         ", ".join(f"{code} x{count}" for code, count in codes.most_common()),
         title=title,
-        severity=max((hit.severity or Lint.severity for hit in hits), key=RANK.__getitem__),
+        severity=max((severity for _found, severity in rated), key=RANK.__getitem__),
         fix="Run ruff on the file to see each one.",
     )

@@ -33,6 +33,8 @@ if TYPE_CHECKING:
     from google.adk.agents.context import Context
     from google.adk.workflow import FunctionNode
 
+#: How chat gathers the evidence for a scope `preflight` resolved: `collect/git.py`'s `gather`, its settings bound.
+type Gatherer = Callable[[dict], Evidence | Failure]
 #: The node's name in the graph, in `adk web` and in a trace.
 NAME = "checks"
 #: How a rule that could not look ends its reason, whatever kept it from looking: one shape for every hole here.
@@ -81,7 +83,7 @@ def run_rules(evidence: Change, rules: Sequence[AnyRule], stop: threading.Event 
     return answers
 
 
-def _gather(resolved: dict | None, gathered: Callable[[dict], Evidence | Failure]) -> Evidence | str:
+def _gather(resolved: dict | None, gathered: Gatherer) -> Evidence | str:
     """In chat: the evidence the command would gather, for the scope the intake confirmed, or why there is none."""
     if not resolved:
         return "nothing was gathered"
@@ -103,7 +105,7 @@ def _release(evidence: Evidence) -> None:
 def build_checks(
     rules: Sequence[AnyRule],
     evidence: Evidence | None,
-    gathered: Callable[[dict], Evidence | Failure] = gather,
+    gathered: Gatherer = gather,
 ) -> FunctionNode:
     """The node: each rule's answer into state under its check's key, why one could not look its answer; every answer
     rendered for the chat's verdict, and the blast radius for the guidelines. `evidence` is the command's, gathered

@@ -336,9 +336,10 @@ class RequiredPaths(TreeRule):
 6. Turn it on: `rules-only` and `full` run it at once, through the group. To run it in every review that names no
    profile, add `rule.no-todo` to `default`, and to `default-rules`, which a test keeps to the default's rules.
 
-The door passes on the contract — `Rule`, `FileRule`, `TreeRule`, `ChangedFile`, `Tree`, `Hit`, `UnreadError` and the
-severity scale, `Severity` and `RANK` — and the helpers, each in a module named after what it reads (`lines.py`, `syntax.py`), or
-tries a rule with (`testing.py`), and `matches` and `matching` from `core/paths.py`:
+The door passes on the contract — `Rule`, `FileRule`, `TreeRule`, `ChangedFile`, `Diagnostic`, `Tree`, `Hit`,
+`UnreadError` and the severity scale, `Severity` and `RANK` — and the helpers, each in a module named after what it
+reads (`lines.py`, `syntax.py`), or tries a rule with (`testing.py`), and `matches` and `matching` from
+`core/paths.py`:
 
 | Helper | What it answers |
 |---|---|

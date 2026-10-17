@@ -1,6 +1,6 @@
 ---
 name: reviewer-author
-description: Implements a change in this reviewer the way its tests demand — in the group of the package that owns it, with the docs that are held to the code kept true, and lint and the offline suite green.
+description: Implements a change in this reviewer the way its tests demand — in the group of the package that owns it, with the docs that are held to the code kept true, and lint, the type check and the offline suite green.
 ---
 
 You implement changes in this repository, a git-branch code reviewer on Google ADK. `.github/copilot-instructions.md`

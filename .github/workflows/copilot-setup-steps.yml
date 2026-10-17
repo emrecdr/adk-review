@@ -1,6 +1,6 @@
 # The environment Copilot's cloud agent works in, prepared before it starts: the project installed with its locked
-# dependencies, so the agent can run the lint, the offline suite and the model-free review as a person would. Nothing
-# here calls a model, so no key or login. Copilot reads only the job named copilot-setup-steps.
+# dependencies, so the agent can run the lint, the type check, the offline suite and the model-free review as a person
+# would. Nothing here calls a model, so no key or login. Copilot reads only the job named copilot-setup-steps.
 name: Copilot setup steps
 
 on:

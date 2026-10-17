@@ -59,10 +59,8 @@ from collections import defaultdict
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import TYPE_CHECKING
 
-if TYPE_CHECKING:  # for the checker alone: `evidence.py` reads `Blast` back, and a cycle at import would follow
-    from .evidence import Entry
+from .evidence import Entry
 
 #: A file that depends on a changed one is named; past this many, the rest are counted.
 NAMES_SHOWN = 5

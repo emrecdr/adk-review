@@ -85,6 +85,7 @@ try:
     from .core.findings import RANK
     from .core.health import Health, measured
     from .core.profiles import DEFAULT
+    from .core.rules import FileRule
     from .core.verdict import (
         EXIT_CLEAN,
         EXIT_DEGRADED,
@@ -804,7 +805,6 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
     the checks and every setting, each model a call would go to, and each outside tool a rule runs. A missing input
     would serve a stale approval."""
     from .collect.tools import IDENTITIES
-    from .core.rules import FileRule
     from .judge.settings import fallback_name
 
     digest = hashlib.sha256()
