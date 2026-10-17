@@ -557,6 +557,7 @@ def test_the_copilot_login_makes_its_files_private_from_the_first_byte(monkeypat
     assert masks == [0o077]
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="a Windows file has no owner/group/other modes to narrow")
 def test_the_copilot_login_keeps_its_files_to_their_owner(tmp_path) -> None:
     """Measured before: both token files 0644 in a 0755 directory, readable by every account on the machine."""
     import copilot_login
