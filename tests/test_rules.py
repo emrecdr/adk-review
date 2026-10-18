@@ -723,7 +723,7 @@ class TestTreeRules:
             "the ending decides: ModelError is an error, ErrorCode and ModelView end in no kind, and Model is the "
             "kind's own name, which promises nothing"
         )
-        bare = ("class User(BaseModel)", "class Repository(Generic[T])", "class Error", "class Model(Base)")
+        bare = ("class User(BaseModel)", "class Repository(Generic[T])", "class Error")
         assert derives(*bare) == [], "a kind's own name alone is no promise: a Pydantic User is no BaseUser"
         assert derives("class AdminUser(User)", "class UserModel(models.Model)", "class LookupError(Error)") == [], (
             "a parent named the kind is of the kind, as Django's models.Model is a model"

@@ -221,9 +221,11 @@ def _check_again(evidence: Evidence, found: set[str], fail_on: str) -> list[str]
     return lines
 
 
-#: What cmd and PowerShell both keep as itself inside double quotes, beside letters and digits: no `"`, nor `“`, `”`
-#: or `„`, which PowerShell reads as one; no `$` or backtick, which PowerShell expands; no `%` or `!`, which cmd does.
-WINDOWS_QUOTED = " \\:._-/~+,;=@#&'()[]{}^"
+#: What cmd and PowerShell both read bare as itself, beside letters and digits.
+WINDOWS_BARE = "\\:._-/"
+#: What both keep as itself inside double quotes, beside letters and digits: no `"`, nor `“`, `”` or `„`, which
+#: PowerShell reads as one; no `$` or backtick, which PowerShell expands; no `%` or `!`, which cmd does.
+WINDOWS_QUOTED = WINDOWS_BARE + " ~+,;=@#&'()[]{}^"
 
 
 def _pasted(argv: Sequence[str], windows: bool = os.name == "nt") -> str | None:
@@ -237,10 +239,10 @@ def _pasted(argv: Sequence[str], windows: bool = os.name == "nt") -> str | None:
 
 
 def _windows_word(arg: str) -> str | None:
-    """One argument as cmd and PowerShell both read it: bare where it holds only letters, digits and `\\:._-/`, else
-    in double quotes where it holds only what `WINDOWS_QUOTED` names and ends in no `\\`, which would keep the quote
-    open; else None."""
-    if arg and all(c.isalnum() or c in "\\:._-/" for c in arg):
+    """One argument as cmd and PowerShell both read it: bare where it holds only letters, digits and what
+    `WINDOWS_BARE` names, else in double quotes where it holds only what `WINDOWS_QUOTED` names and ends in no `\\`,
+    which would keep the quote open; else None."""
+    if arg and all(c.isalnum() or c in WINDOWS_BARE for c in arg):
         return arg
     if all(c.isalnum() or c in WINDOWS_QUOTED for c in arg) and not arg.endswith("\\"):
         return f'"{arg}"'

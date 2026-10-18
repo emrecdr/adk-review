@@ -81,9 +81,10 @@ class TestTheConfig:
         from adk_review.core.profiles import chosen
 
         found, profiles = catalog(), profiles_of()
-        rules, guidelines = found.groups()["rules"], found.groups()["guidelines"]
+        groups = found.groups()
+        rules, guidelines = groups["rules"], groups["guidelines"]
         general = [rule for rule in rules if not rule.startswith(rule_id("demo-"))]
-        on = {name: chosen(profiles, name, found.ids(), found.groups()) for name in ("rules-only", "full", "demo")}
+        on = {name: chosen(profiles, name, found.ids(), groups) for name in ("rules-only", "full", "demo")}
         assert general and len(general) < len(rules)
         assert on["rules-only"] == general, "code alone decides: every rule but the demo's, no guideline"
         assert on["full"] == [*general, *guidelines]

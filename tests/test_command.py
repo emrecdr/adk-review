@@ -524,10 +524,9 @@ class TestThePreviousReportAndTheHandoff:
         found = {f["check"] for f in report["findings"] + report["folded"]}
         section = handoff.read_text(encoding="utf-8").split("\n## Check your work\n", 1)[1]
         (line,) = [one.strip() for one in section.splitlines() if one.startswith("    ")]
-        argv = shlex.split(line, posix=os.name != "nt")
-        argv = [arg.strip('"') for arg in argv] if os.name == "nt" else argv  # Windows' double quotes, as pasted
+        windows = os.name == "nt"  # Windows' double quotes, taken off as a shell there takes them
+        argv = [arg.strip('"') if windows else arg for arg in shlex.split(line, posix=not windows)]
         assert argv[0] == "adk-review" and Path(argv[1]).resolve() == root.resolve(), argv
-        checks = sorted(found)
         assert argv[2:] == [
             "--head",
             HEAD,
@@ -535,7 +534,7 @@ class TestThePreviousReportAndTheHandoff:
             BASE,
             "--fail-on",
             "blocker",
-            *(a for c in checks for a in ("--check", c)),
+            *(a for c in sorted(found) for a in ("--check", c)),
         ], argv
         assert make_demo_repo.fix(root)
         assert cli.main(argv[1:]) == 0
