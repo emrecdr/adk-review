@@ -17,6 +17,7 @@ writing `check` — reading a line's tokens or a module's syntax tree, matching 
 from __future__ import annotations
 
 import ast
+import copy
 import functools
 import inspect
 import re
@@ -28,7 +29,7 @@ from pathlib import PurePath, PurePosixPath
 from types import MappingProxyType
 from typing import ClassVar
 
-from .blast import parse, parsed
+from .blast import is_test, parse, parsed
 from .evidence import Entry, unreleased
 from .findings import Checked, Finding, Severity
 from .profiles import rule_id
@@ -82,6 +83,16 @@ class AnyRule(ABC):
     #: leaves alone. The catalog holds a rule to them wherever the rule is found.
     bad: ClassVar[tuple[Example, ...]] = ()
     good: ClassVar[tuple[Example, ...]] = ()
+    #: Whether the rule reads tests, by `is_test`'s conventions. A rule about the product's code reads none, so the
+    #: tests' deliberate fakes are no findings: measured, demo-derives-from flagged `TestInspectRepository` and
+    #: `FakeModel`. A rule about what runs, what leaks or what steers says True, since a test runs in CI with its keys
+    #: and a file named `test_*` is a test whatever it holds, a workflow among them. Only a test's text is withheld: a
+    #: file rule's `file.changed` and a tree rule's `tree.paths` still list every test.
+    reads_tests: ClassVar[bool] = False
+
+    def reads(self, path: str) -> bool:
+        """Whether the rule is handed what `path` holds: any file, for a rule that reads tests; else one no test."""
+        return self.reads_tests or not is_test(path)
 
     @property
     def check_id(self) -> str:
@@ -108,6 +119,7 @@ class Rule(AnyRule):
         return [
             Hit(entry["path"], line, f"+{text}")
             for entry in files
+            if self.reads(entry["path"])
             for line, text in unreleased(entry["added"])
             if self.check(entry["path"], text)
         ]
@@ -265,6 +277,8 @@ class FileRule(AnyRule):
             if entry["text"] is None and not entry["unread_text"]:
                 continue  # deleted, binary, a link, a submodule: nothing at the head for a file rule to read
             path = entry["path"]
+            if not self.reads(path):
+                continue  # a test, to a rule that reads none: still in `changed`, as every path the change touched
             module = tree.module(path) if tree is not None and path in tree.parsed else None  # the tree's one parse
             added = (line for line, _text in unreleased(entry["added"]))
             # Ruff's diagnostics ride on an entry only for the rule that named its codes; every other rule gets none.
@@ -382,6 +396,16 @@ class Tree:
         self.unread = frozenset(unread)
         self.parsed = parsed(sources)
 
+    @functools.cached_property
+    def without_tests(self) -> Tree:
+        """The same head with no test's module, for a tree rule that reads no tests: every path still listed, so a
+        rule asking whether `tests/` exists is answered, and a test not read whole no hole of its. Made once a tree,
+        whichever rules ask, and nothing parsed again."""
+        view = copy.copy(self)
+        view.parsed = {path: module for path, module in self.parsed.items() if not is_test(path)}
+        view.unread = frozenset(path for path in self.unread if not is_test(path))
+        return view
+
     def has(self, path: str) -> bool:
         """A file by its path, or a folder by its path ending in `/`."""
         if path.endswith("/"):
@@ -422,7 +446,8 @@ class TreeRule(AnyRule):
         if tree is None:
             raise UnreadError("the tree at the head was not listed")
         returns = "a list of (path, what is wrong) pairs, (path, line, what) triples or Hits"
-        return [self._hit(item) for item in _each(self.check(tree), "tree", returns)]
+        read = tree if self.reads_tests else tree.without_tests
+        return [self._hit(item) for item in _each(self.check(read), "tree", returns)]
 
     @staticmethod
     def _hit(item: object) -> Hit:

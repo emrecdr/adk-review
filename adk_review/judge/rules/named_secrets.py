@@ -21,7 +21,6 @@ from ..rule_helpers import (
     SECRET_WORDS,
     Rule,
     is_placeholder,
-    is_test,
     named_at,
     named_values,
     vendor_shape,
@@ -90,12 +89,12 @@ class NamedSecrets(Rule):
         'api_key="hf_..."',
     )
 
-    def check(self, path: str, line: str) -> bool:
+    def check(self, path: str, line: str) -> bool:  # noqa: ARG002 -- any file but a test, as every rule reads
         # The generic shape first, which nearly every line lacks; then the line with its examples blanked, which must
         # hold no vendor's shape: a vendor's is `secrets`' finding, one credential, one finding. An example is blanked
         # as `[REDACTED]`, which no shape takes for a value, so what is left of one is no value either: measured by
         # review, blanked as a space, `" /application"` was flagged as a password. Then every named value on the line.
-        if is_test(path) or named_at(line) is None:
+        if named_at(line) is None:
             return False
         text = without_examples(line)
         if vendor_shape(text) is not None:

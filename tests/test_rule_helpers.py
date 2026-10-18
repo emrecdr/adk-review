@@ -16,6 +16,7 @@ from adk_review.judge.rule_helpers import (
     ChangedFile,
     FileRule,
     Hit,
+    Rule,
     Tree,
     TreeRule,
     argument,
@@ -167,6 +168,41 @@ class TestTheContractSaysWhatAKindTakes:
         assert [hit.path for hit in try_rule(rule, {"pyproject.toml": "[project]\n"})] == ["pyproject.toml"]
         assert try_rule(rule, {"pyproject.toml": "[project]\n", "uv.lock": "version = 1\n"}) == []
 
+    @pytest.mark.parametrize("reads", [False, True])
+    def test_a_rule_of_any_kind_reads_a_test_only_where_it_says_it_reads_tests(self, reads: bool) -> None:
+        """A rule about the product's code is spared the tests' deliberate fakes, unless it says it reads tests:
+        measured, demo-derives-from flagged `TestInspectRepository` and `FakeModel` in this repository's tests. A test's
+        text is all it is spared: the change's paths and the head's still list every test, so a rule asking whether
+        a test came with a change, or whether `tests/` exists, is answered."""
+        files = {"src/a.py": "x = 1\n", "tests/test_a.py": "x = 1\n"}
+
+        class Line(Rule):
+            id, severity, title, fix = "line", "minor", "a line", "Fix it."
+            reads_tests = reads
+
+            def check(self, path: str, line: str) -> bool:  # noqa: ARG002 -- every line, to see which are read
+                return True
+
+        class File(FileRule):
+            id, severity, title, fix = "file", "minor", "a file", "Fix it."
+            reads_tests = reads
+
+            def check(self, file: ChangedFile) -> list[tuple[int | None, str]]:
+                return [(None, " ".join(sorted(file.changed)))]
+
+        class Whole(TreeRule):
+            id, severity, title, fix = "whole", "minor", "a module", "Fix it."
+            reads_tests = reads
+
+            def check(self, tree: Tree) -> list[tuple[str, str]]:
+                return [(path, "tests/ listed" if tree.has("tests/") else "no tests/") for path, _ in tree.modules()]
+
+        read = {"src/a.py", "tests/test_a.py"} if reads else {"src/a.py"}
+        for rule in (Line(), File(), Whole()):
+            assert {hit.path for hit in try_rule(rule, files)} == read, rule.kind
+        assert {hit.text for hit in try_rule(File(), files)} == {"src/a.py tests/test_a.py"}
+        assert {hit.text for hit in try_rule(Whole(), files)} == {"tests/ listed"}
+
     def test_a_tree_rule_that_returns_bare_paths_is_a_sentence(self) -> None:
         """Measured before: a list of bare paths was read a character at a time, and `README.md` became a finding at
         the file `R` whose evidence was `E`."""
@@ -292,4 +328,18 @@ def test_a_rule_names_a_tool_an_adapter_runs_or_is_refused(rules_folder) -> None
     )
     rules_folder("no_tool", rule)
     with pytest.raises(ValueError, match="names the tool 'gitleaks', which no adapter runs; there are ruff"):
+        catalog()
+
+
+def test_a_rule_says_whether_it_reads_tests_with_true_or_false_or_is_refused(rules_folder) -> None:
+    """`reads_tests = "no"` would read as true, and the rule would read the tests its author meant it to skip."""
+    rule = (
+        '"""A rule saying whether it reads tests in words."""\n\nfrom __future__ import annotations\n\n'
+        "from ..rule_helpers import Rule\n\n\nclass Worded(Rule):\n"
+        '    """Reads no test, it says."""\n\n    id = "worded"\n    severity = "minor"\n    title = "a word"\n'
+        '    fix = "Remove it."\n    reads_tests = "no"\n\n'
+        "    def check(self, path: str, line: str) -> bool:\n        return False\n"
+    )
+    rules_folder("worded", rule)
+    with pytest.raises(ValueError, match="'worded' has reads_tests 'no', not True or False"):
         catalog()

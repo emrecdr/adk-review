@@ -9,6 +9,7 @@ import io
 import json
 import os
 import re
+import shlex
 import signal
 import subprocess
 import sys
@@ -243,7 +244,7 @@ class TestWhatAReviewCovers:
         alone = capsys.readouterr().out
         assert head_reads == [], "neither a tree rule nor a guideline ran"
         assert "- not asked: no tree rule and no guideline ran, so the head was not read whole" in alone
-        picked = [arg for check in (*rules, "rule.required-paths") for arg in ("--check", check)]
+        picked = [arg for check in (*rules, "rule.demo-required-paths") for arg in ("--check", check)]
         assert run_review(cli, demo_repo, *picked) in (0, 1)
         beside = capsys.readouterr().out
         assert head_reads == [1] and "not asked" not in beside
@@ -507,6 +508,81 @@ class TestThePreviousReportAndTheHandoff:
         at = next(i for i, line in enumerate(lines) if "also on these lines" in line and folded[0]["title"] in line)
         assert ("at the bar" in lines[at]) is at_bar, lines[at]
         assert folded[0]["fingerprint"] in lines[at + 2], lines[at : at + 3]
+
+    def test_a_handoff_ends_in_the_command_that_checks_the_fixes_with_no_model(self, cli, tmp_path: Path) -> None:
+        """Copilot's review hands a finding to its cloud agent, and Bugbot checks its own fixes in a machine of its
+        own; a coding agent working from the handoff had to work out how to check its fixes. The handoff ends in the
+        command: the rules that found something, run again on the same scope, no model called. Pasted after the
+        demo's two fixes are committed, it ends in exit 0."""
+        import make_demo_repo
+
+        root = make_demo_repo.build(tmp_path / "demo")
+        handoff, data = tmp_path / "handoff.md", tmp_path / "review.json"
+        args = ("--profile", "default-rules", "--handoff", str(handoff), "--json", str(data))
+        assert run_review(cli, root, *args) == 1
+        report = json.loads(data.read_text(encoding="utf-8"))
+        found = {f["check"] for f in report["findings"] + report["folded"]}
+        section = handoff.read_text(encoding="utf-8").split("\n## Check your work\n", 1)[1]
+        (line,) = [one.strip() for one in section.splitlines() if one.startswith("    ")]
+        argv = shlex.split(line, posix=os.name != "nt")
+        argv = [arg.strip('"') for arg in argv] if os.name == "nt" else argv  # Windows' double quotes, as pasted
+        assert argv[0] == "adk-review" and Path(argv[1]).resolve() == root.resolve(), argv
+        checks = sorted(found)
+        assert argv[2:] == [
+            "--head",
+            HEAD,
+            "--base",
+            BASE,
+            "--fail-on",
+            "blocker",
+            *(a for c in checks for a in ("--check", c)),
+        ], argv
+        assert make_demo_repo.fix(root)
+        assert cli.main(argv[1:]) == 0
+
+    def test_a_handoff_names_the_guidelines_findings_apart_since_checking_them_calls_the_model(
+        self, cli, demo_repo: Path, tmp_path: Path
+    ) -> None:
+        """A guideline's finding is a model's reading, and a model's quota is spent each time it is read again: the
+        rules' command calls none, and the guidelines that found something are named apart, with the `--check` that
+        runs them, said to call the model. No command is printed for them: measured by review, one rebuilt from the
+        scope dropped the `--skip`, `--diff-cap`, `--verify` and `--max-tokens` a guideline's review was given. The
+        fake reports the planted shell call under the default profile."""
+        handoff = tmp_path / "handoff.md"
+        assert run_review(cli, demo_repo, "--handoff", str(handoff)) == 1
+        section = handoff.read_text(encoding="utf-8").split("\n## Check your work\n", 1)[1]
+        (rules,) = [one for one in section.splitlines() if one.startswith("    ")]
+        assert "--check rule." in rules and "--check guideline." not in rules, rules
+        said = " ".join(section.split())
+        assert "--check guideline.security" in said and "calls the model and spends its quota" in said, section
+
+    def test_a_handoff_prints_no_command_a_shell_would_read_otherwise(self) -> None:
+        """A branch's name is its author's, and `;`, `$` and a backtick are legal in one: pasted, the command runs
+        what it names and nothing else. A POSIX shell's own quoting; on Windows double quotes, which cmd and
+        PowerShell both read, and no command where either would still read a character inside them; and nowhere a
+        command a line break would end, or the report's own safety rules would rewrite, the checks then named on
+        their own. Measured by review: PowerShell reads a typographic quote as `"`, and a branch named with one
+        closed the quotes and ran what followed."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import _pasted, render_handoff
+
+        hostile = ["adk-review", "/a b", "--head", "x;$(id)`"]
+        assert shlex.split(_pasted(hostile, windows=False) or "") == hostile
+        spaced = ["adk-review", "C:\\a b", "--head", "feature/x"]
+        assert _pasted(spaced, windows=True) == 'adk-review "C:\\a b" --head feature/x'
+        assert _pasted(hostile, windows=True) is None
+        assert _pasted(["adk-review", "/a\nb"], windows=False) is None
+        assert _pasted(["adk-review", "C:\\r", "--head", "x\u201d;calc;\u201c"], windows=True) is None
+        assert _pasted(["adk-review", "C:\\a b\\"], windows=True) is None  # `\"` would keep the quote open
+        assert _pasted(["adk-review", "/r", "--head", "a<!--b"], windows=False) is None  # the report rewrites `<!--`
+        pre = {"repo": "/a\nb", "head": "h", "base": "main", "head_sha": "0" * 40}
+        finding = Finding(file="a.py", line=1, severity="blocker", title="t", evidence="e", suggestion="s")
+        kept = Outcome(kept=[Sourced("rule.secrets", finding, (1, 1))])
+        said = render_handoff(
+            {"preflight": pre, "whole": False, "scope": []}, kept, verdict="REQUEST_CHANGES", fail_on="blocker"
+        )
+        assert "No command is printed" in said and "`--check rule.secrets`" in said, said
 
     def test_a_previous_report_is_made_safe_whole_where_it_is_read(self, tmp_path: Path) -> None:
         """An edited `--previous` is read back through `resolved`: measured by review, a runner's command as a finding's
@@ -817,6 +893,8 @@ class TestTheModesBesideAReview:
         assert cli.main(["--explain", "rule.no-print"]) == 0
         explained = capsys.readouterr().out
         assert explained.startswith("# rule.no-print\n") and "## It flags" in explained
+        assert "\n- tests     not read\n" in explained, "a test's print is the test's own"
+        assert cli.main(["--explain", "rule.secrets"]) == 0 and "\n- tests     read\n" in capsys.readouterr().out
         assert "`def print(self, text):`" in explained.split("## It leaves alone", 1)[1]
         assert cli.main(["--explain", "guideline.security"]) == 0 and "## Its role" in capsys.readouterr().out
         assert cli.main(["--explain", "rule.nope"]) == 2

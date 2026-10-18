@@ -16,7 +16,7 @@ with it. Three commands from the root of this checkout give a first review, with
 
 ```bash
 uv sync --locked                             # once: the reviewer and its locked dependencies
-uv run python scripts/make_demo_repo.py      # a throwaway repository with planted defects; prints its path
+uv run python scripts/make_demo_repo.py      # a throwaway repository with planted defects; prints the review to run
 uv run adk-review <that path> --head feature/payments --base main --profile rules-only
 ```
 
@@ -181,8 +181,9 @@ The rules shipped with the reviewer are written as a project writes its own:
   obeys: a coding agent's instructions or settings, Copilot's and Gemini CLI's among them, a CI workflow, a hook, a
   `.pth` file);
 - a project's own conventions, as examples: `no-print`, `private-patch` and `tests-offline`;
-- one small payments project's own rules, written for the demo repository: `money-in-cents`, and the tree rules
-  `required-paths`, `module-defines`, `parameters` and `derives-from`. A project replaces them with its own.
+- one small payments project's own rules, written for the demo repository and named `demo-` so none is taken for a rule
+  a project needs: `demo-money-in-cents`, and the tree rules `demo-required-paths`, `demo-module-defines`,
+  `demo-parameters` and `demo-derives-from`. A project replaces them with its own.
 
 The guidelines are `security`, `tests`, `complexity` and `correctness`.
 
@@ -272,7 +273,7 @@ class HttpTimeout(FileRule):
         ]
 ```
 
-A tree rule reads the head, every path and each Python module, for what must exist; `required_paths.py` is the whole
+A tree rule reads the head, every path and each Python module, for what must exist; `demo_required_paths.py` is the whole
 of one:
 
 ```python
@@ -288,9 +289,9 @@ REQUIRED = ("README.md", "src/payments/__init__.py", "tests/")
 
 class RequiredPaths(TreeRule):
     """A branch may add what it likes; what it must not do is lose the project's shape: its README, its package and
-    its tests. The list is the rule's own: a project edits it, as it would the words of `money-in-cents`."""
+    its tests. The list is the rule's own: a project edits it, as it would the words of `demo-money-in-cents`."""
 
-    id = "required-paths"
+    id = "demo-required-paths"
     severity = "major"
     title = "a file or folder the project needs is missing"
     fix = "Restore it, or change the list in this rule if the shape has changed on purpose."
@@ -367,6 +368,10 @@ What a rule may do, and may not:
   `collect/tools.py`, and the contract stays as it is.
 - It never reads the repository under review's configuration: a branch must not be able to switch off the rule that
   judges it.
+- It reads no test unless it says so: a rule about the product's code is handed no file `is_test` names, so a
+  test's fakes are no findings, while `file.changed` and `tree.paths` still list every test. A rule about what runs,
+  leaks or steers sets `reads_tests = True`, as `secrets` and `steering-files` do: a test runs in CI with its keys,
+  and a workflow named `test_*.yml` is a test by its name. `--explain` says which a rule does.
 - Its expectations are constants at the top of its file, beside the check, and its examples follow them: a project
   that edits a rule's constants edits its examples with them.
 - A rule that cannot look — a file not read whole, a tree not listed — is a hole in the review, never "nothing
@@ -436,7 +441,15 @@ line by line. Beside it:
   is written beside the path and moved into place, the operator's alone.
 - `--handoff FILE` writes each kept finding as a short instruction for a coding agent: where, the lines quoted, what
   to change, and the fingerprint that must be gone afterwards, with each finding folded into it named under it,
-  since another reading of the same lines can be a second defect. Nothing is applied.
+  since another reading of the same lines can be a second defect. It ends in the command that checks the fixes: the
+  review again on the same scope with only the rules that found something, so an agent checks its own work offline,
+  no model called. The scope is the preflight's, which the cache's key holds, and it is the whole of what the rules
+  read: `--skip` and `--diff-cap` bound the guidelines alone. The guidelines that found something are named apart,
+  with their `--check` and no command, since checking a model's reading spends its quota and their review took flags
+  the scope does not hold. A branch's name is its author's: where no quoting keeps the command one command — a line
+  break, a name the report's safety rules would rewrite, or on Windows a character cmd or PowerShell still reads
+  inside double quotes, PowerShell's typographic quotes among them — none is printed, only the checks to name.
+  Nothing is applied.
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint:
   its check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line,
   so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.

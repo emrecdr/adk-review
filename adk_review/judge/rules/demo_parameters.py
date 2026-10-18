@@ -12,7 +12,7 @@ class Parameters(TreeRule):
     """A caller passes these by name; a parameter renamed or dropped breaks the caller, which the function's own
     diff never shows."""
 
-    id = "parameters"
+    id = "demo-parameters"
     severity = "major"
     title = "a function no longer takes a parameter its callers pass"
     fix = "Take the parameter again, or move every caller with it and change the list in this rule."

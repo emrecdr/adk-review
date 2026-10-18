@@ -6,7 +6,9 @@ from __future__ import annotations
 import functools
 import hashlib
 import json
+import os
 import re
+import shlex
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
@@ -16,6 +18,7 @@ from ..core.blast import Blast, describe
 from ..core.evidence import Evidence
 from ..core.findings import RANK, Checked, Finding, at_or_above
 from ..core.health import Health, found_by_rule, grade
+from ..core.profiles import rule_id
 from ..core.secrets import scrub
 from ..core.text import EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, squash
 from ..core.verdict import Outcome, Sourced, at_bar
@@ -111,9 +114,10 @@ def _blast(blast: Blast) -> list[str]:
 
 def render_handoff(evidence: Evidence, outcome: Outcome, *, verdict: str, fail_on: str) -> str:
     """`--handoff FILE`: each kept finding, most severe first, as a short instruction for a coding agent — where, the
-    lines quoted, what to change, and what must hold afterwards — under the text report's safety rules. Concise
-    comments with the code quoted lead to changes more often, as a study of review comments found. Nothing is
-    applied: the reviewer writes into no repository, and only ruff labels a fix it would apply unasked."""
+    lines quoted, what to change, and what must hold afterwards — under the text report's safety rules, then the
+    command that checks the fixes. Concise comments with the code quoted lead to changes more often, as a study of
+    review comments found. Nothing is applied: the reviewer writes into no repository, and only ruff labels a fix it
+    would apply unasked."""
     pre = evidence["preflight"]
     ranked = sorted(
         zip(outcome.kept, _identified(outcome.kept), strict=True), key=lambda kept: -RANK[kept[0].finding.severity]
@@ -137,6 +141,10 @@ def render_handoff(evidence: Evidence, outcome: Outcome, *, verdict: str, fail_o
         lines.append("Nothing to fix: no finding was kept.")
     if outcome.errors or outcome.unread:
         lines += ["", "This review could not look at everything; what it did not read may hold more to fix."]
+    if ranked:
+        lines += _check_again(
+            evidence, {item.source for item in outcome.kept + [f for f, _ in outcome.folded]}, fail_on
+        )
     return inert("\n".join(lines)) + "\n"
 
 
@@ -170,12 +178,79 @@ def _to_fix(item: Sourced, identity: str, indent: str) -> list[str]:
     ]
 
 
+def _check_again(evidence: Evidence, found: set[str], fail_on: str) -> list[str]:
+    """How a coding agent checks its fixes: the review again on the same scope with only the rules that found
+    something, which calls no model and reads what the review's rules read whatever its `--skip` and `--diff-cap`,
+    since both bound the guidelines alone. The guidelines that found something are named apart, with no command: a
+    model's reading spends its quota each time, and theirs took flags this scope does not hold. What was fixed is
+    committed first, or staged under --staged: a review reads no file on disk."""
+    pre = evidence["preflight"]
+    if pre.get("staged"):
+        scope, first = (
+            ["--staged"],
+            "Stage the fixes: a review of the index reads what is staged, not the files on disk.",
+        )
+    else:
+        scope = ["--head", pre["head"], *(["--all"] if evidence["whole"] else ["--base", pre["base"]])]
+        first = (
+            f"Commit the fixes on {code_span(one_line(pre['head']))}: a review reads commits, not the files on disk."
+        )
+    scope += [arg for path in evidence["scope"] for arg in ("--path", path)]
+    rules = sorted(check for check in found if check.startswith(rule_id("")))
+    guidelines = " ".join(f"--check {check}" for check in sorted(found - set(rules)))
+    lines = ["", "## Check your work", "", first]
+    if rules:
+        named = [arg for check in rules for arg in ("--check", check)]
+        command = _pasted(["adk-review", pre["repo"], *scope, "--fail-on", fail_on, *named])
+        lines += [
+            "",
+            "Then run the rules that found them again. No model is called and nothing is written; the review",
+            "ends in exit 0 once nothing at the bar is left, and its report lists whatever is:",
+            "",
+            f"    {command}"
+            if command
+            else f"No command is printed: a name in it holds a character a shell would read. Run the review again "
+            f"on the same scope with {code_span(' '.join(named))}.",
+        ]
+    if guidelines:
+        lines += [
+            "",
+            f"The guidelines' findings are a model's reading: checking them again is the review run as before with "
+            f"{code_span(guidelines)} in place of its profile, which calls the model and spends its quota.",
+        ]
+    return lines
+
+
+#: What cmd and PowerShell both keep as itself inside double quotes, beside letters and digits: no `"`, nor `“`, `”`
+#: or `„`, which PowerShell reads as one; no `$` or backtick, which PowerShell expands; no `%` or `!`, which cmd does.
+WINDOWS_QUOTED = " \\:._-/~+,;=@#&'()[]{}^"
+
+
+def _pasted(argv: Sequence[str], windows: bool = os.name == "nt") -> str | None:
+    """`argv` as a shell reads it pasted, or None where no quoting keeps it the one command: a POSIX shell's own
+    quoting; on Windows each argument bare where it holds only letters, digits and `\\:._-/`, else in double quotes,
+    which cmd and PowerShell both read, where it holds only what `WINDOWS_QUOTED` names and ends in no `\\`, which would
+    keep the quote open. Nowhere a line a character no one sees would break, or the report's safety rules rewrite.
+    A branch's name is its author's, and `;`, `$`, a backtick and a typographic quote are legal in one."""
+    if not windows:
+        line = shlex.join(argv)
+    else:
+        bare = [bool(arg) and all(c.isalnum() or c in "\\:._-/" for c in arg) for arg in argv]
+        if not all(
+            plain or (all(c.isalnum() or c in WINDOWS_QUOTED for c in arg) and not arg.endswith("\\"))
+            for arg, plain in zip(argv, bare, strict=True)
+        ):
+            return None
+        line = " ".join(arg if plain else f'"{arg}"' for arg, plain in zip(argv, bare, strict=True))
+    return line if line.isprintable() and inert(line) == line else None
+
+
 def render_explained(said: Mapping[str, object]) -> str:
     """`--explain ID`: one check whole, as its file documents it, and for a rule its own examples."""
     lines = [f"# {said['id']}", ""]
     lines.extend(
         f"- {label:<10}{said[label]}"
-        for label in ("kind", "severity", "profiles", "file", "title", "fix")
+        for label in ("kind", "severity", "tests", "profiles", "file", "title", "fix")
         if label in said
     )
     lines += ["", str(said["why"]), ""]

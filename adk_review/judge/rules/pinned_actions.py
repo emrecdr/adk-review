@@ -24,6 +24,7 @@ class PinnedActions(FileRule):
 
     id = "pinned-actions"
     severity = "major"
+    reads_tests = True  # a workflow named `test_*.yml` is a test by its name, and runs with the job's secrets
     title = "a workflow runs an action at a tag, a branch or a short SHA, not its full commit SHA"
     fix = "Pin it by its full 40-character commit SHA, its version in a comment after it (`@<sha> # v4.2.2`)."
     bad = (

@@ -41,6 +41,7 @@ class EncodingDeclaration(FileRule):
 
     id = "encoding-declaration"
     severity = "blocker"
+    reads_tests = True  # a test is code Python runs too, in CI with the job's keys
     title = "an encoding that rewrites the code every rule reads"
     fix = "Save the file as UTF-8 and remove the encoding declaration."
     bad = (

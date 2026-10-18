@@ -10,7 +10,7 @@ holds its flags, checks, JSON fields and limits to the code.
 
 ```bash
 uv sync --locked                             # once: the reviewer, its Python and its locked dependencies
-uv run python scripts/make_demo_repo.py      # a throwaway repository with planted defects; prints its path
+uv run python scripts/make_demo_repo.py      # a throwaway repository with planted defects; prints the review to run
 uv run adk-review <that path> --head feature/payments --base main --profile rules-only
 uv run adk-review <repo> --base main --profile default-rules    # a repository of your own: the default's rules
 ```
@@ -43,7 +43,7 @@ config from beside itself; inside the checkout, `uv run adk-review` is the same 
 | `--skip` | A glob of changed files the guidelines leave to the rules: each is named, never a hole. A submodule, which no rule reads, is never skipped. Adds to the config's `skip`. Repeat it for more than one. |
 | `--verify` | Ask a second model about each guideline finding a rule did not already make. `--no-verify` turns it off. Default: the config's `verify`. |
 | `--json` | Also write the review to this file as JSON. |
-| `--handoff` | Also write each kept finding to this file as a short instruction for a coding agent: where, the quoted lines, what to change, and what must hold afterwards, with each finding folded into it named under it. Nothing is applied. |
+| `--handoff` | Also write each kept finding to this file as a short instruction for a coding agent: where, the quoted lines, what to change, and what must hold afterwards, with each finding folded into it named under it. It ends in the command that checks the fixes once they are committed: the review again on the same scope with only the rules that found something, which calls no model and ends in exit 0 once nothing at the bar is left. The guidelines that found something are named apart with their `--check`, since checking a model's reading spends its quota. The command names `adk-review` as `uv tool install .` puts it on `PATH`; where a name in it would read otherwise in a shell, none is printed, only the checks. Nothing is applied. |
 | `--cache` | Keep each decided review in this folder, keyed by the reviewer's code and config, the commits, the checks, every setting, each model and each outside tool a rule runs, ruff's version among it; the same review again is served from it, with no model call. A review with a hole is never kept. Never a folder inside the repository under review. A file in the folder is served as the review's verdict, so whoever can write the folder can write a verdict: keep it the operator's own, and in CI never restore it from a cache a job running untrusted code can write. |
 | `--previous` | Compare with a previous review's JSON: mark each finding new or seen before, by its fingerprint, and list what is no longer found. A review with a hole resolves nothing. |
 | `--progress` | Tell on stderr as the change is read and as each guideline starts and finishes. On at a terminal. |
@@ -52,7 +52,7 @@ config from beside itself; inside the checkout, `uv run adk-review` is the same 
 | `--record` | Keep each model answer in this folder under a hash of the request as the model read it, secrets redacted: a live run's answers, which a fake replays offline. |
 | `--dry-run` | Say what a review would cover and run — the revisions, the files, the profile, the model and whether its arm is ready — and run nothing. |
 | `--list-checks` | List every check: its id, its kind, its severity, the profiles that run it, what it looks for and its file. |
-| `--explain` | Print one check whole: what it reads, its severity, its profiles, its file and, for a rule, its own examples. |
+| `--explain` | Print one check whole: what it reads, its severity, for a rule whether it reads tests, its profiles, its file and, for a rule, its own examples. |
 | `--try` | Run the profile's rules, or `--check`'s, over files or folders on disk, each read as wholly added: how a rule's author sees a rule fire, with no repository and no model. Takes no repository. |
 | `--version` | Print the reviewer's version. |
 | `--help` | Print every flag. |
@@ -87,28 +87,33 @@ check runs only where a profile names it, or alone with `--check`:
 - `rules-only`: every rule, and no model.
 - `full`: every check.
 
-The payments rules — `money-in-cents`, and the tree rules `required-paths`, `module-defines`, `parameters` and
-`derives-from` — are one small project's own, written for the demo repository: examples of a project's rules, which
-a project replaces with its own. `derives-from` holds a class to the base its name promises — a `…Model` to
-`BaseModel`, an `…Error` to `Exception`, a `…User` to `BaseUser`, a `…Repository` to `BaseRepository` — and a
-project names its own kinds in the rule's `PARENTS`. The checks, as `--list-checks` prints them:
+The payments rules, each id starting with `demo-` — `demo-money-in-cents`, and the tree rules `demo-required-paths`,
+`demo-module-defines`, `demo-parameters` and `demo-derives-from` — are one small project's own, written for the demo
+repository: examples of a project's rules, which a project replaces with its own and none needs as they stand.
+`demo-derives-from` holds a class to the base its name promises — a `…Model` to `BaseModel`, an `…Error` to `Exception`,
+a `…User` to `BaseUser`, a `…Repository` to `BaseRepository` — and a project names its own kinds in the rule's
+`PARENTS`; a kind's own name alone, a Pydantic `User`, promises nothing.
+
+A rule reads no test — a file in a folder named `tests` or `test`, or named `test_*`, `*_test` or `conftest.py` — unless
+it says so, as the rules about what runs, leaks or steers do; `--explain ID` names which. The checks, as `--list-checks`
+prints them:
 
 <!-- checks: the output of `uv run python -m adk_review.review --list-checks`; a test holds it so -->
 | id | kind | severity | profiles | what | where |
 |---|---|---|---|---|---|
-| `rule.derives-from` | tree rule | major | rules-only, full | a class does not derive from the parent its name promises | `judge/rules/derives_from.py` |
+| `rule.demo-derives-from` | tree rule | major | rules-only, full | a class does not derive from the parent its name promises | `judge/rules/demo_derives_from.py` |
+| `rule.demo-module-defines` | tree rule | major | rules-only, full | a module no longer defines a name the project relies on | `judge/rules/demo_module_defines.py` |
+| `rule.demo-money-in-cents` | line rule | major | rules-only, full | cents divided into a float | `judge/rules/demo_money_in_cents.py` |
+| `rule.demo-parameters` | tree rule | major | rules-only, full | a function no longer takes a parameter its callers pass | `judge/rules/demo_parameters.py` |
+| `rule.demo-required-paths` | tree rule | major | rules-only, full | a file or folder the project needs is missing | `judge/rules/demo_required_paths.py` |
 | `rule.encoding-declaration` | file rule | blocker | default, default-rules, rules-only, full | an encoding that rewrites the code every rule reads | `judge/rules/encoding_declaration.py` |
 | `rule.hidden-text` | line rule | major | rules-only, full | text a reader cannot see: tag characters or bidirectional controls | `judge/rules/hidden_text.py` |
 | `rule.lint` | file rule | minor | default, default-rules, rules-only, full | what ruff reports, at a severity for each code | `judge/rules/lint.py` |
 | `rule.lockfile-sources` | file rule | minor | default, default-rules, rules-only, full | a lockfile fetches a package from outside its public registry | `judge/rules/lockfile_sources.py` |
-| `rule.module-defines` | tree rule | major | rules-only, full | a module no longer defines a name the project relies on | `judge/rules/module_defines.py` |
-| `rule.money-in-cents` | line rule | major | rules-only, full | cents divided into a float | `judge/rules/money_in_cents.py` |
 | `rule.named-secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full | a value assigned to a name that says secret | `judge/rules/named_secrets.py` |
 | `rule.no-print` | line rule | minor | rules-only, full | print() left in library code | `judge/rules/no_print.py` |
-| `rule.parameters` | tree rule | major | rules-only, full | a function no longer takes a parameter its callers pass | `judge/rules/parameters.py` |
 | `rule.pinned-actions` | file rule | major | default, default-rules, rules-only, full | a workflow runs an action at a tag, a branch or a short SHA, not its full commit SHA | `judge/rules/pinned_actions.py` |
 | `rule.private-patch` | line rule | minor | rules-only, full | a test patches a private name | `judge/rules/private_patch.py` |
-| `rule.required-paths` | tree rule | major | rules-only, full | a file or folder the project needs is missing | `judge/rules/required_paths.py` |
 | `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full | text that tries to instruct the reviewing model | `judge/rules/reviewer_instructions.py` |
 | `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full | a hard-coded credential | `judge/rules/secrets.py` |
 | `rule.steering-files` | file rule | minor | rules-only, full | a file another tool or agent obeys has changed | `judge/rules/steering_files.py` |

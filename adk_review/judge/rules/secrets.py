@@ -26,6 +26,7 @@ class Secrets(Rule):
 
     id = "secrets"
     severity = "blocker"
+    reads_tests = True  # a key in a test is a key in the history all the same
     title = "a hard-coded credential"
     fix = "Read it from the environment or a secret store, remove it from history, and rotate it."
     bad = (

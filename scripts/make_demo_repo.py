@@ -9,7 +9,7 @@ the function in three runs of seven and the copy in none, and in five of five on
 a change leaves untested; `scripts/measure.py` measures it again. No network,
 repeatable — a golden repository in one script. Idempotent: the target is removed and rebuilt.
 
-    uv run python scripts/make_demo_repo.py            # into the platform temp dir (see the printed path)
+    uv run python scripts/make_demo_repo.py            # into the platform temp dir; prints the review to run
     uv run python scripts/make_demo_repo.py --fix      # both blockers fixed
 
 `--fix` is the fix-and-rerun moment: it commits a receipt that is
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import shlex
 import shutil
 import stat
 import subprocess
@@ -113,7 +114,7 @@ CHARGE_FIXED = (
     + '''
 
 def receipt(charge: Charge) -> str:
-    """The receipt text. Printing is the caller's job: this module never spawns a process."""
+    """The receipt as text: printing is the caller's job, so no process is spawned."""
     return f"receipt: {format_amount(charge.amount_cents, charge.currency)}"
 '''
 )
@@ -129,7 +130,7 @@ def _required(name: str) -> str:
     try:
         return os.environ[name]
     except KeyError:
-        raise RuntimeError(f"{name} is not set; the payments service needs it") from None
+        raise RuntimeError(f"{name} is not set") from None
 
 
 AWS_ACCESS_KEY_ID = _required("AWS_ACCESS_KEY_ID")
@@ -244,6 +245,20 @@ def demo_repo() -> Path:
     return Path(tempfile.gettempdir()) / "adk-demo-repo"
 
 
+def _pasted(path: Path) -> str:
+    """The path as a shell reads it pasted: a POSIX shell's own quoting, or on Windows double quotes, which cmd and
+    PowerShell both read, where it holds more than letters, digits and `\\:._-` (no Windows path holds a `"`)."""
+    text = str(path)
+    if os.name != "nt":
+        return shlex.quote(text)
+    return text if all(c.isalnum() or c in "\\:._-" for c in text) else f'"{text}"'
+
+
+def _review(root: Path) -> str:
+    """The review to run on the demo, ready to paste: the rules alone, so no model and no key."""
+    return f"uv run adk-review {_pasted(root)} --head {HEAD_REF} --base {BASE_REF} --profile rules-only"
+
+
 def main(argv: list[str]) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # a Windows console is not UTF-8 by default
@@ -261,9 +276,20 @@ def main(argv: list[str]) -> int:
             )
             return 1
         if fix(root):
-            print(f"fixed {root}: feature/payments now spawns no process and reads its keys from the environment")
+            print(
+                f"fixed {root}: one commit on {HEAD_REF} removes both blockers\n"
+                "  src/payments/charge.py  print_receipt() ran `lp` through a shell, the printer's name taken from\n"
+                "                          the request; receipt() returns the text instead, and spawns no process\n"
+                "  src/payments/config.py  the hard-coded AWS key pair is gone: both keys are read from the\n"
+                "                          environment, and a missing one stops the service with a sentence\n"
+                "\n"
+                "Left as planted: refund(), which nothing tests, for the guidelines to notice; and report.py's\n"
+                "copy of format_amount(), whose float division of cents demo-money-in-cents reports as a major, below\n"
+                "the bar."
+            )
         else:
             print(f"{root}: feature/payments is fixed already")
+        print(f"\nReview it again; with both blockers gone it ends in exit 0:\n\n  {_review(root)}")
         return 0
     try:
         build(root)
@@ -273,7 +299,23 @@ def main(argv: list[str]) -> int:
             file=sys.stderr,
         )
         return 1
-    print(f"built {root}: main, feature/payments (four planted defects)")
+    fix_it = "uv run python scripts/make_demo_repo.py" + (f" {_pasted(root)}" if args.path else "") + " --fix"
+    print(
+        f"built a throwaway repository to try the reviewer on, at {root}\n"
+        f"  {BASE_REF:<17} a small payments package and its tests\n"
+        f"  {HEAD_REF:<17} four files changed, a defect planted in each: a shell call, a hard-coded AWS key pair\n"
+        f"  {'':<17} (Amazon's own documented example, nothing real), a function nothing tests, a copied block\n"
+        "\n"
+        "Review the branch with the rules alone, no model and no key; it ends in exit 1, a blocker:\n"
+        "\n"
+        f"  {_review(root)}\n"
+        "\n"
+        "Then commit the two fixes, and the same review ends in exit 0:\n"
+        "\n"
+        f"  {fix_it}\n"
+        "\n"
+        "Leave out --profile to add the guidelines, which ask a model: README.md's Quick start says how to set one up."
+    )
     return 0
 
 

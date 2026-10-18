@@ -113,6 +113,7 @@ class Lint(FileRule):
 
     id = "lint"
     severity = "minor"  # a code the table above does not name
+    reads_tests = True  # ruff reads a test too, at the severities `IN_TESTS` gives one
     title = "what ruff reports, at a severity for each code"
     fix = "Correct what ruff reports."
     tool = "ruff"

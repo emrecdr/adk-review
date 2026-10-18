@@ -17,11 +17,12 @@ The shape of a rule — the three kinds, the constants it names, what it may imp
    `file.near(n)` where only the lines around what a change added matter, so a file past the size limits is read; a
    `TreeRule` when it needs the head's paths or every module. Every name comes from one import line,
    `from ..rule_helpers import …`, the door in `adk_review/judge/rule_helpers/`.
-2. Keep the rule's expectations as constants at the top of its file, as `REQUIRED` is in `required_paths.py`, and
+2. Keep the rule's expectations as constants at the top of its file, as `REQUIRED` is in `demo_required_paths.py`, and
    give it `bad` and `good` examples: the catalog holds the rule to them, and to firing on nothing in its own source,
    at every start. The folder holds rules and nothing else: no helper module and no guide; a helper several rules
    share belongs in `adk_review/judge/rule_helpers/`, in the module named after what it reads, and in the
-   door's `__all__`.
+   door's `__all__`. A rule reads no test by default; set `reads_tests = True` when what it finds matters in a test
+   too — a credential, hidden text, a workflow named `test_*.yml` — and a `bad` example at a test's path proves it.
 3. Profiles in `adk_review/config.toml`: `rules-only` and `full` run it at once, through the group `rules`; add
    `rule.<name>` to `default` only when every review should run it, since `default` holds the basics.
 4. See it fire on files on disk, no repository, no model and no key: `uv run python -m adk_review.review --try

@@ -83,12 +83,13 @@ one. A guideline is a class naming its role and a thinking budget (`core/guideli
 the chat alike. A rule imports one door, `judge/rule_helpers/`: the contract, passed on from `core/` (`rules.py`'s
 kinds, `Hit` and `Diagnostic`, `findings.py`'s `Severity` and `RANK`), helpers named after what they read (`lines.py`,
 `syntax.py`) and try a rule with (`testing.py`), and what a review reads too, passed on from `core/`: `matches`, the
-skip list's matcher, a test's path and a credential's shape. A rule may carry `bad` and `good` examples (`lint`
-carries none), which the catalog holds it to at every start with its own source, a rule failing
-either being exit 2; `try_rule`, `lines_hit` and `self_check` try a rule with no repository, `--list-checks` lists every
-check with its kind, its profiles and its file, `--check ID` runs one check alone. Each check has one id,
-`rule.<name>` or `guideline.<name>` (`core/profiles.py`), in the config, on the command line and as its own report
-section; inside ADK it is `state_key`'s identifier, `rule_<name>`.
+skip list's matcher, a test's path and a credential's shape. A rule is handed no test's file unless it sets
+`reads_tests = True`, as each rule about what runs, leaks or steers does (`file.changed` and `tree.paths` still list
+every test). A rule may carry `bad` and `good` examples (`lint` carries none), which the catalog holds it to at every
+start with its own source, a rule failing either being exit 2; `try_rule`, `lines_hit` and `self_check` try a rule with
+no repository, `--list-checks` lists every check with its kind, its profiles and its file, `--check ID` runs one check
+alone. Each check has one id, `rule.<name>` or `guideline.<name>` (`core/profiles.py`), in the config, on the command
+line and as its own report section; inside ADK it is `state_key`'s identifier, `rule_<name>`.
 
 The one config file, `config.toml` beside `review.py`, holds the profiles under `[profiles]` — named lists of check ids
 or the groups `rules` and `guidelines`, `default` the basics — and the review policy (`[review]` `fail_on`,

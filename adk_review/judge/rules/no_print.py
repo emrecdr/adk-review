@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from ..rule_helpers import Rule, calls, is_test
+from ..rule_helpers import Rule, calls
 
 
 class NoPrint(Rule):
@@ -23,4 +23,4 @@ class NoPrint(Rule):
 
     def check(self, path: str, line: str) -> bool:
         # print() called, on its own or as a method: never named in a comment or a string, never fingerprint()
-        return path.endswith(".py") and not is_test(path) and calls(line, "print", "*.print")
+        return path.endswith(".py") and calls(line, "print", "*.print")

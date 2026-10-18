@@ -211,6 +211,37 @@ def test_the_fix_run_twice_is_the_fix_once_and_before_a_build_is_a_sentence(tmp_
     assert "fixed already" in capsys.readouterr().out
 
 
+def test_the_fix_says_what_it_changed_in_each_file_and_what_it_left_planted(tmp_path: Path, capsys) -> None:
+    """A first-time reader once saw one line, the two fixes in a sentence: each file the fix commits is named, with
+    what was wrong in it, and the defects it leaves are named as left on purpose."""
+    import make_demo_repo
+
+    root = tmp_path / "demo"
+    assert make_demo_repo.main([str(root)]) == 0
+    capsys.readouterr()
+    assert make_demo_repo.main([str(root), "--fix"]) == 0
+    said = capsys.readouterr().out
+    assert all(f"  {path}  " in said for path in make_demo_repo.FIXED), said
+    assert "shell" in said and "AWS key pair" in said and "Left as planted" in said, said
+
+
+def test_the_demo_repository_names_the_review_to_run_on_it_ready_to_paste(tmp_path: Path, capsys) -> None:
+    """The build once printed its path alone, and a first-time reader filled the review's command in from the README
+    by hand. The path holds a space here, as a Windows user's temp folder can: pasted, it is still one argument."""
+    import shlex
+
+    import make_demo_repo
+
+    root = tmp_path / "a demo"
+    review = ["uv", "run", "adk-review", str(root.resolve()), "--head", "feature/payments", "--base", "main"]
+    review += ["--profile", "rules-only"]
+    for argv in ([str(root)], [str(root), "--fix"]):
+        assert make_demo_repo.main(argv) == 0
+        lines = capsys.readouterr().out.splitlines()
+        pasted = [shlex.split(line) for line in lines if line.strip().startswith("uv run adk-review")]
+        assert pasted == [review], (argv, lines)
+
+
 def test_the_copilot_login_says_how_to_use_it_and_logs_in_to_nothing(monkeypatch, tmp_path: Path, capsys) -> None:
     """Measured by review: with no token cached, `copilot_login.py --help` began a real device login, the trap the
     demo script's parser was built to close."""

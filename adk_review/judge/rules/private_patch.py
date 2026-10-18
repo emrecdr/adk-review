@@ -18,6 +18,7 @@ class PrivatePatch(Rule):
 
     id = "private-patch"
     severity = "minor"
+    reads_tests = True  # tests alone, which `check` chooses
     title = "a test patches a private name"
     fix = "Patch the public boundary the unit depends on, or pass the collaborator in."
     bad = (

@@ -12,7 +12,7 @@ class ModuleDefines(TreeRule):
     """What the rest of the project imports from a module is its contract; a rename or a removal breaks every
     importer, which a diff of the one file never shows."""
 
-    id = "module-defines"
+    id = "demo-module-defines"
     severity = "major"
     title = "a module no longer defines a name the project relies on"
     fix = "Define the name again, or move every importer with it and change the list in this rule."

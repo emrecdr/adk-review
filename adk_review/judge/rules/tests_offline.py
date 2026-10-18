@@ -20,6 +20,7 @@ class OfflineTests(Rule):
 
     id = "tests-offline"
     severity = "major"
+    reads_tests = True  # tests alone, which `check` chooses
     title = "a test reaches the network"
     fix = "Fake the network at the boundary: a stub client or a recorded answer, never a live call."
     bad = (("tests/test_a.py", "r = requests.get(url)"), ("tests/test_a.py", "s = socket.create_connection((h, p))"))

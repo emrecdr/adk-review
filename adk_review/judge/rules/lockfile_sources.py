@@ -36,6 +36,7 @@ class LockfileSources(FileRule):
 
     id = "lockfile-sources"
     severity = "minor"
+    reads_tests = True  # a lock file a test installs from fetches what it names all the same
     title = "a lockfile fetches a package from outside its public registry"
     fix = "Confirm the source is the one meant, a registry or a mirror the team trusts, over TLS, before it is fetched."
     bad = (

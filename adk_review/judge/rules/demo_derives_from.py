@@ -8,7 +8,8 @@ from ..rule_helpers import Tree, TreeRule, classes
 
 #: A class whose name ends with the key derives from one of the parents named, or from a class whose own name
 #: promises the same kind: `LookupError` is an `Exception`, `MyModel` a `BaseModel`, an `AdminUser` a `BaseUser`
-#: through a `StaffUser`, as far as a name can say.
+#: through a `StaffUser`, as far as a name can say. The kind's own name alone promises nothing: a Pydantic `User` is
+#: no `BaseUser`, while a `User` as a parent is a user, as Django's `models.Model` is a model.
 PARENTS = {
     "Model": ("BaseModel",),
     "Error": ("Exception",),
@@ -23,9 +24,10 @@ PREFIXES = ("Model",)
 class DerivesFrom(TreeRule):
     """A name promises a kind: a `UserModel` is read and validated as a model, a `PaymentError` is caught as an
     exception, an `OrderRepository` is used as any repository is, so each must be one. Read as written, in every
-    Python file at the head, with no import followed."""
+    Python file at the head but the tests, whose fakes are named for what they stand in for, with no import
+    followed."""
 
-    id = "derives-from"
+    id = "demo-derives-from"
     severity = "major"
     title = "a class does not derive from the parent its name promises"
     fix = "Derive the class from the parent named, or rename it so its name promises nothing."
@@ -40,6 +42,8 @@ class DerivesFrom(TreeRule):
             "k.py": "class BaseUser:\n    pass\n\n\nclass StaffUser(BaseUser):\n    pass\n\n\n"
             "class AdminUser(StaffUser):\n    pass\n\n\nclass OrderRepository(BaseRepository):\n    pass\n"
         },
+        {"k.py": "class User(pydantic.BaseModel):\n    pass\n\n\nclass AdminUser(User):\n    pass\n"},
+        {"tests/test_k.py": "class TestInspectRepository:\n    pass\n\n\nclass FakeModel:\n    pass\n"},
     )
 
     def check(self, tree: Tree) -> list[tuple[str, str]]:
@@ -54,9 +58,12 @@ def _classes_at(tree: Tree) -> Iterator[tuple[str, str, list[str]]]:
 
 
 def _promised(name: str) -> str | None:
-    """The kind a class name promises: the key it ends with, else the key among `PREFIXES` it starts with; none for a
-    kind's own base, which promises nothing of itself. Measured: with `User` among the kinds, `class BaseUser:` was
-    flagged for not deriving from itself."""
+    """The kind a class name promises: the key it ends with, else the key among `PREFIXES` it starts with; none for
+    the kind's own name or its base, which promise nothing of themselves. Measured: with `User` among the kinds,
+    `class BaseUser:` was flagged for not deriving from itself, and a Pydantic `class User(BaseModel)` for not
+    deriving from `BaseUser`."""
+    if name in PARENTS:
+        return None
     ending = next((key for key in PARENTS if name.endswith(key)), None)
     key = ending or next((key for key in PARENTS if key in PREFIXES and name.startswith(key)), None)
     return None if key is None or name in PARENTS[key] else key
@@ -71,6 +78,7 @@ def _broken(name: str, bases: list[str]) -> str | None:
 
 
 def _is(base: str, key: str) -> bool:
-    """A written parent of the kind: the parent named, or one whose own name promises the kind, read as a class's is."""
+    """A written parent of the kind: the kind's own name, the parent named, or one whose own name promises the kind,
+    read as a class's is."""
     leaf = base.rsplit(".", 1)[-1]
-    return leaf in PARENTS[key] or _promised(leaf) == key
+    return leaf == key or leaf in PARENTS[key] or _promised(leaf) == key

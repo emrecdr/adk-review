@@ -677,10 +677,10 @@ class TestTreeRules:
 
     def test_each_shipped_tree_rule_holds_where_it_should_and_names_what_breaks(self) -> None:
         from adk_review.core.rules import Tree
-        from adk_review.judge.rules.derives_from import DerivesFrom
-        from adk_review.judge.rules.module_defines import ModuleDefines
-        from adk_review.judge.rules.parameters import Parameters
-        from adk_review.judge.rules.required_paths import RequiredPaths
+        from adk_review.judge.rules.demo_derives_from import DerivesFrom
+        from adk_review.judge.rules.demo_module_defines import ModuleDefines
+        from adk_review.judge.rules.demo_parameters import Parameters
+        from adk_review.judge.rules.demo_required_paths import RequiredPaths
 
         charge, config = "src/payments/charge.py", "src/payments/config.py"
         whole = Tree(
@@ -702,7 +702,7 @@ class TestTreeRules:
         assert Parameters().check(Tree([charge], {charge: "X = 1\n"})) == [(charge, "defines no function charge")]
 
         def derives(*heads: str) -> list[tuple[str, str]]:
-            """What derives-from says of one module holding these classes, a `class X(Parents)` head each."""
+            """What demo-derives-from says of one module holding these classes, a `class X(Parents)` head each."""
             return DerivesFrom().check(Tree(["k.py"], {"k.py": "".join(f"{head}:\n    pass\n" for head in heads)}))
 
         assert derives("class PaymentError(Exception)", "class Other") == []
@@ -720,8 +720,14 @@ class TestTreeRules:
             "class Model(Base)",
             "class ModelView(ModelBase)",
         )
-        assert derives(*kinds) == [("k.py", "class Model derives from Base, not BaseModel")], (
-            "an ending decides first, so ModelError is an error; Error is no prefix; Model and ModelBase are models"
+        assert derives(*kinds) == [], (
+            "an ending decides first, so ModelError is an error; Error is no prefix; ModelBase is a model; and Model "
+            "is the kind's own name, which promises nothing"
+        )
+        bare = ("class User(BaseModel)", "class Repository(Generic[T])", "class Error", "class Model(Base)")
+        assert derives(*bare) == [], "a kind's own name alone is no promise: a Pydantic User is no BaseUser"
+        assert derives("class AdminUser(User)", "class UserModel(models.Model)", "class LookupError(Error)") == [], (
+            "a parent named the kind is of the kind, as Django's models.Model is a model"
         )
         assert derives("class AdminUser(BaseUser)", "class OrderRepository(BaseRepository)") == []
         assert derives("class StaffUser(BaseUser)", "class AdminUser(StaffUser)") == [], "a parent named for the kind"
@@ -737,12 +743,12 @@ class TestTreeRules:
 
     def test_run_rule_names_what_a_tree_rule_found_and_what_it_could_not_look_at(self) -> None:
         from adk_review.core.rules import Tree, TreeRule
-        from adk_review.judge.rules.module_defines import ModuleDefines
-        from adk_review.judge.rules.required_paths import RequiredPaths
+        from adk_review.judge.rules.demo_module_defines import ModuleDefines
+        from adk_review.judge.rules.demo_required_paths import RequiredPaths
 
         unlisted = run_rule(RequiredPaths(), [], None)
         assert unlisted.findings == []
-        assert unlisted.could_not_look == "rule required-paths could not look: the tree at the head was not listed"
+        assert unlisted.could_not_look == "rule demo-required-paths could not look: the tree at the head was not listed"
         tree = Tree(["README.md", "src/payments/charge.py"], {}, unread=["src/payments/charge.py"])
         answers = [run_rule(rule, [], tree) for rule in (RequiredPaths(), ModuleDefines(), _broken(kind=TreeRule))]
         found = [finding for answer in answers for finding in answer.findings]
@@ -751,9 +757,9 @@ class TestTreeRules:
             ("src/payments/__init__.py", "not at the head"),
             ("tests/", "not at the head"),
         ]
-        title = "required-paths: a file or folder the project needs is missing"
+        title = "demo-required-paths: a file or folder the project needs is missing"
         assert all(f.line is None and f.severity == "major" and f.title == title for f in found), "at a path, no line"
-        assert failed[0] == "rule module-defines could not look: src/payments/charge.py was not read whole"
+        assert failed[0] == "rule demo-module-defines could not look: src/payments/charge.py was not read whole"
         assert failed[1].startswith("rule broken raised RuntimeError: no (conftest.py line ") and len(failed) == 2
 
     def test_a_required_module_not_read_whole_is_a_hole_in_the_review_never_an_approval(
@@ -766,27 +772,29 @@ class TestTreeRules:
         monkeypatch.setattr(git, "MAX_FILE_BYTES", 10)
         assert run_review(cli, demo_repo, "--profile", "rules-only") == 3
         out = capsys.readouterr().out
-        assert "rule module-defines could not look: src/payments/charge.py was not read whole" in out, out
-        assert "and so is any rule over the tree" in out and "derives-from could not look" not in out
+        assert "rule demo-module-defines could not look: src/payments/charge.py was not read whole" in out, out
+        assert "and so is any rule over the tree" in out and "demo-derives-from could not look" not in out
 
     def test_the_shipped_tree_rules_hold_on_the_demo_until_its_shape_changes(
         self, demo_repo: Path, cli, monkeypatch, capsys
     ) -> None:
         """One review, with a path the demo lacks added to the required ones: that path is the only tree-rule finding,
         so every shipped expectation holds on the demo as it is."""
-        from adk_review.judge.rules import required_paths
+        from adk_review.judge.rules import demo_required_paths
 
-        monkeypatch.setattr(required_paths, "REQUIRED", (*required_paths.REQUIRED, "CHANGELOG.md"))
+        monkeypatch.setattr(demo_required_paths, "REQUIRED", (*demo_required_paths.REQUIRED, "CHANGELOG.md"))
         # A project that edits a rule's constants edits its examples with them: the catalog holds a rule to both.
-        good = {**required_paths.RequiredPaths.good[0], "CHANGELOG.md": ""}
-        monkeypatch.setattr(required_paths.RequiredPaths, "good", (good,))
+        good = {**demo_required_paths.RequiredPaths.good[0], "CHANGELOG.md": ""}
+        monkeypatch.setattr(demo_required_paths.RequiredPaths, "good", (good,))
         run_review(cli, demo_repo, "--profile", "rules-only")
         out = capsys.readouterr().out
-        assert "- **major** required-paths: a file or folder the project needs is missing (CHANGELOG.md)" in out, out
+        missing = "- **major** demo-required-paths: a file or folder the project needs is missing (CHANGELOG.md)"
+        assert missing in out, out
         assert "  - evidence: `not at the head`" in out
-        assert out.count("required-paths:") == 1, out
+        assert out.count("demo-required-paths:") == 1, out
         quiet = out.split("### no findings from ", 1)[1]
-        assert all(f"`rule.{rule}`" in quiet for rule in ("module-defines", "derives-from", "parameters")), out
+        quiet_ones = ("demo-module-defines", "demo-derives-from", "demo-parameters")
+        assert all(f"`rule.{rule}`" in quiet for rule in quiet_ones), out
 
 
 class TestTheShippedRules:
@@ -855,7 +863,8 @@ class TestTheShippedRules:
         assert self_check(rule) == []
 
     def test_the_money_rule_finds_cents_divided_into_a_float(self) -> None:
-        from adk_review.judge.rules.money_in_cents import MoneyInCents
+        from adk_review.judge.rule_helpers import try_rule
+        from adk_review.judge.rules.demo_money_in_cents import MoneyInCents
 
         rule = MoneyInCents()
         assert rule.check("src/payments/report.py", '    return f"{amount_cents / 100:.2f} {currency}"'), "planted"
@@ -881,15 +890,17 @@ class TestTheShippedRules:
             '"""Money is whole cents. `amount_cents / 100` turns it into a float',
         ):
             assert not rule.check("src/a.py", line), line
-        assert not rule.check("docs/a.md", "cents / 100") and not rule.check("tests/test_a.py", "cents / 100")
+        assert not rule.check("docs/a.md", "cents / 100")
+        assert not try_rule(rule, {"tests/test_a.py": "x = cents / 100\n"}), "a test's arithmetic is the test's own"
 
     def test_the_example_rule_finds_a_print_call_in_library_code_only(self) -> None:
+        from adk_review.judge.rule_helpers import try_rule
         from adk_review.judge.rules.no_print import NoPrint
 
         rule = NoPrint()
-        assert rule.check("src/contests/api.py", "    print(total)"), "`contests` is no tests folder"
+        assert try_rule(rule, {"src/contests/api.py": "print(total)\n"}), "`contests` is no tests folder"
         assert not rule.check("src/a.py", "digest = fingerprint(data)") and not rule.check("src/a.py", "pprint(x)")
-        assert not rule.check("tests/test_a.py", "print(x)") and not rule.check("src/a/tests/b.py", "print(x)")
+        assert not try_rule(rule, {"tests/test_a.py": "print(x)\n", "src/a/tests/b.py": "print(x)\n"})
         assert rule.check("src/a.py", "print (x)"), "a call, spaced"
         # Measured before, on a regex over the text: each of these was flagged.
         for line in ("# print(x) for debugging", 'msg = "call print(x)"', 'logger.info("print(%s)", x)'):

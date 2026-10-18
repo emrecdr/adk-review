@@ -661,7 +661,7 @@ class TestTheChecksNode:
 
         evidence = collect_evidence(str(demo_repo), BASE, HEAD)
         run = await self._run(catalog().rules, {}, evidence)
-        assert self._answer(run, rule_id("money-in-cents")).findings, "the rules read the tree and the texts first"
+        assert self._answer(run, rule_id("demo-money-in-cents")).findings, "the rules read the tree and the texts first"
         assert evidence["tree"] is None
         assert all(e["text"] is None and e["added"] is None and e["diff"] is None for e in evidence["files"])
         assert run.state[BLAST].startswith("## Blast radius"), "the radius, written before the tree went"

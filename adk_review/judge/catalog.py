@@ -91,6 +91,8 @@ def _rule_problem(rule: AnyRule) -> str | None:
         return f"{type(rule).__name__} needs an id, a title and a fix, and has no {' and no '.join(missing)}"
     if (severity := getattr(rule, "severity", None)) not in RANK:
         return f"{rule.id!r} has severity {severity!r}, not {' or '.join(RANK)}"
+    if not isinstance(reads := getattr(rule, "reads_tests", False), bool):  # "no" would read as True
+        return f"{rule.id!r} has reads_tests {reads!r}, not True or False"
     if (tool := getattr(rule, "tool", None)) is not None and tool not in TOOLS:
         return f"{rule.id!r} names the tool {tool!r}, which no adapter runs; there are {', '.join(sorted(TOOLS))}"
     if "hits" in vars(type(rule)):  # one way to write a rule of each kind: its author writes `check`
@@ -220,7 +222,15 @@ def _described(one: AnyRule | Guideline, runs: Mapping[str, str]) -> dict:
     if isinstance(one, Guideline):
         return {**said, "kind": "guideline", "role": squash(one.role)}
     bad, good = ([files_of(example) for example in examples] for examples in (one.bad, one.good))
-    return {**said, "kind": f"{one.kind} rule", "severity": one.severity, "fix": one.fix, "bad": bad, "good": good}
+    return {
+        **said,
+        "kind": f"{one.kind} rule",
+        "severity": one.severity,
+        "tests": "read" if one.reads_tests else "not read",
+        "fix": one.fix,
+        "bad": bad,
+        "good": good,
+    }
 
 
 @dataclass(frozen=True)

@@ -46,6 +46,7 @@ class SteeringFiles(FileRule):
 
     id = "steering-files"
     severity = "minor"
+    reads_tests = True  # a `tests/CLAUDE.md` steers an agent at work there, and a `test_*.yml` workflow runs
     title = "a file another tool or agent obeys has changed"
     fix = "Read the change as that tool will, and confirm each instruction or command it adds is wanted."
     bad = (

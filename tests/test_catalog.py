@@ -399,7 +399,7 @@ class TestTheRuleKinds:
         assert swallowing.could_not_look == "rule swallowing could not look: data.csv was not read whole"
 
     def test_a_type_alias_is_a_name_the_module_defines(self) -> None:
-        """Measured before: `type Money = int` defined no name, so `module-defines` called `Money` missing."""
+        """Measured before: `type Money = int` defined no name, so `demo-module-defines` called `Money` missing."""
         import ast
 
         from adk_review.judge.rule_helpers import defined
@@ -443,9 +443,9 @@ class TestTheRuleKinds:
         text = (ROOT / "README.md").read_text(encoding="utf-8")
         section = text.split("\n## Write a rule\n", 1)[1].split("\n## Write a guideline\n", 1)[0]
         blocks = re.findall(r"```python\n(.*?)```", section, re.DOTALL)
-        names = ("no_todo", "http_timeout", "required_paths")
+        names = ("no_todo", "http_timeout", "demo_required_paths")
         assert len(blocks) == len(names), "one template a kind"
-        shipped = (ROOT / "adk_review" / "judge" / "rules" / "required_paths.py").read_text(encoding="utf-8")
+        shipped = (ROOT / "adk_review" / "judge" / "rules" / "demo_required_paths.py").read_text(encoding="utf-8")
         assert blocks[2] == shipped, "the tree template is the shipped rule, word for word"
         guideline = re.search(r"```python\n(.*?)```", text.split("\n## Write a guideline\n", 1)[1], re.DOTALL)
         for folder, files in ((rules, dict(zip(names, blocks, strict=True))), (guidelines, {"naming": guideline[1]})):
@@ -455,7 +455,7 @@ class TestTheRuleKinds:
                 (where / f"{name}.py").write_text(block, encoding="utf-8")
             monkeypatch.setattr(folder, "__path__", [str(where)])
         found = catalog()
-        assert [rule.id for rule in found.rules] == ["http-timeout", "no-todo", "required-paths"]
+        assert [rule.id for rule in found.rules] == ["demo-required-paths", "http-timeout", "no-todo"]
         assert [g.id for g in found.guidelines] == ["naming"]
         no_todo = next(rule for rule in found.rules if rule.id == "no-todo")
         assert lines_hit(no_todo, "src/a.py", "x = 1  # TODO later\ny = 'TODO'\n") == [1]
@@ -541,7 +541,7 @@ class TestTheProfiles:
     def test_a_profile_may_name_a_group_and_each_check_runs_once(self) -> None:
         from adk_review.core.profiles import chosen
 
-        rules = ["rule.secrets", "rule.lint", "rule.no-print", "rule.money-in-cents"]
+        rules = ["rule.secrets", "rule.lint", "rule.no-print", "rule.demo-money-in-cents"]
         known = (*rules, "guideline.security", "guideline.tests")
         groups = {"rules": rules, "guidelines": ["guideline.security", "guideline.tests"]}
         profiles = {
@@ -576,7 +576,7 @@ class TestTheProfiles:
         assert "| `guideline.security` | guideline | the model's, by finding | default, full |" in out
         assert "| `rule.no-print` | line rule | minor | rules-only, full |" in out
         assert "| `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full |" in out
-        assert "| `rule.required-paths` | tree rule | major | rules-only, full |" in out
+        assert "| `rule.demo-required-paths` | tree rule | major | rules-only, full |" in out
         assert "`judge/rules/no_print.py`" in out and "`judge/guidelines/security.py`" in out
         assert "“Write a rule” and “Write a guideline” in README.md" in out
 
@@ -596,10 +596,11 @@ class TestTheProfiles:
         assert "| `rule.no-print` | line rule | minor | none: --check only |" in out
 
     def test_check_runs_one_check_this_once_and_names_it_in_the_report(self, demo_repo: Path, cli, capsys) -> None:
-        assert run_review(cli, demo_repo, "--check", "rule.money-in-cents") == 0, "a major, below the bar"
+        assert run_review(cli, demo_repo, "--check", "rule.demo-money-in-cents") == 0, "a major, below the bar"
         out = capsys.readouterr().out
-        assert "- profile      --check rule.money-in-cents (off: rule.derives-from, rule.encoding-declaration," in out
-        assert "money-in-cents: cents divided into a float (src/payments/report.py:5)" in out
+        off = "rule.demo-derives-from, rule.demo-module-defines, rule.demo-parameters, rule.demo-required-paths,"
+        assert f"- profile      --check rule.demo-money-in-cents (off: {off} rule.encoding-declaration," in out
+        assert "demo-money-in-cents: cents divided into a float (src/payments/report.py:5)" in out
         assert "### rule.secrets" not in out and "### guideline.security" not in out
         assert run_review(cli, demo_repo, "--check", "no-such") == 2
         assert "which no check or group is" in capsys.readouterr().err

@@ -19,8 +19,7 @@ tree holds, and that `README.md` names each module at the package's root; `tests
 3. Each guide holds one kind of truth: `GUIDE.md` what a user runs and reads back; `README.md` the architecture and
    how to write a rule or a guideline; `CLAUDE.md` the rules a coding agent works by, which Copilot in VS Code and the
    cloud agent read too; `.github/copilot-instructions.md` and `.github/instructions/` their short form, which agrees
-   with it, a rule that changes in one changing in the other. `docs/` holds audits pinned to the commits they name:
-   history, never renumbered or brought up to date.
+   with it, a rule that changes in one changing in the other.
 4. Write as the docs are written: plain prose that says what the code does and why, no date and no count of the
    repository's current state, a number measured once kept as history, lines wrapped at 120. Regenerate `GUIDE.md`'s
    check table from `uv run adk-review --list-checks`.
