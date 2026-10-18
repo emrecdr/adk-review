@@ -94,7 +94,8 @@ repository: examples of a project's rules, which a project replaces with its own
 `demo` runs them.
 `demo-derives-from` holds a class to the base its name promises — a `…Model` to `BaseModel`, an `…Error` to `Exception`,
 a `…User` to `BaseUser`, a `…Repository` to `BaseRepository` — and a project names its own kinds in the rule's
-`PARENTS`; a kind's own name alone, a Pydantic `User`, promises nothing.
+`PARENTS`; a kind's own name alone, a Pydantic `User`, promises nothing, and nor does a name that only starts
+with a kind's, a `ModelForm`.
 
 A rule reads no test — a file in a folder named `tests` or `test`, or named `test_*`, `*_test` or `conftest.py` — unless
 it says so, as the rules about what runs, leaks or steers do; `--explain ID` names which. The checks, as `--list-checks`

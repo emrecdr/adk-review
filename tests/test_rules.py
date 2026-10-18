@@ -711,18 +711,17 @@ class TestTreeRules:
             "a parent named for the kind"
         )
         assert derives("class PaymentError") == [("k.py", "class PaymentError derives from nothing, not Exception")]
-        assert derives("class UserModel(pydantic.BaseModel)", "class ModelView(View)") == [
-            ("k.py", "class ModelView derives from View, not BaseModel")
-        ], "a name starting or ending with Model promises a BaseModel; Charge promises nothing"
-        kinds = (
-            "class ModelError(Exception)",
-            "class ErrorCode(Enum)",
-            "class Model(Base)",
-            "class ModelView(ModelBase)",
+        started = ("class ModelForm(Form)", "class ModelAdmin(Admin)", "class ModelConfig", "class ModelSerializer(S)")
+        assert derives("class UserModel(View)", *started) == [
+            ("k.py", "class UserModel derives from View, not BaseModel")
+        ], (
+            "the ending alone decides: Django's ModelForm and ModelAdmin, DRF's ModelSerializer and a ModelConfig "
+            "are no models"
         )
+        kinds = ("class ModelError(Exception)", "class ErrorCode(Enum)", "class Model(Base)", "class ModelView(View)")
         assert derives(*kinds) == [], (
-            "an ending decides first, so ModelError is an error; Error is no prefix; ModelBase is a model; and Model "
-            "is the kind's own name, which promises nothing"
+            "the ending decides: ModelError is an error, ErrorCode and ModelView end in no kind, and Model is the "
+            "kind's own name, which promises nothing"
         )
         bare = ("class User(BaseModel)", "class Repository(Generic[T])", "class Error", "class Model(Base)")
         assert derives(*bare) == [], "a kind's own name alone is no promise: a Pydantic User is no BaseUser"

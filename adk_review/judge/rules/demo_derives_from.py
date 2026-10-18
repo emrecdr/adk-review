@@ -16,9 +16,6 @@ PARENTS = {
     "User": ("BaseUser",),
     "Repository": ("BaseRepository",),
 }
-#: The keys a name may also start with, each a key of `PARENTS`: a `ModelView` is a model too. An ending decides
-#: first, so a `ModelError` is an error, never a model.
-PREFIXES = ("Model",)
 
 
 class DerivesFrom(TreeRule):
@@ -44,6 +41,7 @@ class DerivesFrom(TreeRule):
         },
         {"k.py": "class User(pydantic.BaseModel):\n    pass\n\n\nclass AdminUser(User):\n    pass\n"},
         {"tests/test_k.py": "class TestInspectRepository:\n    pass\n\n\nclass FakeModel:\n    pass\n"},
+        {"k.py": "class ModelForm(forms.Form):\n    pass\n\n\nclass ModelConfig:\n    pass\n"},
     )
 
     def check(self, tree: Tree) -> list[tuple[str, str]]:
@@ -58,12 +56,12 @@ def _classes_at(tree: Tree) -> Iterator[tuple[str, str, list[str]]]:
 
 
 def _promised(name: str) -> str | None:
-    """The kind a class name promises: the key it ends with, else the key among `PREFIXES` it starts with; none for
-    the kind's own name or its base, which promise nothing of themselves. Measured: with `User` among the kinds,
+    """The kind a class name promises: the key it ends with; none for the kind's own name or its base, which promise
+    nothing of themselves, nor for a name that only starts with a key. Measured: with `User` among the kinds,
     `class BaseUser:` was flagged for not deriving from itself, and a Pydantic `class User(BaseModel)` for not
-    deriving from `BaseUser`."""
-    ending = next((key for key in PARENTS if name.endswith(key)), None)
-    key = ending or next((key for key in PARENTS if key in PREFIXES and name.startswith(key)), None)
+    deriving from `BaseUser`; and while a name starting with `Model` promised a model, Django's `ModelAdmin` and
+    `ModelForm`, DRF's `ModelSerializer` and a `ModelConfig` were each flagged for not deriving from `BaseModel`."""
+    key = next((key for key in PARENTS if name.endswith(key)), None)
     return None if key is None or name == key or name in PARENTS[key] else key
 
 
