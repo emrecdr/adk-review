@@ -186,10 +186,8 @@ def _check_again(evidence: Evidence, found: set[str], fail_on: str) -> list[str]
     committed first, or staged under --staged: a review reads no file on disk."""
     pre = evidence["preflight"]
     if pre.get("staged"):
-        scope, first = (
-            ["--staged"],
-            "Stage the fixes: a review of the index reads what is staged, not the files on disk.",
-        )
+        scope = ["--staged"]
+        first = "Stage the fixes: a review of the index reads what is staged, not the files on disk."
     else:
         scope = ["--head", pre["head"], *(["--all"] if evidence["whole"] else ["--base", pre["base"]])]
         first = (
@@ -201,17 +199,19 @@ def _check_again(evidence: Evidence, found: set[str], fail_on: str) -> list[str]
     lines = ["", "## Check your work", "", first]
     if rules:
         named = [arg for check in rules for arg in ("--check", check)]
-        command = _pasted(["adk-review", pre["repo"], *scope, "--fail-on", fail_on, *named])
         lines += [
             "",
             "Then run the rules that found them again. No model is called and nothing is written; the review",
             "ends in exit 0 once nothing at the bar is left, and its report lists whatever is:",
             "",
-            f"    {command}"
-            if command
-            else f"No command is printed: a name in it holds a character a shell would read. Run the review again "
-            f"on the same scope with {code_span(' '.join(named))}.",
         ]
+        if command := _pasted(["adk-review", pre["repo"], *scope, "--fail-on", fail_on, *named]):
+            lines.append(f"    {command}")
+        else:
+            lines.append(
+                "No command is printed: a name in it holds a character a shell would read. Run the review again on "
+                f"the same scope with {code_span(' '.join(named))}."
+            )
     if guidelines:
         lines += [
             "",
@@ -227,22 +227,24 @@ WINDOWS_QUOTED = " \\:._-/~+,;=@#&'()[]{}^"
 
 
 def _pasted(argv: Sequence[str], windows: bool = os.name == "nt") -> str | None:
-    """`argv` as a shell reads it pasted, or None where no quoting keeps it the one command: a POSIX shell's own
-    quoting; on Windows each argument bare where it holds only letters, digits and `\\:._-/`, else in double quotes,
-    which cmd and PowerShell both read, where it holds only what `WINDOWS_QUOTED` names and ends in no `\\`, which would
-    keep the quote open. Nowhere a line a character no one sees would break, or the report's safety rules rewrite.
-    A branch's name is its author's, and `;`, `$`, a backtick and a typographic quote are legal in one."""
-    if not windows:
-        line = shlex.join(argv)
-    else:
-        bare = [bool(arg) and all(c.isalnum() or c in "\\:._-/" for c in arg) for arg in argv]
-        if not all(
-            plain or (all(c.isalnum() or c in WINDOWS_QUOTED for c in arg) and not arg.endswith("\\"))
-            for arg, plain in zip(argv, bare, strict=True)
-        ):
-            return None
-        line = " ".join(arg if plain else f'"{arg}"' for arg, plain in zip(argv, bare, strict=True))
-    return line if line.isprintable() and inert(line) == line else None
+    """`argv` as a shell reads it pasted, or None where no quoting keeps it the one command: each argument as a POSIX
+    shell quotes it, or as `_windows_word` does; and nowhere a line a character no one sees would break, or the
+    report's safety rules rewrite. A branch's name is its author's, and `;`, `$`, a backtick and a typographic quote
+    are legal in one."""
+    words = [_windows_word(arg) if windows else shlex.quote(arg) for arg in argv]
+    line = " ".join(word for word in words if word is not None)
+    return line if None not in words and line.isprintable() and inert(line) == line else None
+
+
+def _windows_word(arg: str) -> str | None:
+    """One argument as cmd and PowerShell both read it: bare where it holds only letters, digits and `\\:._-/`, else
+    in double quotes where it holds only what `WINDOWS_QUOTED` names and ends in no `\\`, which would keep the quote
+    open; else None."""
+    if arg and all(c.isalnum() or c in "\\:._-/" for c in arg):
+        return arg
+    if all(c.isalnum() or c in WINDOWS_QUOTED for c in arg) and not arg.endswith("\\"):
+        return f'"{arg}"'
+    return None
 
 
 def render_explained(said: Mapping[str, object]) -> str:

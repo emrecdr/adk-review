@@ -247,7 +247,9 @@ def demo_repo() -> Path:
 
 def _pasted(path: Path) -> str:
     """The path as a shell reads it pasted: a POSIX shell's own quoting, or on Windows double quotes, which cmd and
-    PowerShell both read, where it holds more than letters, digits and `\\:._-` (no Windows path holds a `"`)."""
+    PowerShell both read, where it holds more than letters, digits and `\\:._-` (no Windows path holds a `"`). The
+    path is the operator's own; the handoff's command, which quotes a branch's name its author chose, is held to
+    `deliver/report.py`'s stricter `_pasted`, and no script imports the package."""
     text = str(path)
     if os.name != "nt":
         return shlex.quote(text)

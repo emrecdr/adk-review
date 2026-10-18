@@ -62,11 +62,9 @@ def _promised(name: str) -> str | None:
     the kind's own name or its base, which promise nothing of themselves. Measured: with `User` among the kinds,
     `class BaseUser:` was flagged for not deriving from itself, and a Pydantic `class User(BaseModel)` for not
     deriving from `BaseUser`."""
-    if name in PARENTS:
-        return None
     ending = next((key for key in PARENTS if name.endswith(key)), None)
     key = ending or next((key for key in PARENTS if key in PREFIXES and name.startswith(key)), None)
-    return None if key is None or name in PARENTS[key] else key
+    return None if key is None or name == key or name in PARENTS[key] else key
 
 
 def _broken(name: str, bases: list[str]) -> str | None:
