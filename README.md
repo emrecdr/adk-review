@@ -163,7 +163,8 @@ line the change added and answers yes or no. A `FileRule`'s `check(file)` reads 
 at the head — its lines, the numbers of the lines the change added, every path the change touched and, for Python,
 its module — for what one line cannot show, as `reviewer_instructions.py` reads a directive wrapped over lines. A
 `TreeRule`'s `check(tree)` reads the head instead: every path, and each Python module parsed once with the blast
-radius, for what must exist, define a name, derive from a parent or take a parameter. A guideline names its role and
+radius, for what must exist, define a name, derive from a parent or take a parameter. None is handed a test's file
+unless it sets `reads_tests`, as the list of what a rule may do says below. A guideline names its role and
 a thinking budget; the instruction around the role is every guideline's.
 
 The rules shipped with the reviewer are written as a project writes its own:
@@ -174,7 +175,8 @@ The rules shipped with the reviewer are written as a project writes its own:
   across wrapped lines, through hidden and full-width characters, and in a file's name), `encoding-declaration` (a
   source encoding that turns plain text into other code: a hole, since no rule read the code Python would run),
   `lockfile-sources` (a lockfile fetching a package from outside its package manager's public registry, the one
-  check of a lockfile's sources, since the shipped skip list leaves lockfiles to the rules), `pinned-actions` (a
+  check of a lockfile's sources, since the shipped skip list leaves lockfiles to the rules; the formats it reads,
+  and why the rest are left to the credential rules, are its `REGISTRIES`), `pinned-actions` (a
   workflow or an action running another action at a tag, a branch or a short SHA, which can be moved to other code
   after review, not its full commit SHA), `hidden-text` (tag
   characters and bidirectional controls, in any file) and `steering-files` (a change to a file another tool or agent

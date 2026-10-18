@@ -140,9 +140,14 @@ review, and `--dry-run` names the file read. Another policy is a change to this 
 installed command reads the copy it was installed with: installed from your own checkout with `uv tool install
 --editable <checkout>`, a change there applies at once, as to `uv run`; otherwise reinstall after one. A pre-commit
 hook reads the config of the commit it pins, so a policy of your own is a commit of your own fork, pinned instead. The
-shipped `skip` names images and fonts, in either case, which no rule or model reads, so a branch adding a logo is not
-a hole, and lockfiles, which the rules read whole and no guideline judges; an archive, a keystore or a document can
-carry a credential, and stays a hole until the list names it. A text file a glob names is still read by every rule.
+shipped `skip` names images and fonts, in either case, which no rule or model reads, so a branch adding a logo is not a
+hole, and lockfiles, which the rules read whole and no guideline judges. `rule.lockfile-sources` reads where npm's,
+Yarn's, pnpm's, bun's, uv's, Poetry's, PDM's, Pipenv's, Cargo's, Bundler's, Dart's, Mix's and CocoaPods' lockfiles fetch
+from; the other lockfiles the list names are read by the credential rules alone: `go.sum`, `gradle.lockfile` and NuGet's
+`packages.lock.json` name no source, Swift's `Package.resolved`, Nix's `flake.lock` and Composer's `composer.lock` name
+a URL for every package, and Deno's `deno.lock` imports from URLs by design. An archive, a keystore or a document can
+carry a credential, and stays a hole until the list names it. A text file a glob names is still read by the rules, as
+any changed file is.
 
 The model is set in the environment, or in the `.env` at the root of the reviewer's checkout; a variable set in the
 shell wins over the file:
