@@ -38,7 +38,7 @@ from conftest import (
 
 from adk_review.core.profiles import rule_id, state_key
 
-#: The shipped profiles in TOML, for a test's own config: `default`, `rules-only` and `full`.
+#: Three profiles in TOML, named as the shipped ones are, for a test's own config: `default`, `rules-only` and `full`.
 PROFILES_TOML = (
     '[profiles]\ndefault = ["rules", "guidelines"]\nrules-only = ["rules"]\nfull = ["rules", "guidelines"]\n'
 )
@@ -387,11 +387,11 @@ class TestTheDryRun:
         assert "- model        " in out
         assert "## Blast radius" in out and "Nothing ran: no rule, no guideline, no model call." in out
         assert "## Verdict" not in out and "### rule." not in out
-        assert run_review(cli, demo_repo, "--dry-run", "--profile", "rules-only") == 0
+        assert run_review(cli, demo_repo, "--dry-run", "--profile", "demo") == 0
         out = capsys.readouterr().out
         assert "- guidelines " not in out and "- model " not in out
         assert (
-            "- profile      rules-only (off: guideline.complexity, guideline.correctness, guideline.security, "
+            "- profile      demo (off: guideline.complexity, guideline.correctness, guideline.security, "
             "guideline.tests)" in out
         )
         assert run_review(cli, demo_repo, "--dry-run", "--head", "no-such") == 2, "the wrong branch, caught"
@@ -689,7 +689,7 @@ class TestTheJsonReport:
         self, cli, demo_repo: Path, tmp_path: Path
     ) -> None:
         path = tmp_path / "review.json"
-        run_review(cli, demo_repo, "--profile", "rules-only", "--json", str(path))
+        run_review(cli, demo_repo, "--profile", "demo", "--json", str(path))
         data = json.loads(path.read_text(encoding="utf-8"))
         assert data["model"] is None and data["usage"]["attempted"] == 0
         assert data["checks"] == [rule_id(rule.id) for rule in catalog().rules], "every rule, in the group's order"
@@ -1036,7 +1036,7 @@ class TestWhatANewcomerReads:
     def test_checks_that_found_nothing_share_one_line_and_the_verdict_counts_whats_at_the_bar(
         self, demo_repo: Path, cli, capsys
     ) -> None:
-        assert run_review(cli, demo_repo, "--profile", "rules-only") == 1
+        assert run_review(cli, demo_repo, "--profile", "demo") == 1
         out = capsys.readouterr().out
         assert "## Verdict: REQUEST_CHANGES, 2 findings at or above `--fail-on blocker`\n" in out, out
         assert out.count("- no findings") == 0 and "### rule.secrets\n" in out and "### rule.no-print" not in out

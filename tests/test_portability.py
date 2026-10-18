@@ -234,7 +234,7 @@ def test_the_demo_repository_names_the_review_to_run_on_it_ready_to_paste(tmp_pa
 
     root = tmp_path / "a demo"
     review = ["uv", "run", "adk-review", str(root.resolve()), "--head", "feature/payments", "--base", "main"]
-    review += ["--profile", "rules-only"]
+    review += ["--profile", "demo"]
     for argv in ([str(root)], [str(root), "--fix"]):
         assert make_demo_repo.main(argv) == 0
         lines = capsys.readouterr().out.splitlines()

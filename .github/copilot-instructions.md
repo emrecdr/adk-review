@@ -33,7 +33,7 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   (`make typecheck`); `uv run pytest -q` runs the whole offline suite, no key needed (`make test`; `make ci` is all
   three). Run all three before calling anything done, and report what they printed.
 - `uv run python scripts/make_demo_repo.py` builds the demo repository with its planted defects (`--fix` commits its
-  two fixes); `uv run adk-review <demo repo> --head feature/payments --base main --profile rules-only` reviews it with
+  two fixes); `uv run adk-review <demo repo> --head feature/payments --base main --profile demo` reviews it with
   no model call, and `--profile default-rules`, `--check rule.<name>`, `--dry-run`, `--list-checks`, `--explain` and
   `--try` make none either. A review whose profile names a guideline calls a provider, and so do
   `--check guideline.<name>`, `adk web`, `adk run`, `scripts/measure.py`, `scripts/injection_suite.py` and

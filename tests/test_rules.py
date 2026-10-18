@@ -770,7 +770,7 @@ class TestTreeRules:
         from adk_review.collect import git
 
         monkeypatch.setattr(git, "MAX_FILE_BYTES", 10)
-        assert run_review(cli, demo_repo, "--profile", "rules-only") == 3
+        assert run_review(cli, demo_repo, "--profile", "demo") == 3
         out = capsys.readouterr().out
         assert "rule demo-module-defines could not look: src/payments/charge.py was not read whole" in out, out
         assert "and so is any rule over the tree" in out and "demo-derives-from could not look" not in out
@@ -786,7 +786,7 @@ class TestTreeRules:
         # A project that edits a rule's constants edits its examples with them: the catalog holds a rule to both.
         good = {**demo_required_paths.RequiredPaths.good[0], "CHANGELOG.md": ""}
         monkeypatch.setattr(demo_required_paths.RequiredPaths, "good", (good,))
-        run_review(cli, demo_repo, "--profile", "rules-only")
+        run_review(cli, demo_repo, "--profile", "demo")
         out = capsys.readouterr().out
         missing = "- **major** demo-required-paths: a file or folder the project needs is missing (CHANGELOG.md)"
         assert missing in out, out

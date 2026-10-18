@@ -50,7 +50,8 @@ applyTo: "adk_review/**"
 - `config.toml` beside `review.py` is the one config file, nothing naming another: `[review]` the flags' defaults, `[profiles]` named lists of check ids or the groups `rules` and
   `guidelines`. It is read whole, so a misspelt key is exit 2. No setting of the review is read from the repository
   under review, and no review is filtered by its `.gitignore`. `default` holds the
-  basics and a check runs only where a profile names it: a new rule joins `rules-only` and `full` through the group,
+  basics and a check runs only where a profile names it: a new rule joins `demo` through the group, `rules-only` and
+  `full` when its id is added to both, which a test holds to every rule whose id does not start with `demo-`,
   and `default` and `default-rules` when its id is added to both, since a test keeps `default-rules` to the default's
   rules; a file with no `default` is refused, exit 2.
 - `main` wraps the command: an error nothing else names is a sentence and exit 3, never Python's own exit 1, which

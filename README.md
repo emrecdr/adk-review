@@ -17,7 +17,7 @@ with it. Three commands from the root of this checkout give a first review, with
 ```bash
 uv sync --locked                             # once: the reviewer and its locked dependencies
 uv run python scripts/make_demo_repo.py      # a throwaway repository with planted defects; prints the review to run
-uv run adk-review <that path> --head feature/payments --base main --profile rules-only
+uv run adk-review <that path> --head feature/payments --base main --profile demo
 ```
 
 The rules find the demo's hard-coded key pair, its shell call and a float division of cents: exit 1, a blocker.
@@ -41,7 +41,7 @@ uv run adk-review <repo> --base main                            # the default pr
 uv run adk-review <repo> --base main --profile default-rules    # the default's rules: no model, no key
 uv run adk-review <repo> --head <branch> --base main --verify   # a second model judges each guideline finding
 uv run adk-review <repo> --base main --max-tokens 20000         # the call that would pass the ceiling is refused
-uv run adk-review <repo> --base main --profile rules-only       # every rule: no model, no key
+uv run adk-review <repo> --base main --profile rules-only       # every rule but the demo's: no model, no key
 uv run adk-review <repo> --base main --path <folder>            # one folder of the change, the rest counted
 uv run adk-review <repo> --all --profile rules-only             # every file at the head, not a change
 uv run adk-review <repo> --staged --profile default-rules       # what is staged, against HEAD
@@ -195,10 +195,12 @@ A profile is a list in `config.toml`, and a check runs only where a profile name
 - `default-rules` is the default's rules and no model, so it needs no key and fits any project's every pull request;
   a test keeps it to the default's rules;
 - `push-history` is what the pre-push hook reads each commit a push sends with, line by line: the credential rules;
-- `rules-only` is every rule, through the group `rules`, and no model;
-- `full` is every check, through both groups.
+- `rules-only` is every rule but the payments demo's, each by its id, and no model;
+- `full` is `rules-only`'s rules and every guideline, through the group `guidelines`;
+- `demo` is the payments demo's: every rule, through the group `rules`, its own among them, and no model.
 
-A new rule joins `rules-only` and `full` at once, through the group. `--list-checks` prints every check with its
+A new rule is added to `rules-only` and `full` by its id, which a test holds to every rule whose id does not start
+with `demo-`, and joins `demo` through the group. `--list-checks` prints every check with its
 kind, its severity, the profiles that run it and its file; `--explain ID` prints one whole, a rule with its own
 examples. The report's header names the profile and every check it left off: a guideline left off was never asked,
 so it never reads as a failed one. Redaction is not a check: every model call is scrubbed of known credential shapes,
@@ -334,8 +336,9 @@ class RequiredPaths(TreeRule):
    `uv run python -m adk_review.review <repo> --base main --check rule.no-todo`.
 5. Test what the examples do not say, in `tests/`, with the door's `try_rule(rule, {path: text})`,
    `lines_hit(rule, path, text)` and `self_check(rule)`: each reads the rule as a review does.
-6. Turn it on: `rules-only` and `full` run it at once, through the group. To run it in every review that names no
-   profile, add `rule.no-todo` to `default`, and to `default-rules`, which a test keeps to the default's rules.
+6. Turn it on: add `rule.no-todo` to `rules-only` and `full`, which a test holds to every rule not named `demo-`;
+   `demo` runs it through the group. To run it in every review that names no profile, add it to `default` too, and
+   to `default-rules`, which a test keeps to the default's rules.
 
 The door passes on the contract — `Rule`, `FileRule`, `TreeRule`, `ChangedFile`, `Diagnostic`, `Tree`, `Hit`,
 `UnreadError` and the severity scale, `Severity` and `RANK` — and the helpers: each in a module named after what it
@@ -472,8 +475,8 @@ simulated one:
 - the reviewer from its own repository at a pinned commit, never from the change under review, which must not choose
   its judge.
 
-`--profile default-rules` needs no key, so it fits every pull request. `rules-only` adds every other rule, the
-payments rules among them, which are examples written for one project: run it once your own rules replace them. The
+`--profile default-rules` needs no key, so it fits every pull request. `rules-only` adds every other rule but the
+payments demo's, examples written for one project that `demo` alone runs. The
 guidelines need a credential the pipeline can hold, `REVIEW_PROVIDER=gemini` with `GOOGLE_API_KEY` from its secrets:
 the Copilot login is a device flow no pipeline can complete, and a pull request from a fork gets no secrets. Run the
 guidelines on a fork's change only after a maintainer has read it, in a job that holds the provider's key and nothing

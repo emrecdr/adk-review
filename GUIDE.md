@@ -11,11 +11,11 @@ holds its flags, checks, JSON fields and limits to the code.
 ```bash
 uv sync --locked                             # once: the reviewer, its Python and its locked dependencies
 uv run python scripts/make_demo_repo.py      # a throwaway repository with planted defects; prints the review to run
-uv run adk-review <that path> --head feature/payments --base main --profile rules-only
+uv run adk-review <that path> --head feature/payments --base main --profile demo
 uv run adk-review <repo> --base main --profile default-rules    # a repository of your own: the default's rules
 ```
 
-`<repo>` is the path of the repository to review, and `--head` defaults to its branch checked out. `rules-only` and
+`<repo>` is the path of the repository to review, and `--head` defaults to its branch checked out. `demo`, `rules-only` and
 `default-rules` call no model, so they need no key. Drop `--profile` to run the `default` profile, which adds the
 guidelines: they need a model, set as "Configuration" below says. `uv run python -m adk_review.review` is the same
 command spelled long.
@@ -84,12 +84,14 @@ check runs only where a profile names it, or alone with `--check`:
 - `default`: the basics, and what runs with no `--profile`. The config must hold it.
 - `default-rules`: the default's rules and no model. It needs no key and fits any project's every pull request.
 - `push-history`: what the pre-push hook reads each commit a push sends with, line by line: the credential rules.
-- `rules-only`: every rule, and no model.
-- `full`: every check.
+- `rules-only`: every rule but the payments demo's, and no model.
+- `full`: every check but the payments demo's rules.
+- `demo`: the payments demo's: every rule, its own among them, and no model.
 
 The payments rules, each id starting with `demo-` — `demo-money-in-cents`, and the tree rules `demo-required-paths`,
 `demo-module-defines`, `demo-parameters` and `demo-derives-from` — are one small project's own, written for the demo
-repository: examples of a project's rules, which a project replaces with its own and none needs as they stand.
+repository: examples of a project's rules, which a project replaces with its own and none needs as they stand; only
+`demo` runs them.
 `demo-derives-from` holds a class to the base its name promises — a `…Model` to `BaseModel`, an `…Error` to `Exception`,
 a `…User` to `BaseUser`, a `…Repository` to `BaseRepository` — and a project names its own kinds in the rule's
 `PARENTS`; a kind's own name alone, a Pydantic `User`, promises nothing.
@@ -101,23 +103,23 @@ prints them:
 <!-- checks: the output of `uv run python -m adk_review.review --list-checks`; a test holds it so -->
 | id | kind | severity | profiles | what | where |
 |---|---|---|---|---|---|
-| `rule.demo-derives-from` | tree rule | major | rules-only, full | a class does not derive from the parent its name promises | `judge/rules/demo_derives_from.py` |
-| `rule.demo-module-defines` | tree rule | major | rules-only, full | a module no longer defines a name the project relies on | `judge/rules/demo_module_defines.py` |
-| `rule.demo-money-in-cents` | line rule | major | rules-only, full | cents divided into a float | `judge/rules/demo_money_in_cents.py` |
-| `rule.demo-parameters` | tree rule | major | rules-only, full | a function no longer takes a parameter its callers pass | `judge/rules/demo_parameters.py` |
-| `rule.demo-required-paths` | tree rule | major | rules-only, full | a file or folder the project needs is missing | `judge/rules/demo_required_paths.py` |
-| `rule.encoding-declaration` | file rule | blocker | default, default-rules, rules-only, full | an encoding that rewrites the code every rule reads | `judge/rules/encoding_declaration.py` |
-| `rule.hidden-text` | line rule | major | rules-only, full | text a reader cannot see: tag characters or bidirectional controls | `judge/rules/hidden_text.py` |
-| `rule.lint` | file rule | minor | default, default-rules, rules-only, full | what ruff reports, at a severity for each code | `judge/rules/lint.py` |
-| `rule.lockfile-sources` | file rule | minor | default, default-rules, rules-only, full | a lockfile fetches a package from outside its public registry | `judge/rules/lockfile_sources.py` |
-| `rule.named-secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full | a value assigned to a name that says secret | `judge/rules/named_secrets.py` |
-| `rule.no-print` | line rule | minor | rules-only, full | print() left in library code | `judge/rules/no_print.py` |
-| `rule.pinned-actions` | file rule | major | default, default-rules, rules-only, full | a workflow runs an action at a tag, a branch or a short SHA, not its full commit SHA | `judge/rules/pinned_actions.py` |
-| `rule.private-patch` | line rule | minor | rules-only, full | a test patches a private name | `judge/rules/private_patch.py` |
-| `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full | text that tries to instruct the reviewing model | `judge/rules/reviewer_instructions.py` |
-| `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full | a hard-coded credential | `judge/rules/secrets.py` |
-| `rule.steering-files` | file rule | minor | rules-only, full | a file another tool or agent obeys has changed | `judge/rules/steering_files.py` |
-| `rule.tests-offline` | line rule | major | rules-only, full | a test reaches the network | `judge/rules/tests_offline.py` |
+| `rule.demo-derives-from` | tree rule | major | demo | a class does not derive from the parent its name promises | `judge/rules/demo_derives_from.py` |
+| `rule.demo-module-defines` | tree rule | major | demo | a module no longer defines a name the project relies on | `judge/rules/demo_module_defines.py` |
+| `rule.demo-money-in-cents` | line rule | major | demo | cents divided into a float | `judge/rules/demo_money_in_cents.py` |
+| `rule.demo-parameters` | tree rule | major | demo | a function no longer takes a parameter its callers pass | `judge/rules/demo_parameters.py` |
+| `rule.demo-required-paths` | tree rule | major | demo | a file or folder the project needs is missing | `judge/rules/demo_required_paths.py` |
+| `rule.encoding-declaration` | file rule | blocker | default, default-rules, rules-only, full, demo | an encoding that rewrites the code every rule reads | `judge/rules/encoding_declaration.py` |
+| `rule.hidden-text` | line rule | major | rules-only, full, demo | text a reader cannot see: tag characters or bidirectional controls | `judge/rules/hidden_text.py` |
+| `rule.lint` | file rule | minor | default, default-rules, rules-only, full, demo | what ruff reports, at a severity for each code | `judge/rules/lint.py` |
+| `rule.lockfile-sources` | file rule | minor | default, default-rules, rules-only, full, demo | a lockfile fetches a package from outside its public registry | `judge/rules/lockfile_sources.py` |
+| `rule.named-secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, demo | a value assigned to a name that says secret | `judge/rules/named_secrets.py` |
+| `rule.no-print` | line rule | minor | rules-only, full, demo | print() left in library code | `judge/rules/no_print.py` |
+| `rule.pinned-actions` | file rule | major | default, default-rules, rules-only, full, demo | a workflow runs an action at a tag, a branch or a short SHA, not its full commit SHA | `judge/rules/pinned_actions.py` |
+| `rule.private-patch` | line rule | minor | rules-only, full, demo | a test patches a private name | `judge/rules/private_patch.py` |
+| `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full, demo | text that tries to instruct the reviewing model | `judge/rules/reviewer_instructions.py` |
+| `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, demo | a hard-coded credential | `judge/rules/secrets.py` |
+| `rule.steering-files` | file rule | minor | rules-only, full, demo | a file another tool or agent obeys has changed | `judge/rules/steering_files.py` |
+| `rule.tests-offline` | line rule | major | rules-only, full, demo | a test reaches the network | `judge/rules/tests_offline.py` |
 | `guideline.complexity` | guideline | the model's, by finding | default, full | complexity the problem does not require | `judge/guidelines/complexity.py` |
 | `guideline.correctness` | guideline | the model's, by finding | full | logic that does not do what the change means it to | `judge/guidelines/correctness.py` |
 | `guideline.security` | guideline | the model's, by finding | default, full | security defects and unsafe patterns | `judge/guidelines/security.py` |

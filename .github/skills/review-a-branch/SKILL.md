@@ -16,8 +16,8 @@ catch the wrong branch; `--list-checks` shows every check with its kind, its pro
 1. Without a model, which needs no key and is safe anywhere:
    `uv run python -m adk_review.review <repo> --head <branch> --base main --profile default-rules`. The
    default's rules run, `secrets` and `lint` among them; the guidelines do not. `--profile rules-only` runs every rule
-   in `adk_review/judge/rules/`, the payments rules written for the demo too. In a pipeline name `--head`,
-   since the checkout is a detached commit, and fetch the base branch with its history, or review the whole head
+   in `adk_review/judge/rules/` but the payments rules written for the demo, which `--profile demo` adds. In a
+   pipeline name `--head`, since the checkout is a detached commit, and fetch the base branch with its history, or review the whole head
    with `--all`.
 2. With the guidelines, only when asked and when `.env` names a ready arm (`REVIEW_PROVIDER=copilot` after
    `adk-review-login`, or `gemini` with `GOOGLE_API_KEY` or a Vertex AI project): drop `--profile`; a

@@ -258,7 +258,7 @@ def _pasted(path: Path) -> str:
 
 def _review(root: Path) -> str:
     """The review to run on the demo, ready to paste: the rules alone, so no model and no key."""
-    return f"uv run adk-review {_pasted(root)} --head {HEAD_REF} --base {BASE_REF} --profile rules-only"
+    return f"uv run adk-review {_pasted(root)} --head {HEAD_REF} --base {BASE_REF} --profile demo"
 
 
 def main(argv: list[str]) -> int:

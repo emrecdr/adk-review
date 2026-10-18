@@ -72,8 +72,22 @@ class TestTheConfig:
         left = ("bundle.zip", "release.p12", "manual.pdf", "icon.svg", "data.bin", "app.py", "requirements.txt")
         assert not any(matches(path, *skip) for path in left), "what can carry a credential, or is text, stays read"
         assert set(config) == {"review", "profiles"}, "a rule's settings are its own file's, lint's codes among them"
-        assert config["profiles"]["rules-only"] == ["rules"], "code alone decides: every rule, no guideline"
-        assert config["profiles"]["full"] == ["rules", "guidelines"]
+
+    def test_rules_only_and_full_leave_out_the_demos_rules_which_the_demo_profile_runs(self) -> None:
+        """A new project's every pull request once ran the payments demo's own rules under `rules-only` and `full`,
+        and they reported its folders and its money missing. Those two name every rule but the demo's, each by its
+        id, so a rule that is no one project's own is named there when it is written; `demo` is the payments demo's:
+        every rule, its own among them, and no model."""
+        from adk_review.core.profiles import chosen
+
+        found, profiles = catalog(), profiles_of()
+        rules, guidelines = found.groups()["rules"], found.groups()["guidelines"]
+        general = [rule for rule in rules if not rule.startswith(rule_id("demo-"))]
+        on = {name: chosen(profiles, name, found.ids(), found.groups()) for name in ("rules-only", "full", "demo")}
+        assert general and len(general) < len(rules)
+        assert on["rules-only"] == general, "code alone decides: every rule but the demo's, no guideline"
+        assert on["full"] == [*general, *guidelines]
+        assert on["demo"] == rules, "every rule, the demo's own among them, and no guideline"
 
     def test_the_config_gives_the_flags_their_defaults_and_a_flag_wins_for_one_run(self, cli) -> None:
         policy = {"fail_on": "major", "max_tokens": 500, "verify": True, "diff_cap": 9000, "skip": ["*.png"]}
@@ -517,18 +531,19 @@ class TestTheProfiles:
         assert all(chosen(profiles, name, found.ids(), found.groups()) for name in profiles)
         assert "default" in profiles
 
-    def test_rules_only_calls_no_model_needs_no_key_and_runs_the_projects_own_rules(
+    def test_the_demo_profile_calls_no_model_needs_no_key_and_runs_the_projects_own_rules(
         self, demo_repo: Path, cli, monkeypatch, capsys
     ) -> None:
-        """The shipped `rules-only`. `charge.py:19` divides cents the way `report.py:5` does, but on `main` already:
-        a rule reads the lines a change added."""
+        """The shipped `demo`. `charge.py:19` divides cents the way `report.py:5` does, but on `main` already: a
+        rule reads the lines a change added."""
         monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
-        assert run_review(cli, demo_repo, "--profile", "rules-only", "--verify") == 1
+        assert run_review(cli, demo_repo, "--profile", "demo", "--verify") == 1
         out = capsys.readouterr().out
         assert (
-            "- profile      rules-only (off: guideline.complexity, guideline.correctness, guideline.security, "
+            "- profile      demo (off: guideline.complexity, guideline.correctness, guideline.security, "
             "guideline.tests)" in out
         ), "what a profile leaves off is named: here the guidelines, and no rule, since code alone decides"
+        assert "demo-money-in-cents: cents divided into a float (src/payments/report.py:5)" in out
         assert "charge.py:19" not in out
         assert "- spend: 0 model call(s) completed of 0 attempted, 0 tokens" in out and "- model " not in out
         assert "verifier" not in out, "no guideline finding, so no verifier: none is named"
@@ -570,13 +585,17 @@ class TestTheProfiles:
         assert cli.main(["--list-checks"]) == 0
         out = capsys.readouterr().out
         assert (
-            "| `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full |" in out
+            "| `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, demo |"
+            in out
         )
-        assert "| `rule.lint` | file rule | minor | default, default-rules, rules-only, full |" in out
+        assert "| `rule.lint` | file rule | minor | default, default-rules, rules-only, full, demo |" in out
         assert "| `guideline.security` | guideline | the model's, by finding | default, full |" in out
-        assert "| `rule.no-print` | line rule | minor | rules-only, full |" in out
-        assert "| `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full |" in out
-        assert "| `rule.demo-required-paths` | tree rule | major | rules-only, full |" in out
+        assert "| `rule.no-print` | line rule | minor | rules-only, full, demo |" in out
+        assert (
+            "| `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full, demo |"
+            in out
+        )
+        assert "| `rule.demo-required-paths` | tree rule | major | demo |" in out
         assert "`judge/rules/no_print.py`" in out and "`judge/guidelines/security.py`" in out
         assert "“Write a rule” and “Write a guideline” in README.md" in out
 

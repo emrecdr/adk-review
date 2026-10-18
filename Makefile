@@ -11,7 +11,7 @@ endif
 help:
 	@echo "make sync                                    - install (uv)"
 	@echo "make web                                     - adk web .  (the chat, in a browser)"
-	@echo "make demo                                    - build the demo repository and review its branch rules-only: no model, exit 1 is the point"
+	@echo "make demo                                    - build the demo repository and review its branch with the demo profile: no model, exit 1 is the point"
 	@echo "make demo-repo                               - build the throwaway repository with its planted defects"
 	@echo "make demo-fix                                - commit the two fixes on the demo branch, then make review: exit 0"
 	@echo "make review REPO=<path> [BASE= HEAD= ARGS=]  - review a branch (HEAD defaults to feature/payments, the demo's); ARGS='--profile rules-only' calls no model"
@@ -26,7 +26,7 @@ web:
 
 demo:
 	uv run python scripts/make_demo_repo.py "$(DEMO)"
-	-uv run adk-review "$(DEMO)" --head feature/payments --base main --profile rules-only
+	-uv run adk-review "$(DEMO)" --head feature/payments --base main --profile demo
 
 demo-repo:
 	uv run python scripts/make_demo_repo.py $(REPO)

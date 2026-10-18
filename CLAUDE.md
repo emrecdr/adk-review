@@ -22,7 +22,7 @@ uv run pyrefly check                                  # types: the package and s
 uv run python scripts/make_demo_repo.py          # build <tmp>/adk-demo-repo: main + feature/payments with 4 planted defects
 uv run python scripts/make_demo_repo.py --fix    # commit the two fixes on feature/payments
 uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--profile NAME | --check ID] [--json FILE] [--handoff FILE] [--cache DIR] [--previous FILE] [--progress] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
-uv run adk-review <demo repo> --head feature/payments --base main --profile rules-only   # every rule, no model call, no key
+uv run adk-review <demo repo> --head feature/payments --base main --profile demo   # every rule, the demo's own among them, no model call, no key
 uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # what a review would cover and run, nothing run
 uv run adk-review-login                          # one-time GitHub device-flow login for the Copilot arm
 uv run adk web .                                 # the chat in a browser, over the same graph
@@ -50,8 +50,8 @@ A review under `default` makes three calls at once: Gemini's free tier allows fi
 live script's sixteen reviews on it need `--pause` and more than a day, and Copilot rate-limits a model after some
 hundreds of calls in an afternoon; a run that met a 429 names it under `could_not_look` and measures nothing there.
 Run each side of a before-and-after comparison from its own copy of the tree, since a review imports the checkout.
-The suite, `--profile rules-only` or `default-rules`, `--check rule.<name>`, `--dry-run`, `--list-checks`, `--explain`
-and `--try` make none. `[tool.uv]` in `pyproject.toml` takes a release only three days after it is published
+The suite, `--profile rules-only`, `demo` or `default-rules`, `--check rule.<name>`, `--dry-run`, `--list-checks`,
+`--explain` and `--try` make none. `[tool.uv]` in `pyproject.toml` takes a release only three days after it is published
 (`exclude-newer`), so a dependency released since does not resolve yet; the comment there says why the span stays.
 
 ## Configuration
