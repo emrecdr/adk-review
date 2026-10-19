@@ -26,11 +26,13 @@ from ...core.secrets import (
     vendor_shape,
     without_examples,
 )
+from .diagnostics import PER_FILE, family, fix_of, listed, tier
 from .lines import calls, comment_of, tokens, words
 from .syntax import argument, calls_in, classes, defined, functions_in, imports_in, name_of, nodes_in, parameters
 from .testing import lines_hit, self_check, self_test, try_rule
 
 __all__ = [
+    "PER_FILE",
     "RANK",
     "SECRET_WORDS",
     "ChangedFile",
@@ -48,12 +50,15 @@ __all__ = [
     "classes",
     "comment_of",
     "defined",
+    "family",
+    "fix_of",
     "functions_in",
     "imports_in",
     "is_placeholder",
     "is_python",
     "is_test",
     "lines_hit",
+    "listed",
     "matches",
     "matching",
     "name_of",
@@ -64,6 +69,7 @@ __all__ = [
     "self_check",
     "self_test",
     "shape_of",
+    "tier",
     "tokens",
     "try_rule",
     "vendor_shape",

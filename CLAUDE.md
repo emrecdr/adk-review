@@ -82,7 +82,7 @@ one. A guideline is a class naming its role and a thinking budget (`core/guideli
 `judge/agents.py`. `judge/catalog.py` finds every check, reads `config.toml` and resolves what runs, for the command and
 the chat alike. A rule imports one door, `judge/rule_helpers/`: the contract, passed on from `core/` (`rules.py`'s
 kinds, `Hit` and `Diagnostic`, `findings.py`'s `Severity` and `RANK`), helpers named after what they read (`lines.py`,
-`syntax.py`) and try a rule with (`testing.py`), and what a review reads too, passed on from `core/`: `matches`, the
+`syntax.py`, `diagnostics.py`) and try a rule with (`testing.py`), and what a review reads too, passed on from `core/`: `matches`, the
 skip list's matcher, a test's path and a credential's shape. A rule is handed no test's file unless it sets
 `reads_tests = True`, as each rule about what runs, leaks or steers does (`file.changed` and `tree.paths` still list
 every test). A rule may carry `bad` and `good` examples (`lint` carries none), which the catalog holds it to at every

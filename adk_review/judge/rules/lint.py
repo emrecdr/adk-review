@@ -10,11 +10,9 @@ line or not: ruff reads whole files, and a reader told the file and the line can
 
 from __future__ import annotations
 
-from collections import Counter
-from collections.abc import Mapping
 from types import MappingProxyType
 
-from ..rule_helpers import RANK, ChangedFile, Diagnostic, FileRule, Hit, Severity, is_python, is_test
+from ..rule_helpers import ChangedFile, FileRule, Hit, Severity, fix_of, is_python, is_test, listed, tier
 
 #: ruff's codes, run --isolated: errors, pyflakes, warnings, bugbear and bandit, then what a reviewer asks for and no
 #: other check here makes, at ruff's own thresholds: complexity (C901: 10; PLR0911, PLR0912, PLR0913, PLR0915: 6
@@ -75,25 +73,6 @@ FIX = {
 }
 
 
-#: How many of ruff's findings one file lists: the most severe first, the rest counted in one finding at the most
-#: severe of them, so no tier is lost and the report stays one a person reads. Measured with no cap: a new file of
-#: 1,500 unused imports made a 229 KB report and a 490 KB JSON, and the fold took 5.5 s over 8,000 findings in one file.
-PER_FILE = 50
-
-
-def family(code: str) -> str:
-    """`PLR0913` -> `PLR`, `E501` -> `E`: the letters ruff prints before the number. One letter can be two linters'
-    (mccabe's `C90`, flake8-comprehensions' `C4`), which `tier`'s longest key tells apart."""
-    return code.rstrip("0123456789")
-
-
-def tier[V](table: Mapping[str, V], code: str) -> V | None:
-    """The table's entry for `code`: the longest key it begins with inside its own family, so `S` never reaches
-    `SIM108`, `C90` reaches `C901` and not `C416`, and `E501` wins over `E`; None where the table has none."""
-    keys = [key for key in table if code.startswith(key) and family(key) == family(code)]
-    return table[max(keys, key=len)] if keys else None
-
-
 def severity_of(code: str) -> Severity:
     """The code's tier, else minor."""
     return tier(SEVERITY, code) or "minor"
@@ -101,11 +80,8 @@ def severity_of(code: str) -> Severity:
 
 def fix_for(code: str, offered: str | None, label: str | None = None) -> str:
     """Ruff's own fix when it offers one, with ruff's own label for it, else the code's or its family's sentence,
-    else a pointer. Only ruff labels a fix: a reader, or a coding agent, sees which `ruff check --fix` would apply
-    unasked, and which needs `--unsafe-fixes` and a person's reading."""
-    if offered:
-        return f"{offered} (a fix ruff labels {label})" if label else offered
-    return tier(FIX, code) or f"see ruff rule {code}"
+    else a pointer."""
+    return fix_of(FIX, code, offered, label)
 
 
 class Lint(FileRule):
@@ -127,43 +103,4 @@ class Lint(FileRule):
             (found, IN_TESTS[found.code] if tests and found.code in IN_TESTS else severity_of(found.code))
             for found in file.diagnostics
         ]
-        tail: list[Hit] = []
-        # What ruff reports on lines the change did not add is counted, one finding a file at the most severe of them,
-        # so the verdict reads the same. Measured over this repository's 22 commits: 2,101 of lint's 2,435 findings,
-        # 86.3%, sat on lines the commit did not add, and listed one by one they buried the change's own.
-        aside = [(found, severity) for found, severity in rated if found.line not in file.added]
-        if aside:
-            tail.append(_counted(file.path, aside, f"{len(aside)} of ruff's findings on lines the change did not add"))
-            rated = [(found, severity) for found, severity in rated if found.line in file.added]
-        if len(rated) > PER_FILE:
-            ranked = sorted(range(len(rated)), key=lambda at: -RANK[rated[at][1]])  # stable: by line
-            listed = set(ranked[:PER_FILE])
-            rest = [pair for at, pair in enumerate(rated) if at not in listed]
-            tail.insert(0, _counted(file.path, rest, f"{len(rest)} more of ruff's findings in this file, not listed"))
-            rated = [pair for at, pair in enumerate(rated) if at in listed]
-        hits = [
-            Hit(
-                file.path,
-                found.line,
-                found.source,
-                title=f"{found.code} {found.message}",
-                severity=severity,
-                fix=fix_for(found.code, found.fix, found.applicability),
-            )
-            for found, severity in rated
-        ]
-        return hits + tail
-
-
-def _counted(path: str, rated: list[tuple[Diagnostic, Severity]], title: str) -> Hit:
-    """`rated` as one finding at the file: how many of each code, at the most severe of them, so no tier is lost and
-    the verdict reads the same."""
-    codes = Counter(found.code for found, _severity in rated)
-    return Hit(
-        path,
-        None,
-        ", ".join(f"{code} x{count}" for code, count in codes.most_common()),
-        title=title,
-        severity=max((severity for _found, severity in rated), key=RANK.__getitem__),
-        fix="Run ruff on the file to see each one.",
-    )
+        return listed(file, rated, FIX)

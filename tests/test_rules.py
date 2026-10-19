@@ -239,7 +239,7 @@ class TestTheLintRule:
     def test_one_file_lists_at_most_fifty_of_ruffs_findings_and_counts_the_rest(self) -> None:
         """Measured with no cap: a file of 1,500 unused imports made a 229 KB report. The most severe are listed, and
         the rest are counted in one finding at the most severe of them, so no tier is lost to the cap."""
-        from adk_review.judge.rules.lint import PER_FILE
+        from adk_review.judge.rule_helpers import PER_FILE
 
         imports = "".join(f"import os as unused_{n}\n" for n in range(120))
         text = imports + "import subprocess\nsubprocess.run(cmd, shell=True)\n"
