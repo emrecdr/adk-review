@@ -284,23 +284,33 @@ def not_read(files: list[Entry], guidelines: Collection[str]) -> dict[str, str]:
     return {f["path"]: f["unread"] for f in files if f["unread"] and (guidelines or not f["cut"])}
 
 
-def to_verify(guidelines: list[Sourced], rules: list[Sourced]) -> list[Sourced]:
+def to_verify(guidelines: list[Sourced], rules: list[Sourced], tidies: frozenset[str] = frozenset()) -> list[Sourced]:
     """The guideline findings worth a verifier: all but those that only say again what a rule found — a rule's quote
-    and its own overlap, in one file, and the rule's reading is at least as severe, so the fold keeps the rule's
-    whatever were said of the guideline's. The fold still folds them, as it would without `--verify`. Each rule's quote
+    and its own overlap, in one file, and the fold takes the rule's up first, by the `_precedence` `dedupe` reads, so
+    it keeps the rule's whatever were said of the guideline's. The fold still folds them, as it would without
+    `--verify`. Measured by review: with the tie rule written here a second time, a minor defect on a `simplify` tidy's
+    lines was kept by the fold and asked of no verifier. Each rule's quote
     is normalised once and compared only within its file, as `dedupe` does: normalised per pair, a thousand of
     ruff's findings in one file and thirty guideline findings measured 147 ms against 7 ms."""
-    said: dict[str, list[tuple[int, str, Lines]]] = {}  # file -> (rank, quote as seen, lines) of each rule finding
+    said: dict[
+        str, list[tuple[tuple[int, bool], str, Lines]]
+    ] = {}  # file -> each rule finding's precedence, quote, lines
     for rule in rules:
         seen = as_seen(rule.finding.evidence)
-        said.setdefault(rule.finding.file, []).append((RANK[rule.finding.severity], seen, rule.lines))
+        said.setdefault(rule.finding.file, []).append((_precedence(rule, tidies), seen, rule.lines))
     asked: list[Sourced] = []
     for item in guidelines:
-        rank, seen = RANK[item.finding.severity], as_seen(item.finding.evidence)
+        first, seen = _precedence(item, tidies), as_seen(item.finding.evidence)
         here = said.get(item.finding.file, ())
-        if not any(at >= rank and _overlaps(seen, item.lines, quote, lines) for at, quote, lines in here):
+        if not any(at <= first and _overlaps(seen, item.lines, quote, lines) for at, quote, lines in here):
             asked.append(item)
     return asked
+
+
+def _precedence(item: Sourced, tidies: frozenset[str]) -> tuple[int, bool]:
+    """Where the fold takes `item` up among readings of the same lines: the most severe first and, on a tie, a defect
+    before a tidy, a finding of a check in `tidies`; the checks' order breaks what is left, the rules' first."""
+    return -RANK[item.finding.severity], item.source in tidies
 
 
 def dedupe(
@@ -327,7 +337,7 @@ def dedupe(
     held: dict[str, list[tuple[int, str, Lines]]] = {}  # file -> each kept finding's index, quote as seen, lines
     into: dict[int, int] = {}  # a folded finding's index -> the index of the finding it folded into
     # `sorted` is stable: on a tie the first source comes first.
-    for index in sorted(range(len(kept)), key=lambda i: (-RANK[kept[i].finding.severity], kept[i].source in tidies)):
+    for index in sorted(range(len(kept)), key=lambda i: _precedence(kept[i], tidies)):
         item = kept[index]
         seen, here = as_seen(item.finding.evidence), held.setdefault(item.finding.file, [])
         survivor = next((at for at, quote, lines in here if _overlaps(seen, item.lines, quote, lines)), None)

@@ -812,15 +812,19 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   the rules read every added line. Measured live on Copilot at 4,000 characters a file: a 7,529-character file's
   planted shell call went unread and so did 3 of a 17-file change's files, each a hole; at 16,000 each was read, the
   call named in both runs, for a fifth more tokens.
-- **A Python hunk is read within its function.** Where a guideline reads a Python file, git widens each hunk to the
-  function or class around it, `--function-context` with Python's own boundary set as `diff.default.xfuncname`, so the
-  repository's own attributes still choose and no file is written: Claude Code's `/code-review` reads the enclosing
+- **A Python hunk is read within its function.** Where a guideline reads a Python file the change modifies, git widens
+  each hunk to the function or class around it, `--function-context` with Python's own boundary set as
+  `diff.default.xfuncname` through `GIT_CONFIG_COUNT`, as the settings fixed for every call are, so the repository's own
+  attributes still choose and no file is written: Claude Code's `/code-review` reads the enclosing
   function of each hunk, and git's three lines showed an edit deep in a method without its `def`, its arguments or its
   other branches. Every line shown can be quoted, so a finding may stand on an unchanged line of a function the change
   touched, and `on_added_line` says so. Measured over this repository's last 31 commits, the Python diffs grew 1.7 times
-  and one file of 191 went past the diff cap: a file the widening pushes past it, and every file of a change whose
-  widened diffs pass the block's cap, is read as git prints it, so the context never costs a file its reading. Any other
-  file, and every diff the rules alone read, is git's own, and the added lines are the same either way.
+  and one file of 191 went past the diff cap: a file the widening pushes past it is read as git prints it, and so is
+  every widened file where the block, counted as the block counts, leaves a file out, so the context never costs a file
+  its reading. Measured by review, a total of the raw diffs, a skip-listed lockfile's among them and the framing
+  uncounted, had read whole changes as git prints them that the widened block held. An added or a deleted file, whole
+  already, a skip-listed one, any other file, and every diff the rules alone read, are git's own, and the added lines
+  are the same either way.
 - **Fences carry a nonce.** A sentence at the top of an instruction is no boundary: what follows it is the branch's
   own text. Measured with a reviewer of the same shape on Copilot, a docstring declaring an override silenced most of
   its reviewing agents, each answering no findings. Each untrusted section a guideline, a verifier or chat's verdict

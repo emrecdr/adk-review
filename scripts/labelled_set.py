@@ -25,8 +25,8 @@ from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 
-from make_demo_repo import BASE_REF, CHARGE, _git, _write, branch, build
-from measure import ROOT, chosen, judged, options, picked, reviewed, tally
+from make_demo_repo import BASE_REF, CHARGE, _git, branch, build, commit
+from measure import ROOT, judged, options, picked, reviewed, tally
 
 #: The characters of a file's diff a guideline reads, as the shipped config sets them: each review here runs the
 #: command as it ships.
@@ -34,8 +34,6 @@ CAP = tomllib.loads((ROOT / "adk_review" / "config.toml").read_text(encoding="ut
 #: Functions enough that the long file's defect lies past that cap, some fifty characters and four lines each.
 STEPS = CAP // 32
 LONG = "".join(f"def step_{n}(value: int) -> int:\n    return value + {n}\n\n\n" for n in range(STEPS))
-#: Each branch: the files it writes over the demo's `main`, and its label — the file and the lines of its one
-#: defect, or None for a clean change. A guideline names the defect when a finding of its stands on those lines.
 #: A ledger's settlement, which the labelled set commits on its own `main`, beside the demo's: a function long enough
 #: that git's three lines of context leave out its start, so a branch changing its end shows a guideline what only the
 #: function around the hunk holds.
@@ -65,6 +63,8 @@ def settle(balance_cents: int, charges: list[int], refunds: list[int]) -> int:
     return balance_cents + net
 '''
 ON_MAIN = {"src/payments/settle.py": SETTLE}
+#: Each branch: the files it writes over the demo's `main`, and its label — the file and the lines of its one
+#: defect, or None for a clean change. A guideline names the defect when a finding of its stands on those lines.
 BRANCHES: dict[str, tuple[dict[str, str], tuple[str, range] | None]] = {
     "sql-from-input": (
         {"src/payments/charge.py": CHARGE + '''
@@ -191,9 +191,7 @@ def branches(repo: Path) -> dict[str, str]:
     label, the branch to review."""
     build(repo)
     _git(repo, "checkout", "-q", BASE_REF)
-    _write(repo, ON_MAIN)
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-qm", "payments: settle a ledger")
+    commit(repo, ON_MAIN, "payments: settle a ledger")
     made = {}
     for name, (files, _label) in BRANCHES.items():
         made[name] = f"label/{name}"
@@ -242,7 +240,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     results: dict[str, list[bool]] = {}
     by: dict[str, Counter[str]] = {}
-    for name, review in reviewed(repo, picked(parser, made, args.branch), args.runs, args.pause, chosen(args)):
+    for name, review in reviewed(repo, picked(parser, made, args.branch), args):
         named = named_by(name, review.data) if review.data else set()
         results.setdefault(name, []).append(bool(named))
         by.setdefault(name, Counter()).update(named)

@@ -204,12 +204,17 @@ def _writable(function, path: str, _error: BaseException) -> None:
     function(path)
 
 
-def branch(root: Path, name: str, start: str, files: Mapping[str, str], message: str) -> None:
-    """A branch `name` off `start`, holding `files` in one commit."""
-    _git(root, "checkout", "-q", "-b", name, start)
+def commit(root: Path, files: Mapping[str, str], message: str) -> None:
+    """`files` written into `root` and committed, on the branch checked out."""
     _write(root, files)
     _git(root, "add", "-A")
     _git(root, "commit", "-qm", message)
+
+
+def branch(root: Path, name: str, start: str, files: Mapping[str, str], message: str) -> None:
+    """A branch `name` off `start`, holding `files` in one commit."""
+    _git(root, "checkout", "-q", "-b", name, start)
+    commit(root, files, message)
 
 
 def build(root: Path) -> Path:
@@ -218,9 +223,7 @@ def build(root: Path) -> Path:
         shutil.rmtree(root, onexc=_writable)
     root.mkdir(parents=True)
     _git(root, "init", "-q", "-b", BASE_REF)
-    _write(root, BASE)
-    _git(root, "add", "-A")
-    _git(root, "commit", "-qm", "payments: charge and format")
+    commit(root, BASE, "payments: charge and format")
     branch(root, HEAD_REF, BASE_REF, HEAD, "payments: receipts, refunds, daily report")
     return root
 

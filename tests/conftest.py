@@ -332,6 +332,13 @@ def _committed(repo: Path, name: str, text: str | bytes = "x = 1\n", message: st
     return _git_in(repo, "rev-parse", "HEAD")
 
 
+def gathered(repo: Path, head: str, base: str = BASE, **options) -> dict[str, dict]:
+    """Each changed file a review of `head` against `base` gathers, by path, as `collect_evidence` reads it with
+    `options`: what the rules and the guidelines are given."""
+    git = importlib.import_module("adk_review.collect.git")
+    return {f["path"]: f for f in git.collect_evidence(str(repo), base, head, **options)["files"]}
+
+
 def _pushed_from(root: Path) -> tuple[Path, Path]:
     """A bare `remote.git` and a `work` repository beside it, both on `main`, the remote the work's `origin`: where a
     push goes, and where it goes from."""

@@ -19,16 +19,16 @@ import re
 import shutil
 import string
 import subprocess
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 from ..core.blast import Radius
 from ..core.evidence import Entry, Evidence, Failure, unreleased
-from ..core.rules import Tree, is_python
+from ..core.rules import Tree
 from ..core.text import lines_of
-from .change import BLOCK_CAP_CHARS, no_change, radius, shown_to_guidelines
+from .change import no_change, radius, shown_to_guidelines, widens
 from .diff import (
     BINARY,
     DIFF_CAP_CHARS,
@@ -71,7 +71,7 @@ _SETTLED = {
 }
 
 
-def _environment(repo: str) -> dict[str, str]:
+def _environment(repo: str, settings: Mapping[str, str] | None = None) -> dict[str, str]:
     """git's environment for a review: the caller's with every `GIT_*` variable left out, as git's own test suite
     leaves them out, and then only what a review needs: no config but the repository's own and what is fixed here,
     no attributes but the repository's, nothing fetched (a partial clone would fetch what it lacks, into the
@@ -88,7 +88,8 @@ def _environment(repo: str) -> dict[str, str]:
     env = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
     env |= {"GIT_NO_LAZY_FETCH": "1", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_GRAFT_FILE": os.devnull}
     env |= {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_ATTR_NOSYSTEM": "1"}
-    settled = _SETTLED | {"safe.directory": Path(os.path.realpath(repo)).as_posix()}
+    # A call's own `settings` first, so that none of them can move what is fixed for every call.
+    settled = dict(settings or {}) | _SETTLED | {"safe.directory": Path(os.path.realpath(repo)).as_posix()}
     env["GIT_CONFIG_COUNT"] = str(len(settled))
     for index, (key, value) in enumerate(settled.items()):
         env[f"GIT_CONFIG_KEY_{index}"], env[f"GIT_CONFIG_VALUE_{index}"] = key, value
@@ -131,16 +132,23 @@ def _run(argv: list[str], env: dict[str, str], stdin: bytes | None = None) -> su
     return subprocess.CompletedProcess(argv, process.returncode, out, err)
 
 
-def _git(repo: str, *args: str, strip: bool = True, ok: tuple[int, ...] = (0,)) -> tuple[int, str]:
+def _git(
+    repo: str,
+    *args: str,
+    strip: bool = True,
+    ok: tuple[int, ...] = (0,),
+    settings: Mapping[str, str] | None = None,
+) -> tuple[int, str]:
     """One read-only git command: an argv list, no shell, a timeout, no fetch, stdout captured, decoded as UTF-8.
 
     An exit code outside `ok` raises `GitError` with git's own first line, and so does a call past the timeout,
     killed, naming the limit, for the envelope to answer: some answers below are read without their exit
     code, and a failure read as an empty answer would read as nothing there. `ok` names the codes a caller
     reads as an answer: 1 is `rev-parse`'s for a ref that does not exist. `strip` is off for a file's content,
-    where the line numbers must survive, and for a folder's path, whose name may end in a space.
+    where the line numbers must survive, and for a folder's path, whose name may end in a space. `settings` are the
+    call's own, set as the fixed ones are, through `_environment`.
     """
-    done = _git_raw(repo, *args, ok=ok)
+    done = _git_raw(repo, *args, ok=ok, settings=settings)
     return done.returncode, _text(done.stdout, strip)
 
 
@@ -152,13 +160,17 @@ def _text(raw: bytes, strip: bool = True) -> str:
 
 
 def _git_raw(
-    repo: str, *args: str, stdin: bytes | None = None, ok: tuple[int, ...] = (0,)
+    repo: str,
+    *args: str,
+    stdin: bytes | None = None,
+    ok: tuple[int, ...] = (0,),
+    settings: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     """`_git`'s call with its answer left as bytes, what a batch read counts its sizes in."""
     if (git := on_path("git")) == "git":  # not on PATH: Git for Windows can be installed for Git Bash alone
         raise GitError(f"git {_verb(args)} could not start: git is not on PATH")
     try:
-        done = _run([git, "-C", repo, *args], _environment(repo), stdin)
+        done = _run([git, "-C", repo, *args], _environment(repo, settings), stdin)
     except subprocess.TimeoutExpired:
         raise GitError(f"git {_verb(args)} did not answer within {GIT_TIMEOUT_S} s") from None
     except OSError as exc:  # found, and still could not start: no permission to run it, say
@@ -173,15 +185,8 @@ def _git_raw(
 
 
 def _verb(args: tuple[str, ...]) -> str:
-    """The git command a call runs, past git's own options before it (`-c` and the setting it takes, `--attr-source`):
-    what an error names. Measured: a Python function's boundary given with `-c` was named as the command that failed."""
-    given = iter(args)
-    for arg in given:
-        if arg == "-c":
-            next(given, None)  # the setting, never the command
-        elif not arg.startswith("-"):
-            return arg
-    return ""
+    """The git command a call runs, past git's own options before it (`--attr-source`): what an error names."""
+    return next((arg for arg in args if not arg.startswith("-")), "")
 
 
 def _sha(repo: str, ref: str, kind: str = "commit") -> str | None:
@@ -410,8 +415,9 @@ def _literally(*paths: str) -> list[str]:
 #: conversion, renames found.
 _PLAIN = ("--no-color", "--no-ext-diff", "--no-textconv", "-M")
 #: Where a Python function or class begins, as git's own `python` diff driver says: `--function-context` widens each
-#: hunk to the one around it. Set for git's `default` driver, the one a file with no diff attribute has, and only on
-#: a Python file's diff, so the repository's own attributes still choose and no attributes file is written.
+#: hunk to the one around it. Set for git's `default` driver, the one a file with no diff attribute has, through the
+#: environment as the fixed settings are, and only on a Python file's diff, so the repository's own attributes still
+#: choose and no attributes file is written.
 PYTHON_FUNCTION = "^[ \t]*((class|(async[ \t]+)?def)[ \t].*)$"
 
 
@@ -425,13 +431,13 @@ def diff_of(resolved: dict, path: str, old: str = "", *, functions: bool = False
     measured, `a` renamed to `b.py` beside a new `a/x.py` brought `a/x.py`'s key into `b.py`'s diff."""
     repo, base, head = resolved["repo"], resolved["merge_base"], resolved["head_sha"]
     paths = _literally(old, path)
-    wide = ("-c", f"diff.default.xfuncname={PYTHON_FUNCTION}") if functions else ()
-    read = (*wide, f"--attr-source={base}")
+    settings = {"diff.default.xfuncname": PYTHON_FUNCTION} if functions else None
     shown = (*_PLAIN, "--function-context") if functions else _PLAIN
+    attrs = f"--attr-source={base}"
     if resolved.get("staged"):  # the index's text, against the base, as the next commit would hold it
-        _, diff = _git(repo, *read, "diff-index", "--cached", "-p", *shown, base, "--", *paths)
+        _, diff = _git(repo, attrs, "diff-index", "--cached", "-p", *shown, base, "--", *paths, settings=settings)
     else:
-        _, diff = _git(repo, *read, "diff-tree", "-r", "-p", *shown, base, head, "--", *paths)
+        _, diff = _git(repo, attrs, "diff-tree", "-r", "-p", *shown, base, head, "--", *paths, settings=settings)
     return readable(diff)
 
 
@@ -661,8 +667,9 @@ def gather(
     try:
         listed = list_changed(resolved)
         entries = [entry for entry in listed if in_scope(entry["path"], scope)]
-        diffs = _diffs(resolved, entries, scope, guidelines=guidelines, cap=diff_cap)
-        files, block, excluded = shown_to_guidelines(entries, diffs, diff_cap, skip, shown=guidelines)
+        files, block, excluded = _read_change(
+            resolved, entries, scope, guidelines=guidelines, diff_cap=diff_cap, skip=skip
+        )
         away = untracked(resolved) if resolved.get("staged") else None
     except GitError as exc:  # the change half read is not the change: named, never reviewed as it stands
         return {"status": "error", "error_message": str(exc)}
@@ -690,27 +697,46 @@ def gather(
     }
 
 
-def _diffs(
-    resolved: dict, entries: list[dict], scope: Sequence[str], *, guidelines: bool = False, cap: int = DIFF_CAP_CHARS
-) -> list[str]:
-    """Each entry's whole diff, in order: under `--all` one call for them all, else one call a file, `GIT_WORKERS` at
-    a time. Where a guideline reads them, a Python file's hunks are each widened to the function or class around
-    them, as Claude Code's review reads the enclosing function of each hunk: git's three lines showed an edit deep in
-    a method without its `def`, its arguments or its other branches. Measured over this repository's last 31 commits,
-    the widened Python diffs were 1.7 times git's and one file of 191 went past the diff cap: a file widening pushes
-    past `cap`, and every file where together the diffs pass the block's cap, is read again as git prints it, so the
-    context never costs a file its reading. The added lines, all the rules read, are the same either way."""
+def _read_change(
+    resolved: dict, entries: list[dict], scope: Sequence[str], *, guidelines: bool, diff_cap: int, skip: Sequence[str]
+) -> tuple[list[Entry], str, dict[str, str]]:
+    """Each entry's diff, as the rules read it, and the block the guidelines read, as `shown_to_guidelines` builds it.
+    Where a guideline reads the change, each Python hunk `widens` names is read within the function or class around
+    it, as Claude Code's review reads the enclosing function of each hunk: git's three lines showed an edit deep in a
+    method without its `def`, its arguments or its other branches. The context never costs a file its reading, as the
+    block counts it: a file widening pushes past `diff_cap` is read again as git prints it, and so is every widened
+    file where the block leaves a file out. Measured over this repository's last 31 commits, the widened Python diffs
+    were 1.7 times git's and one file of 191 went past the cap; measured by review, a total of the raw diffs, a
+    skip-listed lockfile's among them and the framing uncounted, read whole changes as git prints them that the
+    widened block held. The added lines, all the rules read, are the same either way."""
+    wide = [at for at, entry in enumerate(entries) if guidelines and widens(entry, skip)]
+    diffs = _diffs(resolved, entries, scope, frozenset(wide))
+    over = {at for at in wide if len(diffs[at]) > diff_cap}
+    _narrowed(resolved, entries, diffs, sorted(over))
+    files, block, excluded, left_out = shown_to_guidelines(entries, diffs, diff_cap, skip, shown=guidelines)
+    if left_out and (rest := [at for at in wide if at not in over]):
+        _narrowed(resolved, entries, diffs, rest)
+        files, block, excluded, _left_out = shown_to_guidelines(entries, diffs, diff_cap, skip, shown=guidelines)
+    return files, block, excluded
+
+
+def _diffs(resolved: dict, entries: list[dict], scope: Sequence[str], wide: frozenset[int]) -> list[str]:
+    """Each entry's whole diff, in order, those `wide` numbers within the function around each hunk: under `--all`
+    one call for them all, every file added and so whole already, else one call a file, `GIT_WORKERS` at a time."""
     if not resolved["base"]:  # every file is added: one call reads them all
         return whole_diffs(resolved, entries, scope)
-    widened = [guidelines and is_python(entry["path"], lambda: "") for entry in entries]
-
-    def read(entry: dict, functions: bool) -> str:
-        return diff_of(resolved, entry["path"], entry.get("old", ""), functions=functions)
-
     with ThreadPoolExecutor(max_workers=GIT_WORKERS) as pool:  # git processes to wait on: threads suffice
-        diffs = list(pool.map(read, entries, widened))
-        crowded = sum(map(len, diffs)) > BLOCK_CAP_CHARS
-        narrow = [at for at, diff in enumerate(diffs) if widened[at] and (crowded or len(diff) > cap)]
-        for at, diff in zip(narrow, pool.map(lambda at: read(entries[at], False), narrow), strict=True):
-            diffs[at] = diff
-    return diffs
+        return list(pool.map(lambda at: _diff(resolved, entries[at], at in wide), range(len(entries))))
+
+
+def _narrowed(resolved: dict, entries: list[dict], diffs: list[str], at: Sequence[int]) -> None:
+    """The diffs `at` numbers read again as git prints them, in place, `GIT_WORKERS` at a time."""
+    if at:
+        with ThreadPoolExecutor(max_workers=GIT_WORKERS) as pool:
+            for index, diff in zip(at, pool.map(lambda index: _diff(resolved, entries[index], False), at), strict=True):
+                diffs[index] = diff
+
+
+def _diff(resolved: dict, entry: dict, functions: bool) -> str:
+    """`diff_of` for one listed entry."""
+    return diff_of(resolved, entry["path"], entry.get("old", ""), functions=functions)

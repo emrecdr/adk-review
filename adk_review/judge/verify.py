@@ -97,6 +97,7 @@ def second_opinion(
     diff: str,
     plugins: list[BasePlugin],
     run: Callable[[Coroutine], Any],
+    tidies: frozenset[str] = frozenset(),
 ) -> None:
     """`--verify`: each guideline finding that says more than a rule judged once more — refuted ones out and named,
     unjudged ones kept and named. `run` is the loop the review's run used, so both share it.
@@ -107,10 +108,11 @@ def second_opinion(
     folds it into the rule's, as without `--verify`, so a verifier that holds
     everything leaves the report it would have been. Measured live on Copilot,
     2 of 5 verifier calls judged a guideline's reading of a key the secrets rule had found. Each finding is judged
-    beside the whole change, as its guideline judged it.
+    beside the whole change, as its guideline judged it. `tidies`, the cleanup checks, break a tie as the fold breaks
+    it, so a defect the fold keeps over a tidy of its lines is asked of a verifier.
     """
     outcome.verified = True
-    asked = to_verify(outcome.kept, rules)
+    asked = to_verify(outcome.kept, rules, tidies)
     judged = run(judge_findings([item.finding for item in asked], diff, plugins))
     refuted: set[int] = set()  # by identity: two guidelines can file the same finding
     for item, judgement in zip(asked, judged, strict=True):

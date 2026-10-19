@@ -23,6 +23,7 @@ from conftest import (
     _branch_off_empty,
     _committed,
     _git_in,
+    gathered,
     missing_objects,
     run_review,
     tool_context,
@@ -97,10 +98,7 @@ class TestNoOnesSettings:
         _files, diff = _listed_and_shown(repo, "change", "pay.py")
         assert diff.startswith("diff --git a/pay.py b/pay.py") and "Binary files" not in diff, diff
         assert diff == theirs_unset, diff
-        rules = importlib.import_module("adk_review.collect.git").collect_evidence(
-            str(repo), BASE, "change", guidelines=False
-        )
-        (plain,) = [f["diff"] for f in rules["files"] if f["path"] == "pay.py"]
+        plain = gathered(repo, "change", guidelines=False)["pay.py"]["diff"]
         assert sum(line.startswith(" ") for line in plain.splitlines()) == 6, "git's three lines, for the rules"
 
     def test_a_variable_naming_another_repositorys_refs_is_never_inherited(
@@ -694,13 +692,6 @@ class TestTheFunctionAroundEachHunk:
         _committed(repo, "notes.md", notes.replace("line 10\n", "line ten\n"), "a note")
         return repo
 
-    @staticmethod
-    def _gathered(repo: Path, **options) -> dict[str, dict]:
-        evidence = importlib.import_module("adk_review.collect.git").collect_evidence(
-            str(repo), BASE, "change", **options
-        )
-        return {f["path"]: f for f in evidence["files"]}
-
     def test_a_guideline_reads_a_python_hunk_within_its_function_and_any_other_as_git_prints_it(
         self, tmp_path: Path
     ) -> None:
@@ -709,7 +700,7 @@ class TestTheFunctionAroundEachHunk:
         steps. The method's every line is read, and quotable, the method beside it is not; the note is read as git
         prints a change; and the rules read git's diff and the same added lines either way."""
         repo = self._deep_in_a_method(tmp_path)
-        shown, ruled = self._gathered(repo), self._gathered(repo, guidelines=False)
+        shown, ruled = gathered(repo, "change"), gathered(repo, "change", guidelines=False)
         pay = shown["pay.py"]["diff"]
         assert "\n     def total(self, items):\n" in pay and "\n         step_0 = 0\n" in pay, pay
         assert "\n     def first(self):\n" not in pay, "the method beside it stays out"
@@ -724,16 +715,33 @@ class TestTheFunctionAroundEachHunk:
     ) -> None:
         """Measured over this repository's last 31 commits: widened, the Python diffs were 1.7 times git's, and one
         file of 191, `review.py` with its long `main`, went past the 16,000-character cap, which would have left it
-        unread, a hole. A file widening pushes past the diff cap, and every file of a change whose widened diffs pass
-        the block's cap, is read as git prints it: the context never costs a file its reading."""
-        git = importlib.import_module("adk_review.collect.git")
+        unread, a hole. A file widening pushes past the diff cap is read as git prints it, and so is every widened
+        file where the block, counted as the block counts, would leave a file out: the context never costs a file its
+        reading. Measured by review, a total of the raw diffs, framing uncounted, kept the widened files of a change
+        that then left one out."""
+        change = importlib.import_module("adk_review.collect.change")
         repo = self._deep_in_a_method(tmp_path)
-        wide, plain = self._gathered(repo)["pay.py"]["diff"], self._gathered(repo, guidelines=False)["pay.py"]["diff"]
+        ruled = gathered(repo, "change", guidelines=False)
+        wide, plain = gathered(repo, "change")["pay.py"]["diff"], ruled["pay.py"]["diff"]
         assert len(plain) < len(wide)
-        narrowed = self._gathered(repo, diff_cap=(len(plain) + len(wide)) // 2)["pay.py"]
+        narrowed = gathered(repo, "change", diff_cap=(len(plain) + len(wide)) // 2)["pay.py"]
         assert narrowed["diff"] == plain and narrowed["unread"] == "" and not narrowed["cut"], narrowed["unread"]
-        monkeypatch.setattr(git, "BLOCK_CAP_CHARS", len(wide) - 1)
-        assert self._gathered(repo)["pay.py"]["diff"] == plain, "past the block's cap together, each read as git's"
+        entries = [{"path": path, "status": f["status"]} for path, f in ruled.items()]
+        whole = change.shown_to_guidelines(entries, [f["diff"] for f in ruled.values()], 16_000, ())[1]
+        monkeypatch.setattr(change, "BLOCK_CAP_CHARS", len(whole))  # room for git's own diffs, not for the widened
+        files = gathered(repo, "change")
+        assert files["pay.py"]["diff"] == plain and not any(f["unread"] for f in files.values()), files["pay.py"]
+
+    def test_a_file_the_skip_list_leaves_out_never_costs_the_rest_their_function(self, tmp_path: Path) -> None:
+        """Measured by review: a dependency bump's lockfile, 481,156 of a change's 527,509 characters and on the
+        operator's skip list, read every Python file of it as git prints it where the block held 46,105, and this
+        repository's own 38-file range, 274,798 characters in all, lost the context of its 29 Python files where the
+        widened block held every file in 247,179. What the guidelines are shown decides, as the block counts it."""
+        repo = self._deep_in_a_method(tmp_path)
+        _committed(repo, "uv.lock", "x" * 300_000 + "\n", "a lock")
+        files = gathered(repo, "change", skip=["*.lock"])
+        assert "\n     def total(self, items):\n" in files["pay.py"]["diff"], "still read within its function"
+        assert files["uv.lock"]["unread"] == "" and not any(f["unread"] for f in files.values())
 
 
 class TestWhatTheGuidelinesAreShown:
@@ -751,13 +759,14 @@ class TestWhatTheGuidelinesAreShown:
         diffs = [self._diff("a.py", "x = 1"), self._diff("b.py", "y = 2"), self._diff("logo.png", "binary")]
         first, _ = diff.framed("a.py", diffs[0])
         monkeypatch.setattr(change, "BLOCK_CAP_CHARS", len(first))  # room for `a.py` alone
-        files, block, excluded = change.shown_to_guidelines(entries, diffs, diff.DIFF_CAP_CHARS, ["*.png"])
+        files, block, excluded, left_out = change.shown_to_guidelines(entries, diffs, diff.DIFF_CAP_CHARS, ["*.png"])
         shown, past, skipped = files
         assert shown["quotable"] and not shown["cut"] and shown["unread"] == "", shown
         assert past["quotable"] == [] and past["cut"] and past["unread"].startswith("past the"), past
         assert skipped["unread"] == "" and not skipped["cut"] and excluded == {"logo.png": "*.png"}, skipped
         assert block.startswith(first) and "b.py" not in block.split("\n\n[…")[0], block
         assert "[… 1 more file(s) not shown: past" in block and "the operator's skip list leaves them out" in block
+        assert left_out == 1, "how many the block's cap left out, which the collector reads"
         assert [sorted(f["added_at"]) for f in files] == [[1], [1], [1]], "every file's added lines, shown or not"
 
     def test_with_no_guideline_no_file_is_capped_or_shown_and_what_no_one_reads_is_still_named(self) -> None:
@@ -768,11 +777,11 @@ class TestWhatTheGuidelinesAreShown:
         binary = "diff --git a/logo.png b/logo.png\nBinary files /dev/null and b/logo.png differ\n"
         entries = [{"path": p, "status": "A"} for p in ("a.py", "logo.png", "vendor.png")]
         diffs = [self._diff("a.py", "x" * 50), binary, binary]
-        files, block, excluded = change.shown_to_guidelines(entries, diffs, 10, ["vendor*"], shown=False)
+        files, block, excluded, left_out = change.shown_to_guidelines(entries, diffs, 10, ["vendor*"], shown=False)
         code, image, _vendor = files
         assert code["quotable"] == [] and not code["cut"] and code["unread"] == "", "past the cap, cut for no one"
         assert image["unread"].startswith("binary"), "what no one can read is still named"
-        assert excluded == {"vendor.png": "vendor*"} and "### " not in block, block
+        assert excluded == {"vendor.png": "vendor*"} and "### " not in block and left_out == 0, block
         assert [sorted(f["added_at"]) for f in files] == [[1], [], []], "every file's added lines, for the rules"
 
 

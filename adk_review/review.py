@@ -726,7 +726,7 @@ def _judged(
         rules, holes = read_checks(run, chosen.rules)
         outcome = read_guidelines(run, evidence["files"], guidelines, holes)
         if verify:
-            second_opinion(outcome, rules, evidence["diff"], app.plugins, loop.run)
+            second_opinion(outcome, rules, evidence["diff"], app.plugins, loop.run, chosen.tidies())
     outcome.redacted, usage, seconds = accounted(app.plugins)
     fold(outcome, rules, chosen.ids(), chosen.tidies())
     return outcome, usage, seconds

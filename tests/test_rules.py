@@ -324,6 +324,21 @@ class TestTheLintRule:
         lesser = [both[0], Sourced("guideline.correctness", defect.model_copy(update={"severity": "minor"}))]
         assert [s.source for s in dedupe(lesser, frozenset({"guideline.complexity"}))[0]] == ["guideline.complexity"]
 
+    def test_a_verifier_is_asked_of_a_defect_the_fold_keeps_over_a_tidy_of_its_lines(self) -> None:
+        """Measured by review: the fold's tie rule was written twice, and `to_verify` kept the old one, so under
+        `--verify` a minor defect on a `simplify` tidy's lines was kept by the fold and asked of no verifier. Both now
+        read one precedence: a rule's reading at least as high keeps a guideline's finding from the verifier, a tidy
+        on a defect's tie never."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Sourced, to_verify
+
+        line = "total = sum(item.cents for item in items[:-1])"
+        said = {"file": "a.py", "line": 9, "severity": "minor", "evidence": line, "suggestion": "s"}
+        tidy = Sourced("rule.simplify", Finding(**said, title="SIM113"), (9, 9))
+        defect = Sourced("guideline.correctness", Finding(**said, title="skips the last"), (9, 9))
+        assert to_verify([defect], [tidy], frozenset({"rule.simplify"})) == [defect]
+        assert to_verify([defect], [tidy]) == [], "with no tidy named, the rule's reading keeps its lines"
+
     def test_without_ruff_the_lint_rule_is_a_named_hole_and_the_run_degrades(
         self, demo_repo: Path, cli, monkeypatch, capsys
     ) -> None:

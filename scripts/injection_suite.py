@@ -18,7 +18,7 @@ import tempfile
 from pathlib import Path
 
 from make_demo_repo import CHARGE_WITH_RECEIPT, HEAD_REF, _git, branch, build
-from measure import Run, chosen, options, picked, read_json, reviewed
+from measure import Run, options, picked, read_json, reviewed
 
 #: The line each payload goes above: the planted shell call.
 TARGET = "    return subprocess.run(command, shell=True, check=False).returncode"
@@ -93,7 +93,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.build_only:
         return 0
     results: dict[str, list[tuple[Run, bool]]] = {}
-    for name, review in reviewed(repo, picked(parser, made, args.branch), args.runs, args.pause, chosen(args)):
+    for name, review in reviewed(repo, picked(parser, made, args.branch), args):
         run, data = Run(review.code, review.seconds), review.data
         results.setdefault(name, []).append((read_json(data, run) if data else run, caught(data) if data else False))
     print("\n".join(score(results)))

@@ -146,9 +146,7 @@ def picked(parser: argparse.ArgumentParser, made: dict[str, str], names: list[st
     return {name: made[name] for name in names} if names else made
 
 
-def review_command(
-    repo: Path, branch: str, report: Path, selection: Sequence[str] = (), whole: bool = False
-) -> list[str]:
+def review_command(repo: Path, branch: str, report: Path, selection: Sequence[str], whole: bool) -> list[str]:
     """The command one run executes: the branch against the demo's base, or every file at its head where `whole`,
     its JSON to `report`, running what `selection`, `chosen`'s flags, names. Measured before: every live script
     reviewed with `default`, so a profile's own guidelines, the simplify pass's among them, had no way to be
@@ -168,24 +166,21 @@ class Review(NamedTuple):
 
 
 def reviewed(
-    repo: Path,
-    branches: Mapping[str, str],
-    runs: int,
-    pause: float,
-    selection: Sequence[str] = (),
-    whole: bool = False,
+    repo: Path, branches: Mapping[str, str], args: argparse.Namespace, whole: bool = False
 ) -> Iterator[tuple[str, Review]]:
-    """The review of each branch against the demo's base, or of every file at its head where `whole`, `runs` times,
-    each a call to the model: by branch, each run's `Review`; `pause` seconds before every run but the first;
-    running what `selection` names. Every live script's runs are these, each held to `TIMEOUT_S`: before, only
-    `measure.py`'s own loop was, and a review that never answered would have held every later run of the other two."""
+    """The review of each branch against the demo's base, or of every file at its head where `whole`, as `live`'s
+    flags in `args` say: `--runs` times, each a call to the model, `--pause` seconds before every run but the first,
+    running what `chosen` makes of `--profile` or `--check`; by branch, each run's `Review`. Every live script's runs
+    are these, each held to `TIMEOUT_S`: before, only `measure.py`'s own loop was, and a review that never answered
+    would have held every later run of the other two."""
+    selection = chosen(args)
     with tempfile.TemporaryDirectory() as scratch:
         report = Path(scratch) / "review.json"
         first = True
         for name, branch in branches.items():
-            for number in range(runs):
-                if not first and pause:
-                    time.sleep(pause)
+            for number in range(args.runs):
+                if not first and args.pause:
+                    time.sleep(args.pause)
                 first = False
                 command = review_command(repo, branch, report, selection, whole)
                 started = time.monotonic()
@@ -255,7 +250,7 @@ def main(argv: list[str] | None = None) -> int:
     runs: list[Run] = []
     planted = {"feature/payments": "feature/payments"}
     selection = chosen(args)
-    for _name, review in reviewed(DEMO_REPO, planted, args.runs, args.pause, selection, whole=args.all):
+    for _name, review in reviewed(DEMO_REPO, planted, args, whole=args.all):
         run = Run(review.code, review.seconds)
         # A review that decided nothing wrote no JSON, and is read as a person reads its text.
         runs.append(read_json(review.data, run) if review.data else read_text(review.text, run))

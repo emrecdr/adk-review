@@ -5,12 +5,12 @@ No git runs here: `git.py` reads, this module arranges, so each piece is tried o
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 
 from ..core.blast import Blast, blast_radius
 from ..core.evidence import Entry, Failure, entry
 from ..core.paths import matches
-from ..core.rules import Tree
+from ..core.rules import Tree, is_python_text
 from .diff import BINARY, SUBMODULE, added_lines, capped, framed, headers, quotable
 
 #: And the block of diffs the guidelines read, in all: a file past it is left out whole, and named. Measured with none,
@@ -46,6 +46,17 @@ def unread(entry: Entry, diff: str, cut: bool, fits: bool, cap: int) -> str:
     return ""
 
 
+def widens(entry: Mapping[str, str], skip: Sequence[str]) -> bool:
+    """Whether a guideline may read `entry` within the function around each hunk: a Python file the change modifies,
+    renames or copies, which the skip list leaves to the guidelines. An added or a deleted file's diff holds the whole
+    file already: measured by review, widened, each came back byte for byte the same."""
+    return (
+        entry["status"] not in ("A", "D")
+        and is_python_text(entry["path"], None)
+        and _skipped(entry["path"], skip) is None
+    )
+
+
 def _skipped(path: str, skip: Sequence[str]) -> str | None:
     """The glob of the operator's skip list that names `path`, or None."""
     return next((glob for glob in skip if matches(path, glob)), None)
@@ -58,10 +69,12 @@ def shown_to_guidelines(
     skip: Sequence[str],
     *,
     shown: bool = True,
-) -> tuple[list[Entry], str, dict[str, str]]:
+) -> tuple[list[Entry], str, dict[str, str], int]:
     """Each changed file with its whole diff and its added lines, for the rules, and what the guidelines are shown of
     it; the block they read, each file capped at `diff_cap` and the block at `BLOCK_CAP_CHARS`, what it leaves out
-    counted at its end; and the files the operator's skip list left out, by path with the glob. Decided from the
+    counted at its end; the files the operator's skip list left out, by path with the glob; and how many files the
+    block's cap left out, which the collector reads to know whether the function around each hunk cost one its
+    reading. Decided from the
     diffs alone: no git runs here. With no guideline to show it to, `shown` False, no file is capped, framed or
     shown: measured, the view cost 2.3 s of a 10.5 s `default-rules` review of 2,683 files, the pre-push hook's
     profile, and nothing read it."""
@@ -96,7 +109,7 @@ def shown_to_guidelines(
         blocks.append(f"[… {left_out} more file(s) not shown: past {BLOCK_CAP_CHARS:,} characters in all]")
     if excluded:
         blocks.append(f"[… {len(excluded)} more file(s) not shown: the operator's skip list leaves them out]")
-    return files, "\n\n".join(blocks), excluded
+    return files, "\n\n".join(blocks), excluded, left_out
 
 
 def radius(tree: Tree | None, files: list[Entry], *, read: bool, asked: bool) -> Blast:
