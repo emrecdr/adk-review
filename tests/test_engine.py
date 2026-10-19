@@ -49,15 +49,19 @@ class TestRetriesOnBothArms:
     """Retries ride on the request, where both arms read them; the live proof is a 429."""
 
     @pytest.mark.parametrize("arm", ["gemini", "copilot"])
-    def test_every_judging_request_carries_the_retry_attempts_beside_its_deadline(self, arm: str, monkeypatch) -> None:
-        """Copilot's request asks for one: measured against a server that never answered, LiteLLM handed the
-        attempts to the OpenAI SDK as its retries and retried around it too, three becoming seven. The SDK's own
-        two retries make its three."""
+    def test_every_judging_request_carries_its_arms_retries_beside_its_deadline(self, arm: str, monkeypatch) -> None:
+        """Copilot's request asks for none: the OpenAI SDK under LiteLLM retries twice on its own, backing off and
+        waiting out the server's Retry-After. Measured against a server that never answered, three attempts asked
+        became seven; and against a local server answering 429, one asked added LiteLLM's own retry twenty
+        milliseconds after the SDK's last, its Retry-After unread, where none asked spaced the same three requests."""
         from adk_review.judge.config import REQUEST_TIMEOUT_S, RETRY_ATTEMPTS, request_config
 
         monkeypatch.setenv("REVIEW_PROVIDER", arm)
         options = request_config().http_options
-        assert options.retry_options.attempts == (RETRY_ATTEMPTS if arm == "gemini" else 1)
+        if arm == "gemini":
+            assert options.retry_options is not None and options.retry_options.attempts == RETRY_ATTEMPTS
+        else:
+            assert options.retry_options is None, "the SDK's own retries, spaced, and nothing around them"
         assert options.timeout == REQUEST_TIMEOUT_S * 1000
 
     def test_copilot_is_sent_the_instruction_as_its_system_turn(self, monkeypatch) -> None:
@@ -104,8 +108,8 @@ class TestRetriesOnBothArms:
     @pytest.mark.asyncio
     async def test_adk_hands_litellm_the_same_request_as_retries_and_seconds(self, monkeypatch) -> None:
         """The Copilot arm cannot run offline. This drives ADK's own LiteLLM wrapper with only the network client
-        replaced, so what LiteLLM would be called with is what is asserted: the attempts as `num_retries`, the
-        deadline in seconds, the temperature — one request config, both arms."""
+        replaced, so what LiteLLM would be called with is what is asserted: no `num_retries`, which would retry around
+        the SDK's own, the deadline in seconds, the temperature — one request config, both arms."""
         from google.adk.models.lite_llm import LiteLlm, LiteLLMClient
         from google.adk.models.llm_request import LlmRequest
         from google.genai import types
@@ -124,7 +128,7 @@ class TestRetriesOnBothArms:
         request = LlmRequest(model=model.model, contents=[types.UserContent("judge")], config=request_config())
         async for _response in model.generate_content_async(request):
             pass
-        assert called["num_retries"] == 1 and called["timeout"] == REQUEST_TIMEOUT_S
+        assert called.get("num_retries") is None and called["timeout"] == REQUEST_TIMEOUT_S
         assert called["temperature"] == 0.0
 
     def test_a_run_past_its_deadline_is_named_and_degrades(self, demo_repo: Path, cli, monkeypatch, capsys):
@@ -439,6 +443,19 @@ class TestTheSecondOpinion:
         assert f"folded into one finding: {1 + len(GUIDELINE_NAMES)}" in out, (
             "S105 and S602, and two guidelines into the first"
         )
+
+    def test_a_review_its_verifiers_could_not_judge_is_never_kept(
+        self, demo_repo: Path, cli, fake_provider, tmp_path: Path, capsys
+    ) -> None:
+        """Seen live: a `--verify` review whose verifier met Copilot's 429 decided APPROVED on a major no verifier
+        judged, and a decided review was kept, so the next run would have served it without asking again. One its
+        verifiers could not judge is never kept: the next run asks."""
+        fake_provider.answers_when(THE_GUIDELINES, SAYS_MORE)
+        fake_provider.raises_when(THE_VERIFIER, quota())
+        cache = tmp_path / "cache"
+        assert run_review(cli, demo_repo, "--verify", "--cache", str(cache)) == 1
+        capsys.readouterr()
+        assert not cache.exists() or not any(cache.iterdir()), "a review its verifiers could not judge is not kept"
 
     def test_a_verifier_that_fails_leaves_the_finding_and_names_why(
         self, demo_repo: Path, cli, fake_provider, capsys

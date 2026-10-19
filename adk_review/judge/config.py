@@ -159,8 +159,11 @@ def request_config(thinking_budget: int | None = None) -> types.GenerateContentC
     wrapper converts the timeout to LiteLLM's seconds and forwards the attempts
     as `num_retries` (`lite_llm.py`, 2.9.2). Measured against a server that never
     answered, LiteLLM hands those to the OpenAI SDK as its retries and retries
-    around it too: three became seven. So the Copilot arm asks for one, and the
-    SDK's own two retries make its three. A call past its deadline or its
+    around it too: three became seven. So the Copilot arm asks for none, and the
+    SDK's own two retries make its three, backing off and waiting out the
+    server's Retry-After: measured against a local server answering 429, one
+    asked added LiteLLM's own retry twenty milliseconds after the SDK's last, its
+    Retry-After unread, where none asked spaced the same three. A call past its deadline or its
     retries is a model error like any other, which `ReportProviderErrors` turns
     into that guideline's own answer.
 
@@ -177,7 +180,7 @@ def request_config(thinking_budget: int | None = None) -> types.GenerateContentC
         thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget) if thinking_budget and gemini else None,
         http_options=types.HttpOptions(
             timeout=int(REQUEST_TIMEOUT_S * 1000),
-            retry_options=types.HttpRetryOptions(attempts=RETRY_ATTEMPTS if gemini else 1, initial_delay=1.0),
+            retry_options=types.HttpRetryOptions(attempts=RETRY_ATTEMPTS, initial_delay=1.0) if gemini else None,
         ),
     )
 
