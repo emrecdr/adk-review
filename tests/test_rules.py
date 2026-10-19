@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -221,6 +222,22 @@ class TestTheLintRule:
         text = f"x = 1\n\x0c\n# a\u2028b\r\n{long}\n"
         found = lint_findings({"files": [_entry("m.py", text)], "tree": None})
         assert [(f.line, f.evidence) for f in found if f.title.startswith("lint: E501")] == [(4, long)]
+
+    def test_a_script_any_python_runs_is_python(self) -> None:
+        """Measured by review: a script whose first line ran it through `uv run --script`, PyPy or `pipx run` went
+        unlinted, its `shell=True` with it. Each runs Python; a shell, Node or IPython's own line does not name it."""
+        from adk_review.core.rules import is_python_text
+
+        for line in (
+            "#!/usr/bin/env -S uv run --script",
+            "#!/usr/bin/env -S uv run",
+            "#!/usr/bin/env pypy3",
+            "#!/usr/bin/env -S pipx run",
+            "#!/usr/bin/python3.13 -I",
+        ):
+            assert is_python_text("tools/run", line + "\n"), line
+        for line in ("#!/bin/sh", "#!/usr/bin/env node", "#!/usr/bin/env ipython", "# uv run me"):
+            assert not is_python_text("tools/run", line + "\n"), line
 
     def test_lint_reads_every_file_python_runs_and_nothing_else(self) -> None:
         """Measured before: `shell=True` in a `.pyw` file or in a script named `manage` went unlinted. A stub is read as
@@ -504,32 +521,62 @@ class TestTheLintRule:
         evidence = git.collect_evidence(str(demo_repo), BASE, HEAD)
         real = ruff._ruff
 
-        def nulled(argv: list[str], cwd: str) -> str:
-            return json.dumps([{**hit, "code": None} for hit in json.loads(real(argv, cwd))])
+        def nulled(argv: list[str], cwd: str) -> Iterator[str]:
+            return (json.dumps({**json.loads(line), "code": None}) for line in real(argv, cwd))
 
         monkeypatch.setattr(ruff, "_ruff", nulled)
         found = lint_findings(evidence)
         assert found and {(f.title.split()[1], f.severity) for f in found} == {("invalid-syntax", "major")}, found
 
-        monkeypatch.setattr(ruff, "_ruff", lambda *_args: "not json")
+        monkeypatch.setattr(ruff, "_ruff", lambda *_args: iter(["not json"]))
         said = lint_findings(evidence)
         assert said == "ruff's answer could not be read (JSONDecodeError), so the rule did not look", said
 
-        monkeypatch.setattr(ruff, "_ruff", lambda *_args: json.dumps([{"filename": "module.py"}]))
+        monkeypatch.setattr(ruff, "_ruff", lambda *_args: iter([json.dumps({"filename": "module.py"})]))
         said = lint_findings(evidence)
         assert said == "ruff's answer could not be read (IndexError), so the rule did not look", said
 
+    def test_ruffs_answer_is_read_a_finding_at_a_time(self) -> None:
+        """Measured by review: three files of unary minus chains, a `B002` wherever two minus signs meet, made ruff
+        write 589 MB of JSON each, its fixes' edits and all, read whole and parsed whole: 90 s and 4.5 GB. Ruff now
+        writes a line a finding, read as it comes, each kept as no more than a `Diagnostic` holds, a message said
+        once."""
+        import tracemalloc
+
+        from adk_review.collect import ruff
+
+        flood = "".join("x = " + "-" * 990 + "a\n" for _ in range(100))
+        tracemalloc.start()
+        try:
+            found = ruff.diagnose({"files": [{"path": "flood.py", "text": flood}]}, ("B002",), ())
+            peak = tracemalloc.get_traced_memory()[1]
+        finally:
+            tracemalloc.stop()
+        assert isinstance(found, dict) and len(found["flood.py"]) == 98_900, (
+            found if isinstance(found, str) else len(found)
+        )
+        assert peak < 40_000_000, f"{peak:,} bytes at the peak, for an answer of 96 MB"
+
+    def test_ruff_naming_more_findings_than_its_ceiling_is_a_hole(self, monkeypatch) -> None:
+        """Past its ceiling, what ruff named is not read: the rules that read ruff did not look, never a count that
+        reads as all there was."""
+        from adk_review.collect import ruff
+
+        monkeypatch.setattr(ruff, "RUFF_FINDINGS_MAX", 3)
+        said = ruff.diagnose({"files": [{"path": "m.py", "text": "import os, sys, re, json\n"}]}, ("F401",), ())
+        assert said == "ruff named more than 3 findings, and those past them were not read", said
+
     def test_ruffs_answer_is_read_back_to_each_files_own_path_and_lines(self) -> None:
-        """Read from ruff's JSON alone, no ruff run: each hit under the path its folder's index names, however ruff
-        spells the root, the line it names as the file holds it, none past the file's end, and ruff 0.12's null code
-        for a file that does not parse read as the parse failure it is."""
+        """Read from ruff's JSON lines alone, no ruff run: each hit under the path its folder's index names, however
+        ruff spells the root, the line it names as the file holds it, none past the file's end, and ruff 0.12's null
+        code for a file that does not parse read as the parse failure it is."""
         from adk_review.collect import ruff
 
         hits = [
             {"filename": "/x/1/module.py", "location": {"row": 2}, "code": "F401", "message": "unused", "fix": None},
             {"filename": "0/__init__.py", "location": {"row": 9}, "code": None, "message": "parse", "fix": None},
         ]
-        found = ruff._parsed(json.dumps(hits), {"pkg/__init__.py": [], "app.py": ["", "import os"]})
+        found = ruff._parsed([json.dumps(hit) for hit in hits], {"pkg/__init__.py": [], "app.py": ["", "import os"]})
         ((one,), (two,)) = found["app.py"], found["pkg/__init__.py"]
         assert (one.line, one.source, one.code) == (2, "import os", "F401"), one
         assert (two.line, two.source, two.code) == (9, "", "invalid-syntax"), two

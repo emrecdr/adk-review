@@ -16,7 +16,8 @@ import re
 import subprocess
 import sysconfig
 import tempfile
-from collections.abc import Sequence
+import threading
+from collections.abc import Iterable, Iterator, Sequence
 from pathlib import Path, PurePath, PurePosixPath
 
 from ..core.evidence import Change
@@ -25,6 +26,13 @@ from ..core.text import squash
 from .git import on_path
 
 RUFF_TIMEOUT_S = 60
+#: Ruff's answer is read a finding at a time, and past this many none is: what it named past them is a hole. Measured
+#: by review, three files of unary minus chains made ruff write 589 MB of JSON each, read whole: 90 s and 4.5 GB.
+RUFF_FINDINGS_MAX = 500_000
+
+
+class _FloodError(Exception):
+    """Ruff named more findings than `RUFF_FINDINGS_MAX`."""
 
 
 def diagnose(
@@ -47,6 +55,8 @@ def diagnose(
         return _run(ruff, texts, select, ignore, line_length)
     except OSError as exc:  # a disk that refuses the write: full, or read-only
         return f"a changed file could not be written to lint ({exc.strerror})"
+    except _FloodError:
+        return f"ruff named more than {RUFF_FINDINGS_MAX:,} findings, and those past them were not read"
     except (ValueError, KeyError, IndexError, TypeError) as exc:  # an answer of another shape than ruff's JSON
         return f"ruff's answer could not be read ({type(exc).__name__})"
     except subprocess.CalledProcessError as exc:  # ruff's cause sits on no fixed line, so all it said goes, flat
@@ -69,7 +79,7 @@ def _run(
         argv = [ruff, "check", "--no-fix", "--no-cache", "--isolated", "--exit-zero", "--ignore-noqa"]
         argv += ["--select", ",".join(select), *(["--ignore", ",".join(ignore)] if ignore else [])]
         argv += ["--line-length", str(line_length)] if line_length else []
-        argv += ["--output-format", "json", *targets]
+        argv += ["--output-format", "json-lines", *targets]
         return _parsed(_ruff(argv, tmp), sources)
 
 
@@ -95,32 +105,55 @@ def _laid_out(folder: str, texts: dict[str, str]) -> tuple[list[str], dict[str, 
     return targets, sources
 
 
-def _ruff(argv: list[str], cwd: str) -> str:
-    """The one place ruff runs, as `git._run` is git's: its JSON on stdout, or `CalledProcessError` or
-    `TimeoutExpired`. The caller's environment with every `RUFF_*` variable left out, as git's runs without `GIT_*`:
-    measured, `RUFF_OUTPUT_FILE`, set for another step of a pipeline, sent the report to that file, and stdout read
-    empty."""
+def _ruff(argv: list[str], cwd: str) -> Iterator[str]:
+    """The one place ruff runs, as `git._run` is git's: each line it writes on stdout as it comes, then
+    `CalledProcessError` for an exit that is not 0, or `TimeoutExpired`, a watch stopping it at `RUFF_TIMEOUT_S`. What
+    it says on stderr goes to a file, so no pipe it fills can stop it. The caller's environment with every `RUFF_*`
+    variable left out, as git's runs without `GIT_*`: measured, `RUFF_OUTPUT_FILE`, set for another step of a
+    pipeline, sent the report to that file, and stdout read empty."""
     env = {name: value for name, value in os.environ.items() if not name.startswith("RUFF_")}
-    done = subprocess.run(
-        argv,
-        cwd=cwd,
-        env=env,
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=RUFF_TIMEOUT_S,
-        check=True,
-    )
-    return done.stdout
+    with (
+        tempfile.TemporaryFile() as said,
+        subprocess.Popen(
+            argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=said, encoding="utf-8", errors="replace"
+        ) as running,
+    ):
+        late = threading.Event()
+        watch = threading.Timer(RUFF_TIMEOUT_S, lambda: (late.set(), running.kill()))
+        watch.start()
+        try:
+            yield from running.stdout or ()
+        finally:  # a reader that stops early stops ruff too
+            watch.cancel()
+            if running.poll() is None:
+                running.kill()
+        code = running.wait()
+        if late.is_set():
+            raise subprocess.TimeoutExpired(argv, RUFF_TIMEOUT_S)
+        if code:
+            said.seek(0)
+            raise subprocess.CalledProcessError(code, argv, stderr=said.read().decode("utf-8", "replace"))
 
 
-def _parsed(stdout: str, sources: dict[str, list[str]]) -> dict[str, list[Diagnostic]]:
-    """Ruff's JSON read back: each hit under the path whose index names its folder, `sources` in the order `_laid_out`
-    numbered them, with the line it names as the file holds it; `ValueError`, `KeyError`, `IndexError` or `TypeError`
-    for an answer of another shape."""
+def _parsed(answer: Iterable[str], sources: dict[str, list[str]]) -> dict[str, list[Diagnostic]]:
+    """Ruff's answer read back, a line of JSON a finding: each under the path whose index names its folder, `sources`
+    in the order `_laid_out` numbered them, with the line it names as the file holds it; `ValueError`, `KeyError`,
+    `IndexError` or `TypeError` for an answer of another shape, `_FloodError` past `RUFF_FINDINGS_MAX`. A finding keeps
+    no more than a `Diagnostic` holds, never its fix's edits, and each text said again is kept once."""
     paths = list(sources)
     found: dict[str, list[Diagnostic]] = {}
-    for hit in json.loads(stdout):
+    texts: dict[str, str] = {}
+
+    def once(text: str) -> str:
+        return texts.setdefault(text, text)
+
+    count = 0
+    for text in answer:
+        if not text.strip():
+            continue
+        if (count := count + 1) > RUFF_FINDINGS_MAX:
+            raise _FloodError
+        hit = json.loads(text)
         path = paths[int(PurePath(hit["filename"]).parts[-2])]  # `<index>/<name>`, however ruff spells the root
         row = hit["location"]["row"]
         code = hit["code"] or "invalid-syntax"  # ruff 0.12.0 to 0.12.7 name a file that does not parse with null
@@ -128,7 +161,8 @@ def _parsed(stdout: str, sources: dict[str, list[str]]) -> dict[str, list[Diagno
         line = lines[row - 1] if 0 < row <= len(lines) else ""
         offered = hit.get("fix") or {}
         fix, label = offered.get("message"), offered.get("applicability")
-        found.setdefault(path, []).append(Diagnostic(row, line, code, hit["message"], fix, label))
+        said = Diagnostic(row, line, once(code), once(hit["message"]), fix and once(fix), label and once(label))
+        found.setdefault(path, []).append(said)
     return found
 
 
@@ -138,7 +172,7 @@ def identity() -> str:
     the change, its key the same."""
     ruff = beside() or on_path("ruff")
     try:
-        return f"{ruff} {_ruff([ruff, '--version'], tempfile.gettempdir()).strip()}"
+        return f"{ruff} {''.join(_ruff([ruff, '--version'], tempfile.gettempdir())).strip()}"
     except (OSError, subprocess.SubprocessError) as exc:
         return f"{ruff}: {type(exc).__name__}"
 

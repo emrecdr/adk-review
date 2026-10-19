@@ -521,16 +521,26 @@ def _cleared(flag: str, given: str) -> None:
 
 def _written(path: Path, text: str) -> None:
     """`text` written beside `path` and moved over it: a reader never sees half a report, and the file is the
-    operator's alone, as a temporary file is made."""
+    operator's alone, as a temporary file is made. A character UTF-8 cannot hold, a lone surrogate standing for a byte
+    of a `--head` that was no UTF-8, is written as its escape, which JSON reads back as it was: measured by review,
+    the report printed, then the write raised, exit 3, the temporary file left behind, as any failed write left it."""
     with tempfile.NamedTemporaryFile(
-        "w", encoding="utf-8", newline="\n", dir=path.parent, prefix=f".{path.name}.", delete=False
+        "w",
+        encoding="utf-8",
+        errors="backslashreplace",
+        newline="\n",
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        delete=False,
     ) as handle:
-        handle.write(text)
-    try:
-        os.replace(handle.name, path)
-    except OSError:
-        Path(handle.name).unlink(missing_ok=True)
-        raise
+        try:
+            handle.write(text)
+            handle.close()  # closed before it moves: Windows moves no open file
+            os.replace(handle.name, path)
+        except BaseException:
+            handle.close()
+            Path(handle.name).unlink(missing_ok=True)
+            raise
 
 
 def _say(sentence: str) -> None:

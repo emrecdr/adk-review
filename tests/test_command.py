@@ -783,6 +783,20 @@ class TestTheJsonReport:
             assert kept.read_text(encoding="utf-8") == "keep", "what the link named is untouched"
             assert link.stat().st_mode & 0o077 == 0, "the operator's alone"
 
+    def test_a_name_in_bytes_that_are_no_utf_8_is_written_as_its_escape_and_a_failed_write_leaves_nothing(
+        self, cli, tmp_path: Path
+    ) -> None:
+        """Measured by review: git takes a branch name in any bytes, and Python reads a `--head` holding one that is no
+        UTF-8 as a lone surrogate: the report printed, then `--json` and `--handoff` raised UnicodeEncodeError, exit 3,
+        a temporary file left beside each. Such a character is written as its escape, which JSON reads back as it
+        was, and a write that fails leaves no file behind."""
+        written = tmp_path / "review.json"
+        cli._written(written, json.dumps({"head": "caf\udce9"}, ensure_ascii=False) + "\n")
+        assert json.loads(written.read_text(encoding="utf-8")) == {"head": "caf\udce9"}
+        with pytest.raises(TypeError):
+            cli._written(tmp_path / "other.json", None)  # a write that fails half way
+        assert [path.name for path in tmp_path.iterdir()] == ["review.json"], "no temporary file left"
+
     def test_a_degraded_verdict_names_the_findings_at_the_bar_it_outranks(self) -> None:
         """`DEGRADED` outranks a kept blocker by design, and a pipeline that lets exit 3 through let the blocker
         through with it, unseen: measured before, the verdict line never named it. It is named beside the verdict

@@ -56,7 +56,7 @@ class Hit:
     fix: str | None = None
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, slots=True)
 class Diagnostic:
     """One thing ruff reports on a file: the line, as ruff counts lines, and that line's text; the code, the message,
     and the fix ruff offers, if any, with ruff's own label for it: `safe`, `unsafe` or `display-only`."""
@@ -141,7 +141,9 @@ class Rule(AnyRule):
 
 #: What Python reads as source by its name; a file with no suffix is a script when its first line runs Python.
 PYTHON_SUFFIXES = (".py", ".pyw", ".pyi")
-_RUNS_PYTHON = re.compile(r"#!.*\bpython")
+#: A first line that runs Python: the interpreter, PyPy, or a runner of a script's own, `uv run` or `pipx run`. Measured
+#: by review: a script run through `uv run --script` or PyPy went unlinted, its `shell=True` with it.
+_RUNS_PYTHON = re.compile(r"#!.*(?:\b(?:python|pypy)|\b(?:uv|pipx)\s+run\b)")
 
 
 def is_python(path: str, first_line: Callable[[], str]) -> bool:

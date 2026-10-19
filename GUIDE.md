@@ -268,6 +268,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | The head's Python files read for the tree rules and the radius, in all; and the changed files' texts, in all | 20,000,000 bytes | `collect/git.py`, `MAX_TREE_BYTES` |
 | One git call | 30 seconds | `collect/git.py`, `GIT_TIMEOUT_S` |
 | One ruff run | 60 seconds | `collect/ruff.py`, `RUFF_TIMEOUT_S` |
+| The findings one ruff run names that the rules read: past them, a hole | 500,000 findings | `collect/ruff.py`, `RUFF_FINDINGS_MAX` |
 | One model call | 180 seconds | `judge/config.py`, `REQUEST_TIMEOUT_S` |
 | One run of the guidelines, or of the verifiers | 600 seconds | `judge/config.py`, `RUN_DEADLINE_S` |
 | Model calls in flight at once | 3 | `judge/config.py`, `CONCURRENCY` |

@@ -752,7 +752,9 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   any other. Ruff lints what the collector read and no more: a file not read whole is the hole of each rule that reads
   ruff. What a code means, its severity and its fix, is the rule's: an `assert` is major in library code, where
   `python -O` strips it, and minor in a test, where it is how pytest checks. Without ruff, or with one that fails, the
-  rule did not look and says so, exit 3.
+  rule did not look and says so, exit 3. Its answer is read a finding at a time, as ruff writes one a line, each kept as
+  no more than the rule reads, and past 500,000 findings what it named is a hole: measured by review, three files of
+  unary minus chains made ruff write 589 MB of JSON each, read whole in 90 s and 4.5 GB.
 - **Grounding.** A guideline's finding must quote, verbatim, whole lines of its own file's diff, within one hunk, as the
   guideline saw them: secrets redacted, diff markers gone, whitespace not counted. Where a quote's line breaks were
   lost, its lines begin and end where the file's do, a diff marker or a fence run into them or not: measured live on
