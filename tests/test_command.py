@@ -402,8 +402,8 @@ class TestTheDryRun:
         out = capsys.readouterr().out
         assert "- guidelines " not in out and "- model " not in out
         assert (
-            "- profile      demo (off: guideline.complexity, guideline.correctness, guideline.security, "
-            "guideline.tests)" in out
+            "- profile      demo (off: guideline.altitude, guideline.complexity, guideline.correctness, "
+            "guideline.efficiency, guideline.security, guideline.tests)" in out
         )
         assert run_review(cli, demo_repo, "--dry-run", "--head", "no-such") == 2, "the wrong branch, caught"
         assert "does not exist" in capsys.readouterr().err

@@ -46,8 +46,8 @@ cannot load (a broken install). Ctrl-C is one sentence and 130, the shell's own 
 
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so.
-A review under `default` makes three calls at once: Gemini's free tier allows five a minute and twenty a day, so a
-live script's sixteen reviews on it need `--pause` and more than a day, and Copilot rate-limits a model after some
+A review under `default` makes three calls at once, `simplify` three, `code-review` five and `full` six: Gemini's free
+tier allows five a minute and twenty a day, so a live script's sixteen reviews on it need `--pause` and more than a day, and Copilot rate-limits a model after some
 hundreds of calls in an afternoon; a run that met a 429 names it under `could_not_look` and measures nothing there.
 Run each side of a before-and-after comparison from its own copy of the tree, since a review imports the checkout.
 The suite, `--profile rules-only`, `demo` or `default-rules`, `--check rule.<name>`, `--dry-run`, `--list-checks`,

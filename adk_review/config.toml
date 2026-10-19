@@ -64,5 +64,19 @@ full = [
     "rule.no-print", "rule.pinned-actions", "rule.pitfalls", "rule.private-patch", "rule.reviewer-instructions",
     "rule.secrets", "rule.simplify", "rule.steering-files", "rule.tests-offline", "guidelines",
 ]
+# A simplify pass, as Claude Code's /simplify reads a change: the cleanup ruff can decide, and the complexity, the
+# wasted work and the fix at the wrong depth a model judges, three calls. lint and pitfalls run beside them, at no cost,
+# for the defects a cleanup must not paper over.
+simplify = [
+    "rule.lint", "rule.pitfalls", "rule.simplify", "guideline.complexity", "guideline.efficiency", "guideline.altitude",
+]
+# A code review, as Claude Code's /code-review reads a change: the default's rules and Python's traps, correctness and
+# security, then the simplify pass's cleanup, five calls. Its conventions angle is left out: it obeys the reviewed
+# repository's own CLAUDE.md, the file steering-files names as one a person reads first.
+code-review = [
+    "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
+    "rule.lockfile-sources", "rule.pinned-actions", "rule.pitfalls", "rule.simplify", "guideline.correctness",
+    "guideline.security", "guideline.complexity", "guideline.efficiency", "guideline.altitude",
+]
 # The payments demo's, as scripts/make_demo_repo.py builds it: every rule, the demo's own among them, and no model.
 demo = ["rules"]

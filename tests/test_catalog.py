@@ -90,6 +90,25 @@ class TestTheConfig:
         assert on["full"] == [*general, *guidelines]
         assert on["demo"] == rules, "every rule, the demo's own among them, and no guideline"
 
+    def test_simplify_and_code_review_read_a_change_as_claude_codes_commands_do(self) -> None:
+        """Claude Code's `/simplify` reads a change for reuse, simplification, efficiency and altitude, and its
+        `/code-review` for correctness first and the same cleanup after. Each profile runs that much, beside the rules
+        that decide part of it by code and cost no call, and `default`'s guidelines are what they were."""
+        from adk_review.core.profiles import chosen
+
+        found, profiles = catalog(), profiles_of()
+        names = ("default", "default-rules", "simplify", "code-review")
+        on = {name: chosen(profiles, name, found.ids(), found.groups()) for name in names}
+        cleanup = ["guideline.complexity", "guideline.efficiency", "guideline.altitude"]
+        assert on["simplify"] == ["rule.lint", "rule.pitfalls", "rule.simplify", *cleanup]
+        bugs = ["guideline.correctness", "guideline.security"]
+        assert on["code-review"] == [*on["default-rules"], "rule.pitfalls", "rule.simplify", *bugs, *cleanup]
+        assert [check for check in on["default"] if check.startswith("guideline.")] == [
+            "guideline.security",
+            "guideline.tests",
+            "guideline.complexity",
+        ], "default is unchanged until a live measurement says otherwise"
+
     def test_the_config_gives_the_flags_their_defaults_and_a_flag_wins_for_one_run(self, cli) -> None:
         policy = {"fail_on": "major", "max_tokens": 500, "verify": True, "diff_cap": 9000, "skip": ["*.png"]}
         parser = cli.build_parser(policy)
@@ -541,8 +560,8 @@ class TestTheProfiles:
         assert run_review(cli, demo_repo, "--profile", "demo", "--verify") == 1
         out = capsys.readouterr().out
         assert (
-            "- profile      demo (off: guideline.complexity, guideline.correctness, guideline.security, "
-            "guideline.tests)" in out
+            "- profile      demo (off: guideline.altitude, guideline.complexity, guideline.correctness, "
+            "guideline.efficiency, guideline.security, guideline.tests)" in out
         ), "what a profile leaves off is named: here the guidelines, and no rule, since code alone decides"
         assert "demo-money-in-cents: cents divided into a float (src/payments/report.py:5)" in out
         assert "charge.py:19" not in out
@@ -586,15 +605,18 @@ class TestTheProfiles:
         assert cli.main(["--list-checks"]) == 0
         out = capsys.readouterr().out
         assert (
-            "| `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, demo |"
+            "| `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, code-review, "
+            "demo |" in out
+        )
+        assert (
+            "| `rule.lint` | file rule | minor | default, default-rules, rules-only, full, simplify, code-review, demo |"
             in out
         )
-        assert "| `rule.lint` | file rule | minor | default, default-rules, rules-only, full, demo |" in out
-        assert "| `guideline.security` | guideline | the model's, by finding | default, full |" in out
+        assert "| `guideline.security` | guideline | the model's, by finding | default, full, code-review |" in out
         assert "| `rule.no-print` | line rule | minor | rules-only, full, demo |" in out
         assert (
-            "| `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full, demo |"
-            in out
+            "| `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full, code-review, "
+            "demo |" in out
         )
         assert "| `rule.demo-required-paths` | tree rule | major | demo |" in out
         assert "`judge/rules/no_print.py`" in out and "`judge/guidelines/security.py`" in out

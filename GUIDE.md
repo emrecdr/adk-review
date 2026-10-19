@@ -91,6 +91,13 @@ check runs only where a profile names it, or alone with `--check`:
 - `push-history`: what the pre-push hook reads each commit a push sends with, line by line: the credential rules.
 - `rules-only`: every rule but the payments demo's, and no model.
 - `full`: every check but the payments demo's rules.
+- `simplify`: a simplify pass, as Claude Code's `/simplify` reads a change: `rule.simplify`, the cleanup ruff can decide,
+  and the guidelines `complexity`, `efficiency` and `altitude`, three model calls; `lint` and `pitfalls` beside them
+  name the defects a cleanup must not paper over.
+- `code-review`: a code review, as Claude Code's `/code-review` reads one: the default's rules, `pitfalls` and
+  `simplify`, then the guidelines `correctness` and `security` and the simplify pass's three, five model calls. Its
+  conventions angle is left out: it obeys the reviewed repository's own `CLAUDE.md`, a file `steering-files` names as
+  one a person reads first.
 - `demo`: the payments demo's: every rule, its own among them, and no model.
 
 The payments rules, each id starting with `demo-` — `demo-money-in-cents`, and the tree rules `demo-required-paths`,
@@ -114,23 +121,25 @@ prints them:
 | `rule.demo-money-in-cents` | line rule | major | demo | cents divided into a float | `judge/rules/demo_money_in_cents.py` |
 | `rule.demo-parameters` | tree rule | major | demo | a function no longer takes a parameter its callers pass | `judge/rules/demo_parameters.py` |
 | `rule.demo-required-paths` | tree rule | major | demo | a file or folder the project needs is missing | `judge/rules/demo_required_paths.py` |
-| `rule.encoding-declaration` | file rule | blocker | default, default-rules, rules-only, full, demo | an encoding that rewrites the code every rule reads | `judge/rules/encoding_declaration.py` |
+| `rule.encoding-declaration` | file rule | blocker | default, default-rules, rules-only, full, code-review, demo | an encoding that rewrites the code every rule reads | `judge/rules/encoding_declaration.py` |
 | `rule.hidden-text` | line rule | major | rules-only, full, demo | text a reader cannot see: tag characters or bidirectional controls | `judge/rules/hidden_text.py` |
-| `rule.lint` | file rule | minor | default, default-rules, rules-only, full, demo | what ruff reports, at a severity for each code | `judge/rules/lint.py` |
-| `rule.lockfile-sources` | file rule | minor | default, default-rules, rules-only, full, demo | a lockfile fetches a package from outside its public registry | `judge/rules/lockfile_sources.py` |
-| `rule.named-secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, demo | a value assigned to a name that says secret | `judge/rules/named_secrets.py` |
+| `rule.lint` | file rule | minor | default, default-rules, rules-only, full, simplify, code-review, demo | what ruff reports, at a severity for each code | `judge/rules/lint.py` |
+| `rule.lockfile-sources` | file rule | minor | default, default-rules, rules-only, full, code-review, demo | a lockfile fetches a package from outside its public registry | `judge/rules/lockfile_sources.py` |
+| `rule.named-secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, code-review, demo | a value assigned to a name that says secret | `judge/rules/named_secrets.py` |
 | `rule.no-print` | line rule | minor | rules-only, full, demo | print() left in library code | `judge/rules/no_print.py` |
-| `rule.pinned-actions` | file rule | major | default, default-rules, rules-only, full, demo | a workflow runs an action at a tag, a branch or a short SHA, not its full commit SHA | `judge/rules/pinned_actions.py` |
-| `rule.pitfalls` | file rule | minor | rules-only, full, demo | Python traps ruff can prove: code that does not do what it reads | `judge/rules/pitfalls.py` |
+| `rule.pinned-actions` | file rule | major | default, default-rules, rules-only, full, code-review, demo | a workflow runs an action at a tag, a branch or a short SHA, not its full commit SHA | `judge/rules/pinned_actions.py` |
+| `rule.pitfalls` | file rule | minor | rules-only, full, simplify, code-review, demo | Python traps ruff can prove: code that does not do what it reads | `judge/rules/pitfalls.py` |
 | `rule.private-patch` | line rule | minor | rules-only, full, demo | a test patches a private name | `judge/rules/private_patch.py` |
-| `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full, demo | text that tries to instruct the reviewing model | `judge/rules/reviewer_instructions.py` |
-| `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, demo | a hard-coded credential | `judge/rules/secrets.py` |
-| `rule.simplify` | file rule | minor | rules-only, full, demo | code ruff can write more simply, doing the same | `judge/rules/simplify.py` |
+| `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full, code-review, demo | text that tries to instruct the reviewing model | `judge/rules/reviewer_instructions.py` |
+| `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, code-review, demo | a hard-coded credential | `judge/rules/secrets.py` |
+| `rule.simplify` | file rule | minor | rules-only, full, simplify, code-review, demo | code ruff can write more simply, doing the same | `judge/rules/simplify.py` |
 | `rule.steering-files` | file rule | minor | rules-only, full, demo | a file another tool or agent obeys has changed | `judge/rules/steering_files.py` |
 | `rule.tests-offline` | line rule | major | rules-only, full, demo | a test reaches the network | `judge/rules/tests_offline.py` |
-| `guideline.complexity` | guideline | the model's, by finding | default, full | complexity the problem does not require | `judge/guidelines/complexity.py` |
-| `guideline.correctness` | guideline | the model's, by finding | full | logic that does not do what the change means it to | `judge/guidelines/correctness.py` |
-| `guideline.security` | guideline | the model's, by finding | default, full | security defects and unsafe patterns | `judge/guidelines/security.py` |
+| `guideline.altitude` | guideline | the model's, by finding | full, simplify, code-review | a symptom patched instead of its cause | `judge/guidelines/altitude.py` |
+| `guideline.complexity` | guideline | the model's, by finding | default, full, simplify, code-review | complexity the problem does not require | `judge/guidelines/complexity.py` |
+| `guideline.correctness` | guideline | the model's, by finding | full, code-review | logic that does not do what the change means it to | `judge/guidelines/correctness.py` |
+| `guideline.efficiency` | guideline | the model's, by finding | full, simplify, code-review | work the change wastes | `judge/guidelines/efficiency.py` |
+| `guideline.security` | guideline | the model's, by finding | default, full, code-review | security defects and unsafe patterns | `judge/guidelines/security.py` |
 | `guideline.tests` | guideline | the model's, by finding | default, full | untested changes, and tests that are not honest | `judge/guidelines/tests.py` |
 <!-- /checks -->
 
