@@ -1,6 +1,6 @@
 """Python's traps ruff can prove in a changed file: code that does not do what it reads, beside what `lint` selects.
 
-A naive datetime, a default evaluated once and shared, a `return` in `finally` that swallows the exception, a call whose
+A naive datetime, a default evaluated once and shared, a mutable class default every instance shares, a call whose
 arguments Python refuses, a `subprocess.run` whose failure goes unseen: each a defect ruff names from the code alone,
 and none of them in `lint`'s families. Run with `--isolated` as `lint` runs. A test is read too: an `assert` on a string
 literal never fails, so the test it stands in always passes. Measured over whole files: 0.4 a thousand lines of
@@ -19,10 +19,10 @@ from ..rule_helpers import ChangedFile, FileRule, Hit, Severity, is_python, list
 SELECT = (
     "DTZ", "PLE",
     "PLW0120", "PLW0127", "PLW0128", "PLW0129", "PLW0131", "PLW0133", "PLW0177", "PLW0245", "PLW0406", "PLW0602",
-    "PLW0642", "PLW0711", "PLW1501", "PLW1507", "PLW1508", "PLW1509", "PLW1510", "PLW1641", "PLW2101", "PLW2901",
+    "PLW0642", "PLW1501", "PLW1507", "PLW1508", "PLW1509", "PLW1510", "PLW1641", "PLW2101", "PLW2901",
     "RUF008", "RUF009", "RUF012", "RUF016", "RUF018", "RUF024", "RUF026", "RUF030", "RUF032", "RUF033", "RUF034",
     "RUF040", "RUF043", "RUF048", "RUF049", "RUF060", "RUF064", "RUF071",
-    "SIM107", "SIM115", "PIE794", "PIE796", "G101",
+    "SIM115", "PIE794", "PIE796", "G101",
 )  # fmt: skip
 #: `lint` names a bidirectional control already: one finding for it, not two.
 IGNORE = ("PLE2502",)
@@ -30,9 +30,9 @@ IGNORE = ("PLE2502",)
 #: whenever it runs; any other is minor, misbehaving only on some input, or a trap a reader should see.
 SEVERITY: dict[str, Severity] = {
     "PLE": "major", "PLW0129": "major", "PLW0133": "major", "PLW0177": "major", "PLW0245": "major",
-    "PLW0711": "major", "PLW1501": "major", "PLW2101": "major", "RUF008": "major", "RUF009": "major",
+    "PLW1501": "major", "PLW2101": "major", "RUF008": "major", "RUF009": "major",
     "RUF016": "major", "RUF018": "major", "RUF024": "major", "RUF026": "major", "RUF030": "major", "RUF033": "major",
-    "RUF034": "major", "RUF060": "major", "RUF064": "major", "SIM107": "major", "PIE794": "major", "PIE796": "major",
+    "RUF034": "major", "RUF060": "major", "RUF064": "major", "PIE794": "major", "PIE796": "major",
     "G101": "major",
 }  # fmt: skip
 #: The sentence a finding names where ruff offers no fix, by family, or by code where the family's would mislead.
@@ -41,6 +41,8 @@ FIX = {
         "Give it a timezone, and check what it is compared with or stored beside: an aware value never equals a "
         "naive one."
     ),
+    "DTZ011": "Take the date from an aware datetime, as datetime.now(UTC).date(): a date has no timezone to give it.",
+    "DTZ012": "Take the date from an aware datetime, as datetime.fromtimestamp(ts, UTC).date(): a date has none.",
     "PLE": "Correct it: Python raises here, or does other than the code reads.",
     "PLW": "Rewrite it as ruff names: the code does not do what it reads.",
     "PLW1510": "Pass check=True, or read the return code: a command that fails otherwise goes unseen.",
@@ -48,7 +50,6 @@ FIX = {
     "RUF": "Rewrite it as ruff names: the code does not do what it reads.",
     "RUF009": "Use field(default_factory=...): a default is evaluated once, when the class is defined, and shared.",
     "RUF012": "Annotate it ClassVar, or build it for each instance: a mutable class default is one object, shared.",
-    "SIM107": "Move the return out of finally: a return there swallows the exception being raised.",
     "SIM115": "Open it in a with block, so it is closed when an exception is raised.",
     "PIE794": "Remove the earlier definition: the class keeps only the last.",
     "PIE796": "Give each member its own value: a repeated one makes the second an alias of the first.",

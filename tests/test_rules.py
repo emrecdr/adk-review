@@ -610,14 +610,17 @@ class TestTheCleanupAndThePitfalls:
         assert found == [("SIM102", "minor"), ("C408", "minor"), ("RET504", "minor"), ("PIE790", "minor")], found
 
     def test_pitfalls_names_each_trap_at_its_severity_in_a_test_too(self) -> None:
-        """A `return` in `finally` swallows the exception and a dataclass default evaluated once is shared: each
-        misbehaves whenever it runs. A naive `now()` and a file left open misbehave on some input. A test is read:
-        an `assert` on a string literal always passes, and `simplify` reads no test."""
+        """A dataclass default evaluated once is shared, whenever the code runs; a naive `now()` and a file left open
+        misbehave on some input. A `return` in `finally` is lint's, bugbear's B012, and named once: measured by
+        review, flake8-simplify's SIM107 named the same line and column. A test is read: an `assert` on a string
+        literal always passes, and `simplify` reads no test."""
+        from adk_review.judge.rules.lint import Lint
         from adk_review.judge.rules.pitfalls import Pitfalls
         from adk_review.judge.rules.simplify import Simplify
 
         found = _codes(ruff_rule_findings(Pitfalls(), [_entry("m.py", LANES)]))
-        assert found == [("SIM115", "minor"), ("SIM107", "major"), ("DTZ005", "minor"), ("RUF009", "major")], found
+        assert found == [("SIM115", "minor"), ("DTZ005", "minor"), ("RUF009", "major")], found
+        assert ("B012", "major") in _codes(ruff_rule_findings(Lint(), [_entry("m.py", LANES)]))
         test = _entry("tests/test_m.py", 'def test_it(xs):\n    assert "never"\n    assert dict()\n')
         assert _codes(ruff_rule_findings(Pitfalls(), [test])) == [("PLW0129", "major")]
         assert ruff_rule_findings(Simplify(), [test]) == [], "cleanup in a test is not this rule's"

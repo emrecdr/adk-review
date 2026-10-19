@@ -138,10 +138,8 @@ def render_handoff(
     pre = evidence["preflight"]
     identity = dict(zip(map(id, outcome.kept), _identified(outcome.kept), strict=True))
     identity |= {id(folded): fingerprint(folded) for folded, _into in outcome.folded}
-    groups = [_led(item, [f for f, into in outcome.folded if into is item], tidies) for item in outcome.kept]
-    ranked = sorted(groups, key=lambda group: -RANK[group[0].finding.severity])
-    fixes = [group for group in ranked if group[0].source not in tidies]
-    tidy = [group for group in ranked if group[0].source in tidies]
+    fixes, tidy = _lanes(outcome, tidies)
+    ranked = fixes + tidy
     lines = [
         f"# Findings to fix: {what(evidence)}",
         "",
@@ -154,7 +152,7 @@ def render_handoff(
     lines += _items(fixes, 1, identity, tidies, fail_on)
     if tidy:
         lines += [*([""] if fixes else []), "## Tidy", "", *TIDY_KEEPS, ""]
-        lines += _items(tidy, len(fixes) + 1, identity, tidies, fail_on)
+        lines += _items(tidy, len(fixes) + 1, identity, frozenset(), fail_on)
     if not ranked:
         lines.append("Nothing to fix: no finding was kept.")
     if outcome.errors or outcome.unread:
@@ -166,35 +164,43 @@ def render_handoff(
     return inert("\n".join(lines)) + "\n"
 
 
-def _led(kept: Sourced, folded: list[Sourced], tidies: frozenset[str]) -> list[Sourced]:
-    """A hand-off item's findings, its lead first: the kept finding, unless it is a tidy and another reading of the
-    same lines is not, when the most severe of those leads, the first on a tie, so a defect is never a tidy's footnote.
-    Measured on the fold's order: under `full` the guidelines run as the catalog lists them, `complexity` before
-    `correctness`, and a tie between the two kept the tidy."""
-    members = [kept, *folded]
-    defects = [item for item in folded if item.source not in tidies]
-    if kept.source not in tidies or not defects:
-        return members
-    lead = max(defects, key=lambda item: RANK[item.finding.severity])
-    return [lead, *(item for item in members if item is not lead)]
+def _lanes(outcome: Outcome, tidies: frozenset[str]) -> tuple[list[list[Sourced]], list[list[Sourced]]]:
+    """The hand-off's items, each a lead and the other readings of its lines, in two lanes, each most severe first.
+    An item holding a defect, a finding no cleanup check made, is a fix led by its most severe defect, the first on a
+    tie; a tidy in it stays, to be held back, where a defect there is at major or above, and is otherwise an item of its
+    own in the Tidy lane, so a tidy never takes a fix's instruction. Measured on the fold's order: under `full` the
+    guidelines run as the catalog lists them, `complexity` before `correctness`, and a tie kept the tidy."""
+    fixes: list[list[Sourced]] = []
+    tidy: list[list[Sourced]] = []
+    for kept in outcome.kept:
+        members = [kept, *(folded for folded, into in outcome.folded if into is kept)]
+        defects = [item for item in members if item.source not in tidies]
+        if not defects:
+            tidy.append(members)
+            continue
+        cleanups = [item for item in members if item.source in tidies]
+        lead = max(defects, key=lambda item: RANK[item.finding.severity])
+        suspect = any(at_or_above(item.finding.severity, "major") for item in defects)
+        fixes.append([lead, *(item for item in defects if item is not lead), *(cleanups if suspect else ())])
+        tidy += [] if suspect else [[item] for item in cleanups]
+    for lane in (fixes, tidy):
+        lane.sort(key=lambda group: -RANK[group[0].finding.severity])  # stable: the fold's order on a tie
+    return fixes, tidy
 
 
 def _items(
-    groups: Sequence[list[Sourced]], start: int, identity: Mapping[int, str], tidies: frozenset[str], fail_on: str
+    groups: Sequence[list[Sourced]], start: int, identity: Mapping[int, str], held: frozenset[str], fail_on: str
 ) -> list[str]:
     """Each hand-off item, numbered from `start`: its lead's place, quote and instruction, then each other reading of
-    the same lines, a tidy among them held back where a defect at major or above stands on them."""
+    the same lines, one whose check is in `held` held back, as `_lanes` leaves a tidy under a fix only to be."""
     lines = []
     for number, (lead, *also) in enumerate(groups, start):
         f = lead.finding
-        suspect = any(
-            item.source not in tidies and at_or_above(item.finding.severity, "major") for item in (lead, *also)
-        )
         lines += [
             f"{number}. {prose(f.title)} ({_where(f)}), {f.severity}{_bar(f, fail_on)}",
             f"   - quoted: {_quoted(f)}",
             *_to_fix(lead, identity[id(lead)], "   "),
-            *_folded_under(also, fail_on, identity, tidies if suspect else frozenset()),
+            *_folded_under(also, fail_on, identity, held),
         ]
     return lines
 

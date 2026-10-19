@@ -64,7 +64,7 @@ full = [
     "rule.no-print", "rule.pinned-actions", "rule.pitfalls", "rule.private-patch", "rule.reviewer-instructions",
     "rule.secrets", "rule.simplify", "rule.steering-files", "rule.tests-offline", "guidelines",
 ]
-# A simplify pass, as Claude Code's /simplify reads a change: the cleanup ruff can decide, and the complexity, the
+# A simplify pass, as Claude Code's /simplify reads a change: the cleanup ruff can name, and the complexity, the
 # wasted work and the fix at the wrong depth a model judges, three calls. lint and pitfalls run beside them, at no cost,
 # for the defects a cleanup must not paper over.
 simplify = [

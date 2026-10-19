@@ -23,8 +23,9 @@ catch the wrong branch; `--list-checks` shows every check with its kind, its pro
    `adk-review-login`, or `gemini` with `GOOGLE_API_KEY` or a Vertex AI project): drop `--profile`; a
    `--dry-run` says whether the arm is ready. Never print `.env` or a key;
    the report names the arm and the model that ran. `--profile simplify` reads the change as Claude Code's
-   `/simplify` does, the cleanup alone; `--profile code-review` as its `/code-review` does, correctness and security
-   before the same cleanup; `--profile full` runs every check, `--verify` adds a second opinion on each guideline's
+   `/simplify` does, the cleanup, with `lint` and `pitfalls` beside it; `--profile code-review` as its `/code-review`
+   does, correctness and security before the same cleanup; `--profile full` runs every check but the payments demo's
+   rules, `--verify` adds a second opinion on each guideline's
    finding, and `--handoff FILE` writes the findings for a coding agent to apply.
 3. Read the exit code: 0 approved; 1 a finding at or above `--fail-on` (`blocker` by default); 2 a usage error
    before any model call, such as a branch that adds nothing, an arm that is not ready, or a `config.toml` or

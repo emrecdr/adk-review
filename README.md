@@ -225,10 +225,11 @@ The rules shipped with the reviewer are written as a project writes its own:
   characters and bidirectional controls, in any file) and `steering-files` (a change to a file another tool or agent
   obeys: a coding agent's instructions or settings, Copilot's and Gemini CLI's among them, a CI workflow, a hook, a
   `.pth` file);
-- for Python beside `lint`, each reading ruff with codes no other rule names: `pitfalls` (code that does not do what
-  it reads: a naive datetime, a default evaluated once and shared, a `return` in `finally`, a `subprocess.run` whose
-  failure goes unseen, an `assert` that always passes) and `simplify` (a form ruff proves does the same, said more
-  simply; taste, such as an `else` after a `return` or a ternary, left out);
+- for Python beside `lint`, each reading ruff with codes no other rule names: `pitfalls` (code that does not do what it
+  reads: a naive datetime, a default evaluated once and shared, a mutable class default every instance shares, a
+  `subprocess.run` whose failure goes unseen, an `assert` that always passes) and `simplify` (a simpler form ruff names,
+  each fix labelled safe or unsafe as ruff labels it, every code whose fix ruff documents as changing what the code does
+  left out; taste, such as an `else` after a `return` or a ternary, left out);
 - a project's own conventions, as examples: `no-print`, `private-patch` and `tests-offline`;
 - one small payments project's own rules, written for the demo repository and named `demo-` so none is taken for a rule
   a project needs: `demo-money-in-cents`, and the tree rules `demo-required-paths`, `demo-module-defines`,
@@ -512,9 +513,9 @@ line by line. Beside it:
   inside double quotes, PowerShell's typographic quotes among them — none is printed, only the checks to name.
   Nothing is applied. A check whose findings change how code reads and never what it does sets `cleanup = True`, as
   `simplify` and `complexity` do, and its findings are listed apart, after the fixes, under what a tidy keeps; one on
-  lines a finding at major or above names is held back until that finding is fixed, as a simplify pass keeps its two
-  lanes: suspect code is never tidied. `efficiency` and `altitude` are no cleanup: a cheaper form can reorder I/O and
-  a deeper fix changes a shared mechanism, each a change to weigh.
+  lines another check's defect at major or above names is held back until that defect is fixed, and is never given a
+  fix's instruction, as a simplify pass keeps its two lanes: suspect code is never tidied. `efficiency` and `altitude`
+  are no cleanup: a cheaper form can reorder I/O and a deeper fix changes a shared mechanism, each a change to weigh.
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint:
   its check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line,
   so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.
