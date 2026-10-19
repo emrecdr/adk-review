@@ -605,18 +605,18 @@ class TestTheProfiles:
         assert cli.main(["--list-checks"]) == 0
         out = capsys.readouterr().out
         assert (
-            "| `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, code-review, "
-            "demo |" in out
+            "| `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, "
+            "code-review, demo |" in out
         )
         assert (
-            "| `rule.lint` | file rule | minor | default, default-rules, rules-only, full, simplify, code-review, demo |"
-            in out
+            "| `rule.lint` | file rule | minor | default, default-rules, rules-only, full, simplify, code-review, "
+            "demo |" in out
         )
         assert "| `guideline.security` | guideline | the model's, by finding | default, full, code-review |" in out
         assert "| `rule.no-print` | line rule | minor | rules-only, full, demo |" in out
         assert (
-            "| `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full, code-review, "
-            "demo |" in out
+            "| `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full, "
+            "code-review, demo |" in out
         )
         assert "| `rule.demo-required-paths` | tree rule | major | demo |" in out
         assert "`judge/rules/no_print.py`" in out and "`judge/guidelines/security.py`" in out
