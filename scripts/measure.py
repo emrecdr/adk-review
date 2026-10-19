@@ -64,39 +64,38 @@ class Run:
     seconds: float
     verdict: str = "none"
     named: dict[str, str] = field(default_factory=dict)  # each planted defect named, at the most severe reading
+    by: dict[str, set[str]] = field(default_factory=dict)  # each planted defect named, the guidelines that named it
     stray: int = 0  # the model's findings on no planted defect
     blockers: int = 0  # the model's own blockers
     dropped: int = 0
     tokens: int = 0
 
 
-def credit(run: Run, findings: Iterable[tuple[str, Iterable[int], str]]) -> None:
-    """Each finding of a model's check, `(path, its lines, severity)`, to the planted defect whose lines it stands
-    on, at its most severe reading; one on none is stray. A folded finding's severity is the one it was given."""
-    for path, lines, severity in findings:
+def credit(run: Run, findings: Iterable[tuple[str, str, Iterable[int], str]]) -> None:
+    """Each finding of a model's check, `(check, path, its lines, severity)`, to the planted defect whose lines it
+    stands on, at its most severe reading and by the guideline that made it; one on none is stray. A folded finding's
+    severity is the one it was given."""
+    for check, path, lines, severity in findings:
         lines = set(lines)
         hits = [name for name, (at, planted) in PLANTED.items() if path == at and lines & set(planted)]
         for name in hits:
             run.named[name] = max(run.named.get(name, severity), severity, key=lambda s: RANK.get(s, 0))
+            run.by.setdefault(name, set()).add(check)
         run.stray += not hits
         run.blockers += severity == "blocker"
 
 
-def judged(data: dict) -> list[tuple[str, range, str]]:
-    """Every finding a guideline made in the JSON report, kept or folded: its file, the lines the diff places it on,
-    and its severity."""
-    return [(f["file"], placed(f), f["severity"]) for f in (*data["findings"], *data["folded"]) if by_guideline(f)]
-
-
-def by_guideline(finding: dict) -> bool:
-    """Whether a finding of the JSON report is a guideline's, a model's reading, and not a rule's."""
-    return finding["check"].startswith(GUIDELINE)
-
-
-def placed(finding: dict) -> range:
-    """The lines the diff places a finding of the JSON report on, or none where it names no line."""
-    first, last = finding["lines"] or (finding["line"], finding["line"])
-    return range(first, last + 1) if first is not None and last is not None else range(0)
+def judged(data: dict) -> list[tuple[str, str, range, str]]:
+    """Every finding a guideline made in the JSON report, kept or folded: its check, its file, the lines the diff
+    places it on, and its severity. Which guideline made it is kept: a finding of another dimension can stand on a
+    planted defect's lines, a test missing for the function that holds it."""
+    found = []
+    for f in (*data["findings"], *data["folded"]):
+        if f["check"].startswith(GUIDELINE):
+            first, last = f["lines"] or (f["line"], f["line"])
+            lines = range(first, last + 1) if first is not None and last is not None else range(0)
+            found.append((f["check"], f["file"], lines, f["severity"]))
+    return found
 
 
 def read_json(data: dict, run: Run) -> Run:
@@ -106,22 +105,38 @@ def read_json(data: dict, run: Run) -> Run:
     return run
 
 
-def options(script: str, description: str) -> argparse.ArgumentParser:
-    """The flags of a live measurement over branches it builds: how many runs, the pause between them, or none, and
-    the profile each review runs, the shipped default unless one is named."""
-    parser = argparse.ArgumentParser(prog=script, description=description)
+def live(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
+    """The flags every live measurement takes: how many runs, the pause between them, and the profile each review
+    runs, the shipped default unless one is named."""
     parser.add_argument("--runs", type=int, default=3, help="reviews of each branch (each calls the model)")
     parser.add_argument("--pause", type=float, default=0.0, help="seconds to wait between runs (a quota's worth)")
-    parser.add_argument("--build-only", action="store_true", help="build the branches, review nothing")
     parser.add_argument("--profile", help="the profile each review runs, as the command takes it; default unless named")
     return parser
 
 
-def review_command(repo: Path, branch: str, report: Path, profile: str | None = None) -> list[str]:
-    """The command one run executes: the branch against the demo's base, its JSON to `report`, under `profile` where
-    one is named. Measured before: every live script reviewed with `default`, so a profile's own guidelines, the
-    simplify pass's among them, had no way to be measured."""
-    command = [sys.executable, "-m", COMMAND, str(repo), "--head", branch, "--base", BASE_REF, "--json", str(report)]
+def options(script: str, description: str) -> argparse.ArgumentParser:
+    """The flags of a live measurement over branches it builds: `live`'s, and which branches to review, or none."""
+    parser = live(argparse.ArgumentParser(prog=script, description=description))
+    parser.add_argument("--build-only", action="store_true", help="build the branches, review nothing")
+    parser.add_argument("--branch", action="append", help="review only this branch, by its name; repeat for more")
+    return parser
+
+
+def picked(parser: argparse.ArgumentParser, made: dict[str, str], names: list[str] | None) -> dict[str, str]:
+    """The branches a run reviews: those `--branch` names, or every one built; a name the set does not hold is a
+    usage error. Measured by review: a profile's own branches cost a third of the set, each review three to six
+    calls, and Gemini's free tier allows twenty a day."""
+    if unknown := sorted(set(names or ()) - set(made)):
+        parser.error(f"no branch named {', '.join(unknown)}; there are {', '.join(made)}")
+    return {name: made[name] for name in names} if names else made
+
+
+def review_command(repo: Path, branch: str, report: Path, profile: str | None = None, whole: bool = False) -> list[str]:
+    """The command one run executes: the branch against the demo's base, or every file at its head where `whole`,
+    its JSON to `report`, under `profile` where one is named. Measured before: every live script reviewed with
+    `default`, so a profile's own guidelines, the simplify pass's among them, had no way to be measured."""
+    scope = ["--all"] if whole else ["--base", BASE_REF]
+    command = [sys.executable, "-m", COMMAND, str(repo), "--head", branch, *scope, "--json", str(report)]
     return [*command, "--profile", profile] if profile else command
 
 
@@ -159,7 +174,7 @@ def read_text(report: str, run: Run) -> Run:
         elif line.startswith("### "):
             source = line[4:].split(" ")[0]
         elif (hit := FINDING.match(line)) and source.startswith(GUIDELINE):
-            found.append((hit["path"], [int(hit["line"])], hit["severity"] or "folded"))
+            found.append((source, hit["path"], [int(hit["line"])], hit["severity"] or "folded"))
         elif line.startswith(DROPPED):
             run.dropped = int(line.removeprefix(DROPPED))
         elif spent := SPEND.match(line):
@@ -171,11 +186,10 @@ def read_text(report: str, run: Run) -> Run:
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # a Windows console is not UTF-8 by default
-    parser = argparse.ArgumentParser(prog="measure", description="How often the guidelines find what the demo plants.")
-    parser.add_argument("--runs", type=int, default=3, help="reviews of the planted branch (each calls the model)")
-    parser.add_argument("--pause", type=float, default=0.0, help="seconds to wait between runs (a quota's worth)")
+    parser = live(
+        argparse.ArgumentParser(prog="measure", description="How often the guidelines find what the demo plants.")
+    )
     parser.add_argument("--all", action="store_true", help="review every file at the head, not the change")
-    parser.add_argument("--profile", help="the profile each review runs, as the command takes it; default unless named")
     args = parser.parse_args(argv)
     subprocess.run([sys.executable, "scripts/make_demo_repo.py"], cwd=ROOT, check=True, capture_output=True)
     head = subprocess.run(
@@ -183,20 +197,18 @@ def main(argv: list[str] | None = None) -> int:
         capture_output=True,
         encoding="utf-8",
     )
-    command = [sys.executable, "-m", COMMAND, str(DEMO_REPO), "--head", "feature/payments"]
-    command += ["--all"] if args.all else ["--base", "main"]
-    command += ["--profile", args.profile] if args.profile else []
     who = "a guideline"
     runs: list[Run] = []
     with tempfile.TemporaryDirectory() as scratch:
         report_json = Path(scratch) / "review.json"
+        command = review_command(DEMO_REPO, "feature/payments", report_json, args.profile, whole=args.all)
         for number in range(args.runs):
             if number and args.pause:
                 time.sleep(args.pause)
-            started, written = time.monotonic(), ["--json", str(report_json)]
+            started = time.monotonic()
             try:
                 done = subprocess.run(
-                    command + written, cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace", timeout=600
+                    command, cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace", timeout=600
                 )
                 code, report = done.returncode, done.stdout
             except subprocess.TimeoutExpired:
@@ -217,7 +229,13 @@ def main(argv: list[str] | None = None) -> int:
     for name in PLANTED:
         readings = Counter(run.named[name] for run in runs if name in run.named)
         said = ", ".join(f"{severity} x{count}" for severity, count in readings.most_common())
-        print(f"- {name}: named by {who} in {sum(readings.values())} of {total}" + (f", as {said}" if said else ""))
+        namers = Counter(check for run in runs for check in run.by.get(name, ()))
+        by = ", ".join(f"{check} x{count}" for check, count in namers.most_common())
+        print(
+            f"- {name}: named by {who} in {sum(readings.values())} of {total}"
+            + (f", as {said}" if said else "")
+            + (f"; by {by}" if by else "")
+        )
     print(f"- {who}'s findings on no planted defect, an upper bound on its false ones: {sum(r.stray for r in runs)}")
     print(f"- {who}'s own blocker, the rules' set aside: in {sum(r.blockers > 0 for r in runs)} of {total} runs")
     verdicts = Counter(run.verdict for run in runs)

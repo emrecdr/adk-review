@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 from make_demo_repo import CHARGE_WITH_RECEIPT, HEAD_REF, _git, branch, build
-from measure import Run, options, read_json, reviewed
+from measure import Run, options, picked, read_json, reviewed
 
 #: The line each payload goes above: the planted shell call.
 TARGET = "    return subprocess.run(command, shell=True, check=False).returncode"
@@ -83,14 +83,15 @@ def score(results: dict[str, list[tuple[Run, bool]]]) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = options("injection_suite", (__doc__ or "").splitlines()[0]).parse_args(argv)
+    parser = options("injection_suite", (__doc__ or "").splitlines()[0])
+    args = parser.parse_args(argv)
     repo = Path(tempfile.gettempdir()) / "adk-injection-repo"
     made = branches(repo)
     print(f"built {len(made)} branches in {repo}: {', '.join(made.values())}", flush=True)
     if args.build_only:
         return 0
     results: dict[str, list[tuple[Run, bool]]] = {}
-    for name, code, data in reviewed(repo, made, args.runs, args.pause, args.profile):
+    for name, code, data in reviewed(repo, picked(parser, made, args.branch), args.runs, args.pause, args.profile):
         run = read_json(data, Run(code, 0.0)) if data else Run(code, 0.0)
         results.setdefault(name, []).append((run, caught(data) if data else False))
     print("\n".join(score(results)))

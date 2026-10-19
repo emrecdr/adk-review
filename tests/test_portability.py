@@ -299,7 +299,7 @@ def test_the_measurement_counts_each_planted_defect_across_runs(monkeypatch, cap
     assert measure.main(["--runs", "2"]) == 0
     out = capsys.readouterr().out
     assert "adk-review at c0ffee1, 2 runs of the planted branch" in out
-    assert "- shell call: named by a guideline in 2 of 2" in out
+    assert "- shell call: named by a guideline in 2 of 2, as blocker x2; by guideline.security x2" in out
     assert "- copied block: named by a guideline in 0 of 2" in out
     assert "- a guideline's own blocker, the rules' set aside: in 2 of 2 runs" in out
     assert "- a guideline's findings on no planted defect, an upper bound on its false ones: 2" in out
@@ -392,17 +392,26 @@ def test_the_injection_suite_builds_a_branch_a_payload_and_scores_what_was_lost(
     assert "| wrapped | 2 of 2 | no | 0 of 2 |" in lines
 
 
-def test_a_live_script_reviews_under_the_profile_it_is_named(tmp_path) -> None:
+def test_a_live_script_reviews_under_the_profile_and_the_branches_it_is_named(monkeypatch, capsys) -> None:
     """Measured before: every live script reviewed with `default`, so a profile's own guidelines, the simplify pass's
-    among them, had no way to be measured. Named, the profile reaches each run's command; unnamed, the default runs."""
+    among them, had no way to be measured, and every branch of a set, where a profile's own are a third of it. Named,
+    the profile reaches each run's command and only the branches named are reviewed; unnamed, all are, under default."""
     import measure
 
-    report = tmp_path / "r.json"
-    assert measure.options("x", "y").parse_args(["--profile", "simplify"]).profile == "simplify"
-    assert measure.options("x", "y").parse_args([]).profile is None
-    named = measure.review_command(tmp_path, "label/x", report, "code-review")
-    assert named[-2:] == ["--profile", "code-review"] and "--json" in named
-    assert "--profile" not in measure.review_command(tmp_path, "label/x", report)
+    commands = _measured_runs(monkeypatch, measure)
+    assert measure.main(["--runs", "1", "--all", "--profile", "simplify"]) == 0
+    (review,) = [argv for argv in commands if "-m" in argv]
+    assert review[-2:] == ["--profile", "simplify"] and "--all" in review and "--base" not in review, review
+    commands.clear()
+    assert measure.main(["--runs", "1"]) == 0
+    (review,) = [argv for argv in commands if "-m" in argv]
+    assert "--profile" not in review and "--base" in review, review
+    parser = measure.options("x", "y")
+    made = {"a": "label/a", "b": "label/b"}
+    assert measure.picked(parser, made, ["b"]) == {"b": "label/b"} and measure.picked(parser, made, None) == made
+    with pytest.raises(SystemExit) as refused:
+        measure.picked(parser, made, ["c"])
+    assert refused.value.code == 2 and "no branch named c; there are a, b" in capsys.readouterr().err
 
 
 def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(tmp_path) -> None:
@@ -439,10 +448,14 @@ def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(t
     assert not labelled.scored("sql-from-input", report(("rule.lint", "src/payments/charge.py", 23, "major")))
     assert labelled.scored("clean-docs", report(("guideline.tests", "README.md", 3, "major")))
     assert not labelled.scored("clean-docs", report(("guideline.tests", "README.md", 3, "minor")))
-    assert labelled.table({"sql-from-input": [True, False]})[-1] == "| sql-from-input | its defect named | 1 of 2 |  |"
-    io = report(("guideline.efficiency", "src/payments/ledger.py", 10, "major"))
-    io["folded"] = [{"check": "guideline.tests", "file": "src/payments/ledger.py", "line": 7, "lines": [7, 12]}]
-    io["findings"].append({"check": "rule.lint", "file": "src/payments/ledger.py", "line": 10, "lines": [10, 10]})
+    row = labelled.table({"sql-from-input": [True, False]}, {})[-1]
+    assert row == "| sql-from-input | its defect named | 1 of 2 |  |", row
+    io = report(
+        ("guideline.efficiency", "src/payments/ledger.py", 10, "major"),
+        ("rule.lint", "src/payments/ledger.py", 10, "minor"),
+    )
+    io["folded"] = report(("guideline.tests", "src/payments/ledger.py", 7, "minor"))["findings"]
+    io["folded"][0]["lines"] = [7, 12]
     by = labelled.named_by("repeated-io", io)
     assert by == {"guideline.efficiency", "guideline.tests"}, "a guideline of another dimension is told apart"
     tallied = {"repeated-io": Counter({"guideline.efficiency": 3, "guideline.tests": 1})}

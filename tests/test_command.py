@@ -602,7 +602,7 @@ class TestThePreviousReportAndTheHandoff:
         major tidy over a minor defect does."""
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Outcome, Sourced
-        from adk_review.deliver.report import TIDY_KEEPS, fingerprint, render_handoff
+        from adk_review.deliver.report import TESTS_FIRST, TIDY_KEEPS, fingerprint, render_handoff
 
         def at(check: str, line: int, severity: str, title: str) -> Sourced:
             found = Finding(file="a.py", line=line, severity=severity, title=title, evidence=f"x{line}", suggestion="s")
@@ -637,13 +637,10 @@ class TestThePreviousReportAndTheHandoff:
         assert f"`rule.simplify` no longer reports fingerprint `{fingerprint(loop)}`" in tidy, "its own instruction"
         assert " ".join(TIDY_KEEPS) in " ".join(tidy.split()) and "7. redundant dict() (a.py:20), minor" in tidy
         assert "held back" not in tidy
-        kept = " ".join(tidy.split())
-        assert "its public names and signatures stay, and no dependency is added" in kept, "the hard invariants"
-        checking = " ".join(said.split("## Check your work", 1)[1].split())
-        assert "Run the project's own tests before committing" in checking, "a tidy the tests fail is reverted"
-        assert "a tidy they fail on is reverted, never changed further" in checking
+        assert " ".join(TESTS_FIRST) in " ".join(said.split("## Check your work", 1)[1].split()), "the tests first"
         plain = render_handoff({**evidence, "scope": []}, outcome, verdict="REQUEST_CHANGES", fail_on="blocker")
         assert "## Fix" not in plain and "## Tidy" not in plain and "held back" not in plain, "no tidies, as before"
+        assert "tidy" not in plain, "a hand-off with no tidy says nothing of one, in its check of the work least"
 
     def test_a_previous_report_is_made_safe_whole_where_it_is_read(self, tmp_path: Path) -> None:
         """An edited `--previous` is read back through `resolved`: measured by review, a runner's command as a finding's

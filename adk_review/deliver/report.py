@@ -119,14 +119,16 @@ TIDY_KEEPS = (
     "Each below changes how the code reads, never what it does: its return values, its exceptions and their",
     "messages, its log lines, its evaluation order, laziness and concurrency stay as they are, its public names and",
     "signatures stay, and no dependency is added. Make one only where it is the same by construction, or where tests",
-    "cover its lines and pass; leave any other, and say why. A tidy never turns a list into a generator, `.get()` into",
-    "an index, a call async, or awaits into one gather.",
+    "cover its lines and pass; leave any other, and say why, and revert one the project's tests fail on, never",
+    "changing it further. A tidy never turns a list into a generator, `.get()` into an index, a call async, or awaits",
+    "into one gather.",
 )
 #: What a coding agent runs before it commits, ahead of the review that checks its work: the project's own tests,
-#: which the reviewer never runs, since it runs none of the reviewed code. A tidy they fail on was not the same.
+#: which the reviewer never runs, since it runs none of the reviewed code. What a tidy does when they fail is said
+#: where the tidies are, so a hand-off with none says nothing of them.
 TESTS_FIRST = (
     "Run the project's own tests before committing, as its Makefile, pyproject or CI runs them: a fix is done when",
-    "they pass, and a tidy they fail on is reverted, never changed further.",
+    "they pass.",
 )
 
 

@@ -1,5 +1,5 @@
 """A labelled set: branches each holding one known defect, or none, to measure what the guidelines find and what they
-invent. `uv run python scripts/labelled_set.py [--runs K] [--pause S] [--profile NAME] [--build-only]`.
+invent. `uv run python scripts/labelled_set.py [--runs K] [--pause S] [--profile NAME] [--branch NAME] [--build-only]`.
 
 Matching findings to known facts is reliable, at kappa 70.6 to 86.7, where scoring usefulness is not. Each branch is off
 the demo's `main`: a modification that builds SQL from input, a loop that misses its last item, a function with no test,
@@ -22,7 +22,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from make_demo_repo import BASE_REF, CHARGE, _git, branch, build
-from measure import ROOT, by_guideline, judged, options, placed, reviewed
+from measure import ROOT, judged, options, picked, reviewed
 
 #: The characters of a file's diff a guideline reads, as the shipped config sets them: each review here runs the
 #: command as it ships.
@@ -152,17 +152,6 @@ def branches(repo: Path) -> dict[str, str]:
     return made
 
 
-def scored(name: str, data: dict) -> bool:
-    """One run of one branch: a labelled branch's defect named by a guideline, or a clean branch given a finding at
-    major or above, a false one."""
-    label = BRANCHES[name][1]
-    found = judged(data)
-    if label is None:
-        return any(severity in ("major", "blocker") for _file, _lines, severity in found)
-    path, lines = label
-    return any(file == path and set(at) & set(lines) for file, at, _severity in found)
-
-
 def named_by(name: str, data: dict) -> set[str]:
     """The guidelines whose findings, kept or folded, stand on a labelled branch's defect: which of them named it,
     since a finding of another dimension can quote the same lines, a test missing for the function holding it."""
@@ -170,23 +159,31 @@ def named_by(name: str, data: dict) -> set[str]:
     if label is None:
         return set()
     path, lines = label
-    found = (*data["findings"], *data["folded"])
-    return {f["check"] for f in found if by_guideline(f) and f["file"] == path and set(placed(f)) & set(lines)}
+    return {check for check, file, at, _severity in judged(data) if file == path and set(at) & set(lines)}
 
 
-def table(results: dict[str, list[bool]], by: Mapping[str, Counter[str]] | None = None) -> list[str]:
+def scored(name: str, data: dict) -> bool:
+    """One run of one branch: a labelled branch's defect named by a guideline, or a clean branch given a finding at
+    major or above, a false one."""
+    if BRANCHES[name][1] is None:
+        return any(severity in ("major", "blocker") for *_where, severity in judged(data))
+    return bool(named_by(name, data))
+
+
+def table(results: dict[str, list[bool]], by: Mapping[str, Counter[str]]) -> list[str]:
     """Each branch's line: a defect named in N of K runs, and by which guidelines in how many, or a clean change
     given a false finding in N of K."""
     lines = ["| branch | label | runs | named by |", "|---|---|---|---|"]
     for name, hits in results.items():
         what = "clean: a false finding" if BRANCHES[name][1] is None else "its defect named"
-        who = ", ".join(f"{check} {count}" for check, count in (by or {}).get(name, Counter()).most_common())
+        who = ", ".join(f"{check} {count}" for check, count in by.get(name, Counter()).most_common())
         lines.append(f"| {name} | {what} | {sum(hits)} of {len(hits)} | {who} |")
     return lines
 
 
 def main(argv: list[str] | None = None) -> int:
-    args = options("labelled_set", (__doc__ or "").splitlines()[0]).parse_args(argv)
+    parser = options("labelled_set", (__doc__ or "").splitlines()[0])
+    args = parser.parse_args(argv)
     repo = Path(tempfile.gettempdir()) / "adk-labelled-repo"
     made = branches(repo)
     print(f"built {len(made)} branches in {repo}: {', '.join(made.values())}", flush=True)
@@ -194,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     results: dict[str, list[bool]] = {}
     by: dict[str, Counter[str]] = {}
-    for name, _code, data in reviewed(repo, made, args.runs, args.pause, args.profile):
+    for name, _code, data in reviewed(repo, picked(parser, made, args.branch), args.runs, args.pause, args.profile):
         results.setdefault(name, []).append(scored(name, data) if data else False)
         by.setdefault(name, Counter()).update(named_by(name, data) if data else ())
     print("\n".join(table(results, by)))

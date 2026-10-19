@@ -509,8 +509,8 @@ line by line. Beside it:
 - `--handoff FILE` writes each kept finding as a short instruction for a coding agent: where, the lines quoted, what to
   change, and the fingerprint that must be gone afterwards, with each finding folded into it named under it, since
   another reading of the same lines can be a second defect. It ends by asking for the project's own tests before a
-  commit, a tidy they fail on reverted, and in the command that checks the fixes: the review again on the same scope
-  with only the rules that found something, so an agent checks its own work offline, no model called. The scope is the
+  commit, a fix done when they pass, and in the command that checks the fixes: the review again on the same scope with
+  only the rules that found something, so an agent checks its own work offline, no model called. The scope is the
   preflight's, which the cache's key holds, and it is the whole of what the rules read: `--skip` and `--diff-cap` bound
   the guidelines alone. The guidelines that found something are named apart, with their `--check` and no command, since
   checking a model's reading spends its quota and their review took flags the scope does not hold. A branch's name is
@@ -518,10 +518,10 @@ line by line. Beside it:
   rewrite, or on Windows a character cmd or PowerShell still reads inside double quotes, PowerShell's typographic quotes
   among them — none is printed, only the checks to name. Nothing is applied. A check whose findings change how code
   reads and never what it does sets `cleanup = True`, as `simplify` and `complexity` do, and its findings are listed
-  apart, after the fixes, under what a tidy keeps; one on lines another check's defect at major or above names is held
-  back until that defect is fixed, and is never given a fix's instruction, as a simplify pass keeps its two lanes:
-  suspect code is never tidied. `efficiency` and `altitude` are no cleanup: a cheaper form can reorder I/O and a deeper
-  fix changes a shared mechanism, each a change to weigh.
+  apart, after the fixes, under what a tidy keeps, one the project's tests fail on reverted; one on lines another
+  check's defect at major or above names is held back until that defect is fixed, and is never given a fix's
+  instruction, as a simplify pass keeps its two lanes: suspect code is never tidied. `efficiency` and `altitude` are no
+  cleanup: a cheaper form can reorder I/O and a deeper fix changes a shared mechanism, each a change to weigh.
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint:
   its check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line,
   so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.
