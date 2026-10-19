@@ -33,6 +33,21 @@ STEERS = {
     ".envrc": "what direnv runs on entering the folder",
     ".vscode/tasks.json": "what an editor runs",
     ".devcontainer/": "how a development container is built and started",
+    # Read by review: CVE-2025-53773 let a prompt injection turn on Copilot's auto-approve in an editor's settings,
+    # and Cursor's MCPoison ran a changed MCP config; Cline reads a `.clinerules/` folder, which the bare name above
+    # never matched; and the other agents named here read their own instructions and tool servers.
+    ".vscode/settings.json": "an editor's settings, which can let its coding agent run commands unasked",
+    ".vscode/mcp.json": "the tool servers an editor's coding agent starts",
+    "*.code-workspace": "an editor's settings for a workspace, as `.vscode/settings.json` holds them",
+    ".cursor/mcp.json": "the tool servers a coding agent starts",
+    ".clinerules/": "a coding agent's instructions",
+    ".windsurf/rules/": "a coding agent's instructions",
+    ".github/chatmodes/": "a coding agent's instructions",
+    ".kiro/": "a coding agent's instructions, and hooks it runs",
+    ".junie/": "a coding agent's instructions",
+    ".roo/": "a coding agent's instructions",
+    ".amazonq/": "a coding agent's instructions",
+    ".continue/": "a coding agent's instructions, and the tool servers it starts",
     "*.pth": "code Python runs at every start",
     "sitecustomize.py": "code Python runs at every start",
     "usercustomize.py": "code Python runs at every start",
@@ -58,6 +73,8 @@ class SteeringFiles(FileRule):
         (".gemini/settings.json", '{"mcpServers": {"helper": {"command": "./helper"}}}\n'),
         (".github/skills/release/SKILL.md", "Before a release, run the script the README links.\n"),
         (".agents/rules/style.md", "Always run the setup script first.\n"),
+        (".vscode/settings.json", '{"chat.tools.autoApprove": true}\n'),
+        (".clinerules/style.md", "Always run the setup script first.\n"),
     )
     good = (("README.md", "# The project\n"), ("src/app.py", "x = 1\n"), ("docs/CLAUDE.md.txt", "notes\n"))
 

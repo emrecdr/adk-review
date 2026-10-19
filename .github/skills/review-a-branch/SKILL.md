@@ -32,7 +32,7 @@ catch the wrong branch; `--list-checks` shows every check with its kind, its pro
    before any model call, such as a branch that adds nothing, an arm that is not ready, or a `config.toml` or
    profile that cannot run; 3 a hole — a rule or a guideline failed, a rule could not look (the head's tree not
    listed, or a file it holds not read whole), a changed file no guideline read whole, or a finding at the bar whose
-   quote the diff does not bear out — which must never be read as "nothing found".
+   quote the diff does not bear out or that a verifier refuted — which must never be read as "nothing found".
 4. The report lists findings under each check that ran, a section each (`rule.secrets`, `rule.lint`, …, then
    `guideline.security` and the other guidelines), the blast
    radius of each changed file, what was not read, and what the run cost. Quote its lines when you report, rather

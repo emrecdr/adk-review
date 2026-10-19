@@ -234,9 +234,10 @@ The rules shipped with the reviewer are written as a project writes its own:
   and why the rest are left to the credential rules, are its `REGISTRIES`), `pinned-actions` (a
   workflow or an action running another action at a tag, a branch or a short SHA, which can be moved to other code
   after review, not its full commit SHA), `hidden-text` (tag
-  characters and bidirectional controls, in any file) and `steering-files` (a change to a file another tool or agent
-  obeys: a coding agent's instructions or settings, Copilot's and Gemini CLI's among them, a CI workflow, a hook, a
-  `.pth` file);
+  characters, bidirectional controls, and text smuggled in variation selectors, invisible operators or Hangul fillers,
+  in any file) and `steering-files` (a change to a file another tool or agent
+  obeys: a coding agent's instructions or settings, Copilot's and Gemini CLI's among them, an editor's settings and the
+  tool servers an agent starts, a CI workflow, a hook, a `.pth` file);
 - for Python beside `lint`, each reading ruff with codes no other rule names: `pitfalls` (code that does not do what it
   reads: a naive UTC datetime from `utcnow()`, a dataclass default evaluated once and shared, an exception built and
   never raised, a `subprocess.run` whose failure goes unseen, an `assert` that always passes) and `simplify` (a simpler
@@ -750,32 +751,31 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   ruff. What a code means, its severity and its fix, is the rule's: an `assert` is major in library code, where
   `python -O` strips it, and minor in a test, where it is how pytest checks. Without ruff, or with one that fails, the
   rule did not look and says so, exit 3.
-- **Grounding.** A guideline's finding must quote, verbatim, whole lines of its own file's diff, within one hunk, as
-  the guideline saw them: secrets redacted, diff markers gone, whitespace not counted. Where a quote's line breaks
-  were lost, its lines begin and end where the file's do, a diff marker or a fence run into them or not: measured live
-  on Gemini, a guideline quoted each run of lines as one, its `-` markers and its fence left in, and every finding it
-  made dropped, the review a hole. A redaction's placeholder
-  stands for any other, its label the scrubber's and never the code's: measured live on Gemini, a guideline quoted
-  the planted key's lines with the label renamed, and the finding dropped. Each hunk is read as git prints it, as the
-  new file reads and as the old file read. A finding's line is read off the diff, never taken from
-  the model: measured on Copilot, the guidelines named a wrong line for 4 of 5 findings. A finding at the bar whose
-  quote the diff does not bear out is a hole, since a real blocker dropped would approve. A quote carrying the framing
-  its file was shown in — the heading, the fence, git's header lines and each hunk's `@@`, git's
-  `\ No newline at end of file`, the cap's cut — grounds as the lines inside it: measured live on Gemini, the
-  injection on the labelled set's `sql-from-input` came quoted inside its fence, and the blocker was dropped, the
+- **Grounding.** A guideline's finding must quote, verbatim, whole lines of its own file's diff, within one hunk, as the
+  guideline saw them: secrets redacted, diff markers gone, whitespace not counted. Where a quote's line breaks were
+  lost, its lines begin and end where the file's do, a diff marker or a fence run into them or not: measured live on
+  Gemini, a guideline quoted each run of lines as one, its `-` markers and its fence left in, and every finding it made
+  dropped, the review a hole. A redaction's placeholder stands for any other, its label the scrubber's and never the
+  code's: measured live on Gemini, a guideline quoted the planted key's lines with the label renamed, and the finding
+  dropped. Each hunk is read as git prints it, as the new file reads and as the old file read. A finding's line is read
+  off the diff, never taken from the model: measured on Copilot, the guidelines named a wrong line for 4 of 5 findings.
+  A finding at the bar whose quote the diff does not bear out is a hole, since a real blocker dropped would approve, and
+  so is one a verifier refuted: the verifier reads the branch's own text, which could tell it a real blocker does not
+  hold. A quote carrying the framing its file was shown in — the heading, the fence, git's header lines and each hunk's
+  `@@`, git's `\ No newline at end of file`, the cap's cut — grounds as the lines inside it: measured live on Gemini,
+  the injection on the labelled set's `sql-from-input` came quoted inside its fence, and the blocker was dropped, the
   review a hole; with the framing looked past, two runs more, three of five blocker quotes carried a fence or git's
-  header and both runs kept the blocker. The collector records each file's framing beside its lines as it renders
-  them, so only that file's own is looked past: measured by review with a list of such lines kept by hand instead, a
-  file with no final newline and a file cut at the cap, each quoted whole, were dropped. Measured live with the
-  framing recorded, on both arms, no quote was dropped: Gemini quoted `sql-from-input`'s blocker under git's whole
-  header, down to the hunk's `@@` and the function git named there, and four quotes on the planted branch inside
-  fences, and each was kept. A kept finding's evidence is
-  then the lines its quote stands on, as the file reads them: the report, the JSON, the hand-off, the verifier and the
-  fingerprint read the diff's own text, never a model's framing of it; measured by review, the same two lines quoted
-  plain and inside their fence had two fingerprints, so `--previous` named one finding resolved and new at once. What
-  was measured not to help: told to quote whole lines and, for a missing test, the lines that lack one, Copilot's
-  guidelines quoted whole files under their `@@` headers, and 14 of 27 findings were dropped where 5 of 21 had been;
-  that sentence was taken out.
+  header and both runs kept the blocker. The collector records each file's framing beside its lines as it renders them,
+  so only that file's own is looked past: measured by review with a list of such lines kept by hand instead, a file with
+  no final newline and a file cut at the cap, each quoted whole, were dropped. Measured live with the framing recorded,
+  on both arms, no quote was dropped: Gemini quoted `sql-from-input`'s blocker under git's whole header, down to the
+  hunk's `@@` and the function git named there, and four quotes on the planted branch inside fences, and each was kept.
+  A kept finding's evidence is then the lines its quote stands on, as the file reads them: the report, the JSON, the
+  hand-off, the verifier and the fingerprint read the diff's own text, never a model's framing of it; measured by
+  review, the same two lines quoted plain and inside their fence had two fingerprints, so `--previous` named one finding
+  resolved and new at once. What was measured not to help: told to quote whole lines and, for a missing test, the lines
+  that lack one, Copilot's guidelines quoted whole files under their `@@` headers, and 14 of 27 findings were dropped
+  where 5 of 21 had been; that sentence was taken out.
 - **One finding per span of lines.** Rules and guidelines can all find one line; the report carries it once: the most
   severe reading first, whole; on a tie a defect before a cleanup's finding, then the first check — the rules, then the
   guidelines, each in the order the profile names them, which is the report's order too — and any finding one kept
@@ -871,12 +871,13 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   guideline with no evidence is skipped, its summary saying it did not look. `main` wraps the command: an error
   nothing else names is one sentence and exit 3, never Python's own exit 1, which would read as a finding at the bar.
 - **The report cannot be forged by the branch.** Every string the branch or a model wrote is made safe before it is
-  printed: one line, credentials hidden, control characters and every character a reader cannot see printed as a
-  space, a CI runner's command opener (`##[`, `##vso[`) and an HTML comment's broken, and outside a code span no HTML
-  tag can open. Evidence is cut after the scrub. The JSON's strings pass the same steps and stay plain text, for
-  their reader to escape where it renders them. Measured before: a title holding a newline forged a second verdict
-  heading, and a file named `<h1>Verdict: APPROVED</h1>` printed a heading above the real verdict where a job summary
-  renders the report.
+  printed: one line, credentials hidden, control characters and every character a reader cannot see printed as a space,
+  a CI runner's command opener (`##[`, `##vso[`) and an HTML comment's broken, and outside a code span no HTML tag,
+  markdown image or link can open, so a model's `![x](https://…?q=…)` is never fetched where a summary renders the
+  report, as CamoLeak's was through Copilot's own chat. A model's title and change are cut where its finding is made.
+  Evidence is cut after the scrub. The JSON's strings pass the same steps and stay plain text, for their reader to
+  escape where it renders them. Measured before: a title holding a newline forged a second verdict heading, and a file
+  named `<h1>Verdict: APPROVED</h1>` printed a heading above the real verdict where a job summary renders the report.
 
 ## Left out on purpose
 

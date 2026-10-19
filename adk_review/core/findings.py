@@ -10,7 +10,9 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from .text import SUGGESTION_MAX_CHARS, TITLE_MAX_CHARS, cut_at
 
 Severity = Literal["blocker", "major", "minor"]
 #: The scale, low to high: `decide` and `dedupe` key on it, and the command offers it for `--fail-on`.
@@ -30,6 +32,19 @@ class Finding(BaseModel):
     title: str = Field(description="One line naming the problem.")
     evidence: str = Field(description="The exact diff lines this finding is about, quoted verbatim.")
     suggestion: str = Field(description="What to change, concretely.")
+
+    @field_validator("title")
+    @classmethod
+    def _title_cut(cls, title: str) -> str:
+        """A model's title, cut at `TITLE_MAX_CHARS` with the cut named: the schema the model is asked for is the same,
+        so a long one is cut, never refused as a reply that does not fit."""
+        return cut_at(title, TITLE_MAX_CHARS)
+
+    @field_validator("suggestion")
+    @classmethod
+    def _suggestion_cut(cls, suggestion: str) -> str:
+        """A model's change, cut at `SUGGESTION_MAX_CHARS` as the title is."""
+        return cut_at(suggestion, SUGGESTION_MAX_CHARS)
 
 
 class Review(BaseModel):

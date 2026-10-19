@@ -18,6 +18,11 @@ REASON_MAX_CHARS = 400
 #: the whole added line, and a minified one ran to 200,000 characters. Cut after the scrub, so no cut halves a
 #: credential past its pattern.
 EVIDENCE_MAX_CHARS = 400
+#: A finding's title and its change are a model's own words, read by a person and by the coding agent a hand-off is
+#: for. Nothing capped them, and an injection that survives into one needs room: a title is one line, a change a few
+#: sentences or a short snippet. Cut where the finding is made, so every reader reads the same.
+TITLE_MAX_CHARS = 200
+SUGGESTION_MAX_CHARS = 1_200
 
 
 def squash(text: str) -> str:

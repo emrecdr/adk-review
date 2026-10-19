@@ -39,11 +39,11 @@ a branch that adds nothing: "no change to review", a `config.toml`, profile or r
 `--path`, or no choice made at the question asked when neither `--base` nor `--all` is given), 3 a hole: a rule or a
 guideline failed, a rule could not look (the head's tree not listed, or a file it holds not read whole), a changed file
 no guideline read whole — binary, a submodule, cut at the diff cap or past the guidelines' block cap — named under "not
-read", a finding at the `--fail-on` bar whose quote the diff does not bear out, a guideline's call the token ceiling
-refused (a verifier's leaves its finding unverified), a `--json` or `--handoff` file that cannot be written, any error
-nothing else names (`main` wraps the command: a sentence, never Python's own exit 1, which would read as a blocker), a
-reader that closes the pipe early, and a reviewer that cannot load (a broken install). Ctrl-C is one sentence and 130,
-the shell's own code for it, and a job's SIGTERM 143.
+read", a finding at the `--fail-on` bar whose quote the diff does not bear out or that a verifier refuted, a guideline's
+call the token ceiling refused (a verifier's leaves its finding unverified), a `--json` or `--handoff` file that cannot
+be written, any error nothing else names (`main` wraps the command: a sentence, never Python's own exit 1, which would
+read as a blocker), a reader that closes the pipe early, and a reviewer that cannot load (a broken install). Ctrl-C is
+one sentence and 130, the shell's own code for it, and a job's SIGTERM 143.
 
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so. A
@@ -183,9 +183,10 @@ Conventions:
   `GitError`, turned into an error envelope only where envelopes are built; never answer it as an empty result.
   `_git(..., ok=(0, 1))` is only for calls whose exit code 1 is an answer.
 - Every string a model reads is capped in characters, with the cut named in the text, and the cut never falls inside a
-  credential. The report cuts each finding's evidence the same way, after the scrub, and breaks CI runners' command
-  openers (`##[`, `##vso[`) and HTML comments' (`<!--`) in all it prints, every character a reader cannot see printed
-  as a space.
+  credential, and so is each title and change a model writes into a finding, cut where `core/findings.py` makes it.
+  The report cuts each finding's evidence the same way, after the scrub, and breaks CI runners' command openers (`##[`,
+  `##vso[`) and HTML comments' (`<!--`) in all it prints, and in prose a markdown image's or link's (`![`, `](`), every
+  character a reader cannot see printed as a space.
 - State moves between agents via `output_key` and `{placeholder}` (`{key?}` where the key may be missing). Each key
   more than one module uses is spelled once, in `judge/agents.py`; a check's key is its id through `state_key`.
 - Every `subprocess.run` that decodes passes `encoding=`; no source under `adk_review/` or `scripts/` spells `/tmp/`

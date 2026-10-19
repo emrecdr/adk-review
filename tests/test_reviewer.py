@@ -613,6 +613,19 @@ class TestWhatGroundingKeeps:
         assert rule.decide(dropped("blocker"), "blocker")[0] == "DEGRADED", "a real blocker dropped would approve"
         assert rule.decide(dropped("major"), "blocker")[0] == "APPROVED", "below the bar, a drop is only named"
 
+    def test_a_finding_at_the_bar_a_verifier_refuted_is_no_approval(self) -> None:
+        """Read by review: the verifier reads the branch's own diff, so a payload in it can tell the verifier a real
+        blocker does not hold, and refuted, the blocker left the kept findings and the review approved, exit 0. Refuted
+        at the bar, as dropped at the bar, is no approval: a person reads it; below the bar it is only named."""
+        rule, _collect, schema = _grounding_of()
+
+        def refuted(severity: str):
+            finding = schema.Finding(file="x", line=1, severity=severity, title="t", evidence="q", suggestion="s")
+            return rule.Outcome(refuted=[(rule.Sourced(model_check("security"), finding), "the lines do not show it")])
+
+        assert rule.decide(refuted("blocker"), "blocker")[0] == "DEGRADED", "a verifier told to refute would approve"
+        assert rule.decide(refuted("major"), "blocker")[0] == "APPROVED", "below the bar, a refutal is only named"
+
     def test_a_removed_line_carries_the_new_line_before_it(self) -> None:
         """Measured by review: `@@ -1,2 +0,0 @@`, a deleted file's one hunk, numbered its lines -1, and the report
         named `old.py:-1`. Git names an empty range by the line before it: a deleted file's lines carry 0, no line."""
@@ -753,8 +766,9 @@ class TestWhatTheLanesRead:
         assert one_line("a\u009b2Jb‮c⁦d") == "a 2Jb c d"
 
     def test_the_report_drops_every_character_a_reader_cannot_see(self) -> None:
-        """Every format character Python's Unicode tables know, and the variation selectors. Measured before: a sentence
-        in tag characters printed whole, unseen, in the report and in the JSON a pipeline posts."""
+        """Every format character Python's Unicode tables know, the variation selectors, and the Hangul fillers, which
+        Unicode files as letters though they show nothing. Measured before: a sentence in tag characters printed whole,
+        unseen, in the report and in the JSON a pipeline posts; read by review, a filler printed as it came."""
         import sys
         import unicodedata
 
@@ -762,6 +776,8 @@ class TestWhatTheLanesRead:
 
         unseen = [chr(point) for point in range(sys.maxunicode + 1) if unicodedata.category(chr(point)) == "Cf"]
         unseen += [chr(point) for point in (*range(0xFE00, 0xFE10), *range(0xE0100, 0xE01F0))]
+        unseen += [chr(point) for point in (0x115F, 0x1160, 0x3164, 0xFFA0)]  # Lo, yet blank
+        unseen += [chr(point) for point in (0x034F, 0x17B4, 0x17B5, *range(0x180B, 0x1810), 0x2800)]  # read by review
         kept = [f"U+{ord(c):04X}" for c in unseen if one_line(f"a{c}b") != "a b"]
         assert kept == [], kept
 

@@ -67,7 +67,8 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   entries, read-only verbs only, as an argv list with a timeout, inside `_environment(repo)`, which also starts no
   file-system monitor the repository names; nothing ever writes into the repository under review, and a failed git
   call raises `GitError`, never an empty answer.
-- Every string a model reads is capped in characters with the cut named in the text. Every `subprocess.run` that
+- Every string a model reads is capped in characters with the cut named in the text, and so is each title and change
+  a model writes into a finding. Every `subprocess.run` that
   decodes passes `encoding=`; no source spells `/tmp/` (`tempfile.gettempdir()`); a file a script or a fixture commits
   is written with `newline="\n"`.
 

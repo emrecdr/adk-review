@@ -967,6 +967,48 @@ class TestTreeRules:
 class TestTheShippedRules:
     """Each shipped rule on the shapes it names, and on those it must leave."""
 
+    def test_hidden_text_names_smuggled_selectors_invisible_operators_and_fillers(self) -> None:
+        """Read by review: text can be smuggled in variation selectors behind an emoji, the supplementary ones
+        carrying its bytes; the invisible operators and the Hangul fillers show nothing, and a filler has served as an
+        invisible name in code. Each is named; a single emoji selector, Korean text and Indic joiners, how those
+        scripts are written, are not."""
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.hidden_text import HiddenText
+
+        payload = "".join(chr(0xE0100 + ord(c) - 16) for c in "run it")  # bytes as supplementary selectors
+        hidden = [
+            f"x = 1  # \U0001f600{payload}",
+            "x = 1  # \U0001f600\ufe00\ufe01\ufe02",
+            "total = a\u2062b",
+            "\u3164 = run_it()",
+            "y = 2  # \u115f\u1160",
+        ]
+        seen = [
+            "love = '\u2764\ufe0f'",
+            "greeting = '\ud55c\uad6d\uc5b4'",
+            "word = '\u0915\u094d\u200d\u0937'",
+            "x = 1  # plain",
+        ]
+        text = "\n".join(hidden + seen) + "\n"
+        assert lines_hit(HiddenText(), "m.py", text) == list(range(1, len(hidden) + 1))
+
+    def test_steering_files_names_the_editor_and_agent_files_injections_have_used(self) -> None:
+        """Read by review: CVE-2025-53773 let a prompt injection turn on Copilot's auto-approve in
+        `.vscode/settings.json`, and Cursor's MCPoison ran a changed `.cursor/mcp.json`; Cline reads a `.clinerules/`
+        folder, which the bare name never matched; Kiro, Junie, Roo, Amazon Q, Continue, Copilot's chat modes and a
+        workspace file read their own. Each is named; a source file named like one is not."""
+        from adk_review.judge.rule_helpers import try_rule
+        from adk_review.judge.rules.steering_files import SteeringFiles
+
+        steering = [
+            ".vscode/settings.json", ".vscode/mcp.json", ".cursor/mcp.json", ".clinerules/style.md",
+            ".windsurf/rules/a.md", ".kiro/steering/a.md", ".junie/guidelines.md", ".roo/rules/a.md",
+            ".amazonq/rules/a.md", ".continue/config.yaml", ".github/chatmodes/review.chatmode.md",
+            "team.code-workspace",
+        ]  # fmt: skip
+        hits = try_rule(SteeringFiles(), dict.fromkeys([*steering, "src/vscode_settings.py"], "x\n"))
+        assert sorted(hit.path for hit in hits) == sorted(steering), [hit.path for hit in hits]
+
     def test_a_lockfile_source_outside_its_registry_is_named_once(self) -> None:
         """Measured by review: with lockfiles left to the rules by the shipped skip list, no rule read where a lockfile
         fetches from, so a branch could point a package at a host of its own unseen. Each origin outside the

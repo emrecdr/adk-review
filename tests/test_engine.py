@@ -399,8 +399,9 @@ class TestTheSecondOpinion:
         fake_provider.answers_when(THE_VERIFIER, REFUTED)  # would refute anything it were asked
         code = run_review(cli, demo_repo, "--verify")
         out = capsys.readouterr().out
-        assert code == 1, out  # the rules' blockers still stand
-        assert f"findings refuted by the verifier: {len(GUIDELINE_NAMES)}" in out
+        assert code == 3, out  # a blocker refuted is no approval: a person reads it, as a blocker dropped
+        refuted = len(GUIDELINE_NAMES)
+        assert f"findings refuted by the verifier: {refuted}\n  - {refuted} at or above `--fail-on blocker`" in out
         assert "- `guideline.security`: shell=True with request-controlled input — the lines do not show it" in out
         assert "`guideline.security`" in out.split("### no findings from ", 1)[1], "it looked, and found nothing"
         # The rules' findings are facts: never asked, so never refuted, and a rule's reading of the line stands

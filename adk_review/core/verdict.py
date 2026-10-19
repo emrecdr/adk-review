@@ -372,8 +372,11 @@ def decide(outcome: Outcome, fail_on: str) -> tuple[str, int]:
 
     Only kept findings count: one dropped for evidence that is not in the diff must not decide the build. A failed
     guideline is a hole, and so is a file no guideline read whole, and so is a finding at the bar that no quote bears
-    out, since a real blocker dropped would approve: a hole never approves.
+    out, since a real blocker dropped would approve: a hole never approves. So is one at the bar a verifier refuted:
+    the verifier reads the branch's own text, and read by review, a payload there could have it refute a real blocker
+    and the review approve.
     """
-    if outcome.errors or outcome.unread or at_bar(outcome.dropped, fail_on):
+    refuted = [item for item, _why in outcome.refuted]
+    if outcome.errors or outcome.unread or at_bar(outcome.dropped, fail_on) or at_bar(refuted, fail_on):
         return "DEGRADED", EXIT_DEGRADED
     return ("REQUEST_CHANGES", EXIT_FINDINGS) if at_bar(outcome.kept, fail_on) else ("APPROVED", EXIT_CLEAN)
