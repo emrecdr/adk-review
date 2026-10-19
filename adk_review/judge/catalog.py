@@ -184,7 +184,7 @@ class Catalog:
 
     def ids(self) -> tuple[str, ...]:
         """Every check's id, the rules and then the guidelines: the report's order, so on a tie the fold keeps the
-        reading of code."""
+        reading of code, unless it is a tidy and the other a defect."""
         return tuple(check.check_id for check in (*self.rules, *self.guidelines))
 
     def tidies(self) -> frozenset[str]:

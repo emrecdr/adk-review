@@ -303,8 +303,11 @@ def to_verify(guidelines: list[Sourced], rules: list[Sourced]) -> list[Sourced]:
     return asked
 
 
-def dedupe(kept: list[Sourced]) -> tuple[list[Sourced], list[tuple[Sourced, Sourced]]]:
-    """One finding per span of the diff: the most severe reading first, whole, the first source on a tie.
+def dedupe(
+    kept: list[Sourced], tidies: frozenset[str] = frozenset()
+) -> tuple[list[Sourced], list[tuple[Sourced, Sourced]]]:
+    """One finding per span of the diff: the most severe reading first, whole; on a tie a defect before a tidy, a
+    finding of a check in `tidies`, and then the first source.
 
     Measured on Copilot: three guidelines reported the shell finding, each quoting a
     different span of the same two lines, and the report carried it three
@@ -324,7 +327,7 @@ def dedupe(kept: list[Sourced]) -> tuple[list[Sourced], list[tuple[Sourced, Sour
     held: dict[str, list[tuple[int, str, Lines]]] = {}  # file -> each kept finding's index, quote as seen, lines
     into: dict[int, int] = {}  # a folded finding's index -> the index of the finding it folded into
     # `sorted` is stable: on a tie the first source comes first.
-    for index in sorted(range(len(kept)), key=lambda i: -RANK[kept[i].finding.severity]):
+    for index in sorted(range(len(kept)), key=lambda i: (-RANK[kept[i].finding.severity], kept[i].source in tidies)):
         item = kept[index]
         seen, here = as_seen(item.finding.evidence), held.setdefault(item.finding.file, [])
         survivor = next((at for at, quote, lines in here if _overlaps(seen, item.lines, quote, lines)), None)
@@ -337,11 +340,14 @@ def dedupe(kept: list[Sourced]) -> tuple[list[Sourced], list[tuple[Sourced, Sour
     ]
 
 
-def fold(outcome: Outcome, rules: list[Sourced], order: Sequence[str]) -> None:
+def fold(outcome: Outcome, rules: list[Sourced], order: Sequence[str], tidies: frozenset[str] = frozenset()) -> None:
     """One finding per span of the diff, the first check on a tie: `order` is the report's, the rules before the
-    guidelines, so the fold and the report never disagree on which check a line belongs to."""
+    guidelines, so the fold and the report never disagree on which check a line belongs to. A finding of a check in
+    `tidies`, which changes how code reads and never what it does, gives way on a tie to a defect: measured on the
+    order alone, under `full` `complexity` came before `correctness`, and the report and the JSON named how lines read
+    with what they do wrong folded under it."""
     kept = sorted(rules + outcome.kept, key=lambda item: order.index(item.source))  # stable: each check's own order
-    outcome.kept, outcome.folded = dedupe(kept)
+    outcome.kept, outcome.folded = dedupe(kept, tidies)
 
 
 def at_bar(items: Iterable[Sourced], fail_on: str) -> int:

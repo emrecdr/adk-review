@@ -763,12 +763,13 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   guidelines quoted whole files under their `@@` headers, and 14 of 27 findings were dropped where 5 of 21 had been;
   that sentence was taken out.
 - **One finding per span of lines.** Rules and guidelines can all find one line; the report carries it once: the most
-  severe reading first, whole, the first check on a tie — the rules, then the guidelines, each in the order the
-  profile names them, which is the report's order too — and any finding one kept already holds folds into it. A
-  folded finding is still named, under its own check: "folded into `rule.secrets`'s finding on the same lines: lint:
-  S105 …". Measured before: compared only with the first finding it overlapped, a guideline's blocker quoting a whole
-  function replaced ruff's line 27 and left S602 on line 28 beside it; and with every ruff hit folded into a
-  guideline's blocker, lint's section read "no findings" under the rule that had found `shell=True`.
+  severe reading first, whole; on a tie a defect before a cleanup's finding, then the first check — the rules, then the
+  guidelines, each in the order the profile names them, which is the report's order too — and any finding one kept
+  already holds folds into it. A folded finding is still named, under its own check: "folded into `rule.secrets`'s
+  finding on the same lines: lint: S105 …". Measured before: compared only with the first finding it overlapped, a
+  guideline's blocker quoting a whole function replaced ruff's line 27 and left S602 on line 28 beside it; and with
+  every ruff hit folded into a guideline's blocker, lint's section read "no findings" under the rule that had found
+  `shell=True`.
 - **Retries live in the clients.** They are set once on the request, which both arms read, as the deadline is: genai
   retries the status codes it deems transient, with backoff, and ADK's LiteLLM wrapper forwards the same field as
   `num_retries`. Gemini asks for three attempts; Copilot asks for one, because the OpenAI SDK under LiteLLM retries

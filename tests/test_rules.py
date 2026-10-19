@@ -304,6 +304,26 @@ class TestTheLintRule:
         )
         assert [s.finding.title for s in kept] == ["E501", "S602"] and len(folded) == 1, "a lesser reading leaves both"
 
+    def test_a_defect_keeps_its_lines_from_a_tidy_at_its_severity_whatever_the_order(self) -> None:
+        """Measured on the fold's order: under `full` the guidelines run as the catalog lists them, `complexity`, a
+        cleanup, before `correctness`, and a tie kept the tidy, so the report and the JSON named how the lines read and
+        folded what they do wrong under it. A tidy gives way to a defect at its severity, never to a lesser one."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Sourced, dedupe
+
+        line = "total = sum(item.cents for item in items[:-1])"
+        tidy = Finding(file="a.py", line=9, severity="major", title="nested", evidence=line, suggestion="flatten")
+        defect = Finding(file="a.py", line=9, severity="major", title="skips the last", evidence=line, suggestion="all")
+        both = [Sourced("guideline.complexity", tidy), Sourced("guideline.correctness", defect)]
+        kept, folded = dedupe(both, frozenset({"guideline.complexity"}))
+        assert [s.source for s in kept] == ["guideline.correctness"], kept
+        assert [(item.source, into.source) for item, into in folded] == [
+            ("guideline.complexity", "guideline.correctness")
+        ]
+        assert [s.source for s in dedupe(both)[0]] == ["guideline.complexity"], "with no tidy named, the first source"
+        lesser = [both[0], Sourced("guideline.correctness", defect.model_copy(update={"severity": "minor"}))]
+        assert [s.source for s in dedupe(lesser, frozenset({"guideline.complexity"}))[0]] == ["guideline.complexity"]
+
     def test_without_ruff_the_lint_rule_is_a_named_hole_and_the_run_degrades(
         self, demo_repo: Path, cli, monkeypatch, capsys
     ) -> None:

@@ -157,6 +157,27 @@ class TestTheReport:
         out = capsys.readouterr().out
         assert "at or above `--fail-on blocker`: not approved until a person reads them" in out, out
 
+    def test_a_tidy_and_a_defect_of_the_same_lines_at_one_severity_keep_the_defect_in_the_report(
+        self, cli, demo_repo: Path, fake_provider, tmp_path: Path, capsys
+    ) -> None:
+        """Through the whole command, `complexity`, a cleanup, before `correctness` in the checks' order, as under
+        `full`: both quote the shell call at major, and the defect is the finding the JSON lists, the tidy folded into
+        it, where the order alone kept the tidy."""
+        shell = CANNED_REVIEW["findings"][0]
+        tidy, defect = {**shell, "title": "nested call"}, {**shell, "title": "exit code lost"}
+        fake_provider.answers_when("You judge correctness", {**CANNED_REVIEW, "findings": [defect]})
+        fake_provider.answers_when(
+            "You judge whether the change is more complex", {**CANNED_REVIEW, "findings": [tidy]}
+        )
+        data = tmp_path / "review.json"
+        picked = ["--check", "guideline.complexity", "--check", "guideline.correctness"]
+        run_review(cli, demo_repo, *picked, "--json", str(data))
+        capsys.readouterr()
+        said = json.loads(data.read_text(encoding="utf-8"))
+        assert said["checks"] == ["guideline.complexity", "guideline.correctness"], said["checks"]
+        assert [(f["check"], f["title"]) for f in said["findings"]] == [("guideline.correctness", "exit code lost")]
+        assert [(f["check"], f["into"]) for f in said["folded"]] == [("guideline.complexity", "guideline.correctness")]
+
     def test_a_quote_framed_as_it_was_shown_is_kept_as_its_lines_and_known_again(
         self, cli, demo_repo: Path, fake_provider, tmp_path: Path, capsys
     ) -> None:

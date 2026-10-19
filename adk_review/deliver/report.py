@@ -176,8 +176,8 @@ def _lanes(outcome: Outcome, tidies: frozenset[str]) -> tuple[list[list[Sourced]
     """The hand-off's items, each a lead and the other readings of its lines, in two lanes, each most severe first.
     An item holding a defect, a finding no cleanup check made, is a fix led by its most severe defect, the first on a
     tie; a tidy in it stays, to be held back, where a defect there is at major or above, and is otherwise an item of its
-    own in the Tidy lane, so a tidy never takes a fix's instruction. Measured on the fold's order: under `full` the
-    guidelines run as the catalog lists them, `complexity` before `correctness`, and a tie kept the tidy."""
+    own in the Tidy lane, so a tidy never takes a fix's instruction. The fold keeps a tidy over a defect of its lines
+    only where the tidy is the more severe, a major tidy over a minor defect: here the defect leads all the same."""
     under: dict[int, list[Sourced]] = {}
     for folded, into in outcome.folded:
         under.setdefault(id(into), []).append(folded)

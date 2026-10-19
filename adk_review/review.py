@@ -684,7 +684,7 @@ def _ruled(args: argparse.Namespace, chosen: Selection, evidence: Evidence) -> t
     spent, and no agent timed, as the report says of such a review either way."""
     rules, holes = from_rules(run_rules(evidence, chosen.rules))
     outcome = Outcome(unread=not_read(evidence["files"], ()), errors=holes)
-    fold(outcome, rules, chosen.ids())
+    fold(outcome, rules, chosen.ids(), chosen.tidies())
     return outcome, unspent(args.max_tokens or None), {}
 
 
@@ -728,7 +728,7 @@ def _judged(
         if verify:
             second_opinion(outcome, rules, evidence["diff"], app.plugins, loop.run)
     outcome.redacted, usage, seconds = accounted(app.plugins)
-    fold(outcome, rules, chosen.ids())
+    fold(outcome, rules, chosen.ids(), chosen.tidies())
     return outcome, usage, seconds
 
 
