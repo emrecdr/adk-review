@@ -227,10 +227,10 @@ The rules shipped with the reviewer are written as a project writes its own:
   obeys: a coding agent's instructions or settings, Copilot's and Gemini CLI's among them, a CI workflow, a hook, a
   `.pth` file);
 - for Python beside `lint`, each reading ruff with codes no other rule names: `pitfalls` (code that does not do what it
-  reads: a naive datetime, a default evaluated once and shared, a mutable class default every instance shares, a
-  `subprocess.run` whose failure goes unseen, an `assert` that always passes) and `simplify` (a simpler form ruff names,
-  each fix labelled safe or unsafe as ruff labels it, every code whose fix ruff documents as changing what the code does
-  left out; taste, such as an `else` after a `return` or a ternary, left out);
+  reads: a naive UTC datetime from `utcnow()`, a dataclass default evaluated once and shared, an exception built and
+  never raised, a `subprocess.run` whose failure goes unseen, an `assert` that always passes) and `simplify` (a simpler
+  form ruff names, each fix labelled safe or unsafe as ruff labels it, every code whose fix ruff documents as changing
+  what the code does left out; taste, such as an `else` after a `return` or a ternary, left out);
 - a project's own conventions, as examples: `no-print`, `private-patch` and `tests-offline`;
 - one small payments project's own rules, written for the demo repository and named `demo-` so none is taken for a rule
   a project needs: `demo-money-in-cents`, and the tree rules `demo-required-paths`, `demo-module-defines`,
@@ -242,8 +242,8 @@ The guidelines are `security`, `tests`, `complexity` and `correctness`, and the 
 A profile is a list in `config.toml`, and a check runs only where a profile names it, or alone with `--check ID`:
 
 - `default` runs when no `--profile` names another, and the file must hold it: the basics, `rule.secrets`,
-  `rule.named-secrets`, `rule.lint`, `rule.reviewer-instructions`, `rule.encoding-declaration`,
-  `rule.lockfile-sources` and `rule.pinned-actions`, and the guidelines `security`, `tests` and `complexity`;
+  `rule.named-secrets`, `rule.lint`, `rule.reviewer-instructions`, `rule.encoding-declaration`, `rule.lockfile-sources`,
+  `rule.pinned-actions` and `rule.pitfalls`, and the guidelines `security`, `tests` and `complexity`;
 - `default-rules` is the default's rules and no model, so it needs no key and fits any project's every pull request;
   a test keeps it to the default's rules;
 - `push-history` is what the pre-push hook reads each commit a push sends with, line by line: the credential rules;
@@ -251,8 +251,8 @@ A profile is a list in `config.toml`, and a check runs only where a profile name
 - `full` is `rules-only`'s rules and every guideline, through the group `guidelines`;
 - `simplify` and `code-review` read a change as Claude Code's `/simplify` and `/code-review` do: the first the cleanup,
   `rule.simplify` and the guidelines `complexity`, `efficiency` and `altitude`, with `lint` and `pitfalls` beside them;
-  the second the default's rules, `pitfalls` and `simplify`, then `correctness` and `security` before the same three.
-  `/code-review`'s conventions angle, which obeys the reviewed repository's own `CLAUDE.md`, is left out;
+  the second the default's rules, `pitfalls` among them, and `simplify`, then `correctness` and `security` before the
+  same three. `/code-review`'s conventions angle, which obeys the reviewed repository's own `CLAUDE.md`, is left out;
 - `demo` is the payments demo's: every rule, through the group `rules`, its own among them, and no model.
 
 A new rule is added to `rules-only` and `full` by its id, which a test holds to every rule whose id does not start

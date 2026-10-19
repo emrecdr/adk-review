@@ -22,7 +22,7 @@ from ..rule_helpers import ChangedFile, FileRule, Hit, is_python, listed
 #: ruff's codes, run --isolated: what reads more simply.
 SELECT = (
     "SIM", "RET501", "RET502", "RET503", "RET504", "PIE", "C4", "PERF", "FURB",
-    "PLR0402", "PLR1711", "PLR1716", "PLR1730", "PLR1733", "PLR1736", "PLR5501", "PLW0108",
+    "PLR0402", "PLR1711", "PLR1716", "PLR1730", "PLR1733", "PLR1736", "PLR5501", "PLW0108", "PLW0127",
     "RUF019", "RUF037", "RUF046", "RUF051", "RUF057", "RUF058", "RUF059",
 )  # fmt: skip
 #: Taste; a defect `lint` or `pitfalls` names; advice for an older Python; and each code whose fix ruff documents as
@@ -41,6 +41,7 @@ FIX = {
     "PERF": "Build it in one pass, as ruff names.",
     "FURB": "Use the shorter idiom ruff names.",
     "RUF059": "Name the value it never reads `_`.",
+    "PLW0127": "Remove the assignment of a name to itself: it does nothing.",
 }
 
 

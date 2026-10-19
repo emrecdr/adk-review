@@ -155,7 +155,10 @@ def reviewed(
                     time.sleep(pause)
                 first = False
                 command = review_command(repo, branch, report, profile)
-                done = subprocess.run(command, cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace")
+                # A review's exit code is its verdict, 1 and 3 among the answers: read, never raised.
+                done = subprocess.run(
+                    command, cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace", check=False
+                )
                 data = json.loads(report.read_text(encoding="utf-8")) if report.is_file() else None
                 report.unlink(missing_ok=True)
                 # The model and its arm, as the report names them: a measurement holds for the arm it ran on.
@@ -196,6 +199,7 @@ def main(argv: list[str] | None = None) -> int:
         ["git", "-c", f"safe.directory={ROOT.as_posix()}", "-C", str(ROOT), "rev-parse", "--short", "HEAD"],
         capture_output=True,
         encoding="utf-8",
+        check=False,  # a commit the report cannot name is said so, below
     )
     who = "a guideline"
     runs: list[Run] = []
@@ -208,7 +212,7 @@ def main(argv: list[str] | None = None) -> int:
             started = time.monotonic()
             try:
                 done = subprocess.run(
-                    command, cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace", timeout=600
+                    command, cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace", timeout=600, check=False
                 )
                 code, report = done.returncode, done.stdout
             except subprocess.TimeoutExpired:

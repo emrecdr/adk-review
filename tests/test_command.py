@@ -389,7 +389,7 @@ class TestTheDryRun:
         out = capsys.readouterr().out
         assert out.startswith("# Dry run: feature/payments against main\n")
         checks = "rule.secrets, rule.named-secrets, rule.lint, rule.reviewer-instructions, rule.encoding-declaration, "
-        checks += "rule.lockfile-sources, rule.pinned-actions, guideline.security"
+        checks += "rule.lockfile-sources, rule.pinned-actions, rule.pitfalls, guideline.security"
         assert (
             "- changed      4 file(s):" in out
             and f"- checks       {checks}, guideline.tests, guideline.complexity" in out
@@ -861,7 +861,9 @@ class TestWhatAReviewKeeps:
             f"sys.exit(review.main({argv!r}))\n"
         )
         env = {name: value for name, value in os.environ.items() if not name.startswith(("OTEL_", "REVIEW_"))}
-        done = subprocess.run([sys.executable, "-c", code], cwd=ROOT, env=env, capture_output=True, encoding="utf-8")
+        done = subprocess.run(
+            [sys.executable, "-c", code], cwd=ROOT, env=env, capture_output=True, encoding="utf-8", check=False
+        )
         assert done.returncode == 1, done.stderr
         import sqlite3
 

@@ -94,8 +94,8 @@ check runs only where a profile names it, or alone with `--check`:
 - `simplify`: a simplify pass, as Claude Code's `/simplify` reads a change: `rule.simplify`, the cleanup ruff can name,
   and the guidelines `complexity`, `efficiency` and `altitude`, three model calls; `lint` and `pitfalls` beside them
   name the defects a cleanup must not paper over.
-- `code-review`: a code review, as Claude Code's `/code-review` reads one: the default's rules, `pitfalls` and
-  `simplify`, then the guidelines `correctness` and `security` and the simplify pass's three, five model calls. Its
+- `code-review`: a code review, as Claude Code's `/code-review` reads one: the default's rules, `pitfalls` among them,
+  and `simplify`, then the guidelines `correctness` and `security` and the simplify pass's three, five model calls. Its
   conventions angle is left out: it obeys the reviewed repository's own `CLAUDE.md`, a file `steering-files` names as
   one a person reads first.
 - `demo`: the payments demo's: every rule, its own among them, and no model.
@@ -128,7 +128,7 @@ prints them:
 | `rule.named-secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, code-review, demo | a value assigned to a name that says secret | `judge/rules/named_secrets.py` |
 | `rule.no-print` | line rule | minor | rules-only, full, demo | print() left in library code | `judge/rules/no_print.py` |
 | `rule.pinned-actions` | file rule | major | default, default-rules, rules-only, full, code-review, demo | a workflow runs an action at a tag, a branch or a short SHA, not its full commit SHA | `judge/rules/pinned_actions.py` |
-| `rule.pitfalls` | file rule | minor | rules-only, full, simplify, code-review, demo | Python traps ruff can prove: code that does not do what it reads | `judge/rules/pitfalls.py` |
+| `rule.pitfalls` | file rule | minor | default, default-rules, rules-only, full, simplify, code-review, demo | Python traps ruff can prove: code that does not do what it reads | `judge/rules/pitfalls.py` |
 | `rule.private-patch` | line rule | minor | rules-only, full, demo | a test patches a private name | `judge/rules/private_patch.py` |
 | `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full, code-review, demo | text that tries to instruct the reviewing model | `judge/rules/reviewer_instructions.py` |
 | `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, code-review, demo | a hard-coded credential | `judge/rules/secrets.py` |
@@ -309,7 +309,8 @@ What the hook cannot see, or stops on:
   `config.toml` names it, as the shipped list names images and fonts ("Configuration" above): then the report names
   it as skipped, and it stops nothing. A text file past the size limits
   above, a lock file say, is read as far as its diff shows it, which is all `reviewer-instructions` reads; a Python
-  file past them is a hole for `lint` and `encoding-declaration`, which read a file whole, and stops the push.
+  file past them is a hole for `lint`, `pitfalls` and `encoding-declaration`, which read a file whole, and stops
+  the push.
 - A repository with no `.git` folder of its own, a bare one or one used through `--git-dir`, and a tag of a tree or a
   blob, stop the push: the hook reviews a working tree's commits.
 

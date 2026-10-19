@@ -1,10 +1,10 @@
 """Python's traps ruff can prove in a changed file: code that does not do what it reads, beside what `lint` selects.
 
-A naive datetime, a default evaluated once and shared, a mutable class default every instance shares, a call whose
-arguments Python refuses, a `subprocess.run` whose failure goes unseen: each a defect ruff names from the code alone,
-and none of them in `lint`'s families. Run with `--isolated` as `lint` runs. A test is read too: an `assert` on a string
-literal never fails, so the test it stands in always passes. Measured over whole files: 0.4 a thousand lines of
-google-adk, 1.4 of pydantic, 0.7 of httpx and 1.3 of litellm.
+A naive UTC datetime from `utcnow()`, a dataclass default evaluated once and shared, an exception built and never
+raised, a call whose arguments Python refuses, a `subprocess.run` whose failure goes unseen: each a defect ruff names
+from the code alone, and none of them in `lint`'s families. Run with `--isolated` as `lint` runs. A test is read too: an
+`assert` on a string literal never fails, so the test it stands in always passes. Measured over whole files: 0.4 a
+thousand lines of google-adk, 1.4 of pydantic, 0.7 of httpx and 1.3 of litellm.
 """
 
 from __future__ import annotations
@@ -16,11 +16,19 @@ from ..rule_helpers import ChangedFile, FileRule, Hit, Severity, is_python, list
 #: ruff's codes, run --isolated: flake8-datetimez's, pylint's errors, and the warnings and ruff's own codes that name
 #: code doing other than it reads; with the four of flake8-simplify, flake8-pie and the logging codes that are defects
 #: rather than style, which `simplify` leaves out.
+#: Not selected: each code whose findings, read in a sample of google-adk, pydantic, httpx and litellm, were idioms that
+#: do what they read: a loop variable rebound, `line = line.strip()` (PLW2901, 64 of 168 findings); a class constant
+#: held in a list, or a pydantic field's default, which pydantic copies (RUF012, 35); an `__eq__` with no `__hash__`,
+#: which Python itself makes unhashable (PLW1641); a `global` read and never assigned (PLW0602); a loop's `else` with no
+#: `break` (PLW0120); `int(os.getenv(name, 24))`, whose default is converted (PLW1508, 189 in litellm); and a naive
+#: datetime meant as local time, a timestamp for a file's name or a date to compare with today's (DTZ005, DTZ006, DTZ011
+#: and the rest), where `utcnow()` and `utcfromtimestamp()`, a naive value that reads as local and is deprecated, are
+#: kept. A self-assignment, which does nothing, is `simplify`'s.
 SELECT = (
-    "DTZ", "PLE",
-    "PLW0120", "PLW0127", "PLW0128", "PLW0129", "PLW0131", "PLW0133", "PLW0177", "PLW0245", "PLW0406", "PLW0602",
-    "PLW0642", "PLW1501", "PLW1507", "PLW1508", "PLW1509", "PLW1510", "PLW1641", "PLW2101", "PLW2901",
-    "RUF008", "RUF009", "RUF012", "RUF016", "RUF018", "RUF024", "RUF026", "RUF030", "RUF032", "RUF033", "RUF034",
+    "DTZ003", "DTZ004", "PLE",
+    "PLW0128", "PLW0129", "PLW0131", "PLW0133", "PLW0177", "PLW0245", "PLW0406", "PLW0642", "PLW1501",
+    "PLW1507", "PLW1509", "PLW1510", "PLW2101",
+    "RUF008", "RUF009", "RUF016", "RUF018", "RUF024", "RUF026", "RUF030", "RUF032", "RUF033", "RUF034",
     "RUF040", "RUF043", "RUF048", "RUF049", "RUF060", "RUF064", "RUF071",
     "SIM115", "PIE794", "PIE796", "G101",
 )  # fmt: skip
@@ -37,19 +45,12 @@ SEVERITY: dict[str, Severity] = {
 }  # fmt: skip
 #: The sentence a finding names where ruff offers no fix, by family, or by code where the family's would mislead.
 FIX = {
-    "DTZ": (
-        "Give it a timezone, and check what it is compared with or stored beside: an aware value never equals a "
-        "naive one."
-    ),
-    "DTZ011": "Take the date from an aware datetime, as datetime.now(UTC).date(): a date has no timezone to give it.",
-    "DTZ012": "Take the date from an aware datetime, as datetime.fromtimestamp(ts, UTC).date(): a date has none.",
+    "DTZ": "Use an aware value, datetime.now(UTC) or datetime.fromtimestamp(ts, UTC): a naive UTC one reads as local.",
     "PLE": "Correct it: Python raises here, or does other than the code reads.",
     "PLW": "Rewrite it as ruff names: the code does not do what it reads.",
     "PLW1510": "Pass check=True, or read the return code: a command that fails otherwise goes unseen.",
-    "PLW2901": "Give the inner value a name of its own: the rest of the loop reads the one it overwrote.",
     "RUF": "Rewrite it as ruff names: the code does not do what it reads.",
     "RUF009": "Use field(default_factory=...): a default is evaluated once, when the class is defined, and shared.",
-    "RUF012": "Annotate it ClassVar, or build it for each instance: a mutable class default is one object, shared.",
     "SIM115": "Open it in a with block, so it is closed when an exception is raised.",
     "PIE794": "Remove the earlier definition: the class keeps only the last.",
     "PIE796": "Give each member its own value: a repeated one makes the second an alias of the first.",
