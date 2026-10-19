@@ -1,10 +1,11 @@
 """Ruff over the changed Python files at the head commit, for a rule that names the codes it reads: its diagnostics.
 
-The files, as the collector read them at the head commit, are written into a temporary directory; nothing runs from,
-or writes into, the repository under review. Ruff runs `--isolated`, with the reading rule's own codes and nothing of
-the reviewed repository's configuration, and `--ignore-noqa`, so a branch can neither configure nor silence the rule
-that judges it. Ruff lints the texts the collector read and no more: a file not read whole is the reading rule's
-hole, as it is every file rule's. What the diagnostics mean — a severity, a fix — is the rule's: `judge/rules/lint.py`.
+The files, as the collector read them at the head commit, are written into a temporary directory; nothing runs from, or
+writes into, the repository under review. Ruff runs `--isolated`, with the reading rule's own codes and nothing of the
+reviewed repository's configuration, and `--ignore-noqa`, so a branch can neither configure nor silence the rule that
+judges it. Ruff lints the texts the collector read and no more: a file not read whole is the reading rule's hole, as it
+is every file rule's. What the diagnostics mean — a severity, a fix — is each rule's that names ruff: `lint`, `pitfalls`
+and `simplify`.
 """
 
 from __future__ import annotations

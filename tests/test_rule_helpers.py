@@ -305,11 +305,12 @@ class TestTheCatalogHoldsARuleToItsExamples:
         said = self._refused(rules_folder, "no_fix", text.replace('    fix = "Remove it."\n', ""))
         assert said.endswith("Marker needs an id, a title and a fix, and has no fix")
 
-    def test_every_shipped_rule_but_lint_carries_its_examples(self) -> None:
-        """Examples are optional to the catalog, since `lint` cannot run one without ruff; every other shipped rule
-        carries a bad one and a good one, the pattern a project's rule copies."""
-        bare = [rule.id for rule in catalog().rules if not (rule.bad and rule.good)]
-        assert bare == ["lint"]
+    def test_every_shipped_rule_but_those_reading_ruff_carries_its_examples(self) -> None:
+        """Examples are optional to the catalog, since a rule that reads ruff cannot run one without it; every other
+        shipped rule carries a bad one and a good one, the pattern a project's rule copies."""
+        rules = catalog().rules
+        bare = [rule.id for rule in rules if not (rule.bad and rule.good)]
+        assert bare == [rule.id for rule in rules if getattr(rule, "tool", None)] == ["lint", "pitfalls", "simplify"]
 
 
 def test_a_rule_names_a_tool_an_adapter_runs_or_is_refused(rules_folder) -> None:

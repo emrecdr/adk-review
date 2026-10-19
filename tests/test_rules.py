@@ -520,6 +520,133 @@ class TestTheLintRule:
         assert "## rule.lint" in capsys.readouterr().out
 
 
+#: One file holding, for each lane, a form `simplify` names, a form it leaves to taste, and a trap `pitfalls` names.
+LANES = """import dataclasses
+import datetime
+
+
+def nested(a, b):
+    if a:
+        if b:
+            return dict()
+    return None
+
+
+def total(items):
+    count = len(items)
+    return count
+
+
+def sign(n):
+    if n > 0:
+        word = "positive"
+    else:
+        word = "other"
+    return word
+
+
+def first(n):
+    if n:
+        return 1
+    else:
+        return 2
+
+
+def quiet():
+    try:
+        int("x")
+    except ValueError:
+        pass
+
+
+def opened(path):
+    handle = open(path)
+    return handle.read()
+
+
+def finished():
+    try:
+        return 1
+    finally:
+        return 2
+
+
+@dataclasses.dataclass
+class Order:
+    created: datetime.datetime = datetime.datetime.now()
+
+
+class Empty:
+    \"\"\"Nothing.\"\"\"
+
+    pass
+"""
+
+
+def ruff_rule_findings(rule, files: list[dict]) -> list:
+    """What a rule that names ruff finds over `files`, run as the checks node runs every rule."""
+    from adk_review.judge.checks import run_rules
+
+    answer = run_rules({"files": files, "tree": None}, [rule])[rule.check_id]
+    assert answer.could_not_look is None, answer.could_not_look
+    return answer.findings
+
+
+def _codes(findings: list) -> list[tuple[str, str]]:
+    """Each finding's ruff code and severity, in the order the rule gave them."""
+    return [(f.title.split(": ", 1)[1].split(" ", 1)[0], f.severity) for f in findings]
+
+
+class TestTheCleanupAndThePitfalls:
+    """`simplify` and `pitfalls` read ruff as `lint` does, each with codes of its own: the cleanup a simplify pass can
+    decide by code, and the Python traps a code review looks for."""
+
+    def test_simplify_names_a_simpler_form_and_leaves_taste_and_defects_to_others(self) -> None:
+        """Ruff's own families name a ternary, an `else` after a `return` and `contextlib.suppress` too; each is taste,
+        and a `return` in `finally` or a file opened outside `with` is a defect, `pitfalls`'s."""
+        from adk_review.judge.rules.simplify import Simplify
+
+        found = _codes(ruff_rule_findings(Simplify(), [_entry("m.py", LANES)]))
+        assert found == [("SIM102", "minor"), ("C408", "minor"), ("RET504", "minor"), ("PIE790", "minor")], found
+
+    def test_pitfalls_names_each_trap_at_its_severity_in_a_test_too(self) -> None:
+        """A `return` in `finally` swallows the exception and a dataclass default evaluated once is shared: each
+        misbehaves whenever it runs. A naive `now()` and a file left open misbehave on some input. A test is read:
+        an `assert` on a string literal always passes, and `simplify` reads no test."""
+        from adk_review.judge.rules.pitfalls import Pitfalls
+        from adk_review.judge.rules.simplify import Simplify
+
+        found = _codes(ruff_rule_findings(Pitfalls(), [_entry("m.py", LANES)]))
+        assert found == [("SIM115", "minor"), ("SIM107", "major"), ("DTZ005", "minor"), ("RUF009", "major")], found
+        test = _entry("tests/test_m.py", 'def test_it(xs):\n    assert "never"\n    assert dict()\n')
+        assert _codes(ruff_rule_findings(Pitfalls(), [test])) == [("PLW0129", "major")]
+        assert ruff_rule_findings(Simplify(), [test]) == [], "cleanup in a test is not this rule's"
+
+    def test_no_code_is_named_by_two_of_the_rules_that_read_ruff(self) -> None:
+        """Each of ruff's codes is one rule's, so a line ruff flags is one finding, at the severity its rule gives:
+        asked of ruff itself, which resolves each rule's codes and leaves-out as it would run them."""
+        import shutil
+        import subprocess
+
+        from adk_review.core.rules import FileRule
+
+        ruff = shutil.which("ruff")
+        assert ruff is not None
+        enabled: dict[str, set[str]] = {}
+        for rule in catalog().rules:
+            if isinstance(rule, FileRule) and rule.tool == "ruff":
+                settings = rule.tool_settings
+                argv = [ruff, "check", "--isolated", "--show-settings", "--select", ",".join(settings["select"])]
+                argv += ["--ignore", ",".join(settings["ignore"])] if settings["ignore"] else []
+                shown = subprocess.run([*argv, __file__], capture_output=True, encoding="utf-8", check=True).stdout
+                listed = shown.split("linter.rules.enabled = [", 1)[1].split("]", 1)[0]
+                enabled[rule.id] = set(re.findall(r"\(([A-Z]+[0-9]+)\)", listed))
+        assert set(enabled) == {"lint", "pitfalls", "simplify"}, enabled
+        assert all(enabled.values()), enabled
+        shared = {(a, b): enabled[a] & enabled[b] for a in enabled for b in enabled if a < b}
+        assert not any(shared.values()), shared
+
+
 class TestWhatTheBranchCannotTellTheRules:
     """What the branch changed is linted, whatever the branch says and wherever it sits. Measured before: `# ruff:
     noqa` silenced S602; a file under `.venv/` was skipped by ruff's default excludes, both read as "found nothing";

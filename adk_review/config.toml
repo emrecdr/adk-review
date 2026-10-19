@@ -55,14 +55,14 @@ push-history = ["rule.secrets", "rule.named-secrets"]
 # for one project, as the demo's are, would report another project's folders and money missing.
 rules-only = [
     "rule.encoding-declaration", "rule.hidden-text", "rule.lint", "rule.lockfile-sources", "rule.named-secrets",
-    "rule.no-print", "rule.pinned-actions", "rule.private-patch", "rule.reviewer-instructions", "rule.secrets",
-    "rule.steering-files", "rule.tests-offline",
+    "rule.no-print", "rule.pinned-actions", "rule.pitfalls", "rule.private-patch", "rule.reviewer-instructions",
+    "rule.secrets", "rule.simplify", "rule.steering-files", "rule.tests-offline",
 ]
 # Every check there is but the payments demo's rules: `rules-only`'s and every guideline.
 full = [
     "rule.encoding-declaration", "rule.hidden-text", "rule.lint", "rule.lockfile-sources", "rule.named-secrets",
-    "rule.no-print", "rule.pinned-actions", "rule.private-patch", "rule.reviewer-instructions", "rule.secrets",
-    "rule.steering-files", "rule.tests-offline", "guidelines",
+    "rule.no-print", "rule.pinned-actions", "rule.pitfalls", "rule.private-patch", "rule.reviewer-instructions",
+    "rule.secrets", "rule.simplify", "rule.steering-files", "rule.tests-offline", "guidelines",
 ]
 # The payments demo's, as scripts/make_demo_repo.py builds it: every rule, the demo's own among them, and no model.
 demo = ["rules"]

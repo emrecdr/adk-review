@@ -258,7 +258,7 @@ class FileRule(AnyRule):
     kind = "file"
     #: The outside tool the rule reads, by the name of its adapter in `collect/tools.py` — `ruff` — and the settings
     #: that adapter takes, the rule's own and never the repository's: a rule that names one is given each changed file
-    #: with the tool's diagnostics on `file.diagnostics`. None for every rule but `lint`.
+    #: with the tool's diagnostics on `file.diagnostics`. None for every rule but the three that read ruff.
     tool: ClassVar[str | None] = None
     tool_settings: ClassVar[Mapping[str, object]] = MappingProxyType({})
 

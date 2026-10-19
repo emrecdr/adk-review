@@ -121,9 +121,11 @@ prints them:
 | `rule.named-secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, demo | a value assigned to a name that says secret | `judge/rules/named_secrets.py` |
 | `rule.no-print` | line rule | minor | rules-only, full, demo | print() left in library code | `judge/rules/no_print.py` |
 | `rule.pinned-actions` | file rule | major | default, default-rules, rules-only, full, demo | a workflow runs an action at a tag, a branch or a short SHA, not its full commit SHA | `judge/rules/pinned_actions.py` |
+| `rule.pitfalls` | file rule | minor | rules-only, full, demo | Python traps ruff can prove: code that does not do what it reads | `judge/rules/pitfalls.py` |
 | `rule.private-patch` | line rule | minor | rules-only, full, demo | a test patches a private name | `judge/rules/private_patch.py` |
 | `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full, demo | text that tries to instruct the reviewing model | `judge/rules/reviewer_instructions.py` |
 | `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, demo | a hard-coded credential | `judge/rules/secrets.py` |
+| `rule.simplify` | file rule | minor | rules-only, full, demo | code ruff can write more simply, doing the same | `judge/rules/simplify.py` |
 | `rule.steering-files` | file rule | minor | rules-only, full, demo | a file another tool or agent obeys has changed | `judge/rules/steering_files.py` |
 | `rule.tests-offline` | line rule | major | rules-only, full, demo | a test reaches the network | `judge/rules/tests_offline.py` |
 | `guideline.complexity` | guideline | the model's, by finding | default, full | complexity the problem does not require | `judge/guidelines/complexity.py` |
@@ -132,7 +134,7 @@ prints them:
 | `guideline.tests` | guideline | the model's, by finding | default, full | untested changes, and tests that are not honest | `judge/guidelines/tests.py` |
 <!-- /checks -->
 
-A rule's severity is its findings', but `lint` gives each ruff code its own, and `encoding-declaration` is a hole,
+A rule's severity is its findings', but `lint` and `pitfalls` give each ruff code its own, and `encoding-declaration` is a hole,
 exit 3, rather than a finding: no rule read the code Python would run. `--explain ID` prints one check whole.
 
 ## Configuration

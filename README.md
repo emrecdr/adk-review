@@ -222,6 +222,10 @@ The rules shipped with the reviewer are written as a project writes its own:
   characters and bidirectional controls, in any file) and `steering-files` (a change to a file another tool or agent
   obeys: a coding agent's instructions or settings, Copilot's and Gemini CLI's among them, a CI workflow, a hook, a
   `.pth` file);
+- for Python beside `lint`, each reading ruff with codes no other rule names: `pitfalls` (code that does not do what
+  it reads: a naive datetime, a default evaluated once and shared, a `return` in `finally`, a `subprocess.run` whose
+  failure goes unseen, an `assert` that always passes) and `simplify` (a form ruff proves does the same, said more
+  simply; taste, such as an `else` after a `return` or a ternary, left out);
 - a project's own conventions, as examples: `no-print`, `private-patch` and `tests-offline`;
 - one small payments project's own rules, written for the demo repository and named `demo-` so none is taken for a rule
   a project needs: `demo-money-in-cents`, and the tree rules `demo-required-paths`, `demo-module-defines`,
@@ -409,8 +413,9 @@ What a rule may do, and may not:
 
 - It reads what it is given and runs nothing — no process, no network, no environment, no file but the ones handed
   to it — and imports the door, `judge/rule_helpers/`, alone; `tests/test_layering.py` keeps it so.
-- A rule that needs an outside tool's output names the tool and is handed it: `lint` names `ruff`, with its own codes
-  as its `tool_settings`, and `collect/ruff.py` runs ruff for it. Another tool is one adapter more in
+- A rule that needs an outside tool's output names the tool and is handed it: `lint`, `pitfalls` and `simplify` name
+  `ruff`, each with its own codes as its `tool_settings`, no code named by two of them, and `collect/ruff.py` runs ruff
+  for each. Another tool is one adapter more in
   `collect/tools.py`, and the contract stays as it is.
 - It never reads the repository under review's configuration: a branch must not be able to switch off the rule that
   judges it.
