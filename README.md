@@ -428,6 +428,8 @@ What a rule may do, and may not:
   test's fakes are no findings, while `file.changed` and `tree.paths` still list every test. A rule about what runs,
   leaks or steers sets `reads_tests = True`, as `secrets` and `steering-files` do: a test runs in CI with its keys,
   and a workflow named `test_*.yml` is a test by its name. `--explain` says which a rule does.
+- A rule whose findings change how code reads, never what it does, sets `cleanup = True`, as `simplify` does, and a
+  guideline the same, as `complexity` does: the hand-off lists them as tidies, never as fixes.
 - Its expectations are constants at the top of its file, beside the check, and its examples follow them: a project
   that edits a rule's constants edits its examples with them.
 - A rule that cannot look — a file not read whole, a tree not listed — is a hole in the review, never "nothing
@@ -505,7 +507,11 @@ line by line. Beside it:
   the scope does not hold. A branch's name is its author's: where no quoting keeps the command one command — a line
   break, a name the report's safety rules would rewrite, or on Windows a character cmd or PowerShell still reads
   inside double quotes, PowerShell's typographic quotes among them — none is printed, only the checks to name.
-  Nothing is applied.
+  Nothing is applied. A check whose findings change how code reads and never what it does sets `cleanup = True`, as
+  `simplify` and `complexity` do, and its findings are listed apart, after the fixes, under what a tidy keeps; one on
+  lines a finding at major or above names is held back until that finding is fixed, as a simplify pass keeps its two
+  lanes: suspect code is never tidied. `efficiency` and `altitude` are no cleanup: a cheaper form can reorder I/O and
+  a deeper fix changes a shared mechanism, each a change to weigh.
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint:
   its check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line,
   so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.

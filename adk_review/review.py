@@ -676,7 +676,8 @@ def _decided(
     health = measured(evidence["files"], evidence["tree"]) if evidence["whole"] else None
     engine = bool(chosen.guidelines) or any(getattr(args, flag) for flag in ENGINE)
     judged = _judged(args, chosen, evidence, say) if engine else _ruled(args, chosen, evidence)
-    return _reported(args, evidence, *judged, shown, previous, health, cached)
+    tidies = frozenset(check.check_id for check in (*chosen.rules, *chosen.guidelines) if check.cleanup)
+    return _reported(args, evidence, *judged, shown, previous, health, cached, tidies=tidies)
 
 
 def _ruled(args: argparse.Namespace, chosen: Selection, evidence: Evidence) -> tuple[Outcome, dict, dict[str, float]]:
@@ -742,9 +743,12 @@ def _reported(
     previous: Previous,
     health: Health | None,
     cached: Path | None,
+    *,
+    tidies: frozenset[str],
 ) -> int:
     """The verdict, decided by code, and the review's reports: the text one always, the hand-off and the JSON where
-    asked for or kept, and the whole kept where a cache is named and the review has no hole."""
+    asked for or kept, and the whole kept where a cache is named and the review has no hole. `tidies` are the checks
+    whose findings the hand-off lists apart, as cleanup."""
     seen, seen_health = previous
     verdict, code = decide(outcome, args.fail_on)
     report = render(
@@ -760,7 +764,11 @@ def _reported(
     )
     keep = cached is not None and code in (EXIT_CLEAN, EXIT_FINDINGS)  # a hole is never kept: the next run looks again
     # The hand-off and the JSON only where asked for, or kept: measured, both cost three times the report's own time.
-    handoff = render_handoff(evidence, outcome, verdict=verdict, fail_on=args.fail_on) if args.handoff or keep else ""
+    handoff = (
+        render_handoff(evidence, outcome, verdict=verdict, fail_on=args.fail_on, tidies=tidies)
+        if args.handoff or keep
+        else ""
+    )
     data = (
         as_data(
             evidence,

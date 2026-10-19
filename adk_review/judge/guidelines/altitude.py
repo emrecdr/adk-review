@@ -7,7 +7,8 @@ from ...core.guidelines import Guideline
 
 class Altitude(Guideline):
     """No pattern says where a fix belongs: a special case for one caller, in code many share, reads line by line like
-    any other line. The blast radius beside the diff says how widely each changed file is shared."""
+    any other line. The blast radius beside the diff says how widely each changed file is shared. Not a cleanup: the
+    deeper fix changes the mechanism others share, a change to weigh, never a tidy."""
 
     id = "altitude"
     title = "a symptom patched instead of its cause"

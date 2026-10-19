@@ -7,7 +7,8 @@ from ...core.guidelines import Guideline
 
 class Efficiency(Guideline):
     """Ruff names a blocking call in async code and a list built by hand; whether work is wasted where it runs, and
-    how often it runs there, takes a reader."""
+    how often it runs there, takes a reader. Not a cleanup: the cheaper form can reorder I/O or change how long a thing
+    lives, which a simplify pass reports and never applies as a tidy."""
 
     id = "efficiency"
     title = "work the change wastes"

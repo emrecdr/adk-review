@@ -51,6 +51,7 @@ class Simplify(FileRule):
 
     id = "simplify"
     severity = "minor"
+    cleanup = True  # how the code reads, never what it does
     title = "code ruff can write more simply, doing the same"
     fix = "Write the simpler form ruff names."
     tool = "ruff"

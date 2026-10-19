@@ -344,3 +344,29 @@ def test_a_rule_says_whether_it_reads_tests_with_true_or_false_or_is_refused(rul
     rules_folder("worded", rule)
     with pytest.raises(ValueError, match="'worded' has reads_tests 'no', not True or False"):
         catalog()
+
+
+def test_a_check_says_whether_it_is_a_cleanup_with_true_or_false_or_is_refused(rules_folder) -> None:
+    """`cleanup = "no"` would read as true, and a hand-off would list a defect as a tidy and hold it back."""
+    from adk_review.core.guidelines import Guideline
+    from adk_review.judge.catalog import _guideline_problem
+
+    rule = (
+        '"""A rule saying whether it is a cleanup in words."""\n\nfrom __future__ import annotations\n\n'
+        "from ..rule_helpers import Rule\n\n\nclass Worded(Rule):\n"
+        '    """A defect, it says."""\n\n    id = "worded"\n    severity = "minor"\n    title = "a word"\n'
+        '    fix = "Remove it."\n    cleanup = "no"\n\n'
+        "    def check(self, path: str, line: str) -> bool:\n        return False\n"
+    )
+    rules_folder("worded", rule)
+    with pytest.raises(ValueError, match="'worded' has cleanup 'no', not True or False"):
+        catalog()
+
+    class Worded(Guideline):
+        id = "worded"
+        title = "a word"
+        role = "You judge the words."
+        thinking_budget = 0
+        cleanup = "no"
+
+    assert _guideline_problem(Worded()) == "'worded' has cleanup 'no', not True or False"

@@ -93,6 +93,8 @@ def _rule_problem(rule: AnyRule) -> str | None:
         return f"{rule.id!r} has severity {severity!r}, not {' or '.join(RANK)}"
     if not isinstance(reads := getattr(rule, "reads_tests", False), bool):  # "no" would read as True
         return f"{rule.id!r} has reads_tests {reads!r}, not True or False"
+    if not isinstance(tidies := getattr(rule, "cleanup", False), bool):
+        return f"{rule.id!r} has cleanup {tidies!r}, not True or False"
     if (tool := getattr(rule, "tool", None)) is not None and tool not in TOOLS:
         return f"{rule.id!r} names the tool {tool!r}, which no adapter runs; there are {', '.join(sorted(TOOLS))}"
     if "hits" in vars(type(rule)):  # one way to write a rule of each kind: its author writes `check`
@@ -114,6 +116,8 @@ def _guideline_problem(guideline: Guideline) -> str | None:
         return f"{type(guideline).__name__} needs an id, a title and a role"
     if type(budget := getattr(guideline, "thinking_budget", None)) is not int or budget < 0:
         return f"{guideline.id!r} has thinking_budget {budget!r}, not a whole number of tokens"
+    if not isinstance(tidies := getattr(guideline, "cleanup", False), bool):
+        return f"{guideline.id!r} has cleanup {tidies!r}, not True or False"
     return None
 
 

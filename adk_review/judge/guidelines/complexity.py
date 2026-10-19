@@ -18,3 +18,4 @@ class Complexity(Guideline):
         "as a list for a generator, `.get()` for an index or awaits gathered would."
     )
     thinking_budget = 2048
+    cleanup = True  # how the code reads, never what it does

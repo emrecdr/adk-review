@@ -89,6 +89,9 @@ class AnyRule(ABC):
     #: and a file named `test_*` is a test whatever it holds, a workflow among them. Only a test's text is withheld: a
     #: file rule's `file.changed` and a tree rule's `tree.paths` still list every test.
     reads_tests: ClassVar[bool] = False
+    #: Whether its findings change how code reads and never what it does, as a simplify pass's do: a handoff lists them
+    #: apart, under what a tidy keeps, and holds one back where a defect at major or above names the same lines.
+    cleanup: ClassVar[bool] = False
 
     def reads(self, path: str) -> bool:
         """Whether the rule is handed what `path` holds: any file, for a rule that reads tests; else one no test."""

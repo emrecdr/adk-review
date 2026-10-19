@@ -112,16 +112,36 @@ def _blast(blast: Blast) -> list[str]:
     return [*lines, ""]
 
 
-def render_handoff(evidence: Evidence, outcome: Outcome, *, verdict: str, fail_on: str) -> str:
+#: What every tidy keeps, printed above the Tidy lane: how the code reads changes, never what it does, as a simplify
+#: pass keeps its two lanes apart. A cheaper form that reorders I/O, or a deeper fix, is a change to weigh, and is
+#: listed with the fixes, never as a tidy.
+TIDY_KEEPS = (
+    "Each below changes how the code reads, never what it does: its return values, its exceptions and their",
+    "messages, its log lines, its evaluation order, laziness and concurrency stay as they are. Make one only where it",
+    "is the same by construction, or where tests cover its lines and pass; leave any other, and say why. A tidy never",
+    "turns a list into a generator, `.get()` into an index, a call async, or awaits into one gather.",
+)
+
+
+def render_handoff(
+    evidence: Evidence, outcome: Outcome, *, verdict: str, fail_on: str, tidies: frozenset[str] = frozenset()
+) -> str:
     """`--handoff FILE`: each kept finding, most severe first, as a short instruction for a coding agent — where, the
     lines quoted, what to change, and what must hold afterwards — under the text report's safety rules, then the
     command that checks the fixes. Concise comments with the code quoted lead to changes more often, as a study of
     review comments found. Nothing is applied: the reviewer writes into no repository, and only ruff labels a fix it
-    would apply unasked."""
+    would apply unasked.
+
+    `tidies` names the checks whose findings change how code reads and never what it does. Theirs are listed apart,
+    after the fixes and under what a tidy keeps, and one folded under a defect at major or above is held back until the
+    defect is fixed: suspect code is never tidied. With none of theirs, the hand-off reads as it did before them."""
     pre = evidence["preflight"]
-    ranked = sorted(
-        zip(outcome.kept, _identified(outcome.kept), strict=True), key=lambda kept: -RANK[kept[0].finding.severity]
-    )
+    identity = dict(zip(map(id, outcome.kept), _identified(outcome.kept), strict=True))
+    identity |= {id(folded): fingerprint(folded) for folded, _into in outcome.folded}
+    groups = [_led(item, [f for f, into in outcome.folded if into is item], tidies) for item in outcome.kept]
+    ranked = sorted(groups, key=lambda group: -RANK[group[0].finding.severity])
+    fixes = [group for group in ranked if group[0].source not in tidies]
+    tidy = [group for group in ranked if group[0].source in tidies]
     lines = [
         f"# Findings to fix: {what(evidence)}",
         "",
@@ -129,14 +149,12 @@ def render_handoff(evidence: Evidence, outcome: Outcome, *, verdict: str, fail_o
         "nothing else. Each one holds when a review of the fixed commit no longer reports its fingerprint.",
         "",
     ]
-    for number, (item, identity) in enumerate(ranked, 1):
-        f = item.finding
-        lines += [
-            f"{number}. {prose(f.title)} ({_where(f)}), {f.severity}{_bar(f, fail_on)}",
-            f"   - quoted: {_quoted(f)}",
-            *_to_fix(item, identity, "   "),
-            *_folded_under([folded for folded, into in outcome.folded if into is item], fail_on),
-        ]
+    if fixes and tidy:
+        lines += ["## Fix", ""]
+    lines += _items(fixes, 1, identity, tidies, fail_on)
+    if tidy:
+        lines += [*([""] if fixes else []), "## Tidy", "", *TIDY_KEEPS, ""]
+        lines += _items(tidy, len(fixes) + 1, identity, tidies, fail_on)
     if not ranked:
         lines.append("Nothing to fix: no finding was kept.")
     if outcome.errors or outcome.unread:
@@ -148,18 +166,60 @@ def render_handoff(evidence: Evidence, outcome: Outcome, *, verdict: str, fail_o
     return inert("\n".join(lines)) + "\n"
 
 
-def _folded_under(folded: Sequence[Sourced], fail_on: str) -> list[str]:
+def _led(kept: Sourced, folded: list[Sourced], tidies: frozenset[str]) -> list[Sourced]:
+    """A hand-off item's findings, its lead first: the kept finding, unless it is a tidy and another reading of the
+    same lines is not, when the most severe of those leads, the first on a tie, so a defect is never a tidy's footnote.
+    Measured on the fold's order: under `full` the guidelines run as the catalog lists them, `complexity` before
+    `correctness`, and a tie between the two kept the tidy."""
+    members = [kept, *folded]
+    defects = [item for item in folded if item.source not in tidies]
+    if kept.source not in tidies or not defects:
+        return members
+    lead = max(defects, key=lambda item: RANK[item.finding.severity])
+    return [lead, *(item for item in members if item is not lead)]
+
+
+def _items(
+    groups: Sequence[list[Sourced]], start: int, identity: Mapping[int, str], tidies: frozenset[str], fail_on: str
+) -> list[str]:
+    """Each hand-off item, numbered from `start`: its lead's place, quote and instruction, then each other reading of
+    the same lines, a tidy among them held back where a defect at major or above stands on them."""
+    lines = []
+    for number, (lead, *also) in enumerate(groups, start):
+        f = lead.finding
+        suspect = any(
+            item.source not in tidies and at_or_above(item.finding.severity, "major") for item in (lead, *also)
+        )
+        lines += [
+            f"{number}. {prose(f.title)} ({_where(f)}), {f.severity}{_bar(f, fail_on)}",
+            f"   - quoted: {_quoted(f)}",
+            *_to_fix(lead, identity[id(lead)], "   "),
+            *_folded_under(also, fail_on, identity, tidies if suspect else frozenset()),
+        ]
+    return lines
+
+
+def _folded_under(
+    folded: Sequence[Sourced], fail_on: str, identity: Mapping[int, str], held: frozenset[str] = frozenset()
+) -> list[str]:
     """A line for each finding folded into a handoff item: another reading of the same lines, by another check or the
     same one, which can be a second defect — an injection whose quote spans a key's line folds into the key's finding.
     Each says whether it sits at the bar, since a finding folds only into one at least as severe and a second defect
     that would fail the build on its own would otherwise read like a duplicate; what to change; and the fingerprint a
-    fixed commit must stop reporting, as the JSON's `folded` names it."""
+    fixed commit must stop reporting, as the JSON's `folded` names it. A tidy whose check is in `held` gets no
+    instruction: it waits for the defect on its lines."""
     lines = []
     for item in folded:
         f = item.finding
+        if item.source in held:
+            lines.append(
+                f"   - held back, a tidy of these lines: {prose(f.title)}, {f.severity}. Leave it until the finding"
+                " above is fixed and a review no longer reports it."
+            )
+            continue
         lines += [
             f"   - also on these lines: {prose(f.title)}, {f.severity}{_bar(f, fail_on)}",
-            *_to_fix(item, fingerprint(item), "     "),
+            *_to_fix(item, identity[id(item)], "     "),
         ]
     return lines
 

@@ -594,6 +594,43 @@ class TestThePreviousReportAndTheHandoff:
         )
         assert "No command is printed" in said and "`--check rule.secrets`" in said, said
 
+    def test_a_handoff_lists_the_tidies_apart_and_holds_one_back_on_a_defects_lines(self) -> None:
+        """A simplify pass keeps two lanes: a fix, and a tidy that changes how code reads and never what it does. A
+        tidy is listed after the fixes, under what it keeps, and one on lines a defect at major or above names waits
+        for that defect, since suspect code is never tidied. Where a tidy kept the lines and a defect folded under it,
+        as a tie under `full` once did, the defect leads."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import TIDY_KEEPS, fingerprint, render_handoff
+
+        def at(check: str, line: int, severity: str, title: str) -> Sourced:
+            found = Finding(file="a.py", line=line, severity=severity, title=title, evidence=f"x{line}", suggestion="s")
+            return Sourced(check, found, (line, line))
+
+        shell, nested = at("rule.lint", 3, "major", "shell call"), at("rule.simplify", 3, "minor", "nested if")
+        unit, loop = at("rule.lint", 7, "minor", "line too long"), at("rule.simplify", 7, "minor", "manual list")
+        shape = at("guideline.complexity", 12, "major", "copied block")
+        swallowed = at("guideline.correctness", 12, "major", "error swallowed")
+        alone = at("rule.simplify", 20, "minor", "redundant dict()")
+        outcome = Outcome(kept=[shell, unit, shape, alone], folded=[(nested, shell), (loop, unit), (swallowed, shape)])
+        tidies = frozenset({"rule.simplify", "guideline.complexity"})
+        evidence = {"preflight": {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40}, "whole": False}
+        said = render_handoff(
+            {**evidence, "scope": []}, outcome, verdict="REQUEST_CHANGES", fail_on="blocker", tidies=tidies
+        )
+        fixes, tidy = said.split("\n## Fix\n", 1)[1].split("\n## Tidy\n", 1)
+        assert "1. shell call (a.py:3), major" in fixes and "2. error swallowed (a.py:12), major" in fixes, fixes
+        assert "3. line too long (a.py:7), minor" in fixes, "a minor defect is a fix too"
+        assert "   - held back, a tidy of these lines: nested if, minor." in fixes, "a major defect holds its tidy back"
+        assert "   - held back, a tidy of these lines: copied block, major." in fixes, (
+            "the defect leads, the tidy waits"
+        )
+        assert f"`rule.simplify` no longer reports fingerprint `{fingerprint(nested)}`" not in said, "no instruction"
+        assert "   - also on these lines: manual list, minor" in fixes, "a minor defect holds nothing back"
+        assert " ".join(TIDY_KEEPS) in " ".join(tidy.split()) and "4. redundant dict() (a.py:20), minor" in tidy
+        plain = render_handoff({**evidence, "scope": []}, outcome, verdict="REQUEST_CHANGES", fail_on="blocker")
+        assert "## Fix" not in plain and "## Tidy" not in plain and "held back" not in plain, "no tidies, as before"
+
     def test_a_previous_report_is_made_safe_whole_where_it_is_read(self, tmp_path: Path) -> None:
         """An edited `--previous` is read back through `resolved`: measured by review, a runner's command as a finding's
         key, in a list or in a nested value was written as it came."""
