@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 import subprocess
 import tempfile
+from collections import Counter
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -391,6 +392,19 @@ def test_the_injection_suite_builds_a_branch_a_payload_and_scores_what_was_lost(
     assert "| wrapped | 2 of 2 | no | 0 of 2 |" in lines
 
 
+def test_a_live_script_reviews_under_the_profile_it_is_named(tmp_path) -> None:
+    """Measured before: every live script reviewed with `default`, so a profile's own guidelines, the simplify pass's
+    among them, had no way to be measured. Named, the profile reaches each run's command; unnamed, the default runs."""
+    import measure
+
+    report = tmp_path / "r.json"
+    assert measure.options("x", "y").parse_args(["--profile", "simplify"]).profile == "simplify"
+    assert measure.options("x", "y").parse_args([]).profile is None
+    named = measure.review_command(tmp_path, "label/x", report, "code-review")
+    assert named[-2:] == ["--profile", "code-review"] and "--json" in named
+    assert "--profile" not in measure.review_command(tmp_path, "label/x", report)
+
+
 def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(tmp_path) -> None:
     """Matching findings to known facts is reliable where scoring usefulness is not. Each branch holds one defect at
     the lines its label names, or none; a run names a defect when a guideline's finding stands on those lines, and a
@@ -406,6 +420,9 @@ def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(t
         "untested-function": "def refund",
         "long-file": "shell=True",
         "privileged-container": "privileged: true",
+        "repeated-io": "read_text",
+        "special-case": "the import job",
+        "copied-block": "def usd_total",
     }
     for name, marker in markers.items():
         path, lines = labelled.BRANCHES[name][1]
@@ -422,7 +439,15 @@ def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(t
     assert not labelled.scored("sql-from-input", report(("rule.lint", "src/payments/charge.py", 23, "major")))
     assert labelled.scored("clean-docs", report(("guideline.tests", "README.md", 3, "major")))
     assert not labelled.scored("clean-docs", report(("guideline.tests", "README.md", 3, "minor")))
-    assert labelled.table({"sql-from-input": [True, False]})[-1] == "| sql-from-input | its defect named | 1 of 2 |"
+    assert labelled.table({"sql-from-input": [True, False]})[-1] == "| sql-from-input | its defect named | 1 of 2 |  |"
+    io = report(("guideline.efficiency", "src/payments/ledger.py", 10, "major"))
+    io["folded"] = [{"check": "guideline.tests", "file": "src/payments/ledger.py", "line": 7, "lines": [7, 12]}]
+    io["findings"].append({"check": "rule.lint", "file": "src/payments/ledger.py", "line": 10, "lines": [10, 10]})
+    by = labelled.named_by("repeated-io", io)
+    assert by == {"guideline.efficiency", "guideline.tests"}, "a guideline of another dimension is told apart"
+    tallied = {"repeated-io": Counter({"guideline.efficiency": 3, "guideline.tests": 1})}
+    row = labelled.table({"repeated-io": [True, True, True]}, tallied)[-1]
+    assert row == "| repeated-io | its defect named | 3 of 3 | guideline.efficiency 3, guideline.tests 1 |", row
 
 
 def test_the_copilot_login_is_a_command_of_the_install(monkeypatch, tmp_path: Path) -> None:

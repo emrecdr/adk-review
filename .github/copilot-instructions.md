@@ -38,8 +38,8 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   `--try` make none either. A review whose profile names a guideline calls a provider, and so do
   `--check guideline.<name>`, `adk web`, `adk run`, `scripts/measure.py`, `scripts/injection_suite.py` and
   `scripts/labelled_set.py`, so run one only when the task says so.
-- A review under `default` makes three calls at once, `simplify` three, `code-review` five and `full` six, and
-  Gemini's free tier allows five a minute and twenty a day:
+- A review under `default` makes three calls, `simplify` three, `code-review` five and `full` six, at most three in
+  flight (`CONCURRENCY`), and Gemini's free tier allows five a minute and twenty a day:
   a run that met a 429 names it under `could_not_look` and measures nothing there. Run each side of a
   before-and-after comparison from its own copy of the tree, since a review imports the checkout.
 - `[tool.uv]` in `pyproject.toml` takes a release only three days after it is published (`exclude-newer`), so a

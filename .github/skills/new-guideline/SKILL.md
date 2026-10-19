@@ -25,4 +25,5 @@ the catalog finds the file, and the fan-out, its state key, the chat verdict's s
    only with one that joins it.
    Update each, except a measured number, which is history.
 5. Run the whole suite, the lint and the type check. Measure the guideline live only when asked —
-   `uv run python scripts/measure.py --runs 5` calls a provider.
+   `uv run python scripts/measure.py --runs 5` calls a provider, and `scripts/labelled_set.py --profile NAME` measures
+   a guideline a profile runs and `default` does not, naming which guideline found each defect.

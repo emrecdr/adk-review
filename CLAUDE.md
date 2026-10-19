@@ -27,9 +27,9 @@ uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # 
 uv run adk-review-login                          # one-time GitHub device-flow login for the Copilot arm
 uv run adk web .                                 # the chat in a browser, over the same graph
 hook="$(git -C <repo> rev-parse --path-format=absolute --git-path hooks)/pre-push" && mkdir -p "${hook%/*}" && printf '#!/bin/sh\nexec adk-review-push "$@"\n' > "$hook" && chmod +x "$hook"   # after `uv tool install .`: default-rules on what a push sends, push-history's credential rules on each commit and message; pre-commit's adk-review hook runs the same; --no-verify skips
-uv run python scripts/injection_suite.py --runs 3 [--build-only]   # live: does a payload make a guideline lose the planted shell call
-uv run python scripts/labelled_set.py --runs 3 [--build-only]      # live: one known defect a branch, or none: found, missed, invented
-uv run python scripts/measure.py --runs 5 [--all] # live: per planted defect, how often a guideline names it (--all: as a whole project)
+uv run python scripts/injection_suite.py --runs 3 [--profile NAME] [--build-only]   # live: does a payload make a guideline lose the planted shell call
+uv run python scripts/labelled_set.py --runs 3 [--profile NAME] [--build-only]      # live: one known defect a branch, or none: found (and by which guideline), missed, invented
+uv run python scripts/measure.py --runs 5 [--all] [--profile NAME] # live: per planted defect, how often a guideline names it (--all: as a whole project)
 ```
 
 `uv tool install .` puts `adk-review`, `adk-review-push` and `adk-review-login` on `PATH` anywhere. With no `repo`, the
@@ -45,14 +45,15 @@ never Python's own exit 1, which would read as a blocker), a reader that closes 
 cannot load (a broken install). Ctrl-C is one sentence and 130, the shell's own code for it, and a job's SIGTERM 143.
 
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
-guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so.
-A review under `default` makes three calls at once, `simplify` three, `code-review` five and `full` six: Gemini's free
-tier allows five a minute and twenty a day, so a live script's sixteen reviews on it need `--pause` and more than a day, and Copilot rate-limits a model after some
-hundreds of calls in an afternoon; a run that met a 429 names it under `could_not_look` and measures nothing there.
-Run each side of a before-and-after comparison from its own copy of the tree, since a review imports the checkout.
-The suite, `--profile rules-only`, `demo` or `default-rules`, `--check rule.<name>`, `--dry-run`, `--list-checks`,
-`--explain` and `--try` make none. `[tool.uv]` in `pyproject.toml` takes a release only three days after it is published
-(`exclude-newer`), so a dependency released since does not resolve yet; the comment there says why the span stays.
+guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so. A
+review under `default` makes three calls, `simplify` three, `code-review` five and `full` six, at most three in flight
+(`CONCURRENCY`): Gemini's free tier allows five a minute and twenty a day, so a live script's sixteen reviews on it need
+`--pause` and more than a day, and Copilot rate-limits a model after some hundreds of calls in an afternoon; a run that
+met a 429 names it under `could_not_look` and measures nothing there. Run each side of a before-and-after comparison
+from its own copy of the tree, since a review imports the checkout. The suite, `--profile rules-only`, `demo` or
+`default-rules`, `--check rule.<name>`, `--dry-run`, `--list-checks`, `--explain` and `--try` make none. `[tool.uv]` in
+`pyproject.toml` takes a release only three days after it is published (`exclude-newer`), so a dependency released since
+does not resolve yet; the comment there says why the span stays.
 
 ## Configuration
 

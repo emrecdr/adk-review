@@ -117,9 +117,16 @@ def _blast(blast: Blast) -> list[str]:
 #: listed with the fixes, never as a tidy.
 TIDY_KEEPS = (
     "Each below changes how the code reads, never what it does: its return values, its exceptions and their",
-    "messages, its log lines, its evaluation order, laziness and concurrency stay as they are. Make one only where it",
-    "is the same by construction, or where tests cover its lines and pass; leave any other, and say why. A tidy never",
-    "turns a list into a generator, `.get()` into an index, a call async, or awaits into one gather.",
+    "messages, its log lines, its evaluation order, laziness and concurrency stay as they are, its public names and",
+    "signatures stay, and no dependency is added. Make one only where it is the same by construction, or where tests",
+    "cover its lines and pass; leave any other, and say why. A tidy never turns a list into a generator, `.get()` into",
+    "an index, a call async, or awaits into one gather.",
+)
+#: What a coding agent runs before it commits, ahead of the review that checks its work: the project's own tests,
+#: which the reviewer never runs, since it runs none of the reviewed code. A tidy they fail on was not the same.
+TESTS_FIRST = (
+    "Run the project's own tests before committing, as its Makefile, pyproject or CI runs them: a fix is done when",
+    "they pass, and a tidy they fail on is reverted, never changed further.",
 )
 
 
@@ -262,7 +269,7 @@ def _check_again(evidence: Evidence, found: set[str], fail_on: str) -> list[str]
     scope += [arg for path in evidence["scope"] for arg in ("--path", path)]
     rules = sorted(check for check in found if check.startswith(rule_id("")))
     guidelines = " ".join(f"--check {check}" for check in sorted(found - set(rules)))
-    lines = ["", "## Check your work", "", first]
+    lines = ["", "## Check your work", "", *TESTS_FIRST, "", first]
     if rules:
         named = [arg for check in rules for arg in ("--check", check)]
         lines += [

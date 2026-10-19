@@ -85,13 +85,18 @@ def credit(run: Run, findings: Iterable[tuple[str, Iterable[int], str]]) -> None
 def judged(data: dict) -> list[tuple[str, range, str]]:
     """Every finding a guideline made in the JSON report, kept or folded: its file, the lines the diff places it on,
     and its severity."""
-    found = []
-    for f in (*data["findings"], *data["folded"]):
-        if f["check"].startswith(GUIDELINE):
-            first, last = f["lines"] or (f["line"], f["line"])
-            lines = range(first, last + 1) if first is not None and last is not None else range(0)
-            found.append((f["file"], lines, f["severity"]))
-    return found
+    return [(f["file"], placed(f), f["severity"]) for f in (*data["findings"], *data["folded"]) if by_guideline(f)]
+
+
+def by_guideline(finding: dict) -> bool:
+    """Whether a finding of the JSON report is a guideline's, a model's reading, and not a rule's."""
+    return finding["check"].startswith(GUIDELINE)
+
+
+def placed(finding: dict) -> range:
+    """The lines the diff places a finding of the JSON report on, or none where it names no line."""
+    first, last = finding["lines"] or (finding["line"], finding["line"])
+    return range(first, last + 1) if first is not None and last is not None else range(0)
 
 
 def read_json(data: dict, run: Run) -> Run:
@@ -102,19 +107,30 @@ def read_json(data: dict, run: Run) -> Run:
 
 
 def options(script: str, description: str) -> argparse.ArgumentParser:
-    """The flags of a live measurement over branches it builds: how many runs, the pause between them, or none."""
+    """The flags of a live measurement over branches it builds: how many runs, the pause between them, or none, and
+    the profile each review runs, the shipped default unless one is named."""
     parser = argparse.ArgumentParser(prog=script, description=description)
     parser.add_argument("--runs", type=int, default=3, help="reviews of each branch (each calls the model)")
     parser.add_argument("--pause", type=float, default=0.0, help="seconds to wait between runs (a quota's worth)")
     parser.add_argument("--build-only", action="store_true", help="build the branches, review nothing")
+    parser.add_argument("--profile", help="the profile each review runs, as the command takes it; default unless named")
     return parser
 
 
+def review_command(repo: Path, branch: str, report: Path, profile: str | None = None) -> list[str]:
+    """The command one run executes: the branch against the demo's base, its JSON to `report`, under `profile` where
+    one is named. Measured before: every live script reviewed with `default`, so a profile's own guidelines, the
+    simplify pass's among them, had no way to be measured."""
+    command = [sys.executable, "-m", COMMAND, str(repo), "--head", branch, "--base", BASE_REF, "--json", str(report)]
+    return [*command, "--profile", profile] if profile else command
+
+
 def reviewed(
-    repo: Path, branches: Mapping[str, str], runs: int, pause: float
+    repo: Path, branches: Mapping[str, str], runs: int, pause: float, profile: str | None = None
 ) -> Iterator[tuple[str, int, dict | None]]:
     """The review of each branch against the demo's base, `runs` times, each a call to the model: by branch, the
-    run's exit code and its JSON report, None where it wrote none; `pause` seconds before every run but the first."""
+    run's exit code and its JSON report, None where it wrote none; `pause` seconds before every run but the first;
+    under `profile` where one is named."""
     with tempfile.TemporaryDirectory() as scratch:
         report = Path(scratch) / "review.json"
         first = True
@@ -123,8 +139,7 @@ def reviewed(
                 if not first and pause:
                     time.sleep(pause)
                 first = False
-                command = [sys.executable, "-m", COMMAND, str(repo), "--head", branch, "--base", BASE_REF]
-                command += ["--json", str(report)]
+                command = review_command(repo, branch, report, profile)
                 done = subprocess.run(command, cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace")
                 data = json.loads(report.read_text(encoding="utf-8")) if report.is_file() else None
                 report.unlink(missing_ok=True)
@@ -160,6 +175,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--runs", type=int, default=3, help="reviews of the planted branch (each calls the model)")
     parser.add_argument("--pause", type=float, default=0.0, help="seconds to wait between runs (a quota's worth)")
     parser.add_argument("--all", action="store_true", help="review every file at the head, not the change")
+    parser.add_argument("--profile", help="the profile each review runs, as the command takes it; default unless named")
     args = parser.parse_args(argv)
     subprocess.run([sys.executable, "scripts/make_demo_repo.py"], cwd=ROOT, check=True, capture_output=True)
     head = subprocess.run(
@@ -169,6 +185,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     command = [sys.executable, "-m", COMMAND, str(DEMO_REPO), "--head", "feature/payments"]
     command += ["--all"] if args.all else ["--base", "main"]
+    command += ["--profile", args.profile] if args.profile else []
     who = "a guideline"
     runs: list[Run] = []
     with tempfile.TemporaryDirectory() as scratch:

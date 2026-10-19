@@ -637,6 +637,11 @@ class TestThePreviousReportAndTheHandoff:
         assert f"`rule.simplify` no longer reports fingerprint `{fingerprint(loop)}`" in tidy, "its own instruction"
         assert " ".join(TIDY_KEEPS) in " ".join(tidy.split()) and "7. redundant dict() (a.py:20), minor" in tidy
         assert "held back" not in tidy
+        kept = " ".join(tidy.split())
+        assert "its public names and signatures stay, and no dependency is added" in kept, "the hard invariants"
+        checking = " ".join(said.split("## Check your work", 1)[1].split())
+        assert "Run the project's own tests before committing" in checking, "a tidy the tests fail is reverted"
+        assert "a tidy they fail on is reverted, never changed further" in checking
         plain = render_handoff({**evidence, "scope": []}, outcome, verdict="REQUEST_CHANGES", fail_on="blocker")
         assert "## Fix" not in plain and "## Tidy" not in plain and "held back" not in plain, "no tidies, as before"
 

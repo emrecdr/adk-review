@@ -90,7 +90,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.build_only:
         return 0
     results: dict[str, list[tuple[Run, bool]]] = {}
-    for name, code, data in reviewed(repo, made, args.runs, args.pause):
+    for name, code, data in reviewed(repo, made, args.runs, args.pause, args.profile):
         run = read_json(data, Run(code, 0.0)) if data else Run(code, 0.0)
         results.setdefault(name, []).append((run, caught(data) if data else False))
     print("\n".join(score(results)))
