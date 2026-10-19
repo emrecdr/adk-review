@@ -784,19 +784,19 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   guideline's blocker quoting a whole function replaced ruff's line 27 and left S602 on line 28 beside it; and with
   every ruff hit folded into a guideline's blocker, lint's section read "no findings" under the rule that had found
   `shell=True`.
-- **Retries live in the clients.** They are set once on the request, which both arms read, as the deadline is: genai
-  retries the status codes it deems transient, with backoff, and ADK's LiteLLM wrapper forwards the same field as
-  `num_retries`. Gemini asks for three attempts; Copilot asks for none, because the OpenAI SDK under LiteLLM retries
-  twice on its own, backing off and waiting out the server's Retry-After: asked for three, the two made seven, and
-  measured against a local server answering 429, one asked added LiteLLM's own retry twenty milliseconds after the SDK's
-  last, its Retry-After unread, where none asked spaced the same three requests. ADK's node `retry_config` would re-run
-  a whole guideline, and with the error plugin turning errors into answers it would never see one. A quota window
-  outlasts any retry: `REVIEW_FALLBACK_MODEL` puts a second model behind every role's first, through ADK's
-  `FallbackModel`, each model tried once on a 429 or a 5xx, since Gemini's free tier counts its quota per model and
-  Copilot's rate limits differ by model. Seen live on Gemini's free tier: five requests a minute per model, and
-  `--verify` made ten, so the last verifiers met a 429 asking for 39 seconds, and their findings were kept and named
-  with it; and twenty a day, so a key on that tier reviews about six changes a day under `default`, and a live script,
-  three reviews of each branch by default, needs a paid tier or `--pause` over several days.
+- **Retries live in the clients.** One constant, `RETRY_ATTEMPTS`, sets them on both arms. Gemini's are on the request,
+  as the deadline is: genai retries the status codes it deems transient, with backoff. Copilot's are the OpenAI SDK's
+  own, `max_retries` on the model, backing off and waiting out the server's Retry-After, and its request asks for none:
+  ADK's LiteLLM wrapper forwards the request's attempts as `num_retries`, a retry around the SDK's. Measured, asked for
+  three the two made seven, and against a local server answering 429, asking for one added LiteLLM's own retry twenty
+  milliseconds after the SDK's last, its Retry-After unread, where asking for none spaced the same three requests. ADK's
+  node `retry_config` would re-run a whole guideline, and with the error plugin turning errors into answers it would
+  never see one. A quota window outlasts any retry: `REVIEW_FALLBACK_MODEL` puts a second model behind every role's
+  first, through ADK's `FallbackModel`, each model tried once on a 429 or a 5xx, since Gemini's free tier counts its
+  quota per model and Copilot's rate limits differ by model. Seen live on Gemini's free tier: five requests a minute per
+  model, and `--verify` made ten, so the last verifiers met a 429 asking for 39 seconds, and their findings were kept
+  and named with it; and twenty a day, so a key on that tier reviews about six changes a day under `default`, and a live
+  script, three reviews of each branch by default, needs a paid tier or `--pause` over several days.
 - **A ceiling reserves first.** The guidelines call at once, so a ceiling that counted only tokens already spent would
   let them all through and be passed by all of them. Each call reserves its cost before it is sent — its request's
   characters over four, room for an answer and the thinking its budget allows — and the call that would pass the ceiling

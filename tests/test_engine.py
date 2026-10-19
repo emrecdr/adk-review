@@ -46,14 +46,15 @@ SAYS_MORE = {**CANNED_REVIEW, "findings": [{**CANNED_REVIEW["findings"][0], "sev
 
 
 class TestRetriesOnBothArms:
-    """Retries ride on the request, where both arms read them; the live proof is a 429."""
+    """Retries ride on the request on Gemini and in the OpenAI SDK on Copilot, one constant for both; the live proof
+    is a 429."""
 
     @pytest.mark.parametrize("arm", ["gemini", "copilot"])
     def test_every_judging_request_carries_its_arms_retries_beside_its_deadline(self, arm: str, monkeypatch) -> None:
         """Copilot's request asks for none: the OpenAI SDK under LiteLLM retries twice on its own, backing off and
-        waiting out the server's Retry-After. Measured against a server that never answered, three attempts asked
-        became seven; and against a local server answering 429, one asked added LiteLLM's own retry twenty
-        milliseconds after the SDK's last, its Retry-After unread, where none asked spaced the same three requests."""
+        waiting out the server's Retry-After. Measured against a server that never answered, three attempts asked became
+        seven; and against a local server answering 429, asking for one added LiteLLM's own retry twenty milliseconds
+        after the SDK's last, its Retry-After unread, where asking for none spaced the same three requests."""
         from adk_review.judge.config import REQUEST_TIMEOUT_S, RETRY_ATTEMPTS, request_config
 
         monkeypatch.setenv("REVIEW_PROVIDER", arm)
@@ -106,17 +107,20 @@ class TestRetriesOnBothArms:
         assert report["could_not_look"] == {}, "each guideline answered, its reply valid"
 
     @pytest.mark.asyncio
-    async def test_adk_hands_litellm_the_same_request_as_retries_and_seconds(self, monkeypatch) -> None:
-        """The Copilot arm cannot run offline. This drives ADK's own LiteLLM wrapper with only the network client
-        replaced, so what LiteLLM would be called with is what is asserted: no `num_retries`, which would retry around
-        the SDK's own, the deadline in seconds, the temperature — one request config, both arms."""
-        from google.adk.models.lite_llm import LiteLlm, LiteLLMClient
+    async def test_adk_hands_litellm_the_sdks_retries_the_deadline_and_no_retry_around_them(self, monkeypatch) -> None:
+        """The Copilot arm cannot run offline. This drives ADK's own LiteLLM wrapper, the model built as a review builds
+        it, with only the network client replaced, so what LiteLLM would be called with is what is asserted: the SDK's
+        own retries, `RETRY_ATTEMPTS` in all, where LiteLLM's default of two made them before; no `num_retries`, which
+        would retry around them; the deadline in seconds; the temperature."""
+        from google.adk.models.lite_llm import LiteLLMClient
         from google.adk.models.llm_request import LlmRequest
         from google.genai import types
 
-        from adk_review.judge.config import REQUEST_TIMEOUT_S, request_config
+        from adk_review.judge.config import REQUEST_TIMEOUT_S, RETRY_ATTEMPTS, build_model, request_config
 
         monkeypatch.setenv("REVIEW_PROVIDER", "copilot")
+        monkeypatch.setenv("REVIEW_MODEL", "gpt-4.1")
+        monkeypatch.delenv("REVIEW_FALLBACK_MODEL", raising=False)
         called: dict = {}
 
         class Capture(LiteLLMClient):
@@ -124,10 +128,12 @@ class TestRetriesOnBothArms:
                 called.update(kwargs)
                 return litellm.ModelResponse(choices=[{"message": {"role": "assistant", "content": "ok"}}])
 
-        model = LiteLlm(model="github_copilot/gpt-4.1", llm_client=Capture())
+        model = build_model()
+        model.llm_client = Capture()
         request = LlmRequest(model=model.model, contents=[types.UserContent("judge")], config=request_config())
         async for _response in model.generate_content_async(request):
             pass
+        assert called["max_retries"] == RETRY_ATTEMPTS - 1, "the SDK's own retries, from the reviewer's constant"
         assert called.get("num_retries") is None and called["timeout"] == REQUEST_TIMEOUT_S
         assert called["temperature"] == 0.0
 

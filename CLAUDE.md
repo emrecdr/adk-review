@@ -39,10 +39,11 @@ a branch that adds nothing: "no change to review", a `config.toml`, profile or r
 `--path`, or no choice made at the question asked when neither `--base` nor `--all` is given), 3 a hole: a rule or a
 guideline failed, a rule could not look (the head's tree not listed, or a file it holds not read whole), a changed file
 no guideline read whole — binary, a submodule, cut at the diff cap or past the guidelines' block cap — named under "not
-read", a finding at the `--fail-on` bar whose quote the diff does not bear out, a call the token ceiling refused, a
-`--json` or `--handoff` file that cannot be written, any error nothing else names (`main` wraps the command: a sentence,
-never Python's own exit 1, which would read as a blocker), a reader that closes the pipe early, and a reviewer that
-cannot load (a broken install). Ctrl-C is one sentence and 130, the shell's own code for it, and a job's SIGTERM 143.
+read", a finding at the `--fail-on` bar whose quote the diff does not bear out, a guideline's call the token ceiling
+refused (a verifier's leaves its finding unverified), a `--json` or `--handoff` file that cannot be written, any error
+nothing else names (`main` wraps the command: a sentence, never Python's own exit 1, which would read as a blocker), a
+reader that closes the pipe early, and a reviewer that cannot load (a broken install). Ctrl-C is one sentence and 130,
+the shell's own code for it, and a job's SIGTERM 143.
 
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so. A

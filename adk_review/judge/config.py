@@ -127,7 +127,9 @@ def build_model(*, role: str = "") -> str | BaseLlm:
 
     # Copilot authenticates with a cached device-flow token, not a key: `adk-review-login`, once.
     logging.getLogger("LiteLLM").addFilter(_HIDE_BEARER)  # once: a filter already there is not added again
-    models = [LiteLlm(model=f"{COPILOT}/{name}") for name in names]
+    # Copilot's attempts are the OpenAI SDK's own retries, spaced and waiting out a Retry-After, `RETRY_ATTEMPTS` in
+    # all: the reviewer's constant, where LiteLLM's default of two retries made them before, unwritten here.
+    models = [LiteLlm(model=f"{COPILOT}/{name}", max_retries=RETRY_ATTEMPTS - 1) for name in names]
     return models[0] if len(models) == 1 else FallbackModel(models=models)
 
 
@@ -148,24 +150,24 @@ def _litellm():  # unannotated: a checker then knows the module and its typed fl
 
 
 def request_config(thinking_budget: int | None = None) -> types.GenerateContentConfig:
-    """What every judging call carries, on both arms: temperature zero, a deadline, and retries; and a guideline's
-    thinking budget, where the provider has one.
+    """What every judging call carries, on both arms: temperature zero and a deadline; on Gemini its retries, which
+    Copilot's OpenAI SDK makes itself (`build_model`); and a guideline's thinking budget, where the provider has one.
 
-    A severity is a decision, and a demo that gives a different verdict on
-    every run teaches the wrong lesson. The deadline and the retries are one
-    number each, on the request, and both arms read them there: genai takes
-    `HttpOptions.timeout` in milliseconds and retries the request `attempts`
-    times on the status codes it deems transient, with backoff; ADK's LiteLLM
-    wrapper converts the timeout to LiteLLM's seconds and forwards the attempts
-    as `num_retries` (`lite_llm.py`, 2.9.2). Measured against a server that never
+    A severity is a decision, and a demo that gives a different verdict on every run
+    teaches the wrong lesson. The deadline is one number, on the request, and both
+    arms read it there, as genai reads its retries: genai takes
+    `HttpOptions.timeout` in milliseconds and retries the request `attempts` times
+    on the status codes it deems transient, with backoff; ADK's LiteLLM wrapper
+    converts the timeout to LiteLLM's seconds and forwards the attempts as
+    `num_retries` (`lite_llm.py`, 2.9.2). Measured against a server that never
     answered, LiteLLM hands those to the OpenAI SDK as its retries and retries
     around it too: three became seven. So the Copilot arm asks for none, and the
-    SDK's own two retries make its three, backing off and waiting out the
-    server's Retry-After: measured against a local server answering 429, one
-    asked added LiteLLM's own retry twenty milliseconds after the SDK's last, its
-    Retry-After unread, where none asked spaced the same three. A call past its deadline or its
-    retries is a model error like any other, which `ReportProviderErrors` turns
-    into that guideline's own answer.
+    SDK's own retries, `RETRY_ATTEMPTS` in all, make its three, backing off and
+    waiting out the server's Retry-After: measured against a local server answering
+    429, asking for one added LiteLLM's own retry twenty milliseconds after the
+    SDK's last, its Retry-After unread, where asking for none spaced the same three.
+    A call past its deadline or its retries is a model error like any other, which
+    `ReportProviderErrors` turns into that guideline's own answer.
 
     The budget is configuration, not a plan: ADK's `BuiltInPlanner` only copied
     it onto the request's config, which the request carries itself, and the

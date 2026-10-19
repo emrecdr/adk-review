@@ -14,7 +14,7 @@ and the packages before it; `tests/test_layering.py` keeps it that way. Around
 the steps:
 
 1. Retries on both arms (`judge/config.py`), set once on the request both clients read:
-   `RETRY_ATTEMPTS` on Gemini, none on Copilot, whose SDK retries twice itself, spaced.
+   `RETRY_ATTEMPTS` on Gemini, none on Copilot, whose SDK spaces two retries of its own.
 2. A token ceiling (`--max-tokens`) that ends the spending, never the report:
    the call that would pass it is refused, the guideline is named, exit 3.
 3. An outside tool for a rule that names one: ruff for `lint`, `pitfalls` and `simplify`
@@ -332,8 +332,8 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         "--cache",
         metavar="DIR",
         help="keep each decided review in DIR, keyed by the reviewer's code and config, the commits, the checks, every "
-        "setting and each model; a review of the same inputs is served from it, with no model call; a hole is never "
-        "kept",
+        "setting and each model; a review of the same inputs is served from it, with no model call; a review with a "
+        "hole, or with a finding no verifier could judge, is never kept",
     )
     parser.add_argument(
         "--previous",
@@ -746,8 +746,8 @@ def _reported(
     tidies: frozenset[str],
 ) -> int:
     """The verdict, decided by code, and the review's reports: the text one always, the hand-off and the JSON where
-    asked for or kept, and the whole kept where a cache is named and the review has no hole. `tidies` are the checks
-    whose findings the hand-off lists apart, as cleanup."""
+    asked for or kept, and the whole kept where a cache is named and the review has no hole and no finding a verifier
+    could not judge. `tidies` are the checks whose findings the hand-off lists apart, as cleanup."""
     seen, seen_health = previous
     verdict, code = decide(outcome, args.fail_on)
     report = render(
@@ -761,8 +761,9 @@ def _reported(
         previous_health=seen_health,
         **shown,
     )
-    # A hole is never kept, nor a finding no verifier could judge: seen live, a verifier met Copilot's 429 and the
-    # review approved a major none judged, which kept would be served again without asking. The next run looks again.
+    # A review with a hole is never kept, nor one with a finding no verifier could judge: seen live, a verifier met
+    # Copilot's 429 and the review approved a major no verifier judged, which the cache would have served again
+    # without asking. The next run looks again.
     keep = cached is not None and code in (EXIT_CLEAN, EXIT_FINDINGS) and not outcome.unverified
     # The hand-off and the JSON only where asked for, or kept: measured by review in-process, each costs about the
     # report's own time, 0.9 and 0.2 times it on the demo and 1.6 and 1.1 times over this repository whole.
@@ -801,13 +802,13 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, data: dict, 
     asked for cannot be written."""
     print(report)
     for flag, written, text in (
-        ("hand-off", args.handoff, handoff),
-        ("JSON report", args.json, json.dumps(data, indent=2, ensure_ascii=False) + "\n"),
+        ("hand-off", args.handoff, lambda: handoff),
+        ("JSON report", args.json, lambda: json.dumps(data, indent=2, ensure_ascii=False) + "\n"),
     ):
-        if not written:
+        if not written:  # measured by review: the JSON was dumped whole for a kept review that wrote none
             continue
         try:
-            _written(Path(written).expanduser(), text)
+            _written(Path(written).expanduser(), text())
         except OSError as exc:  # the folder was there when the review began; a full or read-only disk is not
             _say(f"the {flag} could not be written to {written}: {exc.strerror or exc}")
             return EXIT_DEGRADED

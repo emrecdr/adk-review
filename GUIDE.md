@@ -73,7 +73,7 @@ another, and each refuses a review's own flags — `--json`, `--handoff`, `--cac
 | 0 | Approved: no finding at or above `--fail-on`, and no hole. |
 | 1 | A finding at or above `--fail-on`, and no hole. |
 | 2 | A usage error, before any model call: a flag, a config, a profile or a check file that cannot run; no repository named in a pipeline, or no choice made at the question asked; a branch, base or path that does not resolve, a change against a base in a shallow clone, or a change that adds nothing; an arm that is not ready. |
-| 3 | A hole: a check failed or could not look, the token ceiling refused a call, a changed file no check read whole, or a finding at the bar whose quote the diff does not bear out. Also an error nothing else names, a report's reader that closed the pipe early, a `--json` or `--handoff` file that could not be written, and a reviewer that cannot load. |
+| 3 | A hole: a check failed or could not look, the token ceiling refused a guideline's call (a verifier's leaves its finding unverified), a changed file no check read whole, or a finding at the bar whose quote the diff does not bear out. Also an error nothing else names, a report's reader that closed the pipe early, a `--json` or `--handoff` file that could not be written, and a reviewer that cannot load. |
 | 130 | Stopped by Ctrl-C. |
 | 143 | Stopped by a job, with SIGTERM. |
 
