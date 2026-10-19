@@ -1,16 +1,17 @@
 """A labelled set: branches each holding one known defect, or none, to measure what the guidelines find and what they
-invent. `uv run python scripts/labelled_set.py [--runs K] [--pause S] [--profile NAME] [--branch NAME] [--build-only]`.
+invent. `uv run python scripts/labelled_set.py [--runs K] [--pause S] [--profile NAME | --check ID] [--branch NAME]
+[--build-only]`.
 
 Matching findings to known facts is reliable, at kappa 70.6 to 86.7, where scoring usefulness is not. Each branch is off
 the demo's `main`: a modification that builds SQL from input, a loop that misses its last item, a function with no test,
 a long file whose defect sits past the guidelines' cut, a container that runs privileged, a file read again for each
 item of a loop, a shared function patched for one caller's input, a function copied with one value changed, and two
-clean changes. Each is reviewed K times, under `--profile` where one is named and the default profile otherwise: the
-last three are what `simplify` and `code-review` add guidelines for. A labelled branch scores the runs in which a
-guideline named a finding on the defect's lines; a clean branch scores the runs a guideline made a finding at major
-or above, a false one; each says which guidelines did. Injection attempts are `scripts/injection_suite.py`'s. Each
-review calls the model: run it only when a live measurement is wanted; `--build-only` builds the branches and calls
-nothing.
+clean changes. Each is reviewed K times, under `--profile` where one is named, each guideline `--check` names alone
+where one is, and the default profile otherwise: the last three are what `simplify` and `code-review` add guidelines
+for. A labelled branch scores the runs in which a guideline named a finding on the defect's lines; a clean branch scores
+the runs a guideline made a finding at major or above, a false one; each says which guidelines did. Injection attempts
+are `scripts/injection_suite.py`'s. Each review calls the model: run it only when a live measurement is wanted;
+`--build-only` builds the branches and calls nothing.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from make_demo_repo import BASE_REF, CHARGE, _git, branch, build
-from measure import ROOT, judged, options, picked, reviewed, tally
+from measure import ROOT, chosen, judged, options, picked, reviewed, tally
 
 #: The characters of a file's diff a guideline reads, as the shipped config sets them: each review here runs the
 #: command as it ships.
@@ -192,7 +193,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     results: dict[str, list[bool]] = {}
     by: dict[str, Counter[str]] = {}
-    for name, review in reviewed(repo, picked(parser, made, args.branch), args.runs, args.pause, args.profile):
+    for name, review in reviewed(repo, picked(parser, made, args.branch), args.runs, args.pause, chosen(args)):
         named = named_by(name, review.data) if review.data else set()
         results.setdefault(name, []).append(bool(named))
         by.setdefault(name, Counter()).update(named)

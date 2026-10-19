@@ -1,5 +1,5 @@
 """How often the guidelines find what the demo plants: `uv run python scripts/measure.py [--runs N] [--pause S]
-[--all]`.
+[--all] [--profile NAME | --check ID]`.
 
 What code finds is found every run; what a guideline finds is the model's doing and varies. This builds the planted
 branch, reviews it N times, and reads each review from the JSON report it writes, or, where a review decided nothing
@@ -27,7 +27,7 @@ import sys
 import tempfile
 import time
 from collections import Counter
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple
@@ -109,12 +109,24 @@ def read_json(data: dict, run: Run) -> Run:
 
 
 def live(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
-    """The flags every live measurement takes: how many runs, the pause between them, and the profile each review
-    runs, the shipped default unless one is named."""
+    """The flags every live measurement takes: how many runs, the pause between them, and what each review runs: a
+    profile, the shipped default unless one is named, or each check named alone. Measured live under `full`: every
+    guideline's finding stood on a small file's planted lines, so which one found a defect could not be told; a
+    guideline run alone can only be its own."""
     parser.add_argument("--runs", type=int, default=3, help="reviews of each branch (each calls the model)")
     parser.add_argument("--pause", type=float, default=0.0, help="seconds to wait between runs (a quota's worth)")
-    parser.add_argument("--profile", help="the profile each review runs, as the command takes it; default unless named")
+    which = parser.add_mutually_exclusive_group()
+    which.add_argument("--profile", help="the profile each review runs, as the command takes it; default unless named")
+    which.add_argument("--check", action="append", help="run this check alone, as the command does; repeat for more")
     return parser
+
+
+def chosen(args: argparse.Namespace) -> list[str]:
+    """What each review runs, as the command's own flags: each check named, or the profile named, or none, the
+    default."""
+    if args.check:
+        return [flag for check in args.check for flag in ("--check", check)]
+    return ["--profile", args.profile] if args.profile else []
 
 
 def options(script: str, description: str) -> argparse.ArgumentParser:
@@ -134,13 +146,15 @@ def picked(parser: argparse.ArgumentParser, made: dict[str, str], names: list[st
     return {name: made[name] for name in names} if names else made
 
 
-def review_command(repo: Path, branch: str, report: Path, profile: str | None = None, whole: bool = False) -> list[str]:
+def review_command(
+    repo: Path, branch: str, report: Path, selection: Sequence[str] = (), whole: bool = False
+) -> list[str]:
     """The command one run executes: the branch against the demo's base, or every file at its head where `whole`,
-    its JSON to `report`, under `profile` where one is named. Measured before: every live script reviewed with
-    `default`, so a profile's own guidelines, the simplify pass's among them, had no way to be measured."""
+    its JSON to `report`, running what `selection`, `chosen`'s flags, names. Measured before: every live script
+    reviewed with `default`, so a profile's own guidelines, the simplify pass's among them, had no way to be
+    measured."""
     scope = ["--all"] if whole else ["--base", BASE_REF]
-    command = [sys.executable, "-m", COMMAND, str(repo), "--head", branch, *scope, "--json", str(report)]
-    return [*command, "--profile", profile] if profile else command
+    return [sys.executable, "-m", COMMAND, str(repo), "--head", branch, *scope, "--json", str(report), *selection]
 
 
 class Review(NamedTuple):
@@ -158,12 +172,12 @@ def reviewed(
     branches: Mapping[str, str],
     runs: int,
     pause: float,
-    profile: str | None = None,
+    selection: Sequence[str] = (),
     whole: bool = False,
 ) -> Iterator[tuple[str, Review]]:
     """The review of each branch against the demo's base, or of every file at its head where `whole`, `runs` times,
-    each a call to the model: by branch, each run's `Review`; `pause` seconds before every run but the first; under
-    `profile` where one is named. Every live script's runs are these, each held to `TIMEOUT_S`: before, only
+    each a call to the model: by branch, each run's `Review`; `pause` seconds before every run but the first;
+    running what `selection` names. Every live script's runs are these, each held to `TIMEOUT_S`: before, only
     `measure.py`'s own loop was, and a review that never answered would have held every later run of the other two."""
     with tempfile.TemporaryDirectory() as scratch:
         report = Path(scratch) / "review.json"
@@ -173,7 +187,7 @@ def reviewed(
                 if not first and pause:
                     time.sleep(pause)
                 first = False
-                command = review_command(repo, branch, report, profile, whole)
+                command = review_command(repo, branch, report, selection, whole)
                 started = time.monotonic()
                 try:
                     # A review's exit code is its verdict, 1 and 3 among the answers: read, never raised.
@@ -240,7 +254,8 @@ def main(argv: list[str] | None = None) -> int:
     who = "a guideline"
     runs: list[Run] = []
     planted = {"feature/payments": "feature/payments"}
-    for _name, review in reviewed(DEMO_REPO, planted, args.runs, args.pause, args.profile, whole=args.all):
+    selection = chosen(args)
+    for _name, review in reviewed(DEMO_REPO, planted, args.runs, args.pause, selection, whole=args.all):
         run = Run(review.code, review.seconds)
         # A review that decided nothing wrote no JSON, and is read as a person reads its text.
         runs.append(read_json(review.data, run) if review.data else read_text(review.text, run))
@@ -248,7 +263,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  {run.verdict}; {who} named {found}; {run.stray} elsewhere", flush=True)
     total = len(runs)
     what = "the planted branch as a whole project" if args.all else "the planted branch"
-    print(f"\nadk-review at {head.stdout.strip() or 'an unknown commit'}, {total} runs of {what}")
+    under = f", under {' '.join(selection)}" if selection else ""
+    print(f"\nadk-review at {head.stdout.strip() or 'an unknown commit'}, {total} runs of {what}{under}")
     for name in PLANTED:
         readings = Counter(run.named[name] for run in runs if name in run.named)
         said = tally(readings)

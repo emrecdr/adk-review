@@ -414,6 +414,23 @@ def test_a_live_script_reviews_under_the_profile_and_the_branches_it_is_named(mo
     assert refused.value.code == 2 and "no branch named c; there are a, b" in capsys.readouterr().err
 
 
+def test_a_live_script_measures_one_guideline_alone_where_it_is_named(monkeypatch, capsys) -> None:
+    """Measured live under `full`: every guideline's finding stood on the repeated read's lines, and the labelled set
+    credited all six with it, so which one finds what could not be told. Each `--check` reaches each run's command, and
+    nothing else runs; with `--profile` beside it the run is refused, as the command refuses them together."""
+    import measure
+
+    commands = _measured_runs(monkeypatch, measure)
+    picked = ["--check", "guideline.efficiency", "--check", "guideline.altitude"]
+    assert measure.main(["--runs", "1", *picked]) == 0
+    (review,) = [argv for argv in commands if "-m" in argv]
+    assert review[-4:] == picked and "--profile" not in review, review
+    assert "under --check guideline.efficiency --check guideline.altitude" in capsys.readouterr().out
+    with pytest.raises(SystemExit) as refused:
+        measure.main(["--runs", "1", "--profile", "full", "--check", "guideline.tests"])
+    assert refused.value.code == 2 and "not allowed with argument" in capsys.readouterr().err
+
+
 def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(tmp_path) -> None:
     """Matching findings to known facts is reliable where scoring usefulness is not. Each branch holds one defect at
     the lines its label names, or none; a run names a defect when a guideline's finding stands on those lines, and a
