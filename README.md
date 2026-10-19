@@ -105,17 +105,17 @@ on `PATH` alone, with ruff beside it. An installed reviewer reads the model's se
 being read outside the checkout, and its config from beside itself: a team that wants another policy changes
 `config.toml` in its checkout and installs from there, `--editable` so a change applies at once, or passes flags.
 
-Chat runs the same checks: `uv run adk web .` at the root of the checkout, pick `adk_review`, and say what to
-review, the repository's absolute path and its branches: "review /home/me/shop, branch feature/payments against
-main". An intake agent confirms the repository and the commits through read-only tools and asks for what is
-missing, told the repository its conversation already confirmed; the checks node gathers the evidence the command would for those
-commits, runs the rules and writes the change the guidelines read, the command's own block under the same cap and
-skip list; the guidelines judge; and a verdict agent writes the verdict for a person to read. A turn reviews only
-the commits its own intake confirmed: a greeting, a question or a thanks after a review ends at the intake's answer,
-one model call. Chat runs the `default` profile under `[review]`'s `fail_on`, `max_tokens`, `diff_cap`
-and `skip`. Its verdict is a model's prose: the exit code and the second opinion are the command's. Chat asks
-whether its arm can run once a turn, as the command asks before it starts, and answers the same sentence where it
-cannot: on Copilot with no token cached, no login is begun on the server's console.
+Chat runs the same checks: `uv run adk web .` at the root of the checkout, pick `adk_review`, and say what to review,
+the repository's absolute path and its branches: "review /home/me/shop, branch feature/payments against main". An intake
+agent confirms the repository and the commits through read-only tools and asks for what is missing, told the repository
+its conversation already confirmed; the checks node gathers the evidence the command would for those commits, runs the
+rules and writes the change the guidelines read, the command's own block under the same cap and skip list; the
+guidelines judge; and a verdict agent writes the verdict for a person to read. A turn reviews only the commits its own
+intake confirmed: a greeting, a question or a thanks after a review ends at the intake's answer, one model call. Chat
+runs the `default` profile under `[review]`'s `fail_on`, `max_tokens`, `diff_cap` and `skip`. Its verdict is a model's
+prose: the exit code and the second opinion are the command's. Chat asks whether its arm can run once a turn, as the
+command asks before it starts, and answers the same sentence where it cannot: on Copilot with no token cached, no login
+is begun on the server's console.
 
 The tests run offline, on a fake model registered with ADK: `uv run pytest -q`.
 
@@ -331,8 +331,8 @@ class HttpTimeout(FileRule):
         ]
 ```
 
-A tree rule reads the head, every path and each Python module, for what must exist; `demo_required_paths.py` is the whole
-of one:
+A tree rule reads the head, every path and each Python module, for what must exist; `demo_required_paths.py` is the
+whole of one:
 
 ```python
 """The payments project's own shape: the files and folders every branch must keep."""
@@ -394,13 +394,13 @@ class RequiredPaths(TreeRule):
    `lines_hit(rule, path, text)` and `self_check(rule)`: each reads the rule as a review does.
 6. Turn it on: add `rule.no-todo` to `rules-only` and `full`, which a test holds to every rule not named `demo-`;
    `demo` runs it through the group. To run it in every review that names no profile, add it to `default` too, and
-   to `default-rules`, which a test keeps to the default's rules.
+   to `default-rules` and `code-review`, which tests keep to the default's rules and open with them.
 
 The door passes on the contract — `Rule`, `FileRule`, `TreeRule`, `ChangedFile`, `Diagnostic`, `Tree`, `Hit`,
 `UnreadError` and the severity scale, `Severity` and `RANK` — and the helpers: each in a module named after what it
-reads (`lines.py`, `syntax.py`, `diagnostics.py`) or tries a rule with (`testing.py`), or passed on from `core/` where a review reads it
-too — `matches` and `matching` from `paths.py`, `is_test` from `blast.py`, `is_python` from `rules.py`, and a
-credential's shape from `secrets.py`:
+reads (`lines.py`, `syntax.py`, `diagnostics.py`) or tries a rule with (`testing.py`), or passed on from `core/` where a
+review reads it too — `matches` and `matching` from `paths.py`, `is_test` from `blast.py`, `is_python` from `rules.py`,
+and a credential's shape from `secrets.py`:
 
 | Helper | What it answers |
 |---|---|
@@ -485,9 +485,9 @@ one no rule already made.
 
 ## Reports
 
-The text report goes to stdout: the verdict under the title, what was reviewed, under `--all` the project's health,
-the blast radius, a section for each check that found something or failed, one line for those that found nothing, and then what was dropped, refuted, folded, redacted and spent. "The report" in `GUIDE.md` lists it
-line by line. Beside it:
+The text report goes to stdout: the verdict under the title, what was reviewed, under `--all` the project's health, the
+blast radius, a section for each check that found something or failed, one line for those that found nothing, and then
+what was dropped, refuted, folded, redacted and spent. "The report" in `GUIDE.md` lists it line by line. Beside it:
 
 - Under `--all`, where the files are the project, a Health section measures it by code alone: the files read whole,
   the source and the tests in files and lines, the share of the source's function lines in each McCabe complexity
@@ -728,14 +728,14 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   engine's import, and 0.16 to 0.17 s without it, the pre-push hook paying the difference on every push; `--trace`,
   `--debug-log` and `--record` are the engine's own and still bring its run.
 - **A rule that reads ruff reads a copy, never the checkout.** `lint`, `pitfalls` and `simplify` each have ruff run over
-  the same copy. The changed Python files, as the collector read them at the head, are written into a temporary folder,
-  each in a folder of its own under a name of the rule's own — `module.py`, `module.pyi` for a stub, or `__init__.py`
-  where the branch's is one — and named to ruff one by one: a `.venv/` the branch changed is linted, `x.py` beside
-  `X.py/y.py` collides on no disk, and a `nul.py` or `a:b.py`, which Windows cannot hold, is linted like any other. Ruff
-  lints what the collector read and no more: a file not read whole is the hole of each rule that reads ruff. What a code
-  means, its severity and its fix, is the rule's: an `assert` is major in library code, where `python -O` strips it, and
-  minor in a test, where it is how pytest checks. Without ruff, or with one that fails, the rule did not look and says
-  so, exit 3.
+  a copy of their own. The changed Python files, as the collector read them at the head, are written into a temporary
+  folder, each in a folder of its own under a name of the rule's own — `module.py`, `module.pyi` for a stub, or
+  `__init__.py` where the branch's is one — and named to ruff one by one: a `.venv/` the branch changed is linted,
+  `x.py` beside `X.py/y.py` collides on no disk, and a `nul.py` or `a:b.py`, which Windows cannot hold, is linted like
+  any other. Ruff lints what the collector read and no more: a file not read whole is the hole of each rule that reads
+  ruff. What a code means, its severity and its fix, is the rule's: an `assert` is major in library code, where
+  `python -O` strips it, and minor in a test, where it is how pytest checks. Without ruff, or with one that fails, the
+  rule did not look and says so, exit 3.
 - **Grounding.** A guideline's finding must quote, verbatim, whole lines of its own file's diff, within one hunk, as
   the guideline saw them: secrets redacted, diff markers gone, whitespace not counted. Where a quote's line breaks
   were lost, its lines begin and end where the file's do, a diff marker or a fence run into them or not: measured live
@@ -773,14 +773,14 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
 - **Retries live in the clients.** They are set once on the request, which both arms read, as the deadline is: genai
   retries the status codes it deems transient, with backoff, and ADK's LiteLLM wrapper forwards the same field as
   `num_retries`. Gemini asks for three attempts; Copilot asks for one, because the OpenAI SDK under LiteLLM retries
-  twice on its own: asked for three, the two made seven. ADK's node `retry_config` would re-run a whole guideline,
-  and with the error plugin turning errors into answers it would never see one. A quota window outlasts any retry:
-  `REVIEW_FALLBACK_MODEL` puts a second model behind every role's first, through ADK's `FallbackModel`, each model
-  tried once on a 429 or a 5xx, since Gemini's free tier counts its quota per model and Copilot's rate limits differ
-  by model. Seen live on Gemini's free tier: five
-  requests a minute per model, and `--verify` made ten, so the last verifiers met a 429 asking for 39 seconds, and
-  their findings were kept and named with it; and twenty a day, so a key on that tier reviews about six changes a
-  day under `default`, and a live script's sixteen reviews need a paid tier or `--pause` over several days.
+  twice on its own: asked for three, the two made seven. ADK's node `retry_config` would re-run a whole guideline, and
+  with the error plugin turning errors into answers it would never see one. A quota window outlasts any retry:
+  `REVIEW_FALLBACK_MODEL` puts a second model behind every role's first, through ADK's `FallbackModel`, each model tried
+  once on a 429 or a 5xx, since Gemini's free tier counts its quota per model and Copilot's rate limits differ by model.
+  Seen live on Gemini's free tier: five requests a minute per model, and `--verify` made ten, so the last verifiers met
+  a 429 asking for 39 seconds, and their findings were kept and named with it; and twenty a day, so a key on that tier
+  reviews about six changes a day under `default`, and a live script, three reviews of each branch by default, needs a
+  paid tier or `--pause` over several days.
 - **A ceiling reserves first.** The guidelines call at once, so a ceiling that counted only tokens already spent would
   let them all through and be passed by all of them. Each call reserves its cost before it is sent — its request's
   characters over four, room for an answer and the thinking its budget allows — and the call that would pass the ceiling

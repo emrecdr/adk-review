@@ -22,39 +22,42 @@ applyTo: "adk_review/**"
   alone, and the door imports `core` alone; nothing runs. `judge/catalog.py` finds the checks and refuses, with the
   line that raised, a file that will not load, holds no check or two, names its check after another file, writes its
   own `hits`, or fails its own examples. No other folder is read for checks: one place for each kind, one way.
-- A rule names `id` (its file's name with `-` for `_`), `severity` (`blocker`, `major` or `minor`), `title` and `fix`
-  as class constants, its expectations as constants in its file, `bad` and `good` examples (a text, read at
-  `example.py`; a `(path, text)` pair; or `{path: text}`), `reads_tests = True` where what it finds matters in a
-  test too (a credential, hidden text, a workflow named `test_*.yml`; no test's file reaches any other rule, though
-  `file.changed` and `tree.paths` list them all), `cleanup = True` where its findings change how code reads and never
-  what it does (the hand-off lists them as tidies), and one `check` of three kinds — a line, a file, the tree:
-  a `Rule` with `check(path, line) -> bool` over each added line; a `FileRule` with `check(file)` returning line
-  numbers, which the report quotes, or `(line, what is wrong)` pairs over each changed file whole at the head
-  (`file.lines`, `file.added`, `file.changed`, `file.module`, `file.line(n)`, `file.near(n)` for a file past the size
-  limits, as far as its diff shows it, and `file.diagnostics`, an outside tool's,
-  for a rule that names its `tool`, whose adapter is in `collect/tools.py`); a `TreeRule` with `check(tree)` returning `(path, what)` or `(path, line, what)`
-  over the head's paths and parsed modules (`tree.paths`, `tree.has`, `tree.module`, `tree.modules`). Any other
-  shape is a sentence. The helpers come through the door: `is_test`, `matches`, `calls`, `comment_of`, `words`,
-  `tokens`, `calls_in`, `argument`, `functions_in`, `imports_in`, `defined`, `classes`, `parameters` and the rest.
-  A hit may be a `Hit` naming its own title, severity or fix, as `lint` does for ruff's codes. `secrets` and `lint`
-  are written like any other rule; redaction is not a check, and `core/secrets.py` keeps the shapes it scrubs with.
-  A file's lines are numbered as git numbers them (`core/text.py`'s `lines_of`), and a changed file the collector did
-  not read whole is the hole of the file rule that asks for its text — its lines, its module, ruff's diagnostics —
-  and of no other; what that rule found on the files it read stands beside the hole. No rule reads the head for
-  itself. A rule's tests use `try_rule`, `lines_hit` and `self_check` from `judge/rule_helpers/`.
+- A rule names `id` (its file's name with `-` for `_`), `severity` (`blocker`, `major` or `minor`), `title` and `fix` as
+  class constants, its expectations as constants in its file, `bad` and `good` examples (a text, read at `example.py`; a
+  `(path, text)` pair; or `{path: text}`), `reads_tests = True` where what it finds matters in a test too (a credential,
+  hidden text, a workflow named `test_*.yml`; no test's file reaches any other rule, though `file.changed` and
+  `tree.paths` list them all), `cleanup = True` where its findings change how code reads and never what it does (the
+  hand-off lists them as tidies), and one `check` of three kinds — a line, a file, the tree: a `Rule` with
+  `check(path, line) -> bool` over each added line; a `FileRule` with `check(file)` returning line numbers, which the
+  report quotes, or `(line, what is wrong)` pairs over each changed file whole at the head (`file.lines`, `file.added`,
+  `file.changed`, `file.module`, `file.line(n)`, `file.near(n)` for a file past the size limits, as far as its diff
+  shows it, and `file.diagnostics`, an outside tool's, for a rule that names its `tool`, whose adapter is in
+  `collect/tools.py`); a `TreeRule` with `check(tree)` returning `(path, what)` or `(path, line, what)` over the head's
+  paths and parsed modules (`tree.paths`, `tree.has`, `tree.module`, `tree.modules`). Any other shape is a sentence. The
+  helpers come through the door: `is_test`, `matches`, `calls`, `comment_of`, `words`, `tokens`, `calls_in`, `argument`,
+  `functions_in`, `imports_in`, `defined`, `classes`, `parameters` and the rest. A hit may be a `Hit` naming its own
+  title, severity or fix, as `lint` does for ruff's codes. `secrets` and `lint` are written like any other rule;
+  redaction is not a check, and `core/secrets.py` keeps the shapes it scrubs with. A file's lines are numbered as git
+  numbers them (`core/text.py`'s `lines_of`), and a changed file the collector did not read whole is the hole of the
+  file rule that asks for its text — its lines, its module, ruff's diagnostics — and of no other; what that rule found
+  on the files it read stands beside the hole. No rule reads the head for itself. A rule's tests use `try_rule`,
+  `lines_hit` and `self_check` from `judge/rule_helpers/`.
 - A guideline names `id`, `title`, `role` (the instruction's opening: who the model is and what it judges) and
-  `thinking_budget`; `judge/agents.py` builds every guideline's agent the same way around its role.
+  `thinking_budget`, and `cleanup = True` where its findings change how code reads and never what it does, as
+  `complexity`'s do (the hand-off lists them as tidies); `judge/agents.py` builds every guideline's agent the same way
+  around its role.
 - Each check has one id, `rule.<name>` or `guideline.<name>` (`core/profiles.py`), in `config.toml`, on the command
   line (`--check ID`, `--list-checks`) and as its own report section; inside ADK, where names must be identifiers, it
   is `state_key(id)`, `rule_<name>`. Never spell a check's id or key by hand: a check's own `check_id`, built by
   `rule_id` or `guideline_id`, and `state_key`.
-- `config.toml` beside `review.py` is the one config file, nothing naming another: `[review]` the flags' defaults, `[profiles]` named lists of check ids or the groups `rules` and
-  `guidelines`. It is read whole, so a misspelt key is exit 2. No setting of the review is read from the repository
-  under review, and no review is filtered by its `.gitignore`. `default` holds the
-  basics and a check runs only where a profile names it: a new rule joins `demo` through the group, `rules-only` and
-  `full` when its id is added to both, which a test holds to every rule whose id does not start with `demo-`,
-  and `default` and `default-rules` when its id is added to both, since a test keeps `default-rules` to the default's
-  rules; a file with no `default` is refused, exit 2.
+- `config.toml` beside `review.py` is the one config file, nothing naming another: `[review]` the flags' defaults,
+  `[profiles]` named lists of check ids or the groups `rules` and `guidelines`. It is read whole, so a misspelt key is
+  exit 2. No setting of the review is read from the repository under review, and no review is filtered by its
+  `.gitignore`. `default` holds the basics and a check runs only where a profile names it: a new rule joins `demo`
+  through the group, `rules-only` and `full` when its id is added to both, which a test holds to every rule whose id
+  does not start with `demo-`, and `default`, `default-rules` and `code-review` when its id is added to all three, since
+  tests keep `default-rules` to the default's rules and `code-review` opening with them; a file with no `default` is
+  refused, exit 2.
 - `main` wraps the command: an error nothing else names is a sentence and exit 3, never Python's own exit 1, which
   would read as a blocker.
 - `--dry-run`, `--list-checks`, `--try` and `--explain` (`MODES` in `review.py`) each stop before a review would
@@ -76,12 +79,13 @@ applyTo: "adk_review/**"
 - A state key more than one module uses is a constant in `judge/agents.py` (`SCOPE`, `REPOSITORY`, `DIFF`, `BLAST`,
   `RULES`, `FAILURE`), and an instruction reads a key through `placeholder(key)`; `tests/test_engine.py` holds every
   placeholder an instruction reads to a key something writes.
-- Every rule runs the same way, through `run_rule`, in one `FunctionNode` (`judge/checks.py`) before the guidelines,
-  in both shapes, or straight from the driver through the same `run_rules` where no guideline runs; each rule's answer, a `Checked`, is left in state under its check's key. The node also writes the
-  blast radius the guidelines read and, under `RULES`, every answer rendered and capped for the chat's verdict; in
-  chat it gathers the evidence for the commits the intake confirmed, never their names again; and once the rules have
-  read them it lets go of the tree, the texts, the diffs and the added lines. The node never raises: a node that
-  raises ends the whole run, every guideline with it.
+- Every rule runs the same way, through `run_rule`, in one `FunctionNode` (`judge/checks.py`) before the guidelines, in
+  both shapes, or straight from the driver through the same `run_rules` where no guideline runs; each rule's answer, a
+  `Checked`, is left in state under its check's key. The node also writes the blast radius the guidelines read and,
+  under `RULES`, every answer rendered and capped for the chat's verdict; in chat it gathers the evidence for the
+  commits the intake confirmed, never their names again; and once the rules have read them it lets go of the tree, the
+  texts, the diffs and the added lines. The node never raises: a node that raises ends the whole run, every guideline
+  with it.
 - `--json FILE` writes the review as data (`as_data` in `deliver/report.py`): every string through the text report's
   own safety steps, `one_line` then `inert`, evidence cut where the report cuts it. Raise `SCHEMA` when a field
   changes its meaning or goes; add a field freely. A finding's `fingerprint` is built from its check, file and evidence,
