@@ -3,15 +3,18 @@ invent. `uv run python scripts/labelled_set.py [--runs K] [--pause S] [--profile
 [--build-only]`.
 
 Matching findings to known facts is reliable, at kappa 70.6 to 86.7, where scoring usefulness is not. Each branch is off
-the demo's `main`: a modification that builds SQL from input, a loop that misses its last item, a function with no test,
-a long file whose defect sits past the guidelines' cut, a container that runs privileged, a file read again for each
-item of a loop, a shared function patched for one caller's input, a function copied with one value changed, and two
-clean changes. Each is reviewed K times, under `--profile` where one is named, each guideline `--check` names alone
-where one is, and the default profile otherwise: the last three are what `simplify` and `code-review` add guidelines
-for. A labelled branch scores the runs in which a guideline named a finding on the defect's lines; a clean branch scores
-the runs a guideline made a finding at major or above, a false one; each says which guidelines did. Injection attempts
-are `scripts/injection_suite.py`'s. Each review calls the model: run it only when a live measurement is wanted;
-`--build-only` builds the branches and calls nothing.
+the demo's `main`, a ledger's settlement committed beside it: a modification that builds SQL from input, a loop that
+misses its last item, a function with no test, a long file whose defect sits past the guidelines' cut, a container that
+runs privileged; what `simplify` and `code-review` add guidelines for, a file read again for each item of a loop, a
+shared function patched for one caller's input and a function copied with one value changed; a settlement's return
+changed to the balance its statement clamps nine lines above, which forgives a debt its docstring says is carried; and
+three clean changes, a document, a rename and a division a guard twelve lines above makes safe. The settlement's two
+show a guideline their cause only within the function around the hunk, git's three lines of context leave it out. Each
+is reviewed K times, under `--profile` where one is named, each guideline `--check` names alone where one is, and the
+default profile otherwise. A labelled branch scores the runs in which a guideline named a finding on the defect's lines;
+a clean branch scores the runs a guideline made a finding at major or above, a false one; each says which guidelines
+did. Injection attempts are `scripts/injection_suite.py`'s. Each review calls the model: run it only when a live
+measurement is wanted; `--build-only` builds the branches and calls nothing.
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 
-from make_demo_repo import BASE_REF, CHARGE, _git, branch, build
+from make_demo_repo import BASE_REF, CHARGE, _git, _write, branch, build
 from measure import ROOT, chosen, judged, options, picked, reviewed, tally
 
 #: The characters of a file's diff a guideline reads, as the shipped config sets them: each review here runs the
@@ -33,6 +36,35 @@ STEPS = CAP // 32
 LONG = "".join(f"def step_{n}(value: int) -> int:\n    return value + {n}\n\n\n" for n in range(STEPS))
 #: Each branch: the files it writes over the demo's `main`, and its label — the file and the lines of its one
 #: defect, or None for a clean change. A guideline names the defect when a finding of its stands on those lines.
+#: A ledger's settlement, which the labelled set commits on its own `main`, beside the demo's: a function long enough
+#: that git's three lines of context leave out its start, so a branch changing its end shows a guideline what only the
+#: function around the hunk holds.
+SETTLE = '''"""Settling a ledger at the end of the day."""
+
+import logging
+
+log = logging.getLogger(__name__)
+
+
+def settle(balance_cents: int, charges: list[int], refunds: list[int]) -> int:
+    """The balance after the day's charges and refunds. A debt, a balance below zero, is carried to the next day and
+    never forgiven."""
+    if not charges and not refunds:
+        return balance_cents
+    shown = balance_cents
+    if shown < 0:
+        shown = 0  # the statement prints a debt as nothing owed; the balance itself keeps it
+    charged = 0
+    for amount in charges:
+        charged += amount
+    refunded = 0
+    for amount in refunds:
+        refunded += amount
+    net = charged - refunded
+    log.info("statement: %d cents owed, %d cents today", shown, net)
+    return balance_cents + net
+'''
+ON_MAIN = {"src/payments/settle.py": SETTLE}
 BRANCHES: dict[str, tuple[dict[str, str], tuple[str, range] | None]] = {
     "sql-from-input": (
         {"src/payments/charge.py": CHARGE + '''
@@ -133,18 +165,35 @@ def usd_total(amounts: list[tuple[int, str]]) -> int:
 '''},
         ("src/payments/totals.py", range(4, 18)),
     ),
+    "forgives-debt": (
+        {"src/payments/settle.py": SETTLE.replace("    return balance_cents + net\n", "    return shown + net\n")},
+        ("src/payments/settle.py", range(24, 25)),
+    ),
     "clean-docs": ({"README.md": "# payments (demo)\n\nA tiny service the ADK demo reviews, in euro cents.\n"}, None),
     "clean-rename": (
         {"src/payments/charge.py": CHARGE.replace("def format_amount(amount_cents: int", "def format_amount(cents: int")
          .replace("{amount_cents / 100:.2f}", "{cents / 100:.2f}")},
         None,
     ),
+    "guarded-above": (
+        {"src/payments/settle.py": SETTLE.replace(
+            '    log.info("statement: %d cents owed, %d cents today", shown, net)\n',
+            "    average = (charged + refunded) // (len(charges) + len(refunds))\n"
+            '    log.info("statement: %d cents owed, %d cents today, %d on average", shown, net, average)\n',
+        )},
+        None,
+    ),
 }  # fmt: skip
 
 
 def branches(repo: Path) -> dict[str, str]:
-    """Build the demo at `repo` and one branch a label, each off `main`: by label, the branch to review."""
+    """Build the demo at `repo`, with `ON_MAIN` committed on its `main`, and one branch a label, each off `main`: by
+    label, the branch to review."""
     build(repo)
+    _git(repo, "checkout", "-q", BASE_REF)
+    _write(repo, ON_MAIN)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "payments: settle a ledger")
     made = {}
     for name, (files, _label) in BRANCHES.items():
         made[name] = f"label/{name}"

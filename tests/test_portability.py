@@ -449,12 +449,21 @@ def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(t
         "repeated-io": "read_text",
         "special-case": "the import job",
         "copied-block": "def usd_total",
+        "forgives-debt": "return shown + net",
     }
     for name, marker in markers.items():
         path, lines = labelled.BRANCHES[name][1]
         argv = ["git", "-C", str(tmp_path / "repo"), "show", f"{made[name]}:{path}"]
         text = subprocess.run(argv, capture_output=True, encoding="utf-8", check=True).stdout.split("\n")
         assert next(n for n, line in enumerate(text, 1) if marker in line) in lines, name
+    from adk_review.collect.git import collect_evidence
+
+    for name, needed in (("forgives-debt", "shown = 0"), ("guarded-above", "if not charges and not refunds:")):
+        seen = [
+            collect_evidence(str(tmp_path / "repo"), "main", made[name], guidelines=g)["files"] for g in (True, False)
+        ]
+        (shown,), (plain,) = seen
+        assert needed in shown["diff"] and needed not in plain["diff"], f"{name}: only the function around it shows"
 
     def report(*findings: tuple[str, str, int, str]) -> dict:
         found = [{"check": c, "file": f, "line": n, "lines": [n, n], "severity": s} for c, f, n, s in findings]
