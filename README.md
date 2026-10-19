@@ -83,6 +83,9 @@ uv run adk-review <repo> --base main --profile default-rules    # the default's 
 uv run adk-review <repo> --head <branch> --base main --verify   # a second model judges each guideline finding
 uv run adk-review <repo> --base main --max-tokens 20000         # the call that would pass the ceiling is refused
 uv run adk-review <repo> --base main --profile rules-only       # every rule but the demo's: no model, no key
+uv run adk-review <repo> --base main --profile simplify         # as Claude Code's /simplify: the cleanup, three calls
+uv run adk-review <repo> --base main --profile code-review      # as its /code-review: bugs, then the cleanup, five
+uv run adk-review <repo> --all --path src --profile code-review # one folder of the whole codebase, reviewed so
 uv run adk-review <repo> --base main --path <folder>            # one folder of the change, the rest counted
 uv run adk-review <repo> --all --profile rules-only             # every file at the head, not a change
 uv run adk-review <repo> --staged --profile default-rules       # what is staged, against HEAD
