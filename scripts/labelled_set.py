@@ -7,8 +7,8 @@ a long file whose defect sits past the guidelines' cut, a container that runs pr
 item of a loop, a shared function patched for one caller's input, a function copied with one value changed, and two
 clean changes. Each is reviewed K times, under `--profile` where one is named and the default profile otherwise: the
 last three are what `simplify` and `code-review` add guidelines for. A labelled branch scores the runs in which a
-guideline named a finding on the defect's lines, and says which guidelines did; a clean branch scores the runs a
-guideline made a finding at major or above, a false one. Injection attempts are `scripts/injection_suite.py`'s. Each
+guideline named a finding on the defect's lines; a clean branch scores the runs a guideline made a finding at major
+or above, a false one; each says which guidelines did. Injection attempts are `scripts/injection_suite.py`'s. Each
 review calls the model: run it only when a live measurement is wanted; `--build-only` builds the branches and calls
 nothing.
 """
@@ -153,27 +153,29 @@ def branches(repo: Path) -> dict[str, str]:
 
 
 def named_by(name: str, data: dict) -> set[str]:
-    """The guidelines whose findings, kept or folded, stand on a labelled branch's defect: which of them named it,
-    since a finding of another dimension can quote the same lines, a test missing for the function holding it."""
+    """The guidelines a run scores by: on a labelled branch, those whose findings, kept or folded, stand on its
+    defect's lines; on a clean one, those that made a finding at major or above, a false one. Measured live on Copilot:
+    a clean rename drew a false major in 3 of 3 runs under `full`, and which guideline made it was unknown. A finding
+    stands on a defect's lines whatever it says of them: one quoting a small file's whole function, a test missing for
+    it say, stands on every line, so on such a branch every guideline can name the defect."""
     label = BRANCHES[name][1]
+    found = judged(data)
     if label is None:
-        return set()
+        return {check for check, _file, _at, severity in found if severity in ("major", "blocker")}
     path, lines = label
-    return {check for check, file, at, _severity in judged(data) if file == path and set(at) & set(lines)}
+    return {check for check, file, at, _severity in found if file == path and set(at) & set(lines)}
 
 
 def scored(name: str, data: dict) -> bool:
     """One run of one branch: a labelled branch's defect named by a guideline, or a clean branch given a finding at
     major or above, a false one."""
-    if BRANCHES[name][1] is None:
-        return any(severity in ("major", "blocker") for *_where, severity in judged(data))
     return bool(named_by(name, data))
 
 
 def table(results: dict[str, list[bool]], by: Mapping[str, Counter[str]]) -> list[str]:
-    """Each branch's line: a defect named in N of K runs, and by which guidelines in how many, or a clean change
-    given a false finding in N of K."""
-    lines = ["| branch | label | runs | named by |", "|---|---|---|---|"]
+    """Each branch's line: a defect named in N of K runs, or a clean change given a false finding in N of K, and by
+    which guidelines in how many."""
+    lines = ["| branch | label | runs | by |", "|---|---|---|---|"]
     for name, hits in results.items():
         what = "clean: a false finding" if BRANCHES[name][1] is None else "its defect named"
         who = ", ".join(f"{check} {count}" for check, count in by.get(name, Counter()).most_common())

@@ -448,6 +448,10 @@ def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(t
     assert not labelled.scored("sql-from-input", report(("rule.lint", "src/payments/charge.py", 23, "major")))
     assert labelled.scored("clean-docs", report(("guideline.tests", "README.md", 3, "major")))
     assert not labelled.scored("clean-docs", report(("guideline.tests", "README.md", 3, "minor")))
+    false = report(
+        ("guideline.altitude", "src/payments/charge.py", 18, "major"), ("guideline.tests", "a.py", 1, "minor")
+    )
+    assert labelled.named_by("clean-rename", false) == {"guideline.altitude"}, "who made a clean branch's false major"
     row = labelled.table({"sql-from-input": [True, False]}, {})[-1]
     assert row == "| sql-from-input | its defect named | 1 of 2 |  |", row
     io = report(
