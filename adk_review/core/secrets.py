@@ -166,6 +166,12 @@ def scrub(text: str) -> tuple[str, int]:
     return text, total
 
 
+#: How far past a cut a credential crossing it can run: past twice an 8,192-bit key's block, about 6,600 characters
+#: with a diff's markers. A cut searches no further, so it costs its own length and never the text's: measured by
+#: review, a 2 MB diff of padding shaped like a token took 3.6 s to cut at 16,000.
+CREDENTIAL_REACH = 16_384
+
+
 def spans(text: str) -> list[tuple[int, int]]:
     """Where each known secret shape sits in `text`, as `(start, end)`: what a cut must never fall inside, since half a
     credential no longer matches its shape and would be sent unredacted."""

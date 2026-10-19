@@ -440,6 +440,28 @@ class TestWhatTheSecretsGateKnows:
             named = int(shown.rsplit("[… cut at ", 1)[1].split(" ")[0].replace(",", ""))
             assert len(before) <= named < DIFF_CAP_CHARS, "cut before the credential, and named where"
 
+    def test_a_cut_reads_no_further_than_a_credential_crossing_it_could_run(self) -> None:
+        """Measured by review: a cut searched the whole text for where credentials sit, so a 2 MB diff of padding
+        shaped like a token took 3.6 s to cut at 16,000, every file at the cap paying it. A credential crossing the cut
+        starts before it and runs no further than the longest one does, so the search stops there; a key block of an
+        8,192-bit key crossing the cap is still moved past whole."""
+        import time
+
+        from adk_review.collect.diff import DIFF_CAP_CHARS, capped
+        from adk_review.core.text import cut_at
+
+        started = time.perf_counter()
+        cut_at("+" + "-eyJ" * 2**19, DIFF_CAP_CHARS, sep="\n")
+        assert time.perf_counter() - started < 0.5, "the search stops where no crossing credential could reach"
+        block = (
+            "+-----BEGIN RSA PRIVATE KEY-----\n"
+            + "+MIIJKAIBAAKCAgEAyn3bRHQ5abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO\n" * 100
+        )
+        block += "+-----END RSA PRIVATE KEY-----\n"
+        before = "+x = 1\n" * ((DIFF_CAP_CHARS - 20) // 7)
+        shown, cut = capped(before + block + "+y = 2\n" * 50)
+        assert cut and "MIIJKA" not in shown, shown[-200:]
+
     def test_a_value_on_the_line_after_its_name_is_hidden(self) -> None:
         """YAML may put a value on the line after its name. The redaction reads whole text, so it hides that one too,
         on an added line or a diff's context line alike."""

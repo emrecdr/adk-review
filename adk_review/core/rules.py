@@ -34,7 +34,7 @@ from .evidence import Entry, unreleased
 from .findings import Checked, Finding, Severity
 from .paths import matches
 from .profiles import rule_id
-from .secrets import scrub
+from .secrets import CREDENTIAL_REACH, scrub
 from .text import EVIDENCE_MAX_CHARS, cut_at, lines_of
 
 #: One example a rule carries: a text, read at `example.py`; a `(path, text)` pair, for a rule that chooses its files;
@@ -392,9 +392,10 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
                 line=hit.line,
                 severity=hit.severity or rule.severity,
                 title=f"{rule.id}: {hit.title or rule.title}",
-                # The report never prints a secret, a rule's evidence included, and the line is cut once, after the
-                # scrub: measured by review, a 10 MB line was scrubbed again by every later reader, 160 s in all.
-                evidence=cut_at(scrub(hit.text)[0], EVIDENCE_MAX_CHARS),
+                # The report never prints a secret, a rule's evidence included, and the line is cut once, after a
+                # scrub reading as far as a credential crossing the cut could run: measured by review, a 10 MB line
+                # was scrubbed again by every later reader, 160 s in all, and one 2 MB line whole took 9 s.
+                evidence=cut_at(scrub(hit.text[: EVIDENCE_MAX_CHARS + CREDENTIAL_REACH])[0], EVIDENCE_MAX_CHARS),
                 suggestion=hit.fix or rule.fix,
             )
             for hit in hits

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from bisect import bisect_left, bisect_right
 from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from functools import lru_cache
@@ -313,6 +314,45 @@ def _precedence(item: Sourced, tidies: frozenset[str]) -> tuple[int, bool]:
     return -RANK[item.finding.severity], item.source in tidies
 
 
+@dataclass
+class _Held:
+    """What one file kept, as the fold asks of it. A span the diff places is kept only where it holds no kept span and
+    none holds it, so no two kept spans start on one line, and sorted by start their ends rise too: the spans holding a
+    new one lie in one run of them, and those it holds in another, each found by bisection. Each kept finding's turn
+    names the first it overlaps, as reading every one in the order kept would."""
+
+    starts: list[int] = field(default_factory=list)
+    ends: list[int] = field(default_factory=list)
+    placed: list[tuple[int, int]] = field(default_factory=list)  # each placed one's turn and index, by start
+    unplaced: list[tuple[int, int, str]] = field(
+        default_factory=list
+    )  # each one no line places, its turn, index, quote
+    every: list[tuple[int, str, Lines]] = field(default_factory=list)  # each one's index, quote and lines, in turn
+
+    def overlapped(self, seen: str, lines: Lines) -> int | None:
+        """The index of the first kept finding one quoting `seen` on `lines` overlaps, or None: one no line places
+        is read against every quote."""
+        if lines is None:
+            return next((at for at, quote, held in self.every if _overlaps(seen, None, quote, held)), None)
+        first, last = lines
+        holding = range(bisect_left(self.ends, last), bisect_right(self.starts, first))
+        held = range(bisect_left(self.starts, first), bisect_right(self.ends, last))
+        found = [self.placed[at] for run in (holding, held) for at in run]
+        found += [(turn, at) for turn, at, quote in self.unplaced if _overlaps(seen, lines, quote, None)][:1]
+        return min(found)[1] if found else None
+
+    def keep(self, index: int, seen: str, lines: Lines) -> None:
+        turn = len(self.every)
+        self.every.append((index, seen, lines))
+        if lines is None:
+            self.unplaced.append((turn, index, seen))
+            return
+        at = bisect_left(self.starts, lines[0])
+        self.starts.insert(at, lines[0])
+        self.ends.insert(at, lines[1])
+        self.placed.insert(at, (turn, index))
+
+
 def dedupe(
     kept: list[Sourced], tidies: frozenset[str] = frozenset()
 ) -> tuple[list[Sourced], list[tuple[Sourced, Sourced]]]:
@@ -332,17 +372,20 @@ def dedupe(
     the lint rule reads whole files, so a test-heavy branch brings findings by
     the hundred per file, and comparing every pair through `as_seen`'s cache
     measured 689 ms at 1,000 findings against 32 ms this way; most severe
-    first costs what the order before it did, 12 ms each on a thousand.
+    first costs what the order before it did, 12 ms each on a thousand. And
+    a finding is compared with the kept spans that can hold it or lie in it,
+    never with each one kept: measured by review, 20,000 keys a line rule found
+    in one file took 37 s, 2 x 10^8 comparisons.
     """
-    held: dict[str, list[tuple[int, str, Lines]]] = {}  # file -> each kept finding's index, quote as seen, lines
+    held: dict[str, _Held] = {}  # file -> what it kept
     into: dict[int, int] = {}  # a folded finding's index -> the index of the finding it folded into
     # `sorted` is stable: on a tie the first source comes first.
     for index in sorted(range(len(kept)), key=lambda i: _precedence(kept[i], tidies)):
         item = kept[index]
-        seen, here = as_seen(item.finding.evidence), held.setdefault(item.finding.file, [])
-        survivor = next((at for at, quote, lines in here if _overlaps(seen, item.lines, quote, lines)), None)
+        seen, here = as_seen(item.finding.evidence), held.setdefault(item.finding.file, _Held())
+        survivor = here.overlapped(seen, item.lines)
         if survivor is None:
-            here.append((index, seen, item.lines))
+            here.keep(index, seen, item.lines)
         else:
             into[index] = survivor
     return [item for index, item in enumerate(kept) if index not in into], [

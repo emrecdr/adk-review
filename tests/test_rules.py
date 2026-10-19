@@ -251,6 +251,80 @@ class TestTheLintRule:
         assert "more of ruff's findings in this file, not listed" in counted.title, counted
         assert counted.severity == "minor" and counted.evidence.startswith("F401 x"), counted
 
+    @staticmethod
+    def _pairwise(kept: list, tidies: frozenset[str] = frozenset()) -> tuple[list, list]:
+        """The fold as specified: in order of precedence, each finding kept unless it overlaps one kept before it in
+        its file, and folded into the first such."""
+        from adk_review.core.verdict import _overlaps, _precedence, as_seen
+
+        held: dict[str, list] = {}
+        into: dict[int, int] = {}
+        for index in sorted(range(len(kept)), key=lambda i: _precedence(kept[i], tidies)):
+            item = kept[index]
+            seen, here = as_seen(item.finding.evidence), held.setdefault(item.finding.file, [])
+            survivor = next((at for at, quote, lines in here if _overlaps(seen, item.lines, quote, lines)), None)
+            if survivor is None:
+                here.append((index, seen, item.lines))
+            else:
+                into[index] = survivor
+        return [item for index, item in enumerate(kept) if index not in into], [
+            (kept[i], kept[into[i]]) for i in sorted(into)
+        ]
+
+    def test_the_fold_keeps_and_names_what_the_pairwise_fold_does(self) -> None:
+        """The fold finds what a finding overlaps through each file's kept spans, never every pair: the same findings
+        kept, each folded one under the same survivor, over random mixes of rules' lines, guidelines' spans and
+        findings no line places, at every severity."""
+        import random
+
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Sourced, dedupe
+
+        rng = random.Random(20261020)
+        words = ["return None", "x = 1", "os.system(cmd)", "import os", "pass"]
+        for _case in range(400):
+            found = []
+            for _n in range(rng.randint(1, 40)):
+                start = rng.randint(1, 30)
+                placed = rng.random() < 0.85
+                lines = (start, start + rng.choice((0, 0, 0, 1, 2, 5, 12))) if placed else None
+                quote = "\n".join(rng.sample(words, rng.randint(1, 3)))
+                finding = Finding(
+                    file=rng.choice(("a.py", "b.py")),
+                    line=lines[0] if lines else None,
+                    severity=rng.choice(("blocker", "major", "minor")),
+                    title="t",
+                    evidence=quote,
+                    suggestion="s",
+                )
+                found.append(
+                    Sourced(rng.choice(("rule.lint", "guideline.security", "guideline.complexity")), finding, lines)
+                )
+            tidies = frozenset({"guideline.complexity"})
+            assert dedupe(found, tidies) == self._pairwise(found, tidies)
+
+    def test_the_fold_reads_ten_thousand_findings_in_one_file_in_linear_time(self) -> None:
+        """Measured by review: the fold compared each finding with every one kept in its file, and 20,000 keys a line
+        rule found in one file took 37 s, 2 x 10^8 comparisons. Through the kept spans, which never hold one another,
+        two searches find what a finding overlaps."""
+        import time
+
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Sourced, dedupe
+
+        found = [
+            Sourced(
+                "rule.secrets",
+                Finding(file="keys.py", line=n, severity="blocker", title="t", evidence=f"k{n}", suggestion="s"),
+                (n, n),
+            )
+            for n in range(1, 10_001)
+        ]
+        started = time.perf_counter()
+        kept, folded = dedupe(found)
+        assert (len(kept), folded) == (10_000, [])
+        assert time.perf_counter() - started < 1.0, "linear, where it was quadratic"
+
     def test_the_more_severe_reading_of_a_line_survives_the_fold_whole(self) -> None:
         """Measured live: E501 first at minor, then a guideline's blocker on the same line — keeping the first title at
         the higher severity made "line too long" a blocker."""
@@ -1006,6 +1080,21 @@ class TestTheShippedRules:
         assert found, "the key is found"
         assert all(len(f.evidence) < EVIDENCE_MAX_CHARS + 40 and "characters]" in f.evidence for f in found), found
         assert all("AKIA" not in f.evidence for f in found), "scrubbed before the cut"
+
+    def test_a_rules_evidence_costs_its_cut_not_its_line(self) -> None:
+        """Measured by review: the evidence of one 2 MB line holding a key took 9 s, the whole line scrubbed and then
+        searched again for where to cut it, for the 400 characters kept. The scrub reads as far as the cut and a
+        credential crossing it could run."""
+        import time
+
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.secrets import Secrets
+
+        line = 'k = "AKIA' + 'IOSFODNN7EXAMPLE"  # ' + "-eyJ" * 2**19
+        started = time.perf_counter()
+        found = run_rules({"files": [_entry("m.py", line + "\n")], "tree": None}, [Secrets()])["rule.secrets"].findings
+        assert found and all("AKIA" not in f.evidence for f in found), found
+        assert time.perf_counter() - started < 3.0, "the rule's own reading, and no more"
 
     def test_named_secrets_reads_a_long_number_in_linear_time(self) -> None:
         """Measured by review: the pattern for a number had two ways to split a run of digits and tried each on a

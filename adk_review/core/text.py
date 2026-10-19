@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-from .secrets import spans
+from .secrets import CREDENTIAL_REACH, spans
 
 #: A reason is read by a person: a verifier's prose, a raw exception that escaped the engine; 400 characters say it.
 REASON_MAX_CHARS = 400
@@ -55,7 +55,7 @@ def cut_at(text: str, limit: int, *, sep: str = " ") -> str:
     """
     if len(text) <= limit:
         return text
-    found = spans(text)
+    found = spans(text[: limit + CREDENTIAL_REACH])  # one crossing the cut starts before it
     while straddled := [start for start, end in found if start < limit < end]:
         limit = min(straddled)
     return f"{text[:limit]}{sep}[… cut at {limit:,} characters]"
