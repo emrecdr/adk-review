@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from types import MappingProxyType
 
-from ..rule_helpers import ChangedFile, FileRule, Hit, is_python, listed
+from ..rule_helpers import ChangedFile, FileRule, Hit, listed
 
 #: ruff's codes, run --isolated: what reads more simply.
 SELECT = (
@@ -54,11 +54,9 @@ class Simplify(FileRule):
     severity = "minor"
     cleanup = True  # how the code reads, never what it does
     title = "code ruff can write more simply"
-    fix = "Write the simpler form ruff names."
+    fix = SIMPLER
     tool = "ruff"
     tool_settings = MappingProxyType({"select": SELECT, "ignore": IGNORE, "line_length": None})
 
     def check(self, file: ChangedFile) -> list[Hit]:
-        if not is_python(file.path, lambda: file.line(1)):  # ruff reads Python: another file's text is never asked for
-            return []
-        return listed(file, [(found, self.severity) for found in file.diagnostics], FIX)
+        return listed(file, lambda _found: self.severity, FIX)

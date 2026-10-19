@@ -22,7 +22,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from make_demo_repo import BASE_REF, CHARGE, _git, branch, build
-from measure import ROOT, judged, options, picked, reviewed
+from measure import ROOT, judged, options, picked, reviewed, tally
 
 #: The characters of a file's diff a guideline reads, as the shipped config sets them: each review here runs the
 #: command as it ships.
@@ -178,8 +178,7 @@ def table(results: dict[str, list[bool]], by: Mapping[str, Counter[str]]) -> lis
     lines = ["| branch | label | runs | by |", "|---|---|---|---|"]
     for name, hits in results.items():
         what = "clean: a false finding" if BRANCHES[name][1] is None else "its defect named"
-        who = ", ".join(f"{check} {count}" for check, count in by.get(name, Counter()).most_common())
-        lines.append(f"| {name} | {what} | {sum(hits)} of {len(hits)} | {who} |")
+        lines.append(f"| {name} | {what} | {sum(hits)} of {len(hits)} | {tally(by.get(name, Counter()))} |")
     return lines
 
 
@@ -193,9 +192,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     results: dict[str, list[bool]] = {}
     by: dict[str, Counter[str]] = {}
-    for name, _code, data in reviewed(repo, picked(parser, made, args.branch), args.runs, args.pause, args.profile):
-        results.setdefault(name, []).append(scored(name, data) if data else False)
-        by.setdefault(name, Counter()).update(named_by(name, data) if data else ())
+    for name, review in reviewed(repo, picked(parser, made, args.branch), args.runs, args.pause, args.profile):
+        named = named_by(name, review.data) if review.data else set()
+        results.setdefault(name, []).append(bool(named))
+        by.setdefault(name, Counter()).update(named)
     print("\n".join(table(results, by)))
     return 0
 

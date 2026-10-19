@@ -494,11 +494,12 @@ class TestThePreviousReportAndTheHandoff:
         first = written.split("\n1. ", 1)[1].split("\n2. ", 1)[0]
         assert "blocker — at the bar" in first and "REDACTED" in first and "AKIA" not in written
         assert "   - after: `rule.secrets` no longer reports fingerprint `" in first
-        from adk_review.judge.rules.lint import fix_for
+        from adk_review.judge.rule_helpers import fix_of
+        from adk_review.judge.rules.lint import FIX
 
-        labelled = fix_for("F401", "Remove unused import: `os`", "safe")
+        labelled = fix_of(FIX, "F401", "Remove unused import: `os`", "safe")
         assert labelled == "Remove unused import: `os` (a fix ruff labels safe)"
-        assert fix_for("F401", None) == "Remove the unused import, or export it on purpose."
+        assert fix_of(FIX, "F401", None) == "Remove the unused import, or export it on purpose."
 
     @pytest.mark.parametrize(("fail_on", "at_bar"), [("major", True), ("blocker", False)])
     def test_a_handoff_names_each_folded_finding_and_whether_it_is_at_the_bar(
@@ -954,6 +955,9 @@ class TestTheModesBesideAReview:
         explained = capsys.readouterr().out
         assert explained.startswith("# rule.no-print\n") and "## It flags" in explained
         assert "\n- tests     not read\n" in explained, "a test's print is the test's own"
+        assert "\n- cleanup   no\n" in explained, "a print left in is a defect, not how the code reads"
+        for tidy in ("rule.simplify", "guideline.complexity"):
+            assert cli.main(["--explain", tidy]) == 0 and "\n- cleanup   yes\n" in capsys.readouterr().out, tidy
         assert cli.main(["--explain", "rule.secrets"]) == 0 and "\n- tests     read\n" in capsys.readouterr().out
         assert "`def print(self, text):`" in explained.split("## It leaves alone", 1)[1]
         assert cli.main(["--explain", "guideline.security"]) == 0 and "## Its role" in capsys.readouterr().out

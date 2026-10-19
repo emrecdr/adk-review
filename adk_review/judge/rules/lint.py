@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from types import MappingProxyType
 
-from ..rule_helpers import ChangedFile, FileRule, Hit, Severity, fix_of, is_python, is_test, listed, tier
+from ..rule_helpers import ChangedFile, FileRule, Hit, Severity, is_test, listed, tier
 
 #: ruff's codes, run --isolated: errors, pyflakes, warnings, bugbear and bandit, then what a reviewer asks for and no
 #: other check here makes, at ruff's own thresholds: complexity (C901: 10; PLR0911, PLR0912, PLR0913, PLR0915: 6
@@ -78,12 +78,6 @@ def severity_of(code: str) -> Severity:
     return tier(SEVERITY, code) or "minor"
 
 
-def fix_for(code: str, offered: str | None, label: str | None = None) -> str:
-    """Ruff's own fix when it offers one, with ruff's own label for it, else the code's or its family's sentence,
-    else a pointer."""
-    return fix_of(FIX, code, offered, label)
-
-
 class Lint(FileRule):
     """A finding ruff can make is one no guideline need spend a model's attention on, and one no model can miss."""
 
@@ -96,11 +90,9 @@ class Lint(FileRule):
     tool_settings = MappingProxyType({"select": SELECT, "ignore": IGNORE, "line_length": LINE_LENGTH})
 
     def check(self, file: ChangedFile) -> list[Hit]:
-        if not is_python(file.path, lambda: file.line(1)):  # ruff reads Python: another file's text is never asked for
-            return []
         tests = is_test(file.path)
-        rated = [
-            (found, IN_TESTS[found.code] if tests and found.code in IN_TESTS else severity_of(found.code))
-            for found in file.diagnostics
-        ]
-        return listed(file, rated, FIX)
+        return listed(
+            file,
+            lambda found: IN_TESTS[found.code] if tests and found.code in IN_TESTS else severity_of(found.code),
+            FIX,
+        )

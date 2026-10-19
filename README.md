@@ -413,7 +413,7 @@ credential's shape from `secrets.py`:
 | `functions_in(code)`, `imports_in(code)`, `nodes_in(code, *kinds)`, `name_of(node)` | Every function; every imported name with its line; every node of a kind; a name as written, dotted |
 | `defined(module)`, `classes(module)`, `parameters(module, function)` | What a module defines; its classes and their parents; a function's parameters |
 | `try_rule`, `lines_hit`, `self_check`, `self_test` | A rule tried on files, on a text, on its own source, on its own examples |
-| `listed(file, rated, fixes)`, `tier(table, code)`, `family(code)`, `fix_of(table, code, offered, label)`, `PER_FILE` | A ruff-backed rule's findings on one file, each diagnostic at the severity the rule rated it: the change's own lines listed, at most `PER_FILE`, and the rest counted; a code's entry in a rule's table by the longest key in its family; ruff's own fix with its label, else the table's sentence |
+| `listed(file, rate, fixes)`, `tier(table, code)`, `family(code)`, `fix_of(table, code, offered, label)`, `PER_FILE` | A ruff-backed rule's findings on one file, each diagnostic at the severity `rate` gives it, none for a file that is not Python: the change's own lines listed, at most `PER_FILE`, and the rest counted; a code's entry in a rule's table by the longest key in its family; ruff's own fix with its label, else the table's sentence |
 
 Three limits stay. A line helper reads one line alone, so a line inside a docstring reads as code; a rule that must
 tell them apart reads the file. Names are read as written: after `from requests import get`, `get(url)` is not

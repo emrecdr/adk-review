@@ -464,7 +464,7 @@ def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(t
     assert by == {"guideline.efficiency", "guideline.tests"}, "a guideline of another dimension is told apart"
     tallied = {"repeated-io": Counter({"guideline.efficiency": 3, "guideline.tests": 1})}
     row = labelled.table({"repeated-io": [True, True, True]}, tallied)[-1]
-    assert row == "| repeated-io | its defect named | 3 of 3 | guideline.efficiency 3, guideline.tests 1 |", row
+    assert row == "| repeated-io | its defect named | 3 of 3 | guideline.efficiency x3, guideline.tests x1 |", row
 
 
 def test_the_copilot_login_is_a_command_of_the_install(monkeypatch, tmp_path: Path) -> None:

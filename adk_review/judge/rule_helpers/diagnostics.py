@@ -8,10 +8,10 @@ same for each, and lives here once.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 
 from ...core.findings import RANK, Severity
-from ...core.rules import ChangedFile, Diagnostic, Hit
+from ...core.rules import ChangedFile, Diagnostic, Hit, is_python
 
 #: How many of ruff's findings one file lists: the most severe first, the rest counted in one finding at the most
 #: severe of them, so no tier is lost and the report stays one a person reads. Measured with no cap: a new file of
@@ -41,11 +41,15 @@ def fix_of(table: Mapping[str, str], code: str, offered: str | None, label: str 
     return tier(table, code) or f"see ruff rule {code}"
 
 
-def listed(file: ChangedFile, rated: list[tuple[Diagnostic, Severity]], fixes: Mapping[str, str]) -> list[Hit]:
-    """Each of ruff's diagnostics on `file`, at the severity the rule rated it, as findings: those on lines the change
+def listed(file: ChangedFile, rate: Callable[[Diagnostic], Severity], fixes: Mapping[str, str]) -> list[Hit]:
+    """Each of ruff's diagnostics on `file`, at the severity `rate` gives it, as findings: those on lines the change
     added one by one, at most `PER_FILE` of them, the most severe first; the rest counted, one finding each for the
     lines the change did not add and for the ones past the cap, so the verdict reads the same. `fixes` is the rule's
-    own table of sentences, read where ruff offers no fix."""
+    own table of sentences, read where ruff offers no fix. None for a file that is not Python: ruff reads Python, and
+    another file's text is never asked for, so one not read whole is no rule's hole."""
+    if not is_python(file.path, lambda: file.line(1)):
+        return []
+    rated = [(found, rate(found)) for found in file.diagnostics]
     tail: list[Hit] = []
     # What ruff reports on lines the change did not add is counted, one finding a file at the most severe of them,
     # so the verdict reads the same. Measured over this repository's 22 commits: 2,101 of lint's 2,435 findings,

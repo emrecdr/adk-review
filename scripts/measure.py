@@ -30,6 +30,7 @@ from collections import Counter
 from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import NamedTuple
 
 from make_demo_repo import BASE_REF, demo_repo
 
@@ -46,6 +47,8 @@ PLANTED = {
     "copied block": ("src/payments/report.py", range(4, 6)),  # its lines hold the cents division too: either counts
 }
 RANK = {"minor": 1, "major": 2, "blocker": 3}
+#: How long one review may run: past it, its run names no exit code and the next starts.
+TIMEOUT_S = 600
 #: A finding in a text report, kept (`- **major** …`) or folded into another's, ending in its `(path:line)`.
 FINDING = re.compile(
     r"^- (?:\*\*(?P<severity>\w+)\*\* |folded into `[\w.-]+`'s finding on the same lines: )"
@@ -140,12 +143,28 @@ def review_command(repo: Path, branch: str, report: Path, profile: str | None = 
     return [*command, "--profile", profile] if profile else command
 
 
+class Review(NamedTuple):
+    """One run of one review: its exit code, None where it ran past `TIMEOUT_S`; its JSON report, None where it
+    wrote none, and its text report, read where it did not; and how long it took."""
+
+    code: int | None
+    data: dict | None
+    text: str
+    seconds: float
+
+
 def reviewed(
-    repo: Path, branches: Mapping[str, str], runs: int, pause: float, profile: str | None = None
-) -> Iterator[tuple[str, int, dict | None]]:
-    """The review of each branch against the demo's base, `runs` times, each a call to the model: by branch, the
-    run's exit code and its JSON report, None where it wrote none; `pause` seconds before every run but the first;
-    under `profile` where one is named."""
+    repo: Path,
+    branches: Mapping[str, str],
+    runs: int,
+    pause: float,
+    profile: str | None = None,
+    whole: bool = False,
+) -> Iterator[tuple[str, Review]]:
+    """The review of each branch against the demo's base, or of every file at its head where `whole`, `runs` times,
+    each a call to the model: by branch, each run's `Review`; `pause` seconds before every run but the first; under
+    `profile` where one is named. Every live script's runs are these, each held to `TIMEOUT_S`: before, only
+    `measure.py`'s own loop was, and a review that never answered would have held every later run of the other two."""
     with tempfile.TemporaryDirectory() as scratch:
         report = Path(scratch) / "review.json"
         first = True
@@ -154,17 +173,34 @@ def reviewed(
                 if not first and pause:
                     time.sleep(pause)
                 first = False
-                command = review_command(repo, branch, report, profile)
-                # A review's exit code is its verdict, 1 and 3 among the answers: read, never raised.
-                done = subprocess.run(
-                    command, cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace", check=False
-                )
+                command = review_command(repo, branch, report, profile, whole)
+                started = time.monotonic()
+                try:
+                    # A review's exit code is its verdict, 1 and 3 among the answers: read, never raised.
+                    done = subprocess.run(
+                        command,
+                        cwd=ROOT,
+                        capture_output=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        timeout=TIMEOUT_S,
+                        check=False,
+                    )
+                    code, text = done.returncode, done.stdout
+                except subprocess.TimeoutExpired:
+                    code, text = None, ""
+                seconds = time.monotonic() - started
                 data = json.loads(report.read_text(encoding="utf-8")) if report.is_file() else None
                 report.unlink(missing_ok=True)
                 # The model and its arm, as the report names them: a measurement holds for the arm it ran on.
                 on = f", {data['model']}" if data and data.get("model") else ""
-                print(f"{name} run {number + 1}: exit {done.returncode}{on}", flush=True)
-                yield name, done.returncode, data
+                print(f"{name} run {number + 1}: exit {code}{on}", flush=True)
+                yield name, Review(code, data, text, seconds)
+
+
+def tally(counts: Counter[str]) -> str:
+    """`counts`, the most first, as every live script's summary names them: `blocker x2, major x1`."""
+    return ", ".join(f"{key} x{count}" for key, count in counts.most_common())
 
 
 def read_text(report: str, run: Run) -> Run:
@@ -203,38 +239,20 @@ def main(argv: list[str] | None = None) -> int:
     )
     who = "a guideline"
     runs: list[Run] = []
-    with tempfile.TemporaryDirectory() as scratch:
-        report_json = Path(scratch) / "review.json"
-        command = review_command(DEMO_REPO, "feature/payments", report_json, args.profile, whole=args.all)
-        for number in range(args.runs):
-            if number and args.pause:
-                time.sleep(args.pause)
-            started = time.monotonic()
-            try:
-                done = subprocess.run(
-                    command, cwd=ROOT, capture_output=True, encoding="utf-8", errors="replace", timeout=600, check=False
-                )
-                code, report = done.returncode, done.stdout
-            except subprocess.TimeoutExpired:
-                code, report = None, ""
-            run = Run(code, time.monotonic() - started)
-            if report_json.is_file():
-                runs.append(read_json(json.loads(report_json.read_text(encoding="utf-8")), run))
-                report_json.unlink()
-            else:  # a review that decided nothing and wrote no JSON
-                runs.append(read_text(report, run))
-            found = ", ".join(f"{name} ({severity})" for name, severity in sorted(run.named.items())) or "nothing"
-            print(
-                f"run {number + 1}: {run.verdict} (exit {code}); {who} named {found}; {run.stray} elsewhere", flush=True
-            )
+    planted = {"feature/payments": "feature/payments"}
+    for _name, review in reviewed(DEMO_REPO, planted, args.runs, args.pause, args.profile, whole=args.all):
+        run = Run(review.code, review.seconds)
+        # A review that decided nothing wrote no JSON, and is read as a person reads its text.
+        runs.append(read_json(review.data, run) if review.data else read_text(review.text, run))
+        found = ", ".join(f"{name} ({severity})" for name, severity in sorted(run.named.items())) or "nothing"
+        print(f"  {run.verdict}; {who} named {found}; {run.stray} elsewhere", flush=True)
     total = len(runs)
     what = "the planted branch as a whole project" if args.all else "the planted branch"
     print(f"\nadk-review at {head.stdout.strip() or 'an unknown commit'}, {total} runs of {what}")
     for name in PLANTED:
         readings = Counter(run.named[name] for run in runs if name in run.named)
-        said = ", ".join(f"{severity} x{count}" for severity, count in readings.most_common())
-        namers = Counter(check for run in runs for check in run.by.get(name, ()))
-        by = ", ".join(f"{check} x{count}" for check, count in namers.most_common())
+        said = tally(readings)
+        by = tally(Counter(check for run in runs for check in run.by.get(name, ())))
         print(
             f"- {name}: named by {who} in {sum(readings.values())} of {total}"
             + (f", as {said}" if said else "")
@@ -243,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"- {who}'s findings on no planted defect, an upper bound on its false ones: {sum(r.stray for r in runs)}")
     print(f"- {who}'s own blocker, the rules' set aside: in {sum(r.blockers > 0 for r in runs)} of {total} runs")
     verdicts = Counter(run.verdict for run in runs)
-    print(f"- verdicts: {', '.join(f'{verdict} x{count}' for verdict, count in verdicts.most_common())}")
+    print(f"- verdicts: {tally(verdicts)}")
     print(f"- findings dropped for a quote the diff does not bear out: {sum(run.dropped for run in runs)} in all")
     tokens, seconds = sum(run.tokens for run in runs) // max(total, 1), sum(run.seconds for run in runs) / max(total, 1)
     print(f"- a run: {tokens:,} tokens, {seconds:.0f} s")

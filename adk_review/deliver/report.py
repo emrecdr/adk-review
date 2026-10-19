@@ -148,7 +148,6 @@ def render_handoff(
     identity = dict(zip(map(id, outcome.kept), _identified(outcome.kept), strict=True))
     identity |= {id(folded): fingerprint(folded) for folded, _into in outcome.folded}
     fixes, tidy = _lanes(outcome, tidies)
-    ranked = fixes + tidy
     lines = [
         f"# Findings to fix: {what(evidence)}",
         "",
@@ -162,11 +161,11 @@ def render_handoff(
     if tidy:
         lines += [*([""] if fixes else []), "## Tidy", "", *TIDY_KEEPS, ""]
         lines += _items(tidy, len(fixes) + 1, identity, frozenset(), fail_on)
-    if not ranked:
+    if not outcome.kept:
         lines.append("Nothing to fix: no finding was kept.")
     if outcome.errors or outcome.unread:
         lines += ["", "This review could not look at everything; what it did not read may hold more to fix."]
-    if ranked:
+    if outcome.kept:
         lines += _check_again(
             evidence, {item.source for item in outcome.kept + [f for f, _ in outcome.folded]}, fail_on
         )
@@ -179,19 +178,25 @@ def _lanes(outcome: Outcome, tidies: frozenset[str]) -> tuple[list[list[Sourced]
     tie; a tidy in it stays, to be held back, where a defect there is at major or above, and is otherwise an item of its
     own in the Tidy lane, so a tidy never takes a fix's instruction. Measured on the fold's order: under `full` the
     guidelines run as the catalog lists them, `complexity` before `correctness`, and a tie kept the tidy."""
+    under: dict[int, list[Sourced]] = {}
+    for folded, into in outcome.folded:
+        under.setdefault(id(into), []).append(folded)
     fixes: list[list[Sourced]] = []
     tidy: list[list[Sourced]] = []
     for kept in outcome.kept:
-        members = [kept, *(folded for folded, into in outcome.folded if into is kept)]
+        members = [kept, *under.get(id(kept), ())]
         defects = [item for item in members if item.source not in tidies]
         if not defects:
             tidy.append(members)
             continue
         cleanups = [item for item in members if item.source in tidies]
         lead = max(defects, key=lambda item: RANK[item.finding.severity])
-        suspect = any(at_or_above(item.finding.severity, "major") for item in defects)
-        fixes.append([lead, *(item for item in defects if item is not lead), *(cleanups if suspect else ())])
-        tidy += [] if suspect else [[item] for item in cleanups]
+        others = [item for item in defects if item is not lead]
+        if at_or_above(lead.finding.severity, "major"):  # suspect code: its tidies wait under the fix
+            fixes.append([lead, *others, *cleanups])
+        else:
+            fixes.append([lead, *others])
+            tidy += [[item] for item in cleanups]
     for lane in (fixes, tidy):
         lane.sort(key=lambda group: -RANK[group[0].finding.severity])  # stable: the fold's order on a tie
     return fixes, tidy
@@ -215,7 +220,7 @@ def _items(
 
 
 def _folded_under(
-    folded: Sequence[Sourced], fail_on: str, identity: Mapping[int, str], held: frozenset[str] = frozenset()
+    folded: Sequence[Sourced], fail_on: str, identity: Mapping[int, str], held: frozenset[str]
 ) -> list[str]:
     """A line for each finding folded into a handoff item: another reading of the same lines, by another check or the
     same one, which can be a second defect — an injection whose quote spans a key's line folds into the key's finding.
@@ -329,7 +334,7 @@ def render_explained(said: Mapping[str, object]) -> str:
     lines = [f"# {said['id']}", ""]
     lines.extend(
         f"- {label:<10}{said[label]}"
-        for label in ("kind", "severity", "tests", "profiles", "file", "title", "fix")
+        for label in ("kind", "severity", "tests", "cleanup", "profiles", "file", "title", "fix")
         if label in said
     )
     lines += ["", str(said["why"]), ""]

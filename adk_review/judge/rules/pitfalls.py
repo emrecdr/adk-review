@@ -3,15 +3,16 @@
 A naive UTC datetime from `utcnow()`, a dataclass default evaluated once and shared, an exception built and never
 raised, a call whose arguments Python refuses, a `subprocess.run` whose failure goes unseen: each a defect ruff names
 from the code alone, and none of them in `lint`'s families. Run with `--isolated` as `lint` runs. A test is read too: an
-`assert` on a string literal never fails, so the test it stands in always passes. Measured over whole files: 0.4 a
-thousand lines of google-adk, 1.4 of pydantic, 0.7 of httpx and 1.3 of litellm.
+`assert` on a string literal never fails, so the test it stands in always passes. Measured over whole files of
+google-adk, pydantic, httpx and litellm: 0.00 to 0.03 a thousand lines, all but one a real defect, once the codes
+whose findings there were idioms were left out.
 """
 
 from __future__ import annotations
 
 from types import MappingProxyType
 
-from ..rule_helpers import ChangedFile, FileRule, Hit, Severity, is_python, listed, tier
+from ..rule_helpers import ChangedFile, FileRule, Hit, Severity, listed, tier
 
 #: ruff's codes, run --isolated: flake8-datetimez's, pylint's errors, and the warnings and ruff's own codes that name
 #: code doing other than it reads; with the four of flake8-simplify, flake8-pie and the logging codes that are defects
@@ -71,6 +72,4 @@ class Pitfalls(FileRule):
     tool_settings = MappingProxyType({"select": SELECT, "ignore": IGNORE, "line_length": None})
 
     def check(self, file: ChangedFile) -> list[Hit]:
-        if not is_python(file.path, lambda: file.line(1)):  # ruff reads Python: another file's text is never asked for
-            return []
-        return listed(file, [(found, tier(SEVERITY, found.code) or self.severity) for found in file.diagnostics], FIX)
+        return listed(file, lambda found: tier(SEVERITY, found.code) or self.severity, FIX)

@@ -89,7 +89,7 @@ path and a credential's shape. A rule is handed no test's file unless it sets `r
 what runs, leaks or steers does (`file.changed` and `tree.paths` still list every test). A rule or a guideline whose
 findings change how code reads and never what it does sets `cleanup = True`, as `simplify` and `complexity` do: the
 hand-off lists them under `## Tidy`, apart from the fixes, and holds one back on lines a defect at major or above names.
-A rule may carry `bad` and `good` examples (the three that read ruff carry none), which the catalog holds it to at every
+A rule may carry `bad` and `good` examples (those that read ruff carry none), which the catalog holds it to at every
 start with its own source, a rule failing either being exit 2; `try_rule`, `lines_hit` and `self_check` try a rule with
 no repository, `--list-checks` lists every check with its kind, its profiles and its file, `--check ID` runs one check
 alone. Each check has one id, `rule.<name>` or `guideline.<name>` (`core/profiles.py`), in the config, on the command

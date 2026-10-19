@@ -84,6 +84,15 @@ def _words(check: object, *parts: str) -> bool:
     return all(isinstance(getattr(check, part, None), str) and getattr(check, part) for part in parts)
 
 
+def _flag_problem(check: AnyRule | Guideline, *flags: str) -> str | None:
+    """The first of `flags` that `check` gives as anything but True or False, refused, or None: "no" would read as
+    True."""
+    for flag in flags:
+        if not isinstance(value := getattr(check, flag, False), bool):
+            return f"{check.id!r} has {flag} {value!r}, not True or False"
+    return None
+
+
 def _rule_problem(rule: AnyRule) -> str | None:
     """What keeps `rule` from being one whole rule, or None: a part it does not name, or a way of finding hits that
     is not one of the three kinds'."""
@@ -91,10 +100,8 @@ def _rule_problem(rule: AnyRule) -> str | None:
         return f"{type(rule).__name__} needs an id, a title and a fix, and has no {' and no '.join(missing)}"
     if (severity := getattr(rule, "severity", None)) not in RANK:
         return f"{rule.id!r} has severity {severity!r}, not {' or '.join(RANK)}"
-    if not isinstance(reads := getattr(rule, "reads_tests", False), bool):  # "no" would read as True
-        return f"{rule.id!r} has reads_tests {reads!r}, not True or False"
-    if not isinstance(tidies := getattr(rule, "cleanup", False), bool):
-        return f"{rule.id!r} has cleanup {tidies!r}, not True or False"
+    if flagged := _flag_problem(rule, "reads_tests", "cleanup"):
+        return flagged
     if (tool := getattr(rule, "tool", None)) is not None and tool not in TOOLS:
         return f"{rule.id!r} names the tool {tool!r}, which no adapter runs; there are {', '.join(sorted(TOOLS))}"
     if "hits" in vars(type(rule)):  # one way to write a rule of each kind: its author writes `check`
@@ -116,9 +123,7 @@ def _guideline_problem(guideline: Guideline) -> str | None:
         return f"{type(guideline).__name__} needs an id, a title and a role"
     if type(budget := getattr(guideline, "thinking_budget", None)) is not int or budget < 0:
         return f"{guideline.id!r} has thinking_budget {budget!r}, not a whole number of tokens"
-    if not isinstance(tidies := getattr(guideline, "cleanup", False), bool):
-        return f"{guideline.id!r} has cleanup {tidies!r}, not True or False"
-    return None
+    return _flag_problem(guideline, "cleanup")
 
 
 def _file(module: str) -> str:
@@ -182,6 +187,10 @@ class Catalog:
         reading of code."""
         return tuple(check.check_id for check in (*self.rules, *self.guidelines))
 
+    def tidies(self) -> frozenset[str]:
+        """The checks whose findings change how code reads and never what it does: the hand-off lists them apart."""
+        return frozenset(check.check_id for check in (*self.rules, *self.guidelines) if check.cleanup)
+
     def groups(self) -> dict[str, list[str]]:
         """The two names a profile may give for every check of a kind."""
         return {"rules": [rule.check_id for rule in self.rules], "guidelines": [g.check_id for g in self.guidelines]}
@@ -220,6 +229,7 @@ def _described(one: AnyRule | Guideline, runs: Mapping[str, str]) -> dict:
         "id": one.check_id,
         "file": _file(type(one).__module__),
         "profiles": runs[one.check_id],
+        "cleanup": "yes" if one.cleanup else "no",
         "title": one.title,
         "why": squash(type(one).__doc__ or ""),
     }

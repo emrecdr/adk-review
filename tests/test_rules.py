@@ -188,7 +188,8 @@ class TestTheLintRule:
         assert all("wJalrXUtnFEMI" not in f.evidence for f in found), "the rule's evidence is scrubbed too"
 
     def test_a_code_is_tiered_by_the_longest_key_in_its_family_and_names_a_fix(self) -> None:
-        from adk_review.judge.rules.lint import FIX, fix_for, severity_of
+        from adk_review.judge.rule_helpers import fix_of
+        from adk_review.judge.rules.lint import FIX, severity_of
 
         assert severity_of("S602") == "major" and severity_of("SIM108") == "minor", "SIM never inherits S"
         assert severity_of("F821") == "major" and severity_of("F401") == severity_of("F841") == "minor", "hygiene"
@@ -196,9 +197,9 @@ class TestTheLintRule:
         assert severity_of("C901") == "major" and severity_of("C416") == "minor", "C90 is mccabe's; C4 is another's"
         assert severity_of("T100") == "major" and severity_of("T201") == "minor", "T10 is the debugger; T20 is print"
         assert severity_of("PLR0913") == "minor" and severity_of("ERA001") == "minor"
-        assert fix_for("E501", None) == FIX["E501"] != FIX["E"] and fix_for("E501", "Wrap it") == "Wrap it"
-        assert fix_for("E722", None) == FIX["E"], "a family sentence true of every code"
-        assert fix_for("RUF006", None) == FIX["RUF006"] and fix_for("ZZZ9", None) == "see ruff rule ZZZ9"
+        assert fix_of(FIX, "E501", None) == FIX["E501"] != FIX["E"] and fix_of(FIX, "E501", "Wrap it") == "Wrap it"
+        assert fix_of(FIX, "E722", None) == FIX["E"], "a family sentence true of every code"
+        assert fix_of(FIX, "RUF006", None) == FIX["RUF006"] and fix_of(FIX, "ZZZ9", None) == "see ruff rule ZZZ9"
 
     def test_what_the_rule_ignores_ruff_never_reports(self, cli, demo_repo: Path, monkeypatch, capsys) -> None:
         """Measured on this repository's whole project: of the rule's 2,800 findings, 2,230 were lines past ruff's
@@ -632,9 +633,10 @@ class TestTheCleanupAndThePitfalls:
         import shutil
         import subprocess
 
+        from adk_review.collect.ruff import beside
         from adk_review.core.rules import FileRule
 
-        ruff = shutil.which("ruff")
+        ruff = beside() or shutil.which("ruff")  # the ruff a review runs
         assert ruff is not None
         enabled: dict[str, set[str]] = {}
         for rule in catalog().rules:

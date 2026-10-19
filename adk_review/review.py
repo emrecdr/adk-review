@@ -676,8 +676,7 @@ def _decided(
     health = measured(evidence["files"], evidence["tree"]) if evidence["whole"] else None
     engine = bool(chosen.guidelines) or any(getattr(args, flag) for flag in ENGINE)
     judged = _judged(args, chosen, evidence, say) if engine else _ruled(args, chosen, evidence)
-    tidies = frozenset(check.check_id for check in (*chosen.rules, *chosen.guidelines) if check.cleanup)
-    return _reported(args, evidence, *judged, shown, previous, health, cached, tidies=tidies)
+    return _reported(args, evidence, *judged, shown, previous, health, cached, tidies=chosen.tidies())
 
 
 def _ruled(args: argparse.Namespace, chosen: Selection, evidence: Evidence) -> tuple[Outcome, dict, dict[str, float]]:
