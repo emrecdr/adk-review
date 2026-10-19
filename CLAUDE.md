@@ -169,9 +169,12 @@ Conventions:
   `core.precomposeUnicode`, `diff.suppressBlankEmpty` and `core.fsmonitor` fixed through `GIT_CONFIG_COUNT`. A file's
   diff is read as git prints it for no one's settings, through plumbing (`diff-tree -r -p`, or `diff-index --cached -p`
   under `--staged`): each path as `:(top,literal)` pathspec magic, the merge base's attributes (`--attr-source`, git
-  2.41; under `--all`, the empty tree's), `--no-color --no-ext-diff --no-textconv`. A call that fails, cannot start or
-  runs past its timeout raises `GitError`, turned into an error envelope only where envelopes are built; never answer it
-  as an empty result. `_git(..., ok=(0, 1))` is only for calls whose exit code 1 is an answer.
+  2.41; under `--all`, the empty tree's), `--no-color --no-ext-diff --no-textconv`; where a guideline reads a Python
+  file, `--function-context` with Python's own boundary set as `diff.default.xfuncname`, each hunk within the function
+  or class around it, and git's three lines again for a file that widening pushes past the diff cap or a change past the
+  block's. A call that fails, cannot start or runs past its timeout raises `GitError`, turned into an error envelope
+  only where envelopes are built; never answer it as an empty result. `_git(..., ok=(0, 1))` is only for calls whose
+  exit code 1 is an answer.
 - Every string a model reads is capped in characters, with the cut named in the text, and the cut never falls inside a
   credential. The report cuts each finding's evidence the same way, after the scrub, and breaks CI runners' command
   openers (`##[`, `##vso[`) and HTML comments' (`<!--`) in all it prints, every character a reader cannot see printed

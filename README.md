@@ -130,10 +130,10 @@ The order is the architecture: evidence and rules first, the guidelines' judgeme
    it nor `--all` or `--staged`, a person at a terminal is asked which, and a pipeline gets the change against `main`,
    or `master`, or else the branch `origin/HEAD` names. Where a guideline runs, the model's arm must be ready.
    Anything wrong here is one sentence on stderr and exit 2, before any model call.
-2. **Gather the evidence, in plain Python.** Read-only git gives each changed file's whole diff and the lines it
-   added, its text at the head for the file rules and, where a tree rule or a guideline runs, the head's tree and
-   each changed file's blast radius. The block of diffs the guidelines read is built here, each diff capped and the
-   block capped, every cut named.
+2. **Gather the evidence, in plain Python.** Read-only git gives each changed file's whole diff, a Python file's hunks
+   each within the function around it where a guideline reads it, and the lines it added, its text at the head for the
+   file rules and, where a tree rule or a guideline runs, the head's tree and each changed file's blast radius. The
+   block of diffs the guidelines read is built here, each diff capped and the block capped, every cut named.
 3. **Run every rule** before any model call: in one graph node where a guideline follows, straight from the driver
    where none does. Each rule answers with what it found, or why it could not look.
 4. **Let the guidelines judge the change.** Each is an ADK agent with a role of its own, and they run at once under a
@@ -812,6 +812,15 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   the rules read every added line. Measured live on Copilot at 4,000 characters a file: a 7,529-character file's
   planted shell call went unread and so did 3 of a 17-file change's files, each a hole; at 16,000 each was read, the
   call named in both runs, for a fifth more tokens.
+- **A Python hunk is read within its function.** Where a guideline reads a Python file, git widens each hunk to the
+  function or class around it, `--function-context` with Python's own boundary set as `diff.default.xfuncname`, so the
+  repository's own attributes still choose and no file is written: Claude Code's `/code-review` reads the enclosing
+  function of each hunk, and git's three lines showed an edit deep in a method without its `def`, its arguments or its
+  other branches. Every line shown can be quoted, so a finding may stand on an unchanged line of a function the change
+  touched, and `on_added_line` says so. Measured over this repository's last 31 commits, the Python diffs grew 1.7 times
+  and one file of 191 went past the diff cap: a file the widening pushes past it, and every file of a change whose
+  widened diffs pass the block's cap, is read as git prints it, so the context never costs a file its reading. Any other
+  file, and every diff the rules alone read, is git's own, and the added lines are the same either way.
 - **Fences carry a nonce.** A sentence at the top of an instruction is no boundary: what follows it is the branch's
   own text. Measured with a reviewer of the same shape on Copilot, a docstring declaring an override silenced most of
   its reviewing agents, each answering no findings. Each untrusted section a guideline, a verifier or chat's verdict

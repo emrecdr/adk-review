@@ -92,10 +92,16 @@ class TestNoOnesSettings:
         home.mkdir()
         monkeypatch.setenv("HOME", str(home))
         monkeypatch.delenv("XDG_CONFIG_HOME", raising=False)
+        _files, theirs_unset = _listed_and_shown(repo, "change", "pay.py")
         THEIR_SETTINGS[setting](repo, home, monkeypatch)
         _files, diff = _listed_and_shown(repo, "change", "pay.py")
         assert diff.startswith("diff --git a/pay.py b/pay.py") and "Binary files" not in diff, diff
-        assert sum(line.startswith(" ") for line in diff.splitlines()) == 6, diff
+        assert diff == theirs_unset, diff
+        rules = importlib.import_module("adk_review.collect.git").collect_evidence(
+            str(repo), BASE, "change", guidelines=False
+        )
+        (plain,) = [f["diff"] for f in rules["files"] if f["path"] == "pay.py"]
+        assert sum(line.startswith(" ") for line in plain.splitlines()) == 6, "git's three lines, for the rules"
 
     def test_a_variable_naming_another_repositorys_refs_is_never_inherited(
         self, tmp_path: Path, demo_repo: Path, monkeypatch
@@ -665,6 +671,69 @@ class TestWhatAPathCannotForge:
             "review: the review did not finish: RuntimeError: x ::add-mask::APPROVED ## [error]forged "
             "# #vso[task.prependpath]y"
         ], err
+
+
+class TestTheFunctionAroundEachHunk:
+    """What Claude Code's review reads beside each hunk, its enclosing function, the guidelines read too, from git
+    itself: a Python hunk widened to the function or class around it, by Python's own boundary."""
+
+    @staticmethod
+    def _deep_in_a_method(root: Path) -> Path:
+        """`main` holding a class with a short method and a long one, and a twenty-line note; `change` editing a line
+        deep in the long method and one in the middle of the note."""
+        repo = root / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        steps = "".join(f"        step_{n} = {n}\n" for n in range(10))
+        method = f"class Pay:\n    def first(self):\n        return 1\n\n    def total(self, items):\n{steps}"
+        _committed(repo, "pay.py", method + "        return step_9\n", "base")
+        _committed(repo, "notes.md", "".join(f"line {n}\n" for n in range(20)), "notes")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        pay, notes = (repo / "pay.py").read_text(encoding="utf-8"), (repo / "notes.md").read_text(encoding="utf-8")
+        _committed(repo, "pay.py", pay.replace("step_8 = 8\n", "step_8 = 80\n"), "deep in total")
+        _committed(repo, "notes.md", notes.replace("line 10\n", "line ten\n"), "a note")
+        return repo
+
+    @staticmethod
+    def _gathered(repo: Path, **options) -> dict[str, dict]:
+        evidence = importlib.import_module("adk_review.collect.git").collect_evidence(
+            str(repo), BASE, "change", **options
+        )
+        return {f["path"]: f for f in evidence["files"]}
+
+    def test_a_guideline_reads_a_python_hunk_within_its_function_and_any_other_as_git_prints_it(
+        self, tmp_path: Path
+    ) -> None:
+        """Measured against Claude Code's `/code-review`, whose first angle reads the enclosing function of each hunk:
+        git's three lines of context showed an edit deep in a method without its `def`, its arguments or its other
+        steps. The method's every line is read, and quotable, the method beside it is not; the note is read as git
+        prints a change; and the rules read git's diff and the same added lines either way."""
+        repo = self._deep_in_a_method(tmp_path)
+        shown, ruled = self._gathered(repo), self._gathered(repo, guidelines=False)
+        pay = shown["pay.py"]["diff"]
+        assert "\n     def total(self, items):\n" in pay and "\n         step_0 = 0\n" in pay, pay
+        assert "\n     def first(self):\n" not in pay, "the method beside it stays out"
+        assert any(line == "         step_0 = 0" for hunk in shown["pay.py"]["quotable"] for _at, line in hunk)
+        notes = shown["notes.md"]["diff"]
+        assert sum(line.startswith(" ") for line in notes.splitlines()) == 6, notes
+        assert "\n     def total(self, items):\n" not in ruled["pay.py"]["diff"], "the rules read git's own"
+        assert shown["pay.py"]["added"] == ruled["pay.py"]["added"] == [(14, "        step_8 = 80")]
+
+    def test_a_file_its_function_would_push_past_a_cap_is_read_as_git_prints_it(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Measured over this repository's last 31 commits: widened, the Python diffs were 1.7 times git's, and one
+        file of 191, `review.py` with its long `main`, went past the 16,000-character cap, which would have left it
+        unread, a hole. A file widening pushes past the diff cap, and every file of a change whose widened diffs pass
+        the block's cap, is read as git prints it: the context never costs a file its reading."""
+        git = importlib.import_module("adk_review.collect.git")
+        repo = self._deep_in_a_method(tmp_path)
+        wide, plain = self._gathered(repo)["pay.py"]["diff"], self._gathered(repo, guidelines=False)["pay.py"]["diff"]
+        assert len(plain) < len(wide)
+        narrowed = self._gathered(repo, diff_cap=(len(plain) + len(wide)) // 2)["pay.py"]
+        assert narrowed["diff"] == plain and narrowed["unread"] == "" and not narrowed["cut"], narrowed["unread"]
+        monkeypatch.setattr(git, "BLOCK_CAP_CHARS", len(wide) - 1)
+        assert self._gathered(repo)["pay.py"]["diff"] == plain, "past the block's cap together, each read as git's"
 
 
 class TestWhatTheGuidelinesAreShown:

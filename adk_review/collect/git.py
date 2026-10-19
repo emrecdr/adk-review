@@ -26,9 +26,9 @@ from typing import Any
 
 from ..core.blast import Radius
 from ..core.evidence import Entry, Evidence, Failure, unreleased
-from ..core.rules import Tree
+from ..core.rules import Tree, is_python
 from ..core.text import lines_of
-from .change import no_change, radius, shown_to_guidelines
+from .change import BLOCK_CAP_CHARS, no_change, radius, shown_to_guidelines
 from .diff import (
     BINARY,
     DIFF_CAP_CHARS,
@@ -173,8 +173,15 @@ def _git_raw(
 
 
 def _verb(args: tuple[str, ...]) -> str:
-    """The git command a call runs, past git's own options before it (`--attr-source`): what an error names."""
-    return next((arg for arg in args if not arg.startswith("-")), "")
+    """The git command a call runs, past git's own options before it (`-c` and the setting it takes, `--attr-source`):
+    what an error names. Measured: a Python function's boundary given with `-c` was named as the command that failed."""
+    given = iter(args)
+    for arg in given:
+        if arg == "-c":
+            next(given, None)  # the setting, never the command
+        elif not arg.startswith("-"):
+            return arg
+    return ""
 
 
 def _sha(repo: str, ref: str, kind: str = "commit") -> str | None:
@@ -402,22 +409,29 @@ def _literally(*paths: str) -> list[str]:
 #: How every patch is read — `diff_of`, `whole_diffs` and a push's history: no colour, no external diff, no text
 #: conversion, renames found.
 _PLAIN = ("--no-color", "--no-ext-diff", "--no-textconv", "-M")
+#: Where a Python function or class begins, as git's own `python` diff driver says: `--function-context` widens each
+#: hunk to the one around it. Set for git's `default` driver, the one a file with no diff attribute has, and only on
+#: a Python file's diff, so the repository's own attributes still choose and no attributes file is written.
+PYTHON_FUNCTION = "^[ \t]*((class|(async[ \t]+)?def)[ \t].*)$"
 
 
-def diff_of(resolved: dict, path: str, old: str = "") -> str:
+def diff_of(resolved: dict, path: str, old: str = "", *, functions: bool = False) -> str:
     """One file's whole unified diff, as git prints it for no one's settings and with "\\n" its only line break: the
     path taken literally, never as a pattern; the merge base's attributes, never the branch's own; no colour, no
-    external diff, no text conversion.
+    external diff, no text conversion; with `functions`, each hunk widened to the Python function or class around it.
     Measured: each of those once hid a planted key, the branch's `-diff` or a path spelled `:config.py` among them.
     `--attr-source` is git 2.41's. A rename is diffed with its `old` path too, so it reads as the lines it moved
     and changed; by the new path alone, it read as a whole file added. Each path is a file and never a folder:
     measured, `a` renamed to `b.py` beside a new `a/x.py` brought `a/x.py`'s key into `b.py`'s diff."""
     repo, base, head = resolved["repo"], resolved["merge_base"], resolved["head_sha"]
     paths = _literally(old, path)
+    wide = ("-c", f"diff.default.xfuncname={PYTHON_FUNCTION}") if functions else ()
+    read = (*wide, f"--attr-source={base}")
+    shown = (*_PLAIN, "--function-context") if functions else _PLAIN
     if resolved.get("staged"):  # the index's text, against the base, as the next commit would hold it
-        _, diff = _git(repo, f"--attr-source={base}", "diff-index", "--cached", "-p", *_PLAIN, base, "--", *paths)
+        _, diff = _git(repo, *read, "diff-index", "--cached", "-p", *shown, base, "--", *paths)
     else:
-        _, diff = _git(repo, f"--attr-source={base}", "diff-tree", "-r", "-p", *_PLAIN, base, head, "--", *paths)
+        _, diff = _git(repo, *read, "diff-tree", "-r", "-p", *shown, base, head, "--", *paths)
     return readable(diff)
 
 
@@ -647,7 +661,7 @@ def gather(
     try:
         listed = list_changed(resolved)
         entries = [entry for entry in listed if in_scope(entry["path"], scope)]
-        diffs = _diffs(resolved, entries, scope)
+        diffs = _diffs(resolved, entries, scope, guidelines=guidelines, cap=diff_cap)
         files, block, excluded = shown_to_guidelines(entries, diffs, diff_cap, skip, shown=guidelines)
         away = untracked(resolved) if resolved.get("staged") else None
     except GitError as exc:  # the change half read is not the change: named, never reviewed as it stands
@@ -676,10 +690,27 @@ def gather(
     }
 
 
-def _diffs(resolved: dict, entries: list[dict], scope: Sequence[str]) -> list[str]:
+def _diffs(
+    resolved: dict, entries: list[dict], scope: Sequence[str], *, guidelines: bool = False, cap: int = DIFF_CAP_CHARS
+) -> list[str]:
     """Each entry's whole diff, in order: under `--all` one call for them all, else one call a file, `GIT_WORKERS` at
-    a time."""
+    a time. Where a guideline reads them, a Python file's hunks are each widened to the function or class around
+    them, as Claude Code's review reads the enclosing function of each hunk: git's three lines showed an edit deep in
+    a method without its `def`, its arguments or its other branches. Measured over this repository's last 31 commits,
+    the widened Python diffs were 1.7 times git's and one file of 191 went past the diff cap: a file widening pushes
+    past `cap`, and every file where together the diffs pass the block's cap, is read again as git prints it, so the
+    context never costs a file its reading. The added lines, all the rules read, are the same either way."""
     if not resolved["base"]:  # every file is added: one call reads them all
         return whole_diffs(resolved, entries, scope)
+    widened = [guidelines and is_python(entry["path"], lambda: "") for entry in entries]
+
+    def read(entry: dict, functions: bool) -> str:
+        return diff_of(resolved, entry["path"], entry.get("old", ""), functions=functions)
+
     with ThreadPoolExecutor(max_workers=GIT_WORKERS) as pool:  # git processes to wait on: threads suffice
-        return list(pool.map(lambda entry: diff_of(resolved, entry["path"], entry.get("old", "")), entries))
+        diffs = list(pool.map(read, entries, widened))
+        crowded = sum(map(len, diffs)) > BLOCK_CAP_CHARS
+        narrow = [at for at, diff in enumerate(diffs) if widened[at] and (crowded or len(diff) > cap)]
+        for at, diff in zip(narrow, pool.map(lambda at: read(entries[at], False), narrow), strict=True):
+            diffs[at] = diff
+    return diffs

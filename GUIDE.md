@@ -44,7 +44,7 @@ config from beside itself; inside the checkout, `uv run adk-review` is the same 
 | `--check` | Run one check alone, this once: `rule.<name>`, `guideline.<name>`, or a group, `rules` or `guidelines`. Repeat it for more than one. Not with `--profile`. |
 | `--fail-on` | Exit 1 at or above this severity: `minor`, `major` or `blocker`. Default: the config's `fail_on`. |
 | `--max-tokens` | Stop spending past this many tokens; 0 is no ceiling. Default: the config's `max_tokens`. |
-| `--diff-cap` | Characters of one file's diff a guideline reads; a file cut there is named "not read". Default: the config's `diff_cap`. |
+| `--diff-cap` | Characters of one file's diff a guideline reads; a file cut there is named "not read". A Python file's diff shows each hunk within the function or class around it, and one that would pass the cap so shows git's three lines of context instead. Default: the config's `diff_cap`. |
 | `--skip` | A glob of changed files the guidelines leave to the rules: each is named, never a hole. A submodule, which no rule reads, is never skipped. Adds to the config's `skip`. Repeat it for more than one. |
 | `--verify` | Ask a second model about each guideline finding a rule did not already make. `--no-verify` turns it off. Default: the config's `verify`. |
 | `--json` | Also write the review to this file as JSON. |
