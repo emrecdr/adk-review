@@ -89,13 +89,16 @@ class LockfileSources(FileRule):
     )
 
     def check(self, file: ChangedFile) -> list[tuple[int | None, str]]:
-        registry = next((starts for name, starts in REGISTRIES.items() if matches(file.path, name)), None)
+        name, registry = next(
+            ((name, starts) for name, starts in REGISTRIES.items() if matches(file.path, name)), ("", None)
+        )
         if registry is None:
             return []
         found: dict[str, tuple[int | None, str]] = {}  # by origin, the first line that names it
         # Each added line as the diff shows it: a lockfile past the size limits is not read whole, and needs not be.
         # A comment fetches nothing, and pub writes `https://dart.dev` in the header of every pubspec.lock.
-        for number in sorted(file.added):
+        # A lockfile renamed into place adds no line, and every line of it is fetched from now.
+        for number in range(1, len(file.lines) + 1) if file.arrived(name) else sorted(file.added):
             line = file.near(number) or ""
             if line.lstrip().startswith("#"):
                 continue

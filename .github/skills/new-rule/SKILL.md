@@ -8,15 +8,16 @@ description: Add a rule to the reviewer — one file in judge/rules/, named afte
 The shape of a rule — the three kinds, the constants it names, what it may import — is in
 `.github/instructions/reviewer.instructions.md`, which loads with any file under `adk_review/`. The procedure:
 
-1. Read "Write a rule" in `README.md` and copy the template of the kind the question needs to a
-   file in `adk_review/judge/rules/`, the rule's id the file's name with `-` for `_`: the catalog finds it at
-   once and refuses a file not named after its rule. A `Rule` when one added line answers the question (`calls`,
-   `comment_of` and `words` read it as Python does, so a word in a comment or a string is not code); a `FileRule`
-   when the answer needs the file — a call wrapped over lines, a decorator and its definition, a function's length —
-   through `file.lines`, `file.added`, `file.changed` and `file.module`, read with `calls_in` and `argument`, or
-   `file.near(n)` where only the lines around what a change added matter, so a file past the size limits is read; a
-   `TreeRule` when it needs the head's paths or every module. Every name comes from one import line,
-   `from ..rule_helpers import …`, the door in `adk_review/judge/rule_helpers/`.
+1. Read "Write a rule" in `README.md` and copy the template of the kind the question needs to a file in
+   `adk_review/judge/rules/`, the rule's id the file's name with `-` for `_`: the catalog finds it at once and refuses a
+   file not named after its rule. A `Rule` when one added line answers the question (`calls`, `comment_of` and `words`
+   read it as Python does, so a word in a comment or a string is not code); a `FileRule` when the answer needs the file
+   — a call wrapped over lines, a decorator and its definition, a function's length — through `file.lines`,
+   `file.added`, `file.changed`, `file.module` and `file.arrived(*globs)`, which a file renamed or copied into the paths
+   a rule reads answers True, every line of it new there, read with `calls_in` and `argument`, or `file.near(n)` where
+   only the lines around what a change added matter, so a file past the size limits is read; a `TreeRule` when it needs
+   the head's paths or every module. Every name comes from one import line, `from ..rule_helpers import …`, the door in
+   `adk_review/judge/rule_helpers/`.
 2. Keep the rule's expectations as constants at the top of its file, as `REQUIRED` is in `demo_required_paths.py`, and
    give it `bad` and `good` examples: the catalog holds the rule to them, and to firing on nothing in its own source,
    at every start. The folder holds rules and nothing else: no helper module and no guide; a helper several rules

@@ -967,6 +967,62 @@ class TestTreeRules:
 class TestTheShippedRules:
     """Each shipped rule on the shapes it names, and on those it must leave."""
 
+    def test_a_file_moved_into_a_rules_paths_is_read_whole_there(self, tmp_path: Path) -> None:
+        """Measured by review: a pure rename adds no line, so a workflow moved from `docs/` into `.github/workflows/`
+        holding a tag, and a lockfile renamed into `uv.lock` naming another registry, were read by no rule that reads
+        what a change adds; flagged when added, both were approved when moved. A file that arrived in a rule's paths
+        from outside them is read whole there."""
+        from adk_review.collect.git import collect_evidence
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.lockfile_sources import LockfileSources
+        from adk_review.judge.rules.pinned_actions import PinnedActions
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", "main")
+        workflow = "on: push\njobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n"
+        _committed(repo, "docs/ci-example.yml", workflow)
+        _committed(repo, "docs/old.lock", 'source = { registry = "https://pypi.evil.example/simple" }\n')
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        (repo / ".github" / "workflows").mkdir(parents=True)
+        _git_in(repo, "mv", "docs/ci-example.yml", ".github/workflows/ci.yml")
+        _git_in(repo, "mv", "docs/old.lock", "uv.lock")
+        _git_in(repo, "commit", "-qm", "move them into place")
+        evidence = collect_evidence(str(repo), "main", "change")
+        answers = run_rules(evidence, [PinnedActions(), LockfileSources()])
+        assert [f.file for f in answers["rule.pinned-actions"].findings] == [".github/workflows/ci.yml"]
+        assert [f.file for f in answers["rule.lockfile-sources"].findings] == ["uv.lock"]
+
+    def test_a_rules_evidence_is_cut_once_where_the_finding_is_made(self) -> None:
+        """Measured by review: a rule's evidence was its whole added line, and the fold, the report, the JSON, the
+        hand-off and the fingerprint each scrubbed it again before anything cut it, so one 10 MB line holding a key
+        took 160 s. Cut once, after the scrub, at the report's own cap: no credential, and the cut named."""
+        from adk_review.core.text import EVIDENCE_MAX_CHARS
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.secrets import Secrets
+
+        line = "x" * 10_000 + ' key = "AKIA' + 'IOSFODNN7EXAMPLE"  ' + "y" * 10_000
+        found = run_rules({"files": [_entry("m.py", line + "\n")], "tree": None}, [Secrets()])["rule.secrets"].findings
+        assert found, "the key is found"
+        assert all(len(f.evidence) < EVIDENCE_MAX_CHARS + 40 and "characters]" in f.evidence for f in found), found
+        assert all("AKIA" not in f.evidence for f in found), "scrubbed before the cut"
+
+    def test_named_secrets_reads_a_long_number_in_linear_time(self) -> None:
+        """Measured by review: the pattern for a number had two ways to split a run of digits and tried each on a
+        failed match, so a value of 20,000 digits and a letter took 6.9 s, 40 KB took 24 s and the pre-push hook a
+        minute: a branch could stall every review with one line. One way to split it reads the same numbers at once."""
+        import time
+
+        from adk_review.judge.rules.named_secrets import _NUMBER
+
+        started = time.perf_counter()
+        assert _NUMBER.fullmatch("1" * 20_000 + "x") is None
+        assert time.perf_counter() - started < 1.0, "linear, where it was quadratic"
+        for number in ("123", "12.34", "12.", ".5", "-1e9", "+3.0E-2"):
+            assert _NUMBER.fullmatch(number), number
+        for other in ("1.2.3", "e9", "1e", ".", "1x"):
+            assert not _NUMBER.fullmatch(other), other
+
     def test_hidden_text_names_smuggled_selectors_invisible_operators_and_fillers(self) -> None:
         """Read by review: text can be smuggled in variation selectors behind an emoji, the supplementary ones
         carrying its bytes; the invisible operators and the Hangul fillers show nothing, and a filler has served as an

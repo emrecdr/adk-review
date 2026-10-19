@@ -5,13 +5,14 @@ No git runs here: `git.py` reads, this module arranges, so each piece is tried o
 
 from __future__ import annotations
 
+import itertools
 from collections.abc import Mapping, Sequence
 
 from ..core.blast import Blast, blast_radius
 from ..core.evidence import Entry, Failure, entry
-from ..core.paths import matches
+from ..core.paths import linked, matches
 from ..core.rules import Tree, is_python_text
-from .diff import BINARY, SUBMODULE, added_lines, capped, framed, headers, quotable
+from .diff import BINARY, LINK, SUBMODULE, added_lines, capped, framed, headers, hunk_lines, quotable
 
 #: And the block of diffs the guidelines read, in all: a file past it is left out whole, and named. Measured with none,
 #: `--all` over 4,826 files gave each guideline and each verifier 14.9 MB; this repository's whole project, 275,688
@@ -27,6 +28,19 @@ def radius_of(tree: Tree | None, files: list[Entry]) -> Blast:
     return blast_radius(tree.parsed, files, len(tree.unread))
 
 
+#: A file Git LFS stores is committed as the pointer to its content: the whole file, opening with this line and then
+#: the object's id, as the spec orders them. Measured by review, a branch tracked `*.py` with LFS, committed a pointer,
+#: and the review approved what it never read.
+LFS_VERSION = "version https://git-lfs.github.com/spec/v1"
+
+
+def lfs_pointer(diff: str) -> bool:
+    """Whether the file the diff leaves is an LFS pointer: its first two lines as the diff shows them, a removed line
+    standing between them where the id changed. A page quoting the format holds those lines further down."""
+    opening = {number: line[1:] for number, line in itertools.islice(hunk_lines(diff), 4) if line[:1] != "-"}
+    return opening.get(1) == LFS_VERSION and opening.get(2, "").startswith("oid sha256:")
+
+
 def unread(entry: Entry, diff: str, cut: bool, fits: bool, cap: int) -> str:
     """Why the guidelines could not read all of a changed file, or "" when they could: named, never read as "found
     nothing". A deleted file adds nothing: what it removes was reviewed when it came in. `fits` is False for a
@@ -39,6 +53,8 @@ def unread(entry: Entry, diff: str, cut: bool, fits: bool, cap: int) -> str:
         return "a submodule: its commits are another repository's, not read here"
     if BINARY.search(top):
         return "binary: no line of it can be read or quoted"
+    if lfs_pointer(diff):
+        return "a Git LFS pointer: the file's content is stored elsewhere, and none of it was read"
     if not fits:
         return f"past the {BLOCK_CAP_CHARS:,} characters the guidelines read in all; --path narrows a review"
     if cut:
@@ -80,6 +96,7 @@ def shown_to_guidelines(
     profile, and nothing read it."""
     files: list[Entry] = []
     blocks: list[str] = []
+    links: list[tuple[Entry, str | None]] = []
     room, left_out, excluded = BLOCK_CAP_CHARS, 0, {}
     for listed, diff in zip(entries, diffs, strict=True):
         file = entry(listed["path"], listed["status"], diff, added_lines(diff), old=listed.get("old"))
@@ -105,6 +122,17 @@ def shown_to_guidelines(
             room -= len(block) + 2  # and the blank line joining it to the next
         else:
             left_out += 1
+        if not file["unread"] and LINK.search(headers(diff)):
+            links.append((file, linked(file["path"], "\n".join(text for _number, text in file["added"] or ()))))
+    # A link runs as the file it names, and its diff shows only the path: a hole unless the guidelines were shown that
+    # file whole. Read by review: `run.py`, a link to a skip-listed image holding Python, was approved, read by no one.
+    whole = {f["path"] for f in files if f["status"] != "D" and not f["unread"] and f["path"] not in excluded}
+    whole -= {file["path"] for file, _target in links}
+    for file, target in links:
+        if target not in whole:
+            file["unread"] = (
+                "a symbolic link: the guidelines read the path it names, and were not shown that file whole"
+            )
     if left_out:  # named to the guidelines too: a test left out is no test missing
         blocks.append(f"[… {left_out} more file(s) not shown: past {BLOCK_CAP_CHARS:,} characters in all]")
     if excluded:

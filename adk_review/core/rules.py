@@ -32,9 +32,10 @@ from typing import ClassVar
 from .blast import is_test, parse, parsed
 from .evidence import Entry, unreleased
 from .findings import Checked, Finding, Severity
+from .paths import matches
 from .profiles import rule_id
 from .secrets import scrub
-from .text import lines_of
+from .text import EVIDENCE_MAX_CHARS, cut_at, lines_of
 
 #: One example a rule carries: a text, read at `example.py`; a `(path, text)` pair, for a rule that chooses its files;
 #: or `{path: text}`, several files at once, for a rule that reads the change or the tree as a whole.
@@ -109,6 +110,16 @@ class AnyRule(ABC):
         where it could not look at what it asked for."""
 
 
+def added_to(entry: Entry) -> list[tuple[int, str]]:
+    """The lines a change added to `entry`, numbered: those its diff adds, or every line of a symbolic link's text,
+    which is the file the link names and new under the link's name, though its diff adds one line, that file's path.
+    Measured by review: the shell call of `run.py`, a link to an image holding Python, was counted as a line the change
+    did not add."""
+    if "target" in entry and entry["text"] is not None:
+        return list(enumerate(lines_of(entry["text"]), 1))
+    return unreleased(entry["added"])
+
+
 class Rule(AnyRule):
     """One check over the lines a change added: it decides its own scope, and its own verdict on a line."""
 
@@ -123,7 +134,7 @@ class Rule(AnyRule):
             Hit(entry["path"], line, f"+{text}")
             for entry in files
             if self.reads(entry["path"])
-            for line, text in unreleased(entry["added"])
+            for line, text in added_to(entry)
             if self.check(entry["path"], text)
         ]
 
@@ -170,9 +181,12 @@ class ChangedFile:
         unread: str,
         changed: frozenset[str],
         shown: Mapping[int, str] = MappingProxyType({}),
+        old: str | None = None,
     ) -> None:
         self.path = path
         self.added = frozenset(added)
+        #: A renamed or copied file's former path, under git's R and C alone.
+        self.old = old
         #: Every path the change touched, this file's among them: what a rule about the change as a whole asks — a
         #: source file changed and no test with it, a manifest changed and its lock file not. One set for every file
         #: of a change, never copied: measured, a copy each made a file rule cost 1.6 s over 10,000 files.
@@ -186,6 +200,13 @@ class ChangedFile:
         self._shown = shown
         #: Whether the rule asked for the text of a file that was not read.
         self.missed = False
+
+    def arrived(self, *globs: str) -> bool:
+        """Whether this file came into the paths `globs` name by a rename or a copy from outside them: every line of it
+        is new there, though the diff adds none. Measured by review: a workflow moved into `.github/workflows/` and a
+        lockfile renamed into `uv.lock`, each adding no line, were read by no rule that reads what a change adds. A
+        link needs no asking: every line of its text is one the change added."""
+        return self.old is not None and not matches(self.old, *globs)
 
     def _text_at_head(self) -> str:
         """The file's text, or `UnreadError` for one the collector did not read whole: a hole, never an empty file."""
@@ -283,7 +304,7 @@ class FileRule(AnyRule):
             if not self.reads(path):
                 continue  # a test, to a rule that reads none: still in `changed`, as every path the change touched
             module = tree.module(path) if tree is not None and path in tree.parsed else None  # the tree's one parse
-            added = (line for line, _text in unreleased(entry["added"]))
+            added = (line for line, _text in added_to(entry))
             # Ruff's diagnostics ride on an entry only for the rule that named its codes; every other rule gets none.
             unread = entry["unread_text"] or ""
             diagnostics, shown = entry.get("diagnostics", ()), entry.get("shown") or {}
@@ -296,6 +317,7 @@ class FileRule(AnyRule):
                 unread=unread,
                 changed=changed,
                 shown=shown,
+                old=entry.get("old"),
             )
             try:
                 found += [self._hit(file, item) for item in _each(self.check(file), "file", returns)]
@@ -370,7 +392,9 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
                 line=hit.line,
                 severity=hit.severity or rule.severity,
                 title=f"{rule.id}: {hit.title or rule.title}",
-                evidence=scrub(hit.text)[0],  # the report never prints a secret, a rule's evidence included
+                # The report never prints a secret, a rule's evidence included, and the line is cut once, after the
+                # scrub: measured by review, a 10 MB line was scrubbed again by every later reader, 160 s in all.
+                evidence=cut_at(scrub(hit.text)[0], EVIDENCE_MAX_CHARS),
                 suggestion=hit.fix or rule.fix,
             )
             for hit in hits

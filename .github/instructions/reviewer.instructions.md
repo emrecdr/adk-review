@@ -30,11 +30,12 @@ applyTo: "adk_review/**"
   hand-off lists them as tidies), and one `check` of three kinds — a line, a file, the tree: a `Rule` with
   `check(path, line) -> bool` over each added line; a `FileRule` with `check(file)` returning line numbers, which the
   report quotes, or `(line, what is wrong)` pairs over each changed file whole at the head (`file.lines`, `file.added`,
-  `file.changed`, `file.module`, `file.line(n)`, `file.near(n)` for a file past the size limits, as far as its diff
-  shows it, and `file.diagnostics`, an outside tool's, for a rule that names its `tool`, whose adapter is in
-  `collect/tools.py`); a `TreeRule` with `check(tree)` returning `(path, what)` or `(path, line, what)` over the head's
-  paths and parsed modules (`tree.paths`, `tree.has`, `tree.module`, `tree.modules`). Any other shape is a sentence. The
-  helpers come through the door: `is_test`, `matches`, `calls`, `comment_of`, `words`, `tokens`, `calls_in`, `argument`,
+  `file.changed`, `file.module`, `file.arrived(*globs)` where a file renamed or copied into a rule's paths brings every
+  line of it there, `file.line(n)`, `file.near(n)` for a file past the size limits, as far as its diff shows it, and
+  `file.diagnostics`, an outside tool's, for a rule that names its `tool`, whose adapter is in `collect/tools.py`); a
+  `TreeRule` with `check(tree)` returning `(path, what)` or `(path, line, what)` over the head's paths and parsed
+  modules (`tree.paths`, `tree.has`, `tree.module`, `tree.modules`). Any other shape is a sentence. The helpers come
+  through the door: `is_test`, `matches`, `calls`, `comment_of`, `words`, `tokens`, `calls_in`, `argument`,
   `functions_in`, `imports_in`, `defined`, `classes`, `parameters` and the rest. A hit may be a `Hit` naming its own
   title, severity or fix, as `lint` does for ruff's codes. `secrets` and `lint` are written like any other rule;
   redaction is not a check, and `core/secrets.py` keeps the shapes it scrubs with. A file's lines are numbered as git

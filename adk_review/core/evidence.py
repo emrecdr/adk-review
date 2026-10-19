@@ -33,6 +33,7 @@ class Entry(TypedDict):
     cut: bool  # whether the guidelines' view of it is cut: at the diff cap, or past the block's
     text: str | None  # its text at the head, for the file rules; None where not read, or once let go
     unread_text: str | None  # why its text was not read whole, a hole for a rule that reads it whole; None otherwise
+    target: NotRequired[str]  # the file a symbolic link names, whose text it holds, every line new under its name
     shown: NotRequired[
         dict[int, str] | None
     ]  # the lines its diff shows, by number, where its text was not read; None once let go

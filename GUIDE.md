@@ -328,12 +328,11 @@ What the hook cannot see, or stops on:
   so fetch before a push that follows a rewrite, and let a fetch prune deleted ones (`git config fetch.prune true`).
   Pushed to a URL rather than a remote's name, no branch of it is known here, and a new ref is reviewed as a whole
   project.
-- A file no rule can read — a binary one, a submodule — is a hole and stops the push, unless `[review] skip` in
-  `config.toml` names it, as the shipped list names images and fonts ("Configuration" above): then the report names
-  it as skipped, and it stops nothing. A text file past the size limits
-  above, a lock file say, is read as far as its diff shows it, which is all `reviewer-instructions` reads; a Python
-  file past them is a hole for `lint`, `pitfalls` and `encoding-declaration`, which read a file whole, and stops
-  the push.
+- A file no rule can read — a binary one, a submodule, a Git LFS pointer, whose content is stored elsewhere — is a hole
+  and stops the push, unless `[review] skip` in `config.toml` names it, as the shipped list names images and fonts
+  ("Configuration" above): then the report names it as skipped, and it stops nothing. A text file past the size limits
+  above, a lock file say, is read as far as its diff shows it, which is all `reviewer-instructions` reads; a Python file
+  past them is a hole for `lint`, `pitfalls` and `encoding-declaration`, which read a file whole, and stops the push.
 - A repository with no `.git` folder of its own, a bare one or one used through `--git-dir`, and a tag of a tree or a
   blob, stop the push: the hook reviews a working tree's commits.
 

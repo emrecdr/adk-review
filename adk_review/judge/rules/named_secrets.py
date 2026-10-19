@@ -45,8 +45,9 @@ _SEPARATOR = re.compile(r"[\s_.\-/]")
 #: Code where a literal would stand: a chain of attributes, `raw_credential.oauth2.client_secret`, or a name passed on
 #: as an argument, `aws_session_token=s3_aws_session_token,`; unquoted alone, as a quoted value is a literal.
 _CODE = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+[,)\]]*|[A-Za-z_]\w*[,)\]]+")
-#: A number, a price per token or a count: no credential a machine makes.
-_NUMBER = re.compile(r"[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?")
+#: A number, a price per token or a count: no credential a machine makes. One way to split a run of digits: measured
+#: by review, `\d+\.?\d*` had two and tried each on a failed match, 20,000 digits and a letter taking 6.9 s.
+_NUMBER = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
 #: Marks of code, which no key's alphabet holds — base64's, hex's, a UUID's, Django's symbols: what a minified bundle
 #: spans between two of its strings, `+(0,S.parse)(e))}finally{m(!1)}`.
 _CODE_MARK = re.compile(r"[{};]")

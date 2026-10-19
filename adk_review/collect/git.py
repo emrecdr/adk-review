@@ -26,9 +26,10 @@ from typing import Any
 
 from ..core.blast import Radius
 from ..core.evidence import Entry, Evidence, Failure, unreleased
+from ..core.paths import linked
 from ..core.rules import Tree
 from ..core.text import lines_of
-from .change import no_change, radius, shown_to_guidelines, widens
+from .change import lfs_pointer, no_change, radius, shown_to_guidelines, widens
 from .diff import (
     BINARY,
     DIFF_CAP_CHARS,
@@ -43,6 +44,8 @@ GIT_TIMEOUT_S = 30
 #: a file cap alone let a branch of 5,000 one-megabyte files in. The largest real file seen was 0.8 MB.
 MAX_TREE_BYTES = 20_000_000
 MAX_FILE_BYTES = 1_000_000
+#: Git reads a file as binary where a NUL lies in its first 8,000 bytes, and the rules read a link's target so too.
+BINARY_BYTES = 8_000
 #: The tree of no files, by the repository's hash: git knows it without storing it. A whole-project review diffs the
 #: head against it, so every file reads as added and goes through the rules, the guidelines and grounding as a change
 #: does.
@@ -601,13 +604,21 @@ def _texts(resolved: dict, blobs: Iterable[tuple[str, str, str]]) -> tuple[dict[
     return read, unread + [path for path, _sha in wanted if path not in read]
 
 
+def _no_text(diff: str) -> bool:
+    """Whether the file the diff leaves holds no text a rule could read as it: binary, or a Git LFS pointer, whose
+    lines are not the file. Measured by review: ruff read a pointer committed as `tool.py` as Python, and four major
+    findings of invalid syntax stood on its three lines."""
+    return BINARY.search(headers(diff)) is not None or lfs_pointer(diff)
+
+
 def read_texts(resolved: dict, files: list[Entry], listing: list[tuple[str, str, str, str, str]] | None) -> None:
     """Each changed file's text at the head, for the file rules, set on its entry as `text`: a plain file the head
     holds within the caps, read in one batch. `unread_text` names one the head holds that was not read — over its
     cap, past the tree's budget, a blob the batch did not give back, or a tree that could not be listed — a hole for
     a rule that reads it whole; `shown` holds the lines its diff shows of it, by number, the ones added and those kept
-    around them, for a rule that reads no more. A file the head does not hold, a binary, a link or a submodule has
-    neither: nothing for a file rule to read, and the report names a binary under not read already."""
+    around them, for a rule that reads no more. A file the head does not hold, a binary, a Git LFS pointer, a link
+    naming no text file there or a submodule has neither: nothing for a file rule to read, and the report names a
+    binary and a pointer under not read already."""
     for entry in files:
         entry["text"], entry["unread_text"] = None, None
     if listing is None:
@@ -616,10 +627,25 @@ def read_texts(resolved: dict, files: list[Entry], listing: list[tuple[str, str,
             entry["unread_text"] = "was not read: the head's tree could not be listed"
     else:
         blobs = {path: (sha, size) for path, sha, size in _plain(listing)}
-        changed = [
-            entry for entry in files if entry["path"] in blobs and not BINARY.search(headers(unreleased(entry["diff"])))
+        changed = [entry for entry in files if entry["path"] in blobs and not _no_text(unreleased(entry["diff"]))]
+        # A link runs as the file it names, so the rules read that file under the link's name. Read by review: a link
+        # had no text, and `run.py` naming an image that held Python was linted by no rule. One naming no file of the
+        # head, a folder or a path out of the repository, has no text, as before: there is nothing here to run.
+        links = {path: (sha, size) for mode, kind, sha, size, path in listing if kind == "blob" and mode == "120000"}
+        named, _unread = _texts(
+            resolved, ((entry["path"], *links[entry["path"]]) for entry in files if entry["path"] in links)
+        )
+        through = [
+            (entry, target)
+            for entry in files
+            if entry["path"] in named and (target := linked(entry["path"], named[entry["path"]])) in blobs
         ]
-        texts, _unread = _texts(resolved, ((entry["path"], *blobs[entry["path"]]) for entry in changed))
+        wanted = [(entry["path"], *blobs[entry["path"]]) for entry in changed]
+        texts, _unread = _texts(resolved, [*wanted, *((entry["path"], *blobs[target]) for entry, target in through)])
+        for entry, target in through:
+            if "\x00" not in (texts.get(entry["path"]) or "")[:BINARY_BYTES]:
+                entry["target"] = target
+                changed.append(entry)
         unread = []
         for entry in changed:
             entry["text"] = texts.get(entry["path"])
