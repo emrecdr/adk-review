@@ -26,7 +26,8 @@ applyTo: "adk_review/**"
   as class constants, its expectations as constants in its file, `bad` and `good` examples (a text, read at
   `example.py`; a `(path, text)` pair; or `{path: text}`), `reads_tests = True` where what it finds matters in a
   test too (a credential, hidden text, a workflow named `test_*.yml`; no test's file reaches any other rule, though
-  `file.changed` and `tree.paths` list them all), and one `check` of three kinds — a line, a file, the tree:
+  `file.changed` and `tree.paths` list them all), `cleanup = True` where its findings change how code reads and never
+  what it does (the hand-off lists them as tidies), and one `check` of three kinds — a line, a file, the tree:
   a `Rule` with `check(path, line) -> bool` over each added line; a `FileRule` with `check(file)` returning line
   numbers, which the report quotes, or `(line, what is wrong)` pairs over each changed file whole at the head
   (`file.lines`, `file.added`, `file.changed`, `file.module`, `file.line(n)`, `file.near(n)` for a file past the size

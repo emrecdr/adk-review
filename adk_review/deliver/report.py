@@ -1,5 +1,5 @@
-"""The report a person reads in a terminal, the same review as data for a pipeline (`--json`), and every rule that
-keeps model prose from forging either."""
+"""The report a person reads in a terminal, the same review as data for a pipeline (`--json`), the hand-off a coding
+agent acts on (`--handoff`), its fixes and its tidies apart, and every rule that keeps model prose from forging any."""
 
 from __future__ import annotations
 

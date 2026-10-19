@@ -18,7 +18,7 @@ the steps:
 2. A token ceiling (`--max-tokens`) that ends the spending, never the report:
    the call that would pass it is refused, the guideline is named, exit 3.
 3. An outside tool for a rule that names one: ruff for `lint`, `pitfalls` and `simplify`
-   (`judge/rules/lint.py`), run by `collect/ruff.py` through `collect/tools.py`
+   (`judge/rules/`), run by `collect/ruff.py` through `collect/tools.py`
    over the changed Python files at the head.
 4. A second opinion (`--verify`): another model judges each guideline finding
    before the fold — one verifier per finding, a second graph run like the

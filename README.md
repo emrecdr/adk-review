@@ -208,7 +208,8 @@ its module — for what one line cannot show, as `reviewer_instructions.py` read
 `TreeRule`'s `check(tree)` reads the head instead: every path, and each Python module parsed once with the blast
 radius, for what must exist, define a name, derive from a parent or take a parameter. None is handed a test's file
 unless it sets `reads_tests`, as the list of what a rule may do says below. A guideline names its role and
-a thinking budget; the instruction around the role is every guideline's.
+a thinking budget, and `cleanup = True` where its findings change how code reads and never what it does; the
+instruction around the role is every guideline's.
 
 The rules shipped with the reviewer are written as a project writes its own:
 
@@ -466,12 +467,16 @@ class Naming(Guideline):
     thinking_budget = 2048  # tokens of thinking before the answer, on Gemini; Copilot has no such lever
 ```
 
+A guideline whose findings change how code reads and never what it does adds `cleanup = True`, as `complexity` does,
+and the hand-off lists its findings as tidies, apart from the fixes.
+
 1. Copy it to `judge/guidelines/<name>.py` and name the guideline after the file.
 2. Write the role: who the model is and what it judges the change for, in a sentence or two. The instruction asks
    for findings "only in your dimension" right after it, so a role that names one concern keeps the guideline to it.
 3. See it with `--list-checks` and `--explain guideline.naming`, and try it alone, with a model, with
    `--check guideline.naming`.
-4. Turn it on: `full` runs it at once, through the group; add `guideline.naming` to `default` to run it in every
+4. Turn it on: `full` runs it at once, through the group; `simplify` and `code-review` name theirs by id, and a
+   guideline joins one by its id; add `guideline.naming` to `default` to run it in every
    review that names no profile.
 
 Like a rule, a guideline runs nothing; it imports `core` alone. Its findings are a model's, so they are held to the
@@ -721,14 +726,15 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   command, the demo's rules-only review took 0.87 to 0.94 s through a graph holding no agent, 0.41 s of it the
   engine's import, and 0.16 to 0.17 s without it, the pre-push hook paying the difference on every push; `--trace`,
   `--debug-log` and `--record` are the engine's own and still bring its run.
-- **Lint reads a copy, never the checkout.** The changed Python files, as the collector read them at the head, are
-  written into a temporary folder, each in a folder of its own under a name of the rule's own — `module.py`,
-  `module.pyi` for a stub, or `__init__.py` where the branch's is one — and named to ruff one by one: a `.venv/` the
-  branch changed is linted, `x.py` beside `X.py/y.py` collides on no disk, and a `nul.py` or `a:b.py`, which Windows
-  cannot hold, is linted like any other. Ruff lints what the collector read and no more: a file not read whole is
-  lint's hole. What a code means, its severity and its fix, is the rule's: an `assert` is major in library code,
-  where `python -O` strips it, and minor in a test, where it is how pytest checks. Without ruff, or with one that
-  fails, the rule did not look and says so, exit 3.
+- **A rule that reads ruff reads a copy, never the checkout.** `lint`, `pitfalls` and `simplify` each have ruff run over
+  the same copy. The changed Python files, as the collector read them at the head, are written into a temporary folder,
+  each in a folder of its own under a name of the rule's own — `module.py`, `module.pyi` for a stub, or `__init__.py`
+  where the branch's is one — and named to ruff one by one: a `.venv/` the branch changed is linted, `x.py` beside
+  `X.py/y.py` collides on no disk, and a `nul.py` or `a:b.py`, which Windows cannot hold, is linted like any other. Ruff
+  lints what the collector read and no more: a file not read whole is the hole of each rule that reads ruff. What a code
+  means, its severity and its fix, is the rule's: an `assert` is major in library code, where `python -O` strips it, and
+  minor in a test, where it is how pytest checks. Without ruff, or with one that fails, the rule did not look and says
+  so, exit 3.
 - **Grounding.** A guideline's finding must quote, verbatim, whole lines of its own file's diff, within one hunk, as
   the guideline saw them: secrets redacted, diff markers gone, whitespace not counted. Where a quote's line breaks
   were lost, its lines begin and end where the file's do, a diff marker or a fence run into them or not: measured live

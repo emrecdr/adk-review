@@ -1,9 +1,9 @@
 """What a guideline is: one thing a model judges in a change, one class in one file of `judge/guidelines/`.
 
-A guideline is the model's half of a review as a rule is the code's: a rule decides, a guideline gives a model its
-role and asks it to judge. Its file holds only what makes it this guideline — its id, a title, the role and a
-thinking budget. The instruction around the role, the schema, the fences around the change and the reading back are
-the same for every guideline, and live in `judge/agents.py`. Pure: no ADK, nothing run.
+A guideline is the model's half of a review as a rule is the code's: a rule decides, a guideline gives a model its role
+and asks it to judge. Its file holds only what makes it this guideline — its id, a title, the role, a thinking budget,
+and whether its findings are a cleanup. The instruction around the role, the schema, the fences around the change and
+the reading back are the same for every guideline, and live in `judge/agents.py`. Pure: no ADK, nothing run.
 """
 
 from __future__ import annotations
