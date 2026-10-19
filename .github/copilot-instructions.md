@@ -15,9 +15,10 @@ agree; `README.md` is the developer's guide and `GUIDE.md` the user's. Path-spec
 ## Secrets and configuration
 
 One `.env` at the root (gitignored, copied from `.env.example`) holds `REVIEW_PROVIDER`, `REVIEW_MODEL` and the keys;
-the shell wins over it at every entry point. Never read, print or quote `.env`, a key or the Copilot token.
-`adk_review/judge/config.py` injects `truststore` before any client is built, so certificates come from the operating
-system's store; keep that line where it is.
+the shell wins over it at every entry point. Never read, print or quote `.env`, a key, or the Copilot token or its
+folder (`~/.config/litellm/github_copilot`, or `GITHUB_COPILOT_TOKEN_DIR`), and never run `adk-review-login`: it needs
+the person at a browser, and `--force` replaces their token. `adk_review/judge/config.py` injects `truststore` before
+any client is built, so certificates come from the operating system's store; keep that line where it is.
 
 ## When reviewing a pull request
 
@@ -39,8 +40,10 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   `--check guideline.<name>`, `adk web`, `adk run`, `scripts/measure.py`, `scripts/injection_suite.py` and
   `scripts/labelled_set.py`, so run one only when the task says so.
 - A review under `default` makes three calls, `simplify` three, `code-review` five and `full` six, at most three in
-  flight (`CONCURRENCY`), and Gemini's free tier allows five a minute and twenty a day:
-  a run that met a 429 names it under `could_not_look` and measures nothing there. Run each side of a
+  flight (`CONCURRENCY`). On Copilot each call is billed to the seat that logged in, and GitHub rate-limits each user,
+  unpublished; Gemini's free tier allows five a minute and twenty a day: a run that met a 429 names it under
+  `could_not_look` and measures nothing there. The cloud agent's setup logs in to nothing, so there a review naming a
+  guideline stops at readiness, exit 2: run the model-free profiles. Run each side of a
   before-and-after comparison from its own copy of the tree, since a review imports the checkout.
 - `[tool.uv]` in `pyproject.toml` takes a release only three days after it is published (`exclude-newer`), so a
   dependency released since does not resolve yet; the comment there says why the span stays.
@@ -55,8 +58,8 @@ miss: a new flag, check, JSON field or limit the guide does not say.
 - `root_agent.name` equals the folder name, `adk_review`. Never name a sub-package module `agent.py`: ADK's nested
   loader would take it for an agent. `adk_review/judge/config.py` is the only file that builds a provider's model
   (Gemini a plain model string, Copilot `LiteLlm("github_copilot/…")`); `adk_review/judge/settings.py` only reads the
-  environment. Both arms are first-class: every change works, is
-  tested and is measured live on each, `copilot` being only the default; and judging agents run at temperature zero,
+  environment. Both arms are first-class, Copilot the one this reviewer targets and the default: every change works,
+  is tested and is measured live on each, on Copilot first; and judging agents run at temperature zero,
   a model that cannot being refused before any call.
 - A provider error is the agent's own answer, and so is a reply that does not fit its schema (`SCHEMA_MISMATCH`); "did
   not look" must never read as "found nothing".

@@ -14,14 +14,15 @@ resolves what a run would cover — revisions, files, profile, model, readiness 
 catch the wrong branch; `--list-checks` shows every check with its kind, its profiles and its file.
 
 1. Without a model, which needs no key and is safe anywhere:
-   `uv run python -m adk_review.review <repo> --head <branch> --base main --profile default-rules`. The
-   default's rules run, `secrets` and `lint` among them; the guidelines do not. `--profile rules-only` runs every rule
-   in `adk_review/judge/rules/` but the payments rules written for the demo, which `--profile demo` adds. In a
-   pipeline name `--head`, since the checkout is a detached commit, and fetch the base branch with its history, or review the whole head
-   with `--all`.
-2. With the guidelines, only when asked and when `.env` names a ready arm (`REVIEW_PROVIDER=copilot` after
-   `adk-review-login`, or `gemini` with `GOOGLE_API_KEY` or a Vertex AI project): drop `--profile`; a
-   `--dry-run` says whether the arm is ready. Never print `.env` or a key;
+   `uv run python -m adk_review.review <repo> --head <branch> --base main --profile default-rules`. The default's rules
+   run, `secrets` and `lint` among them; the guidelines do not. `--profile rules-only` runs every rule in
+   `adk_review/judge/rules/` but the payments rules written for the demo, which `--profile demo` adds. In a pipeline
+   name `--head`, since the checkout is a detached commit, and fetch the base branch with its history, or review the
+   whole head with `--all`.
+2. With the guidelines, only when asked and when a `--dry-run` says the arm is ready: with nothing set the arm is
+   Copilot, the one this reviewer targets, ready once the person has run `adk-review-login`; Gemini needs
+   `REVIEW_PROVIDER=gemini` with `GOOGLE_API_KEY` or a Vertex AI project. Drop `--profile`. Never run the login, read
+   `.env`, or open the Copilot token's folder;
    the report names the arm and the model that ran. `--profile simplify` reads the change as Claude Code's
    `/simplify` does, the cleanup, with `lint` and `pitfalls` beside it; `--profile code-review` as its `/code-review`
    does, correctness and security before the same cleanup; `--profile full` runs every check but the payments demo's

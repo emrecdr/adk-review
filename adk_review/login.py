@@ -50,7 +50,7 @@ def unreachable(exc: Exception) -> int:
     if "CERTIFICATE_VERIFY_FAILED" in str(exc):
         print(
             "[copilot] a proxy on this network re-signs HTTPS: point Python at its root certificate with "
-            "SSL_CERT_FILE, a PEM bundle that holds it (the README's Windows notes say how), then run this again",
+            'SSL_CERT_FILE, a PEM bundle that holds it ("Configuration" in GUIDE.md says so), then run this again',
             file=sys.stderr,
         )
     return 1

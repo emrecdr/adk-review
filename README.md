@@ -57,15 +57,25 @@ credentials, which the credential rules find as they would anyone's.
 
 ### 5. Turn on a model
 
-The guidelines need a model, on one of two arms. Set it in the shell, or in `.env` at the root of this checkout
-(copy `.env.example`), which the shell wins over:
+The guidelines need a model. Copilot is the arm this reviewer targets, and the arm when nothing is set; Gemini is the
+other, first-class too. Settings go in the shell, or in `.env` at the root of this checkout, which the shell wins over:
+`uv run` reads that file, an installed command the shell alone.
 
-- **Copilot**, the arm when nothing is set: no key. Run `uv run adk-review-login` once, GitHub's device flow, and
-  LiteLLM reads the token it caches; installed, the command is `adk-review-login`.
+```bash
+cp .env.example .env                             # Windows: copy .env.example .env; then set what your arm needs
+uv run adk-review-login                          # Copilot, once: a code to enter at GitHub, then a token cached
+uv run adk-review <repo> --base main --dry-run   # says whether the arm is ready, and runs nothing
+```
+
+- **Copilot**: no key, but a GitHub account whose Copilot plan lets it choose a model (Free and Student choose for
+  themselves) and the login above, `adk-review-login` once installed. Calls are billed to that seat, as its plan bills
+  Copilot chat. Set `REVIEW_MODEL` to a model the plan serves: the default, `gpt-4.1`, is one GitHub has deprecated in
+  Copilot, served while it lasts under per-user rate limits it does not publish. A `*.ghe.com` tenant also sets its
+  endpoints, as `.env.example` shows.
 - **Gemini**: `REVIEW_PROVIDER=gemini` and `GOOGLE_API_KEY`, or through Vertex AI a project, as `.env.example` says.
 
-Then drop `--profile`: `uv run adk-review <repo> --base main` runs the rules, then the guidelines. Both arms are
-first-class; "Configuration" in `GUIDE.md` lists every variable.
+Then drop `--profile`: `uv run adk-review <repo> --base main` runs the rules, then the guidelines. "Configuration" in
+`GUIDE.md` lists every variable, and what each Copilot message means.
 
 ### 6. Review every push
 
@@ -184,7 +194,8 @@ and `--dry-run` names the file read.
 The model comes from the shell, or from the `.env` at the root of the checkout, which never wins over the shell:
 `REVIEW_PROVIDER` picks the arm, `copilot` when unset or `gemini`, and `REVIEW_MODEL` the model, blank for `gpt-4.1`
 or `gemini-2.5-flash`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` give `--verify` and every role's fallback a
-model of their own. Both arms are first-class; `copilot` is only the default. Readiness is asked before any call:
+model of their own. Copilot is the arm this reviewer targets and the default; Gemini is first-class too. Readiness is
+asked before any call:
 Copilot's cached token, from the one-time `uv run adk-review-login`, or Gemini's `GOOGLE_API_KEY` or
 Vertex AI project, which google-genai itself answers, never a copy of its rules; on the Gemini arm a model ADK would
 send to another provider, `gpt-*` or `claude-*`, is refused. Every certificate is verified through the operating
@@ -547,7 +558,9 @@ simulated one:
 `--profile default-rules` needs no key, so it fits every pull request. `rules-only` adds every other rule but the
 payments demo's, examples written for one project that `demo` alone runs. The
 guidelines need a credential the pipeline can hold, `REVIEW_PROVIDER=gemini` with `GOOGLE_API_KEY` from its secrets:
-the Copilot login is a device flow no pipeline can complete, and a pull request from a fork gets no secrets. Run the
+the Copilot login is a device flow no hosted runner can complete, its token a person's own, and a pull request from a
+fork gets no secrets. A self-hosted runner where a person ran the login once can run the Copilot arm, each review billed
+to that person's seat. Run the
 guidelines on a fork's change only after a maintainer has read it, in a job that holds the provider's key and nothing
 else, and never under `pull_request_target`, which hands the base repository's secrets to a run over code the fork
 chose. The command runs from the reviewer's own folder, as below: from inside the checkout under review, `python -m`

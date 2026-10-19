@@ -24,11 +24,11 @@ change against `main` is nothing, exit 2, and the sentence names `--head` and `-
 guidelines: they need a model, set as "Configuration" below says. `uv run python -m adk_review.review` is the same
 command spelled long.
 
-To run it from any folder, install it as a command: `uv tool install .` in this checkout, or with none `uv tool install
-git+https://github.com/emrecdr/adk-review`, the `git+` being uv's own, puts `adk-review`, its pre-push hook,
-`adk-review-push`, and the Copilot login, `adk-review-login`, on `PATH`: the reviewer alone, with ruff beside it. An
-installed reviewer reads the model's settings from the shell alone, no `.env` being read outside the checkout, and its
-config from beside itself; inside the checkout, `uv run adk-review` is the same command.
+To run it from any folder, install it as a command: `uv tool install .` in this checkout, or with none
+`uv tool install git+https://github.com/emrecdr/adk-review`, the `git+` being uv's own, puts `adk-review`, its pre-push
+hook, `adk-review-push`, and the Copilot login, `adk-review-login`, on `PATH`: the reviewer alone, with ruff beside it.
+An installed reviewer reads the model's settings from the shell alone, no `.env` being read outside the checkout, and
+its config from beside itself; inside the checkout, `uv run adk-review` is the same command.
 
 ## Flags
 
@@ -143,27 +143,27 @@ prints them:
 | `guideline.tests` | guideline | the model's, by finding | default, full | untested changes, and tests that are not honest | `judge/guidelines/tests.py` |
 <!-- /checks -->
 
-A rule's severity is its findings', but `lint` and `pitfalls` give each ruff code its own, and `encoding-declaration` is a hole,
-exit 3, rather than a finding: no rule read the code Python would run. `--explain ID` prints one check whole.
+A rule's severity is its findings', but `lint` and `pitfalls` give each ruff code its own, and `encoding-declaration` is
+a hole, exit 3, rather than a finding: no rule read the code Python would run. `--explain ID` prints one check whole.
 
 ## Configuration
 
 `config.toml` beside the command holds the review policy under `[review]` — `fail_on`, `max_tokens`, `verify`,
 `diff_cap` and `skip`, each a flag's default — and the profiles under `[profiles]`. It is read whole: a section or a
-setting it does not know, one missing, one of the wrong kind, a profile that names an unknown check or turns none on,
-or no `default` profile is exit 2. It is the one config: nothing of the policy is read from the repository under
-review, and `--dry-run` names the file read. Another policy is a change to this file, or a flag for one run. An
-installed command reads the copy it was installed with: installed from your own checkout with `uv tool install
---editable <checkout>`, a change there applies at once, as to `uv run`; otherwise reinstall after one. A pre-commit
-hook reads the config of the commit it pins, so a policy of your own is a commit of your own fork, pinned instead. The
-shipped `skip` names images and fonts, in either case, which no rule or model reads, so a branch adding a logo is not a
-hole, and lockfiles, which the rules read whole and no guideline judges. `rule.lockfile-sources` reads where npm's,
-Yarn's, pnpm's, bun's, uv's, Poetry's, PDM's, Pipenv's, Cargo's, Bundler's, Dart's, Mix's and CocoaPods' lockfiles fetch
-from; the other lockfiles the list names are read by the credential rules alone: `go.sum`, `gradle.lockfile` and NuGet's
-`packages.lock.json` name no source, Swift's `Package.resolved`, Nix's `flake.lock` and Composer's `composer.lock` name
-a URL for every package, and Deno's `deno.lock` imports from URLs by design. An archive, a keystore or a document can
-carry a credential, and stays a hole until the list names it. A text file a glob names is still read by the rules, as
-any changed file is.
+setting it does not know, one missing, one of the wrong kind, a profile that names an unknown check or turns none on, or
+no `default` profile is exit 2. It is the one config: nothing of the policy is read from the repository under review,
+and `--dry-run` names the file read. Another policy is a change to this file, or a flag for one run. An installed
+command reads the copy it was installed with: installed from your own checkout with
+`uv tool install --editable <checkout>`, a change there applies at once, as to `uv run`; otherwise reinstall after one.
+A pre-commit hook reads the config of the commit it pins, so a policy of your own is a commit of your own fork, pinned
+instead. The shipped `skip` names images and fonts, in either case, which no rule or model reads, so a branch adding a
+logo is not a hole, and lockfiles, which the rules read whole and no guideline judges. `rule.lockfile-sources` reads
+where npm's, Yarn's, pnpm's, bun's, uv's, Poetry's, PDM's, Pipenv's, Cargo's, Bundler's, Dart's, Mix's and CocoaPods'
+lockfiles fetch from; the other lockfiles the list names are read by the credential rules alone: `go.sum`,
+`gradle.lockfile` and NuGet's `packages.lock.json` name no source, Swift's `Package.resolved`, Nix's `flake.lock` and
+Composer's `composer.lock` name a URL for every package, and Deno's `deno.lock` imports from URLs by design. An archive,
+a keystore or a document can carry a credential, and stays a hole until the list names it. A text file a glob names is
+still read by the rules, as any changed file is.
 
 The model is set in the environment, or in the `.env` at the root of the reviewer's checkout; a variable set in the
 shell wins over the file:
@@ -171,34 +171,54 @@ shell wins over the file:
 | Variable | What it sets |
 |---|---|
 | `REVIEW_PROVIDER` | The arm: `copilot` or `gemini`. Default: `copilot`. |
-| `REVIEW_MODEL` | The model. Blank: `gpt-4.1` on Copilot, `gemini-2.5-flash` on Gemini. On the Gemini arm, a model ADK sends to another provider, `gpt-*` or `claude-*`, is refused, exit 2; on Copilot, one that cannot judge at temperature 0, `gpt-5` or the o-series, as LiteLLM says before any call. |
+| `REVIEW_MODEL` | The model. Blank: `gpt-4.1` on Copilot, `gemini-2.5-flash` on Gemini. GitHub has deprecated `gpt-4.1` in Copilot: it answers while Copilot serves it, under per-user rate limits GitHub does not publish, so name a model the seat's plan serves. On the Gemini arm, a model ADK sends to another provider, `gpt-*` or `claude-*`, is refused, exit 2; on Copilot, one that cannot judge at temperature 0, `gpt-5`, `gpt-5.5` or the o-series, as LiteLLM says before any call. |
 | `REVIEW_VERIFIER_MODEL` | The model `--verify` asks. Blank: `REVIEW_MODEL`. |
 | `REVIEW_FALLBACK_MODEL` | A second model behind every role's first, tried on a 429 or a 5xx. Blank: none. |
 | `GOOGLE_API_KEY` | The Gemini arm's key. |
 | `GOOGLE_GENAI_USE_ENTERPRISE` | `true` sends the Gemini arm through Vertex AI. |
 | `GOOGLE_CLOUD_PROJECT` | Vertex AI's project, signed in with Application Default Credentials (`gcloud auth application-default login`); no `GOOGLE_API_KEY` is needed, a key being Vertex AI's express mode. Blank: the project the credentials name, gcloud's own or a service account's, as on Cloud Run or GKE. |
 | `GOOGLE_CLOUD_LOCATION` | Vertex AI's region. Blank: `global`. |
-| `GITHUB_COPILOT_TOKEN_DIR` | Where the Copilot login caches its token. Default: `~/.config/litellm/github_copilot`. |
+| `GITHUB_COPILOT_TOKEN_DIR` | Where the Copilot login caches its token, and LiteLLM reads it; a `~` is expanded for both. Default: `~/.config/litellm/github_copilot`. |
 | `GITHUB_COPILOT_ACCESS_TOKEN_FILE` | The token's file in that folder. Default: `access-token`. |
+| `GITHUB_COPILOT_API_KEY_FILE` | The file in that folder where LiteLLM caches the short-lived Copilot key the token buys. Default: `api-key.json`. |
 | `GITHUB_COPILOT_API_BASE` | A GitHub Enterprise tenant's own Copilot endpoint. Blank: github.com's. LiteLLM sends the calls to the endpoint the cached API key names before this one, and the report names the host they go to, never github.com's own. |
+| `GITHUB_COPILOT_DEVICE_CODE_URL`, `GITHUB_COPILOT_ACCESS_TOKEN_URL`, `GITHUB_COPILOT_API_KEY_URL` | A `*.ghe.com` tenant's login and key endpoints, as `.env.example` shows. Blank: github.com's. |
+| `GITHUB_COPILOT_CLIENT_ID` | The OAuth app the login asks GitHub's device flow for. Blank: the one LiteLLM uses. |
+| `SSL_CERT_FILE` | A PEM bundle of roots to trust beside the operating system's, for a proxy whose root the machine does not hold. |
+| `LITELLM_LOCAL_MODEL_COST_MAP` | Keeps LiteLLM to the price list its pinned version ships, never the network's. Set by the reviewer when unset. |
 
-Copilot and Gemini are both first-class arms; `copilot` is only the default. The Copilot arm needs a one-time
-`uv run adk-review-login`, or `adk-review-login` once installed. A GitHub Enterprise tenant with its own endpoints sets them in
-`GITHUB_COPILOT_API_BASE` and the login's `GITHUB_COPILOT_*_URL` variables, as `.env.example` shows. Certificates are
-verified through the operating system's own store, so a company proxy's root the machine trusts, the reviewer trusts
-too.
+Copilot is the arm this reviewer targets and the default; Gemini is first-class too. The Copilot arm needs a GitHub
+account whose plan lets it choose a model, Copilot Free and Student choosing for themselves, and a one-time
+`uv run adk-review-login`, or `adk-review-login` once installed: it prints a code to enter at GitHub in a browser, then
+caches a token readable by the account alone. Calls are billed to that seat, as its plan bills Copilot chat. A GitHub
+Enterprise tenant with its own endpoints sets them in `GITHUB_COPILOT_API_BASE` and the login's `GITHUB_COPILOT_*_URL`
+variables, as `.env.example` shows. Certificates are verified through the operating system's own store, so a company
+proxy's root the machine trusts, the reviewer trusts too.
+
+What a Copilot review can say, and what to do:
+
+- `REVIEW_PROVIDER=copilot needs a cached token at …`, exit 2: run `adk-review-login` (`uv run adk-review-login` in the
+  checkout).
+- `REVIEW_MODEL=… cannot judge at temperature 0`, exit 2: name another model.
+- `model_not_supported`, under the guideline it stopped, exit 3: the plan or the organisation's Copilot policy leaves
+  that model off; name one it serves.
+- A 401 from Copilot, exit 3: the token was revoked or the seat lost Copilot; run `adk-review-login --force`.
+- A 429, exit 3: Copilot's per-user rate limit, which GitHub does not publish; wait, or set `REVIEW_FALLBACK_MODEL`.
+- `CERTIFICATE_VERIFY_FAILED`: a proxy's root the machine does not trust; set `SSL_CERT_FILE` to a PEM bundle that holds
+  it.
 
 ## The report
 
 The report prints, in order: the title; the verdict, with the findings at the bar beside a degraded one; what was
-reviewed — the repository, the branch and its base with their commits, the merge base, the model where a guideline
-ran, the profile and every check it left off, the scope, the changed files, and each file not read, skipped or
-untracked; under `--all`, the project's health; the blast radius; a section for each check that found something, with its findings, their evidence and fix, what
-folded into another check's finding, or that failed, and why, then one line naming the checks that found nothing; then what a previous review found and this one no
-longer does (with `--previous`), the findings dropped for a quote the diff does not bear out, what the verifier
-refuted or could not judge (with `--verify`), how many duplicates were folded, how many secrets were redacted, and
-the spend. Every string the branch wrote is made safe to print: no credential, no control character or other
-character a reader cannot see, no CI runner's command, no HTML comment, and no HTML tag outside a code span.
+reviewed — the repository, the branch and its base with their commits, the merge base, the model where a guideline ran,
+the profile and every check it left off, the scope, the changed files, and each file not read, skipped or untracked;
+under `--all`, the project's health; the blast radius; a section for each check that found something, with its findings,
+their evidence and fix, what folded into another check's finding, or that failed, and why, then one line naming the
+checks that found nothing; then what a previous review found and this one no longer does (with `--previous`), the
+findings dropped for a quote the diff does not bear out, what the verifier refuted or could not judge (with `--verify`),
+how many duplicates were folded, how many secrets were redacted, and the spend. Every string the branch wrote is made
+safe to print: no credential, no control character or other character a reader cannot see, no CI runner's command, no
+HTML comment, and no HTML tag outside a code span.
 
 ## The JSON report
 
@@ -301,10 +321,10 @@ What the hook cannot see, or stops on:
   commits the remote already holds. A push of several refs is reviewed whole by git's own hook alone.
 - In a commit before the last, only a credential stops the push, or a binary file no rule can read, unless
   `[review] skip` names it. What a merge's own resolution adds and a later commit takes out is read in no commit.
-- The remote's branches are as this clone last fetched them: one deleted or rewritten there still counts as held
-  here, so fetch before a push that follows a rewrite, and let a fetch prune deleted ones (`git config fetch.prune
-  true`). Pushed to a URL rather than a remote's name, no branch of it is known here, and a new ref is reviewed as a
-  whole project.
+- The remote's branches are as this clone last fetched them: one deleted or rewritten there still counts as held here,
+  so fetch before a push that follows a rewrite, and let a fetch prune deleted ones (`git config fetch.prune true`).
+  Pushed to a URL rather than a remote's name, no branch of it is known here, and a new ref is reviewed as a whole
+  project.
 - A file no rule can read — a binary one, a submodule — is a hole and stops the push, unless `[review] skip` in
   `config.toml` names it, as the shipped list names images and fonts ("Configuration" above): then the report names
   it as skipped, and it stops nothing. A text file past the size limits

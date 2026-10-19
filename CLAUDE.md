@@ -48,12 +48,14 @@ A model call needs a configured arm and spends its quota: `adk web`, `adk run`, 
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so. A
 review under `default` makes three calls, `simplify` three, `code-review` five and `full` six, at most three in flight
 (`CONCURRENCY`): Gemini's free tier allows five a minute and twenty a day, so a live script, three reviews of each
-branch by default, needs `--pause` on it and more than a day, and Copilot rate-limits a model after some hundreds of
-calls in an afternoon; a run that met a 429 names it under `could_not_look` and measures nothing there. Run each side of
-a before-and-after comparison from its own copy of the tree, since a review imports the checkout. The suite,
-`--profile rules-only`, `demo` or `default-rules`, `--check rule.<name>`, `--dry-run`, `--list-checks`, `--explain` and
-`--try` make none. `[tool.uv]` in `pyproject.toml` takes a release only three days after it is published
-(`exclude-newer`), so a dependency released since does not resolve yet; the comment there says why the span stays.
+branch by default, needs `--pause` on it and more than a day, and on Copilot each call is billed to the seat that logged
+in, and GitHub rate-limits each user, unpublished: measured, `gpt-4.1`, which GitHub has deprecated, answered a 429 for
+its utility models after about 175 calls; a run that met a 429 names it under `could_not_look` and measures nothing
+there. Run each side of a before-and-after comparison from its own copy of the tree, since a review imports the
+checkout. The suite, `--profile rules-only`, `demo` or `default-rules`, `--check rule.<name>`, `--dry-run`,
+`--list-checks`, `--explain` and `--try` make none. `[tool.uv]` in `pyproject.toml` takes a release only three days
+after it is published (`exclude-newer`), so a dependency released since does not resolve yet; the comment there says why
+the span stays.
 
 ## Configuration
 
@@ -62,15 +64,17 @@ One `.env` at the root (copy `.env.example`). `REVIEW_PROVIDER=copilot|gemini` p
 too. Copilot needs a one-time `uv run adk-review-login`; Gemini needs `GOOGLE_API_KEY`, or through Vertex AI a project,
 `GOOGLE_CLOUD_PROJECT` or the one Application Default Credentials name — `require_ready` asks google-genai itself, never
 a copy of its rules, and on the Gemini arm refuses a model ADK sends to another provider (`gpt-*`, `claude-*`). Both
-arms are first-class: a change works, is tested and is measured live on each, and `copilot` is only the default.
-`adk_review/judge/config.py` injects `truststore` before any client is built, so certificates are verified through the
-operating system's store (a company proxy's root the machine trusts, Python trusts too), with `SSL_CERT_FILE` still read
-where set; the login, `adk_review/login.py`, does the same and reads the `GITHUB_COPILOT_*` endpoints from `.env`.
-`adk_review/judge/settings.py` reads the environment and builds nothing, so a rules-only review's cache key and the
-login import no engine. The shell wins over `.env` at every entry point: ADK 2.9.2 restores the variables set before it
-loads the file, and the command loads it without overriding. The report names the model, the arm that ran, and Vertex AI
-or a GitHub Enterprise tenant's host where the arm goes through one. Never read, print or quote `.env`, a key or the
-Copilot token.
+arms are first-class, Copilot the one this reviewer targets and the default: a change works, is tested and is measured
+live on each, on Copilot first. `adk_review/judge/config.py` injects `truststore` before any client is built, so
+certificates are verified through the operating system's store (a company proxy's root the machine trusts, Python trusts
+too), with `SSL_CERT_FILE` still read where set; the login, `adk_review/login.py`, does the same and reads the
+`GITHUB_COPILOT_*` endpoints from `.env`. `adk_review/judge/settings.py` reads the environment and builds nothing, so a
+rules-only review's cache key and the login import no engine. The shell wins over `.env` at every entry point: ADK 2.9.2
+restores the variables set before it loads the file, and the command loads it without overriding. The report names the
+model, the arm that ran, and Vertex AI or a GitHub Enterprise tenant's host where the arm goes through one. Never read,
+print or quote `.env`, a key, or the Copilot token or its folder (`~/.config/litellm/github_copilot`, or
+`GITHUB_COPILOT_TOKEN_DIR`), and never run `adk-review-login`: it needs the person at a browser, and `--force` replaces
+their token.
 
 ## Architecture
 
@@ -133,8 +137,8 @@ Load-bearing rules the tests enforce:
 - **Providers.** `judge/config.py` is the only file that builds a provider's model: Gemini is a plain model string,
   Copilot is `LiteLlm("github_copilot/…")`; `judge/settings.py` only reads which arm and which names the environment
   sets. Every change must work on both arms. Judging agents run at temperature zero; a model that cannot, Copilot's
-  `gpt-5` or o-series as LiteLLM says offline, is refused by `require_ready`, exit 2. Copilot is sent the instruction as
-  its system turn (`litellm.disable_copilot_system_to_assistant`), as Gemini reads it.
+  `gpt-5`, `gpt-5.5` or o-series as LiteLLM says offline, is refused by `require_ready`, exit 2. Copilot is sent the
+  instruction as its system turn (`litellm.disable_copilot_system_to_assistant`), as Gemini reads it.
 - **Shape.** `agent.py` exports both `app` and `root_agent` (the loader prefers `app`, and a bare `root_agent` would
   lose the plugins). `build_app(chat=True)` adds an intake agent before the same middle and a verdict after it; the
   command uses `chat=False` over seeded state. In chat a gate after the intake goes on only for a scope this turn's

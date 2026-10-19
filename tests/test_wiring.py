@@ -5,6 +5,7 @@ from __future__ import annotations
 import importlib
 import json
 import sys
+from pathlib import Path
 
 import litellm
 import pytest
@@ -147,6 +148,25 @@ def test_the_suite_reads_neither_the_developers_env_nor_the_network() -> None:
     assert os.environ.get("LITELLM_MODE") == "PRODUCTION"
     assert os.environ.get("LITELLM_LOCAL_MODEL_COST_MAP") == "True"
     assert "\nLITELLM_LOCAL_MODEL_COST_MAP=True\n" in (ROOT / ".env.example").read_text(encoding="utf-8")
+
+
+def test_the_copilot_arm_hands_litellm_the_token_folder_readiness_read_and_its_pinned_price_list(
+    monkeypatch, tmp_path: Path
+) -> None:
+    """LiteLLM reads `GITHUB_COPILOT_TOKEN_DIR` as written, where readiness and the login expand its `~`: read by
+    review, a folder given as `~/tokens` read ready, and LiteLLM, finding no token under a folder named `~`, would
+    start its own device login in the middle of a review. Its price list is the pinned version's with no `.env`, which
+    an installed command never reads: before, `.env.example` alone kept it from the network."""
+    import os
+
+    config = importlib.import_module("adk_review.judge.config")
+    for home in ("HOME", "USERPROFILE"):  # where `~` points, on POSIX and on Windows
+        monkeypatch.setenv(home, str(tmp_path))
+    monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", "~/tokens")
+    monkeypatch.delenv("LITELLM_LOCAL_MODEL_COST_MAP", raising=False)
+    config._litellm()
+    assert os.environ["GITHUB_COPILOT_TOKEN_DIR"] == str(tmp_path / "tokens"), "the folder readiness read"
+    assert os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] == "True", "the pinned version's own price list"
 
 
 def test_no_test_inherits_a_provider_or_a_model_from_the_shell() -> None:

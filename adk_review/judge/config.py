@@ -134,8 +134,14 @@ def build_model(*, role: str = "") -> str | BaseLlm:
 def _litellm():  # unannotated: a checker then knows the module and its typed flags, where `ModuleType` names none
     """LiteLLM, imported where the Copilot arm needs it and nowhere else. At the top of the command it cost about a
     second of every start, `--help` included, and on its own import it read `.env` unless told it runs in production,
-    as ADK tells it, and fetched a price list unless `LITELLM_LOCAL_MODEL_COST_MAP` is set."""
+    as ADK tells it, and fetched a price list unless `LITELLM_LOCAL_MODEL_COST_MAP` is set: set here, where before
+    `.env.example` alone set it, and an installed command reads no `.env`. It reads `GITHUB_COPILOT_TOKEN_DIR` as
+    written, so it is handed the folder readiness and the login read: read by review, `~/tokens` read ready, and
+    LiteLLM, finding no token under a folder named `~`, would have started its own device login mid-review."""
     os.environ.setdefault("LITELLM_MODE", "PRODUCTION")
+    os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")  # the pinned version's own price list
+    if "GITHUB_COPILOT_TOKEN_DIR" in os.environ:
+        os.environ["GITHUB_COPILOT_TOKEN_DIR"] = str(copilot_dir())
     import litellm
 
     return litellm
