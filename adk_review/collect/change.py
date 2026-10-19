@@ -8,7 +8,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from ..core.blast import Blast, blast_radius
-from ..core.evidence import Entry, entry
+from ..core.evidence import Entry, Failure, entry
 from ..core.paths import matches
 from ..core.rules import Tree
 from .diff import BINARY, SUBMODULE, added_lines, capped, framed, headers, quotable
@@ -109,11 +109,13 @@ def radius(tree: Tree | None, files: list[Entry], *, read: bool, asked: bool) ->
     return Blast((), (), 0, asked=False)
 
 
-def no_change(head: str, base: str | None, scope: Sequence[str]) -> str:
-    """Why there is nothing to review: the head holds no file, adds nothing to the base, or nothing under the scope."""
+def no_change(head: str, base: str | None, scope: Sequence[str]) -> Failure:
+    """Why there is nothing to review: the head holds no file, adds nothing to the base, or nothing under the scope.
+    Only a head that adds nothing is marked: most often it is the base itself, a branch checked out on `main`."""
     if scope:
         what = f"no file at {head!r}" if base is None else f"nothing {head!r} changes"
-        return f"{what} lies under {', '.join(scope)}: no change to review"
+        return {"status": "error", "error_message": f"{what} lies under {', '.join(scope)}: no change to review"}
     if base is None:
-        return f"{head!r} holds no file: nothing to review"
-    return f"{head!r} adds nothing to {base!r}: no change to review"
+        return {"status": "error", "error_message": f"{head!r} holds no file: nothing to review"}
+    why = f"{head!r} adds nothing to {base!r}: no change to review"
+    return {"status": "error", "error_message": why, "adds_nothing": True}

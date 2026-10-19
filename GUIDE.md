@@ -8,6 +8,9 @@ holds its flags, checks, JSON fields and limits to the code.
 
 ## First run
 
+`README.md`'s Quick start walks these from a clone, step by step. They need uv 0.12 or later, which installs Python
+3.13 itself, and git 2.41 or later on `PATH`.
+
 ```bash
 uv sync --locked                             # once: the reviewer, its Python and its locked dependencies
 uv run python scripts/make_demo_repo.py      # a throwaway repository with planted defects; prints the review to run
@@ -15,14 +18,16 @@ uv run adk-review <that path> --head feature/payments --base main --profile demo
 uv run adk-review <repo> --base main --profile default-rules    # a repository of your own: the default's rules
 ```
 
-`<repo>` is the path of the repository to review, and `--head` defaults to its branch checked out. `demo`, `rules-only` and
+`<repo>` is the path of the repository to review, and `--head` defaults to its branch checked out: on `main` itself a
+change against `main` is nothing, exit 2, and the sentence names `--head` and `--all`. `demo`, `rules-only` and
 `default-rules` call no model, so they need no key. Drop `--profile` to run the `default` profile, which adds the
 guidelines: they need a model, set as "Configuration" below says. `uv run python -m adk_review.review` is the same
 command spelled long.
 
-To run it from any folder, install it as a command: `uv tool install <path or git URL of this repository>` puts
-`adk-review`, its pre-push hook, `adk-review-push`, and the Copilot login, `adk-review-login`, on `PATH`: the reviewer
-alone, with ruff beside it. An installed reviewer reads the model's settings from the shell alone, no `.env` being read outside the checkout, and its
+To run it from any folder, install it as a command: `uv tool install .` in this checkout, or with none `uv tool install
+git+https://github.com/emrecdr/adk-review`, the `git+` being uv's own, puts `adk-review`, its pre-push hook,
+`adk-review-push`, and the Copilot login, `adk-review-login`, on `PATH`: the reviewer alone, with ruff beside it. An
+installed reviewer reads the model's settings from the shell alone, no `.env` being read outside the checkout, and its
 config from beside itself; inside the checkout, `uv run adk-review` is the same command.
 
 ## Flags

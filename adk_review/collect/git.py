@@ -653,7 +653,7 @@ def gather(
     except GitError as exc:  # the change half read is not the change: named, never reviewed as it stands
         return {"status": "error", "error_message": str(exc)}
     if not files:  # measured: a branch already merged, or a base equal to its head, approved a review of nothing
-        return {"status": "error", "error_message": no_change(head, base, scope if listed else ())}
+        return no_change(head, base, scope if listed else ())
     listing = head_listing(resolved)
     # The head read whole, every Python file parsed, only for what reads it: a tree rule, or the radius a guideline
     # is shown, which measures changed Python files alone. The changed files' own texts are read either way, for the

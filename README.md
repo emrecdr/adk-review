@@ -11,18 +11,51 @@ out and configured, and how to write a rule or a guideline of your own.
 
 ## Quick start
 
-The reviewer needs Python 3.13, uv, and git 2.41 or later on `PATH`. Ruff, which the lint rule runs, is installed
-with it. Three commands from the root of this checkout give a first review, with no model and no key:
+From a clone to a review of every push, in six steps. The first four call no model and need no key.
+
+### 1. Install what it runs on
+
+The reviewer needs uv 0.12 or later (https://docs.astral.sh/uv/getting-started/installation/), which installs Python
+3.13 itself where the machine has none, and git 2.41 or later on `PATH`.
+
+### 2. Get the reviewer
 
 ```bash
-uv sync --locked                             # once: the reviewer and its locked dependencies
+git clone https://github.com/emrecdr/adk-review
+cd adk-review                                # every command below runs at the root of this checkout
+uv sync --locked                             # once: the reviewer and its locked dependencies, ruff among them
+```
+
+Or, with no checkout, install it as a command, which puts `adk-review`, `adk-review-push` and `adk-review-login` on
+`PATH`, each command below then dropping its `uv run`; step 3's demo needs the checkout, its script not installed:
+
+```bash
+uv tool install git+https://github.com/emrecdr/adk-review    # the git+ is uv's: it refuses the plain address
+```
+
+### 3. Review the demo
+
+```bash
 uv run python scripts/make_demo_repo.py      # a throwaway repository with planted defects; prints the review to run
 uv run adk-review <that path> --head feature/payments --base main --profile demo
 ```
 
 The rules find the demo's hard-coded key pair, its shell call and a float division of cents: exit 1, a blocker.
-`make demo` runs the last two. On a repository of your own, `uv run adk-review <repo> --base main --profile
-default-rules` runs the default profile's rules alone, still with no model.
+`make demo` runs both.
+
+### 4. Review a repository of your own
+
+```bash
+uv run adk-review <repo> --base main --profile default-rules   # its branch checked out, against main
+uv run adk-review <repo> --all --profile default-rules         # every file at that branch, not a change
+```
+
+`default-rules` is the default profile's rules alone, still with no model, and `--head <branch>` names a branch other
+than the one checked out. On `main` itself the first command has nothing to compare: it says so, exit 2, and names
+`--head` and `--all`. This checkout is a poor first target: its tests and its rules' own examples hold planted
+credentials, which the credential rules find as they would anyone's.
+
+### 5. Turn on a model
 
 The guidelines need a model, on one of two arms. Set it in the shell, or in `.env` at the root of this checkout
 (copy `.env.example`), which the shell wins over:
@@ -33,6 +66,14 @@ The guidelines need a model, on one of two arms. Set it in the shell, or in `.en
 
 Then drop `--profile`: `uv run adk-review <repo> --base main` runs the rules, then the guidelines. Both arms are
 first-class; "Configuration" in `GUIDE.md` lists every variable.
+
+### 6. Review every push
+
+The pre-push hook, `adk-review-push`, comes with the installed command, from step 2's address or from this checkout
+with `uv tool install .`. It reviews what a push sends with the default profile's rules, no model, and "Before a push"
+in `GUIDE.md` installs it in a repository. On a pull request, "In a pipeline" below runs the same command in CI.
+
+### Every mode
 
 Every mode is the same command:
 
@@ -56,11 +97,10 @@ uv run adk-review --explain rule.lint                           # one check whol
 that names none is refused, exit 2. `--help` prints every flag, and `uv run python -m adk_review.review` is the same
 command spelled long.
 
-To run it from any folder, install it as a command: `uv tool install <path or git URL of this repository>` puts
-`adk-review`, its pre-push hook, `adk-review-push`, and the Copilot login, `adk-review-login`, on `PATH`: the reviewer
-alone, with ruff beside it. An installed reviewer reads the model's settings from the shell alone, no `.env` being read outside the checkout, and its
-config from beside itself: a team that wants another policy changes `config.toml` in its checkout and installs from
-there, `--editable` so a change applies at once, or passes flags.
+Installed as a command, from this checkout with `uv tool install .` or from its address as step 2 says, the reviewer is
+on `PATH` alone, with ruff beside it. An installed reviewer reads the model's settings from the shell alone, no `.env`
+being read outside the checkout, and its config from beside itself: a team that wants another policy changes
+`config.toml` in its checkout and installs from there, `--editable` so a change applies at once, or passes flags.
 
 Chat runs the same checks: `uv run adk web .` at the root of the checkout, pick `adk_review`, and say what to
 review, the repository's absolute path and its branches: "review /home/me/shop, branch feature/payments against

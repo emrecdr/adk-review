@@ -66,6 +66,16 @@ class TestWhatAReviewCovers:
         assert run_review(*rules_only, "--path", "../elsewhere") == 2
         assert "--path '../elsewhere' must name a folder inside the repository" in capsys.readouterr().err
 
+    def test_a_head_that_adds_nothing_names_the_flags_that_review_something(self, cli, demo_repo, capsys) -> None:
+        # Measured: a first review of a repository checked out on main, `--base main`, ended at the sentence alone.
+        assert cli.main([str(demo_repo), "--head", "main", "--base", "main", "--profile", "rules-only"]) == 2
+        err = capsys.readouterr().err
+        assert (
+            "'main' adds nothing to 'main': no change to review; name the branch to review with --head, or review"
+            " every file at 'main' with --all in place of --base"
+        ) in err, err
+        assert cli.main([str(demo_repo), "--head", "main", "--all", "--profile", "rules-only"]) != 2, "as it says"
+
     def test_all_reviews_every_file_at_the_head_and_what_git_ignores_is_never_there(
         self, cli, tmp_path: Path, shallow_clone: Path, capsys
     ) -> None:
@@ -363,7 +373,8 @@ class TestWhatAReviewCovers:
         assert (repo / ".git" / "index").read_bytes() == index, "nothing written: no refresh, no lock"
         _git_in(repo, "reset", "-q")
         assert cli.main([str(repo), "--staged", "--profile", "default-rules"]) == 2
-        assert "no change to review" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "no change to review" in err and "--head" not in err, "the index takes no --head and no --all"
         assert cli.main([str(repo), "--staged", "--head", "main"]) == 2
         with pytest.raises(SystemExit) as refused:
             cli.main([str(repo), "--staged", "--base", "main"])

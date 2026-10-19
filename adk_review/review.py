@@ -625,7 +625,12 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
         repo, base, head, scope, staged=args.staged, **chosen.head_reading(), diff_cap=args.diff_cap, skip=args.skip
     )
     if evidence["status"] != "success":
-        _say(evidence["error_message"])
+        # Measured: a first review of a repository checked out on main ended at "adds nothing" with no way on. The
+        # flags are the command's, so the command names them; the index takes neither.
+        widen = (
+            f"; name the branch to review with --head, or review every file at {head!r} with --all in place of --base"
+        )
+        _say(evidence["error_message"] + (widen if evidence.get("adds_nothing") and not args.staged else ""))
         return EXIT_USAGE
     # What every report says of the review itself, a dry run's too: with no guideline there is no model to name; an
     # arm that is not ready names no model either: `why` says why.
