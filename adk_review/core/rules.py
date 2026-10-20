@@ -140,7 +140,8 @@ class Rule(AnyRule):
             for line, text in added_to(entry)
             if self.check(entry["path"], text)
         ]
-        # A link's lines are the file it names: one not read shows only that file's path, so the rule could not look.
+        # A link's lines are the file it names: one not read, or not followed, shows only its path, so the rule could
+        # not look.
         # Read by review: a key in a blob a partial clone lacked was approved, named nowhere, and kept in the cache.
         missed = [
             f"{entry['path']} {entry['unread_text']}" for entry in read if "target" in entry and entry["unread_text"]

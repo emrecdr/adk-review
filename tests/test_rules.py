@@ -994,6 +994,25 @@ class TestTheCleanupAndThePitfalls:
         assert checked.could_not_look is not None, "a link not read is a hole, never silence"
         assert "settings.yaml was not read whole" in checked.could_not_look, checked.could_not_look
 
+    def test_a_link_whose_way_is_not_known_is_a_hole_for_the_line_rules(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: a link moved whole to a file inside a submodule was not followed, and each line rule read
+        only the link's own path, so the pre-push hook's profile approved it. A link not followed is a link still: each
+        line rule that reads it names the hole."""
+        repo = tmp_path / "r"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", "main")
+        _committed(repo, "app.py", "x = 1\n")
+        _git_in(repo, "update-index", "--add", "--cacheinfo", f"160000,{_git_in(repo, 'rev-parse', 'HEAD')},shared")
+        link = _git_in(repo, "hash-object", "-w", "--stdin", stdin="shared/settings.yaml")
+        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{link},old/settings.yaml")
+        _git_in(repo, "commit", "-qm", "a link naming a file inside a submodule")
+        _git_in(repo, "checkout", "-qb", "feature")
+        _git_in(repo, "update-index", "--force-remove", "old/settings.yaml")
+        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{link},settings.yaml")
+        _git_in(repo, "commit", "-qm", "the link moved whole")
+        assert cli.main([str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules"]) == 3
+        assert "settings.yaml was not followed to the file it names" in capsys.readouterr().out
+
     def test_pitfalls_and_simplify_leave_fastapis_routes_alone(self) -> None:
         """Measured by review on FastAPI 0.141.1: a route whose dependency or request reads the path parameter answers
         each id, and ruff's FAST003, which reads no dependency, named six such routes at major. Ruff documents
