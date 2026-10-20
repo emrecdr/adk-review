@@ -36,9 +36,10 @@ def _matches(path: str, glob: str) -> bool:
 #: How many links one path is followed through, as Linux follows them: past forty, a loop, and it names no file.
 LINK_HOPS = 40
 #: The parts of a path a review follows its links through, in all: past them, where a link leads is not known, a hole
-#: for a rule that reads it whole. Measured: an ordinary relative link took 7, an absolute one 59, and a whole project's
-#: 52,000 icon links 260,000 in 171 ms; a branch of 2,000 links, each heading a chain of 39 links whose paths ran 2,000
-#: parts through `a/..`, took 78,041 a link and 42 s in all, which stops here in 0.6 s.
+#: for a rule that reads it whole and for each line rule that reads the link. Measured: an ordinary relative link took
+#: 7, an absolute one 59, and a whole project's 52,000 icon links 260,000 in 171 ms; a branch of 2,000 links, each
+#: heading a chain of 39 links whose paths ran 2,000 parts through `a/..`, took 78,041 a link and 42 s in all, which
+#: stops here in 0.6 s.
 LINK_STEPS = 2_000_000
 
 

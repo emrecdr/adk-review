@@ -635,10 +635,10 @@ def _read_first(blob: tuple[str, str, str]) -> tuple[int, int]:
 
 
 def _as_linked(through: list[tuple[Entry, str]], texts: Mapping[str, str], skipped: Collection[str]) -> None:
-    """Each link's text, `texts` holding it under the link's path, read as the file it runs: none for a binary, as git
-    reads one; a hole for a rule that reads it whole where it was not read, or is a Git LFS pointer, its file stored
-    elsewhere, which read by review was linted line by line; else every line of it added under the link's name, for
-    the report as for the rules."""
+    """Each link's text, `texts` holding it under the link's path, read as the file it runs: a binary one, as git reads
+    one by its first 8,000 bytes, named not read as a binary file is; a hole for a rule that reads it whole, and for
+    each line rule, where it was not read, or is a Git LFS pointer, its file stored elsewhere, which read by review was
+    linted line by line; else every line of it added under the link's name, for the report as for the rules."""
     for entry, target in through:
         text = texts.get(entry["path"])
         # Binary as git reads a file: a NUL in its first 8,000 bytes, never characters, which read by review took
@@ -759,15 +759,15 @@ def read_texts(
     listing: list[tuple[str, str, str, str, str]] | None,
     skipped: Collection[str] = (),
 ) -> None:
-    """Each changed file's text at the head, for the file rules, set on its entry as `text`: a plain file the head
-    holds within the caps, read in one batch, and a link as the file it runs. `unread_text` names one the head holds
-    that was not read — over its cap, past the tree's budget, a blob the batch did not give back, a tree that could
-    not be listed, a link whose way could not be followed or that names a Git LFS pointer — a hole for a rule that
-    reads it whole; `shown` holds the lines its diff shows of it, by number, the ones added and those kept
-    around them, for a rule that reads no more. A file the head does not hold, a binary, a Git LFS pointer, a link
-    naming no text file there or a submodule has neither: nothing for a file rule to read, and the report names a
-    binary and a pointer under not read already. A pointer only its text shows, its diff showing none of its opening,
-    is named here, unless the operator's skip list, `skipped`, names it."""
+    """Each changed file's text at the head, for the file rules, set on its entry as `text`: a plain file the head holds
+    within the caps, read in one batch, and a link as the file it runs. `unread_text` names one the head holds that was
+    not read — over its cap, past the tree's budget, a blob the batch did not give back, a tree that could not be
+    listed, a link whose way could not be followed or that names a Git LFS pointer — a hole for a rule that reads it
+    whole, and for a link one for each line rule too; `shown` holds the lines its diff shows of it, by number, the ones
+    added and those kept around them, for a rule that reads no more. A file the head does not hold, a binary, a Git LFS
+    pointer, a link naming no text file there or a submodule has neither: nothing for a file rule to read, and the
+    report names a binary and a pointer under not read already. A pointer only its text shows, its diff showing none of
+    its opening, is named here, unless the operator's skip list, `skipped`, names it."""
     for entry in files:
         entry["text"], entry["unread_text"] = None, None
     if listing is None:
