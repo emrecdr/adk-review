@@ -226,9 +226,6 @@ _VENDOR = (
         "[REDACTED:private_key]",
     ),
 )
-#: A hunk header, which git follows with a line from above the hunk: the nearest one opening with a letter, where no
-#: language's boundary is set. Read by review: a `.env` value or a Dockerfile's `ENV` repeated there reached the model.
-_HUNK_HEADER = r"(?:@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@[^\S\n]+)?"
 #: A value a name alone says is secret, with no vendor's shape: what `named-secrets` weighs.
 _GENERIC = (
     (
@@ -237,11 +234,9 @@ _GENERIC = (
         r"\1\2[REDACTED]\2",
     ),
     (
-        "generic_secret",  # a named value unquoted, a `.env`, YAML or Dockerfile line or a hunk header, with a digit
+        "generic_secret",  # a named value unquoted, a `.env`, YAML or Dockerfile line, holding a digit
         re.compile(
-            r"(?im)^("
-            + _HUNK_HEADER
-            + r"[+ -]?[^\S\n]*(?:(?:export|env|arg)[^\S\n]+)?[\w.-]{0,80}?"
+            r"(?im)^([+ -]?[^\S\n]*(?:(?:export|env|arg)[^\S\n]+)?[\w.-]{0,80}?"
             + _NAMED
             + r"\s*[:=]\s*)(?=[^\s#]*\d)"
             + _STAND_IN
@@ -372,9 +367,8 @@ def named_values(text: str) -> list[tuple[str, str, bool]]:
     return [_named(match) for match in found]
 
 
-#: A name as code, a `.env` line, YAML or a Dockerfile spells it, past a hunk header, a diff's marker and an `export`,
-#: `ENV` or `ARG`.
-_NAME = re.compile(r"(?i)" + _HUNK_HEADER + r"[+ -]?\s*(?:(?:export|env|arg)\s+)?([\w.-]+)")
+#: A name as code, a `.env` line, YAML or a Dockerfile spells it, past a diff's marker and an `export`, `ENV` or `ARG`.
+_NAME = re.compile(r"(?i)[+ -]?\s*(?:(?:export|env|arg)\s+)?([\w.-]+)")
 
 
 def _named(found: re.Match[str]) -> tuple[str, str, bool]:

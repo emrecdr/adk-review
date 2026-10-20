@@ -1,12 +1,11 @@
 """Python's traps ruff can prove in a changed file: code that does not do what it reads, beside what `lint` selects.
 
 A naive UTC datetime from `utcnow()`, a dataclass default evaluated once and shared, an exception built and never
-raised, a call whose arguments Python refuses, a `subprocess.run` whose failure goes unseen, a FastAPI route that never
-takes a parameter its path names: each a defect ruff names from the code alone, and none of them in `lint`'s families.
-Run with `--isolated` as `lint` runs. A test is read too: an `assert` on a string literal never fails, so the test it
-stands in always passes. Measured over whole files of google-adk, pydantic, httpx and litellm: 0.00 to 0.03 a thousand
-lines, all but one a real defect, once the codes whose findings there were idioms were left out. FastAPI's, measured
-over google-adk's 67 routes, found none; ruff sees no route on a router annotated `Final`, as litellm's 102 are.
+raised, a call whose arguments Python refuses, a `subprocess.run` whose failure goes unseen: each a defect ruff names
+from the code alone, and none of them in `lint`'s families. Run with `--isolated` as `lint` runs. A test is read too: an
+`assert` on a string literal never fails, so the test it stands in always passes. Measured over whole files of
+google-adk, pydantic, httpx and litellm: 0.00 to 0.03 a thousand lines, all but one a real defect, once the codes
+whose findings there were idioms were left out.
 """
 
 from __future__ import annotations
@@ -17,8 +16,7 @@ from ..rule_helpers import ChangedFile, FileRule, Hit, Severity, listed, tier
 
 #: ruff's codes, run --isolated: flake8-datetimez's, pylint's errors, and the warnings and ruff's own codes that name
 #: code doing other than it reads; with the four of flake8-simplify, flake8-pie and the logging codes that are defects
-#: rather than style, which `simplify` leaves out; and FastAPI's path parameter a route never takes, which FastAPI
-#: ignores, so every request gets the same answer.
+#: rather than style, which `simplify` leaves out.
 #: Not selected: each code whose findings, read in a sample of google-adk, pydantic, httpx and litellm, were idioms that
 #: do what they read: a loop variable rebound, `line = line.strip()` (PLW2901, 64 of 168 findings); a class constant
 #: held in a list, or a pydantic field's default, which pydantic copies (RUF012, 35); an `__eq__` with no `__hash__`,
@@ -26,14 +24,16 @@ from ..rule_helpers import ChangedFile, FileRule, Hit, Severity, listed, tier
 #: `break` (PLW0120); `int(os.getenv(name, 24))`, whose default is converted (PLW1508, 189 in litellm); and a naive
 #: datetime meant as local time, a timestamp for a file's name or a date to compare with today's (DTZ005, DTZ006, DTZ011
 #: and the rest), where `utcnow()` and `utcfromtimestamp()`, a naive value that reads as local and is deprecated, are
-#: kept. A self-assignment, which does nothing, is `simplify`'s.
+#: kept. A self-assignment, which does nothing, is `simplify`'s. Nor FastAPI's FAST003, a path parameter a route never
+#: takes: ruff reads no dependency, and six routes whose dependency or request read it, each answering each id, were
+#: named at major (measured by review on FastAPI 0.141.1).
 SELECT = (
     "DTZ003", "DTZ004", "PLE",
     "PLW0128", "PLW0129", "PLW0131", "PLW0133", "PLW0177", "PLW0245", "PLW0406", "PLW0642", "PLW1501",
     "PLW1507", "PLW1509", "PLW1510", "PLW2101",
     "RUF008", "RUF009", "RUF016", "RUF018", "RUF024", "RUF026", "RUF030", "RUF032", "RUF033", "RUF034",
     "RUF040", "RUF043", "RUF048", "RUF049", "RUF060", "RUF064", "RUF071",
-    "SIM115", "PIE794", "PIE796", "G101", "FAST003",
+    "SIM115", "PIE794", "PIE796", "G101",
 )  # fmt: skip
 #: `lint` names a bidirectional control already: one finding for it, not two.
 IGNORE = ("PLE2502",)
@@ -44,7 +44,7 @@ SEVERITY: dict[str, Severity] = {
     "PLW1501": "major", "PLW2101": "major", "RUF008": "major", "RUF009": "major",
     "RUF016": "major", "RUF018": "major", "RUF024": "major", "RUF026": "major", "RUF030": "major", "RUF033": "major",
     "RUF034": "major", "RUF060": "major", "RUF064": "major", "PIE794": "major", "PIE796": "major",
-    "G101": "major", "FAST003": "major",
+    "G101": "major",
 }  # fmt: skip
 #: The sentence a finding names where ruff offers no fix, by family, or by code where the family's would mislead.
 FIX = {
@@ -58,7 +58,6 @@ FIX = {
     "PIE794": "Remove the earlier definition: the class keeps only the last.",
     "PIE796": "Give each member its own value: a repeated one makes the second an alias of the first.",
     "G101": "Rename the key in extra: one that clashes with a LogRecord field raises when the line is logged.",
-    "FAST003": "Take the path parameter in the function, or remove it from the route: FastAPI ignores it.",
 }
 
 

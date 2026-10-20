@@ -36,6 +36,7 @@ from .diff import (
     headers,
     hunk_lines,
     readable,
+    unguessed,
 )
 
 GIT_TIMEOUT_S = 30
@@ -435,7 +436,7 @@ def diff_of(resolved: dict, path: str, old: str = "", *, functions: bool = False
         _, diff = _git(repo, attrs, "diff-index", "--cached", "-p", *shown, base, "--", *paths, settings=settings)
     else:
         _, diff = _git(repo, attrs, "diff-tree", "-r", "-p", *shown, base, head, "--", *paths, settings=settings)
-    return readable(diff)
+    return unguessed(readable(diff))
 
 
 def whole_diffs(resolved: dict, entries: list[dict[str, str]], scope: Sequence[str]) -> list[str]:
@@ -460,7 +461,7 @@ def whole_diffs(resolved: dict, entries: list[dict[str, str]], scope: Sequence[s
     # Only the files asked for: a third-party folder's are in git's patch, never read. Left out by git's own pathspec
     # instead, a glob git reads otherwise than `matches` could leave out a file of the project's own.
     pairs = sorted(((path, part) for path, part in zip(paths, parts, strict=True) if path in asked), key=lambda p: p[0])
-    return [readable(_text(part)) for _, part in pairs]
+    return [unguessed(readable(_text(part))) for _, part in pairs]
 
 
 #: How many git processes run at once where a change asks one per file. Measured on a branch of 224 files: its

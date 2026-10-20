@@ -874,18 +874,19 @@ class TestWhatRanUntested:
         assert run_review(cli, demo_repo) == 1
         assert "- secrets redacted before any model call: 6" in capsys.readouterr().out
 
-    def test_a_credential_git_repeats_in_a_hunk_header_is_redacted_before_any_model_reads_it(
-        self, cli, asked, tmp_path: Path, capsys
-    ) -> None:
-        """Found by review: a file diffed without Python's boundary keeps git's own, so each hunk header repeats the
-        nearest line above the hunk that opens with a letter, and the unquoted shape was read only from a line's
-        start. Measured: a Dockerfile's `ENV` value and a `.env` value reached every guideline, 0 redacted."""
+    def test_no_line_git_repeats_in_a_hunk_header_reaches_a_model(self, cli, asked, tmp_path: Path) -> None:
+        """Found by review: git follows each hunk header with its guess at the function around the hunk, a line from
+        above it, cut at 80 bytes. Measured: a Dockerfile's `ENV` value and a `.env` value reached every guideline,
+        and a quoted key cut before its closing quote, which no shape of a credential reads, did after a fix to the
+        shapes. Each header is now bare, as git prints one with no guess."""
+        key = "django-insecure-x8f2k9m4q7w1z5p3r6t0y2u8v4b7n1c5d9e3f6g0h2j4k8l1m5"
         repo = tmp_path / "r"
         repo.mkdir()
         _git_in(repo, "init", "-q", "-b", "main")
         docker = "FROM python:3.13-slim\nENV DB_PASSWORD=Sup3rS3cret-db9\n\n# the app\nCOPY . /app\nWORKDIR /app\n"
         docker += 'RUN pip install -r requirements.txt\nCMD ["python", "app.py"]\n'
-        env = "DEBUG=0\nSECRET_KEY=k3y-f0r-the-app-9a8b\nLOG_LEVEL=info\nWORKERS=2\nPORT=8000\nHOST=0.0.0.0\n"
+        env = f'DEBUG=0\nSECRET_KEY=k3y-f0r-the-app-9a8b\nDJANGO_SECRET_KEY="{key}"\n# database\n# cache\n'
+        env += "WORKERS=2\nPORT=8000\nHOST=0.0.0.0\n"
         (repo / "Dockerfile").write_text(docker, encoding="utf-8", newline="\n")
         (repo / "settings.env").write_text(env, encoding="utf-8", newline="\n")
         _git_in(repo, "add", ".")
@@ -897,10 +898,9 @@ class TestWhatRanUntested:
         cli.main([str(repo), "--head", "feature", "--base", "main"])
         sent = "\n".join(system + "\n" + "\n".join(turns) for system, turns in asked)
         assert asked, "a guideline was asked"
-        assert [s for s in ("Sup3rS3cret-db9", "k3y-f0r-the-app-9a8b") if s in sent] == []
-        assert "@@ ENV DB_PASSWORD=[REDACTED]" in sent and "@@ SECRET_KEY=[REDACTED]" in sent, "the header stays"
-        said = [line for line in capsys.readouterr().out.splitlines() if "secrets redacted" in line]
-        assert said == ["- secrets redacted before any model call: 6"], said  # two values in each of three calls
+        assert [s for s in ("Sup3rS3cret-db9", "k3y-f0r-the-app-9a8b", key[:40]) if s in sent] == []
+        headers = {line for line in sent.splitlines() if line.startswith("@@ ")}
+        assert headers and all(line.endswith(" @@") for line in headers), headers
 
     def test_an_engine_that_fails_is_named_and_degrades(self, cli, demo_repo: Path, monkeypatch, capsys) -> None:
         """What escapes the engine itself is every guideline's reason, never a traceback and never an approval."""

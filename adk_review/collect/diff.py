@@ -26,6 +26,18 @@ BINARY = re.compile(r"^Binary files .* differ$", re.MULTILINE)
 SUBMODULE = re.compile(r"^(?:new file mode|index \S+) 160000$", re.MULTILINE)
 
 
+#: A hunk header and the text git prints after it: its guess at the function around the hunk, a line from above it, cut
+#: at 80 bytes.
+_GUESS = re.compile(r"(?m)^(@@ -\d+(?:,\d+)? \+\d+(?:,\d+)? @@) [^\n]*")
+
+
+def unguessed(diff: str) -> str:
+    """The diff with each hunk header bare, as git prints one where it has no guess at the function around the hunk.
+    The guess is a line from above the hunk, cut at 80 bytes: read by review, a credential there reached every
+    model, a quoted one with its closing quote past the cut, which no shape of a credential reads."""
+    return _GUESS.sub(r"\1", diff)
+
+
 def readable(diff: str) -> str:
     """The diff with "\\n" its only line break: a CRLF file's `\\r` dropped, every other break shown as its escape and
     a space, so what follows opens on a word's edge as it does after a line break. Measured: a lone `\\r` in an added

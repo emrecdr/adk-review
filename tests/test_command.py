@@ -1042,6 +1042,26 @@ class TestWhatAReviewKeeps:
         said = capsys.readouterr()
         assert "served from the cache" not in said.err and "vendor/lib.py" in said.out, said
 
+    def test_the_cache_key_reads_how_many_changed_files_lie_outside_the_path(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: under --staged --path, a change staged outside the folder changed no key, and the cache
+        served a report that counted 0 files outside it, where a new review counted 1."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "src/a.py", "x = 1\n")
+        _committed(repo, "other/b.py", "y = 1\n", "base")
+        (repo / "src" / "a.py").write_text("x = 2\n", encoding="utf-8", newline="\n")
+        _git_in(repo, "add", "src/a.py")
+        argv = [str(repo), "--staged", "--path", "src", "--profile", "default-rules", "--cache", str(tmp_path / "c")]
+        assert cli.main(argv) == 0
+        assert re.search(r"\b0 \S+ file\(s\) outside it", capsys.readouterr().out)
+        (repo / "other" / "b.py").write_text("y = 2\n", encoding="utf-8", newline="\n")
+        _git_in(repo, "add", "other/b.py")
+        assert cli.main(argv) == 0
+        said = capsys.readouterr()
+        assert "served from the cache" not in said.err, said.err
+        assert re.search(r"\b1 \S+ file\(s\) outside it", said.out), said.out
+
     def test_a_debug_log_holds_what_each_guideline_was_asked_and_no_secret(
         self, cli, demo_repo: Path, tmp_path: Path
     ) -> None:

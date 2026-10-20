@@ -975,27 +975,39 @@ class TestTheCleanupAndThePitfalls:
         assert _codes(ruff_rule_findings(Pitfalls(), [test])) == [("PLW0129", "major")]
         assert ruff_rule_findings(Simplify(), [test]) == [], "cleanup in a test is not this rule's"
 
-    def test_a_fastapi_route_that_ignores_a_path_parameter_is_a_pitfall_and_a_repeated_model_a_tidy(self) -> None:
-        """Measured: FastAPI answers every item id the same when the function never takes `item_id`, so the route
-        misbehaves whenever it runs, a major. A `response_model` the return type already names says it twice. A router
-        of the project's own, with the same method name, is not FastAPI's, and nothing is found there."""
+    def test_pitfalls_and_simplify_leave_fastapis_routes_alone(self) -> None:
+        """Measured by review on FastAPI 0.141.1: a route whose dependency or request reads the path parameter answers
+        each id, and ruff's FAST003, which reads no dependency, named six such routes at major. Ruff documents
+        FAST001's fix as always unsafe: a `response_model` dropped can change what the route returns."""
         from adk_review.judge.rules.pitfalls import Pitfalls
         from adk_review.judge.rules.simplify import Simplify
 
         api = (
-            "from fastapi import FastAPI\nfrom pydantic import BaseModel\n\napp = FastAPI()\n\n\n"
+            "from typing import Annotated\n\nfrom fastapi import Depends, FastAPI, Request\n"
+            "from pydantic import BaseModel\n\napp = FastAPI()\n\n\n"
             "class Item(BaseModel):\n    name: str\n\n\n"
-            '@app.get("/items/{item_id}")\nasync def read_item() -> dict:\n    return {}\n\n\n'
-            '@app.get("/users/{user_id}")\nasync def read_user(user_id: int) -> dict:\n    return {"id": user_id}\n\n\n'
+            "class ItemQuery:\n    def __init__(self, item_id: int) -> None:\n        self.item_id = item_id\n\n\n"
+            '@app.get("/c/{item_id}")\nasync def by_class(query: Annotated[ItemQuery, Depends()]) -> dict:\n'
+            '    return {"id": query.item_id}\n\n\n'
+            '@app.get("/f/{item_id}")\nasync def by_request(request: Request) -> dict:\n'
+            '    return {"id": request.path_params["item_id"]}\n\n\n'
             '@app.post("/items/", response_model=Item)\nasync def create_item(item: Item) -> Item:\n    return item\n'
         )
-        assert _codes(ruff_rule_findings(Pitfalls(), [_entry("api.py", api)])) == [("FAST003", "major")]
-        assert _codes(ruff_rule_findings(Simplify(), [_entry("api.py", api)])) == [("FAST001", "minor")]
-        own = (
-            "class Router:\n    def get(self, path):\n        return lambda f: f\n\n\napp = Router()\n\n\n"
-            '@app.get("/items/{item_id}")\ndef read_item():\n    return {}\n'
-        )
-        assert ruff_rule_findings(Pitfalls(), [_entry("own.py", own)]) == []
+        assert ruff_rule_findings(Pitfalls(), [_entry("api.py", api)]) == []
+        assert ruff_rule_findings(Simplify(), [_entry("api.py", api)]) == []
+
+    def test_a_hunk_header_before_a_run_of_blanks_costs_named_secrets_linear_time(self) -> None:
+        """Measured by review: a shape that read a hunk header had two ways to split the blanks after it, so a line
+        of 16,000 took 39 s, and one commit message of 8 KB held the pre-push hook 5.8 s."""
+        import time
+
+        from adk_review.core.secrets import named_values, scrub
+
+        line = "@@ -1 +1 @@" + " " * 8_000 + "!token"
+        started = time.perf_counter()
+        named_values(line)
+        scrub(line)
+        assert time.perf_counter() - started < 1.0, "linear, where it was quadratic"
 
     def test_no_code_is_named_by_two_of_the_rules_that_read_ruff(self) -> None:
         """Each of ruff's codes is one rule's, so a line ruff flags is one finding, at the severity its rule gives:

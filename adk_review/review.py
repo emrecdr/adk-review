@@ -950,6 +950,7 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
         "asked": {key: value for key, value in sorted(vars(args).items()) if key not in OUTPUTS},
         "untracked": evidence.get("untracked"),  # `--staged`'s note: a new untracked file is a new report
         "ignored": evidence.get("ignored"),  # read by review: a staged change to a vendored file served a stale list
+        "outside": evidence.get("outside"),  # read by review: one staged outside --path served a stale count
         "models": [model, fallback_name()],  # the verifier's among `model`'s roles under --verify
         # Each outside tool a rule that runs reads, as it would run: a newer ruff finds what an older one did not.
         "tools": {tool: IDENTITIES[tool]() for tool in tools},

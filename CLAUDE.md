@@ -186,13 +186,15 @@ Conventions:
   `core.precomposeUnicode`, `diff.suppressBlankEmpty` and `core.fsmonitor` fixed through `GIT_CONFIG_COUNT`, and a
   call's own settings beside them there, never as `-c`. A file's diff is read as git prints it for no one's settings,
   through plumbing (`diff-tree -r -p`, or `diff-index --cached -p` under `--staged`): each path as `:(top,literal)`
-  pathspec magic, the merge base's attributes (`--attr-source`, git 2.41; under `--all`, the empty tree's),
-  `--no-color --no-ext-diff --no-textconv`; where a guideline reads a Python file the change modifies,
-  `--function-context` with Python's own boundary as `diff.default.xfuncname`, each hunk within the function or class
-  around it, and git's three lines again for a file that widening pushes past the diff cap, and for every widened file
-  where the block, as it counts, leaves a file out. A call that fails, cannot start or runs past its timeout raises
-  `GitError`, turned into an error envelope only where envelopes are built; never answer it as an empty result.
-  `_git(..., ok=(0, 1))` is only for calls whose exit code 1 is an answer.
+  pathspec magic, the merge base's attributes (`--attr-source`, git 2.41; under `--all`, the empty tree's), `--no-color
+  --no-ext-diff --no-textconv`; where a guideline reads a Python file the change modifies, `--function-context` with
+  Python's own boundary as `diff.default.xfuncname`, each hunk within the function or class around it, and git's three
+  lines again for a file that widening pushes past the diff cap, and for every widened file where the block, as it
+  counts, leaves a file out. Each hunk header is left bare (`unguessed`): git follows one with its guess at the function
+  around the hunk, a line from above it cut at 80 bytes, and a credential there, its closing quote past the cut, reached
+  the model. A call that fails, cannot start or runs past its timeout raises `GitError`, turned into an error envelope
+  only where envelopes are built; never answer it as an empty result. `_git(..., ok=(0, 1))` is only for calls whose
+  exit code 1 is an answer.
 - Every string a model reads is capped in characters, with the cut named in the text, and the cut never falls inside a
   credential, and so is each title and change a model writes into a finding, cut where `core/findings.py` makes it.
   The report cuts each finding's evidence the same way, after the scrub, and breaks CI runners' command openers (`##[`,

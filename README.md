@@ -254,10 +254,9 @@ The rules shipped with the reviewer are written as a project writes its own:
   tool servers an agent starts, a CI workflow, a hook, a `.pth` file);
 - for Python beside `lint`, each reading ruff with codes no other rule names: `pitfalls` (code that does not do what it
   reads: a naive UTC datetime from `utcnow()`, a dataclass default evaluated once and shared, an exception built and
-  never raised, a `subprocess.run` whose failure goes unseen, an `assert` that always passes, a FastAPI route that
-  ignores a path parameter) and `simplify` (a simpler form ruff names, each fix labelled safe or unsafe as ruff labels
-  it, every code whose fix ruff documents as changing what the code does left out; taste, such as an `else` after a
-  `return` or a ternary, left out);
+  never raised, a `subprocess.run` whose failure goes unseen, an `assert` that always passes) and `simplify` (a simpler
+  form ruff names, each fix labelled safe or unsafe as ruff labels it, every code whose fix ruff documents as changing
+  what the code does left out; taste, such as an `else` after a `return` or a ternary, left out);
 - a project's own conventions, as examples: `no-print`, `private-patch` and `tests-offline`;
 - one small payments project's own rules, written for the demo repository and named `demo-` so none is taken for a rule
   a project needs: `demo-money-in-cents`, and the tree rules `demo-required-paths`, `demo-module-defines`,
@@ -879,16 +878,17 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
 - **A Python hunk is read within its function.** Where a guideline reads a Python file the change modifies, git widens
   each hunk to the function or class around it, `--function-context` with Python's own boundary set as
   `diff.default.xfuncname` through `GIT_CONFIG_COUNT`, as the settings fixed for every call are, so the repository's own
-  attributes still choose and no file is written: Claude Code's `/code-review` reads the enclosing
-  function of each hunk, and git's three lines showed an edit deep in a method without its `def`, its arguments or its
-  other branches. Every line shown can be quoted, so a finding may stand on an unchanged line of a function the change
-  touched, and `on_added_line` says so. Measured over this repository's last 31 commits, the Python diffs grew 1.7 times
-  and one file of 191 went past the diff cap: a file the widening pushes past it is read as git prints it, and so is
-  every widened file where the block, counted as the block counts, leaves a file out, so the context never costs a file
-  its reading. Measured by review, a total of the raw diffs, a skip-listed lockfile's among them and the framing
-  uncounted, had read whole changes as git prints them that the widened block held. An added or a deleted file, whole
-  already, a skip-listed one, any other file, and every diff the rules alone read, are git's own, and the added lines
-  are the same either way.
+  attributes still choose and no file is written: Claude Code's `/code-review` reads the enclosing function of each
+  hunk, and git's three lines showed an edit deep in a method without its `def`, its arguments or its other branches.
+  Each hunk header is left bare: git follows one with its guess at the function around the hunk, a line from above it
+  cut at 80 bytes, and a credential there, its closing quote past the cut, reached every model. Every line shown can be
+  quoted, so a finding may stand on an unchanged line of a function the change touched, and `on_added_line` says so.
+  Measured over this repository's last 31 commits, the Python diffs grew 1.7 times and one file of 191 went past the
+  diff cap: a file the widening pushes past it is read as git prints it, and so is every widened file where the block,
+  counted as the block counts, leaves a file out, so the context never costs a file its reading. Measured by review, a
+  total of the raw diffs, a skip-listed lockfile's among them and the framing uncounted, had read whole changes as git
+  prints them that the widened block held. An added or a deleted file, whole already, a skip-listed one, any other file,
+  and every diff the rules alone read, are git's own, and the added lines are the same either way.
 - **Fences carry a nonce.** A sentence at the top of an instruction is no boundary: what follows it is the branch's own
   text. Measured with a reviewer of the same shape on Copilot, a docstring declaring an override silenced most of its
   reviewing agents, each answering no findings. Each untrusted section a guideline, a verifier or chat's verdict reads
