@@ -398,8 +398,7 @@ What the hook cannot see, or stops on:
   lines, and stops the push; so is one whose file was not read, past the size limits or a blob a partial clone lacks.
   One naming no file, a folder say, holds nothing to run, and stops nothing. Known limits: a link to a file the same
   change adds past the size limits is a hole, though that file's own lines were read; a `.py` link to a file of another
-  suffix is parsed by no tree rule; and the NUL that makes a link's file binary is looked for in its first 8,000
-  characters, where git counts bytes.
+  suffix is parsed by no tree rule.
 - A repository with no `.git` folder of its own, a bare one or one used through `--git-dir`, and a tag of a tree or a
   blob, stop the push: the hook reviews a working tree's commits.
 

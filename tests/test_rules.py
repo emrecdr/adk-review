@@ -12,6 +12,7 @@ from conftest import (
     BASE,
     GUIDELINE_NAMES,
     HEAD,
+    KEY_LINE,
     PROFILES,
     _branch_off_empty,
     _broken,
@@ -1032,6 +1033,37 @@ class TestTheCleanupAndThePitfalls:
         monkeypatch.setattr(git, "head_listing", lambda *_args, **_kwargs: None)
         assert run_review(cli, repo, "--profile", "default-rules") == 3
         assert "settings.yaml was not read" in capsys.readouterr().out
+
+    def test_a_link_to_a_binary_file_is_a_hole_as_that_file_is_with_no_model(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: a link to a binary file set nothing, so under the pre-push hook's profile it was read as its
+        own path and approved, where the same bytes committed under its name were a hole. A PNG with a zip appended
+        runs as Python through `python run.py`. The link is named not read, as the binary file is."""
+        repo = tmp_path / "r"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "assets/logo.png", b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + b"\x00" * 64)
+        _git_in(repo, "checkout", "-qb", HEAD)
+        link = _git_in(repo, "hash-object", "-w", "--stdin", stdin="assets/logo.png")
+        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{link},run.py")
+        _git_in(repo, "commit", "-qm", "a script that runs the image")
+        assert run_review(cli, repo, "--profile", "default-rules") == 3
+        out = capsys.readouterr().out
+        assert "run.py" in out and "binary: no line of it can be read or quoted" in out, out
+
+    def test_a_links_file_is_binary_by_its_first_8000_bytes_as_git_reads_one(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: the NUL that makes a link's file binary was looked for in its first 8,000 characters, where
+        git counts bytes, so 4,500 two-byte letters and then a NUL read as binary here and as text to git, and the
+        key after them went unread."""
+        repo = tmp_path / "r"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "assets/notes.dat", "\u00e9" * 4_500 + "\x00\n" + KEY_LINE)
+        _git_in(repo, "checkout", "-qb", HEAD)
+        link = _git_in(repo, "hash-object", "-w", "--stdin", stdin="assets/notes.dat")
+        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{link},settings.yaml")
+        _git_in(repo, "commit", "-qm", "a link to the notes")
+        assert run_review(cli, repo, "--profile", "default-rules") == 1
+        assert "settings.yaml:2" in capsys.readouterr().out
 
     def test_pitfalls_and_simplify_leave_fastapis_routes_alone(self) -> None:
         """Measured by review on FastAPI 0.141.1: a route whose dependency or request reads the path parameter answers

@@ -30,7 +30,16 @@ from ..core.evidence import Entry, Evidence, Failure, unreleased
 from ..core.paths import Links, UnfollowedError, in_review, matches
 from ..core.rules import PYTHON_SUFFIXES, Tree
 from ..core.text import lines_of
-from .change import POINTER_UNREAD, lfs_pointer, no_change, pointer_text, radius, shown_to_guidelines, widens
+from .change import (
+    BINARY_UNREAD,
+    POINTER_UNREAD,
+    lfs_pointer,
+    no_change,
+    pointer_text,
+    radius,
+    shown_to_guidelines,
+    widens,
+)
 from .diff import (
     BINARY,
     DIFF_CAP_CHARS,
@@ -625,14 +634,19 @@ def _read_first(blob: tuple[str, str, str]) -> tuple[int, int]:
     return (0 if suffix in PYTHON_SUFFIXES else 1 if not suffix else 2), int(size) if size.isdigit() else MAX_TREE_BYTES
 
 
-def _as_linked(through: list[tuple[Entry, str]], texts: Mapping[str, str]) -> None:
+def _as_linked(through: list[tuple[Entry, str]], texts: Mapping[str, str], skipped: Collection[str]) -> None:
     """Each link's text, `texts` holding it under the link's path, read as the file it runs: none for a binary, as git
     reads one; a hole for a rule that reads it whole where it was not read, or is a Git LFS pointer, its file stored
     elsewhere, which read by review was linted line by line; else every line of it added under the link's name, for
     the report as for the rules."""
     for entry, target in through:
         text = texts.get(entry["path"])
-        if text is not None and "\x00" in text[:BINARY_BYTES]:
+        # Binary as git reads a file: a NUL in its first 8,000 bytes, never characters, which read by review took
+        # 4,500 two-byte letters and a NUL for binary where git read text. Named not read as the binary file is: read
+        # by review, the link was read as its own path and approved, with no model, where the file was a hole.
+        if text is not None and b"\x00" in text[:BINARY_BYTES].encode("utf-8", "replace")[:BINARY_BYTES]:
+            if entry["path"] not in skipped:  # one the operator's skip list names stays its choice
+                entry["unread"] = BINARY_UNREAD
             continue
         entry["target"] = target
         if text is None:
@@ -772,7 +786,7 @@ def read_texts(
         # smallest first: read by review, in their paths' order, 20 MB of JSON fixtures in `data/` spent the budget
         # before `src/app.py`, which lint then could not read, and a first push stopped.
         texts, _unread = _texts(resolved, sorted(wanted, key=_read_first))
-        _as_linked(through, texts)
+        _as_linked(through, texts, skipped)
         unread = []
         for entry in changed:
             entry["text"] = texts.get(entry["path"])

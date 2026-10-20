@@ -39,6 +39,8 @@ LFS_VERSIONS = frozenset(
 POINTER_BYTES = 1_024
 #: Why no one read a pointer: what the report says of one, under not read.
 POINTER_UNREAD = "a Git LFS pointer: the file's content is stored elsewhere, and none of it was read"
+#: Why a binary file, or a link to one, is not read: the same sentence for both, as both stop the push.
+BINARY_UNREAD = "binary: no line of it can be read or quoted"
 _POINTER_KEYS = ("version", "oid", "size")
 _POINTER_EXTENSION = re.compile(r"ext-[0-9]-\w", re.ASCII)
 _POINTER_OID = re.compile(r"sha256:[0-9a-f]{64}")
@@ -110,7 +112,7 @@ def unread(entry: Entry, diff: str, cut: bool, fits: bool, cap: int) -> str:
     if SUBMODULE.search(top := headers(diff)):  # each header: a type change prints the new file's second
         return "a submodule: its commits are another repository's, not read here"
     if BINARY.search(top):
-        return "binary: no line of it can be read or quoted"
+        return BINARY_UNREAD
     if lfs_pointer(diff):
         return POINTER_UNREAD
     if not fits:
