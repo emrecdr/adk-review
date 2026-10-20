@@ -1168,6 +1168,31 @@ def test_a_file_every_review_of_a_merge_could_not_read_stops_it_and_each_sides_o
     assert push._stops({"could_not_look": {"rule.lint": said}}) is None, "what stopped it is not known whole"
 
 
+def test_a_merge_one_review_passes_is_pushed_though_another_stopped_on_a_reason_the_json_cut(monkeypatch) -> None:
+    """Read by review: a review of a merge whose reason the JSON cut stopped the push at once, before the merge was
+    reviewed against its other base, though a line the remote holds nowhere is new to every base: links not followed,
+    on the side the remote held, stopped a merge the other review passed. Every base is reviewed, and one review that
+    passes clears the merge; where none does, a reason not known whole still stops it."""
+    push = importlib.import_module("adk_review.push")
+    from adk_review.core.text import REASON_MAX_CHARS, cut_at
+
+    long = "; ".join(f"{'x' * 140}_{n}.yaml was not followed" for n in range(4))
+    said = cut_at(f"rule secrets could not look: {long}", REASON_MAX_CHARS)
+
+    def merged(passes: str) -> tuple[int, str] | None:
+        def review(argv: list[str]) -> int:
+            base = argv[argv.index("--base") + 1]
+            report = {} if base == passes else {"could_not_look": {"rule.secrets": said}}
+            Path(argv[argv.index("--json") + 1]).write_text(json.dumps(report), encoding="utf-8")
+            return 0 if base == passes else 3
+
+        monkeypatch.setattr(push, "review", review)
+        return push.reviewed("repo", "merge", ["theirs", "ours"])
+
+    assert merged(passes="ours") is None, "the review against `ours` passes: nothing is new to the remote"
+    assert merged(passes="neither") is not None, "no review passes, and what stopped one is not known whole"
+
+
 def test_a_file_a_push_moves_out_of_an_ignored_one_is_read_in_its_commit(tmp_path) -> None:
     """Read by review: the history read paired a renamed file with its old path. A vendored module's token, moved into
     the project's `app.py` and taken out, passed the hook unread: no commit added a line of `app.py`. Each commit is

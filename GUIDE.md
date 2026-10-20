@@ -393,13 +393,13 @@ What the hook cannot see, or stops on:
   folders and links to links. A path out of the repository is read as coming back in, at every depth the repository
   could lie at: through the checkout's own folder, by whatever name a clone gave it, or into a copy deployed from the
   top of the file system, at `/app` say. A name spelled in another case or Unicode form than git holds it is read as a
-  file system blind to them finds it, as macOS's and Windows' are. One naming a Git LFS pointer, a file inside a
+  file system blind to them finds it, as macOS's and Windows' are. One naming a Git LFS pointer, anything inside a
   submodule, a name such a system finds more than one spelling of, more than one file as where a copy lies decides, or
   one whose way could not be followed, is a hole for a rule that reads it whole and for each line rule, which reads its
   lines, and stops the push; so is one whose file was not read, past the size limits or a blob a partial clone lacks.
-  One naming no file, a folder say, holds nothing to run, and stops nothing. Known limits: a link to a file the same
-  change adds past the size limits is a hole, though that file's own lines were read; a `.py` link is parsed under its
-  own name by no tree rule and counted by no blast radius, even one to a `.py` file.
+  One naming no file, a folder outside any submodule say, holds nothing to run, and stops nothing. Known limits: a link
+  to a file the same change adds past the size limits is a hole, though that file's own lines were read; a `.py` link is
+  parsed under its own name by no tree rule and counted by no blast radius, even one to a `.py` file.
 - A repository with no `.git` folder of its own, a bare one or one used through `--git-dir`, and a tag of a tree or a
   blob, stop the push: the hook reviews a working tree's commits.
 

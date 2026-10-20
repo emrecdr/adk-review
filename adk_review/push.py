@@ -127,8 +127,9 @@ def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, s
     A line the remote holds nowhere is new to every base, so one review that passes leaves none to find; each other
     base a merge brings holds the other side's own changes, which the remote holds already. So where every review of
     a merge stops, the merge stops only on what all of them found: read by review, a merge of two branches the remote
-    held, each with a file no rule can read, stopped though it added nothing, each review reading the other side's."""
-    stopped, shared = None, None
+    held, each with a file no rule can read, stopped though it added nothing, each review reading the other side's.
+    A review whose reasons are not known whole weighs nothing, and still lets another that passes clear the merge."""
+    stopped, shared, unknown = None, None, False
     for base in bases or [None]:
         said = io.StringIO()
         with (
@@ -142,16 +143,21 @@ def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, s
         if code == 0:
             return None
         stopped = stopped or (code, said.getvalue())
-        if found is None or len(bases) < 2:  # what stopped it is not known, or there is no other base to weigh it by
+        if len(bases) < 2:  # there is no other base to weigh it by
             return stopped
-        shared = found if shared is None else shared & found
-    return stopped if shared else None
+        # Read by review: a reason the JSON cut stopped a merge at its first base, which another base's review passed.
+        if found is None:
+            unknown = True
+        else:
+            shared = found if shared is None else shared & found
+    return stopped if unknown or shared else None
 
 
 def _stops(report: dict) -> frozenset[tuple[str, ...]] | None:
     """What stopped a review, as its JSON report says: each finding at the bar, each file not read, and each reason a
     check could not look, one a file, so a file every review of a merge could not read stops it, and each side's own
-    does not. None where it says of none, a review stopped for another reason, which no other review clears."""
+    does not. None where it says of none, a review stopped for another reason, which only a review that passes
+    clears."""
     bar = report.get("fail_on", "blocker")
     if any(CUT_MARK in why for why in report.get("could_not_look", {}).values()):
         return None  # read by review: a reason the JSON cut names not every file, and a new one past the cut passed
