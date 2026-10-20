@@ -187,7 +187,7 @@ def build_guideline(guideline: Guideline) -> LlmAgent:
     """One guideline's agent: its role, the shared diff from state, the shared schema, its own budget."""
     key = state_key(guideline.check_id)
     return LlmAgent(
-        model=build_model(),
+        model=build_model(role=guideline.id, preset=guideline.models),
         name=key,
         description=f"Judges the change for {guideline.title}.",
         instruction=(

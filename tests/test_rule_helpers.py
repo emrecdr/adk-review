@@ -373,3 +373,28 @@ def test_a_check_says_whether_it_is_a_cleanup_with_true_or_false_or_is_refused(r
         cleanup = "no"
 
     assert _guideline_problem(Worded()) == "'worded' has cleanup 'no', not True or False"
+
+
+def test_a_guidelines_models_name_an_arm_and_a_model_or_it_is_refused() -> None:
+    """A guideline's own model is named per arm, in a `Models` with one field for each arm. Anything else, a plain
+    map or a model that is no name, would run on nothing it says: refused at the start, as a check that cannot run."""
+    from dataclasses import fields
+
+    from adk_review.core.guidelines import Guideline, Models
+    from adk_review.judge.catalog import _guideline_problem
+    from adk_review.judge.settings import DEFAULTS
+
+    assert {field.name for field in fields(Models)} == set(DEFAULTS), "one field for each arm the reviewer has"
+
+    class Picked(Guideline):
+        id = "picked"
+        title = "a pick"
+        role = "You judge the pick."
+        thinking_budget = 0
+
+    assert _guideline_problem(Picked()) is None, "no model of its own is fine"
+    Picked.models = Models(copilot="claude-sonnet-4", gemini="gemini-2.5-pro")
+    assert _guideline_problem(Picked()) is None
+    for wrong in ({"copilot": "claude-sonnet-4"}, "gpt-4.1", Models(copilot=4.1)):  # type: ignore[arg-type]
+        Picked.models = wrong
+        assert "'picked' has models" in (_guideline_problem(Picked()) or ""), wrong

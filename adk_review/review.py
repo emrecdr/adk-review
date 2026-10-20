@@ -86,6 +86,7 @@ try:
     from .collect.git import MAX_FILE_BYTES, GitError, checked_out, collect_evidence, default_base, is_repository
     from .core.evidence import Evidence, unreleased
     from .core.findings import RANK
+    from .core.guidelines import Guideline
     from .core.health import Health, measured
     from .core.profiles import DEFAULT
     from .core.rules import FileRule
@@ -653,7 +654,7 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
     # Only a guideline calls a model: a profile without one needs no key, and the verifier has no guideline finding to
     # judge.
     verify = args.verify and bool(guidelines)
-    why, model = _arm(verify) if guidelines else (None, "")
+    why, model = _arm(verify, chosen.guidelines) if guidelines else (None, "")
     if why is not None and not args.dry_run:  # a dry run reports an arm that is not ready; a review stops at it
         _say(why)
         return EXIT_USAGE
@@ -701,16 +702,17 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
     return _decided(args, chosen, evidence, shown, previous, say)
 
 
-def _arm(verify: bool) -> tuple[str | None, str]:
+def _arm(verify: bool, guidelines: Sequence[Guideline] = ()) -> tuple[str | None, str]:
     """Whether the arm the guidelines call is ready, and the model the report names where it is: the verifier's own
     model under --verify, beside everyone's, every model the run would build checked before anything is spent. The
     engine's first import, made only where a guideline runs."""
     from .judge.config import require_ready, served
     from .judge.verify import VERIFIER
 
-    roles = (VERIFIER,) if verify else ()
-    why = require_ready(roles=roles)
-    return why, served(roles) if why is None else ""
+    roles = ((VERIFIER,) if verify else ()) + tuple(guideline.id for guideline in guidelines)
+    presets = {guideline.id: guideline.models for guideline in guidelines}
+    why = require_ready(roles=roles, presets=presets)
+    return why, served(roles, presets) if why is None else ""
 
 
 def _decided(

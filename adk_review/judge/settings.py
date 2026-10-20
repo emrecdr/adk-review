@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from ..core.guidelines import Models
+
 DEFAULTS = {"gemini": "gemini-2.5-flash", "copilot": "gpt-4.1"}
 
 
@@ -26,19 +28,27 @@ def provider() -> str:
     return arm
 
 
-def model_var(role: str = "") -> str:
-    """The variable naming a role's model: its own `REVIEW_<ROLE>_MODEL` when set, else everyone's `REVIEW_MODEL`:
-    the verifier's role is `verifier`, so `REVIEW_VERIFIER_MODEL` gives `--verify` a model of its own."""
-    own = f"REVIEW_{role.upper()}_MODEL"
-    return own if role and os.environ.get(own, "").strip() else "REVIEW_MODEL"
+def model_pick(role: str = "", preset: Models | None = None) -> tuple[str, str]:
+    """What names a role's model, and the model, the most specific choice first: the role's own
+    `REVIEW_<ROLE>_MODEL`; a guideline's own `models` for the arm, from its file; everyone's `REVIEW_MODEL`; the arm's
+    default. The verifier's role is `verifier`, a guideline's its id: `REVIEW_SECURITY_MODEL`."""
+    arm = provider()
+    own = f"REVIEW_{role.upper().replace('-', '_')}_MODEL"
+    if role and (name := os.environ.get(own, "").strip()):
+        return own, name
+    if preset is not None and (name := getattr(preset, arm, "").strip()):
+        return f"guideline.{role} models.{arm}", name
+    return "REVIEW_MODEL", os.environ.get("REVIEW_MODEL", "").strip() or DEFAULTS[arm]
 
 
-def model_name(role: str = "") -> str:
-    """The model a role runs on: what its variable names, else the arm's default.
+def model_var(role: str = "", preset: Models | None = None) -> str:
+    """What names a role's model: its variable, or a guideline's file."""
+    return model_pick(role, preset)[0]
 
-    The model is chosen per agent, so a role may run on a stricter or a cheaper one; the verifier does.
-    """
-    return os.environ.get(model_var(role), "").strip() or DEFAULTS[provider()]
+
+def model_name(role: str = "", preset: Models | None = None) -> str:
+    """The model a role runs on. The model is chosen per agent, so a role may run on a stricter or a cheaper one."""
+    return model_pick(role, preset)[1]
 
 
 def fallback_name() -> str:

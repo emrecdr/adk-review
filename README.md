@@ -201,15 +201,15 @@ setting quietly left at another value. It is the one place the review policy liv
 repository under review, and `--dry-run` names the file read.
 
 The model comes from the shell, or from the `.env` at the root of the checkout, which never wins over the shell:
-`REVIEW_PROVIDER` picks the arm, `copilot` when unset or `gemini`, and `REVIEW_MODEL` the model, blank for `gpt-4.1`
-or `gemini-2.5-flash`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` give `--verify` and every role's fallback a
-model of their own. Copilot is the arm this reviewer targets and the default; Gemini is first-class too. Readiness is
-asked before any call:
-Copilot's cached token, from the one-time `uv run adk-review-login`, or Gemini's `GOOGLE_API_KEY` or
-Vertex AI project, which google-genai itself answers, never a copy of its rules; on the Gemini arm a model ADK would
-send to another provider, `gpt-*` or `claude-*`, is refused. Every certificate is verified through the operating
-system's own store, so a company proxy's root the machine trusts, the reviewer trusts too. "Configuration" in
-`GUIDE.md` lists each variable with its default, and `.env.example` shows each arm's block.
+`REVIEW_PROVIDER` picks the arm, `copilot` when unset or `gemini`, and `REVIEW_MODEL` the model, blank for `gpt-4.1` or
+`gemini-2.5-flash`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` give `--verify` and every role's fallback a
+model of their own. `REVIEW_<ID>_MODEL` gives one guideline its own, over the `models` its file may name. Copilot is the
+arm this reviewer targets and the default; Gemini is first-class too. Readiness is asked before any call: Copilot's
+cached token, from the one-time `uv run adk-review-login`, or Gemini's `GOOGLE_API_KEY` or Vertex AI project, which
+google-genai itself answers, never a copy of its rules; on the Gemini arm a model ADK would send to another provider,
+`gpt-*` or `claude-*`, is refused. Every certificate is verified through the operating system's own store, so a company
+proxy's root the machine trusts, the reviewer trusts too. "Configuration" in `GUIDE.md` lists each variable with its
+default, and `.env.example` shows each arm's block.
 
 ## Checks and profiles
 
@@ -493,6 +493,11 @@ class Naming(Guideline):
 
 A guideline whose findings change how code reads and never what it does adds `cleanup = True`, as `complexity` does,
 and the hand-off lists its findings as tidies, apart from the fixes.
+
+A guideline that needs a stronger or a cheaper model names one per arm, `models = Models(copilot="claude-sonnet-4",
+gemini="gemini-2.5-pro")`, with `Models` imported beside `Guideline`. An arm it leaves blank runs on `REVIEW_MODEL`.
+`REVIEW_<ID>_MODEL` on a machine overrides both: `REVIEW_NAMING_MODEL`. The review checks each model before any call,
+and the report names a guideline on a model of its own.
 
 1. Copy it to `judge/guidelines/<name>.py` and name the guideline after the file.
 2. Write the role: who the model is and what it judges the change for, in a sentence or two. The instruction asks

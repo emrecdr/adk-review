@@ -47,8 +47,8 @@ applyTo: "adk_review/**"
   `lines_hit` and `self_check` from `judge/rule_helpers/`.
 - A guideline names `id`, `title`, `role` (the instruction's opening: who the model is and what it judges) and
   `thinking_budget`, and `cleanup = True` where its findings change how code reads and never what it does, as
-  `complexity`'s do (the hand-off lists them as tidies); `judge/agents.py` builds every guideline's agent the same way
-  around its role.
+  `complexity`'s do (the hand-off lists them as tidies); optionally `models = Models(copilot=..., gemini=...)`, a model
+  of its own per arm; `judge/agents.py` builds every guideline's agent the same way around its role.
 - Each check has one id, `rule.<name>` or `guideline.<name>` (`core/profiles.py`), in `config.toml`, on the command
   line (`--check ID`, `--list-checks`) and as its own report section; inside ADK, where names must be identifiers, it
   is `state_key(id)`, `rule_<name>`. Never spell a check's id or key by hand: a check's own `check_id`, built by

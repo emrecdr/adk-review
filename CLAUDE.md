@@ -65,7 +65,8 @@ yet; the comment there says why the span stays.
 
 One `.env` at the root (copy `.env.example`). `REVIEW_PROVIDER=copilot|gemini` picks the arm, `copilot` when unset;
 `REVIEW_MODEL` blank means `gpt-4.1` / `gemini-2.5-flash`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` are read
-too. Copilot needs a one-time `uv run adk-review-login`; Gemini needs `GOOGLE_API_KEY`, or through Vertex AI a project,
+too, and `REVIEW_<ID>_MODEL` gives one guideline its own model, over the `models` its file may name per arm. Copilot
+needs a one-time `uv run adk-review-login`; Gemini needs `GOOGLE_API_KEY`, or through Vertex AI a project,
 `GOOGLE_CLOUD_PROJECT` or the one Application Default Credentials name — `require_ready` asks google-genai itself, never
 a copy of its rules, and on the Gemini arm refuses a model ADK sends to another provider (`gpt-*`, `claude-*`). Both
 arms are first-class, Copilot the one this reviewer targets and the default: a change works, is tested and is measured
@@ -87,19 +88,19 @@ rule is one class of three kinds: a `Rule`, `check(path, line)` over each added 
 each changed file whole at the head, its lines, the lines the change added, its module, and an outside tool's
 diagnostics where it names the tool (`lint`, `pitfalls` and `simplify` name ruff, each with codes no other names, whose
 adapter `collect/tools.py` holds, run by `collect/ruff.py`); a `TreeRule`, `check(tree)` over the head's paths and
-parsed modules, naming a line where it knows one. A guideline is a class naming its role and a thinking budget
-(`core/guidelines.py`), built into an agent by `judge/agents.py`. `judge/catalog.py` finds every check, reads
-`config.toml` and resolves what runs, for the command and the chat alike. A rule imports one door,
-`judge/rule_helpers/`: the contract, passed on from `core/` (`rules.py`'s kinds, `Hit` and `Diagnostic`, `findings.py`'s
-`Severity` and `RANK`), helpers named after what they read (`lines.py`, `syntax.py`, `diagnostics.py`) and try a rule
-with (`testing.py`), and what a review reads too, passed on from `core/`: `matches`, the skip list's matcher, a test's
-path and a credential's shape. A rule is handed no test's file unless it sets `reads_tests = True`, as each rule about
-what runs, leaks or steers does (`file.changed` and `tree.paths` still list every test). A rule reads only the files
-`scan` names unless it sets `reads_every_kind = True`, as the two credential rules do: a key leaks from a README as from
-code. A rule or a guideline whose findings change how code reads and never what it does sets `cleanup = True`, as
-`simplify` and `complexity` do: the hand-off lists them under `## Tidy`, apart from the fixes, and holds one back on
-lines a defect at major or above names. A rule may carry `bad` and `good` examples (those that read ruff carry none),
-which the catalog holds it to at every start with its own source, a rule failing either being exit 2; `try_rule`,
+parsed modules, naming a line where it knows one. A guideline is a class naming its role, a thinking budget and,
+optionally, its own model per arm (`core/guidelines.py`), built into an agent by `judge/agents.py`. `judge/catalog.py`
+finds every check, reads `config.toml` and resolves what runs, for the command and the chat alike. A rule imports one
+door, `judge/rule_helpers/`: the contract, passed on from `core/` (`rules.py`'s kinds, `Hit` and `Diagnostic`,
+`findings.py`'s `Severity` and `RANK`), helpers named after what they read (`lines.py`, `syntax.py`, `diagnostics.py`)
+and try a rule with (`testing.py`), and what a review reads too, passed on from `core/`: `matches`, the skip list's
+matcher, a test's path and a credential's shape. A rule is handed no test's file unless it sets `reads_tests = True`, as
+each rule about what runs, leaks or steers does (`file.changed` and `tree.paths` still list every test). A rule reads
+only the files `scan` names unless it sets `reads_every_kind = True`, as the two credential rules do: a key leaks from a
+README as from code. A rule or a guideline whose findings change how code reads and never what it does sets `cleanup =
+True`, as `simplify` and `complexity` do: the hand-off lists them under `## Tidy`, apart from the fixes, and holds one
+back on lines a defect at major or above names. A rule may carry `bad` and `good` examples (those that read ruff carry
+none), which the catalog holds it to at every start with its own source, a rule failing either being exit 2; `try_rule`,
 `lines_hit` and `self_check` try a rule with no repository, `--list-checks` lists every check with its kind, its
 profiles and its file, `--check ID` runs one check alone. Each check has one id, `rule.<name>` or `guideline.<name>`
 (`core/profiles.py`), in the config, on the command line and as its own report section; inside ADK it is `state_key`'s

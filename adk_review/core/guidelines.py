@@ -8,9 +8,20 @@ the reading back are the same for every guideline, and live in `judge/agents.py`
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import ClassVar
 
 from .profiles import guideline_id
+
+
+@dataclass(frozen=True)
+class Models:
+    """The model a guideline runs on, one field for each arm: `Models(copilot="claude-sonnet-4")`. An arm left blank
+    runs on `REVIEW_MODEL`, and `REVIEW_<ID>_MODEL` on a machine overrides both. Asked by the owner: a guideline may
+    name its own model. A name is one arm's, so the file names one per arm."""
+
+    copilot: str = ""
+    gemini: str = ""
 
 
 class Guideline:
@@ -27,6 +38,8 @@ class Guideline:
     #: Whether its findings change how code reads and never what it does, as a simplify pass's do: a handoff lists them
     #: apart, under what a tidy keeps, and holds one back where a defect at major or above names the same lines.
     cleanup: ClassVar[bool] = False
+    #: The model it runs on, by arm; blank runs on everyone's.
+    models: ClassVar[Models] = Models()
 
     @property
     def check_id(self) -> str:

@@ -16,7 +16,7 @@ import json
 import logging
 import os
 import re
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Mapping
 from typing import Any
 from urllib.parse import urlsplit
 
@@ -29,7 +29,8 @@ from google.adk.utils.env_utils import is_enterprise_mode_enabled
 from google.auth.exceptions import GoogleAuthError
 from google.genai import types
 
-from .settings import DEFAULTS, copilot_dir, copilot_token, fallback_name, model_name, model_var, provider
+from ..core.guidelines import Models
+from .settings import DEFAULTS, copilot_dir, copilot_token, fallback_name, model_name, model_pick, provider
 
 # Certificates are verified through the operating system's own store, as a browser does, before any client is
 # built. Measured on a company Windows machine: its proxy re-signed HTTPS with a root the machine trusted and
@@ -100,14 +101,15 @@ def _copilot_api() -> str:
     return str(endpoint or os.environ.get("GITHUB_COPILOT_API_BASE", "")).strip()
 
 
-def served(roles: tuple[str, ...]) -> str:
+def served(roles: tuple[str, ...], presets: Mapping[str, Models] | None = None) -> str:
     """`serving()`, with each role whose model is not everyone's named beside it: `gpt-4.1 on copilot (verifier:
-    gpt-5)`."""
-    own = [f"{role}: {model_name(role)}" for role in roles if model_name(role) != model_name()]
+    gpt-5)`. `presets` holds each guideline's own `models`, by its id."""
+    chosen = presets or {}
+    own = [f"{role}: {name}" for role in roles if (name := model_name(role, chosen.get(role))) != model_name()]
     return serving() + (f" ({'; '.join(own)})" if own else "")
 
 
-def build_model(*, role: str = "") -> str | BaseLlm:
+def build_model(*, role: str = "", preset: Models | None = None) -> str | BaseLlm:
     """The model for `REVIEW_PROVIDER`: a name ADK resolves natively on Gemini, a LiteLLM model otherwise — and, when
     `REVIEW_FALLBACK_MODEL` names one, ADK's `FallbackModel` over both.
 
@@ -120,7 +122,7 @@ def build_model(*, role: str = "") -> str | BaseLlm:
     a review's call is read, never acted on, and an operator who names a
     fallback has chosen to pay for a second answer.
     """
-    names = [model_name(role)] + ([fallback] if (fallback := fallback_name()) else [])
+    names = [model_name(role, preset)] + ([fallback] if (fallback := fallback_name()) else [])
     if provider() == "gemini":
         return names[0] if len(names) == 1 else FallbackModel(models=names, retriable_status_codes=_FALL_BACK_ON)
     litellm = _litellm()
@@ -242,7 +244,7 @@ def request_config(thinking_budget: int | None = None) -> types.GenerateContentC
     )
 
 
-def require_ready(*, roles: tuple[str, ...] = ()) -> str | None:
+def require_ready(*, roles: tuple[str, ...] = (), presets: Mapping[str, Models] | None = None) -> str | None:
     """Why the chosen arm cannot run, or None. Called by the driver before anything is spent, never at import.
 
     The guidelines' model is always checked; `roles` names the agents with a model
@@ -254,7 +256,7 @@ def require_ready(*, roles: tuple[str, ...] = ()) -> str | None:
         arm = provider()
     except ValueError as exc:
         return str(exc)
-    named = [(model_var(role), model_name(role)) for role in ("", *roles)]
+    named = [model_pick(role, (presets or {}).get(role)) for role in ("", *roles)]
     if fallback := fallback_name():
         named.append(("REVIEW_FALLBACK_MODEL", fallback))
     if arm == "copilot":

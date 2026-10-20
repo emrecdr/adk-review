@@ -16,6 +16,7 @@ import hashlib
 import json
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from functools import partial
 from pathlib import Path
 from typing import Any, override
 
@@ -26,6 +27,7 @@ from google.adk.utils.content_utils import extract_text_from_content
 from google.genai import types
 from pydantic import BaseModel, ValidationError
 
+from ..core.guidelines import Models
 from ..core.secrets import scrub, scrub_value
 from ..core.text import REASON_MAX_CHARS, cut_at, squash
 from .agents import BOUNDARY, FAILURE, JUDGED_BOUNDARY, mismatch
@@ -224,12 +226,18 @@ class RefuseUnready(BasePlugin):
     runs, schedules a close that fails on what it never made.
     """
 
-    def __init__(self, name: str = "refuse_unready") -> None:
+    def __init__(
+        self,
+        name: str = "refuse_unready",
+        roles: tuple[str, ...] = (),
+        presets: Mapping[str, Models] | None = None,
+    ) -> None:
         super().__init__(name=name)
+        self.roles, self.presets = roles, dict(presets or {})
 
     @override
     async def before_run_callback(self, *, invocation_context: Any) -> types.Content | None:
-        why = await asyncio.to_thread(require_ready)
+        why = await asyncio.to_thread(partial(require_ready, roles=self.roles, presets=self.presets))
         return types.ModelContent(f"I could not reach the model: NOT_READY: {why}") if why else None
 
 

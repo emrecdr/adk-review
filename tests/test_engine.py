@@ -295,6 +295,69 @@ class TestRetriesOnBothArms:
         assert (require_ready() or "").startswith("REVIEW_FALLBACK_MODEL:"), "the fallback is a model the run builds"
 
 
+class TestAGuidelinesOwnModel:
+    """Asked by the owner: a guideline may name the model it runs on. Its file names one per arm, `REVIEW_<ID>_MODEL`
+    on a machine overrides it, and an arm the file leaves out runs on `REVIEW_MODEL`."""
+
+    def test_the_most_specific_choice_names_a_guidelines_model(self, monkeypatch) -> None:
+        from adk_review.core.guidelines import Models
+        from adk_review.judge.settings import model_name, model_var
+
+        monkeypatch.setenv("REVIEW_PROVIDER", "gemini")
+        monkeypatch.setenv("REVIEW_MODEL", "everyone")
+        monkeypatch.delenv("REVIEW_SECURITY_MODEL", raising=False)
+        preset = Models(gemini="preset", copilot="claude-x")
+        assert (model_var("security", preset), model_name("security", preset)) == (
+            "guideline.security models.gemini",
+            "preset",
+        )
+        monkeypatch.setenv("REVIEW_SECURITY_MODEL", "own")
+        assert (model_var("security", preset), model_name("security", preset)) == ("REVIEW_SECURITY_MODEL", "own")
+        monkeypatch.delenv("REVIEW_SECURITY_MODEL")
+        assert model_name("security", Models(copilot="claude-x")) == "everyone", "an arm the file leaves out"
+        monkeypatch.setenv("REVIEW_MY_CHECK_MODEL", "hyphen")
+        assert model_name("my-check") == "hyphen", "a hyphen in an id is an underscore in a variable's name"
+
+    def test_a_guideline_runs_on_the_model_its_file_names(self, monkeypatch) -> None:
+        load_agent(monkeypatch)
+        from adk_review.core.guidelines import Models
+        from adk_review.judge.agents import build_guideline
+        from adk_review.judge.guidelines.security import Security
+
+        class Strong(Security):
+            models = Models(gemini="fake.strong")
+
+        assert build_guideline(Strong()).model == "fake.strong"
+        assert build_guideline(Security()).model == "fake", "no choice of its own: everyone's model"
+
+    def test_a_guidelines_model_the_arm_cannot_run_is_refused_before_any_call(self, monkeypatch) -> None:
+        from adk_review.core.guidelines import Models
+        from adk_review.judge.config import require_ready, served
+
+        monkeypatch.setenv("REVIEW_PROVIDER", "gemini")
+        monkeypatch.setenv("GOOGLE_API_KEY", "x")
+        monkeypatch.setenv("REVIEW_MODEL", "gemini-2.5-flash")
+        presets = {"security": Models(gemini="no-such-model")}
+        assert (require_ready(roles=("security",), presets=presets) or "").startswith(
+            "guideline.security models.gemini:"
+        )
+        assert require_ready(roles=("security",), presets={"security": Models(gemini="gemini-2.5-pro")}) is None
+        assert served(("security",), {"security": Models(gemini="gemini-2.5-pro")}).endswith(
+            "(security: gemini-2.5-pro)"
+        ), "the report names a guideline on a model of its own"
+
+    def test_a_review_names_and_checks_each_guidelines_own_model(self, cli, demo_repo: Path, monkeypatch, capsys):
+        import importlib
+
+        from adk_review.core.guidelines import Models
+
+        security = importlib.import_module("adk_review.judge.guidelines.security").Security
+        monkeypatch.setattr(security, "models", Models(gemini="fake.strong"))
+        argv = [str(demo_repo), "--head", "feature/payments", "--base", "main", "--dry-run"]
+        assert cli.main(argv) == 0
+        assert "security: fake.strong" in capsys.readouterr().out
+
+
 class TestTheTokenCeiling:
     """A ceiling ends the spending, never the report: the refused guideline is named, what was found is shown, and
     the exit is 3."""
