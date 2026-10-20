@@ -332,6 +332,25 @@ def _committed(repo: Path, name: str, text: str | bytes = "x = 1\n", message: st
     return _git_in(repo, "rev-parse", "HEAD")
 
 
+def _link_staged(repo: Path, path: str, target: str) -> str:
+    """A link at `path` naming `target`, staged through git's plumbing, so no file system need hold one: its blob."""
+    blob = _git_in(repo, "hash-object", "-w", "--stdin", stdin=target)
+    _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{blob},{path}")
+    return blob
+
+
+def _link_on_branch(root: Path, target: str, text: str | bytes, path: str) -> Path:
+    """A repository whose `BASE` holds `text` at `target`, and whose `HEAD` adds `path`, a link naming it."""
+    repo = root / "r"
+    repo.mkdir()
+    _git_in(repo, "init", "-q", "-b", BASE)
+    _committed(repo, target, text)
+    _git_in(repo, "checkout", "-qb", HEAD)
+    _link_staged(repo, path, target)
+    _git_in(repo, "commit", "-qm", f"{path}, a link to {target}")
+    return repo
+
+
 def gathered(repo: Path, head: str, base: str = BASE, **options) -> dict[str, dict]:
     """Each changed file a review of `head` against `base` gathers, by path, as `collect_evidence` reads it with
     `options`: what the rules and the guidelines are given."""

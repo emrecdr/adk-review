@@ -129,7 +129,7 @@ def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, s
     a merge stops, the merge stops only on what all of them found: read by review, a merge of two branches the remote
     held, each with a file no rule can read, stopped though it added nothing, each review reading the other side's.
     A review whose reasons are not known whole weighs nothing, and still lets another that passes clear the merge."""
-    stopped, shared, unknown = None, None, False
+    stopped, stops = None, []
     for base in bases or [None]:
         said = io.StringIO()
         with (
@@ -145,12 +145,9 @@ def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, s
         stopped = stopped or (code, said.getvalue())
         if len(bases) < 2:  # there is no other base to weigh it by
             return stopped
-        # Read by review: a reason the JSON cut stopped a merge at its first base, which another base's review passed.
-        if found is None:
-            unknown = True
-        else:
-            shared = found if shared is None else shared & found
-    return stopped if unknown or shared else None
+        stops.append(found)
+    # Read by review: a reason the JSON cut stopped a merge at its first base, which another base's review passed.
+    return stopped if None in stops or frozenset.intersection(*stops) else None
 
 
 def _stops(report: dict) -> frozenset[tuple[str, ...]] | None:

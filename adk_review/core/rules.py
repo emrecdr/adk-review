@@ -143,12 +143,7 @@ class Rule(AnyRule):
         # A link's lines are the file it names: one not read, or not followed, shows only its path, so the rule could
         # not look.
         # Read by review: a key in a blob a partial clone lacked was approved, named nowhere, and kept in the cache.
-        missed = [
-            f"{entry['path']} {entry['unread_text']}" for entry in read if entry.get("link") and entry["unread_text"]
-        ]
-        if missed:
-            raise UnreadError("; ".join(missed), found)
-        return found
+        return _answered(found, [(entry["path"], entry["unread_text"]) for entry in read if entry.get("link")])
 
 
 #: What Python reads as source by its name; a file with no suffix is a script when its first line runs Python.
@@ -310,7 +305,7 @@ class FileRule(AnyRule):
         changed = frozenset(entry["path"] for entry in files)
         returns = "a list of line numbers, (line, what is wrong) pairs or Hits"
         found: list[Hit] = []
-        missed: list[str] = []
+        missed: list[tuple[str, str | None]] = []
         for entry in files:
             if entry["text"] is None and not entry["unread_text"]:
                 continue  # deleted, binary, a link, a submodule: nothing at the head for a file rule to read
@@ -339,10 +334,8 @@ class FileRule(AnyRule):
                 if not file.missed:  # not this file's text: let the rule's run name it
                     raise
             if file.missed:  # the head holds it, the rule asked for it, and it was not read: a hole, never silence
-                missed.append(f"{path} {unread}")
-        if missed:
-            raise UnreadError("; ".join(missed), found)
-        return found
+                missed.append((path, unread))
+        return _answered(found, missed)
 
     @staticmethod
     def _hit(file: ChangedFile, item: object) -> Hit:
@@ -428,6 +421,14 @@ class UnreadError(LookupError):
     def __init__(self, why: str, found: Iterable[Hit] = ()) -> None:
         super().__init__(why)
         self.found = tuple(found)
+
+
+def _answered(found: list[Hit], missed: Iterable[tuple[str, str | None]]) -> list[Hit]:
+    """What a rule found, or `UnreadError` naming each `(path, why)` of `missed` that has a why, as "path why", "; "
+    between them: `push._stops` splits a merge's holes there, so the line and file rules spell them alike."""
+    if holes := [f"{path} {why}" for path, why in missed if why]:
+        raise UnreadError("; ".join(holes), found)
+    return found
 
 
 class Tree:

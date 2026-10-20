@@ -12,7 +12,7 @@ from ..core.blast import Blast, blast_radius
 from ..core.evidence import Entry, Failure, entry
 from ..core.paths import matches
 from ..core.rules import Tree, is_python_text
-from .diff import BINARY, SUBMODULE, added_lines, capped, framed, headers, hunk_lines, quotable
+from .diff import BINARY, LINK_MODE, SUBMODULE, added_lines, capped, framed, headers, hunk_lines, quotable
 
 #: And the block of diffs the guidelines read, in all: a file past it is left out whole, and named. Measured with none,
 #: `--all` over 4,826 files gave each guideline and each verifier 14.9 MB; this repository's whole project, 275,688
@@ -158,9 +158,9 @@ def shown_to_guidelines(
     blocks: list[str] = []
     room, left_out, excluded = BLOCK_CAP_CHARS, 0, {}
     for listed, diff in zip(entries, diffs, strict=True):
-        file = entry(listed["path"], listed["status"], diff, added_lines(diff), old=listed.get("old"))
-        if listed.get("mode") == "120000":  # a symbolic link, known with no tree listed
-            file["link"] = True
+        # A symbolic link is known by the change's own mode, with no tree listed.
+        link = listed.get("mode") == LINK_MODE
+        file = entry(listed["path"], listed["status"], diff, added_lines(diff), old=listed.get("old"), link=link)
         files.append(file)
         # A file the operator's skip list names: the rules read it as any other, the guidelines are not shown it,
         # and it is named and counted, never a hole. The operator chose it, in the tool's own config: a branch

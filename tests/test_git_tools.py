@@ -24,6 +24,7 @@ from conftest import (
     _branch_off_empty,
     _committed,
     _git_in,
+    _link_staged,
     gathered,
     missing_objects,
     run_review,
@@ -687,8 +688,7 @@ class TestWhatALinkPointsAt:
         _git_in(repo, "checkout", "-q", "-b", "change")
         if adding:  # before the link: `_committed` adds every change, and the link is in no working tree
             _committed(repo, *adding)
-        blob = _git_in(repo, "hash-object", "-w", "--stdin", stdin=target)
-        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{blob},run.py")
+        _link_staged(repo, "run.py", target)
         _git_in(repo, "commit", "-qm", "a link")
         return repo
 
@@ -759,12 +759,6 @@ class TestWhatALinkPointsAt:
         found = run_rules(evidence, [PinnedActions()])["rule.pinned-actions"].findings
         assert [(f.file, f.line) for f in found] == [(".github/workflows/ci.yml", 5)], found
 
-    @staticmethod
-    def _link(repo: Path, path: str, target: str) -> None:
-        """A link at `path` naming `target`, staged through git's plumbing, so no file system need hold one."""
-        blob = _git_in(repo, "hash-object", "-w", "--stdin", stdin=target)
-        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{blob},{path}")
-
     def test_a_link_to_a_file_the_change_only_modifies_is_a_hole(self, tmp_path: Path) -> None:
         """Read by review: a file the change modifies counted as shown whole, though the guidelines saw one hunk of it,
         so a link to a file whose shell call the change did not touch was no hole, the call read by no guideline. Only
@@ -776,7 +770,7 @@ class TestWhatALinkPointsAt:
         _committed(repo, "docs/example.txt", body, "base")
         _git_in(repo, "checkout", "-q", "-b", "change")
         _committed(repo, "docs/example.txt", body.replace("x20 = 20", "x20 = 21"), "an edit far from the call")
-        self._link(repo, "run.py", "docs/example.txt")
+        _link_staged(repo, "run.py", "docs/example.txt")
         _git_in(repo, "commit", "-qm", "a link")
         assert "symbolic link" in gathered(repo, "change")["run.py"]["unread"]
 
@@ -788,7 +782,7 @@ class TestWhatALinkPointsAt:
         repo.mkdir()
         _git_in(repo, "init", "-q", "-b", BASE)
         _committed(repo, "scripts/helper.txt", "import os\nos.system(input())\n", "a helper")
-        self._link(repo, "tools/run.py", "helper.txt")
+        _link_staged(repo, "tools/run.py", "helper.txt")
         _git_in(repo, "commit", "-qm", "a link")
         _git_in(repo, "checkout", "-q", "-b", "change")
         blob = _git_in(repo, "rev-parse", "HEAD:tools/run.py")
@@ -810,10 +804,10 @@ class TestWhatALinkPointsAt:
         repo.mkdir()
         _git_in(repo, "init", "-q", "-b", BASE)
         _committed(repo, "assets/logo.png", "import os\nos.system(input())\n", "an image")
-        self._link(repo, "mid", "assets/logo.png")
+        _link_staged(repo, "mid", "assets/logo.png")
         _git_in(repo, "commit", "-qm", "a link")
         _git_in(repo, "checkout", "-q", "-b", "change")
-        self._link(repo, "run.py", "mid")
+        _link_staged(repo, "run.py", "mid")
         _git_in(repo, "commit", "-qm", "a link to the link")
         evidence = importlib.import_module("adk_review.collect.git").collect_evidence(
             str(repo), BASE, "change", guidelines=False

@@ -33,7 +33,7 @@ class Entry(TypedDict):
     cut: bool  # whether the guidelines' view of it is cut: at the diff cap, or past the block's
     text: str | None  # its text at the head, for the file rules; None where not read, or once let go
     #: Why its text was not read whole, a hole for a rule that reads it whole, and for a link one for each line rule
-    #: too; None otherwise.
+    #: too, from the start until the file it names is read; None otherwise.
     unread_text: str | None
     target: NotRequired[str]  # the file a symbolic link names, whose text it holds, every line new under its name
     #: A symbolic link, known from the change's own mode: its lines are the file it names, which the line rules read
@@ -54,6 +54,7 @@ def entry(
     *,
     old: str | None = None,
     text: str | None = None,
+    link: bool = False,
 ) -> Entry:
     """One changed file as it first stands, before the guidelines' view and the head's text are added: every key
     spelled once, `added_at` derived once. Measured before it was spelled: the collector and `--try` each built the
@@ -73,6 +74,8 @@ def entry(
     }
     if old is not None:
         made["old"] = old
+    if link:
+        made["link"] = True
     return made
 
 

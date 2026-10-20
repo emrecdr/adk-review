@@ -1147,6 +1147,16 @@ def test_the_history_a_push_sends_reads_no_third_party_code(tmp_path) -> None:
     assert found and all("notes.md:1" in place for place in found), found
 
 
+def _cut_reason(rule: str, why: str) -> str:
+    """A reason the JSON cuts, as `rule` gives it for four files named past the cap, each a path then `why`: sized
+    from the cap, so one raised leaves it past the cap still."""
+    from adk_review.core.text import REASON_MAX_CHARS, cut_at
+
+    width = REASON_MAX_CHARS // 3  # four files whose names pass the cap together, none alone
+    long = "; ".join(f"{'x' * width}_{n}{why}" for n in range(4))
+    return cut_at(f"rule {rule} could not look: {long}", REASON_MAX_CHARS)
+
+
 def test_a_file_every_review_of_a_merge_could_not_read_stops_it_and_each_sides_own_does_not() -> None:
     """Read by review: a merge's reviews were weighed by each hole's whole sentence, which names every file the check
     could not read, so a new file too large to read, named beside the other side's in one review and alone in the
@@ -1161,10 +1171,7 @@ def test_a_file_every_review_of_a_merge_could_not_read_stops_it_and_each_sides_o
     assert stops("new.py", "theirs.py") & stops("new.py"), "the new file goes unread in every review"
     assert not stops("theirs.py") & stops("ours.py"), "each review reads the other side's file, which the remote holds"
     # Read by the next review: the JSON cuts a reason at its cap, so a file named past the cut was weighed by none.
-    from adk_review.core.text import REASON_MAX_CHARS, cut_at
-
-    long = "; ".join(f"{'x' * 140}_{n}_pb2.py was not read whole" for n in range(4))
-    said = cut_at(f"rule lint could not look: {long}", REASON_MAX_CHARS)
+    said = _cut_reason("lint", "_pb2.py was not read whole")
     assert push._stops({"could_not_look": {"rule.lint": said}}) is None, "what stopped it is not known whole"
 
 
@@ -1174,10 +1181,7 @@ def test_a_merge_one_review_passes_is_pushed_though_another_stopped_on_a_reason_
     on the side the remote held, stopped a merge the other review passed. Every base is reviewed, and one review that
     passes clears the merge; where none does, a reason not known whole still stops it."""
     push = importlib.import_module("adk_review.push")
-    from adk_review.core.text import REASON_MAX_CHARS, cut_at
-
-    long = "; ".join(f"{'x' * 140}_{n}.yaml was not followed" for n in range(4))
-    said = cut_at(f"rule secrets could not look: {long}", REASON_MAX_CHARS)
+    said = _cut_reason("secrets", ".yaml was not followed")
 
     def merged(passes: str) -> tuple[int, str] | None:
         def review(argv: list[str]) -> int:

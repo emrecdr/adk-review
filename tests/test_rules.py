@@ -19,6 +19,8 @@ from conftest import (
     _committed,
     _entry,
     _git_in,
+    _link_on_branch,
+    _link_staged,
     _with_profiles,
     catalog,
     in_tags,
@@ -989,8 +991,8 @@ class TestTheCleanupAndThePitfalls:
         from adk_review.core.rules import run_rule
         from adk_review.judge.rules.secrets import Secrets
 
-        link = entry("settings.yaml", "A", None, [(1, "conf/real.yaml")])
-        link |= {"link": True, "target": "conf/real.yaml", "unread_text": "was not read whole"}
+        link = entry("settings.yaml", "A", None, [(1, "conf/real.yaml")], link=True)
+        link |= {"target": "conf/real.yaml", "unread_text": "was not read whole"}
         checked = run_rule(Secrets(), [link], None)
         assert checked.could_not_look is not None, "a link not read is a hole, never silence"
         assert "settings.yaml was not read whole" in checked.could_not_look, checked.could_not_look
@@ -1001,18 +1003,19 @@ class TestTheCleanupAndThePitfalls:
         line rule that reads it names the hole."""
         repo = tmp_path / "r"
         repo.mkdir()
-        _git_in(repo, "init", "-q", "-b", "main")
-        _committed(repo, "app.py", "x = 1\n")
-        _git_in(repo, "update-index", "--add", "--cacheinfo", f"160000,{_git_in(repo, 'rev-parse', 'HEAD')},shared")
-        link = _git_in(repo, "hash-object", "-w", "--stdin", stdin="shared/settings.yaml")
-        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{link},old/settings.yaml")
+        _git_in(repo, "init", "-q", "-b", BASE)
+        commit = _committed(repo, "app.py", "x = 1\n")
+        _git_in(repo, "update-index", "--add", "--cacheinfo", f"160000,{commit},shared")
+        _link_staged(repo, "old/settings.yaml", "shared/settings.yaml")
         _git_in(repo, "commit", "-qm", "a link naming a file inside a submodule")
-        _git_in(repo, "checkout", "-qb", "feature")
+        _git_in(repo, "checkout", "-qb", HEAD)
         _git_in(repo, "update-index", "--force-remove", "old/settings.yaml")
-        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{link},settings.yaml")
+        _link_staged(repo, "settings.yaml", "shared/settings.yaml")
         _git_in(repo, "commit", "-qm", "the link moved whole")
-        assert cli.main([str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules"]) == 3
-        assert "settings.yaml was not followed to the file it names" in capsys.readouterr().out
+        assert run_review(cli, repo, "--profile", "default-rules") == 3
+        out = capsys.readouterr().out
+        for rule in ("secrets", "named-secrets"):  # each line rule that reads it, not one section of the report
+            assert f"rule {rule} could not look: settings.yaml was not followed to the file it names" in out, out
 
     def test_a_link_is_a_hole_for_the_line_rules_where_the_heads_tree_was_not_listed(
         self, cli, tmp_path: Path, capsys, monkeypatch
@@ -1022,30 +1025,30 @@ class TestTheCleanupAndThePitfalls:
         link is known from the change's own mode, as the head's tree need not be listed to know it."""
         from adk_review.collect import git
 
-        repo = tmp_path / "r"
-        repo.mkdir()
-        _git_in(repo, "init", "-q", "-b", BASE)
-        _committed(repo, "conf/real.yaml", "github_token: ghp_" + "a1B2c3D4e5" * 4 + "\n")
-        _git_in(repo, "checkout", "-qb", HEAD)
-        link = _git_in(repo, "hash-object", "-w", "--stdin", stdin="conf/real.yaml")
-        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{link},settings.yaml")
-        _git_in(repo, "commit", "-qm", "a link to the file holding the token")
+        repo = _link_on_branch(tmp_path, "conf/real.yaml", KEY_LINE, "settings.yaml")
         monkeypatch.setattr(git, "head_listing", lambda *_args, **_kwargs: None)
         assert run_review(cli, repo, "--profile", "default-rules") == 3
         assert "settings.yaml was not read" in capsys.readouterr().out
+
+    def test_a_link_no_step_of_the_read_marks_is_a_hole_for_the_line_rules(
+        self, cli, tmp_path: Path, capsys, monkeypatch
+    ) -> None:
+        """Read by review, round after round: a link one step of the read passed over, not followed, not read, binary
+        or out of `scan`, was read as its own path and approved, and each fix marked one step more. A link is a hole
+        from the start, until the file it names is read as text: one the head's listing names no link is a hole too."""
+        from adk_review.collect import git
+
+        repo = _link_on_branch(tmp_path, "conf/real.yaml", KEY_LINE, "settings.yaml")
+        monkeypatch.setattr(git, "_links", lambda _listing: {})
+        assert run_review(cli, repo, "--profile", "default-rules") == 3
+        assert "settings.yaml was not read as the file it names" in capsys.readouterr().out
 
     def test_a_link_to_a_binary_file_is_a_hole_as_that_file_is_with_no_model(self, cli, tmp_path: Path, capsys) -> None:
         """Read by review: a link to a binary file set nothing, so under the pre-push hook's profile it was read as its
         own path and approved, where the same bytes committed under its name were a hole. A PNG with a zip appended
         runs as Python through `python run.py`. The link is named not read, as the binary file is."""
-        repo = tmp_path / "r"
-        repo.mkdir()
-        _git_in(repo, "init", "-q", "-b", BASE)
-        _committed(repo, "assets/logo.png", b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + b"\x00" * 64)
-        _git_in(repo, "checkout", "-qb", HEAD)
-        link = _git_in(repo, "hash-object", "-w", "--stdin", stdin="assets/logo.png")
-        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{link},run.py")
-        _git_in(repo, "commit", "-qm", "a script that runs the image")
+        png = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR" + b"\x00" * 64
+        repo = _link_on_branch(tmp_path, "assets/logo.png", png, "run.py")
         assert run_review(cli, repo, "--profile", "default-rules") == 3
         out = capsys.readouterr().out
         assert "run.py" in out and "binary: no line of it can be read or quoted" in out, out
@@ -1054,29 +1057,23 @@ class TestTheCleanupAndThePitfalls:
         """Read by review: the NUL that makes a link's file binary was looked for in its first 8,000 characters, where
         git counts bytes, so 4,500 two-byte letters and then a NUL read as binary here and as text to git, and the
         key after them went unread."""
-        repo = tmp_path / "r"
-        repo.mkdir()
-        _git_in(repo, "init", "-q", "-b", BASE)
-        _committed(repo, "assets/notes.dat", "\u00e9" * 4_500 + "\x00\n" + KEY_LINE)
-        _git_in(repo, "checkout", "-qb", HEAD)
-        link = _git_in(repo, "hash-object", "-w", "--stdin", stdin="assets/notes.dat")
-        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{link},settings.yaml")
-        _git_in(repo, "commit", "-qm", "a link to the notes")
+        repo = _link_on_branch(tmp_path, "assets/notes.dat", "é" * 4_500 + "\x00\n" + KEY_LINE, "settings.yaml")
         assert run_review(cli, repo, "--profile", "default-rules") == 1
         assert "settings.yaml:2" in capsys.readouterr().out
+
+    def test_a_links_file_counts_a_byte_utf8_could_not_read_as_git_counts_it(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: a byte UTF-8 could not read became U+FFFD, three bytes when encoded again, so 3,000 such
+        bytes and then a NUL read as text here, the NUL past 8,000, where git, counting the file's own bytes, read a
+        binary file. Each such character counts as one byte, never past where git looks."""
+        repo = _link_on_branch(tmp_path, "assets/notes.dat", b"\x80" * 3_000 + b"\x00\n" + KEY_LINE.encode(), "run.py")
+        assert run_review(cli, repo, "--profile", "default-rules") == 3
+        assert "binary: no line of it can be read or quoted" in capsys.readouterr().out
 
     def test_the_credential_rules_read_the_file_a_link_out_of_scan_names(self, cli, tmp_path: Path, capsys) -> None:
         """Read by review: the credential rules read the project's own files of every kind, but a link of a kind
         `scan` leaves out was never followed, so they read only its path: `notes.txt`, a link to a file holding a key,
         was approved where `settings.yaml`, the same link, was a blocker."""
-        repo = tmp_path / "r"
-        repo.mkdir()
-        _git_in(repo, "init", "-q", "-b", BASE)
-        _committed(repo, "conf/real.yaml", KEY_LINE)
-        _git_in(repo, "checkout", "-qb", HEAD)
-        link = _git_in(repo, "hash-object", "-w", "--stdin", stdin="conf/real.yaml")
-        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{link},notes.txt")
-        _git_in(repo, "commit", "-qm", "notes that are the config")
+        repo = _link_on_branch(tmp_path, "conf/real.yaml", KEY_LINE, "notes.txt")
         assert run_review(cli, repo, "--profile", "default-rules") == 1
         assert "notes.txt:1" in capsys.readouterr().out
 
