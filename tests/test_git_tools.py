@@ -1392,7 +1392,7 @@ class TestWhatALargeFileStoreHides:
         code, no pointer, and approved, where Git LFS smudges in the file it stores. Measured with git-lfs 3.8.0."""
         from adk_review.collect.change import POINTER_BYTES, pointer_text
 
-        head = f"version https://git-lfs.github.com/spec/v1\noid sha256:{'a' * 64}\nsize 9\n"
+        head = POINTER
         pad = "\u3000" * ((POINTER_BYTES - len(head.encode())) // 3)
         filled = head + pad + " " * (POINTER_BYTES - len((head + pad).encode()) - short)
         assert len(filled.encode()) == POINTER_BYTES - short

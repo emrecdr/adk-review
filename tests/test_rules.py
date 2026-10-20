@@ -1079,17 +1079,35 @@ class TestTheCleanupAndThePitfalls:
         assert run_review(cli, repo, "--profile", "default-rules") == 1
         assert "settings.yaml:2" in capsys.readouterr().out
 
-    def test_a_link_the_review_ignores_to_a_file_too_large_to_read_is_no_hole(
-        self, cli, tmp_path: Path, monkeypatch
+    def test_a_link_the_review_ignores_whose_file_was_not_read_is_a_hole_unless_the_skip_list_names_it(
+        self, cli, tmp_path: Path, capsys, monkeypatch
     ) -> None:
-        """Read by review: `hero.png`, a link to an image past the size limits, was a hole for the credential rules,
-        which no skip list could clear, so every push that touched it stopped. A link of a kind `scan` leaves out is
-        read for its credentials where it can be, and is never a hole, as a file of its kind is none."""
+        """Read by review: a link `scan` leaves out was made no hole where its file was not read, so `notes.txt`, a link
+        to a file past the size limits holding a key, was approved, where a plain file of its kind is read through its
+        own diff. Its lines are that file's: one not read is a hole for the credential rules that read it. The
+        operator's skip list clears it: `hero.png`, a link to an image past the limits, stopped every push before."""
         from adk_review.collect import git
 
         monkeypatch.setattr(git, "MAX_FILE_BYTES", 1_000)
-        repo = _link_on_branch(tmp_path, "assets/hero.png", b"\x89PNG\r\n\x1a\n\x00" + bytes(2_000), "hero.png")
-        assert run_review(cli, repo, "--profile", "default-rules") == 0
+        repo = _link_on_branch(tmp_path, "vendor/lib/data.txt", KEY_LINE + "x" * 2_000 + "\n", "notes.txt")
+        assert run_review(cli, repo, "--profile", "default-rules") == 3
+        assert "notes.txt was not read whole" in capsys.readouterr().out
+        image = _link_on_branch(
+            tmp_path / "png", "assets/hero.png", b"\x89PNG\r\n\x1a\n\x00" + bytes(2_000), "hero.png"
+        )
+        assert run_review(cli, image, "--profile", "default-rules") == 0, "the shipped skip list names `*.png`"
+
+    def test_a_link_the_review_ignores_is_a_hole_where_the_heads_tree_was_not_listed(
+        self, cli, tmp_path: Path, capsys, monkeypatch
+    ) -> None:
+        """Read by review: where git could not list the head's tree, a link `scan` leaves out was cleared as no hole,
+        so the key in the file it names was approved, and kept in the cache. It names why it was not read."""
+        from adk_review.collect import git
+
+        repo = _link_on_branch(tmp_path, "conf/real.yaml", KEY_LINE, "other.txt")
+        monkeypatch.setattr(git, "head_listing", lambda *_args, **_kwargs: None)
+        assert run_review(cli, repo, "--profile", "default-rules") == 3
+        assert "other.txt was not read: the head's tree could not be listed" in capsys.readouterr().out
 
     def test_a_link_to_a_git_lfs_pointer_is_named_not_read_as_the_pointer_is(self, cli, tmp_path: Path, capsys) -> None:
         """Read by review: a link naming a Git LFS pointer was a hole for each rule that reads it, so `docs/hero.png`,
@@ -1102,13 +1120,11 @@ class TestTheCleanupAndThePitfalls:
         out = capsys.readouterr().out
         assert "run.py" in out and "a Git LFS pointer: the file's content is stored elsewhere" in out, out
 
-    def test_links_the_review_ignores_come_last_in_the_budget_and_are_never_a_hole(
-        self, cli, tmp_path: Path, monkeypatch
+    def test_links_the_review_ignores_come_after_every_file_it_reads_in_the_budget(
+        self, tmp_path: Path, monkeypatch
     ) -> None:
         """Read by review: links of a kind `scan` leaves out, read for the credential rules alone, shared the tree's
-        budget with the files a review reads, ahead of a larger config, and each one the budget left out was a hole:
-        24 links to pages stopped the push, and the config went unread. They come after every file the review reads,
-        and one past the budget is no hole, as a file of their kind is none."""
+        budget with the files a review reads, ahead of a larger config, which went unread. They come after them."""
         from adk_review.collect import git
         from adk_review.judge.catalog import CONFIG, load_config
 
@@ -1125,9 +1141,22 @@ class TestTheCleanupAndThePitfalls:
         for n in range(24):  # after the commit, which would take back a link no working tree holds
             _link_staged(repo, f"l{n:02}.md", f"docs/p{n:02}.md")
         _git_in(repo, "commit", "-qm", "links to the pages")
-        assert run_review(cli, repo, "--profile", "default-rules") == 0, "a link the review ignores is no hole"
         scan = load_config(CONFIG)["review"]["scan"]  # the shipped one, which leaves `.md` out
         assert gathered(repo, HEAD, guidelines=False, scan=scan)["conf/app.yaml"]["text"] is not None, "read first"
+
+    def test_links_that_name_one_file_spend_the_budget_on_it_once(self, cli, tmp_path: Path, monkeypatch) -> None:
+        """Read by review: each link charged the file it names to the tree's budget again, so 24 links to one config
+        spent it, and the last were holes, though the batch reads a blob once. A path is charged as its own only where
+        it is parsed and linted as its own, as Python's is."""
+        from adk_review.collect import git
+
+        monkeypatch.setattr(git, "MAX_FILE_BYTES", 1_000)
+        monkeypatch.setattr(git, "MAX_TREE_BYTES", 20_000)
+        repo = _link_on_branch(tmp_path, "conf/base.yaml", "name: base\n# " + "y" * 880 + "\n", "env00.yaml")
+        for n in range(1, 24):
+            _link_staged(repo, f"env{n:02}.yaml", "conf/base.yaml")
+        _git_in(repo, "commit", "-qm", "more links to the config")
+        assert run_review(cli, repo, "--profile", "default-rules") == 0
 
     def test_the_credential_rules_read_the_file_a_link_out_of_scan_names(self, cli, tmp_path: Path, capsys) -> None:
         """Read by review: the credential rules read the project's own files of every kind, but a link of a kind

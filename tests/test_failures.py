@@ -1188,10 +1188,11 @@ def test_a_merge_one_review_passes_is_pushed_though_another_stopped_on_a_reason_
     assert merged(passes="neither") is not None, "no review passes, and what stopped one is not known whole"
 
 
-def test_a_merge_review_that_ends_with_no_report_stops_the_push_at_once(monkeypatch) -> None:
+def test_a_merge_review_interrupted_or_ending_with_no_report_stops_the_push_at_once(monkeypatch) -> None:
     """Read by review: once each base of a merge was reviewed, a review cut short, Ctrl-C's 130 or a job's SIGTERM,
     143, wrote no report, which read as a reason not known, and the next base's review ran and, passing, let the push
-    through. A review that ends with no report, interrupted or failed, stops the push at once."""
+    through; one interrupted a moment after its report was written did so too. A review interrupted, or that ends
+    with no report, stops the push at once."""
     push = importlib.import_module("adk_review.push")
 
     def merged(code: int, *, reported: bool) -> tuple[tuple[int, str] | None, list[str]]:

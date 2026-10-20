@@ -22,10 +22,10 @@ _HUNK_START = re.compile(r"^@@ -\S+ \+(\d+)(,0\b)?")
 _ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
 #: What a reader, or `str.splitlines`, breaks a line at besides "\n": a lone `\r`, a form feed, U+2028 among them.
 _BREAKS = re.compile("[\r\x0b\x0c\x1c-\x1e\x85\u2028\u2029]")
-BINARY = re.compile(r"^Binary files .* differ$", re.MULTILINE)
-SUBMODULE = re.compile(r"^(?:new file mode|index \S+) 160000$", re.MULTILINE)
 #: Git's modes for a symbolic link and a submodule, in a listing of the change or of the head's tree.
 LINK_MODE, SUBMODULE_MODE = "120000", "160000"
+BINARY = re.compile(r"^Binary files .* differ$", re.MULTILINE)
+SUBMODULE = re.compile(rf"^(?:new file mode|index \S+) {SUBMODULE_MODE}$", re.MULTILINE)
 
 
 #: A hunk header and the text git prints after it: its guess at the function around the hunk, a line from above it, cut
