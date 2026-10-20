@@ -84,8 +84,6 @@ max-complexity = 10
 "scripts/make_demo_repo.py" = ["S607"]
 "scripts/measure.py" = ["S607"]
 "tests/*" = ["S607"]
-# The Copilot login's `main`, one device-flow conversation read top to bottom, is the one function past the bar.
-"adk_review/login.py" = ["C901"]
 
 [tool.pyrefly]
 # The tests are not type checked, in `make typecheck`, CI or an editor: they hand the code partial and wrong values on

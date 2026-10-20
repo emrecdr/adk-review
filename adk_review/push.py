@@ -185,30 +185,46 @@ def in_history(repository: str, remote: str | None, head: str, held: str | None,
     unless the operator's skip list names it, as a review of the change names one."""
     config = load_config(CONFIG)
     rules = history_rules(config)  # first: a profile that cannot read a commit is refused before git runs
-    skip, scan, third_party = (config["review"][key] for key in ("skip", "scan", "third_party"))
     said = [(tag, message, []) for tag, message in tag_messages(repository, head)]  # a tag's words are in no commit
     merged = merged_tags(repository, remote, head, held, read)
-    found = []
-    for commit, message, everything in itertools.chain(said, sent(repository, remote, head, held, read)):
-        mine = [f for f in everything if not matches(f["path"], *third_party)]  # another project's code: never read
-        files = [f for f in mine if in_review(f["path"], scan, third_party)]  # as a review reads a change
-        for f in files:
-            if (f.get("binary") or f.get("pointer")) and not matches(f["path"], *skip):
-                kind = "a binary file, which" if f.get("binary") else "a Git LFS pointer, whose file"
-                found.append(f"{_named(commit)}, {f['path']}: {kind} no rule can read")
-        # As a line rule reads a change: a path and the lines added. The message is all added, and so is a tag a merge
-        # carries; a file's letter is not read here.
-        told = [
-            entry(MESSAGE, "A", None, list(enumerate(lines_of(message), 1))),
-            *([entry(MERGED, "A", None, list(enumerate(lines_of(merged[commit]), 1)))] if commit in merged else []),
-        ]
-        for rule in rules:
-            given = mine if rule.reads_every_kind else files  # a credential rule reads the project's own of every kind
-            answer = run_rule(rule, [*told, *(entry(f["path"], "M", None, f["added"]) for f in given)], None)
-            found += [f"{_named(commit)}, {_where(f)}: {rule.title} ({rule.check_id})" for f in answer.findings]
-            if answer.could_not_look:
-                found.append(f"{_named(commit)}: {answer.could_not_look}")
+    return [
+        place
+        for commit, message, everything in itertools.chain(said, sent(repository, remote, head, held, read))
+        for place in _commit_places(commit, message, merged.get(commit), everything, rules, config["review"])
+    ]
+
+
+def _commit_places(
+    commit: str, message: str, merged: str | None, everything: list[dict], rules: Sequence[AnyRule], review: dict
+) -> list[str]:
+    """What the history rules find in one commit, or in a tag's words: each file no rule can read, and each finding or
+    hole of a rule over the lines it added, its message and a tag a merge carries."""
+    mine = [f for f in everything if not matches(f["path"], *review["third_party"])]  # another project's: never read
+    files = [f for f in mine if in_review(f["path"], review["scan"], review["third_party"])]  # as a review reads one
+    found = [_unreadable(commit, f) for f in files if _unread_kind(f) and not matches(f["path"], *review["skip"])]
+    # As a line rule reads a change: a path and the lines added. The message is all added, and so is a tag a merge
+    # carries; a file's letter is not read here.
+    told = [entry(MESSAGE, "A", None, list(enumerate(lines_of(message), 1)))]
+    if merged is not None:
+        told.append(entry(MERGED, "A", None, list(enumerate(lines_of(merged), 1))))
+    for rule in rules:
+        given = mine if rule.reads_every_kind else files  # a credential rule reads the project's own of every kind
+        answer = run_rule(rule, [*told, *(entry(f["path"], "M", None, f["added"]) for f in given)], None)
+        found += [f"{_named(commit)}, {_where(f)}: {rule.title} ({rule.check_id})" for f in answer.findings]
+        if answer.could_not_look:
+            found.append(f"{_named(commit)}: {answer.could_not_look}")
     return found
+
+
+def _unread_kind(file: dict) -> bool:
+    """Whether a commit's file is one no rule can read: a binary one, or a Git LFS pointer."""
+    return bool(file.get("binary") or file.get("pointer"))
+
+
+def _unreadable(commit: str, file: dict) -> str:
+    """The place a commit's file no rule can read is named at, with why."""
+    kind = "a binary file, which" if file.get("binary") else "a Git LFS pointer, whose file"
+    return f"{_named(commit)}, {file['path']}: {kind} no rule can read"
 
 
 def _where(finding: Finding) -> str:

@@ -637,6 +637,32 @@ def _as_linked(through: list[tuple[Entry, str]], texts: Mapping[str, str]) -> No
             entry["text"], entry["added_at"] = text, frozenset(range(1, len(lines_of(text)) + 1))
 
 
+def _split(
+    entries: list[dict], scan: Sequence[str], third_party: Sequence[str]
+) -> tuple[list[dict], list[dict], list[str]]:
+    """The changed files a review reads; the project's own of every other kind, for the credential rules alone, never
+    a submodule or another project's code; and the paths of every file the review ignores. A file moved or copied out
+    of one its readers never saw is read whole, as one the change adds: no review read it where it lay."""
+    own = [entry for entry in entries if _reviewed(entry, scan, third_party)]
+    kept = {entry["path"] for entry in own}
+    others = [
+        entry
+        for entry in entries
+        if entry["path"] not in kept and entry["mode"] != "160000" and not matches(entry["path"], *third_party)
+    ]
+    _added_whole(own, lambda old: not in_review(old, scan, third_party))
+    _added_whole(others, lambda old: matches(old, *third_party))
+    return own, others, sorted({entry["path"] for entry in entries} - kept)
+
+
+def _added_whole(entries: list[dict], unseen: Callable[[str], bool]) -> None:
+    """Each entry moved or copied out of a path `unseen` names, read as one the change adds."""
+    for entry in entries:
+        if "old" in entry and unseen(entry["old"]):
+            del entry["old"]
+            entry["status"] = "A"
+
+
 def _reviewed(entry: Mapping[str, str], scan: Sequence[str], third_party: Sequence[str]) -> bool:
     """Whether a review reads a changed file, as `in_review` says; a submodule, another repository's commit and a hole,
     by its folder alone. Read by review: one named `nanopb-0.4.7` read as a file with the suffix `.7`, ignored."""
@@ -796,24 +822,7 @@ def gather(
     try:
         listed = list_changed(resolved)
         entries = [entry for entry in listed if in_scope(entry["path"], scope)]
-        own = [entry for entry in entries if _reviewed(entry, scan, third_party)]
-        ignored = sorted({entry["path"] for entry in entries} - {entry["path"] for entry in own})
-        for entry in own:  # moved or copied out of a file the review ignores, which no review read: all of it is new
-            if "old" in entry and not in_review(entry["old"], scan, third_party):
-                del entry["old"]
-                entry["status"] = "A"
-        # The project's own files of every other kind, for the credential rules alone: never a submodule, never
-        # another project's code. One moved out of another project's code is new to them too.
-        kept = {entry["path"] for entry in own}
-        others = [
-            entry
-            for entry in entries
-            if entry["path"] not in kept and entry["mode"] != "160000" and not matches(entry["path"], *third_party)
-        ]
-        for entry in others:
-            if "old" in entry and matches(entry["old"], *third_party):
-                del entry["old"]
-                entry["status"] = "A"
+        own, others, ignored = _split(entries, scan, third_party)
         files, block, excluded = _read_change(resolved, own, scope, guidelines=guidelines, diff_cap=diff_cap, skip=skip)
         unscanned = _read_change(resolved, others, scope, guidelines=False, diff_cap=diff_cap, skip=skip)[0]
         away = untracked(resolved) if resolved.get("staged") else None

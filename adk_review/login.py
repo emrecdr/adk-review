@@ -19,6 +19,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import truststore
 from dotenv import dotenv_values
@@ -66,15 +67,7 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="adk-review-login", description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--force", action="store_true", help="log in again although a token is cached")
     args = parser.parse_args(argv)
-    try:  # the reviewer reads `.env`; the login reads of it what names Copilot's endpoints, an enterprise tenant's say
-        for key, value in dotenv_values(ROOT / ".env").items():
-            if key.startswith("GITHUB_COPILOT_") and value:
-                os.environ.setdefault(key, value)  # the shell wins over the file, as it does for the reviewer
-    except UnicodeDecodeError:
-        print(
-            "[copilot] the central .env is not UTF-8. Save it as UTF-8: Windows PowerShell 5.1's `>` writes UTF-16",
-            file=sys.stderr,
-        )
+    if not _endpoints_from_env():
         return 1
     token = token_path()
     if token.is_file() and token.stat().st_size and not args.force:  # an empty file is no token, to the reviewer too
@@ -87,7 +80,7 @@ def main(argv: list[str]) -> int:
         DEFAULT_GITHUB_CLIENT_ID,
         Authenticator,
     )
-    from litellm.llms.github_copilot.common_utils import GetAPIKeyError, GetDeviceCodeError
+    from litellm.llms.github_copilot.common_utils import GetDeviceCodeError
 
     auth = Authenticator()
     try:
@@ -117,22 +110,7 @@ def main(argv: list[str]) -> int:
             except httpx.HTTPError as exc:  # the network went away between two polls
                 return unreachable(exc)
             if access_token := data.get("access_token"):
-                auth._ensure_token_dir()
-                token.write_text(access_token, encoding="utf-8")
-                try:
-                    auth.get_api_key()  # exchange it once now, so a failure shows here and not in a review
-                except GetAPIKeyError as exc:  # GitHub knows the account; Copilot serves it no key
-                    token.unlink()  # kept, the reviewer would read it as ready and fail at its first call instead
-                    print(f"[copilot] GitHub signed you in, but Copilot gave no key: {exc}", file=sys.stderr)
-                    print(
-                        "[copilot] usually that account has no Copilot seat. A proxy that blocks api.github.com reads "
-                        "the same. Run this again with an account that has one",
-                        file=sys.stderr,
-                    )
-                    return 1
-                keep_private(token.parent)
-                print(f"[copilot] done: token cached at {token}")
-                return 0
+                return _stored(auth, token, access_token)
             error = data.get("error")
             if error == "slow_down":
                 interval += 5
@@ -141,6 +119,45 @@ def main(argv: list[str]) -> int:
                 return 1
     print("[copilot] the code expired before you approved it. Run this again", file=sys.stderr)
     return 1
+
+
+def _endpoints_from_env() -> bool:
+    """Read of `.env` what names Copilot's endpoints, an enterprise tenant's say, the shell winning over the file as it
+    does for the reviewer. False, said, where the file is not UTF-8."""
+    try:
+        for key, value in dotenv_values(ROOT / ".env").items():
+            if key.startswith("GITHUB_COPILOT_") and value:
+                os.environ.setdefault(key, value)
+    except UnicodeDecodeError:
+        print(
+            "[copilot] the central .env is not UTF-8. Save it as UTF-8: Windows PowerShell 5.1's `>` writes UTF-16",
+            file=sys.stderr,
+        )
+        return False
+    return True
+
+
+def _stored(auth: Any, token: Path, access_token: str) -> int:
+    """Keep GitHub's token, and exchange it once now, so a failure shows here and not in a review: exit 0, or 1 where
+    Copilot serves the account no key, the token then removed, since the reviewer would read it as ready."""
+    from litellm.llms.github_copilot.common_utils import GetAPIKeyError
+
+    auth._ensure_token_dir()
+    token.write_text(access_token, encoding="utf-8")
+    try:
+        auth.get_api_key()
+    except GetAPIKeyError as exc:  # GitHub knows the account; Copilot serves it no key
+        token.unlink()
+        print(f"[copilot] GitHub signed you in, but Copilot gave no key: {exc}", file=sys.stderr)
+        print(
+            "[copilot] usually that account has no Copilot seat. A proxy that blocks api.github.com reads "
+            "the same. Run this again with an account that has one",
+            file=sys.stderr,
+        )
+        return 1
+    keep_private(token.parent)
+    print(f"[copilot] done: token cached at {token}")
+    return 0
 
 
 def run() -> int:

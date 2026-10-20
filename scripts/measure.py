@@ -191,38 +191,42 @@ def reviewed(
     selection = chosen(args)
     with tempfile.TemporaryDirectory() as scratch:
         report = Path(scratch) / "review.json"
-        first = True
-        for name, branch in branches.items():
-            for number in range(args.runs):
-                if not first and args.pause:
-                    time.sleep(args.pause)
-                first = False
-                command = review_command(repo, branch, report, selection, whole)
-                started = time.monotonic()
-                try:
-                    # A review's exit code is its verdict, 1 and 3 among the answers: read, never raised.
-                    done = subprocess.run(
-                        command,
-                        cwd=ROOT,
-                        capture_output=True,
-                        encoding="utf-8",
-                        errors="replace",
-                        timeout=TIMEOUT_S,
-                        check=False,
-                    )
-                    code, text = done.returncode, done.stdout
-                except subprocess.TimeoutExpired:
-                    code, text = None, ""
-                seconds = time.monotonic() - started
-                data = json.loads(report.read_text(encoding="utf-8")) if report.is_file() else None
-                report.unlink(missing_ok=True)
-                # The model and its arm, as the report names them: a measurement holds for the arm it ran on.
-                on = f", {data['model']}" if data and data.get("model") else ""
-                print(f"{name} run {number + 1}: exit {code}{on}", flush=True)
-                if limit := rate_limited(data):
-                    print(f"stopped at {name} run {number + 1}: {limit}; no run after it is made", flush=True)
-                    return
-                yield name, Review(code, data, text, seconds)
+        runs = [(name, branch, number) for name, branch in branches.items() for number in range(args.runs)]
+        for at, (name, branch, number) in enumerate(runs):
+            if at and args.pause:
+                time.sleep(args.pause)
+            code, text, seconds, data = _run_once(review_command(repo, branch, report, selection, whole), report)
+            # The model and its arm, as the report names them: a measurement holds for the arm it ran on.
+            on = f", {data['model']}" if data and data.get("model") else ""
+            print(f"{name} run {number + 1}: exit {code}{on}", flush=True)
+            if limit := rate_limited(data):
+                print(f"stopped at {name} run {number + 1}: {limit}; no run after it is made", flush=True)
+                return
+            yield name, Review(code, data, text, seconds)
+
+
+def _run_once(command: list[str], report: Path) -> tuple[int | None, str, float, dict | None]:
+    """One review, held to `TIMEOUT_S`: its exit code, None past the timeout, its text, its seconds, and the JSON
+    report it wrote, if any, which is then removed for the next run."""
+    started = time.monotonic()
+    try:
+        # A review's exit code is its verdict, 1 and 3 among the answers: read, never raised.
+        done = subprocess.run(
+            command,
+            cwd=ROOT,
+            capture_output=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=TIMEOUT_S,
+            check=False,
+        )
+        code, text = done.returncode, done.stdout
+    except subprocess.TimeoutExpired:
+        code, text = None, ""
+    seconds = time.monotonic() - started
+    data = json.loads(report.read_text(encoding="utf-8")) if report.is_file() else None
+    report.unlink(missing_ok=True)
+    return code, text, seconds, data
 
 
 def tally(counts: Counter[str]) -> str:

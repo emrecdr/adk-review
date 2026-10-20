@@ -104,6 +104,33 @@ def _release(evidence: Evidence) -> None:
         entry["text"] = entry["added"] = entry["diff"] = entry["shown"] = None
 
 
+async def _checked(
+    scope: dict | None, evidence: Evidence | None, gathered: Gatherer, rules: Sequence[AnyRule], stop: threading.Event
+) -> tuple[Evidence | str, dict[str, Checked]]:
+    """The evidence the rules read, the command's or the one chat gathers for `scope`, and each rule's answer: a hole
+    for each where nothing was gathered."""
+    import asyncio
+
+    found = evidence if evidence is not None else await asyncio.to_thread(_gather, scope, gathered)
+    if isinstance(found, str):
+        return found, {rule.check_id: _hole(found) for rule in rules}
+    return found, await asyncio.to_thread(run_rules, found, rules, stop)
+
+
+def _seen(found: Evidence | str) -> tuple[str, list[str], dict[str, dict]]:
+    """What chat's later agents read of what the node gathered: the change the guidelines read, the files the review
+    ignored, and each file as grounding reads it. None where nothing was gathered, so every guideline's guard skips
+    and names the hole. Measured before, chat's guidelines judged the intake model's retyping of its tools' replies,
+    cut at the tools' own cap and under no skip list, and a tool's error, repeated, read as a change. The command
+    seeds the change at the session's start, where no event carries it: measured, a state delta carried the diff
+    unredacted into `--debug-log`'s file. Chat grounds the guidelines' findings before its verdict, as the command
+    does after."""
+    if not isinstance(found, dict):
+        return "", [], {}
+    quotable = {f["path"]: {key: f[key] for key in ("quotable", "framing", "unread", "cut")} for f in found["files"]}
+    return found["diff"], found.get("ignored", []), quotable
+
+
 def build_checks(
     rules: Sequence[AnyRule],
     evidence: Evidence | None,
@@ -127,13 +154,7 @@ def build_checks(
         # stop, the thread ends at its next rule, and the review 2.6 to 3.1 s later.
         stop = threading.Event()
         try:
-            found = (
-                evidence if evidence is not None else await asyncio.to_thread(_gather, ctx.state.get(SCOPE), gathered)
-            )
-            if isinstance(found, str):
-                answers = {rule.check_id: _hole(found) for rule in rules}
-            else:
-                answers = await asyncio.to_thread(run_rules, found, rules, stop)
+            found, answers = await _checked(ctx.state.get(SCOPE), evidence, gathered, rules, stop)
         except asyncio.CancelledError:
             stop.set()
             raise
@@ -143,19 +164,8 @@ def build_checks(
         for check, answer in answers.items():
             ctx.state[state_key(check)] = answer.model_dump(mode="json")
         ctx.state[BLAST] = for_the_guidelines(found["blast"]) if isinstance(found, dict) else ""
-        # In chat, the change the guidelines read, from the evidence the rules read: none where nothing was gathered,
-        # so every guideline's guard skips it and names the hole. Measured before, chat's guidelines judged the intake
-        # model's retyping of its tools' replies, cut at the tools' own cap and under no skip list, and a tool's error,
-        # repeated, read as a change. The command seeds it at the session's start, where no event carries it:
-        # measured, a state delta carried the diff unredacted into `--debug-log`'s file. And each file as grounding
-        # reads it, beside it: chat grounds the guidelines' findings before its verdict, as the command does after.
         if evidence is None:
-            ctx.state[DIFF] = found["diff"] if isinstance(found, dict) else ""
-            ctx.state[IGNORED] = found.get("ignored", []) if isinstance(found, dict) else []
-            ctx.state[QUOTABLE] = {
-                f["path"]: {key: f[key] for key in ("quotable", "framing", "unread", "cut")}
-                for f in (found["files"] if isinstance(found, dict) else ())
-            }
+            ctx.state[DIFF], ctx.state[IGNORED], ctx.state[QUOTABLE] = _seen(found)
         else:  # read by the rules, not held through the guidelines' model calls
             _release(evidence)
 
