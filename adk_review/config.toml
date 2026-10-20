@@ -27,8 +27,8 @@ skip = [
 # credential's own files, keys and key stores, and what a coding agent or another tool obeys; --scan adds more for one
 # run, and an empty list reads every file. A file with no suffix is read whatever this names: a script that runs Python
 # is one, which only its first line tells; and so is a submodule, another repository's commit, a hole no rule can read.
-# Any other changed file is ignored: read by no rule and no guideline, parsed into no tree, read in no commit by the
-# pre-push hook, and listed in the report, never a hole.
+# Any other changed file is ignored: no guideline reads it and no tree parses it, and the report lists it, never a hole.
+# The credential rules alone still read the project's own, in a review and in each commit a push sends.
 scan = [
     # Python's own files, notebooks, and a `.pth`, which Python runs at every start
     "*.py", "*.pyi", "*.pyw", "*.pth", "*.ipynb",

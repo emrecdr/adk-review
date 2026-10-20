@@ -176,12 +176,13 @@ files, keys and key stores, and what a coding agent or another tool obeys, each 
 every file with no suffix, which a script that runs Python can be, as only its first line tells, and a submodule, a hole
 no rule can read. It never reads a file under a folder `third_party` names, other projects' code, vendored or installed:
 those named `vendor`, `third_party`, `_vendor`, `node_modules`, `site-packages`, `.venv` and their like, and `venv` at
-the top alone, a name a project's own package has too. Any other changed file is ignored: read by no rule and no
-guideline, parsed into no tree, read in no commit by the pre-push hook, and listed in the report, never a hole; a change
-of nothing else is approved, in chat as by the command. A file the change moves out of an ignored one is read whole, as
-one it adds: no review read it where it lay. Nor does a review read the environment it runs in: only the repository's
-own commits. Code a branch puts in an ignored file goes unreviewed too, a credential in a `README.md` or a shell script
-among it.
+the top alone, a name a project's own package has too. Any other changed file is ignored: no guideline reads it, no tree
+parses it, and the report lists it, never a hole. Only the two credential rules, `secrets` and `named-secrets`, still
+read the project's own files of every kind, in a review and in each commit a push sends: a key leaks from a README or a
+script as from code. No rule reads another project's code; a change of nothing else is approved, in chat as by the
+command. A file the change moves out of an ignored one is read whole, as one it adds: no review read it where it lay.
+Nor does a review read the environment it runs in: only the repository's own commits. Code a branch puts in an ignored
+file goes unreviewed too, but for its credentials.
 
 The model is set in the environment, or in the `.env` at the root of the reviewer's checkout; a variable set in the
 shell wins over the file:
@@ -372,8 +373,8 @@ What the hook cannot see, or stops on:
   `pushurl` naming a server apart from the one fetched, no fetch could, so the push does not stop, and what the fetched
   server holds counts as held on the other. Pushed to a URL rather than a remote's name, no branch of it is known here,
   and a new ref is reviewed as a whole project.
-- A file the review ignores, by `[review] scan` and `third_party`, is read in no commit either: a credential there
-  passes.
+- A file under a folder `[review] third_party` names is read in no commit: a credential there passes. A file `scan`
+  leaves out is read there by the credential rules alone, and a binary one is no hole.
 - A file no rule can read — a binary one, a submodule, a Git LFS pointer, whose content is stored elsewhere — is a hole
   and stops the push, unless `[review] skip` in `config.toml` names it, as the shipped list names images and fonts
   ("Configuration" above): then the report names it as skipped, and it stops nothing. A text file past the size limits

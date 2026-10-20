@@ -190,20 +190,21 @@ def in_history(repository: str, remote: str | None, head: str, held: str | None,
     merged = merged_tags(repository, remote, head, held, read)
     found = []
     for commit, message, everything in itertools.chain(said, sent(repository, remote, head, held, read)):
-        files = [f for f in everything if in_review(f["path"], scan, third_party)]  # as a review reads a change
+        mine = [f for f in everything if not matches(f["path"], *third_party)]  # another project's code: never read
+        files = [f for f in mine if in_review(f["path"], scan, third_party)]  # as a review reads a change
         for f in files:
             if (f.get("binary") or f.get("pointer")) and not matches(f["path"], *skip):
                 kind = "a binary file, which" if f.get("binary") else "a Git LFS pointer, whose file"
                 found.append(f"{_named(commit)}, {f['path']}: {kind} no rule can read")
         # As a line rule reads a change: a path and the lines added. The message is all added, and so is a tag a merge
         # carries; a file's letter is not read here.
-        entries = [
+        told = [
             entry(MESSAGE, "A", None, list(enumerate(lines_of(message), 1))),
             *([entry(MERGED, "A", None, list(enumerate(lines_of(merged[commit]), 1)))] if commit in merged else []),
-            *(entry(f["path"], "M", None, f["added"]) for f in files),
         ]
         for rule in rules:
-            answer = run_rule(rule, entries, None)
+            given = mine if rule.reads_every_kind else files  # a credential rule reads the project's own of every kind
+            answer = run_rule(rule, [*told, *(entry(f["path"], "M", None, f["added"]) for f in given)], None)
             found += [f"{_named(commit)}, {_where(f)}: {rule.title} ({rule.check_id})" for f in answer.findings]
             if answer.could_not_look:
                 found.append(f"{_named(commit)}: {answer.could_not_look}")

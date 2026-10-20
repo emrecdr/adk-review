@@ -90,6 +90,9 @@ class AnyRule(ABC):
     #: and a file named `test_*` is a test whatever it holds, a workflow among them. Only a test's text is withheld: a
     #: file rule's `file.changed` and a tree rule's `tree.paths` still list every test.
     reads_tests: ClassVar[bool] = False
+    #: Whether the rule reads the project's own files `scan` leaves out. Only a credential rule does: a key leaks from
+    #: a README as from code. Another project's code reaches no rule.
+    reads_every_kind: ClassVar[bool] = False
     #: Whether its findings change how code reads and never what it does, as a simplify pass's do: a handoff lists them
     #: apart, under what a tidy keeps, and holds one back where a defect at major or above names the same lines.
     cleanup: ClassVar[bool] = False

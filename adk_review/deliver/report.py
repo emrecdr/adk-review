@@ -454,7 +454,10 @@ def header(evidence: Evidence, *, model: str, profile: str, off: Sequence[str], 
             for path, glob in evidence.get("skipped", {}).items()
         ),
         *(
-            [f"- ignored      {len(left)} file(s), neither Python nor config, or another project's: {_spans(left)}"]
+            [
+                f"- ignored      {len(left)} file(s), out of scope; credential rules still read the project's own: "
+                f"{_spans(left)}"
+            ]
             if (left := evidence.get("ignored"))
             else []
         ),

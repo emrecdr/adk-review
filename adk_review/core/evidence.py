@@ -83,6 +83,7 @@ class Change(TypedDict):
 
     files: list[Entry]  # each changed file, in path order
     tree: "Tree | None"  # the head as the tree rules read it; None where it could not be listed, or once let go
+    unscanned: NotRequired[list[Entry]]  # the project's own files `scan` leaves out, for the credential rules alone
 
 
 class Failure(TypedDict):
@@ -107,8 +108,8 @@ class Evidence(Change):
     whole: bool  # under --all: every file at the head is the change, diffed against the empty tree
     scope: list[str]  # the folders --path named, as git spells them; [] for the whole change
     skipped: dict[str, str]  # the files the operator's skip list left to the rules, by path with the glob
-    ignored: NotRequired[
-        list[str]
-    ]  # the changed files a review leaves out, by the config's scan and third_party: never read
+    #: The changed files the review leaves out, by the config's scan and third_party: the credential rules still read
+    #: the project's own among them, and nothing reads another project's code.
+    ignored: NotRequired[list[str]]
     untracked: list[str] | None  # under --staged, what git neither tracks nor ignores; None otherwise
     outside: int  # how many changed files lay outside the scope, for the report to count

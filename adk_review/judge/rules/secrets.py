@@ -29,12 +29,13 @@ class Secrets(Rule):
     reads_tests = True  # a key in a test is a key in the history all the same
     title = "a hard-coded credential"
     fix = "Read it from the environment or a secret store, remove it from history, and rotate it."
+    reads_every_kind = True  # a key leaks from a README or a script as from code
     bad = (
         'client = Github("ghp_' + "a1B2" * 9 + '")',
         ("deploy.yaml", "url: https://hooks.slack.com/services/T0/B0/x"),
         'DATABASE_URL = "postgresql://app:' + "Xk9mQ2vR7t" + '@db.internal.acme.io/app"',
         'URL = "mssql://sa:' + "P@ssw0rd" + '@sqlserver.corp.acme.io/db"',
-        ("scripts/release", "curl https://x-access-token:ghp_" + "a1B2" * 9 + "@api.example.com/repos"),
+        ("README.md", "curl https://x-access-token:ghp_" + "a1B2" * 9 + "@api.example.com/repos"),
     )
     good = (
         "token = get_token(request)",

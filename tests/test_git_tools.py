@@ -1203,6 +1203,34 @@ class TestWhatIsThirdParty:
         assert [f["path"] for f in evidence["files"]] == ["bin/run"] and evidence["ignored"] == ["scripts/run.sh"]
         assert not evidence["files"][0]["unread"], evidence["files"][0]["unread"]
 
+    def test_the_credential_rules_read_the_projects_own_files_of_every_kind(self, tmp_path: Path) -> None:
+        """Asked by the owner: a key leaks from a README or a script as from code. The two credential rules read the
+        project's own files `scan` leaves out. No other check reads them, and no guideline sees them. Another
+        project's code stays unread. A binary file of another kind is no hole."""
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.lint import Lint
+        from adk_review.judge.rules.named_secrets import NamedSecrets
+        from adk_review.judge.rules.secrets import Secrets
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "app.py", "x = 1\n", "base")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        token = "ghp_" + "a1B2" * 9
+        _committed(repo, "README.md", f"Clone with https://x-access-token:{token}@github.com/acme/app\n")
+        _committed(repo, "deploy.sh", "DB_PASSWORD=Xk9mQ2vR7t4p\n")
+        _committed(repo, "vendor/lib/README.md", f"Clone with https://x-access-token:{token}@github.com/x/y\n")
+        _committed(repo, "docs/manual.pdf", b"%PDF\x00\x01" * 32)
+        evidence = importlib.import_module("adk_review.collect.git").collect_evidence(
+            str(repo), BASE, "change", **self._shipped()
+        )
+        found = run_rules(evidence, [Secrets(), NamedSecrets(), Lint()])
+        assert [f.file for f in found["rule.secrets"].findings] == ["README.md"], found
+        assert [f.file for f in found["rule.named-secrets"].findings] == ["deploy.sh"], found
+        assert found["rule.lint"].findings == [] and token not in evidence["diff"], "no other check reads them"
+        assert not any(answer.could_not_look for answer in found.values()), "a binary of another kind is no hole"
+
     def test_a_whole_project_reads_no_third_party_module(self, tmp_path: Path) -> None:
         """Under `--all`, the head's tree: a third-party module is never parsed for the tree rules or the radius, and
         never counted among the project's files."""
@@ -1228,7 +1256,7 @@ class TestWhatIsThirdParty:
         code = cli.main([str(repo), "--head", "change", "--base", BASE, "--profile", "default-rules"])
         said = capsys.readouterr().out
         assert code == 0 and "## Verdict: APPROVED" in said, said
-        assert "- ignored      2 file(s), neither Python nor config, or another project's:" in said, said
+        assert "- ignored      2 file(s), out of scope; credential rules still read the project's own:" in said, said
 
 
 class TestWhatTheBudgetReadsFirst:

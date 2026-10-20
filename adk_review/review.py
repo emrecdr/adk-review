@@ -888,7 +888,9 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
         "previous": Path(args.previous).expanduser().read_bytes().hex() if args.previous else "",
         # What was read, byte for byte: the index has no commit to name it by, and a hash of a commit's diffs costs
         # nothing beside the review it would spare.
-        "diffs": hashlib.sha256("\0".join(unreleased(f["diff"]) for f in evidence["files"]).encode()).hexdigest(),
+        "diffs": hashlib.sha256(
+            "\0".join(unreleased(f["diff"]) for f in (*evidence["files"], *evidence.get("unscanned", ()))).encode()
+        ).hexdigest(),
     }
     digest.update(json.dumps(said, sort_keys=True, default=str).encode())
     return Path(args.cache).expanduser() / f"{digest.hexdigest()[:32]}.json"

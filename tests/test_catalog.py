@@ -131,14 +131,20 @@ class TestTheConfig:
         `scan` read none of them, so the rule never fired where it was made to; its examples ran through `try_rule`,
         which no scan stands before. Each file a line or file rule shows by example, and each kind `steering-files`
         names, is one the shipped `scan` reads."""
-        from adk_review.core.paths import in_review
+        from adk_review.core.paths import in_review, matches
         from adk_review.judge.catalog import catalog as checks
         from adk_review.judge.rules.steering_files import STEERS
 
         review = cli.load_config(cli.CONFIG)["review"]
-        shown = [ex[0] for rule in checks().rules if rule.kind != "tree" for ex in rule.bad if isinstance(ex, tuple)]
+        scan, third_party = review["scan"], review["third_party"]
+
+        def reads(rule, path: str) -> bool:  # a credential rule reads the project's own files of every kind
+            return in_review(path, scan, third_party) or (rule.reads_every_kind and not matches(path, *third_party))
+
+        shown = [(r, ex[0]) for r in checks().rules if r.kind != "tree" for ex in r.bad if isinstance(ex, tuple)]
         named = [glob.replace("*", "x") + ("x.md" if glob.endswith("/") else "") for glob in STEERS]
-        unread = [path for path in (*shown, *named) if not in_review(path, review["scan"], review["third_party"])]
+        unread = [path for rule, path in shown if not reads(rule, path)]
+        unread += [path for path in named if not in_review(path, scan, third_party)]
         assert unread == [], unread
 
     def test_the_config_gives_the_flags_their_defaults_and_a_flag_wins_for_one_run(self, cli) -> None:

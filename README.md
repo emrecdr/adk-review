@@ -451,10 +451,12 @@ What a rule may do, and may not:
   `collect/tools.py`, and the contract stays as it is.
 - It never reads the repository under review's configuration: a branch must not be able to switch off the rule that
   judges it.
-- It reads no test unless it says so: a rule about the product's code is handed no file `is_test` names, so a
-  test's fakes are no findings, while `file.changed` and `tree.paths` still list every test. A rule about what runs,
-  leaks or steers sets `reads_tests = True`, as `secrets` and `steering-files` do: a test runs in CI with its keys,
-  and a workflow named `test_*.yml` is a test by its name. `--explain` says which a rule does.
+- It reads no test unless it says so: a rule about the product's code is handed no file `is_test` names, so a test's
+  fakes are no findings, while `file.changed` and `tree.paths` still list every test. A rule about what runs, leaks or
+  steers sets `reads_tests = True`, as `secrets` and `steering-files` do: a test runs in CI with its keys, and a
+  workflow named `test_*.yml` is a test by its name. `--explain` says which a rule does. It reads only the files the
+  shipped `scan` names unless it sets `reads_every_kind = True`, as `secrets` and `named-secrets` do: a key leaks from a
+  README or a script as from code. No rule reads another project's code.
 - A rule whose findings change how code reads, never what it does, sets `cleanup = True`, as `simplify` does, and a
   guideline the same, as `complexity` does: the hand-off lists them as tidies, never as fixes.
 - Its expectations are constants at the top of its file, beside the check, and its examples follow them: a project

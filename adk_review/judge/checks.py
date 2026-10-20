@@ -73,6 +73,8 @@ def run_rules(evidence: Change, rules: Sequence[AnyRule], stop: threading.Event 
         if stop is not None and stop.is_set():
             break
         files: list[Entry] = evidence["files"]
+        if rule.reads_every_kind:  # the project's own files `scan` leaves out: a credential rule reads them too
+            files = [*files, *evidence.get("unscanned", ())]
         if isinstance(rule, FileRule) and (tool := rule.tool):
             found = _diagnosed(tool, rule.tool_settings, evidence)
             if isinstance(found, str):
@@ -98,6 +100,7 @@ def _release(evidence: Evidence) -> None:
     gone, and no finding of a real review stood on an added line. Runs after a failure too, over whatever shape the
     evidence had."""
     evidence["tree"] = None
+    evidence["unscanned"] = []
     for entry in evidence.get("files", ()):
         entry["text"] = entry["added"] = entry["diff"] = entry["shown"] = None
 

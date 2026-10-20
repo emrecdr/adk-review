@@ -25,9 +25,10 @@ The shape of a rule — the three kinds, the constants it names, what it may imp
    `scan` too. The folder holds rules and nothing else: no helper module and no guide; a helper several rules share
    belongs in `adk_review/judge/rule_helpers/`, in the module named after what it reads, and in the door's `__all__`. A
    rule reads no test by default; set `reads_tests = True` when what it finds matters in a test too — a credential,
-   hidden text, a workflow named `test_*.yml` — and a `bad` example at a test's path proves it. Set `cleanup = True`
-   when what it finds changes how code reads and never what it does, as `simplify`'s does: the hand-off then lists it as
-   a tidy, apart from the fixes.
+   hidden text, a workflow named `test_*.yml` — and a `bad` example at a test's path proves it. A rule reads only the
+   files `scan` names; a credential rule sets `reads_every_kind = True` to read the project's own files of every kind.
+   Set `cleanup = True` when what it finds changes how code reads and never what it does, as `simplify`'s does: the
+   hand-off then lists it as a tidy, apart from the fixes.
 3. Profiles in `adk_review/config.toml`: add `rule.<name>` to `rules-only` and `full`, which a test holds to every
    rule whose id does not start with `demo-`, the prefix a rule written for the demo alone takes; `demo` runs every
    rule through the group `rules`. Add it to `default` only when every review should run it, since `default` holds

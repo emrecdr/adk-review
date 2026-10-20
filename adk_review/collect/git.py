@@ -802,7 +802,20 @@ def gather(
             if "old" in entry and not in_review(entry["old"], scan, third_party):
                 del entry["old"]
                 entry["status"] = "A"
+        # The project's own files of every other kind, for the credential rules alone: never a submodule, never
+        # another project's code. One moved out of another project's code is new to them too.
+        kept = {entry["path"] for entry in own}
+        others = [
+            entry
+            for entry in entries
+            if entry["path"] not in kept and entry["mode"] != "160000" and not matches(entry["path"], *third_party)
+        ]
+        for entry in others:
+            if "old" in entry and matches(entry["old"], *third_party):
+                del entry["old"]
+                entry["status"] = "A"
         files, block, excluded = _read_change(resolved, own, scope, guidelines=guidelines, diff_cap=diff_cap, skip=skip)
+        unscanned = _read_change(resolved, others, scope, guidelines=False, diff_cap=diff_cap, skip=skip)[0]
         away = untracked(resolved) if resolved.get("staged") else None
     except GitError as exc:  # the change half read is not the change: named, never reviewed as it stands
         return {"status": "error", "error_message": str(exc)}
@@ -828,6 +841,7 @@ def gather(
         "whole": base is None,
         "scope": list(scope),
         "skipped": excluded,
+        "unscanned": unscanned,
         "ignored": ignored,
         "untracked": away,
         "outside": len(listed) - len(entries),

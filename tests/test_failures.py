@@ -1131,9 +1131,9 @@ def test_the_install_recipe_keeps_the_hook_it_finds_and_hands_both_gits_lines(tm
 
 
 def test_the_history_a_push_sends_reads_no_third_party_code(tmp_path) -> None:
-    """Asked by the owner: never scan a third-party library's code, in the pre-push hook's reading of each commit too:
-    a vendored package's key, its binary and its pointer are another project's, and none is read or named; nor is a
-    file neither Python's nor a config's."""
+    """Asked by the owner: never scan a third-party library's code, in the pre-push hook's reading of each commit too.
+    A vendored package's key, binary and pointer are another project's: none is read or named. The credential rules
+    read the project's own page, as in a review. A binary of its kind is no hole."""
     push = importlib.import_module("adk_review.push")
     _remote, work = _pushed_from(tmp_path)
     _committed(work, "a.py")
@@ -1141,8 +1141,10 @@ def test_the_history_a_push_sends_reads_no_third_party_code(tmp_path) -> None:
     _git_in(work, "checkout", "-q", "-b", "bump")
     _committed(work, "vendor/lib/keys.py", 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "vendor a library")
     _committed(work, "vendor/lib/data.bin", b"\x00\x01" * 64, "and its data")
+    _committed(work, "docs/manual.pdf", b"%PDF\x00\x01" * 32, "a manual")
     _committed(work, "notes.md", 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "a page")
-    assert push.in_history(str(work), "origin", "HEAD", None, []) == []
+    found = push.in_history(str(work), "origin", "HEAD", None, [])
+    assert found and all("notes.md:1" in place for place in found), found
 
 
 def test_a_file_every_review_of_a_merge_could_not_read_stops_it_and_each_sides_own_does_not() -> None:
@@ -1167,21 +1169,21 @@ def test_a_file_every_review_of_a_merge_could_not_read_stops_it_and_each_sides_o
 
 
 def test_a_file_a_push_moves_out_of_an_ignored_one_is_read_in_its_commit(tmp_path) -> None:
-    """Read by review: the history read paired a renamed file with its old path, so a token added in `notes.txt`,
-    which the review ignores, moved to `app.py` and taken out, passed the hook unread: no commit added a line of
-    `app.py`. Each commit's files are read with no rename found, a moved file added whole."""
+    """Read by review: the history read paired a renamed file with its old path. A vendored module's token, moved into
+    the project's `app.py` and taken out, passed the hook unread: no commit added a line of `app.py`. Each commit is
+    read with no rename found, so a moved file is added whole."""
     push = importlib.import_module("adk_review.push")
     _remote, work = _pushed_from(tmp_path)
     _committed(work, "a.py")
     _git_in(work, "push", "-q", "origin", "main")
     _git_in(work, "checkout", "-q", "-b", "moved")
-    _committed(work, "notes.txt", 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "a note")
-    _git_in(work, "mv", "notes.txt", "app.py")
-    _git_in(work, "commit", "-qm", "move it")
+    _committed(work, "vendor/lib/creds.py", 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "vendor a library")
+    _git_in(work, "mv", "vendor/lib/creds.py", "app.py")
+    _git_in(work, "commit", "-qm", "move it in")
     _git_in(work, "rm", "-q", "app.py")
     _git_in(work, "commit", "-qm", "take it out")
     found = push.in_history(str(work), "origin", "HEAD", None, [])
-    assert len(found) == 1 and "app.py" in found[0], found
+    assert found and all("app.py:1" in place for place in found), found
 
 
 def test_the_check_for_a_misread_remote_is_exact_quiet_where_a_push_address_is_set_and_never_a_traceback(
