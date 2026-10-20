@@ -26,7 +26,7 @@ from typing import Any
 
 from ..core.blast import Radius
 from ..core.evidence import Entry, Evidence, Failure, unreleased
-from ..core.paths import Links, UnfollowedError
+from ..core.paths import Links, UnfollowedError, in_review, matches
 from ..core.rules import PYTHON_SUFFIXES, Tree
 from ..core.text import lines_of
 from .change import POINTER_UNREAD, lfs_pointer, no_change, pointer_text, radius, shown_to_guidelines, widens
@@ -454,9 +454,12 @@ def whole_diffs(resolved: dict, entries: list[dict[str, str]], scope: Sequence[s
     pieces = _git_raw(repo, *args).stdout.split(b"\ndiff --git ")  # the whole, freed once split
     first = [pieces[0]] if pieces[0].startswith(b"diff --git ") else []
     parts = first + [b"diff --git " + piece for piece in pieces[1:]]
-    if len(parts) != len(paths) or sorted(paths) != [entry["path"] for entry in entries]:
+    asked = {entry["path"] for entry in entries}
+    if len(parts) != len(paths) or not asked <= set(paths):
         raise GitError("git diff-tree's one patch did not split into the files it lists")
-    pairs = sorted(zip(paths, parts, strict=True), key=lambda pair: pair[0])  # as `list_changed` sorts git's order
+    # Only the files asked for: a third-party folder's are in git's patch, never read. Left out by git's own pathspec
+    # instead, a glob git reads otherwise than `matches` could leave out a file of the project's own.
+    pairs = sorted(((path, part) for path, part in zip(paths, parts, strict=True) if path in asked), key=lambda p: p[0])
     return [readable(_text(part)) for _, part in pairs]
 
 
@@ -543,7 +546,9 @@ def head_listing(resolved: dict) -> list[tuple[str, str, str, str, str]] | None:
         return None
 
 
-def tree_at_head(resolved: dict, listing: list[tuple[str, str, str, str, str]] | None) -> Tree | None:
+def tree_at_head(
+    resolved: dict, listing: list[tuple[str, str, str, str, str]] | None, third_party: Sequence[str] = ()
+) -> Tree | None:
     """The head's tree: every path, every Python file read and parsed once, and the Python files not read; None when
     the tree could not be listed.
 
@@ -553,12 +558,16 @@ def tree_at_head(resolved: dict, listing: list[tuple[str, str, str, str, str]] |
     code ignored, every changed file read as "a leaf". A batch past its timeout reads nothing, and every file it
     was asked for is named unread; so is a blob a partial clone lacks, which git lists with no size. `listing` is
     `head_listing`'s, taken once for the tree and the texts: a tree git could not list is None here too, never listed
-    a second time.
+    a second time. A module under a folder `third_party` names is another project's: listed, never read or parsed.
     """
     if listing is None:
         return None
     paths = [path for _mode, _kind, _sha, _size, path in listing]
-    python = ((path, sha, size) for path, sha, size in _plain(listing) if path.endswith(".py"))
+    python = (
+        (path, sha, size)
+        for path, sha, size in _plain(listing)
+        if path.endswith(".py") and not matches(path, *third_party)
+    )
     return Tree(paths, *_texts(resolved, python))
 
 
@@ -763,28 +772,32 @@ def gather(
     guidelines: bool = True,
     diff_cap: int = DIFF_CAP_CHARS,
     skip: Sequence[str] = (),
+    scan: Sequence[str] = (),
+    third_party: Sequence[str] = (),
 ) -> Evidence | Failure:
     """The evidence `collect_evidence` describes, for a scope `preflight` resolved: what the chat's checks node gathers
     for the commits the intake confirmed, never resolving their names again — measured, a head given as a sha resolved
-    through no ref, and the rules reviewed nothing while the guidelines reviewed the change."""
+    through no ref, and the rules reviewed nothing while the guidelines reviewed the change. A changed file `in_review`
+    does not take, neither Python's nor a config's or another project's code, is ignored: never diffed, read or shown,
+    only listed; a change of nothing else is one of no file reviewed, never "no change", which would stop its push."""
     base, head = resolved["base"] or None, resolved["head"]
     try:
         listed = list_changed(resolved)
         entries = [entry for entry in listed if in_scope(entry["path"], scope)]
-        files, block, excluded = _read_change(
-            resolved, entries, scope, guidelines=guidelines, diff_cap=diff_cap, skip=skip
-        )
+        own = [entry for entry in entries if in_review(entry["path"], scan, third_party)]
+        ignored = sorted({entry["path"] for entry in entries} - {entry["path"] for entry in own})
+        files, block, excluded = _read_change(resolved, own, scope, guidelines=guidelines, diff_cap=diff_cap, skip=skip)
         away = untracked(resolved) if resolved.get("staged") else None
     except GitError as exc:  # the change half read is not the change: named, never reviewed as it stands
         return {"status": "error", "error_message": str(exc)}
-    if not files:  # measured: a branch already merged, or a base equal to its head, approved a review of nothing
+    if not files and not ignored:  # measured: a branch already merged, or a base equal to its head, approved nothing
         return no_change(head, base, scope if listed else ())
     listing = head_listing(resolved)
     # The head read whole, every Python file parsed, only for what reads it: a tree rule, or the radius a guideline
     # is shown, which measures changed Python files alone. The changed files' own texts are read either way, for the
     # file rules.
     read = tree_rules or (guidelines and any(Radius(entry["path"]).measured for entry in files))
-    tree = tree_at_head(resolved, listing) if read else None
+    tree = tree_at_head(resolved, listing, third_party) if read else None
     read_texts(resolved, files, listing, excluded)
     if guidelines:
         _links_unread(files, {entry["path"] for entry in entries if entry["mode"] == "120000"}, excluded)
@@ -798,6 +811,7 @@ def gather(
         "whole": base is None,
         "scope": list(scope),
         "skipped": excluded,
+        "ignored": ignored,
         "untracked": away,
         "outside": len(listed) - len(entries),
     }

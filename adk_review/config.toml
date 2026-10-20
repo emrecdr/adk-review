@@ -23,6 +23,23 @@ skip = [
     "pnpm-lock.yaml", "bun.lock", "deno.lock", "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock", "mix.lock",
     "pubspec.lock", "Podfile.lock", "Package.resolved", "packages.lock.json", "gradle.lockfile", "flake.lock",
 ]
+# Globs of the changed files a review reads, at any depth: Python's, the configs beside them, and a credential's own
+# files, keys and key stores; --scan adds more for one run, and an empty list reads every file. Any other changed file is ignored: read by no rule and no guideline,
+# parsed into no tree, read in no commit by the pre-push hook, and listed in the report, never a hole.
+scan = [
+    "*.py", "*.pyi", "*.pyw", "*.toml", "*.cfg", "*.ini", "*.conf", "*.yaml", "*.yml", "*.json", ".env", "*.env",
+    ".env.*", "requirements*.txt", "constraints*.txt", "Pipfile", "*.lock", "Dockerfile*", "*.pem", "*.key", "*.p12",
+    "*.pfx", "*.jks",
+]
+# Globs of the folders holding other projects' code a repository keeps beside its own, vendored or installed, at any
+# depth; --third-party adds more for one run. A review is of a project's own code, never of a library it keeps: a file
+# under one is ignored, whatever `scan` names. Code a branch puts under one goes unreviewed too, so a folder belongs here
+# only where what it holds is another project's.
+third_party = [
+    "**/vendor/**", "**/vendored/**", "**/_vendor/**", "**/third_party/**", "**/third-party/**", "**/thirdparty/**",
+    "**/node_modules/**", "**/bower_components/**", "**/jspm_packages/**", "**/site-packages/**",
+    "**/dist-packages/**", "**/.venv/**", "**/venv/**", "**/__pypackages__/**", "**/Pods/**", "**/Carthage/**",
+]
 
 # Named lists of the checks a review runs, chosen with --profile NAME; with no --profile a review runs `default`.
 # A check is a rule, decided by code, one file in judge/rules/, or a guideline, judged by a model, one file in

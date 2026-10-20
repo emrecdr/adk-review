@@ -907,11 +907,12 @@ class TestTheCleanupAndThePitfalls:
 
 
 class TestWhatTheBranchCannotTellTheRules:
-    """What the branch changed is linted, whatever the branch says and wherever it sits. Measured before: `# ruff:
-    noqa` silenced S602; a file under `.venv/` was skipped by ruff's default excludes, both read as "found nothing";
-    and `x.py` beside `X.py/y.py` crashed the rule on a case-insensitive disk, Python's exit 1, the blocker's code."""
+    """What the branch changed is linted, whatever the branch says and wherever it sits, but under a third-party folder.
+    Measured before: `# ruff: noqa` silenced S602; and `x.py` beside `X.py/y.py` crashed the rule on a case-insensitive
+    disk, Python's exit 1, the blocker's code. A file under `.venv/`, which ruff's own excludes once hid, is the
+    config's third-party code now, never read."""
 
-    @pytest.mark.parametrize(("branch", "path"), [("noqa", "run.py"), ("excluded", ".venv/run.py")])
+    @pytest.mark.parametrize(("branch", "path"), [("noqa", "run.py")])
     def test_the_branch_cannot_silence_or_hide_a_file_from_ruff(self, branch: str, path: str, hostile_repo) -> None:
         from adk_review.collect import git
 
@@ -973,11 +974,12 @@ class TestWhatTheBranchCannotTellTheRules:
             assert read == [git._git(str(hostile_repo), "show", f"{head}:{path}", strip=False)[1] for path in paths]
         listed = git._listed(git.preflight(str(hostile_repo), BASE, "submodule"))
         kinds = {path: kind for _mode, kind, _sha, _size, path in listed}
-        assert kinds["vendor/lib"] == "commit" and "vendor/lib" not in dict.fromkeys(p for p, *_ in git._plain(listed))
+        assert kinds["libs/core"] == "commit" and "libs/core" not in dict.fromkeys(p for p, *_ in git._plain(listed))
 
     def test_every_file_under_all_is_diffed_in_one_call_as_diff_of_diffs_it(self, hostile_repo, monkeypatch) -> None:
         """Two git processes whatever the number of files, each file's diff what `diff_of` gives it for every name
-        the branches spell, under a scope too, and a split that does not match the files an error."""
+        the branches spell, under a scope too; the files asked for alone, as a third-party folder's are left out; and a
+        file git's patch does not list an error."""
         from adk_review.collect import git
 
         run, calls = git._run, []
@@ -991,8 +993,10 @@ class TestWhatTheBranchCannotTellTheRules:
                 diffs = git.whole_diffs(resolved, entries, scope)
                 assert len(calls) == 2, (branch, scope)
                 assert diffs == [git.diff_of(resolved, entry["path"]) for entry in entries], (branch, scope)
+        some = git.list_changed(resolved)[1:]
+        assert git.whole_diffs(resolved, some, ()) == [git.diff_of(resolved, entry["path"]) for entry in some]
         with pytest.raises(git.GitError, match="did not split into the files it lists"):
-            git.whole_diffs(resolved, git.list_changed(resolved)[1:], ())
+            git.whole_diffs(resolved, [*some, {"path": "no/such/file.py", "status": "A"}], ())
 
     def test_each_commit_a_push_sends_reads_its_files_as_diff_of_does(self, hostile_repo) -> None:
         """Measured by review: a file a commit holds before another kept its CRLF last line's `\\r`, and the pre-push

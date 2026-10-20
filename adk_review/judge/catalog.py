@@ -48,6 +48,8 @@ REVIEW = {
     "verify": (lambda v: type(v) is bool, "true or false"),
     "diff_cap": (lambda v: type(v) is int and v > 0, "a whole number of characters above 0"),
     "skip": (lambda v: type(v) is list and all(type(g) is str and g for g in v), "a list of globs"),
+    "scan": (lambda v: type(v) is list and all(type(g) is str and g for g in v), "a list of globs"),
+    "third_party": (lambda v: type(v) is list and all(type(g) is str and g for g in v), "a list of globs"),
 }
 #: What each section is a table of, as the sentence refusing another shape names it.
 TABLES = {"review": "settings", "profiles": "named lists"}

@@ -296,6 +296,22 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         "named, never a hole; repeat it for more than one",
     )
     parser.add_argument(
+        "--scan",
+        action="append",
+        default=list(review["scan"]),
+        metavar="GLOB",
+        help="a glob of changed files a review reads, as the config's scan list does, Python's and configs' by "
+        "default: any other is ignored, only listed; repeat it for more than one",
+    )
+    parser.add_argument(
+        "--third-party",
+        action="append",
+        default=list(review["third_party"]),
+        metavar="GLOB",
+        help="a glob of folders holding other projects' code, as the config's third_party list does: a file under "
+        "one is ignored, never read, only listed; repeat it for more than one",
+    )
+    parser.add_argument(
         "--verify",
         action=argparse.BooleanOptionalAction,
         default=review["verify"],
@@ -632,7 +648,16 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
     if say is not None:
         say(f"reading {head} against {base or 'the empty tree'}")
     evidence = collect_evidence(
-        repo, base, head, scope, staged=args.staged, **chosen.head_reading(), diff_cap=args.diff_cap, skip=args.skip
+        repo,
+        base,
+        head,
+        scope,
+        staged=args.staged,
+        **chosen.head_reading(),
+        diff_cap=args.diff_cap,
+        skip=args.skip,
+        scan=args.scan,
+        third_party=args.third_party,
     )
     if evidence["status"] != "success":
         # Measured: a first review of a repository checked out on main ended at "adds nothing" with no way on. The

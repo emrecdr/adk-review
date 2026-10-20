@@ -23,7 +23,7 @@ app = build_app(
     chat=True,
     checks=checks,
     fail_on=policy["fail_on"],
-    gathered=gathering(checks, policy["diff_cap"], policy["skip"]),
+    gathered=gathering(checks, policy["diff_cap"], policy["skip"], policy["scan"], policy["third_party"]),
     ceiling=policy["max_tokens"] or None,  # the config's ceiling, as the command's default is
 )
 root_agent = app.root_agent

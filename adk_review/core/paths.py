@@ -7,7 +7,7 @@ from __future__ import annotations
 import bisect
 import functools
 import unicodedata
-from collections.abc import Iterable, Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from fnmatch import fnmatchcase
 from pathlib import PurePosixPath
@@ -223,6 +223,12 @@ def _holds(paths: list[str], folder: str) -> bool:
 def _fold(path: str) -> str:
     """`path` as a file system blind to case and to Unicode's forms reads it: Unicode's canonical caseless match."""
     return unicodedata.normalize("NFD", unicodedata.normalize("NFD", path).casefold())
+
+
+def in_review(path: str, scan: Sequence[str], third_party: Sequence[str]) -> bool:
+    """Whether a review reads `path`: one `scan` names, Python's or a config's, every file where it names none, and
+    none under a folder `third_party` names, another project's code. Any other is ignored, never read or scanned."""
+    return (not scan or matches(path, *scan)) and not matches(path, *third_party)
 
 
 def matching(paths: Iterable[str], *globs: str) -> list[str]:

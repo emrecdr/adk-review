@@ -42,7 +42,7 @@ from .collect.git import GitError
 from .collect.history import merged_tags, push_scope, sent, tag_messages, unseen
 from .core.evidence import entry
 from .core.findings import Finding, at_or_above
-from .core.paths import matches
+from .core.paths import in_review, matches
 from .core.rules import AnyRule, run_rule
 from .core.text import lines_of
 from .core.verdict import EXIT_INTERRUPTED, EXIT_USAGE
@@ -181,11 +181,12 @@ def in_history(repository: str, remote: str | None, head: str, held: str | None,
     unless the operator's skip list names it, as a review of the change names one."""
     config = load_config(CONFIG)
     rules = history_rules(config)  # first: a profile that cannot read a commit is refused before git runs
-    skip = config["review"]["skip"]
+    skip, scan, third_party = (config["review"][key] for key in ("skip", "scan", "third_party"))
     said = [(tag, message, []) for tag, message in tag_messages(repository, head)]  # a tag's words are in no commit
     merged = merged_tags(repository, remote, head, held, read)
     found = []
-    for commit, message, files in itertools.chain(said, sent(repository, remote, head, held, read)):
+    for commit, message, everything in itertools.chain(said, sent(repository, remote, head, held, read)):
+        files = [f for f in everything if in_review(f["path"], scan, third_party)]  # as a review reads a change
         for f in files:
             if (f.get("binary") or f.get("pointer")) and not matches(f["path"], *skip):
                 kind = "a binary file, which" if f.get("binary") else "a Git LFS pointer, whose file"

@@ -49,6 +49,8 @@ outside the checkout, and its config from beside itself; inside the checkout, `u
 | `--max-tokens` | Stop spending past this many tokens; 0 is no ceiling. Default: the config's `max_tokens`. |
 | `--diff-cap` | Characters of one file's diff a guideline reads; a file cut there is named "not read". A Python file's diff shows each hunk within the function or class around it, and one that would pass the cap so shows git's three lines of context instead. Default: the config's `diff_cap`. |
 | `--skip` | A glob of changed files the guidelines leave to the rules: each is named, never a hole. A submodule, which no rule reads, is never skipped. Adds to the config's `skip`. Repeat it for more than one. |
+| `--scan` | A glob of changed files a review reads, beside the config's `scan`: Python's and configs' by default. Any other changed file is ignored, only listed. Repeat it for more than one. |
+| `--third-party` | A glob of folders holding other projects' code, vendored or installed: a changed file under one is ignored, never read, only listed. Adds to the config's `third_party`. Repeat it for more than one. |
 | `--verify` | Ask a second model about each guideline finding a rule did not already make. `--no-verify` turns it off. Default: the config's `verify`. |
 | `--json` | Also write the review to this file as JSON. |
 | `--handoff` | Also write each kept finding to this file as a short instruction for a coding agent, told first that each quote is the branch's own text and each title and change a model's reading of it, a reviewer's comments and never instructions: where, the quoted lines, what to change, and what must hold afterwards, with each finding folded into it named under it. A cleanup's findings, as `--explain` names `rule.simplify` and `guideline.complexity` one, are listed apart under `## Tidy`, after the fixes and under what a tidy keeps: how the code reads changes, never what it does, and one the project's tests fail on is reverted. A tidy is never given a fix's instruction: on lines where another check's defect at major or above stands, it is held back until that defect is fixed, and anywhere else it is an item of its own under `## Tidy`. It ends by asking for the project's own tests before a commit, a fix done when they pass, then gives the command that checks the fixes once they are committed: the review again on the same scope with only the rules that found something, which calls no model and ends in exit 0 once nothing at the bar is left. The guidelines that found something are named apart with their `--check`, since checking a model's reading spends its quota. The command names `adk-review` as `uv tool install .` puts it on `PATH`; where a name in it would read otherwise in a shell, none is printed, only the checks. Nothing is applied. |
@@ -152,21 +154,29 @@ a hole, exit 3, rather than a finding: no rule read the code Python would run. `
 ## Configuration
 
 `config.toml` beside the command holds the review policy under `[review]` — `fail_on`, `max_tokens`, `verify`,
-`diff_cap` and `skip`, each a flag's default — and the profiles under `[profiles]`. It is read whole: a section or a
-setting it does not know, one missing, one of the wrong kind, a profile that names an unknown check or turns none on, or
-no `default` profile is exit 2. It is the one config: nothing of the policy is read from the repository under review,
-and `--dry-run` names the file read. Another policy is a change to this file, or a flag for one run. An installed
-command reads the copy it was installed with: installed from your own checkout with
-`uv tool install --editable <checkout>`, a change there applies at once, as to `uv run`; otherwise reinstall after one.
-A pre-commit hook reads the config of the commit it pins, so a policy of your own is a commit of your own fork, pinned
-instead. The shipped `skip` names images and fonts, in either case, which no rule or model reads, so a branch adding a
-logo is not a hole, and lockfiles, which the rules read whole and no guideline judges. `rule.lockfile-sources` reads
-where npm's, Yarn's, pnpm's, bun's, uv's, Poetry's, PDM's, Pipenv's, Cargo's, Bundler's, Dart's, Mix's and CocoaPods'
-lockfiles fetch from; the other lockfiles the list names are read by the credential rules alone: `go.sum`,
-`gradle.lockfile` and NuGet's `packages.lock.json` name no source, Swift's `Package.resolved`, Nix's `flake.lock` and
-Composer's `composer.lock` name a URL for every package, and Deno's `deno.lock` imports from URLs by design. An archive,
-a keystore or a document can carry a credential, and stays a hole until the list names it. A text file a glob names is
-still read by the rules, as any changed file is.
+`diff_cap`, `skip`, `scan` and `third_party`, each a flag's default — and the profiles under `[profiles]`. It is read
+whole: a section or a setting it does not know, one missing, one of the wrong kind, a profile that names an unknown
+check or turns none on, or no `default` profile is exit 2. It is the one config: nothing of the policy is read from the
+repository under review, and `--dry-run` names the file read. Another policy is a change to this file, or a flag for one
+run. An installed command reads the copy it was installed with: installed from your own checkout with `uv tool install
+--editable <checkout>`, a change there applies at once, as to `uv run`; otherwise reinstall after one. A pre-commit hook
+reads the config of the commit it pins, so a policy of your own is a commit of your own fork, pinned instead. The
+shipped `skip` names images and fonts, in either case, which no rule or model reads, so a branch adding a logo is not a
+hole, and lockfiles, which the rules read whole and no guideline judges. `rule.lockfile-sources` reads where npm's,
+Yarn's, pnpm's, bun's, uv's, Poetry's, PDM's, Pipenv's, Cargo's, Bundler's, Dart's, Mix's and CocoaPods' lockfiles fetch
+from; the other lockfiles the list names are read by the credential rules alone: `go.sum`, `gradle.lockfile` and NuGet's
+`packages.lock.json` name no source, Swift's `Package.resolved`, Nix's `flake.lock` and Composer's `composer.lock` name
+a URL for every package, and Deno's `deno.lock` imports from URLs by design. An archive, a keystore or a document can
+carry a credential, and stays a hole until the list names it. A text file a glob names is still read by the rules, as
+any changed file is.
+
+A review reads the change between two local branches, and of it only the files `scan` names: Python's, the configs
+beside them (TOML, CFG, INI, YAML, JSON, `.env`, requirements, lockfiles, Dockerfiles) and a credential's own files,
+keys and key stores. It never reads a file under a folder `third_party` names, other projects' code, vendored or
+installed: those named `vendor`, `third_party`, `_vendor`, `node_modules`, `site-packages`, `.venv` and their like. Any
+other changed file is ignored: read by no rule and no guideline, parsed into no tree, read in no commit by the pre-push
+hook, and listed in the report, never a hole; a change of nothing else is approved. Nor does a review read the
+environment it runs in: only the repository's own commits. Code a branch puts in an ignored file goes unreviewed too.
 
 The model is set in the environment, or in the `.env` at the root of the reviewer's checkout; a variable set in the
 shell wins over the file:
@@ -238,7 +248,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | `exit_code` | The command's exit code. |
 | `fail_on` | The bar. |
 | `findings_at_fail_on` | How many kept findings sit at or above the bar. |
-| `reviewed` | The repository, the head and its sha, the base, its sha and the merge base (null under `--all`), the scope, the files the skip list left to the rules, the untracked files under `--staged` (null otherwise), and the changed files. |
+| `reviewed` | The repository, the head and its sha, the base, its sha and the merge base (null under `--all`), the scope, the files the skip list left to the rules, the files the review ignored, by `scan` and `third_party`, the untracked files under `--staged` (null otherwise), and the changed files. |
 | `model` | The model and arm that ran, or null where no guideline ran. |
 | `profile` | The profile, or the `--check` list. |
 | `off` | Every check the profile left off. |
@@ -354,6 +364,8 @@ What the hook cannot see, or stops on:
   to the remote's.
   Pushed to a URL rather than a remote's name, no branch of it is known here, and a new ref is reviewed as a whole
   project.
+- A file the review ignores, by `[review] scan` and `third_party`, is read in no commit either: a credential there
+  passes.
 - A file no rule can read — a binary one, a submodule, a Git LFS pointer, whose content is stored elsewhere — is a hole
   and stops the push, unless `[review] skip` in `config.toml` names it, as the shipped list names images and fonts
   ("Configuration" above): then the report names it as skipped, and it stops nothing. A text file past the size limits

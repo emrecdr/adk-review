@@ -114,11 +114,13 @@ def _verdict() -> LlmAgent:
     )
 
 
-def gathering(checks: Catalog, diff_cap: int, skip: Sequence[str]) -> Gatherer:
+def gathering(
+    checks: Catalog, diff_cap: int, skip: Sequence[str], scan: Sequence[str] = (), third_party: Sequence[str] = ()
+) -> Gatherer:
     """How chat gathers the evidence for the scope its intake confirmed: the command's own gathering, reading the head
-    as these checks read it, under the config's cap and skip list, bound once where chat's policy is read, so no
-    builder carries a setting of it."""
-    return partial(gather, **checks.head_reading(), diff_cap=diff_cap, skip=skip)
+    as these checks read it, under the config's cap, skip list, scan and third-party folders, bound once where chat's
+    policy is read, so no builder carries a setting of it."""
+    return partial(gather, **checks.head_reading(), diff_cap=diff_cap, skip=skip, scan=scan, third_party=third_party)
 
 
 def build_workflow(

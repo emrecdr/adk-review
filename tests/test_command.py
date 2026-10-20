@@ -94,7 +94,7 @@ class TestWhatAReviewCovers:
         _git_in(repo, "add", "-f", ".env")
         _git_in(repo, "commit", "-q", "-m", "all")
         stored = _git_in(repo, "count-objects", "-v")
-        assert cli.main([str(repo), "--all", "--head", "feature", "--profile", "rules-only"]) == 1
+        assert cli.main([str(repo), "--all", "--head", "feature", "--profile", "rules-only", "--scan", "*"]) == 1
         out = capsys.readouterr().out
         assert out.startswith("# Review: every file at feature\n"), out
         assert "- files        3 file(s): `.env`, `.gitignore`, `app.py`\n" in out
@@ -268,11 +268,11 @@ class TestWhatAReviewCovers:
         from 0.3 s to 1.7 to 3.1 s, for a radius that measures changed Python files alone. With none changed and no
         tree rule, the head is not read, and each changed file is named not measured, as reading it would say."""
         repo = _branch_off_empty(tmp_path / "repo", "feature", base="main")
-        _committed(repo, "README.md", "# A project\n")
+        _committed(repo, "config.yaml", "# A project\n")
         reviewed = [str(repo), "--head", "feature", "--base", "main", "--check", "guideline.security"]
         assert cli.main(reviewed) == 0
         out = capsys.readouterr().out
-        assert head_reads == [] and "- `README.md`: not measured: not a Python file" in out, out
+        assert head_reads == [] and "- `config.yaml`: not measured: not a Python file" in out, out
         assert "not asked" not in out, "a guideline ran: the radius was asked, and needed no head to answer"
         _committed(repo, "app.py")
         cli.main(reviewed)
@@ -294,9 +294,9 @@ class TestWhatAReviewCovers:
             return state
 
         repo = _branch_off_empty(tmp_path / "repo", "feature", base="main")
-        _committed(repo, "README.md", "# A project\n")
+        _committed(repo, "config.yaml", "# A project\n")
         done = await reviewed(repo)
-        assert head_reads == [] and "### README.md" in done[agents.DIFF], "gathered, the head not read whole"
+        assert head_reads == [] and "### config.yaml" in done[agents.DIFF], "gathered, the head not read whole"
         _committed(repo, "app.py")
         await reviewed(repo)
         assert head_reads == [1], "a changed Python file is measured over the head"
@@ -312,7 +312,7 @@ class TestWhatAReviewCovers:
         _committed(repo, "release.p12", b"0\x82\x00\x00binary")
         _committed(repo, "hidden.png", 'password = "correct horse battery staple"\n')
         _committed(repo, "a.py")
-        reviewed = [str(repo), "--head", "feature", "--base", "main"]
+        reviewed = [str(repo), "--head", "feature", "--base", "main", "--scan", "*"]
         assert cli.main(reviewed) == 3, "a binary no guideline can read is a hole"
         assert "- not read     `release.p12`: binary" in capsys.readouterr().out
         assert cli.main([*reviewed, "--skip", "*.p12"]) == 1
@@ -343,7 +343,10 @@ class TestWhatAReviewCovers:
         named as skipped by the shipped config and stops nothing; which suffixes it names, the config's test holds."""
         repo = _branch_off_empty(tmp_path / "repo", "feature", base="main")
         _committed(repo, "logo.png", b"\x89PNG\r\n\x1a\n\x00\x00binary")
-        assert cli.main([str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules"]) == 0
+        assert (
+            cli.main([str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules", "--scan", "*"])
+            == 0
+        )
         out = capsys.readouterr().out
         assert "- skipped      `logo.png`: left to the rules by the operator's `*.png`" in out
         assert "- not read" not in out

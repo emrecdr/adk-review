@@ -107,5 +107,8 @@ class Evidence(Change):
     whole: bool  # under --all: every file at the head is the change, diffed against the empty tree
     scope: list[str]  # the folders --path named, as git spells them; [] for the whole change
     skipped: dict[str, str]  # the files the operator's skip list left to the rules, by path with the glob
+    ignored: NotRequired[
+        list[str]
+    ]  # the changed files a review leaves out, by the config's scan and third_party: never read
     untracked: list[str] | None  # under --staged, what git neither tracks nor ignores; None otherwise
     outside: int  # how many changed files lay outside the scope, for the report to count

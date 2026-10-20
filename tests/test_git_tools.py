@@ -522,7 +522,7 @@ class TestWhatNoLaneCouldRead:
     def test_a_file_the_lanes_could_not_read_whole_is_named_and_degrades(
         self, branch: str, path: str, why: str, hostile_repo: Path, cli, capsys
     ) -> None:
-        assert cli.main([str(hostile_repo), "--base", BASE, "--head", branch]) == 3
+        assert cli.main([str(hostile_repo), "--base", BASE, "--head", branch, "--scan", "*"]) == 3
         out = capsys.readouterr().out
         assert "## Verdict: DEGRADED" in out, out
         named = [line for line in out.splitlines() if line.startswith("- not read") and f"`{path}`" in line]
@@ -623,9 +623,9 @@ class TestWhatIsNotAChangeToRead:
     def test_a_submodule_is_named_not_read(self, hostile_repo: Path, cli, capsys) -> None:
         """Measured before: a gitlink bumped to a commit carrying the key APPROVED, exit 0, never named: its commits
         are another repository's, which no lane reads."""
-        assert cli.main([str(hostile_repo), "--base", BASE, "--head", "submodule"]) == 3
+        assert cli.main([str(hostile_repo), "--base", BASE, "--head", "submodule", "--scan", "*"]) == 3
         out = capsys.readouterr().out
-        assert "- not read     `vendor/lib`: a submodule" in out, out  # measured: once "git showed none of it"
+        assert "- not read     `libs/core`: a submodule" in out, out  # measured: once "git showed none of it"
 
     def test_in_chat_the_lanes_read_the_same_line_breaks(self, hostile_repo: Path) -> None:
         """The intake agent assembled the diff from `show_diff`, which read git's raw output: a lone `\\r` reached the
@@ -1085,6 +1085,72 @@ class TestWhatALinkPointsAt:
         pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:" + "a" * 64 + "\nsize 9\n"
         link = gathered(self._linked(tmp_path, "model.py", target_text=pointer), "change", guidelines=False)["run.py"]
         assert link["text"] is None and "Git LFS" in (link["unread_text"] or ""), (link["text"], link["unread_text"])
+
+
+class TestWhatIsThirdParty:
+    """A review reads the change between two branches, and of it only Python's files and the configs beside them, never
+    another project's code under a folder the config's `third_party` names: any other file is ignored, listed alone."""
+
+    @staticmethod
+    def _shipped() -> dict:
+        from adk_review.judge.catalog import CONFIG, load_config
+
+        review = load_config(CONFIG)["review"]
+        return {"scan": review["scan"], "third_party": review["third_party"]}
+
+    def test_only_pythons_files_and_configs_are_read(self, tmp_path: Path) -> None:
+        """Asked by the owner: the diff of two local branches, its Python files and configs alone, every third-party
+        library, vendored module and environment ignored whole. A change adding each kind reviews the project's own
+        Python and config files, and lists the rest."""
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.lint import Lint
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "app.py", "x = 1\n", "base")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        shell = "import os\nos.system(input())\n"
+        for path in ("vendor/lib/run.py", "src/vendor/six.py", ".venv/lib/site.py", "node_modules/pkg/index.js"):
+            _committed(repo, path, shell)
+        for path in ("README.md", "web/app.js", "deploy.sh"):
+            _committed(repo, path, "TOKEN = 'ghp_" + "a1B2" * 9 + "'\n")
+        _committed(repo, "app.py", "x = 2\n")
+        _committed(repo, "pyproject.toml", '[project]\nname = "x"\n')
+        git = importlib.import_module("adk_review.collect.git")
+        evidence = git.collect_evidence(str(repo), BASE, "change", **self._shipped())
+        assert [f["path"] for f in evidence["files"]] == ["app.py", "pyproject.toml"]
+        assert evidence["ignored"] == [".venv/lib/site.py", "README.md", "deploy.sh", "node_modules/pkg/index.js",
+                                       "src/vendor/six.py", "vendor/lib/run.py", "web/app.js"]  # fmt: skip
+        assert "vendor" not in evidence["diff"] and "ghp_" not in evidence["diff"], "no guideline is shown one"
+        assert run_rules(evidence, [Lint()])["rule.lint"].findings == [], "nor does any rule read one"
+
+    def test_a_whole_project_reads_no_third_party_module(self, tmp_path: Path) -> None:
+        """Under `--all`, the head's tree: a third-party module is never parsed for the tree rules or the radius, and
+        never counted among the project's files."""
+        repo = _branch_off_empty(tmp_path / "repo", "change")
+        _committed(repo, "app.py", "import six\n")
+        _committed(repo, "third_party/six/__init__.py", "x = 1\n")
+        evidence = importlib.import_module("adk_review.collect.git").collect_evidence(
+            str(repo), None, "change", **self._shipped()
+        )
+        assert [f["path"] for f in evidence["files"]] == ["app.py"]
+        assert list(evidence["tree"].parsed) == ["app.py"], list(evidence["tree"].parsed)
+
+    def test_a_change_of_nothing_read_approves_and_lists_it(self, tmp_path: Path, cli, capsys) -> None:
+        """A change of only ignored files, a vendored package and a page, ends approved, the report listing them,
+        never "no change to review", which would stop the push that sends it."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "app.py", "x = 1\n", "base")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "vendor/lib/run.py", "import os\nos.system(input())\n")
+        _committed(repo, "README.md", "# x\n")
+        code = cli.main([str(repo), "--head", "change", "--base", BASE, "--profile", "default-rules"])
+        said = capsys.readouterr().out
+        assert code == 0 and "## Verdict: APPROVED" in said, said
+        assert "- ignored      2 file(s), neither Python nor config, or another project's:" in said, said
 
 
 class TestWhatTheBudgetReadsFirst:

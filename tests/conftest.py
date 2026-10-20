@@ -548,13 +548,11 @@ def hostile_repo(tmp_path_factory) -> Path:
         _git_in(repo, "commit", "-qm", name)
     shell = b"import subprocess\n\nsubprocess.run(cmd, shell=True)\n"
     branch("noqa", {"run.py": b"# ruff: noqa\n" + shell})
-    (repo / ".venv").mkdir()
-    branch("excluded", {".venv/run.py": shell})
     _git_in(repo, "checkout", "-q", "-b", "deleted", BASE)
     _git_in(repo, "rm", "-q", "rates.py")
     _git_in(repo, "commit", "-qm", "deleted")
     _git_in(repo, "checkout", "-q", "-b", "submodule", BASE)  # a gitlink, through the index: no nested repository
-    gitlink = f"160000,{_git_in(repo, 'rev-parse', 'carriage')},vendor/lib"
+    gitlink = f"160000,{_git_in(repo, 'rev-parse', 'carriage')},libs/core"
     _git_in(repo, "update-index", "--add", "--cacheinfo", gitlink)
     _git_in(repo, "commit", "-qm", "submodule")
     _git_in(repo, "checkout", "-q", "-b", "renamed", BASE)
@@ -770,7 +768,10 @@ SOME_CHECKS = ("rule.secrets", "rule.lint", "guideline.security", "guideline.tes
 
 
 #: A whole `config.toml` with no profiles, for the tests that spoil one setting of it.
-WHOLE_CONFIG = '[review]\nfail_on = "blocker"\nmax_tokens = 0\nverify = false\ndiff_cap = 4000\nskip = []\n'
+WHOLE_CONFIG = (
+    '[review]\nfail_on = "blocker"\nmax_tokens = 0\nverify = false\ndiff_cap = 4000\n'
+    "skip = []\nscan = []\nthird_party = []\n"
+)
 
 
 #: Profiles as `config.toml`'s `[profiles]` holds them, for tests that choose among them: a `default`, as the file must

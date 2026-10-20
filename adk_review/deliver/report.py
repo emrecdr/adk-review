@@ -453,6 +453,11 @@ def header(evidence: Evidence, *, model: str, profile: str, off: Sequence[str], 
             f"- skipped      {code_span(one_line(path))}: left to the rules by the operator's {code_span(glob)}"
             for path, glob in evidence.get("skipped", {}).items()
         ),
+        *(
+            [f"- ignored      {len(left)} file(s), neither Python nor config, or another project's: {_spans(left)}"]
+            if (left := evidence.get("ignored"))
+            else []
+        ),
         *_untracked(evidence.get("untracked")),
     ]
 
@@ -890,6 +895,7 @@ def as_data(
             "merge_base": None if whole else pre["merge_base"],
             "scope": [safe_line(folder) for folder in evidence["scope"]],
             "skipped": {safe_line(path): glob for path, glob in evidence.get("skipped", {}).items()},
+            "ignored": [safe_line(path) for path in evidence.get("ignored", ())],
             "untracked": None if (away := evidence.get("untracked")) is None else [safe_line(name) for name in away],
             "files": [safe_line(f["path"]) for f in evidence["files"]],
         },

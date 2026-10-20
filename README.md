@@ -127,12 +127,12 @@ rules and writes the change the guidelines read, the command's own block under t
 guidelines judge; a grounding node holds their findings to the diff and decides the verdict through the command's own
 functions; and a verdict agent writes it for a person to read. A turn reviews only the commits its own intake confirmed:
 a greeting, a question or a thanks after a review ends at the intake's answer, one model call. Chat runs the `default`
-profile under `[review]`'s `fail_on`, `max_tokens`, `diff_cap` and `skip`. Its verdict is decided in code, as the
-command's is, and written up by a model: measured by review, chat's verdict agent read each guideline's answer as its
-model gave it and decided the verdict itself, a blocker quoting no line of the change reported as one. The exit code and
-the second opinion are the command's. Chat asks whether its arm can run once a turn, as the command asks before it
-starts, and answers the same sentence where it cannot: on Copilot with no token cached, no login is begun on the
-server's console.
+profile under `[review]`'s `fail_on`, `max_tokens`, `diff_cap`, `skip`, `scan` and `third_party`. Its verdict is decided
+in code, as the command's is, and written up by a model: measured by review, chat's verdict agent read each guideline's
+answer as its model gave it and decided the verdict itself, a blocker quoting no line of the change reported as one. The
+exit code and the second opinion are the command's. Chat asks whether its arm can run once a turn, as the command asks
+before it starts, and answers the same sentence where it cannot: on Copilot with no token cached, no login is begun on
+the server's console.
 
 The tests run offline, on a fake model registered with ADK: `uv run pytest -q`.
 
@@ -194,11 +194,11 @@ templates are in this file, under "Write a rule" and "Write a guideline".
 ## Configuration
 
 `config.toml`, beside `review.py`, is the one config file. `[review]` holds the review policy, each setting a flag's
-default that the flag overrides for one run: `fail_on`, `max_tokens`, `verify`, `diff_cap` and `skip`. `[profiles]`
-holds named lists of check ids, or the groups `rules` and `guidelines`. The file is read whole: a section or a setting
-it does not know, one missing, or one of the wrong kind is a sentence and exit 2, never a setting quietly left at
-another value. It is the one place the review policy lives: nothing of it is read from the repository under review,
-and `--dry-run` names the file read.
+default that the flag overrides for one run: `fail_on`, `max_tokens`, `verify`, `diff_cap`, `skip`, `scan` and
+`third_party`. `[profiles]` holds named lists of check ids, or the groups `rules` and `guidelines`. The file is read
+whole: a section or a setting it does not know, one missing, or one of the wrong kind is a sentence and exit 2, never a
+setting quietly left at another value. It is the one place the review policy lives: nothing of it is read from the
+repository under review, and `--dry-run` names the file read.
 
 The model comes from the shell, or from the `.env` at the root of the checkout, which never wins over the shell:
 `REVIEW_PROVIDER` picks the arm, `copilot` when unset or `gemini`, and `REVIEW_MODEL` the model, blank for `gpt-4.1`

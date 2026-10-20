@@ -62,9 +62,17 @@ class TestTheConfig:
         from adk_review.judge.rule_helpers import matches
 
         config = cli.load_config(cli.CONFIG)
-        skip = config["review"].pop("skip")
+        skip, third_party = config["review"].pop("skip"), config["review"].pop("third_party")
+        scan = config["review"].pop("scan")
+        read = ("app.py", "src/pkg/types.pyi", "pyproject.toml", ".github/workflows/ci.yml", "requirements-dev.txt")
+        assert all(matches(path, *scan) for path in (*read, "setup.cfg", "config/.env", "uv.lock", "Dockerfile"))
+        assert not any(matches(path, *scan) for path in ("README.md", "web/app.js", "run.sh", "logo.png")), "neither"
         cap = importlib.import_module(f"{cli.__package__}.collect.git").DIFF_CAP_CHARS  # the limit GUIDE.md names
         assert config["review"] == {"fail_on": "blocker", "max_tokens": 0, "verify": False, "diff_cap": cap}
+        kept = ("vendor/github.com/x/y.go", "src/vendor/six.py", "web/node_modules/a/i.js", ".venv/lib/site.py")
+        assert all(matches(path, *third_party) for path in kept), "another project's code, at any depth"
+        own = ("src/vendors.py", "vendoring/notes.md", "app/third_party_api.py", "docs/node_modules.md", "venv.py")
+        assert not any(matches(path, *third_party) for path in own), "the project's own files, named alike"
         assert all(matches(path, *skip) for path in ("logo.png", "img/IMG_0001.JPG", "fonts/body.woff2"))
         locks = ("uv.lock", "web/package-lock.json", "yarn.lock", "pnpm-lock.yaml", "Cargo.lock", "go.sum")
         assert all(matches(path, *skip) for path in locks), "a lockfile, generated whole"
@@ -110,10 +118,13 @@ class TestTheConfig:
 
     def test_the_config_gives_the_flags_their_defaults_and_a_flag_wins_for_one_run(self, cli) -> None:
         policy = {"fail_on": "major", "max_tokens": 500, "verify": True, "diff_cap": 9000, "skip": ["*.png"]}
-        parser = cli.build_parser(policy)
+        parser = cli.build_parser({**policy, "scan": ["*.py"], "third_party": ["**/vendor/**"]})
         args = parser.parse_args(["--head", "x"])
         assert (args.fail_on, args.max_tokens, args.verify, args.diff_cap) == ("major", 500, True, 9000)
         assert args.skip == ["*.png"] and parser.parse_args(["--skip", "*.svg"]).skip == ["*.png", "*.svg"]
+        more = parser.parse_args(["--third-party", "**/deps/**"]).third_party
+        assert args.third_party == ["**/vendor/**"] and more == ["**/vendor/**", "**/deps/**"]
+        assert parser.parse_args(["--scan", "*.sh"]).scan == ["*.py", "*.sh"]
         flags = ["--fail-on", "blocker", "--max-tokens", "0", "--no-verify", "--diff-cap", "100"]
         args = parser.parse_args(["--head", "x", *flags])
         assert (args.fail_on, args.max_tokens, args.verify, args.diff_cap) == ("blocker", 0, False, 100)

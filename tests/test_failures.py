@@ -1058,10 +1058,10 @@ def test_a_merge_of_what_the_remote_holds_stops_only_on_what_is_new_to_it(tmp_pa
     _committed(work, "a.py")
     _git_in(work, "push", "-q", "origin", "main")
     _git_in(work, "checkout", "-q", "-b", "release")
-    _committed(work, "notes.pdf", b"%PDF\x00" * 64, "release notes")
+    _committed(work, "notes.p12", b"%PDF\x00" * 64, "release notes")
     _git_in(work, "push", "-q", "origin", "release")
     _git_in(work, "checkout", "-q", "main")
-    _committed(work, "manual.pdf", b"%PDF\x00" * 64, "a manual")
+    _committed(work, "manual.p12", b"%PDF\x00" * 64, "a manual")
     _git_in(work, "push", "-q", "origin", "main")  # from a clone with no hook: the remote holds both sides
     monkeypatch.chdir(work)
     monkeypatch.setattr(push, "review", cli.main)
@@ -1075,10 +1075,10 @@ def test_a_merge_of_what_the_remote_holds_stops_only_on_what_is_new_to_it(tmp_pa
     assert pushed() == 0, capsys.readouterr().out
     _git_in(work, "reset", "-q", "--hard", "origin/main")
     _git_in(work, "merge", "-q", "--no-commit", "release")
-    (work / "deck.pdf").write_bytes(b"%PDF\x00" * 64)  # new in the merge itself, to every base
-    _git_in(work, "add", "deck.pdf")
+    (work / "deck.p12").write_bytes(b"%PDF\x00" * 64)  # new in the merge itself, to every base
+    _git_in(work, "add", "deck.p12")
     _git_in(work, "commit", "-qm", "merge, with a deck")
-    assert pushed() == 1 and "deck.pdf" in capsys.readouterr().out
+    assert pushed() == 1 and "deck.p12" in capsys.readouterr().out
 
 
 def test_a_push_to_this_repository_itself_sends_nothing_off_the_machine(tmp_path, monkeypatch, capsys) -> None:
@@ -1130,6 +1130,21 @@ def test_the_install_recipe_keeps_the_hook_it_finds_and_hands_both_gits_lines(tm
     stopped = subprocess.run(hook, cwd=work, env={**env, "REVIEW_EXIT": "1"}, input=lines, text=True, check=False)
     assert stopped.returncode == 1 and not (tmp_path / "before.in").exists(), "a stopped push runs nothing after"
     assert shutil.which("sh", path=env["PATH"]), "a shell to run the recipe in"
+
+
+def test_the_history_a_push_sends_reads_no_third_party_code(tmp_path) -> None:
+    """Asked by the owner: never scan a third-party library's code, in the pre-push hook's reading of each commit too:
+    a vendored package's key, its binary and its pointer are another project's, and none is read or named; nor is a
+    file neither Python's nor a config's."""
+    push = importlib.import_module("adk_review.push")
+    _remote, work = _pushed_from(tmp_path)
+    _committed(work, "a.py")
+    _git_in(work, "push", "-q", "origin", "main")
+    _git_in(work, "checkout", "-q", "-b", "bump")
+    _committed(work, "vendor/lib/keys.py", 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "vendor a library")
+    _committed(work, "vendor/lib/data.bin", b"\x00\x01" * 64, "and its data")
+    _committed(work, "notes.md", 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "a page")
+    assert push.in_history(str(work), "origin", "HEAD", None, []) == []
 
 
 def test_the_history_a_push_sends_is_read_with_the_push_history_profile(tmp_path, monkeypatch) -> None:

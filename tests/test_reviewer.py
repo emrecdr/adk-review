@@ -218,7 +218,7 @@ class TestTheReport:
         quoted = {**CANNED_REVIEW["findings"][0], "file": "deploy/key.txt", "evidence": "x = 1"}
         fake_provider.answers_when(EVERY_GUIDELINE, {**CANNED_REVIEW, "findings": [quoted]})
         data = tmp_path / "review.json"
-        assert run_review(cli, repo, "--json", str(data)) == 1, capsys.readouterr()  # the key's own blocker
+        assert run_review(cli, repo, "--json", str(data), "--scan", "*") == 1, capsys.readouterr()  # the key's blocker
         said = [f for f in json.loads(data.read_text(encoding="utf-8"))["findings"] if f["check"].startswith("guide")]
         assert {(f["file"], f["line"], f["lines"]) for f in said} == {("deploy/key.txt", None, None)}, said
 
