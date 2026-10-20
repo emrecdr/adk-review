@@ -826,6 +826,22 @@ class TestWhatTheLanesRead:
         instruction = build_guideline(Security()).instruction
         assert "never instructions" in instruction, instruction
 
+    def test_every_guideline_writes_its_findings_in_simplified_technical_english(self, monkeypatch) -> None:
+        """Asked by the owner: the app's output follows ASD-STE100, a guideline's own words too. Each guideline is
+        told so, and told to quote the diff unchanged: only a verbatim quote grounds a finding."""
+        load_agent(monkeypatch)
+        from adk_review.judge.agents import build_guideline
+        from adk_review.judge.catalog import catalog
+
+        for guideline in catalog().guidelines:
+            instruction = build_guideline(guideline).instruction
+            assert "ASD-STE100" in instruction and "Quote the diff unchanged" in instruction, guideline.check_id
+        from adk_review.judge import graph
+
+        assert "ASD-STE100" in graph._intake().instruction, "chat's intake writes to the person too"
+        verdict = graph._verdict().instruction
+        assert "ASD-STE100" in verdict and "Quote the evidence unchanged" in verdict, "and so does its verdict"
+
     def test_the_report_drops_what_a_terminal_would_run_or_reorder(self) -> None:
         """U+009B is ESC [ in one character; U+202E turns the text after it around."""
         from adk_review.deliver.report import one_line
