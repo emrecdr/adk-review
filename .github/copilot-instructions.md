@@ -1,24 +1,29 @@
 # Copilot instructions for this repository
 
-This repository is `adk-review`, a git-branch code reviewer on Google ADK (`google-adk[extensions]==2.9.2`, Python
-3.13, `uv`). It is grouped by the steps of a review — `core`, `collect`, `judge`, `deliver` — and every check is one
-file: a rule, decided by code, in `adk_review/judge/rules/`, importing one door, `adk_review/judge/rule_helpers/`, and
-held to its own examples; a guideline, judged by a model, in `adk_review/judge/guidelines/`; each named after its file
-and chosen by profile in `adk_review/config.toml`. Around them: the rules as one node before the guidelines, retries, a
+This repository is `adk-review`, a git-branch code reviewer on Google ADK (`google-adk[extensions]==2.9.2`, Python 3.13,
+`uv`). It is grouped by the steps of a review — `core`, `collect`, `judge`, `deliver` — and every check is one file: a
+rule, decided by code, in `adk_review/judge/rules/`, importing one door, `adk_review/judge/rule_helpers/`, and held to
+its own examples; a guideline, judged by a model, in `adk_review/judge/guidelines/`; each named after its file and
+chosen by profile in `adk_review/config.toml`. Around them: the rules as one node before the guidelines, retries, a
 token ceiling, `--verify`, each file's blast radius, fences with a nonce around all the guidelines read, what a review
-covers (`--path`, `--all`, `--staged`), a JSON report for pipelines (`--json`) and a pre-push hook. `CLAUDE.md` at the
-root is the long form of these instructions, which Copilot in VS Code and the cloud agent read as well, so the two
-agree; `README.md` is the developer's guide and `GUIDE.md` the user's. Path-specific rules sit in
-`.github/instructions/`, and the recurring tasks in `.github/skills/`, each a slash command in VS Code's chat:
-`/new-rule`, `/new-guideline`, `/review-a-branch` and `/update-docs`, which keeps the docs true after a change.
+covers (`--path`, `--all`, `--staged`) and reads (`[review] scan`: Python's files and the configs beside them, never
+another project's code under `third_party`, the credential rules alone reading the project's own files of every kind), a
+JSON report for pipelines (`--json`), `--quiet` for a pipeline's silent log, progress with a heartbeat at a terminal,
+and a pre-push hook. `CLAUDE.md` at the root is the long form of these instructions, which Copilot in VS Code and the
+cloud agent read as well, so the two agree; `README.md` is the developer's guide and `GUIDE.md` the user's.
+Path-specific rules sit in `.github/instructions/`, and the recurring tasks in `.github/skills/`, each a slash command
+in VS Code's chat: `/new-rule`, `/new-guideline`, `/review-a-branch` and `/update-docs`, which keeps the docs true after
+a change.
 
 ## Secrets and configuration
 
 One `.env` at the root (gitignored, copied from `.env.example`) holds `REVIEW_PROVIDER`, `REVIEW_MODEL` and the keys;
-the shell wins over it at every entry point. Never read, print or quote `.env`, a key, or the Copilot token or its
-folder (`~/.config/litellm/github_copilot`, or `GITHUB_COPILOT_TOKEN_DIR`), and never run `adk-review-login`: it needs
-the person at a browser, and `--force` replaces their token. `adk_review/judge/config.py` injects `truststore` before
-any client is built, so certificates come from the operating system's store; keep that line where it is.
+the shell wins over it at every entry point. A guideline may name its own model per arm in its file, `models =
+Models(copilot=…, gemini=…)`, which `REVIEW_<ID>_MODEL` overrides; `REVIEW_VERIFIER_MODEL` gives `--verify` its own.
+Never read, print or quote `.env`, a key, or the Copilot token or its folder (`~/.config/litellm/github_copilot`, or
+`GITHUB_COPILOT_TOKEN_DIR`), and never run `adk-review-login`: it needs the person at a browser, and `--force` replaces
+their token. `adk_review/judge/config.py` injects `truststore` before any client is built, so certificates come from the
+operating system's store; keep that line where it is.
 
 ## When reviewing a pull request
 
@@ -71,6 +76,10 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   a model writes into a finding. Every `subprocess.run` that
   decodes passes `encoding=`; no source spells `/tmp/` (`tempfile.gettempdir()`); a file a script or a fixture commits
   is written with `newline="\n"`.
+- Every sentence the package prints itself — a stderr line, a flag's `--help`, an error it raises or answers, a rule's
+  title and fix — is ASD-STE100: one command, at most 20 words, no `;` joining two (`tests/test_command.py`). The
+  guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged. A
+  rule's `(path, text)` example names a file the shipped `scan` reads (`tests/test_catalog.py`).
 
 ## Tests
 
@@ -79,7 +88,8 @@ the fixtures, the naming, async — is in `.github/instructions/tests.instructio
 
 ## Style
 
-Ruff, line length 120, Python 3.13. Comments and docstrings are plain prose that says why; commit subjects are
-plain-prose sentences stating what changed and what was learned. A pull request comes with lint, the type check and the
-suite green on the three platforms CI runs (`.github/workflows/ci.yml`, `azure-pipelines.yml`), and a workflow action is
-pinned by its commit SHA, and uv by one exact version in every pipeline.
+Ruff, line length 120, Python 3.13. Comments and docstrings are plain prose that says why, and what the package prints
+follows ASD-STE100; commit subjects are plain-prose sentences stating what changed and what was learned. A pull request
+comes with lint, the type check and the suite green on the three platforms CI runs (`.github/workflows/ci.yml`,
+`azure-pipelines.yml`), and a workflow action is pinned by its commit SHA, and uv by one exact version in every
+pipeline.

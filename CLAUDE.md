@@ -100,11 +100,11 @@ only the files `scan` names unless it sets `reads_every_kind = True`, as the two
 README as from code. A rule or a guideline whose findings change how code reads and never what it does sets `cleanup =
 True`, as `simplify` and `complexity` do: the hand-off lists them under `## Tidy`, apart from the fixes, and holds one
 back on lines a defect at major or above names. A rule may carry `bad` and `good` examples (those that read ruff carry
-none), which the catalog holds it to at every start with its own source, a rule failing either being exit 2; `try_rule`,
-`lines_hit` and `self_check` try a rule with no repository, `--list-checks` lists every check with its kind, its
-profiles and its file, `--check ID` runs one check alone. Each check has one id, `rule.<name>` or `guideline.<name>`
-(`core/profiles.py`), in the config, on the command line and as its own report section; inside ADK it is `state_key`'s
-identifier, `rule_<name>`.
+none), which the catalog holds it to at every start with its own source, a rule failing either being exit 2, and a
+`(path, text)` example names a file the shipped `scan` reads (`tests/test_catalog.py`); `try_rule`, `lines_hit` and
+`self_check` try a rule with no repository, `--list-checks` lists every check with its kind, its profiles and its file,
+`--check ID` runs one check alone. Each check has one id, `rule.<name>` or `guideline.<name>` (`core/profiles.py`), in
+the config, on the command line and as its own report section; inside ADK it is `state_key`'s identifier, `rule_<name>`.
 
 The one config file, `config.toml` beside `review.py`, holds the profiles under `[profiles]` — named lists of check ids
 or the groups `rules` and `guidelines`, `default` the basics — and the review policy (`[review]` `fail_on`,
@@ -198,6 +198,9 @@ Conventions:
   The report cuts each finding's evidence the same way, after the scrub, and breaks CI runners' command openers (`##[`,
   `##vso[`) and HTML comments' (`<!--`) in all it prints, and in prose a markdown image's or link's (`![`, `](`), every
   character a reader cannot see printed as a space.
+- Every sentence the package prints itself — a stderr line, a flag's `--help`, an error it raises or answers, a rule's
+  title and fix — is ASD-STE100: one command, at most 20 words, no `;` joining two (`tests/test_command.py`). The
+  guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged.
 - State moves between agents via `output_key` and `{placeholder}` (`{key?}` where the key may be missing). Each key
   more than one module uses is spelled once, in `judge/agents.py`; a check's key is its id through `state_key`.
 - Every `subprocess.run` that decodes passes `encoding=`; no source under `adk_review/` or `scripts/` spells `/tmp/`

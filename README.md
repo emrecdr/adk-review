@@ -402,11 +402,13 @@ class RequiredPaths(TreeRule):
    saying why there is none. A `Hit` names its own title, severity or fix, where one rule covers several problems, as
    `lint` does for ruff's codes. Anything else returned is a sentence naming what the kind takes, and a rule that raises
    is named with the line of its own file that raised.
-3. Give it examples: `bad`, each of which it must flag, and `good`, each of which it must leave alone — a text, read
-   at `example.py`; a `(path, text)` pair, for a rule that chooses its files; or `{path: text}`, several files at
-   once. At every start the catalog holds every rule to its own examples, and a line or a file rule to firing on
-   nothing in its own source, its examples aside: a rule that fails either is a sentence and exit 2, never a rule
-   that quietly finds nothing.
+3. Give it examples: `bad`, each of which it must flag, and `good`, each of which it must leave alone — a text, read at
+   `example.py`; a `(path, text)` pair, for a rule that chooses its files; or `{path: text}`, several files at once. At
+   every start the catalog holds every rule to its own examples, and a line or a file rule to firing on nothing in its
+   own source, its examples aside: a rule that fails either is a sentence and exit 2, never a rule that quietly finds
+   nothing. A `(path, text)` example names a file the shipped `scan` reads, or any file of the project's own for a rule
+   that sets `reads_every_kind` (`tests/test_catalog.py`). Its `title` and `fix` hold one command and at most 20 words a
+   sentence, as every sentence the package prints does (`tests/test_command.py`).
 4. See it fire, with no repository, no model and no key:
    `uv run python -m adk_review.review --try src/ --check rule.no-todo` reads files on disk, each as wholly
    added — a file at the path given, a folder's files at their paths inside it — and `--explain rule.no-todo` prints
@@ -497,7 +499,8 @@ and the hand-off lists its findings as tidies, apart from the fixes.
 A guideline that needs a stronger or a cheaper model names one per arm, `models = Models(copilot="claude-sonnet-4",
 gemini="gemini-2.5-pro")`, with `Models` imported beside `Guideline`. An arm it leaves blank runs on `REVIEW_MODEL`.
 `REVIEW_<ID>_MODEL` on a machine overrides both: `REVIEW_NAMING_MODEL`. The review checks each model before any call,
-and the report names a guideline on a model of its own.
+and the report names a guideline on a model of its own. Its id is never `verifier` or `fallback`: those roles are the
+reviewer's own, and their variables name other models.
 
 1. Copy it to `judge/guidelines/<name>.py` and name the guideline after the file.
 2. Write the role: who the model is and what it judges the change for, in a sentence or two. The instruction asks

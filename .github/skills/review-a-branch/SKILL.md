@@ -34,6 +34,7 @@ catch the wrong branch; `--list-checks` shows every check with its kind, its pro
    listed, or a file it holds not read whole), a changed file no guideline read whole, or a finding at the bar whose
    quote the diff does not bear out or that a verifier refuted — which must never be read as "nothing found".
 4. The report lists findings under each check that ran, a section each (`rule.secrets`, `rule.lint`, …, then
-   `guideline.security` and the other guidelines), the blast
-   radius of each changed file, what was not read, and what the run cost. Quote its lines when you report, rather
-   than paraphrasing them.
+   `guideline.security` and the other guidelines), the blast radius of each changed file, what was not read, the files
+   it ignored by `[review] scan` and `third_party` (the credential rules still read the project's own), and what the run
+   cost. In a pipeline, `--quiet` prints nothing when the review passes. Quote its lines when you report, rather than
+   paraphrasing them.
