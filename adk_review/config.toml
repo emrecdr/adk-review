@@ -61,8 +61,9 @@ third_party = [
 # A check is a rule, decided by code, one file in judge/rules/, or a guideline, judged by a model, one file in
 # judge/guidelines/. A profile names each by its id, rule.<name> or guideline.<name>, as --list-checks prints them,
 # or every check of a kind by the group `rules` or `guidelines`. A check runs only where a profile names it, or alone
-# with --check ID: a new rule joins every profile that names `rules` at once, as `demo` does, and `rules-only`,
-# `full` and `default` when its id is added to them.
+# with --check ID: a new rule joins every profile that names `rules` at once, as `demo` does, `rules-only` and `full`
+# when its id is added to them, and `default` when it is added there and to `default-rules` and `code-review`, which
+# the tests hold to the default's rules.
 [profiles]
 # The basics, what a review runs when no --profile names another: the rules every project wants — a credential, by a
 # vendor's shape or by the name it is given, and lint — the two that guard the review itself — against a diff that gives

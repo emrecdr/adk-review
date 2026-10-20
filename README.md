@@ -154,10 +154,10 @@ The order is the architecture: evidence and rules first, the guidelines' judgeme
    Anything wrong here is one sentence on stderr and exit 2, before any model call.
 2. **Gather the evidence, in plain Python.** Read-only git gives each changed file's whole diff, a Python file's hunks
    each within the function around it where a guideline reads it, and the lines it added, its text at the head for the
-   file rules, a symbolic link's being the file it runs, followed through links as a system follows them, every line
-   of it new under the link's name, and, where a tree rule or a guideline runs, the head's tree and each changed file's
-   blast radius. The block of diffs the guidelines read is built here, each diff capped and the block capped, every
-   cut named.
+   file rules, a symbolic link of a kind the review reads being the file it runs, followed through links as a system
+   follows them, every line of it new under the link's name, where one `scan` leaves out is read as its own path, and,
+   where a tree rule or a guideline runs, the head's tree and each changed file's blast radius. The block of diffs the
+   guidelines read is built here, each diff capped and the block capped, every cut named.
 3. **Run every rule** before any model call: in one graph node where a guideline follows, straight from the driver
    where none does. Each rule answers with what it found, or why it could not look.
 4. **Let the guidelines judge the change.** Each is an ADK agent with a role of its own, and they run at once under a
@@ -168,8 +168,8 @@ The order is the architecture: evidence and rules first, the guidelines' judgeme
    made, and one it refutes is dropped and named.
 6. **Fold and decide.** Findings on the same lines fold into one, the most severe reading kept whole. The verdict is
    code's: a kept finding at or above `--fail-on` is `REQUEST_CHANGES`, exit 1. A hole — a check that failed or could
-   not look, a changed file no check read whole, a dropped finding at the bar — is `DEGRADED`, exit 3. A hole never
-   approves.
+   not look, a changed file no guideline can read whole, a dropped finding at the bar — is `DEGRADED`, exit 3. A hole
+   never approves.
 7. **Deliver.** The report goes to stdout, and the JSON (`--json`) and a hand-off for a coding agent (`--handoff`) to
    their files, whenever a review is decided.
 
