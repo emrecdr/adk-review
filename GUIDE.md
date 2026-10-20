@@ -343,8 +343,11 @@ What the hook cannot see, or stops on:
   above, a lock file say, is read as far as its diff shows it, which is all `reviewer-instructions` reads; a Python file
   past them is a hole for `lint`, `pitfalls` and `encoding-declaration`, which read a file whole, and stops the push.
 - A symbolic link is read as the file it runs, followed a part at a time as a system follows it, through links to
-  folders and links to links. One naming a Git LFS pointer, or one whose way could not be followed, is a hole for a
-  rule that reads it whole, and stops the push; one naming no file of the repository, a folder or a path outside it,
+  folders and links to links. A path out of the repository is read as coming back in: through the checkout's own
+  folder, by whatever name a clone gave it, or into a copy deployed from the top of the file system, at `/app` say.
+  One naming a Git LFS pointer, a file inside a submodule, a path only a file system blind to case or to Unicode's
+  forms finds, as macOS's and Windows' are, more than one file as where a copy lies decides, or one whose way could
+  not be followed, is a hole for a rule that reads it whole, and stops the push; one naming no file, a folder say,
   holds nothing to run, and stops nothing.
 - A repository with no `.git` folder of its own, a bare one or one used through `--git-dir`, and a tag of a tree or a
   blob, stop the push: the hook reviews a working tree's commits.

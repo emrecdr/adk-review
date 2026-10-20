@@ -5,7 +5,6 @@ No git runs here: `git.py` reads, this module arranges, so each piece is tried o
 
 from __future__ import annotations
 
-import itertools
 from collections.abc import Mapping, Sequence
 
 from ..core.blast import Blast, blast_radius
@@ -28,26 +27,40 @@ def radius_of(tree: Tree | None, files: list[Entry]) -> Blast:
     return blast_radius(tree.parsed, files, len(tree.unread))
 
 
-#: A file Git LFS stores is committed as the pointer to its content: the whole file, opening with this line and then
-#: the object's id, as the spec orders them. Measured by review, a branch tracked `*.py` with LFS, committed a pointer,
-#: and the review approved what it never read.
-LFS_VERSION = "version https://git-lfs.github.com/spec/v1"
+#: A file Git LFS stores is committed as the pointer to its content, opening with a version line and then the
+#: object's id: the spec's version, and the two Git LFS took before it. Measured by review, a branch tracked `*.py` with
+#: LFS, committed a pointer, and the review approved what it never read; and measured with git-lfs 3.8.0, each version
+#: line is one it smudges, with CRLF line ends, blank lines or spaces before it, or extension lines after it, where the
+#: spec's alone was known here and a pointer spelled another way was linted as Python.
+LFS_VERSIONS = frozenset(
+    f"version {url}"
+    for url in ("https://git-lfs.github.com/spec/v1", "https://hawser.github.com/spec/v1", "http://git-media.io/v/2")
+)
+#: How much of a file Git LFS reads to know a pointer: past it, nothing.
+POINTER_BYTES = 1_024
 
 
 def pointer_text(text: str) -> bool:
-    """Whether `text`, a file's whole, is a Git LFS pointer, as `lfs_pointer` reads one off a diff: the spec's version
-    its first line, and the object's id its second."""
-    first, _, rest = text.partition("\n")
-    return first == LFS_VERSION and rest.startswith("oid sha256:")
+    """Whether a file opening with `text` is a Git LFS pointer, as Git LFS reads one: its first `POINTER_BYTES`, the
+    space around them trimmed and blank lines passed over, a version line it reads first and the object's id after.
+    A page quoting the format holds them further down."""
+    said = [line.strip() for line in text[:POINTER_BYTES].strip().split("\n") if line.strip()]
+    return bool(said) and said[0] in LFS_VERSIONS and any(line.startswith("oid sha256:") for line in said[1:])
 
 
 def lfs_pointer(diff: str) -> bool:
-    """Whether the file the diff leaves is an LFS pointer: its first two lines as the diff shows them, whatever lines
-    it removed before them. A page quoting the format holds those lines further down. Read by review: four lines of
-    the hunk, removed ones counted, missed a file the change turned into a pointer, its old lines removed first."""
+    """Whether the file the diff leaves is a Git LFS pointer: `pointer_text` of its opening lines as the diff shows
+    them, whatever lines it removed before them. Read by review: four lines of the hunk, removed ones counted, missed a
+    file the change turned into a pointer, its old lines removed first."""
+    opening: list[str] = []
+    read = 0
     kept = ((number, line[1:]) for number, line in hunk_lines(diff) if line[:1] != "-")
-    opening = dict(itertools.islice(kept, 2))
-    return opening.get(1) == LFS_VERSION and opening.get(2, "").startswith("oid sha256:")
+    for at, (number, line) in enumerate(kept, 1):
+        if number != at or read > POINTER_BYTES:
+            break
+        opening.append(line)
+        read += len(line) + 1
+    return pointer_text("\n".join(opening))
 
 
 def unread(entry: Entry, diff: str, cut: bool, fits: bool, cap: int) -> str:

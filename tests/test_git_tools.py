@@ -907,22 +907,34 @@ class TestWhatALinkPointsAt:
             ("assets", None),  # a folder runs as no file
             ("assets/logo.png/", None),  # nor a file read as a folder
             ("assets/logo.png/../logo.png", None),
-            ("vendor/x.py", None),  # a submodule's files are another repository's
-            ("../outside.py", None),  # out of the repository
+            ("vendor", None),  # a submodule is a folder
+            ("vendor/../assets/logo.png", "assets/logo.png"),
+            ("vendor/tool.png", "unfollowed"),  # and what it holds another repository's
+            ("../proj/assets/logo.png", "assets/logo.png"),  # back in through a checkout named `proj`
+            ("../../work/proj/assets/logo.png", "assets/logo.png"),
+            ("../outside.py", None),  # a checkout's own folder, at most
+            ("/app/assets/logo.png", "assets/logo.png"),  # a copy deployed at `/app`
             ("/etc/passwd", None),
-            ("C:/Windows/x.py", None),  # a drive's
-            ("\\\\host\\share\\x.py", None),
+            ("/opt/tools/run.sh", "unfollowed"),  # `tools/run.sh` or `run.sh`, as where the copy lies decides
+            ("Assets/Logo.png", "unfollowed"),  # what a file system blind to case finds
+            ("cafe\u0301.png", "unfollowed"),  # or one blind to Unicode's forms
+            ("C:logo.png", "C:logo.png"),  # a name, as git stores a link and a POSIX system reads one
+            ("\\logo.png", "\\logo.png"),
+            ("C:/Windows/x.py", None),
             ("loop", None),  # a link to itself: past forty, as a system reads it
             ("unread/x.py", "unfollowed"),  # a link on the way that was not read
         ],
     )
     def test_a_link_runs_as_the_file_a_system_finds_there(self, named: str, runs: str | None) -> None:
         """Each part of the path in turn, as a system follows it: a link on the way, a `..` after one, and a file, a
-        folder, a submodule or a path out of the repository at the end."""
+        folder or a submodule at the end. Read by review: a path out of the repository, which a checkout's own folder
+        or a deployed copy leads back into, one only a file system blind to case finds, and one into a submodule each
+        named no file, and the pre-push hook's profile approved what each runs."""
         from adk_review.core.paths import Links, UnfollowedError
 
+        files = {"assets/logo.png", "assets/pkg/readme.txt", "tools/run.sh", "run.sh", "C:logo.png", "\\logo.png"}
         head = Links(
-            {"assets/logo.png", "assets/pkg/readme.txt"},
+            {*files, "caf\u00e9.png"},
             {"img": "assets", "lib": "assets/pkg", "loop": "loop", "unread": None, "run.py": named},
             ["vendor"],
         )
@@ -931,6 +943,43 @@ class TestWhatALinkPointsAt:
         except UnfollowedError:
             found = "unfollowed"
         assert found == runs
+
+    def test_the_folders_of_deep_paths_cost_no_copy_of_each(self) -> None:
+        """Read by review: every folder of every path at the head was kept as a string of its own, so one link in a
+        change of 200 paths two thousand folders deep took a gigabyte. The folders are read off the paths, sorted."""
+        import tracemalloc
+
+        from adk_review.core.paths import Links
+
+        paths = [f"b{n}/" + "a/" * 1_000 + "f.py" for n in range(50)]
+        tracemalloc.start()
+        try:
+            head = Links(paths, {"run.py": paths[0]})
+            assert head.follow("run.py") == paths[0]
+            _now, peak = tracemalloc.get_traced_memory()
+        finally:
+            tracemalloc.stop()
+        assert peak < 5_000_000, f"{peak:,} bytes"
+
+    def test_a_path_out_of_the_repository_that_leads_back_in_is_read(self, tmp_path: Path) -> None:
+        """Read by review: `run.py` naming `../proj/assets/logo.png` named nothing here, a path out of the repository,
+        where a clone in its default folder, `proj`, runs `assets/logo.png` and its shell call: approved under the
+        pre-push hook's profile. A path climbing out is read as coming back in through the checkout's own folder."""
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.lint import Lint
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "assets/logo.png", "import os\nos.system(input())\n", "an image")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        self._staged(repo, {"run.py": "../proj/assets/logo.png"}, tmp_path / "links")
+        _git_in(repo, "commit", "-qm", "a link out and back")
+        evidence = importlib.import_module("adk_review.collect.git").collect_evidence(
+            str(repo), BASE, "change", guidelines=False
+        )
+        found = run_rules(evidence, [Lint()])["rule.lint"].findings
+        assert [(f.file, f.line) for f in found if "S605" in f.title] == [("run.py", 2)], [f.title for f in found]
 
     def test_a_link_is_named_unread_where_the_heads_tree_could_not_be_listed(self, tmp_path: Path, monkeypatch) -> None:
         """Read by review: a link was known by the head's listing alone, so where git could not list the head, past
@@ -995,6 +1044,30 @@ class TestWhatALargeFileStoreHides:
         _committed(repo, "tool.py", "version https://git-lfs.github.com/spec/v1\noid sha256:" + "a" * 64 + "\nsize 9\n")
         pointer = gathered(repo, "change")["tool.py"]
         assert (pointer["text"], pointer["unread_text"]) == (None, None)
+
+    @pytest.mark.parametrize(
+        "pointer",
+        [
+            "version https://hawser.github.com/spec/v1\noid sha256:{oid}\nsize 9\n",
+            "version http://git-media.io/v/2\noid sha256:{oid}\nsize 9\n",
+            "version https://git-lfs.github.com/spec/v1\r\noid sha256:{oid}\r\nsize 9\r\n",
+            "\n  version https://git-lfs.github.com/spec/v1\noid sha256:{oid}\nsize 9\n",
+            "version https://git-lfs.github.com/spec/v1\next-0-foo sha256:{oid}\noid sha256:{oid}\nsize 9\n",
+        ],
+        ids=["hawser", "git-media", "crlf", "blank-first", "extension"],
+    )
+    def test_every_spelling_git_lfs_reads_as_a_pointer_is_one(self, pointer: str, tmp_path: Path) -> None:
+        """Read by review: one spelling of a pointer was known, where Git LFS 3.8.0 also reads the two version lines it
+        took before the spec's, CRLF line ends, blank lines and spaces before it and extension lines after it, and
+        smudges each into the stored file: a pointer committed as `tool.py` in any of those was linted as Python, its
+        lines eight findings of invalid syntax, and a link to one so too, approved."""
+        text = pointer.format(oid="a" * 64)
+        repo = _branch_off_empty(tmp_path / "repo", "change")
+        _committed(repo, "tool.py", text)
+        assert "Git LFS" in gathered(repo, "change")["tool.py"]["unread"]
+        linked = TestWhatALinkPointsAt._linked(tmp_path / "linked", "model.py", target_text=text)
+        link = gathered(linked, "change", guidelines=False)["run.py"]
+        assert link["text"] is None and "Git LFS" in (link["unread_text"] or ""), (link["text"], link["unread_text"])
 
     def test_a_page_quoting_a_pointer_is_read_as_the_page_it_is(self, tmp_path: Path) -> None:
         """A pointer is a whole file, its version line first and the object's id second: a page explaining the format
