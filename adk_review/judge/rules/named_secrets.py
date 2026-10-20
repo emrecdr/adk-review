@@ -57,19 +57,19 @@ _SCHEME = re.compile(r"(?i)\A(?:bearer|basic|token)\s+(?=\S+$)")
 #: An environment's file, which a folder named `test` holds as config, never as a test's fixture: `.env`, `db.env`,
 #: `.env.test`. Read by review: any file in such a folder was a test's, and a password in `deploy/test/db.env` passed.
 _ENV_FILE = re.compile(r"(?:^|/)(?:[^/]*\.env|\.env(?:\.[^/]*)?|\.envrc)$")
-#: A test suite's own folder, by each language's layout. At any depth: `tests/`, Jest's `__tests__/`, Go's
-#: `testdata/`. At the top, as a package keeps its suite: `test/`, RSpec's `spec/`, Swift's `Tests/`, Xcode's
-#: `MyAppTests/`, .NET's `MyApp.Tests/`. Maven's `src/test/`, Android's `src/androidTest/`. A `test/` folder below the
-#: top names an environment as often, `deploy/test/`, and is read. Read by the fourth review: any folder named `test`
-#: was a suite, and a password in `deploy/test/db.js` passed.
+#: A test suite's own folder, by each language's layout. At any depth: `tests/`, Jest's `__tests__/`, Go's `testdata/`.
+#: At the top, as a package keeps its suite: `test/`, RSpec's `spec/`, Swift's `Tests/`, Xcode's `MyAppTests/`, .NET's
+#: `MyApp.Tests/`. Maven's `src/test/`, a Gradle source set's `src/androidTest/`. A `test/` folder below the top names
+#: an environment as often, `deploy/test/`, and is read. Read by the fourth review: any folder named `test` was a suite,
+#: and a password in `deploy/test/db.js` passed.
 _SUITE = re.compile(
-    r"(?:^|/)(?:tests|__tests__|testdata)/|^(?:test|spec|\w*Tests|[\w.]+\.Tests)/|(?:^|/)src/(?:test|\w+Test)/"
+    r"(?:^|/)(?:tests|__tests__|testdata)/|^(?:test|spec|\w*Tests|[\w.]+\.Tests)/|(?:^|/)src/(?:test|[a-z]\w*Test)/"
 )
 #: A test file by its own name, in the languages that name one: `test_login.py`, `conftest.py`, `login_test.go`,
 #: `login.test.ts`, `login.spec.js`, `login_spec.rb`. Each name is bound to its language: `pod_spec.py` is production
 #: code, as the third review found.
 _TEST_NAME = re.compile(
-    r"(?:^|/)(?:test_\w*\.pyi?|conftest\.py)$|_test\.(?:pyi?|go|rb|exs?|dart|rs)$|\.(?:test|spec)\.[cm]?[jt]sx?$"
+    r"(?:^|/)(?:test_\w*\.pyi?|conftest\.py)$|_test\.(?:pyi?|go|rb|exs|dart|rs)$|\.(?:test|spec)\.[cm]?[jt]sx?$"
     r"|_spec\.rb$"
 )
 #: The shortest credential a machine makes: shorter is a documentation's example, `sk-1234`.

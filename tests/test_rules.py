@@ -255,6 +255,15 @@ class TestTheSecretShapes:
         }
         for path, text in suites.items():
             assert lines_hit(NamedSecrets(), path, text) == [], path
+        # Read by the fifth review: Mix tests only `*_test.exs`, and Gradle's source sets start lower-case, so an
+        # Elixir module named `ab_test.ex` and a .NET project `src/SpeedTest/` are production code, read.
+        production = {
+            "lib/my_app/ab_test.ex": 'password = "Sup3rS3cret-db9"\n',
+            "src/SpeedTest/appsettings.json": '"Password": "Sup3rS3cret-db9"\n',
+            "src/ABTest/Experiment.java": 'String password = "Sup3rS3cret-db9";\n',
+        }
+        for path, text in production.items():
+            assert lines_hit(NamedSecrets(), path, text) == [1], path
 
     def test_named_secrets_weighs_the_value_as_well_as_the_name(self) -> None:
         """A person chooses a password, which may be any words; a machine makes a token, a key or a secret, one run of
