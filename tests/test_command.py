@@ -1116,6 +1116,23 @@ class TestWhatAReviewKeeps:
         monkeypatch.setattr(cli.platform, "python_version", lambda: "3.14.0")
         assert cli._cached_at(args, chosen, evidence, "m", previous) != key
 
+    def test_a_previous_reports_health_is_bounded_as_its_findings_are(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ):
+        """Read by review: a previous report's health was read as it was loaded, where its findings are made safe and
+        so bounded, and the cache key's encoding of one nested deep overflowed the stack: exit 3, where the same
+        review gave 0 without the cache. Health now gets the findings' bound, and their sentence."""
+        from adk_review.deliver.report import SCHEMA
+
+        node = health = {}
+        for _ in range(2_000):
+            node["a"] = {}
+            node = node["a"]
+        previous = tmp_path / "previous.json"
+        previous.write_text(json.dumps({"schema": SCHEMA, "findings": [], "health": health}), encoding="utf-8")
+        assert run_review(cli, demo_repo, "--previous", str(previous), "--profile", "default-rules") == 2
+        assert "nested deeper than a report --json writes" in capsys.readouterr().err
+
     def test_a_debug_log_holds_what_each_guideline_was_asked_and_no_secret(
         self, cli, demo_repo: Path, tmp_path: Path
     ) -> None:

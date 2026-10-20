@@ -133,13 +133,21 @@ class Rule(AnyRule):
         """True when `line`, added to `path`, breaks the rule."""
 
     def hits(self, files: list[Entry], tree: Tree | None) -> list[Hit]:  # noqa: ARG002 -- a line rule reads no tree
-        return [
+        read = [entry for entry in files if self.reads(entry["path"])]
+        found = [
             Hit(entry["path"], line, f"+{text}")
-            for entry in files
-            if self.reads(entry["path"])
+            for entry in read
             for line, text in added_to(entry)
             if self.check(entry["path"], text)
         ]
+        # A link's lines are the file it names: one not read shows only that file's path, so the rule could not look.
+        # Read by review: a key in a blob a partial clone lacked was approved, named nowhere, and kept in the cache.
+        missed = [
+            f"{entry['path']} {entry['unread_text']}" for entry in read if "target" in entry and entry["unread_text"]
+        ]
+        if missed:
+            raise UnreadError("; ".join(missed), found)
+        return found
 
 
 #: What Python reads as source by its name; a file with no suffix is a script when its first line runs Python.

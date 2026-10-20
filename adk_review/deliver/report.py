@@ -782,12 +782,14 @@ def read_previous(path: str) -> tuple[dict[str, dict], dict | None]:
         # Each finding made safe whole, keys and nested values too, where it comes in: `resolved` gives it back, and
         # a kept report can be edited. One a review wrote reads the same, a cut's run of spaces aside.
         kept = {f["fingerprint"]: f for f in map(safe_value, findings)}
+        # Its health made safe too, and so bounded as the findings are: read by review, one nested deep and read as it
+        # was loaded overflowed the cache key's encoding, exit 3, where the same review gave 0 without the cache.
+        health = safe_value(data["health"]) if isinstance(data.get("health"), dict) else None
     except RecursionError:  # measured by review: nested 1,100 deep, which no report `--json` writes, it ended as a hole
         raise ValueError(f"--previous {path}: nested deeper than a report --json writes") from None
     except (OSError, ValueError) as exc:
         raise ValueError(f"--previous {path}: {getattr(exc, 'strerror', None) or exc}") from None
-    health = data.get("health")
-    return kept, health if isinstance(health, dict) else None
+    return kept, health
 
 
 # Cached: a report's strings repeat, its keys, checks, files and fixes. Measured over 18,296 findings: a previous

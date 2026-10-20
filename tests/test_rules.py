@@ -975,6 +975,20 @@ class TestTheCleanupAndThePitfalls:
         assert _codes(ruff_rule_findings(Pitfalls(), [test])) == [("PLW0129", "major")]
         assert ruff_rule_findings(Simplify(), [test]) == [], "cleanup in a test is not this rule's"
 
+    def test_a_line_rule_names_a_link_whose_file_was_not_read_as_a_hole(self) -> None:
+        """Read by review: a link's lines are the file it names, new under its name, and one not read, a blob a
+        partial clone lacks or a file past the size cap, showed a line rule only that file's path. A key there was
+        approved, named nowhere as not read, and kept in the cache. A file rule named it a hole already."""
+        from adk_review.core.evidence import entry
+        from adk_review.core.rules import run_rule
+        from adk_review.judge.rules.secrets import Secrets
+
+        link = entry("settings.yaml", "A", None, [(1, "conf/real.yaml")])
+        link |= {"target": "conf/real.yaml", "unread_text": "was not read whole"}
+        checked = run_rule(Secrets(), [link], None)
+        assert checked.could_not_look is not None, "a link not read is a hole, never silence"
+        assert "settings.yaml was not read whole" in checked.could_not_look, checked.could_not_look
+
     def test_pitfalls_and_simplify_leave_fastapis_routes_alone(self) -> None:
         """Measured by review on FastAPI 0.141.1: a route whose dependency or request reads the path parameter answers
         each id, and ruff's FAST003, which reads no dependency, named six such routes at major. Ruff documents
