@@ -45,7 +45,7 @@ from .core.findings import Finding, at_or_above
 from .core.paths import in_review, matches
 from .core.rules import AnyRule, run_rule
 from .core.text import CUT_MARK, lines_of
-from .core.verdict import EXIT_INTERRUPTED, EXIT_USAGE
+from .core.verdict import EXIT_INTERRUPTED, EXIT_TERMINATED, EXIT_USAGE
 from .deliver.report import safe_line
 from .judge.catalog import CONFIG, catalog, load_config, select
 from .review import main as review
@@ -124,7 +124,7 @@ def command(repository: str, head: str, base: str | None) -> list[str]:
 
 def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, str] | None:
     """None where the change passes its review against one of its bases, else the first review's exit code and report,
-    or at once those of one that ended with no report, interrupted or failed, which no other review clears.
+    or at once those of one interrupted, or that ended with no report, which no other review clears.
     A line the remote holds nowhere is new to every base, so one review that passes leaves none to find; each other
     base a merge brings holds the other side's own changes, which the remote holds already. So where every review of
     a merge stops, the merge stops only on what all of them found: read by review, a merge of two branches the remote
@@ -140,12 +140,13 @@ def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, s
         ):
             written = Path(folder) / "review.json"
             code = review([*command(repository, pushed, base), "--json", str(written)])
-            decided = written.exists()
-            found = _stops(json.loads(written.read_text(encoding="utf-8"))) if decided else None
-        if code == 0:
-            return None
-        if not decided:  # read by review: Ctrl-C's 130 wrote no report, and a review of the next base let the push by
-            return code, said.getvalue()
+            if code == 0:
+                return None
+            # Read by review: Ctrl-C's 130 wrote no report, and a review of the next base let the push by; so did one
+            # a moment after its report was written.
+            if code in (EXIT_INTERRUPTED, EXIT_TERMINATED) or not written.exists():
+                return code, said.getvalue()
+            found = _stops(json.loads(written.read_text(encoding="utf-8")))
         stopped = stopped or (code, said.getvalue())
         if len(bases) < 2:  # there is no other base to weigh it by
             return stopped

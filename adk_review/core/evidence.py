@@ -46,6 +46,10 @@ class Entry(TypedDict):
     diagnostics: NotRequired["Sequence[Diagnostic]"]  # an outside tool's, on the copy a rule naming the tool reads
 
 
+#: Why a symbolic link is a hole from its birth, until the file it names is read as text.
+LINK_UNREAD = "was not read as the file it names"
+
+
 def entry(
     path: str,
     status: str,
@@ -70,7 +74,7 @@ def entry(
         "unread": "",
         "cut": False,
         "text": text,
-        "unread_text": None,
+        "unread_text": LINK_UNREAD if link else None,
     }
     if old is not None:
         made["old"] = old

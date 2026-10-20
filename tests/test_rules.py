@@ -24,6 +24,7 @@ from conftest import (
     _link_staged,
     _with_profiles,
     catalog,
+    gathered,
     in_tags,
     run_review,
     run_rule,
@@ -1070,6 +1071,26 @@ class TestTheCleanupAndThePitfalls:
         assert run_review(cli, repo, "--profile", "default-rules") == 3
         assert "binary: no line of it can be read or quoted" in capsys.readouterr().out
 
+    def test_a_links_file_is_text_where_git_reads_its_bytes_as_text(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: the NUL that makes a link's file binary was looked for in characters counted one byte each,
+        so 2,700 U+FFFD, 8,100 bytes, then a NUL read as binary here, where git read text, and the key after them went
+        unread. The bytes git reads decide it, before any decoding."""
+        repo = _link_on_branch(tmp_path, "assets/notes.dat", "\ufffd" * 2_700 + "\x00\n" + KEY_LINE, "settings.yaml")
+        assert run_review(cli, repo, "--profile", "default-rules") == 1
+        assert "settings.yaml:2" in capsys.readouterr().out
+
+    def test_a_link_the_review_ignores_to_a_file_too_large_to_read_is_no_hole(
+        self, cli, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by review: `hero.png`, a link to an image past the size limits, was a hole for the credential rules,
+        which no skip list could clear, so every push that touched it stopped. A link of a kind `scan` leaves out is
+        read for its credentials where it can be, and is never a hole, as a file of its kind is none."""
+        from adk_review.collect import git
+
+        monkeypatch.setattr(git, "MAX_FILE_BYTES", 1_000)
+        repo = _link_on_branch(tmp_path, "assets/hero.png", b"\x89PNG\r\n\x1a\n\x00" + bytes(2_000), "hero.png")
+        assert run_review(cli, repo, "--profile", "default-rules") == 0
+
     def test_a_link_to_a_git_lfs_pointer_is_named_not_read_as_the_pointer_is(self, cli, tmp_path: Path, capsys) -> None:
         """Read by review: a link naming a Git LFS pointer was a hole for each rule that reads it, so `docs/hero.png`,
         a link `scan` leaves out to a stored image, stopped every push, where a plain pointer of its kind is no hole.
@@ -1081,17 +1102,32 @@ class TestTheCleanupAndThePitfalls:
         out = capsys.readouterr().out
         assert "run.py" in out and "a Git LFS pointer: the file's content is stored elsewhere" in out, out
 
-    def test_links_that_name_one_file_spend_the_budget_on_it_once(self, cli, tmp_path: Path) -> None:
-        """Read by review: each link charged the file it names to the tree's budget again, so 24 links to one 891 KB
-        page spent 21 MB, and the last two were holes. A blob is read once, however many paths hold it."""
-        from adk_review.collect.git import MAX_FILE_BYTES, MAX_TREE_BYTES
+    def test_links_the_review_ignores_come_last_in_the_budget_and_are_never_a_hole(
+        self, cli, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by review: links of a kind `scan` leaves out, read for the credential rules alone, shared the tree's
+        budget with the files a review reads, ahead of a larger config, and each one the budget left out was a hole:
+        24 links to pages stopped the push, and the config went unread. They come after every file the review reads,
+        and one past the budget is no hole, as a file of their kind is none."""
+        from adk_review.collect import git
+        from adk_review.judge.catalog import CONFIG, load_config
 
-        size = MAX_FILE_BYTES * 9 // 10
-        repo = _link_on_branch(tmp_path, "docs/big.md", "lorem ipsum\n" * (size // 12), "l00.md")
-        for n in range(1, MAX_TREE_BYTES // size + 2):  # past the budget, were each link charged for the page
-            _link_staged(repo, f"l{n:02}.md", "docs/big.md")
-        _git_in(repo, "commit", "-qm", "more links to the page")
-        assert run_review(cli, repo, "--profile", "default-rules") == 0
+        monkeypatch.setattr(git, "MAX_FILE_BYTES", 1_000)
+        monkeypatch.setattr(git, "MAX_TREE_BYTES", 20_000)
+        repo = tmp_path / "r"
+        (repo / "docs").mkdir(parents=True)
+        _git_in(repo, "init", "-q", "-b", BASE)
+        for n in range(24):
+            (repo / "docs" / f"p{n:02}.md").write_text(f"# page {n:02}\n" + "x" * 890 + "\n", encoding="utf-8")
+        _committed(repo, "README.md", "# pages\n")  # every page with it: `_committed` adds every change
+        _git_in(repo, "checkout", "-qb", HEAD)
+        _committed(repo, "conf/app.yaml", "name: app\n# " + "y" * 940 + "\n")
+        for n in range(24):  # after the commit, which would take back a link no working tree holds
+            _link_staged(repo, f"l{n:02}.md", f"docs/p{n:02}.md")
+        _git_in(repo, "commit", "-qm", "links to the pages")
+        assert run_review(cli, repo, "--profile", "default-rules") == 0, "a link the review ignores is no hole"
+        scan = load_config(CONFIG)["review"]["scan"]  # the shipped one, which leaves `.md` out
+        assert gathered(repo, HEAD, guidelines=False, scan=scan)["conf/app.yaml"]["text"] is not None, "read first"
 
     def test_the_credential_rules_read_the_file_a_link_out_of_scan_names(self, cli, tmp_path: Path, capsys) -> None:
         """Read by review: the credential rules read the project's own files of every kind, but a link of a kind

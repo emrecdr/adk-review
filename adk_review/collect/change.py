@@ -39,7 +39,7 @@ LFS_VERSIONS = frozenset(
 POINTER_BYTES = 1_024
 #: Why no one read a pointer: what the report says of one, under not read.
 POINTER_UNREAD = "a Git LFS pointer: the file's content is stored elsewhere, and none of it was read"
-#: Why a binary file, or a link to one, is not read: the same sentence for both, as both stop the push.
+#: Why a binary file, or a link to one, is not read: the same sentence for both, as both are the same hole.
 BINARY_UNREAD = "binary: no line of it can be read or quoted"
 _POINTER_KEYS = ("version", "oid", "size")
 _POINTER_EXTENSION = re.compile(r"ext-[0-9]-\w", re.ASCII)

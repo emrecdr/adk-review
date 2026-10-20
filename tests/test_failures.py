@@ -1193,19 +1193,24 @@ def test_a_merge_review_that_ends_with_no_report_stops_the_push_at_once(monkeypa
     143, wrote no report, which read as a reason not known, and the next base's review ran and, passing, let the push
     through. A review that ends with no report, interrupted or failed, stops the push at once."""
     push = importlib.import_module("adk_review.push")
-    ran = []
 
-    def review(argv: list[str]) -> int:
-        base = argv[argv.index("--base") + 1]
-        ran.append(base)
-        if base == "theirs":
-            return 130  # interrupted: no report written
-        Path(argv[argv.index("--json") + 1]).write_text("{}", encoding="utf-8")
-        return 0
+    def merged(code: int, *, reported: bool) -> tuple[tuple[int, str] | None, list[str]]:
+        ran = []
 
-    monkeypatch.setattr(push, "review", review)
-    assert push.reviewed("repo", "merge", ["theirs", "ours"]) == (130, "")
-    assert ran == ["theirs"], "no review runs after one cut short"
+        def review(argv: list[str]) -> int:
+            base = argv[argv.index("--base") + 1]
+            ran.append(base)
+            if base == "ours" or reported:
+                Path(argv[argv.index("--json") + 1]).write_text("{}", encoding="utf-8")
+            return 0 if base == "ours" else code
+
+        monkeypatch.setattr(push, "review", review)
+        return push.reviewed("repo", "merge", ["theirs", "ours"]), ran
+
+    assert merged(130, reported=False) == ((130, ""), ["theirs"]), "no review runs after one cut short"
+    # Read by the next review: a Ctrl-C after the report was written, a moment before the command returned.
+    assert merged(130, reported=True) == ((130, ""), ["theirs"]), "an interrupted review stops it, report or not"
+    assert merged(143, reported=True) == ((143, ""), ["theirs"]), "and so does a job's SIGTERM"
 
 
 def test_a_file_a_push_moves_out_of_an_ignored_one_is_read_in_its_commit(tmp_path) -> None:

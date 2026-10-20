@@ -24,8 +24,8 @@ _ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34,
 _BREAKS = re.compile("[\r\x0b\x0c\x1c-\x1e\x85\u2028\u2029]")
 BINARY = re.compile(r"^Binary files .* differ$", re.MULTILINE)
 SUBMODULE = re.compile(r"^(?:new file mode|index \S+) 160000$", re.MULTILINE)
-#: Git's mode for a symbolic link, in a listing of the change or of the head's tree.
-LINK_MODE = "120000"
+#: Git's modes for a symbolic link and a submodule, in a listing of the change or of the head's tree.
+LINK_MODE, SUBMODULE_MODE = "120000", "160000"
 
 
 #: A hunk header and the text git prints after it: its guess at the function around the hunk, a line from above it, cut

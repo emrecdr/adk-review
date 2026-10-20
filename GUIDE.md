@@ -183,11 +183,10 @@ those named `vendor`, `third_party`, `_vendor`, `node_modules`, `site-packages`,
 the top alone, a name a project's own package has too. Any other changed file is ignored: no guideline reads it, no tree
 parses it, and the report lists it, never a hole. Only the two credential rules, `secrets` and `named-secrets`, still
 read the project's own files of every kind, in a review and in each commit a push sends: a key leaks from a README or a
-script as from code, and a link among them as the file it names: one whose file they could not read is their hole. No
-rule reads another project's code; a change of nothing else is approved, in chat as by the command. A file the change
-moves out of an ignored one is read whole, as one it adds: no review read it where it lay. Nor does a review read the
-environment it runs in: only the repository's own commits. Code a branch puts in an ignored file goes unreviewed too,
-but for its credentials.
+script as from code, and a link among them as the file it names, where it can be read. No rule reads another project's
+code; a change of nothing else is approved, in chat as by the command. A file the change moves out of an ignored one is
+read whole, as one it adds: no review read it where it lay. Nor does a review read the environment it runs in: only the
+repository's own commits. Code a branch puts in an ignored file goes unreviewed too, but for its credentials.
 
 The model is set in the environment, or in the `.env` at the root of the reviewer's checkout; a variable set in the
 shell wins over the file:
@@ -398,10 +397,11 @@ What the hook cannot see, or stops on:
   system finds more than one spelling of, more than one file as where a copy lies decides, or one whose way could not be
   followed, is a hole for a rule that reads it whole and for each line rule, which reads its lines, and stops the push;
   so is one whose file was not read, past the size limits or a blob a partial clone lacks. One naming a binary file or a
-  Git LFS pointer is named not read, as that file is, and stops the push, unless `[review] skip` names the link. One
-  naming no file, a folder outside any submodule say, holds nothing to run, and stops nothing. Known limits: a link to a
-  file the same change adds past the size limits is a hole, though that file's own lines were read; a `.py` link is
-  parsed under its own name by no tree rule and counted by no blast radius, even one to a `.py` file.
+  Git LFS pointer is named not read, as that file is, and stops the push, unless `[review] skip` names the link. A link
+  of a kind `scan` leaves out, read by the credential rules alone, is none of these, and stops nothing. One naming no
+  file, a folder outside any submodule say, holds nothing to run, and stops nothing. Known limits: a link to a file the
+  same change adds past the size limits is a hole, though that file's own lines were read; a `.py` link is parsed under
+  its own name by no tree rule and counted by no blast radius, even one to a `.py` file.
 - A repository with no `.git` folder of its own, a bare one or one used through `--git-dir`, and a tag of a tree or a
   blob, stop the push: the hook reviews a working tree's commits.
 

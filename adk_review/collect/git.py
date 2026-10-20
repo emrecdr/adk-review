@@ -26,7 +26,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ..core.blast import Radius
-from ..core.evidence import Entry, Evidence, Failure, unreleased
+from ..core.evidence import LINK_UNREAD, Entry, Evidence, Failure, unreleased
 from ..core.paths import Links, UnfollowedError, in_review, matches
 from ..core.rules import PYTHON_SUFFIXES, Tree
 from ..core.text import lines_of
@@ -44,6 +44,7 @@ from .diff import (
     BINARY,
     DIFF_CAP_CHARS,
     LINK_MODE,
+    SUBMODULE_MODE,
     headers,
     hunk_lines,
     readable,
@@ -521,7 +522,7 @@ def _index_listed(resolved: dict) -> list[tuple[str, str, str, str, str]]:
     for record in filter(None, staged.split("\0")):
         meta, _, path = record.partition("\t")
         mode, sha, _stage = meta.split()
-        entries.append((mode, "commit" if mode == "160000" else "blob", sha, "-", path))
+        entries.append((mode, "commit" if mode == SUBMODULE_MODE else "blob", sha, "-", path))
     blobs = [sha for _mode, kind, sha, _size, _path in entries if kind == "blob"]
     if not blobs:
         return entries
@@ -532,6 +533,13 @@ def _index_listed(resolved: dict) -> list[tuple[str, str, str, str, str]]:
         if len(parts) == 3:  # `<sha> blob <size>`, else `<sha> missing`
             sizes[parts[0]] = parts[2]
     return [(mode, kind, sha, sizes.get(sha, "-"), path) for mode, kind, sha, _size, path in entries]
+
+
+class _Binary(str):
+    """A blob's text that git reads as binary, a NUL in its first `BINARY_BYTES` bytes, found in the bytes the batch
+    gave before they were decoded: decoded still, for a caller that reads every file as text, and known by its kind
+    for one that asks. Read by review, the NUL was looked for in the decoded text, which counts characters, or bytes
+    again after a U+FFFD stood for one byte git read or three: a file git read as text was binary, or the reverse."""
 
 
 def _blobs(resolved: dict, shas: Sequence[str]) -> list[str | None]:
@@ -548,7 +556,9 @@ def _blobs(resolved: dict, shas: Sequence[str]) -> list[str | None]:
         header, at = out[at:end].split(), end + 1
         if len(header) == 3:  # else `<name> missing`, and no content follows
             size = int(header[2])
-            texts[index] = out[at : at + size].decode("utf-8", errors="replace")
+            raw = out[at : at + size]
+            text = raw.decode("utf-8", errors="replace")
+            texts[index] = _Binary(text) if b"\x00" in raw[:BINARY_BYTES] else text
             at += size + 1
     return texts
 
@@ -636,14 +646,6 @@ def _read_first(blob: tuple[str, str, str]) -> tuple[int, int]:
     return (0 if suffix in PYTHON_SUFFIXES else 1 if not suffix else 2), int(size) if size.isdigit() else MAX_TREE_BYTES
 
 
-def _binary(text: str) -> bool:
-    """Whether git reads the blob `text` was decoded from as binary: a NUL in its first `BINARY_BYTES` bytes, never
-    characters, which read by review took 4,500 two-byte letters and a NUL for binary where git read text. A byte
-    UTF-8 could not read was decoded as U+FFFD, three bytes encoded again, so each counts as one: read by review, 3,000
-    such bytes and a NUL read as text, where git read a binary file."""
-    return b"\x00" in text[:BINARY_BYTES].replace("\ufffd", "?").encode("utf-8", "replace")[:BINARY_BYTES]
-
-
 def _not_read(entry: Entry, why: str, skipped: Collection[str]) -> None:
     """`entry` named not read, `why` the report's sentence, unless the operator's skip list, `skipped`, names it:
     that stays its choice."""
@@ -658,22 +660,20 @@ def _as_linked(through: list[tuple[Entry, str]], texts: Mapping[str, str], skipp
     name, for the report as for the rules, and no hole."""
     for entry, target in through:
         text = texts.get(entry["path"])
-        unread = (
-            "" if text is None else BINARY_UNREAD if _binary(text) else POINTER_UNREAD if pointer_text(text) else ""
-        )
-        # Named not read as the file itself is, unless the skip list names it. Read by review: a link to a binary file
-        # was read as its own path and approved, with no model, where the file was a hole; and one to a pointer, a
-        # hole for each rule, stopped every push where a plain pointer of its kind was no hole.
-        if unread:
-            entry["unread_text"] = None
-            _not_read(entry, unread, skipped)
-            continue
         entry["target"] = target
         if text is None:
             entry["unread_text"] = "was not read whole"
+            continue
+        entry["unread_text"] = None
+        # Named not read as the file itself is, unless the skip list names it. Read by review: a link to a binary file
+        # was read as its own path and approved, with no model, where the file was a hole; and one to a pointer, a
+        # hole for each rule, stopped every push where a plain pointer of its kind was no hole.
+        if isinstance(text, _Binary):
+            _not_read(entry, BINARY_UNREAD, skipped)
+        elif pointer_text(text):
+            _not_read(entry, POINTER_UNREAD, skipped)
         else:
-            entry["text"], entry["unread_text"] = text, None
-            entry["added_at"] = frozenset(range(1, len(lines_of(text)) + 1))
+            entry["text"], entry["added_at"] = text, frozenset(range(1, len(lines_of(text)) + 1))
 
 
 def _split(
@@ -687,7 +687,7 @@ def _split(
     others = [
         entry
         for entry in entries
-        if entry["path"] not in kept and entry["mode"] != "160000" and not matches(entry["path"], *third_party)
+        if entry["path"] not in kept and entry["mode"] != SUBMODULE_MODE and not matches(entry["path"], *third_party)
     ]
     _added_whole(own, lambda old: not in_review(old, scan, third_party))
     _added_whole(others, lambda old: matches(old, *third_party))
@@ -705,7 +705,7 @@ def _added_whole(entries: list[dict], unseen: Callable[[str], bool]) -> None:
 def _reviewed(entry: Mapping[str, str], scan: Sequence[str], third_party: Sequence[str]) -> bool:
     """Whether a review reads a changed file, as `in_review` says; a submodule, another repository's commit and a hole,
     by its folder alone. Read by review: one named `nanopb-0.4.7` read as a file with the suffix `.7`, ignored."""
-    if entry["mode"] == "160000":
+    if entry["mode"] == SUBMODULE_MODE:
         return not matches(entry["path"], *third_party)
     return in_review(entry["path"], scan, third_party)
 
@@ -722,38 +722,35 @@ def _links_unread(files: list[Entry], skipped: Mapping[str, str], read: Callable
         if entry["status"] == "A" and not entry["unread"] and entry["path"] not in skipped and not entry.get("link")
     }
     for entry in files:
-        held = entry.get("link") and entry["path"] not in skipped and not entry["unread"]
         target = entry.get("target")
-        if held and target not in whole and (target is None or read(target)):
-            entry["unread"] = (
-                "a symbolic link: the guidelines read the path it names, and were not shown that file whole"
+        if entry.get("link") and not entry["unread"] and target not in whole and (target is None or read(target)):
+            _not_read(
+                entry,
+                "a symbolic link: the guidelines read the path it names, and were not shown that file whole",
+                skipped,
             )
 
 
 def _budgeted(blobs: Iterable[tuple[str, str, str]]) -> tuple[list[tuple[str, str]], list[str]]:
-    """Which of the `(path, sha, size)` blobs to read, each within its cap and all within the tree's budget, in order, a
-    blob charged once however many paths hold it; and the paths left unread — one over its cap, past the budget, or
-    sized "BAD", as a partial clone lists a blob it lacks, which nothing fetches to size."""
+    """Which of the `(path, sha, size)` blobs to read, each within its cap and all within the tree's budget, in
+    order, each path charged, since a path is parsed and linted as its own; and the paths left unread — one over its
+    cap, past the budget, or sized "BAD", as a partial clone lists a blob it lacks, which nothing fetches to size."""
     wanted: list[tuple[str, str]] = []
     unread: list[str] = []
     budget = MAX_TREE_BYTES
-    taken: set[str] = set()
     for path, sha, size_field in blobs:
         size = int(size_field) if size_field.isdigit() else None
-        # Read by review: 24 links to one 891 KB page charged it 24 times, and the last two were holes.
-        if sha in taken:  # read once for another path already: it costs the budget nothing more
-            wanted.append((path, sha))
-        elif size is None or size > min(MAX_FILE_BYTES, budget):
+        if size is None or size > min(MAX_FILE_BYTES, budget):
             unread.append(path)
         else:
             wanted.append((path, sha))
-            taken.add(sha)
             budget -= size
     return wanted, unread
 
 
 def _texts(resolved: dict, blobs: Iterable[tuple[str, str, str]]) -> tuple[dict[str, str], list[str]]:
-    """The text of each `(path, sha, size)` blob within the caps, by path, from one batch; and the paths not read —
+    """The text of each `(path, sha, size)` blob within the caps, by path, from one batch, each blob read once however
+    many paths hold it; and the paths not read —
     over a cap or past the tree's budget, not given back by the batch, or read by no batch at all, one that failed
     or timed out — for the caller to name unread."""
     wanted, unread = _budgeted(blobs)
@@ -778,21 +775,23 @@ def read_texts(
     files: list[Entry],
     listing: list[tuple[str, str, str, str, str]] | None,
     skipped: Collection[str] = (),
+    others: Sequence[Entry] = (),
 ) -> None:
     """Each changed file's text at the head, for the file rules, set on its entry as `text`: a plain file the head holds
     within the caps, read in one batch, and a link as the file it runs. `unread_text` names one the head holds that was
     not read — over its cap, past the tree's budget, a blob the batch did not give back, a tree that could not be
-    listed, a link whose way could not be followed — a hole for a rule that reads it
-    whole, and for a link one for each line rule too: a link is one from the start, until the file it names is read as
-    text, names no file here, or is binary, which the report names not read; `shown` holds the lines its diff shows of
+    listed, a link whose way could not be followed — a hole for a rule that reads it whole, and for a link one for
+    each line rule too: a link is one from its birth, until the file it names is read as text, names no file here, or
+    is binary or a Git LFS pointer, which the report names not read; `shown` holds the lines its diff shows of
     it, by number, the ones added and those kept around them, for a rule that reads no more. A file the head does not
     hold, a binary, a Git LFS pointer, a link naming no text file there or a submodule has neither: nothing for a file
     rule to read, and the report names a binary and a pointer under not read already. A pointer only its text shows, its
-    diff showing none of its opening, is named here, unless the operator's skip list, `skipped`, names it."""
-    for entry in files:
+    diff showing none of its opening, is named here, unless the operator's skip list, `skipped`, names it. `others` are
+    the links `scan` leaves out, read for the credential rules alone: last in the budget, and never a hole."""
+    for entry in [*files, *others]:
         # A link's lines are the file it names: a hole for each rule that reads it until that file is read as text.
         # Read by review, round after round, a link one step of the read passed over was read as its path and approved.
-        entry["text"], entry["unread_text"] = None, "was not read as the file it names" if entry.get("link") else None
+        entry["text"], entry["unread_text"] = None, LINK_UNREAD if entry.get("link") else None
     if listing is None:
         unread = [*files]
         for entry in files:
@@ -802,13 +801,15 @@ def read_texts(
         changed = [entry for entry in files if entry["path"] in blobs and not _no_text(unreleased(entry["diff"]))]
         # A link runs as the file it names, so the rules read that file under the link's name. Read by review: a link
         # had no text, and `run.py` naming an image that held Python was linted by no rule.
-        through = _followed(resolved, files, listing, blobs)
+        through = _followed(resolved, [*files, *others], listing, blobs)
         wanted = [(entry["path"], *blobs[entry["path"]]) for entry in changed]
         wanted += [(entry["path"], *blobs[target]) for entry, target in through]
         # What a rule reads whole first, Python's, then a file with no suffix, a script, then the rest, each the
         # smallest first: read by review, in their paths' order, 20 MB of JSON fixtures in `data/` spent the budget
-        # before `src/app.py`, which lint then could not read, and a first push stopped.
-        texts, _unread = _texts(resolved, sorted(wanted, key=_read_first))
+        # before `src/app.py`, which lint then could not read, and a first push stopped. The links `scan` leaves out
+        # come last: read by review, 24 links to pages took the budget from a config the review reads.
+        aside = {entry["path"] for entry in others}
+        texts, _unread = _texts(resolved, sorted(wanted, key=lambda blob: (blob[0] in aside, *_read_first(blob))))
         _as_linked(through, texts, skipped)
         unread = []
         for entry in changed:
@@ -821,6 +822,8 @@ def read_texts(
                 _not_read(entry, POINTER_UNREAD, skipped)
     for entry in unread:
         entry["shown"] = {number: line[1:] for number, line in hunk_lines(unreleased(entry["diff"])) if line[:1] != "-"}
+    for entry in others:  # read for its credentials where it could be, and never a hole: the review ignores its kind
+        entry["unread_text"] = None
 
 
 def collect_evidence(
@@ -880,7 +883,7 @@ def gather(
     tree = tree_at_head(resolved, listing, third_party) if read else None
     # A link the scan leaves out is followed too: the credential rules read it, as the file it names. Read by review,
     # `notes.txt`, a link to a file holding a key, was read as its own path and approved.
-    read_texts(resolved, [*files, *(entry for entry in unscanned if entry.get("link"))], listing, excluded)
+    read_texts(resolved, files, listing, excluded, [entry for entry in unscanned if entry.get("link")])
     if guidelines:
         _links_unread(files, excluded, lambda path: in_review(path, scan, third_party))
     return {
