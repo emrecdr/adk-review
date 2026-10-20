@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterator
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -521,18 +521,18 @@ class TestTheLintRule:
         evidence = git.collect_evidence(str(demo_repo), BASE, HEAD)
         real = ruff._ruff
 
-        def nulled(argv: list[str], cwd: str) -> Iterator[str]:
+        def nulled(argv: list[str], cwd: str) -> Generator[str]:
             return (json.dumps({**json.loads(line), "code": None}) for line in real(argv, cwd))
 
         monkeypatch.setattr(ruff, "_ruff", nulled)
         found = lint_findings(evidence)
         assert found and {(f.title.split()[1], f.severity) for f in found} == {("invalid-syntax", "major")}, found
 
-        monkeypatch.setattr(ruff, "_ruff", lambda *_args: iter(["not json"]))
+        monkeypatch.setattr(ruff, "_ruff", lambda *_args: (line for line in ["not json"]))
         said = lint_findings(evidence)
         assert said == "ruff's answer could not be read (JSONDecodeError), so the rule did not look", said
 
-        monkeypatch.setattr(ruff, "_ruff", lambda *_args: iter([json.dumps({"filename": "module.py"})]))
+        monkeypatch.setattr(ruff, "_ruff", lambda *_args: (line for line in [json.dumps({"filename": "module.py"})]))
         said = lint_findings(evidence)
         assert said == "ruff's answer could not be read (IndexError), so the rule did not look", said
 
@@ -545,17 +545,17 @@ class TestTheLintRule:
 
         from adk_review.collect import ruff
 
-        flood = "".join("x = " + "-" * 990 + "a\n" for _ in range(100))
+        flood = "".join("x = " + "-" * 100 + "a\n" for _ in range(1_000))  # deeper overflows Windows' ruff's stack
         tracemalloc.start()
         try:
             found = ruff.diagnose({"files": [{"path": "flood.py", "text": flood}]}, ("B002",), ())
             peak = tracemalloc.get_traced_memory()[1]
         finally:
             tracemalloc.stop()
-        assert isinstance(found, dict) and len(found["flood.py"]) == 98_900, (
+        assert isinstance(found, dict) and len(found["flood.py"]) == 99_000, (
             found if isinstance(found, str) else len(found)
         )
-        assert peak < 40_000_000, f"{peak:,} bytes at the peak, for an answer of 96 MB"
+        assert peak < 40_000_000, f"{peak:,} bytes at the peak, for an answer of 60 MB"
 
     def test_ruff_naming_more_findings_than_its_ceiling_is_a_hole(self, monkeypatch) -> None:
         """Past its ceiling, what ruff named is not read: the rules that read ruff did not look, never a count that

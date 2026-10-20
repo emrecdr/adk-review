@@ -17,7 +17,8 @@ import subprocess
 import sysconfig
 import tempfile
 import threading
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Generator, Iterable, Sequence
+from contextlib import closing
 from pathlib import Path, PurePath, PurePosixPath
 
 from ..core.evidence import Change
@@ -80,7 +81,10 @@ def _run(
         argv += ["--select", ",".join(select), *(["--ignore", ",".join(ignore)] if ignore else [])]
         argv += ["--line-length", str(line_length)] if line_length else []
         argv += ["--output-format", "json-lines", *targets]
-        return _parsed(_ruff(argv, tmp), sources)
+        # Closed before the folder goes, a reader that stopped early stopping ruff: measured on Windows, which deletes
+        # no file a process holds open, the folder's removal failed under a ruff still running, and its error was named.
+        with closing(_ruff(argv, tmp)) as answer:
+            return _parsed(answer, sources)
 
 
 def _laid_out(folder: str, texts: dict[str, str]) -> tuple[list[str], dict[str, list[str]]]:
@@ -105,7 +109,7 @@ def _laid_out(folder: str, texts: dict[str, str]) -> tuple[list[str], dict[str, 
     return targets, sources
 
 
-def _ruff(argv: list[str], cwd: str) -> Iterator[str]:
+def _ruff(argv: list[str], cwd: str) -> Generator[str]:
     """The one place ruff runs, as `git._run` is git's: each line it writes on stdout as it comes, then
     `CalledProcessError` for an exit that is not 0, or `TimeoutExpired`, a watch stopping it at `RUFF_TIMEOUT_S`. What
     it says on stderr goes to a file, so no pipe it fills can stop it. The caller's environment with every `RUFF_*`
