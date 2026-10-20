@@ -1138,6 +1138,18 @@ class TestWhatALargeFileStoreHides:
             ("version {v1}\n \noid sha256:{oid}\nsize 10\n", False),
             ("version {v1}\noid sha256:{oid}\nsize -1\n", False),
             ("ext-x-foo sha256:{oid}\nversion {v1}\noid sha256:{oid}\nsize 10\n", False),
+            ("ext-10-foo sha256:{oid}\nversion {v1}\noid sha256:{oid}\nsize 10\n", False),  # one digit
+            ("ext-0-foo anything\nversion {v1}\noid sha256:{oid}\nsize 10\n", False),  # an object's id, or none
+            ("ext-0-foo sha256:{oid}\next-0-bar sha256:{oid}\nversion {v1}\noid sha256:{oid}\nsize 10\n", False),
+            ("ext-0-foo junk\next-0-foo sha256:{oid}\nversion {v1}\noid sha256:{oid}\nsize 10\n", True),  # the last
+            ("ext-0-foo sha256:{oid}\next-0-foo junk\nversion {v1}\noid sha256:{oid}\nsize 10\n", False),
+            ("ext-0-foo-bar sha256:{oid}\next-1-a!! sha256:{oid}\nversion {v1}\noid sha256:{oid}\nsize 10\n", True),
+            ("version {v1}\noid sha256:{oid}\nsize 9223372036854775807\n", True),  # Go's int64
+            ("version {v1}\noid sha256:{oid}\nsize 9223372036854775808\n", False),
+            ("\x1cversion {v1}\noid sha256:{oid}\nsize 10\n", False),  # what Go reads as no space
+            ("version {v1}\noid sha256:{oid}\nsize 10\n\x1f", False),
+            ("version {v1}\noid sha256:{oid}\nsize 10\n\u200b", False),
+            ("\x85version {v1}\noid sha256:{oid}\nsize 10\n\xa0\u2028", True),  # and what it does
         ],
     )
     def test_a_pointer_is_what_git_lfs_reads_as_one(self, pointer: str, is_one: bool) -> None:
@@ -1150,6 +1162,72 @@ class TestWhatALargeFileStoreHides:
         oid = "c6f0c6ab4c8c1c8a62d8a9b5e3e0b1d0c4a9e6f5b2d7a8c3e1f0a9b8c7d6e5f4"
         text = pointer.format(v1="https://git-lfs.github.com/spec/v1", oid=oid, upper=oid.upper())
         assert pointer_text(text) is is_one
+
+    @pytest.mark.parametrize("short", [0, 1])
+    def test_a_pointer_is_read_over_the_bytes_git_lfs_reads(self, short: int) -> None:
+        """Read by review: the window was 1,024 characters where Git LFS reads 1,024 bytes, so a pointer padded with
+        ideographic spaces, three bytes each, to the window's end and a line of code after it was read on into the
+        code, no pointer, and approved, where Git LFS smudges in the file it stores. Measured with git-lfs 3.8.0."""
+        from adk_review.collect.change import POINTER_BYTES, pointer_text
+
+        head = f"version https://git-lfs.github.com/spec/v1\noid sha256:{'a' * 64}\nsize 9\n"
+        pad = "\u3000" * ((POINTER_BYTES - len(head.encode())) // 3)
+        filled = head + pad + " " * (POINTER_BYTES - len((head + pad).encode()) - short)
+        assert len(filled.encode()) == POINTER_BYTES - short
+        assert pointer_text(filled + "\nimport os\nos.system(input())\n")
+
+    def test_a_pointer_is_read_as_git_lfs_reads_one_over_random_texts(self) -> None:
+        """Random texts built of a pointer's pieces, the spaces Go and Python read apart, extension lines, and padding
+        up to Git LFS's 1,024 bytes, each asked of git-lfs's `pointer --check` and of `pointer_text`: they agree on
+        every one. Two reviews in a row each found a text on which they did not."""
+        import random
+        import shutil
+        import subprocess
+        from concurrent.futures import ThreadPoolExecutor
+
+        from adk_review.collect.change import pointer_text
+
+        git = shutil.which("git")
+        if git is None or subprocess.run([git, "lfs", "version"], capture_output=True, check=False).returncode:
+            pytest.skip("git-lfs is not installed")
+        a, b = "a" * 64, "0123456789abcdef" * 4
+        pieces = {
+            "version": ["version https://git-lfs.github.com/spec/v1", "version https://hawser.github.com/spec/v1"] * 3
+            + ["version http://git-media.io/v/2", "version https://example.com/v1", "version  https://x", "version x "],
+            "oid": [f"oid sha256:{a}", f"oid sha256:{b}"] * 3 + ["oid sha256:abc", f"oid md5:{a}", f" oid sha256:{a}"],
+            "size": ["size 9", "size +5"] * 3 + ["size -1", "size 9223372036854775808", "size x", "size"],
+            "ext": [f"ext-0-foo sha256:{a}", f"ext-1-bar sha256:{b}", f"ext-0-baz sha256:{b}", "ext-0-foo junk"],
+            "junk": ["", " ", "import os", "\x1c", "\x85", "\xa0", "\u3000", "\u200b", "\r"],
+        }
+        orders = [["version", "oid", "size"]] * 4 + [
+            ["ext", "version", "oid", "size"],
+            ["version", "oid", "ext", "size"],
+        ]
+        orders += [["version", "oid", "size", "ext"], ["version", "oid", "size", "junk"], ["oid", "version", "size"]]
+        orders += [["version", "oid"], ["ext", "ext", "version", "oid", "size"], ["junk", "version", "oid", "size"]]
+        spaces = ["", "\n", " ", "\u3000", "\xa0", "\x1c", "\r\n", "\x85"]
+        rng, texts = random.Random(7), []
+        for _ in range(300):
+            lines = [rng.choice(pieces[kind]) for kind in rng.choice(orders)]
+            text = rng.choice(spaces) + rng.choice(["\n", "\r\n"]).join(lines) + "\n" + rng.choice(spaces)
+            if rng.random() < 0.2:  # padded toward Git LFS's 1,024 bytes, code after them
+                pad = rng.choice([" ", "\u3000", "\xa0"])
+                text += (
+                    pad * ((1_024 - len(text.encode()) - rng.choice([0, 1, 2])) // len(pad.encode())) + "\nimport os\n"
+                )
+            texts.append(text)
+
+        def checked(text: str) -> bool:
+            done = subprocess.run(
+                [git, "lfs", "pointer", "--check", "--stdin"], input=text.encode(), capture_output=True
+            )
+            return done.returncode == 0
+
+        with ThreadPoolExecutor(8) as pool:
+            theirs = list(pool.map(checked, texts))
+        differ = [(text, said) for text, said in zip(texts, theirs, strict=True) if pointer_text(text) is not said]
+        assert any(theirs) and not all(theirs), "both kinds asked"
+        assert differ == [], differ[:3]
 
     def test_a_page_quoting_a_pointer_is_read_as_the_page_it_is(self, tmp_path: Path) -> None:
         """A pointer is a whole file, its version line first and the object's id second: a page explaining the format

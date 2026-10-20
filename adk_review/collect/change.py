@@ -43,17 +43,24 @@ _POINTER_KEYS = ("version", "oid", "size")
 _POINTER_EXTENSION = re.compile(r"ext-[0-9]-\w", re.ASCII)
 _POINTER_OID = re.compile(r"sha256:[0-9a-f]{64}")
 _POINTER_SIZE = re.compile(r"[+-]?[0-9]+")
+#: What Go reads as space and trims from around a pointer, `unicode.IsSpace`: Python's `str.strip` trims more, the
+#: separators `\x1c` to `\x1f` among them, around which Git LFS reads no pointer.
+_GO_SPACE = "\t\n\v\f\r \x85\xa0\u1680" + "".join(map(chr, range(0x2000, 0x200B))) + "\u2028\u2029\u202f\u205f\u3000"
 
 
 def pointer_text(text: str) -> bool:
     """Whether a file opening with `text` is a Git LFS pointer, as git-lfs 3.8.0's `pointer --check` reads one: its
-    first `POINTER_BYTES`, the space around them trimmed, each line's carriage return dropped and blank lines passed
-    over, then `version`, `oid` and `size` in that order, an extension line before any of them, and nothing after. A
-    page quoting the format holds other lines first. Read by review: asked only for the spec's version line first, a
-    pointer with an extension line before it was linted as Python and approved, and one with a shell line after its
-    size, which Git LFS checks out as written, was named stored elsewhere."""
+    first `POINTER_BYTES` bytes, the space Go reads around them trimmed, each line's carriage return dropped and blank
+    lines passed over, then `version`, `oid` and `size` in that order, nothing after, and before any of them extension
+    lines, the last of each name kept, each naming an object and a priority no other does. A page quoting the format
+    holds other lines first. Read by review: asked only for the spec's version line first, a pointer with an extension
+    line before it was linted as Python and approved, and one with a shell line after its size, which Git LFS checks out
+    as written, was named stored elsewhere; and read over 1,024 characters, a pointer padded with three-byte spaces to
+    Git LFS's 1,024 bytes was read on into the code after them, and approved."""
+    window = text[:POINTER_BYTES].encode("utf-8", "surrogatepass")[:POINTER_BYTES].decode("utf-8", "ignore")
     said: dict[str, str] = {}
-    for line in text[:POINTER_BYTES].strip().split("\n"):
+    extensions: dict[str, str] = {}
+    for line in window.strip(_GO_SPACE).split("\n"):
         if not (line := line.removesuffix("\r")):
             continue
         key, space, value = line.partition(" ")
@@ -61,14 +68,17 @@ def pointer_text(text: str) -> bool:
             return False
         if key == _POINTER_KEYS[len(said)]:
             said[key] = value
-        elif not _POINTER_EXTENSION.match(key):
+        elif _POINTER_EXTENSION.match(key):
+            extensions[key] = value
+        else:
             return False
-    size = said.get("size", "")
+    size, priorities = said.get("size", ""), [key.split("-", 2)[1] for key in extensions]
     return (
         f"version {said.get('version')}" in LFS_VERSIONS
-        and _POINTER_OID.fullmatch(said.get("oid", "")) is not None
+        and all(_POINTER_OID.fullmatch(oid) for oid in (said.get("oid", ""), *extensions.values()))
         and _POINTER_SIZE.fullmatch(size) is not None
-        and int(size) >= 0
+        and 0 <= int(size) < 2**63
+        and len(set(priorities)) == len(priorities)
     )
 
 
