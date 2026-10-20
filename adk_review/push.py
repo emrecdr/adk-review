@@ -1,12 +1,10 @@
 """A git pre-push hook: what a push sends, reviewed by code alone before it leaves the machine.
 
 Once the reviewer is installed, a repository's hook is a file named `pre-push` in the folder git reads hooks from,
-which `git rev-parse --git-path hooks` names, holding two lines, the same on every system. It is executable
-(`chmod +x`): git passes over a hook it cannot run, and over one in a folder it does not read, and the push goes
-unreviewed.
-
-    #!/bin/sh
-    exec adk-review-push "$@"
+which `git rev-parse --git-path hooks` names, written by the lines GUIDE.md's "Before a push" gives, the same on every
+system: it hands git's lines to this command, and after it passes, to a hook that was there before, Git LFS's say,
+which those lines keep. It is executable (`chmod +x`): git passes over a hook it cannot run, and over one in a folder
+it does not read, and the push goes unreviewed.
 
 A repository that uses pre-commit names the hook `adk-review` from `.pre-commit-hooks.yaml` instead, which runs this
 command too. Git hands its hook the remote's name and URL and one line a pushed ref; pre-commit reads those lines
@@ -30,11 +28,14 @@ from __future__ import annotations
 import contextlib
 import io
 import itertools
+import json
 import os
 import re
 import sys
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TextIO
 
 from .collect.git import GitError
@@ -124,16 +125,40 @@ def command(repository: str, head: str, base: str | None) -> list[str]:
 def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, str] | None:
     """None where the change passes its review against one of its bases, else the first review's exit code and report.
     A line the remote holds nowhere is new to every base, so one review that passes leaves none to find; each other
-    base a merge brings holds the other side's own changes, which the remote holds already."""
-    stopped = None
+    base a merge brings holds the other side's own changes, which the remote holds already. So where every review of
+    a merge stops, the merge stops only on what all of them found: read by review, a merge of two branches the remote
+    held, each with a file no rule can read, stopped though it added nothing, each review reading the other side's."""
+    stopped, shared = None, None
     for base in bases or [None]:
         said = io.StringIO()
-        with contextlib.redirect_stdout(said), contextlib.redirect_stderr(said):
-            code = review(command(repository, pushed, base))
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            contextlib.redirect_stdout(said),
+            contextlib.redirect_stderr(said),
+        ):
+            written = Path(folder) / "review.json"
+            code = review([*command(repository, pushed, base), "--json", str(written)])
+            found = _stops(json.loads(written.read_text(encoding="utf-8"))) if written.exists() else None
         if code == 0:
             return None
         stopped = stopped or (code, said.getvalue())
-    return stopped
+        if found is None or len(bases) < 2:  # what stopped it is not known, or there is no other base to weigh it by
+            return stopped
+        shared = found if shared is None else shared & found
+    return stopped if shared else None
+
+
+def _stops(report: dict) -> frozenset[tuple[str, ...]] | None:
+    """What stopped a review, as its JSON report says: each finding at the bar, each file not read, each check that
+    could not look. None where it says of none, a review stopped for another reason, which no other review clears."""
+    bar = report.get("fail_on", "blocker")
+    stops = frozenset(
+        [("finding", f["check"], f["file"], str(f["line"]), f["title"]) for f in report.get("findings", ())
+         if at_or_above(f["severity"], bar)]
+        + [("not read", path) for path in report.get("not_read", {})]
+        + [("could not look", check, why) for check, why in report.get("could_not_look", {}).items()]
+    )  # fmt: skip
+    return stops or None
 
 
 def history_rules(config: dict | None = None) -> tuple[AnyRule, ...]:
@@ -212,6 +237,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         _say("a pre-push hook, run by git or pre-commit with what a push sends; adk-review reviews a branch")
         return EXIT_USAGE
     remote, pushed = asked
+    if remote == ".":  # `git push . a:b` moves a branch here: nothing leaves the machine
+        return 0
     repository = os.getcwd()  # git runs a hook at the top of the working tree it pushes from, and so does pre-commit
     lacked = [
         ref.removeprefix("refs/heads/")

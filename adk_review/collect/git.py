@@ -21,13 +21,13 @@ import string
 import subprocess
 from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ..core.blast import Radius
 from ..core.evidence import Entry, Evidence, Failure, unreleased
 from ..core.paths import Links, UnfollowedError
-from ..core.rules import Tree
+from ..core.rules import PYTHON_SUFFIXES, Tree
 from ..core.text import lines_of
 from .change import POINTER_UNREAD, lfs_pointer, no_change, pointer_text, radius, shown_to_guidelines, widens
 from .diff import (
@@ -602,6 +602,14 @@ def _followed(
     return through
 
 
+def _read_first(blob: tuple[str, str, str]) -> tuple[int, int]:
+    """Where a changed file's text comes in the budget: Python's, then a file with no suffix, a script maybe, then the
+    rest, each the smallest first; one git gave no size for, last."""
+    path, _sha, size = blob
+    suffix = PurePosixPath(path).suffix
+    return (0 if suffix in PYTHON_SUFFIXES else 1 if not suffix else 2), int(size) if size.isdigit() else MAX_TREE_BYTES
+
+
 def _as_linked(through: list[tuple[Entry, str]], texts: Mapping[str, str]) -> None:
     """Each link's text, `texts` holding it under the link's path, read as the file it runs: none for a binary, as git
     reads one; a hole for a rule that reads it whole where it was not read, or is a Git LFS pointer, its file stored
@@ -706,7 +714,11 @@ def read_texts(
         # had no text, and `run.py` naming an image that held Python was linted by no rule.
         through = _followed(resolved, files, listing, blobs)
         wanted = [(entry["path"], *blobs[entry["path"]]) for entry in changed]
-        texts, _unread = _texts(resolved, [*wanted, *((entry["path"], *blobs[target]) for entry, target in through)])
+        wanted += [(entry["path"], *blobs[target]) for entry, target in through]
+        # What a rule reads whole first, Python's, then a file with no suffix, a script, then the rest, each the
+        # smallest first: read by review, in their paths' order, 20 MB of JSON fixtures in `data/` spent the budget
+        # before `src/app.py`, which lint then could not read, and a first push stopped.
+        texts, _unread = _texts(resolved, sorted(wanted, key=_read_first))
         _as_linked(through, texts)
         unread = []
         for entry in changed:

@@ -26,7 +26,7 @@ uv run adk-review <demo repo> --head feature/payments --base main --profile demo
 uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # what a review would cover and run, nothing run
 uv run adk-review-login                          # one-time GitHub device-flow login for the Copilot arm
 uv run adk web .                                 # the chat in a browser, over the same graph
-hook="$(git -C <repo> rev-parse --path-format=absolute --git-path hooks)/pre-push" && mkdir -p "${hook%/*}" && printf '#!/bin/sh\nexec adk-review-push "$@"\n' > "$hook" && chmod +x "$hook"   # after `make install`: default-rules on what a push sends, push-history's credential rules on each commit and message; pre-commit's adk-review hook runs the same; --no-verify skips
+# the pre-push hook, after `make install`: GUIDE.md's "Before a push" lines, which keep a pre-push hook already there (Git LFS's) and run it after the review; default-rules on what a push sends, push-history's credential rules on each commit and message; pre-commit's adk-review hook runs the same; --no-verify skips
 uv run python scripts/injection_suite.py --runs 3 [--profile NAME | --check ID] [--branch NAME] [--build-only]   # live: does a payload make a guideline lose the planted shell call
 uv run python scripts/labelled_set.py --runs 3 [--profile NAME | --check ID] [--branch NAME] [--build-only]      # live: one known defect a branch, or none: found (and by which guideline), missed, invented
 uv run python scripts/measure.py --runs 5 [--all] [--profile NAME | --check ID] # live: per planted defect, how often a guideline names it (--all: as a whole project)

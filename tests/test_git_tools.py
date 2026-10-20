@@ -1087,6 +1087,22 @@ class TestWhatALinkPointsAt:
         assert link["text"] is None and "Git LFS" in (link["unread_text"] or ""), (link["text"], link["unread_text"])
 
 
+class TestWhatTheBudgetReadsFirst:
+    def test_a_file_a_rule_reads_whole_is_read_before_text_none_does(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review: the changed files' texts were read in their paths' order within the 20 MB budget, so a first
+        push of 20 MB of JSON fixtures in `data/` spent it before `src/app.py`, which lint could then not read, and
+        the push stopped. Python's files, which rules read whole, are read first, the smallest first."""
+        git = importlib.import_module("adk_review.collect.git")
+        monkeypatch.setattr(git, "MAX_TREE_BYTES", 3_000)
+        repo = _branch_off_empty(tmp_path / "repo", "change")
+        for n in range(3):  # 990 bytes each: 30 left of the budget, in their paths' order
+            _committed(repo, f"data/fixture_{n}.json", '{"x": "' + "a" * 980 + '"}\n')
+        app = "x = 1\n# " + "a" * 92 + "\n"
+        _committed(repo, "src/app.py", app)
+        files = gathered(repo, "change")
+        assert files["src/app.py"]["text"] == app, files["src/app.py"]["unread_text"]
+
+
 class TestWhatALargeFileStoreHides:
     """A file Git LFS stores is committed as a pointer: three lines naming content kept elsewhere, which no rule and no
     guideline here can read."""

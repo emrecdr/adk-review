@@ -827,7 +827,8 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
         codes[:] = [returned]
         pushing("refs/heads/feature", tip)
         assert push.main(["origin", str(remote)]) == expected
-    assert ran[0][1:] == ["--head", tip, "--base", first, "--profile", "default-rules"]
+    assert ran[0][1:-2] == ["--head", tip, "--base", first, "--profile", "default-rules"]
+    assert ran[0][-2] == "--json", "each review says what stopped it, for a merge's reviews to be weighed together"
     said = capsys.readouterr().out
     assert said.count("## Verdict: REQUEST_CHANGES") == 3, "the report is printed where the push stops, only there"
     assert "ended in exit 1; push with --no-verify to skip it" in said
@@ -844,11 +845,11 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
     monkeypatch.setenv("PRE_COMMIT_LOCAL_BRANCH", "refs/heads/feature")
     monkeypatch.setenv("PRE_COMMIT_FROM_REF", tip)
     codes[:] = [0]
-    assert push.main([]) == 0 and ran[-1][1:] == ["--head", tip, "--base", first, "--profile", "default-rules"]
+    assert push.main([]) == 0 and ran[-1][1:-2] == ["--head", tip, "--base", first, "--profile", "default-rules"]
     # A push to a remote this clone knows no branch of: the whole project is new.
     monkeypatch.setenv("PRE_COMMIT_REMOTE_NAME", "elsewhere")
     codes[:] = [0]
-    assert push.main([]) == 0 and ran[-1][1:] == ["--head", tip, "--all", "--profile", "default-rules"]
+    assert push.main([]) == 0 and ran[-1][1:-2] == ["--head", tip, "--all", "--profile", "default-rules"]
     # Arguments a config gives the hook, where pre-commit passes none of git's lines on: refused, never approved.
     monkeypatch.setattr(sys, "stdin", io.StringIO(""))
     assert push.main(["--profile", "rules-only"]) == 1 and "takes none of" in capsys.readouterr().out
@@ -858,11 +859,11 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
     monkeypatch.setenv("PRE_COMMIT_FROM_REF", first)
     monkeypatch.setenv("PRE_COMMIT_TO_REF", tip)
     codes[:] = [0]
-    assert push.main([]) == 0 and ran[-1][1:] == ["--head", tip, "--base", first, "--profile", "default-rules"]
+    assert push.main([]) == 0 and ran[-1][1:-2] == ["--head", tip, "--base", first, "--profile", "default-rules"]
     for name in ("PRE_COMMIT_FROM_REF", "PRE_COMMIT_TO_REF"):
         monkeypatch.delenv(name)
     codes[:] = [0]
-    assert push.main([]) == 0 and ran[-1][1:] == ["--head", tip, "--all", "--profile", "default-rules"]
+    assert push.main([]) == 0 and ran[-1][1:-2] == ["--head", tip, "--all", "--profile", "default-rules"]
     monkeypatch.delenv("PRE_COMMIT")
 
     git("checkout", "-q", "-b", "undo", first)
@@ -1044,6 +1045,91 @@ def test_what_a_tag_of_a_tag_and_a_merged_signed_tag_say_is_read(tmp_path, monke
     merge = _git_in(work, "rev-parse", "HEAD")
     assert pushed("main", first, "refs/heads/main") == 1
     assert f"{merge[:9]}, the tag it merges, line " in capsys.readouterr().out
+
+
+def test_a_merge_of_what_the_remote_holds_stops_only_on_what_is_new_to_it(tmp_path, monkeypatch, capsys, cli) -> None:
+    """Read by review: a merge was reviewed against each base it grows from, and passed when one review did, so a
+    merge of two branches the remote held, each with a file no rule can read, stopped though it added nothing: each
+    review read the other side's own file. What stops a merge is what every base's review found."""
+    import io
+
+    push = importlib.import_module("adk_review.push")
+    remote, work = _pushed_from(tmp_path)
+    _committed(work, "a.py")
+    _git_in(work, "push", "-q", "origin", "main")
+    _git_in(work, "checkout", "-q", "-b", "release")
+    _committed(work, "notes.pdf", b"%PDF\x00" * 64, "release notes")
+    _git_in(work, "push", "-q", "origin", "release")
+    _git_in(work, "checkout", "-q", "main")
+    _committed(work, "manual.pdf", b"%PDF\x00" * 64, "a manual")
+    _git_in(work, "push", "-q", "origin", "main")  # from a clone with no hook: the remote holds both sides
+    monkeypatch.chdir(work)
+    monkeypatch.setattr(push, "review", cli.main)
+
+    def pushed() -> int:
+        local, held = _git_in(work, "rev-parse", "main"), _git_in(work, "rev-parse", "origin/main")
+        monkeypatch.setattr(sys, "stdin", io.StringIO(f"refs/heads/main {local} refs/heads/main {held}\n"))
+        return push.main(["origin", str(remote)])
+
+    _git_in(work, "merge", "-q", "--no-edit", "release")
+    assert pushed() == 0, capsys.readouterr().out
+    _git_in(work, "reset", "-q", "--hard", "origin/main")
+    _git_in(work, "merge", "-q", "--no-commit", "release")
+    (work / "deck.pdf").write_bytes(b"%PDF\x00" * 64)  # new in the merge itself, to every base
+    _git_in(work, "add", "deck.pdf")
+    _git_in(work, "commit", "-qm", "merge, with a deck")
+    assert pushed() == 1 and "deck.pdf" in capsys.readouterr().out
+
+
+def test_a_push_to_this_repository_itself_sends_nothing_off_the_machine(tmp_path, monkeypatch, capsys) -> None:
+    """Read by review: `git push . origin/main:main`, which moves a branch here and sends nothing anywhere, was reviewed
+    as a push to a remote holding nothing, and stopped on a teammate's file."""
+    import io
+
+    push = importlib.import_module("adk_review.push")
+    _remote, work = _pushed_from(tmp_path)
+    local = _committed(work, "manual.pdf", b"%PDF\x00" * 64, "a manual")
+    monkeypatch.chdir(work)
+    monkeypatch.setattr(push, "review", lambda argv: pytest.fail(f"reviewed {argv}"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"refs/heads/main {local} refs/heads/copy {'0' * 40}\n"))
+    assert push.main([".", "."]) == 0 and capsys.readouterr() == ("", "")
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the recipe is a POSIX shell's, run by Git Bash there")
+def test_the_install_recipe_keeps_the_hook_it_finds_and_hands_both_gits_lines(tmp_path) -> None:
+    """Read by review: the recipe in the guide replaced any pre-push hook already there, Git LFS's among them, so a
+    pushed image's file was never uploaded and a fresh clone could not fetch it. The recipe keeps the hook it finds
+    and runs it after the review passes, each given git's own lines."""
+    import re
+    import shutil
+
+    guide = ROOT.joinpath("GUIDE.md").read_text(encoding="utf-8")
+    recipe = re.search(r"\n\n((?:    [^\n]*\n|\n)+)", guide[guide.index("To install it, run these lines") :])
+    assert recipe, "the guide's recipe"
+    script = "\n".join(line.removeprefix("    ") for line in recipe.group(1).strip("\n").splitlines())
+    work, bin_ = tmp_path / "work", tmp_path / "bin"
+    work.mkdir()
+    bin_.mkdir()
+    _git_in(work, "init", "-q", "-b", "main")
+    hooks = work / ".git" / "hooks"
+    hooks.mkdir(exist_ok=True)
+    (hooks / "pre-push").write_text(f'#!/bin/sh\ncat > "{tmp_path}/before.in"\necho "$@" > "{tmp_path}/before.args"\n')
+    (hooks / "pre-push").chmod(0o755)
+    reviewed = bin_ / "adk-review-push"
+    reviewed.write_text(f'#!/bin/sh\ncat > "{tmp_path}/review.in"\nexit "${{REVIEW_EXIT:-0}}"\n')
+    reviewed.chmod(0o755)
+    env = {**os.environ, "PATH": f"{bin_}{os.pathsep}{os.environ['PATH']}", "GIT_CONFIG_GLOBAL": os.devnull}
+    subprocess.run(["sh", "-c", script], cwd=work, env=env, check=True)
+    lines = f"refs/heads/main {'a' * 40} refs/heads/main {'0' * 40}\n"
+    hook = [str(hooks / "pre-push"), "origin", "https://example.com/r.git"]
+    done = subprocess.run(hook, cwd=work, env=env, input=lines, text=True, check=False)
+    assert done.returncode == 0
+    assert (tmp_path / "review.in").read_text() == lines == (tmp_path / "before.in").read_text()
+    assert (tmp_path / "before.args").read_text().split() == hook[1:]
+    (tmp_path / "before.in").unlink()
+    stopped = subprocess.run(hook, cwd=work, env={**env, "REVIEW_EXIT": "1"}, input=lines, text=True, check=False)
+    assert stopped.returncode == 1 and not (tmp_path / "before.in").exists(), "a stopped push runs nothing after"
+    assert shutil.which("sh", path=env["PATH"]), "a shell to run the recipe in"
 
 
 def test_the_history_a_push_sends_is_read_with_the_push_history_profile(tmp_path, monkeypatch) -> None:

@@ -298,14 +298,25 @@ on, a cut is no hole: the cap is the guidelines' limit, and the rules read every
 `adk-review-push`, installed beside `adk-review`, is a git pre-push hook. To install it, run these lines in the
 repository to guard, in any shell git brings (Git Bash on Windows):
 
-    hook="$(git rev-parse --path-format=absolute --git-path hooks)/pre-push"
-    mkdir -p "${hook%/*}"
-    printf '#!/bin/sh\nexec adk-review-push "$@"\n' > "$hook" && chmod +x "$hook"
+    hooks="$(git rev-parse --path-format=absolute --git-path hooks)"
+    mkdir -p "$hooks"
+    [ ! -e "$hooks/pre-push" ] || grep -q adk-review-push "$hooks/pre-push" ||
+      mv "$hooks/pre-push" "$hooks/pre-push.before-adk-review"
+    cat > "$hooks/pre-push" <<'HOOK'
+    #!/bin/sh
+    lines="$(cat)"
+    printf '%s\n' "$lines" | adk-review-push "$@" || exit
+    before="$(dirname "$0")/pre-push.before-adk-review"
+    if [ -x "$before" ]; then printf '%s\n' "$lines" | "$before" "$@"; fi
+    HOOK
+    chmod +x "$hooks/pre-push"
 
-They write the hook where git reads it: `.git/hooks`, unless `core.hooksPath` names another folder, and from a
-linked worktree its main repository's; a pre-push hook already there is replaced. Git passes over a hook it cannot
-run, and over one in a folder it does not read, and the push goes unreviewed. A tool that runs hooks for git must
-hand this one git's lines on its standard input: given none, it reads a push that sends nothing.
+They write the hook where git reads it: `.git/hooks`, unless `core.hooksPath` names another folder, and from a linked
+worktree its main repository's. A pre-push hook already there, Git LFS's say, is kept beside it as
+`pre-push.before-adk-review` and runs after the review passes, given git's lines too: replaced, Git LFS's would upload
+no stored file, and a clone could not fetch one. Run again, the lines keep the first hook they kept. Git passes over a
+hook it cannot run, and over one in a folder it does not read, and the push goes unreviewed. A tool that runs hooks for
+git must hand this one git's lines on its standard input: given none, it reads a push that sends nothing.
 
 A repository that uses pre-commit names the hook `adk-review` from this repository's `.pre-commit-hooks.yaml`
 instead, at a pinned commit, with pre-commit's pre-push hook installed (`pre-commit install --hook-type pre-push`); it
@@ -313,27 +324,29 @@ runs the same command, and takes no `args:`, which stop every push. pre-commit i
 pre-commit itself runs on, and the reviewer needs 3.13 or newer: with an older one the install fails, and so does the
 push. That config names another beside the hook's id, `language_version: python3.13`.
 
-For each ref a push sends, the hook asks git which commits the remote does not hold yet and reviews them as one
-change with `default-rules`, against the commit they grow from on the remote's side, or with `--all` where the remote
-holds none of their history. A merge grows from more than one: the change is reviewed against each, and passes when
-one review passes, since a line the remote holds nowhere is new to every one of them. Then the rules `push-history`
-names, the credential rules `secrets` and `named-secrets`, read each of those commits as it was made, and what each
-says, a pushed tag's words too, those of each tag it was made of, and those of a signed tag a merge carries in its own
-header: a credential one commit adds and a later one takes out stops the push, though the change as a whole no longer
-holds it. A commit is read line by line, so the profile names line rules alone, and a
-commit a push sends under two names, a branch and its tag, is reviewed and read once. Any exit but 0 stops the push
-and prints why; so does a `git` the hook cannot find, or a line from git it
-cannot read. A push that sends nothing new, or commits that change nothing, says nothing. Through pre-commit by hand,
-`pre-commit run adk-review --hook-stage pre-push --from-ref A --to-ref B` reviews that range and its commits, and with
-neither ref, the whole project at `HEAD`. Run alone at a terminal, the hook says what it is, exit 2.
-`git push --no-verify` skips it.
+For each ref a push sends, the hook asks git which commits the remote does not hold yet and reviews them as one change
+with `default-rules`, against the commit they grow from on the remote's side, or with `--all` where the remote holds
+none of their history. A merge grows from more than one: the change is reviewed against each, and passes when one review
+passes, since a line the remote holds nowhere is new to every one of them; where every review stops, the push stops only
+on what all of them found, since what one side brings the remote holds already. Then the rules `push-history` names, the
+credential rules `secrets` and `named-secrets`, read each of those commits as it was made, and what each says, a pushed
+tag's words too, those of each tag it was made of, and those of a signed tag a merge carries in its own header: a
+credential one commit adds and a later one takes out stops the push, though the change as a whole no longer holds it. A
+commit is read line by line, so the profile names line rules alone, and a commit a push sends under two names, a branch
+and its tag, is reviewed and read once. Any exit but 0 stops the push and prints why; so does a `git` the hook cannot
+find, or a line from git it cannot read. A push that sends nothing new, or commits that change nothing, says nothing,
+and so does a push to this repository itself, `git push . a:b`, which sends nothing off the machine. Through pre-commit
+by hand, `pre-commit run adk-review --hook-stage pre-push --from-ref A --to-ref B` reviews that range and its commits,
+and with neither ref, the whole project at `HEAD`. Run alone at a terminal, the hook says what it is, exit 2. `git push
+--no-verify` skips it.
 
 What the hook cannot see, or stops on:
 
 - pre-commit reads git's lines itself and hands its hook one ref: the first not deleted, passing over a new ref whose
   commits the remote already holds. A push of several refs is reviewed whole by git's own hook alone.
-- In a commit before the last, only a credential stops the push, or a file no rule can read, a binary one or a Git
-  LFS pointer, whose file Git LFS's own hook uploads, unless `[review] skip` names it. What a merge's own resolution adds and a later commit takes out is read in no commit.
+- In a commit before the last, only a credential stops the push, or a file no rule can read, a binary one or a Git LFS
+  pointer, whose file Git LFS's own hook uploads, unless `[review] skip` names it. What a merge's own resolution adds
+  and a later commit takes out is read in no commit.
 - The remote's branches are as this clone last fetched them: one deleted or rewritten there still counts as held here,
   so fetch before a push that follows a rewrite, and let a fetch prune deleted ones (`git config fetch.prune true`).
   Where git says the remote holds no branch this clone last saw there — its URL changed, a `pushurl` names another
