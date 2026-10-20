@@ -80,7 +80,7 @@ another, and each refuses a review's own flags — `--json`, `--handoff`, `--cac
 | 0 | Approved: no finding at or above `--fail-on`, and no hole. |
 | 1 | A finding at or above `--fail-on`, and no hole. |
 | 2 | A usage error, before any model call: a flag, a config, a profile or a check file that cannot run; no repository named in a pipeline, or no choice made at the question asked; a branch, base or path that does not resolve, a change against a base in a shallow clone, or a change that adds nothing; an arm that is not ready. |
-| 3 | A hole: a check failed or could not look, the token ceiling refused a guideline's call (a verifier's leaves its finding unverified), a changed file no guideline can read whole, or a finding at the bar whose quote the diff does not bear out or that a verifier refuted under `--verify`. Also an error nothing else names, a report's reader that closed the pipe early, a `--json` or `--handoff` file that could not be written, and a reviewer that cannot load. |
+| 3 | A hole: a check failed or could not look, the token ceiling refused a guideline's call (a verifier's leaves its finding unverified), a changed file no check can read whole, or where a guideline runs one it was not shown whole, or a finding at the bar whose quote the diff does not bear out or that a verifier refuted under `--verify`. Also an error nothing else names, a report's reader that closed the pipe early, a `--json` or `--handoff` file that could not be written, and a reviewer that cannot load. |
 | 130 | Stopped by Ctrl-C. |
 | 143 | Stopped by a job, with SIGTERM. |
 
@@ -271,7 +271,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | `findings` | Each kept finding: its fingerprint, check, file, line, the lines the diff places it on, whether one of them is a line the change added (null for a finding with no line), severity, title, evidence and suggestion. A guideline's finding's evidence is the lines of the diff its quote stands on, as the file reads them. A fingerprint is built from the check, the file and the evidence, never the line, so a finding keeps it when lines move. With `--previous`, `since_previous` says `new` or `seen`. |
 | `resolved` | With `--previous`, the earlier findings no longer found, as that report wrote them; null without it, or where this review has a hole. |
 | `could_not_look` | Each check that failed or could not look, and why. |
-| `not_read` | Each changed file no guideline can read whole, and why. |
+| `not_read` | Each changed file no check can read whole, or where a guideline runs one it was not shown whole, and why. |
 | `folded` | Each finding folded into another on the same lines, and the check it folded into. |
 | `dropped` | Each finding dropped for a quote the diff does not bear out. |
 | `dropped_at_fail_on` | How many of those sit at or above the bar. |
@@ -297,7 +297,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | The steps the blast radius takes in all, one for each cycle of imports a walk reaches: past them, a radius is not counted, and says so | 2,000,000 steps | `core/blast.py`, `RADIUS_STEPS` |
 | One file at the head the rules and the radius read, and one file `--try` reads | 1,000,000 bytes | `collect/git.py`, `MAX_FILE_BYTES` |
 | The start of a file a link names in which a NUL makes it binary, as git reads one | 8,000 bytes | `collect/git.py`, `BINARY_BYTES` |
-| The head's Python files read for the tree rules and the radius, in all; the head's links a changed link is followed through, in all; and the changed files' texts, in all | 20,000,000 bytes | `collect/git.py`, `MAX_TREE_BYTES` |
+| The head's Python files read for the tree rules and the radius, in all; every link at the head, the changed ones first, read to follow a changed link, in all; and the changed files' texts, in all | 20,000,000 bytes | `collect/git.py`, `MAX_TREE_BYTES` |
 | The links one symbolic link is followed through, as Linux follows them: past them, it names no file | 40 links | `core/paths.py`, `LINK_HOPS` |
 | The parts of a path a review follows its links through, in all: past them, a link not yet followed is a hole for a rule that reads it whole and for each line rule | 2,000,000 parts | `core/paths.py`, `LINK_STEPS` |
 | One git call | 30 seconds | `collect/git.py`, `GIT_TIMEOUT_S` |

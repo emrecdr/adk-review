@@ -211,34 +211,39 @@ class TestTheSecretShapes:
         for path, line in quiet.items():
             assert lines_hit(NamedSecrets(), path, line) == [], path
 
-    def test_named_secrets_reads_a_compose_files_list_of_variables(self) -> None:
+    def test_named_secrets_reads_a_yaml_lists_items_as_the_lines_they_hold(self) -> None:
         """Found when the owner chose it: a compose file sets a service's variables as a list as often as a map, `-
-        DB_PASSWORD=...`, the whole item quoted or not, and neither the rule nor the redaction before every model call
-        read that form, so a password there passed every review and reached each guideline. Each is read and hidden;
-        a variable, a name with no value and a setting are not credentials."""
+        DB_PASSWORD=...`, and neither the rule nor the redaction before every model call read a list's item, so a
+        password there passed every review and reached each guideline. An item is read as the line it holds, with the
+        same rules: a value needs a digit, as the map form's does. Read by review: a shape of its own decided the two
+        forms apart, read a container's flags as variables, and hid removed lines of Python."""
         from adk_review.core.secrets import named_at, scrub
         from adk_review.judge.rule_helpers import lines_hit
         from adk_review.judge.rules.named_secrets import NamedSecrets
 
         read = {
             "docker-compose.yml": "      - DB_PASSWORD=Sup3rS3cret-db9\n",
-            "compose.yaml": '      - "API_KEY=4f8a1c2e9b7d6035"\n',
-            "deploy/docker-compose.prod.yml": "    - 'SECRET_KEY=8d0e5f2a9c4b7e13'\n",
+            "deploy/docker-compose.prod.yml": "    - SECRET_KEY=8d0e5f2a9c4b7e13\n",
+            "k8s/app.yaml": "  - password: Sup3rS3cret9\n",
         }
         for path, line in read.items():
             assert lines_hit(NamedSecrets(), path, line) == [1], path
             hidden, count = scrub(line)
-            assert count == 1 and "[REDACTED]" in hidden and "-" in hidden, (path, hidden)
-        assert (named_at('  - "DB_PASSWORD=Sup3rS3cret-db9"') or ("",))[0] == "DB_PASSWORD", "the name, not the dash"
-        assert scrub('  - "API_KEY=4f8a1c2e9b7d6035"')[0] == '  - "API_KEY=[REDACTED]"', "the quotes kept"
+            assert count == 1 and "[REDACTED]" in hidden and "- " in hidden, (path, hidden)
+        assert (named_at("      - DB_PASSWORD=Sup3rS3cret-db9") or ("",))[0] == "DB_PASSWORD", "the name, not the dash"
         quiet = {
             "docker-compose.yml": "      - API_KEY=${API_KEY}\n",
             "compose.yaml": "      - GITHUB_TOKEN\n",
             "compose.override.yaml": "      - DEBUG=true\n",
-            "docker-compose.dev.yml": '      - "PASSWORD=changeme"\n',
+            "docker-compose.dev.yml": "      - POSTGRES_PASSWORD=postgres\n",
+            "docker-compose.local.yml": "      POSTGRES_PASSWORD: postgres\n",
+            "k8s/deploy.yaml": "        - --password-file=/run/secrets/db1\n",
+            "k8s/job.yaml": "        - --api-key-file=/etc/app/key1.pem\n",
         }
         for path, line in quiet.items():
             assert lines_hit(NamedSecrets(), path, line) == [], path
+        removed = "-        password=password,\n-        api_key=api_key,\n"
+        assert scrub(removed) == (removed, 0), "a removed line of Python is no list's item"
 
     def test_named_secrets_reads_a_test_environments_config(self) -> None:
         """Read by review: any file in a folder named `test` read as a test's, so a password in `deploy/test/db.env`, an

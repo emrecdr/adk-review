@@ -11,6 +11,10 @@ token. Of 37 credentials written as projects write them, in code, JSON, YAML, `.
 name alone found, and one more is found: every named value on a line is weighed, not the first alone. A scheme before
 a token is no part of it, and only an unquoted value can be code: of 8 more credentials in formats those lack, 5 are
 found where none was, and the twelve projects' 4 are the same 4.
+
+A YAML list's item is read as the line it holds, a compose file's `- DB_PASSWORD=...` as a `.env` line, a digit in its
+value, and `- password: ...` as YAML. Not read, as known limits: a compose item quoted whole, `- "DB_PASSWORD=..."`,
+a flow sequence, `environment: [...]`, and a Dockerfile's `ENV` line continued with a backslash.
 """
 
 from __future__ import annotations
@@ -112,6 +116,7 @@ class NamedSecrets(Rule):
         'password = os.environ["PASSWORD"]',
         ("Dockerfile", "ENV API_KEY=${API_KEY}"),
         ("docker-compose.yml", "      - API_KEY=${API_KEY}"),
+        ("k8s/deploy.yaml", "        - --password-file=/run/secrets/db1"),
         'api_key = "your-api-key-here"',
         'PASSWORD = "changeme"',
         ("tests/test_login.py", 'user = User(password="testpassword")'),
@@ -142,7 +147,10 @@ def _credential(name: str, value: str, quoted: bool, written: bool) -> bool:
     """Whether `value`, given to `name`, can be the credential the name says: never a name about one, a placeholder,
     code, or a label that names a secret and holds none; a password a person wrote, whatever its words; else what a
     machine makes, one run of eight characters or more, a digit among them, no number and no mark of code."""
-    if name.lower().endswith(ABOUT) or is_placeholder(value) or (not quoted and _CODE.fullmatch(value)):
+    # A flag spells its name with `-`, `--password-file`: read by review, a list of a container's arguments was read
+    # as its variables, and each file a flag named was a blocker.
+    about = name.lower().replace("-", "_").endswith(ABOUT)
+    if about or is_placeholder(value) or (not quoted and _CODE.fullmatch(value)):
         return False
     made = _SCHEME.sub("", value)
     digit = any(char.isdigit() for char in made)
