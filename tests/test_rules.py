@@ -1065,6 +1065,21 @@ class TestTheCleanupAndThePitfalls:
         assert run_review(cli, repo, "--profile", "default-rules") == 1
         assert "settings.yaml:2" in capsys.readouterr().out
 
+    def test_the_credential_rules_read_the_file_a_link_out_of_scan_names(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: the credential rules read the project's own files of every kind, but a link of a kind
+        `scan` leaves out was never followed, so they read only its path: `notes.txt`, a link to a file holding a key,
+        was approved where `settings.yaml`, the same link, was a blocker."""
+        repo = tmp_path / "r"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "conf/real.yaml", KEY_LINE)
+        _git_in(repo, "checkout", "-qb", HEAD)
+        link = _git_in(repo, "hash-object", "-w", "--stdin", stdin="conf/real.yaml")
+        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{link},notes.txt")
+        _git_in(repo, "commit", "-qm", "notes that are the config")
+        assert run_review(cli, repo, "--profile", "default-rules") == 1
+        assert "notes.txt:1" in capsys.readouterr().out
+
     def test_pitfalls_and_simplify_leave_fastapis_routes_alone(self) -> None:
         """Measured by review on FastAPI 0.141.1: a route whose dependency or request reads the path parameter answers
         each id, and ruff's FAST003, which reads no dependency, named six such routes at major. Ruff documents

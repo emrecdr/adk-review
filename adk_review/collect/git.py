@@ -856,7 +856,9 @@ def gather(
     # file rules.
     read = tree_rules or (guidelines and any(Radius(entry["path"]).measured for entry in files))
     tree = tree_at_head(resolved, listing, third_party) if read else None
-    read_texts(resolved, files, listing, excluded)
+    # A link the scan leaves out is followed too: the credential rules read it, as the file it names. Read by review,
+    # `notes.txt`, a link to a file holding a key, was read as its own path and approved.
+    read_texts(resolved, [*files, *(entry for entry in unscanned if entry.get("link"))], listing, excluded)
     if guidelines:
         links = {entry["path"] for entry in entries if entry["mode"] == "120000"}
         _links_unread(files, links, excluded, lambda path: in_review(path, scan, third_party))
