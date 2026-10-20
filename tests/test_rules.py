@@ -182,6 +182,30 @@ class TestTheSecretShapes:
         hidden, _count = scrub("\n".join(f"+{line}" for line in putty) + "\n x = 1\n")
         assert putty[7] not in hidden and putty[8] not in hidden and " x = 1" in hidden, hidden
 
+    def test_named_secrets_reads_a_dockerfiles_assignments(self) -> None:
+        """Found when the owner's goal asked for more: a Dockerfile's `ENV` and `ARG` set a value as `=` does, and
+        neither was read, so a password in a Python project's container config passed. Each is read; a path, a
+        variable and an argument with no value are not credentials."""
+        from adk_review.core.secrets import named_at
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.named_secrets import NamedSecrets
+
+        read = {
+            "Dockerfile": "ENV DB_PASSWORD=Sup3rS3cret-db9\n",
+            "build/api.Dockerfile": "ARG DB_PASSWORD=Sup3rS3cret-db9\n",
+            "Dockerfile.dev": "env db_password=Sup3rS3cret-db9\n",
+        }
+        for path, line in read.items():
+            assert lines_hit(NamedSecrets(), path, line) == [1], path
+        assert (named_at("ENV DB_PASSWORD=Sup3rS3cret-db9") or ("",))[0] == "DB_PASSWORD", "the name, not the keyword"
+        quiet = {
+            "Dockerfile": "ENV PATH=/usr/local/bin:$PATH\n",
+            "Dockerfile.ci": "ENV API_KEY=${API_KEY}\n",
+            "build/api.Dockerfile": "ARG GITHUB_TOKEN\n",
+        }
+        for path, line in quiet.items():
+            assert lines_hit(NamedSecrets(), path, line) == [], path
+
     def test_named_secrets_reads_a_test_environments_config(self) -> None:
         """Read by review: any file in a folder named `test` read as a test's, so a password in `deploy/test/db.env`, an
         environment's config, passed `named-secrets`, in the review and in the pre-push hook's history alike. A test's
