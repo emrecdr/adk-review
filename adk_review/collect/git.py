@@ -644,13 +644,8 @@ def _read_first(blob: tuple[str, str, str]) -> tuple[int, int]:
     """Where a changed file's text comes in the budget: Python's, then a file with no suffix, a script maybe, then the
     rest, each the smallest first; one git gave no size for, last."""
     path, _sha, size = blob
-    return _kind(path), int(size) if size.isdigit() else MAX_TREE_BYTES
-
-
-def _kind(path: str) -> int:
-    """0 for Python's own file, 1 for one with no suffix, a script maybe, each parsed and linted alone; else 2."""
     suffix = PurePosixPath(path).suffix
-    return 0 if suffix in PYTHON_SUFFIXES else 1 if not suffix else 2
+    return (0 if suffix in PYTHON_SUFFIXES else 1 if not suffix else 2), int(size) if size.isdigit() else MAX_TREE_BYTES
 
 
 def _not_read(entry: Entry, why: str, skipped: Collection[str]) -> None:
@@ -741,22 +736,18 @@ def _links_unread(files: list[Entry], skipped: Mapping[str, str], read: Callable
 def _budgeted(blobs: Iterable[tuple[str, str, str]]) -> tuple[list[tuple[str, str]], list[str]]:
     """Which of the `(path, sha, size)` blobs to read, each within its cap and all within the tree's budget, in
     order; and the paths left unread — one over its cap, past the budget, or sized "BAD", as a partial clone lists a
-    blob it lacks, which nothing fetches to size. A blob read once is charged once, but for each path parsed and linted
-    as its own, Python's or a script's: read by review, 24 links to one config spent the budget and the last were
-    holes, where 24 links to one module would be parsed and linted 24 times."""
+    blob it lacks, which nothing fetches to size. Each path is charged, a blob read once for several too, since each
+    is read whole under its own name: read by review, charged once, 200 links to one 960 KB config were read as 192 MB
+    past the 20 MB budget."""
     wanted: list[tuple[str, str]] = []
     unread: list[str] = []
     budget = MAX_TREE_BYTES
-    taken: set[str] = set()
     for path, sha, size_field in blobs:
         size = int(size_field) if size_field.isdigit() else None
-        if sha in taken and _kind(path) == 2:  # read once for another path, and read here as text alone
-            wanted.append((path, sha))
-        elif size is None or size > min(MAX_FILE_BYTES, budget):
+        if size is None or size > min(MAX_FILE_BYTES, budget):
             unread.append(path)
         else:
             wanted.append((path, sha))
-            taken.add(sha)
             budget -= size
     return wanted, unread
 
@@ -788,7 +779,6 @@ def read_texts(
     files: list[Entry],
     listing: list[tuple[str, str, str, str, str]] | None,
     skipped: Collection[str] = (),
-    others: Sequence[Entry] = (),
 ) -> None:
     """Each changed file's text at the head, for the file rules, set on its entry as `text`: a plain file the head holds
     within the caps, read in one batch, and a link as the file it runs. `unread_text` names one the head holds that was
@@ -799,32 +789,27 @@ def read_texts(
     it, by number, the ones added and those kept around them, for a rule that reads no more. A file the head does not
     hold, a binary, a Git LFS pointer, a link naming no text file there or a submodule has neither: nothing for a file
     rule to read, and the report names a binary and a pointer under not read already. A pointer only its text shows, its
-    diff showing none of its opening, is named here, unless the operator's skip list, `skipped`, names it. `others` are
-    the links `scan` leaves out, read for the credential rules alone: last in the budget, and a hole for them where
-    their file was not read, unless the skip list names them. Read by review: one past the size limits, made no hole,
-    approved the key in the file it named, where a plain file of its kind is read through its own diff."""
-    for entry in [*files, *others]:
+    diff showing none of its opening, is named here, unless the operator's skip list, `skipped`, names it."""
+    for entry in files:
         # A link's lines are the file it names: a hole for each rule that reads it until that file is read as text.
         # Read by review, round after round, a link one step of the read passed over was read as its path and approved.
         entry["text"], entry["unread_text"] = None, LINK_UNREAD if entry.get("link") else None
     if listing is None:
         unread = [*files]
-        for entry in [*files, *others]:
+        for entry in files:
             entry["unread_text"] = "was not read: the head's tree could not be listed"
     else:
         blobs = {path: (sha, size) for path, sha, size in _plain(listing)}
         changed = [entry for entry in files if entry["path"] in blobs and not _no_text(unreleased(entry["diff"]))]
         # A link runs as the file it names, so the rules read that file under the link's name. Read by review: a link
         # had no text, and `run.py` naming an image that held Python was linted by no rule.
-        through = _followed(resolved, [*files, *others], listing, blobs)
+        through = _followed(resolved, files, listing, blobs)
         wanted = [(entry["path"], *blobs[entry["path"]]) for entry in changed]
         wanted += [(entry["path"], *blobs[target]) for entry, target in through]
         # What a rule reads whole first, Python's, then a file with no suffix, a script, then the rest, each the
         # smallest first: read by review, in their paths' order, 20 MB of JSON fixtures in `data/` spent the budget
-        # before `src/app.py`, which lint then could not read, and a first push stopped. The links `scan` leaves out
-        # come last: read by review, 24 links to pages took the budget from a config the review reads.
-        aside = {entry["path"] for entry in others}
-        texts, _unread = _texts(resolved, sorted(wanted, key=lambda blob: (blob[0] in aside, *_read_first(blob))))
+        # before `src/app.py`, which lint then could not read, and a first push stopped.
+        texts, _unread = _texts(resolved, sorted(wanted, key=_read_first))
         _as_linked(through, texts, skipped)
         unread = []
         for entry in changed:
@@ -837,9 +822,6 @@ def read_texts(
                 _not_read(entry, POINTER_UNREAD, skipped)
     for entry in unread:
         entry["shown"] = {number: line[1:] for number, line in hunk_lines(unreleased(entry["diff"])) if line[:1] != "-"}
-    for entry in others:  # the operator's skip list clears a link the review ignores, as it clears a binary file
-        if entry["path"] in skipped:
-            entry["unread_text"] = None
 
 
 def collect_evidence(
@@ -885,7 +867,7 @@ def gather(
         entries = [entry for entry in listed if in_scope(entry["path"], scope)]
         own, others, ignored = _split(entries, scan, third_party)
         files, block, excluded = _read_change(resolved, own, scope, guidelines=guidelines, diff_cap=diff_cap, skip=skip)
-        unscanned, _block, aside = _read_change(resolved, others, scope, guidelines=False, diff_cap=diff_cap, skip=skip)
+        unscanned = _read_change(resolved, others, scope, guidelines=False, diff_cap=diff_cap, skip=skip)[0]
         away = untracked(resolved) if resolved.get("staged") else None
     except GitError as exc:  # the change half read is not the change: named, never reviewed as it stands
         return {"status": "error", "error_message": str(exc)}
@@ -899,7 +881,11 @@ def gather(
     tree = tree_at_head(resolved, listing, third_party) if read else None
     # A link the scan leaves out is followed too: the credential rules read it, as the file it names. Read by review,
     # `notes.txt`, a link to a file holding a key, was read as its own path and approved.
-    read_texts(resolved, files, listing, {**excluded, **aside}, [entry for entry in unscanned if entry.get("link")])
+    # A link of a kind `scan` leaves out is read by the credential rules as its own path, as its diff shows it and a
+    # secret scanner reads a link's blob: a key in the file it names is found where that file's own change adds it.
+    # Read by review, four rounds running: followed, it was a hole wherever its file could not be read, and each way
+    # round that let a key through.
+    read_texts(resolved, files, listing, excluded)
     if guidelines:
         _links_unread(files, excluded, lambda path: in_review(path, scan, third_party))
     return {
