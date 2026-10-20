@@ -62,6 +62,7 @@ import hashlib
 import json
 import logging
 import os
+import platform
 import signal
 import sys
 import tempfile
@@ -725,7 +726,7 @@ def _decided(
 ) -> int:
     """The review decided and reported: served from the cache where one holds it; else the rules, and the guidelines
     where any runs. `--trace`, `--debug-log` and `--record` are the engine's own and bring its run too."""
-    cached = _cached_at(args, chosen, evidence, shown["model"]) if args.cache else None
+    cached = _cached_at(args, chosen, evidence, shown["model"], previous) if args.cache else None
     if cached is not None and (hit := _from_cache(cached)) is not None:
         if not args.quiet:
             _say(f"served from the cache: {cached.name}, a review of these commits with these checks and models")
@@ -919,11 +920,12 @@ def _waiting(running: Sequence[str]) -> str:
     return f"waiting on {', '.join(running)}" if running else "working"
 
 
-def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, model: str) -> Path:
+def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, model: str, previous: Previous) -> Path:
     """Where a decided review of these inputs is kept: a file named by a hash of everything its result depends on —
-    the reviewer's own code and its config, whatever their version says, the commits, what of them is covered,
-    the checks and every setting, each model a call would go to, and each outside tool a rule runs. A missing input
-    would serve a stale approval."""
+    the reviewer's own code, its config and its version, the interpreter that parses the tree, the commits or the
+    index, what of them is covered and what of the tree went unread, the checks and every setting, the previous
+    report as it was read, each model a call would go to, and each outside tool a rule runs. A missing input would
+    serve a stale approval."""
     from .collect.tools import IDENTITIES
     from .judge.settings import fallback_name
 
@@ -941,7 +943,8 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
         diffs.update(b"\0")
     pre = evidence["preflight"]
     said = {
-        **{key: pre.get(key) for key in ("repo", "head", "head_sha", "index_sha", "base", "base_sha", "merge_base")},
+        # The scope as preflight resolved it, whole: read by review, the refs the report prints were left out.
+        "preflight": pre,
         "scope": evidence["scope"],
         "whole": evidence["whole"],
         "profile": chosen.name,
@@ -954,7 +957,13 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
         "models": [model, fallback_name()],  # the verifier's among `model`'s roles under --verify
         # Each outside tool a rule that runs reads, as it would run: a newer ruff finds what an older one did not.
         "tools": {tool: IDENTITIES[tool]() for tool in tools},
-        "previous": Path(args.previous).expanduser().read_bytes().hex() if args.previous else "",
+        # As `read_previous` read it: read again here, a pipe gave nothing the second time and a FIFO never answered.
+        "previous": previous,
+        # What of the head's tree went unread: read by review, a blob a partial clone fetched since served a stale
+        # verdict, read with the tree as a floor.
+        "tree": [evidence["blast"].skipped, list(evidence["blast"].unparsed), evidence["blast"].listed],
+        "python": platform.python_version(),  # the parser the tree is read with: 3.14 reads what 3.13 refuses
+        "version": version(),  # the JSON names it
         "diffs": diffs.hexdigest(),
     }
     digest.update(json.dumps(said, sort_keys=True, default=str).encode())

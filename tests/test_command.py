@@ -1082,6 +1082,40 @@ class TestWhatAReviewKeeps:
         assert cli.main(argv) == 0
         assert "served from the cache" not in capsys.readouterr().err
 
+    def test_the_cache_key_reads_each_input_a_review_reads_and_each_value_its_report_prints(
+        self, cli, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by review, one at a time: the key read `--previous` again, which a pipe then gave as nothing and a
+        FIFO never answered; it named no ref, though the report prints each; no blob a partial clone fetched since; no
+        interpreter, though Python 3.14 parses what 3.13 refuses; and no version, though the JSON prints it."""
+        import argparse
+        from types import SimpleNamespace
+
+        from adk_review.core.blast import Blast
+
+        args = argparse.Namespace(cache=str(tmp_path / "c"), previous=str(tmp_path / "gone.json"))
+        chosen = SimpleNamespace(rules=[], name="default-rules", ids=lambda: ())
+        pre = {"repo": "r", "head": "b", "head_sha": "1" * 40, "base": "c", "base_sha": "2" * 40}
+        pre |= {"merge_base": "3" * 40, "head_ref": "refs/heads/b", "base_ref": "refs/heads/c"}
+        evidence = {
+            "preflight": pre,
+            "scope": [],
+            "whole": False,
+            "files": [{"diff": "+x\n"}],
+            "blast": Blast((), (), 0),
+        }
+        previous = ({"f1": {"title": "t"}}, None)
+        key = cli._cached_at(args, chosen, evidence, "m", previous)  # the file is gone: what was read is hashed
+        assert cli._cached_at(args, chosen, evidence, "m", ({}, None)) != key
+        tagged = {**evidence, "preflight": {**pre, "head_ref": "refs/tags/b"}}
+        assert cli._cached_at(args, chosen, tagged, "m", previous) != key
+        assert cli._cached_at(args, chosen, {**evidence, "blast": Blast((), (), 1)}, "m", previous) != key
+        monkeypatch.setattr(cli, "version", lambda: "9.9.9")
+        assert cli._cached_at(args, chosen, evidence, "m", previous) != key
+        monkeypatch.undo()
+        monkeypatch.setattr(cli.platform, "python_version", lambda: "3.14.0")
+        assert cli._cached_at(args, chosen, evidence, "m", previous) != key
+
     def test_a_debug_log_holds_what_each_guideline_was_asked_and_no_secret(
         self, cli, demo_repo: Path, tmp_path: Path
     ) -> None:
