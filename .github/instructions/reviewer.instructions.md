@@ -78,15 +78,16 @@ applyTo: "adk_review/**"
   a reminder, `REMINDER` for the guidelines and the verifiers. Never escape or rewrite the content itself: a guideline
   quotes the diff verbatim, and grounding holds the quote to the real lines.
 - A state key more than one module uses is a constant in `judge/agents.py` (`SCOPE`, `REPOSITORY`, `DIFF`, `BLAST`,
-  `RULES`, `FAILURE`), and an instruction reads a key through `placeholder(key)`; `tests/test_engine.py` holds every
-  placeholder an instruction reads to a key something writes.
+  `QUOTABLE`, `FINDINGS`, `FAILURE`), and an instruction reads a key through `placeholder(key)`; `tests/test_engine.py`
+  holds every placeholder an instruction reads to a key something writes.
 - Every rule runs the same way, through `run_rule`, in one `FunctionNode` (`judge/checks.py`) before the guidelines, in
   both shapes, or straight from the driver through the same `run_rules` where no guideline runs; each rule's answer, a
-  `Checked`, is left in state under its check's key. The node also writes the blast radius the guidelines read and,
-  under `RULES`, every answer rendered and capped for the chat's verdict; in chat it gathers the evidence for the
-  commits the intake confirmed, never their names again; and once the rules have read them it lets go of the tree, the
-  texts, the diffs and the added lines. The node never raises: a node that raises ends the whole run, every guideline
-  with it.
+  `Checked`, is left in state under its check's key. The node also writes the blast radius the guidelines read; in chat
+  it keeps each file as grounding reads it under `QUOTABLE`, for the grounding node that holds the guidelines' findings
+  to the diff and decides the verdict before the verdict agent writes it up under `FINDINGS`, and gathers the evidence
+  for the commits the intake confirmed, never their names again; and once the rules have read them it lets go of the
+  tree, the texts, the diffs and the added lines. The node never raises: a node that raises ends the whole run, every
+  guideline with it.
 - `--json FILE` writes the review as data (`as_data` in `deliver/report.py`): every string through the text report's
   own safety steps, `one_line` then `inert`, evidence cut where the report cuts it. Raise `SCHEMA` when a field
   changes its meaning or goes; add a field freely. A finding's `fingerprint` is built from its check, file and evidence,

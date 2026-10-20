@@ -279,7 +279,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | One run of the guidelines, or of the verifiers | 600 seconds | `judge/config.py`, `RUN_DEADLINE_S` |
 | Model calls in flight at once | 3 | `judge/config.py`, `CONCURRENCY` |
 | The radius a guideline is shown | 20,000 characters | `judge/agents.py`, `BLAST_CAP_CHARS` |
-| The rules' findings chat's verdict reads | 20,000 characters | `judge/agents.py`, `RULES_CAP_CHARS` |
+| Every check's findings chat's verdict reads, grounded and decided | 20,000 characters | `judge/agents.py`, `FINDINGS_CAP_CHARS` |
 | The changed-files list a model reads in chat | 20,000 characters | `judge/tools.py`, `LISTED_MAX_CHARS` |
 | Ruff's findings listed for one file by a rule that names ruff; the rest are counted in one finding | 50 | `judge/rule_helpers/diagnostics.py`, `PER_FILE` |
 | A finding's evidence in the report | 400 characters | `core/text.py`, `EVIDENCE_MAX_CHARS` |

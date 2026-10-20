@@ -14,6 +14,7 @@ from types import SimpleNamespace
 import litellm
 import pytest
 from conftest import (
+    CANNED_REVIEW,
     GUIDELINE_NAMES,
     INTAKE,
     QUOTA_TEXT,
@@ -104,6 +105,37 @@ async def test_when_one_lane_fails_the_others_finish_and_the_verdict_still_answe
     assert final and state[VERDICT], "the verdict agent answered"
     assert state[model_key("security")]["findings"], "the other guidelines finished"
     assert model_key("tests") not in state, "a hole, for the code that decides"
+
+
+#: Words of chat's verdict agent's instruction alone, and of the security guideline's.
+THE_VERDICT, SECURITY = "Rules and guidelines have judged one change", "security defects and unsafe patterns"
+
+
+@pytest.mark.asyncio
+async def test_chats_verdict_reads_what_the_diff_bears_out_and_the_verdict_code_decides(
+    monkeypatch, fake_provider, asked, demo_repo
+):
+    """Measured by review: chat's verdict agent read each guideline's answer as its model gave it and decided the
+    verdict itself, where the command grounds every finding in the diff and decides in code: a blocker quoting no line
+    of the change reached chat's verdict as one. Chat grounds and decides as the command does now, a finding whose
+    quote the diff does not bear out named as dropped, and its verdict agent writes up what code decided."""
+    module = load_agent(monkeypatch)
+    confirms(fake_provider, demo_repo)
+    await run_turn(module, REVIEW_REQUEST)
+    (read,) = [system for system, _turns in asked if THE_VERDICT in system]
+    # The canned finding stands on lint's S602 line and folds into it, as the command's report folds it.
+    assert "verdict: REQUEST_CHANGES" in read and "## guideline.security" in read, read
+    assert "- dropped," not in read, "every canned quote is a line of the planted diff"
+
+    asked.clear()
+    planted = CANNED_REVIEW["findings"][0]
+    invented = {**CANNED_REVIEW, "findings": [{**planted, "severity": "blocker", "title": "an invented injection"}]}
+    invented["findings"][0]["evidence"] = "eval(input())"  # no line of the change
+    fake_provider.answers_when(SECURITY, invented)
+    await run_turn(module, REVIEW_REQUEST)
+    (read,) = [system for system, _turns in asked if THE_VERDICT in system]
+    assert "verdict: DEGRADED" in read and "- dropped, the diff does not bear its quote out: blocker" in read, read
+    assert "an invented injection" in read
 
 
 class _RateLimitError(Exception):

@@ -523,7 +523,7 @@ class TestTheStateKeys:
     def test_every_placeholder_an_instruction_reads_is_a_key_something_writes(self) -> None:
         from google.adk.agents import LlmAgent
 
-        from adk_review.judge.agents import BLAST, DIFF, REPOSITORY, RULES
+        from adk_review.judge.agents import BLAST, DIFF, FINDINGS, REPOSITORY
         from adk_review.judge.graph import build_workflow
         from adk_review.judge.verify import build_verifier, keys
 
@@ -532,10 +532,10 @@ class TestTheStateKeys:
 
         found = catalog()
         # The change: the command seeds it, and chat's checks node writes it from the evidence it gathered. The node
-        # writes the radius beside it and every rule's answer rendered for the chat's verdict, in both shapes. In chat
-        # the intake's first tool writes the repository it confirmed (`test_git_tools.py` runs it), which the intake
-        # is told on each later turn.
-        by_the_node = {BLAST, RULES, DIFF}
+        # writes the radius beside it, in both shapes; chat's grounding node writes every check's answer grounded and
+        # the verdict decided, for its verdict. In chat the intake's first tool writes the repository it confirmed
+        # (`test_git_tools.py` runs it), which the intake is told on each later turn.
+        by_the_node = {BLAST, FINDINGS, DIFF}
         by_the_tool = {REPOSITORY}
         for chat in (False, True):
             graph = build_workflow(chat=chat, checks=found, fail_on="blocker").graph
@@ -543,7 +543,7 @@ class TestTheStateKeys:
             written = by_the_node | by_the_tool | {agent.output_key for agent in agents}
             assert read(agents) - written == set(), f"chat={chat}: an instruction reads a key nothing writes"
             assert {DIFF, BLAST} <= read(agents), "the guidelines read the change and the radius beside it"
-            assert chat == (RULES in read(agents)), "the chat's verdict reads the rules' answers, rendered and capped"
+            assert chat == (FINDINGS in read(agents)), "chat's verdict reads every check's answer, grounded and decided"
             assert chat == (REPOSITORY in read(agents)), "chat's intake reads the repository its conversation confirmed"
         finding, _judgement = keys(0)
         assert read([build_verifier(0)]) == {finding, DIFF}, "a verifier reads its finding and the change, as seeded"
@@ -603,9 +603,10 @@ class TestTheChecksNode:
     ) -> None:
         """For the commits, never their names again. Measured before: a head given as a sha had resolved through no
         ref, and the node, handed the ref, found no head: every rule said it did not look while the guidelines
-        reviewed the change. The node writes the radius the guidelines read, and the rules rendered for the verdict."""
+        reviewed the change. The node writes the radius the guidelines read, and keeps each file as grounding reads it
+        beside the change, which chat's grounding node reads before its verdict."""
         from adk_review.collect.git import preflight
-        from adk_review.judge.agents import BLAST, RULES, SCOPE
+        from adk_review.judge.agents import BLAST, QUOTABLE, SCOPE
         from adk_review.judge.rules.secrets import Secrets
 
         for head in (HEAD, _git_in(demo_repo, "rev-parse", HEAD)):
@@ -617,9 +618,9 @@ class TestTheChecksNode:
                 ("src/payments/config.py", 5),
             ]
         assert "\n- src/payments/charge.py: 1 module and 1 test" in run.state[BLAST]
-        quoted = '+AWS_ACCESS_KEY_ID = "[REDACTED:aws_access_key_id]"'
-        line = f"- blocker src/payments/config.py:4: secrets: a hard-coded credential — {quoted}"
-        assert run.state[RULES].startswith(f"## rule.secrets\n{line}\n"), run.state[RULES]
+        held = run.state[QUOTABLE]["src/payments/config.py"]
+        assert any("AWS_ACCESS_KEY_ID" in line for hunk in held["quotable"] for _number, line in hunk), held
+        assert (held["unread"], held["cut"]) == ("", False)
 
     @pytest.mark.asyncio
     async def test_a_cancelled_node_stops_its_rules_at_the_next_rule(self) -> None:
@@ -660,7 +661,7 @@ class TestTheChecksNode:
 
     @pytest.mark.asyncio
     async def test_with_nothing_gathered_each_check_says_it_did_not_look_and_no_radius_is_kept(self) -> None:
-        from adk_review.judge.agents import BLAST, RULES
+        from adk_review.judge.agents import BLAST, QUOTABLE
 
         rules = catalog().rules
         run = await self._run(rules, {BLAST: "the last scope's radius"})
@@ -668,7 +669,7 @@ class TestTheChecksNode:
             answer = self._answer(run, rule.check_id)
             assert answer.findings == [] and answer.could_not_look == "nothing was gathered, so the rule did not look"
         assert run.state[BLAST] == "", "a scope that gathered nothing never keeps the last one's radius"
-        assert run.state[RULES].count("— could not look: nothing was gathered") == len(rules)
+        assert run.state[QUOTABLE] == {}, "no file for chat's grounding where nothing was gathered"
 
     @pytest.mark.asyncio
     async def test_a_check_that_raises_is_its_answer_and_the_run_goes_on(self) -> None:
@@ -690,18 +691,32 @@ class TestTheChecksNode:
         assert all(e["text"] is None and e["added"] is None and e["diff"] is None for e in evidence["files"])
         assert run.state[BLAST].startswith("## Blast radius"), "the radius, written before the tree went"
 
-    def test_the_verdict_reads_the_rules_rendered_one_finding_a_line_and_capped(self, monkeypatch) -> None:
-        from adk_review.core.findings import Checked, Finding
+    def test_chats_verdict_reads_each_check_decided_one_finding_a_line_and_capped(self, monkeypatch) -> None:
+        """The verdict first, as code decided it; each check in the report's order, a finding it kept one line, one the
+        diff did not bear out named dropped, one that could not look saying so; each file not read; the whole capped."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
         from adk_review.judge import agents
 
-        found = Finding(
-            file="src/a.py", line=4, severity="blocker", title="secrets: a key", evidence="+k = 'x'", suggestion="s"
+        def found(title: str, severity: str) -> Finding:
+            return Finding(file="src/a.py", line=4, severity=severity, title=title, evidence="+k = 'x'", suggestion="s")
+
+        outcome = Outcome(
+            kept=[Sourced("rule.secrets", found("secrets: a key", "blocker"), (4, 4))],
+            dropped=[Sourced("guideline.security", found("an invented hole", "major"))],
+            errors={"rule.lint": "ruff is not here"},
+            unread={"img.png": "binary: no line of it can be read or quoted"},
         )
-        answers = {"rule.secrets": Checked(findings=[found]), "rule.lint": Checked(could_not_look="ruff is not here")}
-        rendered = agents.for_the_verdict(answers)
+        checks = ("rule.secrets", "rule.lint", "guideline.security", "guideline.tests")
+        rendered = agents.for_the_verdict(outcome, checks, "DEGRADED")
         assert rendered == (
+            "verdict: DEGRADED\n"
             "## rule.secrets\n- blocker src/a.py:4: secrets: a key — +k = 'x'\n"
-            "## rule.lint — could not look: ruff is not here\n- no findings"
+            "## rule.lint — could not look: ruff is not here\n"
+            "## guideline.security\n"
+            "- dropped, the diff does not bear its quote out: major src/a.py:4: an invented hole\n"
+            "## guideline.tests\n- no findings\n"
+            "## not read: img.png — binary: no line of it can be read or quoted"
         )
-        monkeypatch.setattr(agents, "RULES_CAP_CHARS", 40)
-        assert agents.for_the_verdict(answers).endswith("\n[… cut at 40 characters]")
+        monkeypatch.setattr(agents, "FINDINGS_CAP_CHARS", 40)
+        assert agents.for_the_verdict(outcome, checks, "DEGRADED").endswith("\n[… cut at 40 characters]")

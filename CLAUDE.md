@@ -144,19 +144,20 @@ Load-bearing rules the tests enforce:
   `gpt-5`, `gpt-5.5` or o-series as LiteLLM says offline, is refused by `require_ready`, exit 2. Copilot is sent the
   instruction as its system turn (`litellm.disable_copilot_system_to_assistant`), as Gemini reads it.
 - **Shape.** `agent.py` exports both `app` and `root_agent` (the loader prefers `app`, and a bare `root_agent` would
-  lose the plugins). `build_app(chat=True)` adds an intake agent before the same middle and a verdict after it; the
-  command uses `chat=False` over seeded state. In chat a gate after the intake goes on only for a scope this turn's
-  intake confirmed — a `temp:` key, which ADK keeps for one turn — so a turn that confirms none ends at the intake's
-  answer; the checks node gathers its own evidence from that scope and writes the change the guidelines read, where the
-  command seeds the change at the session's start, in no event a debug log could carry. Plugins: `StopAtRateLimit`,
-  which after a 429 no retry or fallback got past sends no later call of the review, the verifiers' included, answering
-  each `RATE_LIMITED` (in chat, until the turn ends), then `RedactSecretsPlugin`, ADK's `DebugLoggingPlugin` and
-  `Recorder` where `--debug-log` and `--record` ask, `UsageLedger`, `ReportProviderErrors`, and `Progress`, which times
-  each agent and, at a terminal or with `--progress`, tells each guideline's start and finish on stderr; in chat, first,
-  `RefuseUnready`, which asks `require_ready` once a turn, as the command asks before it builds anything, and while the
-  arm cannot run answers the turn with its sentence before any agent runs, and after `StopAtRateLimit`, `OneTurn`, which
-  gives each judging agent one fixed turn, `review`, as the command's read: ADK would hand the verdict the guidelines'
-  findings unfenced as a turn.
+  lose the plugins). `build_app(chat=True)` adds an intake agent before the same middle and, after it, a grounding node,
+  which holds the guidelines' findings to the diff and decides the verdict through the command's own functions, and a
+  verdict agent that writes it up; the command uses `chat=False` over seeded state. In chat a gate after the intake goes
+  on only for a scope this turn's intake confirmed — a `temp:` key, which ADK keeps for one turn — so a turn that
+  confirms none ends at the intake's answer; the checks node gathers its own evidence from that scope and writes the
+  change the guidelines read, where the command seeds the change at the session's start, in no event a debug log could
+  carry. Plugins: `StopAtRateLimit`, which after a 429 no retry or fallback got past sends no later call of the review,
+  the verifiers' included, answering each `RATE_LIMITED` (in chat, until the turn ends), then `RedactSecretsPlugin`,
+  ADK's `DebugLoggingPlugin` and `Recorder` where `--debug-log` and `--record` ask, `UsageLedger`,
+  `ReportProviderErrors`, and `Progress`, which times each agent and, at a terminal or with `--progress`, tells each
+  guideline's start and finish on stderr; in chat, first, `RefuseUnready`, which asks `require_ready` once a turn, as
+  the command asks before it builds anything, and while the arm cannot run answers the turn with its sentence before any
+  agent runs, and after `StopAtRateLimit`, `OneTurn`, which gives each judging agent one fixed turn, `review`, as the
+  command's read: ADK would hand the verdict the guidelines' findings unfenced as a turn.
 - **Layering** (`tests/test_layering.py`): `core` → `collect` → `judge` → `deliver`, with imports pointing one way
   only, never spelled from the top (`adk_review.…`), `deliver/` importing `core` alone, a guideline importing `core`
   alone, and a rule importing one door, `judge/rule_helpers/`, alone, which imports `core` alone and lists in `__all__`

@@ -21,7 +21,6 @@ from conftest import (
     _entry,
     _with_profiles,
     catalog,
-    load_agent,
     profiles_of,
     run_review,
     run_rule,
@@ -187,20 +186,24 @@ class TestTheConfig:
         err = capsys.readouterr().err
         assert "config.toml: [review] verify must be true or false" in err and "Traceback" not in err, err
 
-    def test_chat_holds_findings_to_the_configs_bar_as_the_command_does(self, monkeypatch) -> None:
+    def test_chat_holds_findings_to_the_configs_bar_as_the_command_does(self) -> None:
         """Measured before: chat's verdict said "major or blocker" while the command's bar was `blocker`, so the two
-        disagreed on every major. Chat's sentence is built from `[review] fail_on`, as the command's default is."""
-        from adk_review.judge.graph import VERDICT, build_workflow
+        disagreed on every major, and then its model decided the verdict from that sentence. Chat decides in code now,
+        at `[review] fail_on`, through the command's own functions: a major alone is a request for changes at `major`
+        and an approval at `blocker`."""
+        from types import SimpleNamespace
 
-        def verdict(workflow) -> str:
-            return next(node.instruction for node in workflow.graph.nodes if node.name == VERDICT)
+        from adk_review.core.findings import Checked, Finding
+        from adk_review.core.profiles import state_key
+        from adk_review.judge.rules.secrets import Secrets
+        from adk_review.judge.run import decided
 
-        found = catalog()
-        for fail_on, said in (("blocker", "is blocker)"), ("major", "is major or blocker)")):
-            workflow = build_workflow(chat=True, checks=found, fail_on=fail_on)
-            assert f"REQUEST CHANGES if any finding's severity {said}" in verdict(workflow)
-        agent = load_agent(monkeypatch)  # the loader's entry, reading `[review] fail_on`
-        assert "REQUEST CHANGES if any finding's severity is blocker)" in verdict(agent.app.root_agent)
+        rule = Secrets()
+        major = Finding(file="a.py", line=3, severity="major", title="t", evidence="+x", suggestion="s")
+        checks = SimpleNamespace(rules=[rule], guidelines=[], ids=lambda: (rule.check_id,), tidies=frozenset)
+        state = {state_key(rule.check_id): Checked(findings=[major]).model_dump(mode="json")}
+        assert decided(state, {}, checks, "major").startswith("verdict: REQUEST_CHANGES\n")
+        assert decided(state, {}, checks, "blocker").startswith("verdict: APPROVED\n")
 
 
 class TestTheRuleKinds:

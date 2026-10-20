@@ -124,12 +124,15 @@ the repository's absolute path and its branches: "review /home/me/shop, branch f
 agent confirms the repository and the commits through read-only tools and asks for what is missing, told the repository
 its conversation already confirmed; the checks node gathers the evidence the command would for those commits, runs the
 rules and writes the change the guidelines read, the command's own block under the same cap and skip list; the
-guidelines judge; and a verdict agent writes the verdict for a person to read. A turn reviews only the commits its own
-intake confirmed: a greeting, a question or a thanks after a review ends at the intake's answer, one model call. Chat
-runs the `default` profile under `[review]`'s `fail_on`, `max_tokens`, `diff_cap` and `skip`. Its verdict is a model's
-prose: the exit code and the second opinion are the command's. Chat asks whether its arm can run once a turn, as the
-command asks before it starts, and answers the same sentence where it cannot: on Copilot with no token cached, no login
-is begun on the server's console.
+guidelines judge; a grounding node holds their findings to the diff and decides the verdict through the command's own
+functions; and a verdict agent writes it for a person to read. A turn reviews only the commits its own intake confirmed:
+a greeting, a question or a thanks after a review ends at the intake's answer, one model call. Chat runs the `default`
+profile under `[review]`'s `fail_on`, `max_tokens`, `diff_cap` and `skip`. Its verdict is decided in code, as the
+command's is, and written up by a model: measured by review, chat's verdict agent read each guideline's answer as its
+model gave it and decided the verdict itself, a blocker quoting no line of the change reported as one. The exit code and
+the second opinion are the command's. Chat asks whether its arm can run once a turn, as the command asks before it
+starts, and answers the same sentence where it cannot: on Copilot with no token cached, no login is begun on the
+server's console.
 
 The tests run offline, on a fake model registered with ADK: `uv run pytest -q`.
 
@@ -877,12 +880,12 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   payload were quoted without what no reader sees, and dropped. Grounding now reads the diff and the quote alike
   without it, and measured once on Copilot, that review decided, the shell call kept and the payload named.
 - **State keys are spelled once.** The scope chat's intake confirms, the repository its conversation confirmed, the
-  change, the blast radius beside it, the
-  rules' answers rendered for chat's verdict and the failure the error plugin leaves are each one constant in
-  `judge/agents.py`, which the command's seed, the checks node, the chat tools and every instruction use; an
-  instruction reads a key through `placeholder`, and a check's key is its id through `state_key`. A misspelt optional
-  placeholder reads as empty, so the guidelines would judge without the radius and nothing would say so: a test holds
-  every placeholder an instruction reads to a key something writes.
+  change, the blast radius beside it, the files chat's grounding reads, every check's answer grounded and decided for
+  chat's verdict, and the failure the error plugin leaves are each one constant in `judge/agents.py`, which the
+  command's seed, the checks node, the chat tools and every instruction use; an instruction reads a key through
+  `placeholder`, and a check's key is its id through `state_key`. A misspelt optional placeholder reads as empty, so the
+  guidelines would judge without the radius and nothing would say so: a test holds every placeholder an instruction
+  reads to a key something writes.
 - **A failure is an answer, never a crash.** A provider error, a call past its deadline, or a reply that does not fit
   its schema becomes that guideline's own error, through one plugin on the `App` that no agent can opt out of, so
   every other guideline finishes; the run itself has a deadline, and whatever still escapes the engine is named. A

@@ -117,7 +117,7 @@ def build_checks(
 
     from google.adk.workflow import FunctionNode
 
-    from .agents import BLAST, DIFF, RULES, SCOPE, for_the_guidelines, for_the_verdict
+    from .agents import BLAST, DIFF, QUOTABLE, SCOPE, for_the_guidelines
 
     async def run(ctx: Context) -> None:
         # A stopped review stops here too: measured, a SIGTERM one second into the rules of a 2,683-file `--all`
@@ -145,11 +145,14 @@ def build_checks(
         # so every guideline's guard skips it and names the hole. Measured before, chat's guidelines judged the intake
         # model's retyping of its tools' replies, cut at the tools' own cap and under no skip list, and a tool's error,
         # repeated, read as a change. The command seeds it at the session's start, where no event carries it:
-        # measured, a state delta carried the diff unredacted into `--debug-log`'s file. The rules' answers rendered
-        # for a verdict agent, too, which only chat has: the command decides in code and renders none.
+        # measured, a state delta carried the diff unredacted into `--debug-log`'s file. And each file as grounding
+        # reads it, beside it: chat grounds the guidelines' findings before its verdict, as the command does after.
         if evidence is None:
             ctx.state[DIFF] = found["diff"] if isinstance(found, dict) else ""
-            ctx.state[RULES] = for_the_verdict(answers)
+            ctx.state[QUOTABLE] = {
+                f["path"]: {key: f[key] for key in ("quotable", "framing", "unread", "cut")}
+                for f in (found["files"] if isinstance(found, dict) else ())
+            }
         else:  # read by the rules, not held through the guidelines' model calls
             _release(evidence)
 

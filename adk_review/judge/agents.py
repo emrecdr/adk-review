@@ -12,7 +12,7 @@ the chat's verdict, capped, as the blast radius is rendered for the guidelines.
 from __future__ import annotations
 
 import secrets
-from collections.abc import Mapping
+from collections.abc import Sequence
 
 from google.adk.agents import LlmAgent
 from google.adk.agents.callback_context import CallbackContext
@@ -20,32 +20,36 @@ from google.genai import types
 from pydantic import BaseModel, ValidationError
 
 from ..core.blast import Blast, describe
-from ..core.findings import Checked, Review
+from ..core.findings import Finding, Review
 from ..core.guidelines import Guideline
 from ..core.profiles import state_key
 from ..core.text import EVIDENCE_MAX_CHARS, cut_at, squash
+from ..core.verdict import Outcome
 from .config import build_model, request_config
 
 #: The state keys more than one module spells: the scope the intake's first tool confirms and the checks node gathers
 #: from, `temp:` so it lasts only the turn that confirmed it; the repository a conversation confirmed first, its only
 #: one, which the guard holds the tools to and the intake is told; the change, which the command seeds and in chat the
-#: checks node writes; the blast radius beside it, which the checks node writes in both shapes; every rule's answer
-#: rendered for the chat's verdict, which it writes in chat; and the failure the error plugin leaves for the guidelines'
-#: guard. A misspelt placeholder reads as empty when it is optional, as the radius is: the guidelines would judge
-#: without it and nothing would say so. A test holds every placeholder an instruction reads to a key something writes.
-#: Measured with the scope kept in the session: every later turn, a "thanks!" among them, gathered and judged it again.
+#: checks node writes; the blast radius beside it, which the checks node writes in both shapes; in chat, each changed
+#: file as grounding reads it, which the checks node writes beside the change, and every check's answer grounded and the
+#: verdict decided, which the grounding node writes for the verdict agent; and the failure the error plugin leaves for
+#: the guidelines' guard. A misspelt placeholder reads as empty when it is optional, as the radius is: the guidelines
+#: would judge without it and nothing would say so. A test holds every placeholder an instruction reads to a key
+#: something writes. Measured with the scope kept in the session: every later turn, a "thanks!" among them, gathered and
+#: judged it again.
 SCOPE = "temp:review_scope"
 REPOSITORY = "review_repo"
 DIFF = "diff"
 BLAST = "blast"
-RULES = "rules"
+QUOTABLE = "quotable"
+FINDINGS = "findings"
 FAILURE = "temp:failure"
 #: The blast radius beside the diff is capped as the diff is, and widest first, so the cut takes the narrowest.
 #: Measured with none, `--all` over 4,826 files gave each guideline 800,272 characters of it; this repository, 11,161.
 BLAST_CAP_CHARS = 20_000
-#: What the chat's verdict reads of the rules is capped the same way. Measured uncapped: lint over a 5-file branch of a
+#: What the chat's verdict reads of the checks is capped the same way. Measured uncapped: lint over a 5-file branch of a
 #: 724-file tree gave it 21,814 characters, and that tree reviewed as one branch 619,116.
-RULES_CAP_CHARS = 20_000
+FINDINGS_CAP_CHARS = 20_000
 #: The boundary of every untrusted section a model reads, drawn once a process and never from the branch's text: a
 #: sentence at the top of an instruction is no boundary, since the sections that follow are the repository's own words,
 #: and a diff that ends in `## Review discipline` and a rule reads exactly like the section the real one follows. The
@@ -115,21 +119,34 @@ def for_the_guidelines(blast: Blast) -> str:
     return f"## Blast radius\n{fenced('blast radius', cut_at('\n'.join(lines), BLAST_CAP_CHARS, sep='\n'))}\n\n"
 
 
-def for_the_verdict(answers: Mapping[str, Checked]) -> str:
-    """The `{rules?}` section of the chat verdict's instruction: every rule's answer by its check id, as the report
-    would print it — each finding one line, its evidence cut where the report cuts it, a rule that could not look saying
-    so — and the whole capped: a rule quotes the branch's own lines, and lint can bring thousands of them."""
-    lines: list[str] = []
-    for check, answer in answers.items():
-        hole = f" — could not look: {squash(answer.could_not_look)}" if answer.could_not_look else ""
-        lines.append(f"## {check}{hole}")
-        for f in answer.findings:
-            where = squash(f.file) + (f":{f.line}" if f.line else "")
+def for_the_verdict(outcome: Outcome, checks: Sequence[str], verdict: str) -> str:
+    """The `{findings}` section of the chat verdict's instruction: the verdict as code decides it, the command's own,
+    then each check's answer by its id in the report's order — each finding it kept one line, its evidence cut where the
+    report cuts it, each one dropped for a quote the diff does not bear out named so, a check that could not look saying
+    so — and each file no check read whole; the whole capped: a rule quotes the branch's own lines, and lint can bring
+    thousands of them. Measured by review: chat's verdict agent read each guideline's answer as its model gave it, a
+    blocker quoting no line of the change among them, and decided the verdict itself."""
+    lines = [f"verdict: {verdict}"]
+    for check in checks:
+        hole = outcome.errors.get(check)
+        lines.append(f"## {check}" + (f" — could not look: {squash(hole)}" if hole else ""))
+        kept = [item.finding for item in outcome.kept if item.source == check]
+        dropped = [item.finding for item in outcome.dropped if item.source == check]
+        for f in kept:
             quote = cut_at(squash(f.evidence), EVIDENCE_MAX_CHARS)
-            lines.append(f"- {f.severity} {where}: {squash(f.title)} — {quote}")
-        if not answer.findings:
+            lines.append(f"- {f.severity} {_where(f)}: {squash(f.title)} — {quote}")
+        lines += [
+            f"- dropped, the diff does not bear its quote out: {f.severity} {_where(f)}: {squash(f.title)}"
+            for f in dropped
+        ]
+        if not (kept or dropped or hole):
             lines.append("- no findings")
-    return cut_at("\n".join(lines), RULES_CAP_CHARS, sep="\n")
+    lines += [f"## not read: {squash(path)} — {squash(why)}" for path, why in outcome.unread.items()]
+    return cut_at("\n".join(lines), FINDINGS_CAP_CHARS, sep="\n")
+
+
+def _where(f: Finding) -> str:
+    return squash(f.file) + (f":{f.line}" if f.line else "")
 
 
 def mismatch(why: str) -> str:

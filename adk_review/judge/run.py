@@ -16,18 +16,25 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from google.adk.runners import InMemoryRunner
 from google.genai import types
 
-from ..core.evidence import Entry
+from ..core.evidence import Entry, entry
 from ..core.findings import Checked, Review
 from ..core.profiles import state_key
 from ..core.rules import AnyRule
-from ..core.verdict import Outcome, Sourced, drop_ungrounded, from_rules, not_read
-from .agents import read_back
+from ..core.verdict import Outcome, Sourced, decide, drop_ungrounded, fold, from_rules, not_read
+from .agents import FINDINGS, QUOTABLE, for_the_verdict, read_back
 from .checks import NAME as CHECKS
 from .config import RUN_DEADLINE_S
+
+if TYPE_CHECKING:
+    from google.adk.agents.context import Context
+    from google.adk.workflow import FunctionNode
+
+    from .catalog import Catalog
 
 USER = "reviewer"
 
@@ -100,3 +107,41 @@ def read_guidelines(run: Run, files: list[Entry], guidelines: Sequence[str], hol
         outcome.kept += [Sourced(check, f, lines) for f, lines in kept]
         outcome.dropped += [Sourced(check, f) for f in dropped]
     return outcome
+
+
+def build_grounding(checks: Catalog, fail_on: str) -> FunctionNode:
+    """Chat's node before its verdict, reading what the checks and the guidelines left as the command reads it once a
+    run ends: each rule's answer, each guideline's grounded in the diff, the fold, and the verdict decided in code, all
+    rendered under `FINDINGS` for the verdict agent, which writes them up and decides nothing. The turn's own state and
+    each agent's error event of this turn stand in for a run's. Measured by review: chat's verdict agent read each
+    guideline's answer as its model gave it and decided the verdict itself, a blocker quoting no line of the change
+    reported as one, where the command dropped it and held the verdict back."""
+    from google.adk.workflow import FunctionNode
+
+    async def ground(ctx: Context) -> None:
+        events = ctx.session.events
+        errors = {
+            e.author: f"{e.error_code}: {e.error_message}"
+            for e in events
+            if e.invocation_id == ctx.invocation_id and e.error_code
+        }
+        ctx.state[FINDINGS] = decided(ctx.state.to_dict(), errors, checks, fail_on)
+
+    return FunctionNode(func=ground, name="grounded")
+
+
+def decided(state: Mapping, errors: Mapping[str, str], checks: Catalog, fail_on: str) -> str:
+    """Every check's answer as the command reads it from `state` and the agents' `errors`: each rule's, each
+    guideline's grounded in the files `QUOTABLE` holds, the fold, and the verdict decided at `fail_on`, rendered for
+    chat's verdict agent."""
+    run = Run(dict(state), dict(errors), None)
+    files = []
+    for path, held in (state.get(QUOTABLE) or {}).items():
+        made = entry(path, "M", None, [])
+        made.update(quotable=held["quotable"], framing=held["framing"], unread=held["unread"], cut=held["cut"])
+        files.append(made)
+    rules, holes = read_checks(run, checks.rules)
+    outcome = read_guidelines(run, files, tuple(guideline.check_id for guideline in checks.guidelines), holes)
+    fold(outcome, rules, checks.ids(), checks.tidies())
+    verdict, _code = decide(outcome, fail_on)
+    return for_the_verdict(outcome, checks.ids(), verdict)
