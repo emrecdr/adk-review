@@ -49,6 +49,7 @@ from .plugins import (
     RedactSecretsPlugin,
     RefuseUnready,
     ReportProviderErrors,
+    StopAtRateLimit,
     UsageLedger,
 )
 from .tools import changed_files, inspect_repository, one_repository
@@ -187,9 +188,11 @@ def build_app(
     kept = [Recorder(Path(record).expanduser())] if record else []  # the same place: the model's own answers
     plugins = [
         # Chat alone: the command asks before it builds anything, and stops at exit 2. First, so a call that cannot
-        # be made is neither logged nor counted. Then each judging agent's one turn, the command's, before the
-        # redaction, the log and the recorder, so each records the request as it is sent.
-        *([RefuseUnready(), OneTurn(frozenset({*named, VERDICT}))] if chat else []),
+        # be made is neither logged nor counted, as one past a rate limit is not. Then each judging agent's one turn,
+        # the command's, before the redaction, the log and the recorder, so each records the request as it is sent.
+        *([RefuseUnready()] if chat else []),
+        StopAtRateLimit(per_turn=chat),
+        *([OneTurn(frozenset({*named, VERDICT}))] if chat else []),
         RedactSecretsPlugin(),
         *debug,
         *kept,

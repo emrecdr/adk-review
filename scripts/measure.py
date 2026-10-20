@@ -165,6 +165,19 @@ class Review(NamedTuple):
     seconds: float
 
 
+#: How a review's JSON names a call its provider refused for its rate, on either arm, as live runs named one: Copilot's
+#: `RateLimitError: 429: …`, Gemini's `RESOURCE_EXHAUSTED: 429: …`.
+RATE_LIMITED = re.compile(r"\b(?:RateLimitError|RESOURCE_EXHAUSTED): 429\b")
+
+
+def rate_limited(data: Mapping | None) -> str | None:
+    """The first reason a review's JSON gives, a check's that could not look or a verifier's that could not judge, that
+    names a provider's rate limit; None where none does."""
+    reasons = [*((data or {}).get("could_not_look") or {}).values()]
+    reasons += [item.get("reason", "") for item in (data or {}).get("unverified") or ()]
+    return next((reason for reason in reasons if RATE_LIMITED.search(reason)), None)
+
+
 def reviewed(
     repo: Path, branches: Mapping[str, str], args: argparse.Namespace, whole: bool = False
 ) -> Iterator[tuple[str, Review]]:
@@ -172,7 +185,9 @@ def reviewed(
     flags in `args` say: `--runs` times, each a call to the model, `--pause` seconds before every run but the first,
     running what `chosen` makes of `--profile` or `--check`; by branch, each run's `Review`. Every live script's runs
     are these, each held to `TIMEOUT_S`: before, only `measure.py`'s own loop was, and a review that never answered
-    would have held every later run of the other two."""
+    would have held every later run of the other two. They stop at the first run whose report names a rate limit, that
+    run unread: measured live, Copilot's limit for utility models lasts hours, and each run after it sent three
+    requests a guideline into it and measured nothing there."""
     selection = chosen(args)
     with tempfile.TemporaryDirectory() as scratch:
         report = Path(scratch) / "review.json"
@@ -204,6 +219,9 @@ def reviewed(
                 # The model and its arm, as the report names them: a measurement holds for the arm it ran on.
                 on = f", {data['model']}" if data and data.get("model") else ""
                 print(f"{name} run {number + 1}: exit {code}{on}", flush=True)
+                if limit := rate_limited(data):
+                    print(f"stopped at {name} run {number + 1}: {limit}; no run after it is made", flush=True)
+                    return
                 yield name, Review(code, data, text, seconds)
 
 

@@ -106,6 +106,48 @@ async def test_when_one_lane_fails_the_others_finish_and_the_verdict_still_answe
     assert model_key("tests") not in state, "a hole, for the code that decides"
 
 
+class _RateLimitError(Exception):
+    """A provider's refusal for its rate, as LiteLLM's `RateLimitError` and genai's `ClientError` carry it: a 429."""
+
+    status_code = 429
+
+
+@pytest.mark.asyncio
+async def test_after_a_rate_limit_a_call_is_answered_unsent_and_a_chat_turn_asks_again() -> None:
+    """A 429 the client's retries and any fallback could not get past ends what the review spends: each later call is
+    answered in the model's place, never sent. An error with no 429 stops nothing, and in chat the next turn asks."""
+    from adk_review.judge.plugins import StopAtRateLimit
+
+    request = SimpleNamespace(config=SimpleNamespace(response_schema=_Answer))
+    at = SimpleNamespace(agent_name="guideline_security", state={})
+    limited = _RateLimitError("429: Sorry, you've exceeded your rate limit for utility models.")
+    stop = StopAtRateLimit(per_turn=False)
+    assert await stop.before_model_callback(callback_context=at, llm_request=request) is None
+    assert await stop.on_model_error_callback(callback_context=at, llm_request=request, error=quota()) is None
+    assert await stop.before_model_callback(callback_context=at, llm_request=request) is None, "no 429: no stop"
+    assert await stop.on_model_error_callback(callback_context=at, llm_request=request, error=limited) is None
+    refused = await stop.before_model_callback(callback_context=at, llm_request=request)
+    assert refused.error_code == "RATE_LIMITED" and "exceeded your rate limit" in refused.error_message, refused
+    turned = StopAtRateLimit(per_turn=True)
+    await turned.on_model_error_callback(callback_context=at, llm_request=request, error=limited)
+    await turned.before_run_callback(invocation_context=SimpleNamespace())
+    assert await turned.before_model_callback(callback_context=at, llm_request=request) is None, "a new turn asks"
+
+
+def test_a_review_that_met_a_rate_limit_sends_no_later_call(monkeypatch, fake_provider, asked, cli, demo_repo, capsys):
+    """Measured live: Copilot's limit for utility models lasts hours, and each guideline after the first 429 sent three
+    requests into it, each a hole all the same. One call at a time here, so later is well defined: the first is sent
+    and refused, and every later one is named and never sent, nor counted as attempted."""
+    for name in ("adk_review.judge.graph", "adk_review.judge.verify"):
+        monkeypatch.setattr(importlib.import_module(name), "CONCURRENCY", 1)
+    fake_provider.raises_when("", _RateLimitError("429: Sorry, you've exceeded your rate limit for utility models."))
+    assert run_review(cli, demo_repo) == 3
+    out = capsys.readouterr().out
+    assert len(asked) == 1, [instruction[:60] for instruction, _turns in asked]
+    assert out.count("RATE_LIMITED: not sent") == len(GUIDELINE_NAMES) - 1, out
+    assert "0 model call(s) completed of 1 attempted" in out, out
+
+
 class _Answer(BaseModel):
     """A schema a judging agent answers in, as small as one can be."""
 

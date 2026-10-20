@@ -203,7 +203,9 @@ What a Copilot review can say, and what to do:
 - `model_not_supported`, under the guideline it stopped, exit 3: the plan or the organisation's Copilot policy leaves
   that model off; name one it serves.
 - A 401 from Copilot, exit 3: the token was revoked or the seat lost Copilot; run `adk-review-login --force`.
-- A 429, exit 3: Copilot's per-user rate limit, which GitHub does not publish; wait, or set `REVIEW_FALLBACK_MODEL`.
+- A 429, exit 3: Copilot's per-user rate limit, which GitHub does not publish; wait, or set `REVIEW_FALLBACK_MODEL`. No
+  call of the review after it is sent, each named `RATE_LIMITED`, since the limit lasts hours and a review with a hole
+  is run again.
 - `CERTIFICATE_VERIFY_FAILED`: a proxy's root the machine does not trust; set `SSL_CERT_FILE` to a PEM bundle that holds
   it.
 

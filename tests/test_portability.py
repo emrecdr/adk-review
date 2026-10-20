@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import json
 import subprocess
 import tempfile
 from collections import Counter
@@ -305,6 +306,38 @@ def test_the_measurement_counts_each_planted_defect_across_runs(monkeypatch, cap
     assert "- a guideline's findings on no planted defect, an upper bound on its false ones: 2" in out
     assert "- verdicts: REQUEST_CHANGES x2" in out
     assert "- a run: 4,678 tokens" in out
+
+
+def test_the_live_runs_stop_at_a_rate_limit_and_read_the_runs_before_it(monkeypatch, capsys) -> None:
+    """Measured live: Copilot's limit for utility models lasts hours, and each run after a 429 sent three requests a
+    guideline into it and measured nothing there. The runs stop at the first whose report names a rate limit, on
+    either arm, a check's or a verifier's, say so, and the summary reads the runs before it."""
+    import measure
+
+    reviews = []
+
+    def ran(argv, **_kwargs):
+        if "-m" not in argv:
+            return SimpleNamespace(returncode=0, stdout="c0ffee1\n")
+        reviews.append(argv)
+        if len(reviews) == 1:  # a review as before: no JSON, its text read
+            return SimpleNamespace(returncode=1, stdout=MEASURED)
+        limited = {
+            "guideline.security": "RateLimitError: 429: Sorry, you've exceeded your rate limit for utility models."
+        }
+        Path(argv[argv.index("--json") + 1]).write_text(json.dumps({"could_not_look": limited}), encoding="utf-8")
+        return SimpleNamespace(returncode=3, stdout="")
+
+    monkeypatch.setattr(measure.subprocess, "run", ran)
+    assert measure.main(["--runs", "4"]) == 0
+    out = capsys.readouterr().out
+    assert len(reviews) == 2, "no run after the one that met the limit"
+    assert "stopped at feature/payments run 2: RateLimitError: 429" in out, out
+    assert "adk-review at c0ffee1, 1 runs of the planted branch" in out
+    gemini = {"could_not_look": {"guideline.tests": "RESOURCE_EXHAUSTED: 429: You exceeded your current quota"}}
+    verifier = {"unverified": [{"check": "guideline.security", "reason": "RateLimitError: 429: Sorry"}]}
+    assert measure.rate_limited(gemini) and measure.rate_limited(verifier)
+    assert measure.rate_limited({"could_not_look": {"rule.lint": "ruff exited 2: 429 is no code"}}) is None
 
 
 def test_the_measurement_reviews_the_planted_branch_as_a_whole_project_on_request(monkeypatch, capsys) -> None:

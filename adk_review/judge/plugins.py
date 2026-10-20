@@ -171,6 +171,42 @@ def _failed(callback_context: Any, llm_request: Any, kind: str, why: str) -> Llm
     )
 
 
+class StopAtRateLimit(BasePlugin):
+    """After a provider refuses a call for its rate, a 429 the client's own retries, and a fallback model where one is
+    named, could not get past, no later call of the review is sent: each is answered in the model's place,
+    `RATE_LIMITED`, with the provider's words. Measured live: Copilot's limit for utility models lasts hours, and each
+    guideline and verifier after the first 429 sent three requests into it, measuring nothing, each a hole all the
+    same, and a review with a hole is never kept, so it is run again whatever they found. The verifiers share the
+    review's plugins, so they are stopped too; chat's next turn asks again, as the ledger counts again. First among
+    the plugins that read a call, so one it answers is neither logged nor counted."""
+
+    def __init__(self, *, per_turn: bool, name: str = "stop_at_rate_limit") -> None:
+        super().__init__(name=name)
+        self.per_turn = per_turn
+        self.limited: str | None = None  # the provider's words for the first 429
+
+    @override
+    async def before_run_callback(self, *, invocation_context: Any) -> types.Content | None:
+        if self.per_turn:
+            self.limited = None
+        return None
+
+    @override
+    async def before_model_callback(self, *, callback_context: Any, llm_request: Any) -> LlmResponse | None:
+        if self.limited is None:
+            return None
+        why = f"not sent: an earlier call of this review met the provider's rate limit, {self.limited}"
+        return _failed(callback_context, llm_request, "RATE_LIMITED", why)
+
+    @override
+    async def on_model_error_callback(
+        self, *, callback_context: Any, llm_request: Any, error: Exception
+    ) -> LlmResponse | None:
+        if 429 in (getattr(error, "code", None), getattr(error, "status_code", None)):
+            self.limited = self.limited or describe(error)
+        return None  # the call that met it is `ReportProviderErrors`' to answer, in the provider's own words
+
+
 class RefuseUnready(BasePlugin):
     """Chat's readiness check, the one the command makes before it builds anything: while the arm cannot run, the turn
     is answered with `require_ready`'s sentence before any agent runs. ADK asks `before_run_callback` once a turn,

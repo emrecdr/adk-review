@@ -42,9 +42,9 @@ miss: a new flag, check, JSON field or limit the guide does not say.
 - A review under `default` makes three calls, `simplify` three, `code-review` five and `full` six, at most three in
   flight (`CONCURRENCY`). On Copilot each call is billed to the seat that logged in, and GitHub rate-limits each user,
   unpublished; Gemini's free tier allows five a minute and twenty a day: a run that met a 429 names it under
-  `could_not_look` and measures nothing there. The cloud agent's setup logs in to nothing, so there a review naming a
-  guideline stops at readiness, exit 2: run the model-free profiles. Run each side of a
-  before-and-after comparison from its own copy of the tree, since a review imports the checkout.
+  `could_not_look` and measures nothing there, and a live script stops at it. The cloud agent's setup logs in to
+  nothing, so there a review naming a guideline stops at readiness, exit 2: run the model-free profiles. Run each side
+  of a before-and-after comparison from its own copy of the tree, since a review imports the checkout.
 - `[tool.uv]` in `pyproject.toml` takes a release only three days after it is published (`exclude-newer`), so a
   dependency released since does not resolve yet; the comment there says why the span stays.
 

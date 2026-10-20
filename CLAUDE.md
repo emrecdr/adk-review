@@ -53,11 +53,11 @@ review under `default` makes three calls, `simplify` three, `code-review` five a
 branch by default, needs `--pause` on it and more than a day, and on Copilot each call is billed to the seat that logged
 in, and GitHub rate-limits each user, unpublished: measured, `gpt-4.1`, which GitHub has deprecated, answered a 429 for
 its utility models after about 175 calls; a run that met a 429 names it under `could_not_look` and measures nothing
-there. Run each side of a before-and-after comparison from its own copy of the tree, since a review imports the
-checkout. The suite, `--profile rules-only`, `demo` or `default-rules`, `--check rule.<name>`, `--dry-run`,
-`--list-checks`, `--explain` and `--try` make none. `[tool.uv]` in `pyproject.toml` takes a release only three days
-after it is published (`exclude-newer`), so a dependency released since does not resolve yet; the comment there says why
-the span stays.
+there, and a live script stops at it. Run each side of a before-and-after comparison from its own copy of the tree,
+since a review imports the checkout. The suite, `--profile rules-only`, `demo` or `default-rules`,
+`--check rule.<name>`, `--dry-run`, `--list-checks`, `--explain` and `--try` make none. `[tool.uv]` in `pyproject.toml`
+takes a release only three days after it is published (`exclude-newer`), so a dependency released since does not resolve
+yet; the comment there says why the span stays.
 
 ## Configuration
 
@@ -145,14 +145,16 @@ Load-bearing rules the tests enforce:
   lose the plugins). `build_app(chat=True)` adds an intake agent before the same middle and a verdict after it; the
   command uses `chat=False` over seeded state. In chat a gate after the intake goes on only for a scope this turn's
   intake confirmed — a `temp:` key, which ADK keeps for one turn — so a turn that confirms none ends at the intake's
-  answer; the checks node gathers its own evidence from that scope and writes the change the guidelines read, where
-  the command seeds the change at the session's start, in no event a debug log could carry. Plugins:
-  `RedactSecretsPlugin`, ADK's `DebugLoggingPlugin` and `Recorder` where `--debug-log` and `--record` ask,
-  `UsageLedger`, `ReportProviderErrors`, and `Progress`, which times each agent and, at a
-  terminal or with `--progress`, tells each guideline's start and finish on stderr; in chat, first, `RefuseUnready`,
-  which asks `require_ready` once a turn, as the command asks before it builds anything, and while the arm cannot
-  run answers the turn with its sentence before any agent runs, then `OneTurn`, which gives each judging agent one
-  fixed turn, `review`, as the command's read: ADK would hand the verdict the guidelines' findings unfenced as a turn.
+  answer; the checks node gathers its own evidence from that scope and writes the change the guidelines read, where the
+  command seeds the change at the session's start, in no event a debug log could carry. Plugins: `StopAtRateLimit`,
+  which after a 429 no retry or fallback got past sends no later call of the review, the verifiers' included, answering
+  each `RATE_LIMITED` (in chat, until the turn ends), then `RedactSecretsPlugin`, ADK's `DebugLoggingPlugin` and
+  `Recorder` where `--debug-log` and `--record` ask, `UsageLedger`, `ReportProviderErrors`, and `Progress`, which times
+  each agent and, at a terminal or with `--progress`, tells each guideline's start and finish on stderr; in chat, first,
+  `RefuseUnready`, which asks `require_ready` once a turn, as the command asks before it builds anything, and while the
+  arm cannot run answers the turn with its sentence before any agent runs, and after `StopAtRateLimit`, `OneTurn`, which
+  gives each judging agent one fixed turn, `review`, as the command's read: ADK would hand the verdict the guidelines'
+  findings unfenced as a turn.
 - **Layering** (`tests/test_layering.py`): `core` → `collect` → `judge` → `deliver`, with imports pointing one way
   only, never spelled from the top (`adk_review.…`), `deliver/` importing `core` alone, a guideline importing `core`
   alone, and a rule importing one door, `judge/rule_helpers/`, alone, which imports `core` alone and lists in `__all__`
