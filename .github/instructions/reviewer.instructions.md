@@ -43,8 +43,9 @@ applyTo: "adk_review/**"
   written like any other rule; redaction is not a check, and `core/secrets.py` keeps the shapes it scrubs with. A file's
   lines are numbered as git numbers them (`core/text.py`'s `lines_of`), and a changed file the collector did not read
   whole is the hole of the file rule that asks for its text — its lines, its module, ruff's diagnostics — and of no
-  other; what that rule found on the files it read stands beside the hole. No rule reads the head for itself. A rule's
-  tests use `try_rule`, `lines_hit` and `self_check` from `judge/rule_helpers/`.
+  other, but a symbolic link whose file was not read or not followed, which is a hole for each line rule too, since its
+  lines are that file's; what that rule found on the files it read stands beside the hole. No rule reads the head for
+  itself. A rule's tests use `try_rule`, `lines_hit` and `self_check` from `judge/rule_helpers/`.
 - A guideline names `id`, `title`, `role` (the instruction's opening: who the model is and what it judges) and
   `thinking_budget`, and `cleanup = True` where its findings change how code reads and never what it does, as
   `complexity`'s do (the hand-off lists them as tidies); optionally `models = Models(copilot=..., gemini=...)`, a model

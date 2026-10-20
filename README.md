@@ -467,9 +467,9 @@ What a rule may do, and may not:
   guideline the same, as `complexity` does: the hand-off lists them as tidies, never as fixes.
 - Its expectations are constants at the top of its file, beside the check, and its examples follow them: a project
   that edits a rule's constants edits its examples with them.
-- A rule that cannot look — a file not read whole, a tree not listed — is a hole in the review, never "nothing
-  found". The kinds raise `UnreadError` for you, and a rule may raise it itself, as `encoding-declaration` does for
-  code no rule can read; a rule that raises anything is named in the report, exit 3.
+- A rule that cannot look — a file not read whole, a tree not listed, a link whose file was not read or followed — is a
+  hole in the review, never "nothing found". The kinds raise `UnreadError` for you, and a rule may raise it itself, as
+  `encoding-declaration` does for code no rule can read; a rule that raises anything is named in the report, exit 3.
 - A rule's own examples are what it flags, so a review of a change to the rule's file may flag them too.
 - A rule is for what a pattern decides; what needs judgement is a guideline.
 
