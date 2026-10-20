@@ -308,7 +308,7 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         metavar="GLOB",
         help="a glob of changed files a review reads, beside the config's scan list. The default reads Python, "
         "notebooks and configs, and every file with no suffix. The review ignores any other file and only lists it. "
-        "Repeat it for more globs",
+        "The credential rules still read the project's own. Repeat it for more globs",
     )
     parser.add_argument(
         "--third-party",
@@ -374,7 +374,7 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         "--trace",
         metavar="FILE",
         help="record ADK's OpenTelemetry spans, with their timings and token counts, to FILE, a local SQLite "
-        "database. The review sends nothing anywhere",
+        "database. The trace stays on this machine",
     )
     parser.add_argument(
         "--record",

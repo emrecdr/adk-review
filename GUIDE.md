@@ -49,7 +49,7 @@ outside the checkout, and its config from beside itself; inside the checkout, `u
 | `--max-tokens` | Stop spending past this many tokens; 0 is no ceiling. Default: the config's `max_tokens`. |
 | `--diff-cap` | Characters of one file's diff a guideline reads; a file cut there is named "not read". A Python file's diff shows each hunk within the function or class around it, and one that would pass the cap so shows git's three lines of context instead. Default: the config's `diff_cap`. |
 | `--skip` | A glob of changed files the guidelines leave to the rules: each is named, never a hole. A submodule, which no rule reads, is never skipped. Adds to the config's `skip`. Repeat it for more than one. |
-| `--scan` | A glob of changed files a review reads, beside the config's `scan`: Python's, notebooks' and configs' by default, and always a file with no suffix. Any other changed file is ignored, only listed. Repeat it for more than one. |
+| `--scan` | A glob of changed files a review reads, beside the config's `scan`: Python's, notebooks' and configs' by default, and always a file with no suffix. Any other changed file is ignored, only listed. The credential rules still read the project's own. Repeat it for more than one. |
 | `--third-party` | A glob of folders holding other projects' code, vendored or installed: a changed file under one is ignored, never read, only listed. Adds to the config's `third_party`. Repeat it for more than one. |
 | `--verify` | Ask a second model about each guideline finding a rule did not already make. `--no-verify` turns it off. Default: the config's `verify`. |
 | `--json` | Also write the review to this file as JSON. |

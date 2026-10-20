@@ -218,6 +218,21 @@ class TestTheSecretShapes:
         for path, text in code.items():
             assert lines_hit(NamedSecrets(), path, text) == [], path
         assert lines_hit(NamedSecrets(), "pkg/auth/login.go", code["pkg/auth/login_test.go"]) == [1], "not a test"
+        # Read by the third review: the skip took every suffix not a config's as a test's code, and `_spec.` and
+        # `Test.` named a test in every language. A real credential in a test environment, or a production module
+        # named like a test, passed. Each is read.
+        real = {
+            "infra/test/terraform.tfvars": 'db_password = "Sup3rS3cret-db9"\n',
+            "infra/test/main.tf": 'db_password = "Sup3rS3cret-db9"\n',
+            "infra/test/deploy.sh": "DB_PASSWORD=Sup3rS3cret-db9\n",
+            "infra/test/Dockerfile": "DB_PASSWORD=Sup3rS3cret-db9\n",
+            "infra/test/kubeconfig": "password: Sup3rS3cret-db9\n",
+            "deploy/pod_spec.py": 'password = "Sup3rS3cret-db9"\n',
+            "app/api_spec.py": 'password = "Sup3rS3cret-db9"\n',
+            "src/main/java/com/acme/ABTest.java": 'String password = "Sup3rS3cret-db9";\n',
+        }
+        for path, text in real.items():
+            assert lines_hit(NamedSecrets(), path, text) == [1], path
 
     def test_named_secrets_weighs_the_value_as_well_as_the_name(self) -> None:
         """A person chooses a password, which may be any words; a machine makes a token, a key or a secret, one run of

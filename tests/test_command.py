@@ -701,14 +701,16 @@ class TestThePreviousReportAndTheHandoff:
 class TestTheJsonReport:
     """`--json FILE`: the review the text report prints, as data a pipeline reads, under the same safety rules."""
 
-    def test_a_finding_in_a_file_scan_leaves_out_is_on_its_added_line(self, cli, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("engine", [False, True])
+    def test_a_finding_in_a_file_scan_leaves_out_is_on_its_added_line(self, cli, tmp_path: Path, engine: bool) -> None:
         """Read by review: the JSON found a finding's line among the added lines of the scanned files alone. A token
-        added to a README read `on_added_line: false`."""
+        added to a README read `on_added_line: false`. Through the engine too, which lets the texts go after the rules:
+        `--record` runs it with no model call."""
         repo = _branch_off_empty(tmp_path / "repo", "feature", base="main")
         _committed(repo, "README.md", "Clone with https://x-access-token:ghp_" + "a1B2" * 9 + "@github.com/a/b\n")
         data = tmp_path / "review.json"
         argv = [str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules", "--json", str(data)]
-        assert cli.main(argv) == 1
+        assert cli.main([*argv, *(["--record", str(tmp_path / "answers")] if engine else [])]) == 1
         found = json.loads(data.read_text(encoding="utf-8"))["findings"]
         assert found and all(f["file"] == "README.md" and f["on_added_line"] for f in found), found
 

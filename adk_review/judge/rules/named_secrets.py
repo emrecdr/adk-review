@@ -61,17 +61,28 @@ _ENV_FILE = re.compile(r"(?:^|/)(?:[^/]*\.env|\.env(?:\.[^/]*)?|\.envrc)$")
 #: A test suite's own folder, where a fixture in any language is the test's: `tests`, never `test`, which names an
 #: environment as often. Read by review: `deploy/test/config.yaml` and `k8s/test/secret.yaml` passed as fixtures.
 _SUITE = re.compile(r"(?:^|/)(?:tests|src/test)/")
-#: A test's own code by other languages' names, beside `is_test`'s Python and Go `*_test`: `__tests__/`,
-#: `login.test.ts`, `user.spec.js`, `LoginTest.java`, `user_spec.rb`. Read by the second review: the rule reads every
-#: language now, and a Go test's fixture password stopped a push.
-_TEST_ELSEWHERE = re.compile(r"(?:^|/)__tests__/|\.(?:test|spec)\.\w+$|Tests?\.\w+$|_spec\.\w+$")
-#: A config's suffix. One in a test's folder is read, since an environment's folder is named `test` as often.
-_CONFIG = re.compile(r"\.(?:ya?ml|json|toml|ini|cfg|conf|properties|xml)$")
+#: A test's own code by its language's names, beside `is_test`'s Python and Go `*_test`: `__tests__/`,
+#: `login.test.ts`, `user.spec.js`, `user_spec.rb`. A Java test is known by Maven's `src/test/`. Read by the third
+#: review: `_spec.` and `Test.` in any language skipped `pod_spec.py` and `ABTest.java`, production code.
+_TEST_ELSEWHERE = re.compile(r"(?:^|/)__tests__/|\.(?:test|spec)\.[cm]?[jt]sx?$|_spec\.rb$")
+#: A source file's suffix: in a test's folder, only code is the test's own. Read by the third review: every suffix
+#: but a config's was skipped there, and a password in `infra/test/terraform.tfvars` passed.
+_SOURCE = re.compile(r"\.(?:pyi?|go|java|kts?|scala|[cm]?[jt]sx?|rb|cs|swift|php|rs|c|cc|cpp|h|hpp)$")
 #: The shortest credential a machine makes: shorter is a documentation's example, `sk-1234`.
 MADE_MIN_CHARS = 8
 #: The widest line a person writes: wider is generated, a minified bundle or data, where a name says nothing of who
 #: chose its value, so every value there is weighed as a machine's.
 WRITTEN_MAX_CHARS = 1_000
+
+
+def _tests_own(path: str) -> bool:
+    """Whether `path` is a test's own, its password a fixture's: any file under a test suite's folder, and a test's
+    code in any language. Never an env file: an environment's config even in a folder named `test`."""
+    if _ENV_FILE.search(path):
+        return False
+    if _SUITE.search(path):
+        return True
+    return bool(_SOURCE.search(path) and (is_test(path) or _TEST_ELSEWHERE.search(path)))
 
 
 class NamedSecrets(Rule):
@@ -108,9 +119,8 @@ class NamedSecrets(Rule):
     )
 
     def check(self, path: str, line: str) -> bool:
-        test = is_test(path) or _TEST_ELSEWHERE.search(path)
-        if test and not _ENV_FILE.search(path) and (not _CONFIG.search(path) or _SUITE.search(path)):
-            return False  # a test's code in any language, or a config under its suite's folder: never an env file
+        if _tests_own(path):
+            return False
         # The generic shape first, which nearly every line lacks; then the line with its examples blanked, which must
         # hold no vendor's shape: a vendor's is `secrets`' finding, one credential, one finding. An example is blanked
         # as `[REDACTED]`, which no shape takes for a value, so what is left of one is no value either: measured by
