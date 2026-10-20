@@ -5,6 +5,7 @@ No git runs here: `git.py` reads, this module arranges, so each piece is tried o
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 
 from ..core.blast import Blast, blast_radius
@@ -27,25 +28,48 @@ def radius_of(tree: Tree | None, files: list[Entry]) -> Blast:
     return blast_radius(tree.parsed, files, len(tree.unread))
 
 
-#: A file Git LFS stores is committed as the pointer to its content, opening with a version line and then the
-#: object's id: the spec's version, and the two Git LFS took before it. Measured by review, a branch tracked `*.py` with
-#: LFS, committed a pointer, and the review approved what it never read; and measured with git-lfs 3.8.0, each version
-#: line is one it smudges, with CRLF line ends, blank lines or spaces before it, or extension lines after it, where the
-#: spec's alone was known here and a pointer spelled another way was linted as Python.
+#: A file Git LFS stores is committed as the pointer to its content: a version line, the object's id and its size,
+#: in that order. The version lines are the spec's and the two Git LFS took before it. Measured by review, a branch
+#: tracked `*.py` with LFS, committed a pointer, and the review approved what it never read.
 LFS_VERSIONS = frozenset(
     f"version {url}"
     for url in ("https://git-lfs.github.com/spec/v1", "https://hawser.github.com/spec/v1", "http://git-media.io/v/2")
 )
 #: How much of a file Git LFS reads to know a pointer: past it, nothing.
 POINTER_BYTES = 1_024
+#: Why no one read a pointer: what the report says of one, under not read.
+POINTER_UNREAD = "a Git LFS pointer: the file's content is stored elsewhere, and none of it was read"
+_POINTER_KEYS = ("version", "oid", "size")
+_POINTER_EXTENSION = re.compile(r"ext-[0-9]-\w", re.ASCII)
+_POINTER_OID = re.compile(r"sha256:[0-9a-f]{64}")
+_POINTER_SIZE = re.compile(r"[+-]?[0-9]+")
 
 
 def pointer_text(text: str) -> bool:
-    """Whether a file opening with `text` is a Git LFS pointer, as Git LFS reads one: its first `POINTER_BYTES`, the
-    space around them trimmed and blank lines passed over, a version line it reads first and the object's id after.
-    A page quoting the format holds them further down."""
-    said = [line.strip() for line in text[:POINTER_BYTES].strip().split("\n") if line.strip()]
-    return bool(said) and said[0] in LFS_VERSIONS and any(line.startswith("oid sha256:") for line in said[1:])
+    """Whether a file opening with `text` is a Git LFS pointer, as git-lfs 3.8.0's `pointer --check` reads one: its
+    first `POINTER_BYTES`, the space around them trimmed, each line's carriage return dropped and blank lines passed
+    over, then `version`, `oid` and `size` in that order, an extension line before any of them, and nothing after. A
+    page quoting the format holds other lines first. Read by review: asked only for the spec's version line first, a
+    pointer with an extension line before it was linted as Python and approved, and one with a shell line after its
+    size, which Git LFS checks out as written, was named stored elsewhere."""
+    said: dict[str, str] = {}
+    for line in text[:POINTER_BYTES].strip().split("\n"):
+        if not (line := line.removesuffix("\r")):
+            continue
+        key, space, value = line.partition(" ")
+        if not space or len(said) == len(_POINTER_KEYS):
+            return False
+        if key == _POINTER_KEYS[len(said)]:
+            said[key] = value
+        elif not _POINTER_EXTENSION.match(key):
+            return False
+    size = said.get("size", "")
+    return (
+        f"version {said.get('version')}" in LFS_VERSIONS
+        and _POINTER_OID.fullmatch(said.get("oid", "")) is not None
+        and _POINTER_SIZE.fullmatch(size) is not None
+        and int(size) >= 0
+    )
 
 
 def lfs_pointer(diff: str) -> bool:
@@ -76,7 +100,7 @@ def unread(entry: Entry, diff: str, cut: bool, fits: bool, cap: int) -> str:
     if BINARY.search(top):
         return "binary: no line of it can be read or quoted"
     if lfs_pointer(diff):
-        return "a Git LFS pointer: the file's content is stored elsewhere, and none of it was read"
+        return POINTER_UNREAD
     if not fits:
         return f"past the {BLOCK_CAP_CHARS:,} characters the guidelines read in all; --path narrows a review"
     if cut:

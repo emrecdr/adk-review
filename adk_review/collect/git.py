@@ -29,7 +29,7 @@ from ..core.evidence import Entry, Evidence, Failure, unreleased
 from ..core.paths import Links, UnfollowedError
 from ..core.rules import Tree
 from ..core.text import lines_of
-from .change import lfs_pointer, no_change, pointer_text, radius, shown_to_guidelines, widens
+from .change import POINTER_UNREAD, lfs_pointer, no_change, pointer_text, radius, shown_to_guidelines, widens
 from .diff import (
     BINARY,
     DIFF_CAP_CHARS,
@@ -678,7 +678,12 @@ def _no_text(diff: str) -> bool:
     return BINARY.search(headers(diff)) is not None or lfs_pointer(diff)
 
 
-def read_texts(resolved: dict, files: list[Entry], listing: list[tuple[str, str, str, str, str]] | None) -> None:
+def read_texts(
+    resolved: dict,
+    files: list[Entry],
+    listing: list[tuple[str, str, str, str, str]] | None,
+    skipped: Collection[str] = (),
+) -> None:
     """Each changed file's text at the head, for the file rules, set on its entry as `text`: a plain file the head
     holds within the caps, read in one batch, and a link as the file it runs. `unread_text` names one the head holds
     that was not read — over its cap, past the tree's budget, a blob the batch did not give back, a tree that could
@@ -686,7 +691,8 @@ def read_texts(resolved: dict, files: list[Entry], listing: list[tuple[str, str,
     reads it whole; `shown` holds the lines its diff shows of it, by number, the ones added and those kept
     around them, for a rule that reads no more. A file the head does not hold, a binary, a Git LFS pointer, a link
     naming no text file there or a submodule has neither: nothing for a file rule to read, and the report names a
-    binary and a pointer under not read already."""
+    binary and a pointer under not read already. A pointer only its text shows, its diff showing none of its opening,
+    is named here, unless the operator's skip list, `skipped`, names it."""
     for entry in files:
         entry["text"], entry["unread_text"] = None, None
     if listing is None:
@@ -708,6 +714,10 @@ def read_texts(resolved: dict, files: list[Entry], listing: list[tuple[str, str,
             if entry["text"] is None:
                 entry["unread_text"] = "was not read whole"
                 unread.append(entry)
+            elif pointer_text(entry["text"]):  # read by review: one its diff showed no opening of was linted as Python
+                entry["text"] = None
+                if entry["path"] not in skipped:  # one the operator's skip list names stays its choice
+                    entry["unread"] = POINTER_UNREAD
     for entry in unread:
         entry["shown"] = {number: line[1:] for number, line in hunk_lines(unreleased(entry["diff"])) if line[:1] != "-"}
 
@@ -763,7 +773,7 @@ def gather(
     # file rules.
     read = tree_rules or (guidelines and any(Radius(entry["path"]).measured for entry in files))
     tree = tree_at_head(resolved, listing) if read else None
-    read_texts(resolved, files, listing)
+    read_texts(resolved, files, listing, excluded)
     if guidelines:
         _links_unread(files, {entry["path"] for entry in entries if entry["mode"] == "120000"}, excluded)
     return {
