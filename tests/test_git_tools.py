@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import importlib
 import os
+import random
 import re
 import subprocess
 import sys
@@ -971,6 +972,59 @@ class TestWhatALinkPointsAt:
         theme = Links({f"src/icon{n}.png" for n in range(52_000)}, icons)
         assert all(theme.follow(link) == f"src/icon{n}.png" for n, link in enumerate(icons))
 
+    @staticmethod
+    def _random_tree(rng: random.Random, top: Path) -> tuple[set[str], dict[str, str]]:
+        """A tree of real files and links at `top`, its files and each link's path with the path it names: half of
+        them a route to something the tree holds, through detours a system walks its own way, out over the top and
+        back in through the checkout's own folder, `work`; the rest random parts. No empty folder, as git holds none."""
+        folders = rng.sample(["a", "b", "a/b", "a/c", "c"], k=rng.randint(1, 4))
+        files = {f"{rng.choice(['', *folders])}/{name}".lstrip("/") for name in rng.sample(["f.py", "g"], 2)}
+        links: dict[str, str] = {}
+        for at in range(rng.randint(2, 8)):
+            folder = rng.choice(["", *folders])
+            if rng.random() < 0.5:
+                parts = [".."] * (folder.count("/") + 1 if folder else 0) + rng.choice([[], [], ["..", "work"]])
+                for part in rng.choice([*files, *folders, *links, "a/f.py"]).split("/"):
+                    if rng.random() < 0.3:  # into a folder or a link to one and back out, which may land elsewhere
+                        parts += [rng.choice(["a", "b", "c", *links]).rpartition("/")[2], ".."]
+                    parts += [part] if rng.random() < 0.8 else [".", part]
+            else:
+                parts = rng.choices(["a", "b", "c", "f.py", "g", "..", ".", "work", "l0", "l1"], k=rng.randint(1, 5))
+            links[f"{folder}/l{at}".lstrip("/")] = "/".join(parts) + rng.choice(["", "", "", "/"])
+        for path in [*files, *links]:
+            (top / path).parent.mkdir(parents=True, exist_ok=True)
+        for path in files:
+            (top / path).write_text("x\n", encoding="utf-8")
+        for path, named in links.items():
+            os.symlink(named, top / path)
+        return files, links
+
+    @pytest.mark.skipif(os.name == "nt", reason="a link needs a privilege on Windows")
+    def test_a_link_runs_as_the_file_system_runs_it_over_random_trees(self, tmp_path: Path) -> None:
+        """Random trees of real files and links, each link asked of the file system and of `Links.follow`: where the
+        system's walk stays in the repository, or comes back in through the checkout's own folder, they name the same
+        file, or none. Four reviews each found a path on which they did not; the walk before the third answered none
+        where a system came back in."""
+        from adk_review.core.paths import Links, UnfollowedError
+
+        rng, asked = random.Random(3), 0
+        for trial in range(300):
+            top = tmp_path / str(trial) / "work"  # the checkout's own folder, which a link may climb back in through
+            files, links = self._random_tree(rng, top)
+            real_top, head = os.path.realpath(top), Links(files, links)
+            for path in links:
+                real = os.path.realpath(top / path)
+                if os.path.commonpath([real, real_top]) != real_top:
+                    continue  # out of the repository and not back in: what it runs is no file of it
+                runs = os.path.relpath(real, real_top).replace(os.sep, "/") if os.path.isfile(top / path) else None
+                try:
+                    found: str | None = head.follow(path)
+                except UnfollowedError as hole:
+                    found = f"a hole: {hole}"
+                assert found == runs, (trial, path, links, files)
+                asked += 1
+        assert asked > 1_000, asked
+
     def test_the_folders_of_deep_paths_cost_no_copy_of_each(self) -> None:
         """Read by review: every folder of every path at the head was kept as a string of its own, so one link in a
         change of 200 paths two thousand folders deep took a gigabyte. The folders are read off the paths, sorted."""
@@ -1180,9 +1234,7 @@ class TestWhatALargeFileStoreHides:
         """Random texts built of a pointer's pieces, the spaces Go and Python read apart, extension lines, and padding
         up to Git LFS's 1,024 bytes, each asked of git-lfs's `pointer --check` and of `pointer_text`: they agree on
         every one. Two reviews in a row each found a text on which they did not."""
-        import random
         import shutil
-        import subprocess
         from concurrent.futures import ThreadPoolExecutor
 
         from adk_review.collect.change import pointer_text
