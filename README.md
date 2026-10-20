@@ -777,9 +777,11 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   A kept finding's evidence is then the lines its quote stands on, as the file reads them: the report, the JSON, the
   hand-off, the verifier and the fingerprint read the diff's own text, never a model's framing of it; measured by
   review, the same two lines quoted plain and inside their fence had two fingerprints, so `--previous` named one finding
-  resolved and new at once. What was measured not to help: told to quote whole lines and, for a missing test, the lines
-  that lack one, Copilot's guidelines quoted whole files under their `@@` headers, and 14 of 27 findings were dropped
-  where 5 of 21 had been; that sentence was taken out.
+  resolved and new at once. A quote is placed from no line whose rest of the hunk is too short to hold it, and within
+  20,000 lines read on: measured by review, a hunk of 2,000 repeated lines quoted whole took 4.9 s a finding, read on
+  from every line, a branch's lines a model was steered to quote stalling the review. What was measured not to help:
+  told to quote whole lines and, for a missing test, the lines that lack one, Copilot's guidelines quoted whole files
+  under their `@@` headers, and 14 of 27 findings were dropped where 5 of 21 had been; that sentence was taken out.
 - **One finding per span of lines.** Rules and guidelines can all find one line; the report carries it once: the most
   severe reading first, whole; on a tie a defect before a cleanup's finding, then the first check — the rules, then the
   guidelines, each in the order the profile names them, which is the report's order too — and any finding one kept

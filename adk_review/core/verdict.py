@@ -112,16 +112,32 @@ def _visible(text: str) -> str:
     return "".join(ch for ch in text if unicodedata.category(ch) != "Cf" and ord(ch) not in _SELECTORS)
 
 
+#: The lines grounding reads on from where a quote could start, in one view of a hunk: past them, the places found by
+#: then are read. Measured by review: a hunk of 2,000 repeated lines quoted by half took 3.7 s a finding, each of its
+#: thousand places walked whole.
+_PLACING_STEPS = 20_000
+
+
 def _whole_lines(quote: str, lines: tuple[str, ...]) -> Iterator[tuple[int, int]]:
     """Each place `quote` starts and ends as a run of consecutive `lines`, each whole: it starts where one begins and
     ends where one ends, each line read with a diff marker before it or without. Measured live on Gemini: a guideline
     quoted three added lines with the breaks between them lost and each one's `-` left in, `-a-b-c` on one line, and
     every finding it made dropped, the review a hole. Measured by review at the 16,000-character cap: a framed
     100-line quote took 30 ms to place with a run built from every line, and 6 ms with none built where the quote
-    cannot start."""
+    cannot start; and a hunk of 2,000 repeated lines quoted whole took 4.9 s, read on from every line, where no line
+    whose rest of the hunk, a marker before each, is shorter than the quote now starts one."""
+    room, total = [0] * len(lines), 0
+    for index in range(len(lines) - 1, -1, -1):
+        total += len(lines[index]) + 1
+        room[index] = total
+    steps = _PLACING_STEPS
     for start in range(len(lines)):
+        if room[start] < len(quote):  # the room only shrinks: no later line holds it either
+            return
         at, end = _past(quote, {0}, lines[start]), start  # no line is empty: each place left is past a whole line
         while at:
+            if (steps := steps - 1) < 0:
+                return
             if len(quote) in at:
                 yield start, end
             end += 1

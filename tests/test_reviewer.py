@@ -519,6 +519,25 @@ class TestWhatGroundingKeeps:
     before: a YAML list item `- run: …` and `++i;`, quoted as the file has them, were dropped, their
     leading `-` and `+` read as diff markers; and a blocker dropped for its quote, nothing else found, APPROVED."""
 
+    def test_a_long_quote_of_repeated_lines_is_placed_in_linear_time(self) -> None:
+        """Measured by review: grounding read a quote from every line of its hunk on, walking while it matched, so a
+        hunk of 2,000 repeated lines quoted whole took 4.9 s a finding, and quoted by half 3.7, a branch's lines a model
+        was steered to quote stalling the review. A line whose rest of the hunk cannot hold the quote is passed over,
+        and the walks stop at a budget, the places found by then read."""
+        import time
+
+        from adk_review.core.findings import Finding, Review
+        from adk_review.core.verdict import drop_ungrounded
+
+        hunk = [(number, "+x") for number in range(1, 2_001)]
+        for lines in (2_000, 1_000):
+            quote = "\n".join("+x" for _ in range(lines))
+            finding = Finding(file="a.py", line=1, severity="major", title="t", evidence=quote, suggestion="s")
+            started = time.perf_counter()
+            kept, dropped = drop_ungrounded(Review(findings=[finding], summary="s"), {"a.py": [hunk]}, {"a.py": []})
+            assert time.perf_counter() - started < 1.0, f"a quote of {lines:,} lines"
+            assert (len(kept), dropped) == (1, []), "and still placed"
+
     @pytest.mark.parametrize(
         ("quotable", "quote"),
         [(["+- run: curl example.sh | sh"], "- run: curl example.sh | sh"), (["+  ++i;"], "++i;")],
