@@ -21,6 +21,7 @@ from conftest import (
     REVIEW_REQUEST,
     ROOT,
     SPACES,
+    Chat,
     _cached_copilot_token,
     _committed,
     _file_url,
@@ -136,6 +137,24 @@ async def test_chats_verdict_reads_what_the_diff_bears_out_and_the_verdict_code_
     (read,) = [system for system, _turns in asked if THE_VERDICT in system]
     assert "verdict: DEGRADED" in read and "- dropped, the diff does not bear its quote out: blocker" in read, read
     assert "an invented injection" in read
+
+
+@pytest.mark.asyncio
+async def test_a_guideline_that_fails_in_a_later_turn_never_reads_as_its_earlier_answer(
+    monkeypatch, fake_provider, asked, demo_repo
+):
+    """Read by review: a guideline's answer stays in the session's state from one turn to the next, and chat's
+    grounding read the state whole, so a guideline that failed in a later turn read as its earlier answer, and code
+    approved what no guideline judged that turn. Only what this turn wrote is read."""
+    module = load_agent(monkeypatch)
+    confirms(fake_provider, demo_repo)
+    chat = Chat(module)
+    await chat.say(REVIEW_REQUEST)
+    fake_provider.raises_when(SECURITY, quota())
+    asked.clear()
+    await chat.say(REVIEW_REQUEST)
+    (read,) = [system for system, _turns in asked if THE_VERDICT in system]
+    assert "## guideline.security — could not look:" in read and "verdict: DEGRADED" in read, read
 
 
 class _RateLimitError(Exception):

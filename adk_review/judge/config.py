@@ -161,12 +161,17 @@ def _bounded() -> type[BaseLlm]:
 
     class Bounded(LiteLlm):
         async def generate_content_async(self, llm_request: Any, stream: bool = False) -> AsyncGenerator[Any]:
+            # The answer is gathered under the deadline and handed on after it: read by review, a deadline held across
+            # the yield counted ADK's own time with an answer that came in time, and running out there cancelled
+            # ADK's await, the answer lost and no timeout raised for a fallback to move on from.
+            asked = super().generate_content_async(llm_request, stream)
             try:
                 async with asyncio.timeout(REQUEST_TIMEOUT_S):
-                    async for response in super().generate_content_async(llm_request, stream):
-                        yield response
+                    answered = [response async for response in asked]
             except TimeoutError as exc:
                 raise CallTimeoutError(f"no answer within {REQUEST_TIMEOUT_S:g} s, the retries included") from exc
+            for response in answered:
+                yield response
 
     return Bounded
 

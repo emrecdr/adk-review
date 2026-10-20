@@ -28,7 +28,7 @@ from pydantic import BaseModel, ValidationError
 
 from ..core.secrets import scrub, scrub_value
 from ..core.text import REASON_MAX_CHARS, cut_at, squash
-from .agents import BOUNDARY, FAILURE, mismatch
+from .agents import BOUNDARY, FAILURE, JUDGED_BOUNDARY, mismatch
 from .config import REQUEST_TIMEOUT_S, require_ready, said
 
 #: Room reserved for an answer on top of a request's own size, in tokens; a guideline's typed review is well under it.
@@ -259,10 +259,12 @@ class OneTurn(BasePlugin):
 
 
 def request_hash(llm_request: Any) -> str:
-    """A request as the model read it, secrets redacted, as one hash: its instruction, with the fences' nonce, drawn
-    once a process, read as a placeholder, and the text of every turn. What a recorded answer is kept under and a
-    replay finds it by."""
-    instruction = str(llm_request.config.system_instruction or "").replace(BOUNDARY, "<boundary>")
+    """A request as the model read it, secrets redacted, as one hash: its instruction, with the fences' two nonces,
+    each drawn once a process, read as placeholders, and the text of every turn. What a recorded answer is kept under
+    and a replay finds it by. Read by review: with the second nonce, a verifier's, read as it was drawn, a recording of
+    a `--verify` run was kept under hashes no later process could ask by."""
+    instruction = str(llm_request.config.system_instruction or "")
+    instruction = instruction.replace(BOUNDARY, "<boundary>").replace(JUDGED_BOUNDARY, "<judged boundary>")
     turns = [[part.text for part in (content.parts or []) if part.text] for content in (llm_request.contents or [])]
     said = json.dumps({"instruction": instruction, "turns": turns}, ensure_ascii=False, sort_keys=True)
     return hashlib.sha256(said.encode("utf-8", "surrogatepass")).hexdigest()

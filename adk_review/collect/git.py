@@ -46,6 +46,8 @@ MAX_TREE_BYTES = 20_000_000
 MAX_FILE_BYTES = 1_000_000
 #: Git reads a file as binary where a NUL lies in its first 8,000 bytes, and the rules read a link's target so too.
 BINARY_BYTES = 8_000
+#: How many links one link is followed through, as Linux follows them: past it, the link names no file.
+LINK_HOPS = 40
 #: The tree of no files, by the repository's hash: git knows it without storing it. A whole-project review diffs the
 #: head against it, so every file reads as added and goes through the rules, the guidelines and grounding as a change
 #: does.
@@ -574,6 +576,58 @@ def _plain(listing: list[tuple[str, str, str, str, str]]) -> Iterator[tuple[str,
     return ((path, sha, size) for mode, kind, sha, size, path in listing if kind == "blob" and mode != "120000")
 
 
+def _links(listing: list[tuple[str, str, str, str, str]] | None) -> dict[str, tuple[str, str]]:
+    """Each symbolic link at the head as `(sha, size)` by its path: a link is known by its mode, which a link moved
+    whole prints in no diff."""
+    return {path: (sha, size) for mode, kind, sha, size, path in listing or () if kind == "blob" and mode == "120000"}
+
+
+def _link_targets(
+    resolved: dict, starts: list[str], links: dict[str, tuple[str, str]], blobs: Mapping[str, object]
+) -> dict[str, str]:
+    """The plain file each of `starts`, a link, names at the head, followed through links up to `LINK_HOPS`, by the
+    link's path; none for one that names a folder, a path out of the repository, nothing, or a chain past the hops.
+    Each link's blob read once. Read by review: one link read through, a link to a link to an image holding Python
+    was read by no rule."""
+    named: dict[str, str] = {}
+    at = {start: start for start in starts}
+    found: dict[str, str] = {}
+    for _hop in range(LINK_HOPS):
+        unread = sorted({place for place in at.values() if place in links and place not in named})
+        if unread:
+            named.update(_texts(resolved, ((place, *links[place]) for place in unread))[0])
+        onward = {}
+        for start, place in at.items():
+            if place in blobs:
+                found[start] = place
+            elif place in named and (target := linked(place, named[place])) is not None:
+                onward[start] = target
+        if not (at := onward):
+            break
+    return found
+
+
+def _links_unread(files: list[Entry], links: Mapping[str, object], skipped: Mapping[str, str]) -> None:
+    """A symbolic link runs as the file it names, which its diff never shows: for the guidelines a hole, named on the
+    link, unless the change showed them that file whole, as it shows a file it adds. Read by review: `run.py`, a link
+    to a skip-listed image holding Python, was approved, read by no one; a file the change only modified counted as
+    shown whole, one hunk of it shown; and a link moved whole, which prints no mode, was not known for one."""
+    whole = {
+        entry["path"]
+        for entry in files
+        if entry["status"] == "A"
+        and not entry["unread"]
+        and entry["path"] not in skipped
+        and entry["path"] not in links
+    }
+    for entry in files:
+        held = entry["path"] in links and entry["path"] not in skipped and not entry["unread"]
+        if held and entry.get("target") not in whole:
+            entry["unread"] = (
+                "a symbolic link: the guidelines read the path it names, and were not shown that file whole"
+            )
+
+
 def _budgeted(blobs: Iterable[tuple[str, str, str]]) -> tuple[list[tuple[str, str]], list[str]]:
     """Which of the `(path, sha, size)` blobs to read, each within its cap and all within the tree's budget, in
     order; and the paths left unread — one over its cap, past the budget, or sized "BAD", as a partial clone lists
@@ -631,21 +685,18 @@ def read_texts(resolved: dict, files: list[Entry], listing: list[tuple[str, str,
         # A link runs as the file it names, so the rules read that file under the link's name. Read by review: a link
         # had no text, and `run.py` naming an image that held Python was linted by no rule. One naming no file of the
         # head, a folder or a path out of the repository, has no text, as before: there is nothing here to run.
-        links = {path: (sha, size) for mode, kind, sha, size, path in listing if kind == "blob" and mode == "120000"}
-        named, _unread = _texts(
-            resolved, ((entry["path"], *links[entry["path"]]) for entry in files if entry["path"] in links)
-        )
-        through = [
-            (entry, target)
-            for entry in files
-            if entry["path"] in named and (target := linked(entry["path"], named[entry["path"]])) in blobs
-        ]
+        links = _links(listing)
+        found = _link_targets(resolved, [entry["path"] for entry in files if entry["path"] in links], links, blobs)
+        through = [(entry, found[entry["path"]]) for entry in files if entry["path"] in found]
         wanted = [(entry["path"], *blobs[entry["path"]]) for entry in changed]
         texts, _unread = _texts(resolved, [*wanted, *((entry["path"], *blobs[target]) for entry, target in through)])
         for entry, target in through:
-            if "\x00" not in (texts.get(entry["path"]) or "")[:BINARY_BYTES]:
+            text = texts.get(entry["path"])
+            if "\x00" not in (text or "")[:BINARY_BYTES]:
                 entry["target"] = target
                 changed.append(entry)
+                if text is not None:  # every line of it added under the link's name, for the report as for the rules
+                    entry["added_at"] = frozenset(range(1, len(lines_of(text)) + 1))
         unread = []
         for entry in changed:
             entry["text"] = texts.get(entry["path"])
@@ -708,6 +759,8 @@ def gather(
     read = tree_rules or (guidelines and any(Radius(entry["path"]).measured for entry in files))
     tree = tree_at_head(resolved, listing) if read else None
     read_texts(resolved, files, listing)
+    if guidelines:
+        _links_unread(files, _links(listing), excluded)
     return {
         "status": "success",
         "preflight": resolved,

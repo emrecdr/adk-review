@@ -94,6 +94,33 @@ class TestRetriesOnBothArms:
         sent = GithubCopilotConfig()._transform_messages(asked, "gpt-4.1")
         assert [message["role"] for message in sent] == ["system", "user"], sent
 
+    def test_a_copilot_answer_in_time_is_never_lost_to_the_time_adk_takes_with_it(self, monkeypatch) -> None:
+        """Read by review: the deadline was held across the answer's yield, so the time ADK spent with an answer that
+        came in time, appending it to the session or running chat's intake's tool, counted against it, and where it ran
+        out there ADK's own await was cancelled: the answer lost, the guideline named as one that produced no output,
+        and no timeout for a fallback to move on from. The deadline holds the call alone."""
+        import asyncio
+
+        from google.adk.models.lite_llm import LiteLlm
+
+        config = importlib.import_module("adk_review.judge.config")
+        monkeypatch.setattr(config, "REQUEST_TIMEOUT_S", 0.2)
+
+        async def answered(_self, _llm_request, _stream=False):
+            yield "the answer"
+
+        monkeypatch.setattr(LiteLlm, "generate_content_async", answered)
+        model = config._bounded()(model="github_copilot/gpt-4.1")
+
+        async def consumed() -> list:
+            got = []
+            async for response in model.generate_content_async(None):
+                got.append(response)
+                await asyncio.sleep(0.4)  # ADK's own work with the answer, past the deadline
+            return got
+
+        assert asyncio.run(consumed()) == ["the answer"]
+
     def test_a_copilot_call_that_hangs_ends_at_one_deadline_and_its_fallback_answers(
         self, demo_repo: Path, monkeypatch, tmp_path: Path, capsys
     ) -> None:

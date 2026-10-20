@@ -924,6 +924,25 @@ class TestWhatAReviewKeeps:
         assert run_review(cli, demo_repo, "--cache", str(demo_repo / ".cache")) == 2
         assert "lies in the repository under review" in capsys.readouterr().err
 
+    def test_a_request_is_kept_under_one_hash_whatever_nonce_its_process_drew(self, monkeypatch) -> None:
+        """Read by review: a verifier's request carries the second nonce, drawn apart once a process, and the hash read
+        only the first as a placeholder, so a recording of a `--verify` run was kept under hashes no later process
+        could ask by. Both nonces are read as one placeholder each."""
+        from types import SimpleNamespace
+
+        from adk_review.judge import plugins
+
+        def asked(first: str, second: str) -> str:
+            instruction = f"<<< change {first}\nx\n>>> change {first}\n<<< finding {second}\ny\n>>> finding {second}"
+            return plugins.request_hash(
+                SimpleNamespace(config=SimpleNamespace(system_instruction=instruction), contents=[])
+            )
+
+        drawn = asked(plugins.BOUNDARY, plugins.JUDGED_BOUNDARY)
+        monkeypatch.setattr(plugins, "BOUNDARY", "aaaaaaaaaaaa")
+        monkeypatch.setattr(plugins, "JUDGED_BOUNDARY", "bbbbbbbbbbbb")
+        assert asked("aaaaaaaaaaaa", "bbbbbbbbbbbb") == drawn, "another process, another pair of nonces, one hash"
+
     def test_a_recorded_run_replays_offline_answer_for_answer(
         self, cli, demo_repo: Path, tmp_path: Path, fake_provider, capsys
     ) -> None:

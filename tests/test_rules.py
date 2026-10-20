@@ -1213,6 +1213,30 @@ class TestTheShippedRules:
         assert all(len(f.evidence) < EVIDENCE_MAX_CHARS + 40 and "characters]" in f.evidence for f in found), found
         assert all("AKIA" not in f.evidence for f in found), "scrubbed before the cut"
 
+    def test_a_rules_evidence_hides_a_quoted_value_longer_than_its_scrub_reads(self) -> None:
+        """Read by review: the scrub read as far as the cut and a credential crossing it could run, 16,384 characters
+        on, and a quoted value longer than that held no closing quote there, so 385 characters of a 17,000-character
+        token were printed as evidence, where a scrub of the whole line hid it. A quoted value that runs to the end of
+        the text read is one too."""
+        import random
+        import string
+
+        from adk_review.core.rules import Rule
+        from adk_review.judge.checks import run_rules
+
+        class Every(Rule):  # quotes every line it is given, as lint's E501 quotes a long one
+            id, severity, title, fix = "every", "minor", "a line", "f"
+
+            def check(self, path: str, line: str) -> bool:  # noqa: ARG002 -- every line, whatever it holds
+                return True
+
+        rng = random.Random(5)
+        value = "".join(rng.choice(string.ascii_letters + string.digits) for _ in range(17_000))
+        line = f'API_TOKEN = "{value}"\n'
+        found = run_rules({"files": [_entry("settings.py", line)], "tree": None}, [Every()])
+        evidence = [f.evidence for f in found["rule.every"].findings]
+        assert evidence and all(value[:20] not in quoted for quoted in evidence), [quoted[:60] for quoted in evidence]
+
     def test_a_rules_evidence_costs_its_cut_not_its_line(self) -> None:
         """Measured by review: the evidence of one 2 MB line holding a key took 9 s, the whole line scrubbed and then
         searched again for where to cut it, for the 400 characters kept. The scrub reads as far as the cut and a

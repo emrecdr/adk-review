@@ -119,13 +119,14 @@ def build_grounding(checks: Catalog, fail_on: str) -> FunctionNode:
     from google.adk.workflow import FunctionNode
 
     async def ground(ctx: Context) -> None:
-        events = ctx.session.events
-        errors = {
-            e.author: f"{e.error_code}: {e.error_message}"
-            for e in events
-            if e.invocation_id == ctx.invocation_id and e.error_code
-        }
-        ctx.state[FINDINGS] = decided(ctx.state.to_dict(), errors, checks, fail_on)
+        # Only what this turn wrote: a guideline's answer stays in the session from one turn to the next, and read by
+        # review, one that failed in a later turn read as its earlier answer, and code approved what no guideline
+        # judged that turn.
+        turn = [event for event in ctx.session.events if event.invocation_id == ctx.invocation_id]
+        errors = {e.author: f"{e.error_code}: {e.error_message}" for e in turn if e.error_code}
+        written = {key for event in turn for key in event.actions.state_delta or {}}
+        state = {key: value for key, value in ctx.state.to_dict().items() if key in written}
+        ctx.state[FINDINGS] = decided(state, errors, checks, fail_on)
 
     return FunctionNode(func=ground, name="grounded")
 

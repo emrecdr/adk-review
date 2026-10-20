@@ -35,7 +35,11 @@ _STAND_IN = r"(?![$%{<]|\[REDACTED)"
 #: further on: measured with any text allowed between them, the change in between was hidden from every model call.
 _KEY_HEADER = r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----"
 _KEY_FOOTER = r"-----END (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----"
-_KEY_LINE = r"[+\- ]?[ \t]*(?:[A-Za-z0-9+/=]+|(?:Proc-Type|DEK-Info|Version|Comment|Hash|Charset): [^\n]*)?[ \t]*\r?"
+#: Each run read once and kept: measured by review, a line's blanks split every way between the two runs, a header and
+#: 8,000 spaces took 0.6 s to scrub, four times as long for each doubling, and every request of a review is scrubbed.
+_KEY_LINE = (
+    r"[+\- ]?[ \t]*+(?:[A-Za-z0-9+/=]++|(?:Proc-Type|DEK-Info|Version|Comment|Hash|Charset): [^\n]*+)?[ \t]*+\r?"
+)
 #: A URL's scheme and user, and its password: up to the last `@` before the host, since a password may hold one,
 #: `P@ssw0rd`. Measured before, the password ended at its first `@`: the rule read `P` as a placeholder, and redaction
 #: sent the rest of the password to the model.
@@ -48,13 +52,13 @@ _BEDROCK = r"\b(?:ABSK[A-Za-z0-9+/]{109,269}={0,2}|bedrock-api-key-YmVkcm9jay5hb
 #: A PuTTY key file: its header, then its own lines alone — a diff's marker, then a field PuTTY writes or base64 —
 #: to its MAC, so a header where no rule reads cannot reach a MAC further on, as a private key's block cannot.
 _PUTTY_LINE = (
-    r"[+\- ]?[ \t]*(?:[A-Za-z0-9+/=]+|(?:Encryption|Comment|Public-Lines|Private-Lines|Key-Derivation"
-    r"|Argon2-Memory|Argon2-Passes|Argon2-Parallelism|Argon2-Salt): [^\n]*)?[ \t]*\r?"
+    r"[+\- ]?[ \t]*+(?:[A-Za-z0-9+/=]++|(?:Encryption|Comment|Public-Lines|Private-Lines|Key-Derivation"
+    r"|Argon2-Memory|Argon2-Passes|Argon2-Parallelism|Argon2-Salt): [^\n]*+)?[ \t]*+\r?"
 )
 _PUTTY = (
     r"\bPuTTY-User-Key-File-[23]: [^\n]*(?:\n(?:(?>"
     + _PUTTY_LINE
-    + r"\n)){0,80}?[+\- ]?[ \t]*Private-MAC: [0-9a-fA-F]+)?"
+    + r"\n)){0,80}?[+\- ]?[ \t]*+Private-MAC: [0-9a-fA-F]+)?"
 )
 #: The shapes a vendor's credential takes, or a URL's or a key file's: what the secrets rule finds.
 _VENDOR = (
@@ -225,8 +229,11 @@ _VENDOR = (
 #: A value a name alone says is secret, with no vendor's shape: what `named-secrets` weighs.
 _GENERIC = (
     (
-        "generic_secret",  # a named value in quotes: code, JSON, YAML
-        re.compile(r"(?i)(" + _NAMED + r"[\"']?\s*[:=]\s*)([\"'])" + _STAND_IN + r"([^\"'\n]{6,})\2"),
+        # A named value in quotes: code, JSON, YAML. Or one that runs to the end of the text read: read by review, a
+        # scrub that read as far as a cut and a credential crossing it could run found no closing quote for a token
+        # longer than that, and its first 385 characters were printed as a rule's evidence.
+        "generic_secret",
+        re.compile(r"(?i)(" + _NAMED + r"[\"']?\s*[:=]\s*)([\"'])" + _STAND_IN + r"([^\"'\n]{6,})(?:\2|\Z)"),
         r"\1\2[REDACTED]\2",
     ),
     (

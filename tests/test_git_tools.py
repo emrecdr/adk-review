@@ -704,6 +704,9 @@ class TestWhatALinkPointsAt:
         )
         (link,) = [f for f in evidence["files"] if f["path"] == "run.py"]
         assert link["text"] == "import os\nos.system(input())\n", "the file the link names, read under its name"
+        # And every line of it is added, for the report too: read by review, the JSON said the shell call stood on a
+        # line the change did not add, which a pipeline reading added lines alone would pass over.
+        assert link["added_at"] == {1, 2}, link["added_at"]
         assert "symbolic link" in link["unread"], link["unread"]
         found = run_rules(evidence, [Lint()])["rule.lint"].findings
         # Every line of it is new under the link's name: listed where it stands, never counted as one the change kept.
@@ -755,6 +758,68 @@ class TestWhatALinkPointsAt:
         found = run_rules(evidence, [PinnedActions()])["rule.pinned-actions"].findings
         assert [(f.file, f.line) for f in found] == [(".github/workflows/ci.yml", 5)], found
 
+    @staticmethod
+    def _link(repo: Path, path: str, target: str) -> None:
+        """A link at `path` naming `target`, staged through git's plumbing, so no file system need hold one."""
+        blob = _git_in(repo, "hash-object", "-w", "--stdin", stdin=target)
+        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{blob},{path}")
+
+    def test_a_link_to_a_file_the_change_only_modifies_is_a_hole(self, tmp_path: Path) -> None:
+        """Read by review: a file the change modifies counted as shown whole, though the guidelines saw one hunk of it,
+        so a link to a file whose shell call the change did not touch was no hole, the call read by no guideline. Only
+        a file the change adds is shown whole."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        body = "import os\nos.system(input())\n" + "".join(f"x{n} = {n}\n" for n in range(30))
+        _committed(repo, "docs/example.txt", body, "base")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "docs/example.txt", body.replace("x20 = 20", "x20 = 21"), "an edit far from the call")
+        self._link(repo, "run.py", "docs/example.txt")
+        _git_in(repo, "commit", "-qm", "a link")
+        assert "symbolic link" in gathered(repo, "change")["run.py"]["unread"]
+
+    def test_a_link_moved_whole_is_known_by_its_mode(self, tmp_path: Path) -> None:
+        """Read by review: a link was known by the mode its diff printed, and a link moved whole prints none, only
+        `similarity index 100%`, so `scripts/run.py`, moved to name a helper holding a shell call, was no hole and the
+        call read by no one. A link is known by its mode at the head, and read through as any other."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "scripts/helper.txt", "import os\nos.system(input())\n", "a helper")
+        self._link(repo, "tools/run.py", "helper.txt")
+        _git_in(repo, "commit", "-qm", "a link")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        blob = _git_in(repo, "rev-parse", "HEAD:tools/run.py")
+        _git_in(repo, "update-index", "--force-remove", "tools/run.py")
+        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{blob},scripts/run.py")
+        _git_in(repo, "commit", "-qm", "the link moved")
+        moved = gathered(repo, "change")["scripts/run.py"]
+        assert moved["status"] == "R" and "symbolic link" in moved["unread"], (moved["status"], moved["unread"])
+        assert moved["text"] == "import os\nos.system(input())\n", "the rules read the file it names now"
+
+    def test_the_rules_follow_a_link_through_a_link(self, tmp_path: Path) -> None:
+        """Read by review: the rules read one link through, so `run.py`, a link to a link to an image holding Python,
+        was read by no rule, under the pre-push hook's profile approved with no hole. Links are followed as a system
+        follows them, forty deep."""
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.lint import Lint
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "assets/logo.png", "import os\nos.system(input())\n", "an image")
+        self._link(repo, "mid", "assets/logo.png")
+        _git_in(repo, "commit", "-qm", "a link")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        self._link(repo, "run.py", "mid")
+        _git_in(repo, "commit", "-qm", "a link to the link")
+        evidence = importlib.import_module("adk_review.collect.git").collect_evidence(
+            str(repo), BASE, "change", guidelines=False
+        )
+        found = run_rules(evidence, [Lint()])["rule.lint"].findings
+        assert [(f.file, f.line) for f in found if "S605" in f.title] == [("run.py", 2)], [f.title for f in found]
+
 
 class TestWhatALargeFileStoreHides:
     """A file Git LFS stores is committed as a pointer: three lines naming content kept elsewhere, which no rule and no
@@ -771,6 +836,20 @@ class TestWhatALargeFileStoreHides:
         files = gathered(repo, "change", skip=["assets/*"])
         assert "Git LFS" in files["run.py"]["unread"], files["run.py"]["unread"]
         assert files["assets/model.bin"]["unread"] == "", "the operator's skip list leaves it to the rules"
+
+    def test_a_file_made_a_pointer_is_named_unread_as_one_added_is(self, tmp_path: Path) -> None:
+        """Read by review: a file the change turned into a pointer, as `git lfs track` and `git add --renormalize` do,
+        shows its old lines removed before the pointer's, and only the first four lines of the hunk were read, all of
+        them removed ones: no pointer was named, the rules linted its lines as Python, and the review approved."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "tool.py", "".join(f"x{n} = {n}\n" for n in range(6)), "base")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "tool.py", "version https://git-lfs.github.com/spec/v1\noid sha256:" + "a" * 64 + "\nsize 9\n")
+        pointer = gathered(repo, "change")["tool.py"]
+        assert "Git LFS" in pointer["unread"], pointer["unread"]
+        assert (pointer["text"], pointer["unread_text"]) == (None, None), "no text for the rules either"
 
     def test_a_pointers_lines_are_no_text_for_the_rules(self, tmp_path: Path) -> None:
         """Measured by review: ruff read a pointer committed as `tool.py` as Python, and four major findings of invalid

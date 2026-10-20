@@ -24,8 +24,6 @@ _ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34,
 _BREAKS = re.compile("[\r\x0b\x0c\x1c-\x1e\x85\u2028\u2029]")
 BINARY = re.compile(r"^Binary files .* differ$", re.MULTILINE)
 SUBMODULE = re.compile(r"^(?:new file mode|index \S+) 160000$", re.MULTILINE)
-#: A symbolic link: the diff shows the path it names, never the file there.
-LINK = re.compile(r"^(?:new file mode|new mode|index \S+) 120000$", re.MULTILINE)
 
 
 def readable(diff: str) -> str:

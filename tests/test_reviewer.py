@@ -422,6 +422,17 @@ class TestWhatTheSecretsGateKnows:
             secret_findings([{"path": "x.py", "added": [(1, text)]}])
             assert time.perf_counter() - started < 2, repr(text[:24])
 
+    def test_a_key_blocks_lines_read_a_run_of_blanks_once(self) -> None:
+        """Read by review: each line of a key block, PEM's and PuTTY's, opened and closed on a run of blanks, two runs
+        a line of blanks could be split between every way, so a header and a line of 8,000 spaces took 0.6 s and 1.2
+        s to scrub, four times as long for each doubling, and every request of a review is scrubbed. Each run is read
+        once and kept."""
+        scrub, _gate = _secrets_of()
+        for header in ("-----BEGIN RSA PRIVATE KEY-----\n", "PuTTY-User-Key-File-2: ssh-rsa\n"):
+            started = time.perf_counter()
+            scrub(header + " " * 40_000 + "!\n")
+            assert time.perf_counter() - started < 1.0, header
+
     def test_the_cut_never_falls_inside_a_credential(self) -> None:
         """Measured before: a file's diff was cut at its cap, then scrubbed, and half a credential matches no shape:
         30 of an AWS secret's 40 characters reached every lane, and four lines of a key's body. The cut moves to before
