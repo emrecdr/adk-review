@@ -159,6 +159,11 @@ def merged_tags(repo: str, remote: str | None, head: str, held: str | None, read
 def unseen(repo: str, remote: str, branches: Sequence[str]) -> list[str]:
     """Each of `branches`, which git says `remote` does not hold, that this clone still has as the remote's: where it
     does, the clone's picture of the remote is not the remote's, and what the remote holds, read off that picture,
-    is not known. Read by review: after `git remote set-url` to another server, or with a `pushurl` naming one, the
-    old server's branches counted as held, and a token in their history reached the new server unread."""
-    return [branch for branch in branches if _sha(repo, f"refs/remotes/{remote}/{branch}") is not None]
+    is not known. Read by review: after `git remote set-url` to another server, the old server's branches counted as
+    held, and a token in their history reached the new server unread. With a `pushurl` naming a server apart from the
+    one fetched, none is named: no fetch could bring the picture back, and the push could never go."""
+    if _git(repo, "config", "--get", f"remote.{remote}.pushurl", ok=(0, 1))[0] == 0:
+        return []  # pushed elsewhere than fetched: the branches here are the fetch address's, which no fetch clears
+    _, listed = _git(repo, "for-each-ref", "--format=%(refname)", f"refs/remotes/{remote}/")
+    held = set(listed.splitlines())  # by name exactly: read by review, a disk blind to case found `Feature/login`
+    return [branch for branch in branches if f"refs/remotes/{remote}/{branch}" in held]

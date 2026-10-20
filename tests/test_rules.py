@@ -185,7 +185,7 @@ class TestTheSecretShapes:
     def test_named_secrets_reads_a_test_environments_config(self) -> None:
         """Read by review: any file in a folder named `test` read as a test's, so a password in `deploy/test/db.env`, an
         environment's config, passed `named-secrets`, in the review and in the pre-push hook's history alike. A test's
-        Python code, where a user made with a password of the test's own is a fixture, is still left alone."""
+        own fixture, in any language, a user made with a password of its own, is still left alone."""
         from adk_review.judge.rule_helpers import lines_hit
         from adk_review.judge.rules.named_secrets import NamedSecrets
 
@@ -193,6 +193,14 @@ class TestTheSecretShapes:
         for path in ("deploy/test/db.env", "k8s/overlays/test/secrets.env", "tests/e2e/.env"):
             assert lines_hit(NamedSecrets(), path, line) == [1], path
         assert lines_hit(NamedSecrets(), "tests/test_login.py", 'user = User(password="Xk9mQ2vR7t4p")\n') == []
+        # Read by review: a test's fixtures in any language are its own, Django's, a docker-compose's, Java's.
+        fixtures = {
+            "myapp/tests/fixtures/users.json": '{"password": "pbkdf2_sha256$600000$abc$def"}\n',
+            "tests/integration/docker-compose.yml": "POSTGRES_PASSWORD: Xk9mQ2vR7t4p\n",
+            "src/test/resources/application-test.properties": "spring.datasource.password=Xk9mQ2vR7t4p\n",
+        }
+        for path, text in fixtures.items():
+            assert lines_hit(NamedSecrets(), path, text) == [], path
 
     def test_named_secrets_weighs_the_value_as_well_as_the_name(self) -> None:
         """A person chooses a password, which may be any words; a machine makes a token, a key or a secret, one run of

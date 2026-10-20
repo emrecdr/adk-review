@@ -970,27 +970,25 @@ def test_a_binary_file_one_commit_adds_and_a_later_takes_out_stops_the_push(tmp_
 
 def test_a_push_the_clone_misreads_the_remote_for_stops_and_says_to_fetch(tmp_path, monkeypatch, capsys) -> None:
     """Read by review: what a remote holds was read off this clone's last fetch of it, so after `git remote set-url` to
-    another server, or with a `pushurl` naming one, the old server's branches counted as held, and a token one commit
-    added and the next took out reached the new server unread. Where git says the remote holds no branch this clone
-    saw there, its picture of the remote is wrong, and the push stops, saying to fetch it with `--prune` first."""
+    another server the old server's branches counted as held, and a token one commit added and the next took out
+    reached the new server unread. Where git says the remote holds no branch this clone saw there, its picture of the
+    remote is wrong, and the push stops, saying to fetch it with `--prune` first."""
     import io
 
     push = importlib.import_module("adk_review.push")
-    (old, work), token = _pushed_from(tmp_path), "ghp_" + "a1B2" * 9
+    (_old, work), token = _pushed_from(tmp_path), "ghp_" + "a1B2" * 9
     _committed(work, "settings.py", f'TOKEN = "{token}"\n', "add settings")
     _committed(work, "settings.py", "TOKEN = None\n", "take the token out")
     _git_in(work, "push", "-q", "origin", "main")  # from a clone with no hook: the old server holds it all
     new = tmp_path / "new.git"
     _git_in(tmp_path, "init", "-q", "--bare", "-b", "main", str(new))
+    _git_in(work, "remote", "set-url", "origin", str(new))
     monkeypatch.chdir(work)
     local = _git_in(work, "rev-parse", "main")
-    for moved in (("remote", "set-url", "origin", str(new)), ("config", "remote.origin.pushurl", str(new))):
-        _git_in(work, "remote", "set-url", "origin", str(old))
-        _git_in(work, *moved)
-        monkeypatch.setattr(sys, "stdin", io.StringIO(f"refs/heads/main {local} refs/heads/main {'0' * 40}\n"))
-        assert push.main(["origin", str(new)]) == 1, moved
-        said = capsys.readouterr().out
-        assert "git fetch --prune origin" in said and "main" in said, said
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"refs/heads/main {local} refs/heads/main {'0' * 40}\n"))
+    assert push.main(["origin", str(new)]) == 1
+    said = capsys.readouterr().out
+    assert "git fetch --prune origin" in said and "main" in said, said
 
 
 def test_a_large_file_stores_pointer_one_commit_adds_and_a_later_takes_out_stops_the_push(tmp_path) -> None:
@@ -1145,6 +1143,58 @@ def test_the_history_a_push_sends_reads_no_third_party_code(tmp_path) -> None:
     _committed(work, "vendor/lib/data.bin", b"\x00\x01" * 64, "and its data")
     _committed(work, "notes.md", 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "a page")
     assert push.in_history(str(work), "origin", "HEAD", None, []) == []
+
+
+def test_a_file_every_review_of_a_merge_could_not_read_stops_it_and_each_sides_own_does_not() -> None:
+    """Read by review: a merge's reviews were weighed by each hole's whole sentence, which names every file the check
+    could not read, so a new file too large to read, named beside the other side's in one review and alone in the
+    other, matched nowhere, and the merge pushed it unread. Each file a hole names is weighed alone: one every review
+    names stops the merge, while each side's own, which the remote holds, stops none, as 4442883 found."""
+    push = importlib.import_module("adk_review.push")
+
+    def stops(*unread: str) -> frozenset:
+        why = "; ".join(f"{path} was not read whole" for path in unread)
+        return push._stops({"could_not_look": {"rule.lint": f"rule lint could not look: {why}"}}) or frozenset()
+
+    assert stops("new.py", "theirs.py") & stops("new.py"), "the new file goes unread in every review"
+    assert not stops("theirs.py") & stops("ours.py"), "each review reads the other side's file, which the remote holds"
+
+
+def test_the_check_for_a_misread_remote_is_exact_quiet_where_a_push_address_is_set_and_never_a_traceback(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    """Read by review: a branch the remote holds as `Feature/login` was found for `feature/login` on a disk blind to
+    case, and the push stopped for good; with a push address apart from the fetch address, the stop could never be
+    cleared by a fetch; and a git that failed there ended the hook in a traceback."""
+    import io
+
+    from adk_review.collect.git import GitError
+    from adk_review.collect.history import unseen
+
+    push = importlib.import_module("adk_review.push")
+    remote, work = _pushed_from(tmp_path)
+    first = _committed(work, "a.py")
+    _git_in(work, "push", "-q", "origin", "main")
+    _git_in(work, "update-ref", "refs/remotes/origin/Feature/login", first)
+    assert unseen(str(work), "origin", ["feature/login", "Feature/login"]) == ["Feature/login"]
+    _git_in(work, "update-ref", "refs/remotes/origin/gone", first)
+    monkeypatch.chdir(work)
+    monkeypatch.setattr(push, "review", lambda _argv: 0)
+
+    def pushed() -> int:
+        monkeypatch.setattr(sys, "stdin", io.StringIO(f"refs/heads/gone {first} refs/heads/gone {'0' * 40}\n"))
+        return push.main(["origin", str(remote)])
+
+    assert pushed() == 1 and "fetch --prune" in capsys.readouterr().out
+    _git_in(work, "config", "remote.origin.pushurl", str(tmp_path / "elsewhere.git"))
+    assert pushed() == 0, "a fetch could not clear it: the branches here are the fetch address's"
+    _git_in(work, "config", "--unset", "remote.origin.pushurl")
+
+    def fails(*_args):
+        raise GitError("git could not start")
+
+    monkeypatch.setattr(push, "unseen", fails)
+    assert pushed() == 1 and "could not be listed" in capsys.readouterr().out
 
 
 def test_the_history_a_push_sends_is_read_with_the_push_history_profile(tmp_path, monkeypatch) -> None:

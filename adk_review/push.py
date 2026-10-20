@@ -149,14 +149,16 @@ def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, s
 
 
 def _stops(report: dict) -> frozenset[tuple[str, ...]] | None:
-    """What stopped a review, as its JSON report says: each finding at the bar, each file not read, each check that
-    could not look. None where it says of none, a review stopped for another reason, which no other review clears."""
+    """What stopped a review, as its JSON report says: each finding at the bar, each file not read, and each reason a
+    check could not look, one a file, so a file every review of a merge could not read stops it, and each side's own
+    does not. None where it says of none, a review stopped for another reason, which no other review clears."""
     bar = report.get("fail_on", "blocker")
     stops = frozenset(
         [("finding", f["check"], f["file"], str(f["line"]), f["title"]) for f in report.get("findings", ())
          if at_or_above(f["severity"], bar)]
         + [("not read", path) for path in report.get("not_read", {})]
-        + [("could not look", check, why) for check, why in report.get("could_not_look", {}).items()]
+        + [("could not look", check, part) for check, why in report.get("could_not_look", {}).items()
+           for part in why.partition(": ")[2].split("; ")]
     )  # fmt: skip
     return stops or None
 
@@ -246,7 +248,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         for _head, held, ref in pushed
         if held is None and ref and ref.startswith("refs/heads/")
     ]
-    if remote is not None and (missing := unseen(repository, remote, lacked)):
+    try:
+        missing = unseen(repository, remote, lacked) if remote is not None else []
+    except GitError as exc:
+        _say(f"the branches this clone saw on {remote} could not be listed ({exc}); push with --no-verify")
+        return 1
+    if missing:
         _say(
             f"{remote} holds no {', '.join(missing)}, which this clone last saw there: its picture of {remote} is "
             f"another server's or out of date, and what {remote} holds is not known; run git fetch --prune {remote}, "

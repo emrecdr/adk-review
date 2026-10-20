@@ -324,9 +324,12 @@ repository to guard, in any shell git brings (Git Bash on Windows):
 They write the hook where git reads it: `.git/hooks`, unless `core.hooksPath` names another folder, and from a linked
 worktree its main repository's. A pre-push hook already there, Git LFS's say, is kept beside it as
 `pre-push.before-adk-review` and runs after the review passes, given git's lines too: replaced, Git LFS's would upload
-no stored file, and a clone could not fetch one. Run again, the lines keep the first hook they kept. Git passes over a
-hook it cannot run, and over one in a folder it does not read, and the push goes unreviewed. A tool that runs hooks for
-git must hand this one git's lines on its standard input: given none, it reads a push that sends nothing.
+no stored file, and a clone could not fetch one. Run again over their own hook, the lines change nothing; over one
+another tool wrote since, they keep that one in place of the first. A tool that manages hooks may write that folder
+anew, husky at each install, this one's hook with it: add the line `adk-review-push "$@"` to the pre-push hook it runs
+instead. Git passes over a hook it cannot run, and over one in a folder it does not read, and the push goes unreviewed.
+A tool that runs hooks for git must hand this one git's lines on its standard input: given none, it reads a push that
+sends nothing.
 
 A repository that uses pre-commit names the hook `adk-review` from this repository's `.pre-commit-hooks.yaml`
 instead, at a pinned commit, with pre-commit's pre-push hook installed (`pre-commit install --hook-type pre-push`); it
@@ -357,13 +360,13 @@ What the hook cannot see, or stops on:
 - In a commit before the last, only a credential stops the push, or a file no rule can read, a binary one or a Git LFS
   pointer, whose file Git LFS's own hook uploads, unless `[review] skip` names it. What a merge's own resolution adds
   and a later commit takes out is read in no commit.
-- The remote's branches are as this clone last fetched them: one deleted or rewritten there still counts as held here,
-  so fetch before a push that follows a rewrite, and let a fetch prune deleted ones (`git config fetch.prune true`).
-  Where git says the remote holds no branch this clone last saw there — its URL changed, a `pushurl` names another
-  server, or the branch was deleted there — the push stops until `git fetch --prune` brings the clone's picture back
-  to the remote's.
-  Pushed to a URL rather than a remote's name, no branch of it is known here, and a new ref is reviewed as a whole
-  project.
+- The remote's branches are as this clone last fetched them: one deleted or rewritten there, or held by the server a
+  changed URL named before, still counts as held here, so fetch before a push that follows a rewrite or a new URL, and
+  let a fetch prune deleted ones (`git config fetch.prune true`). Where git says the remote holds no branch this clone
+  last saw there, the push stops until `git fetch --prune` brings the clone's picture back to the remote's. With a
+  `pushurl` naming a server apart from the one fetched, no fetch could, so the push does not stop, and what the fetched
+  server holds counts as held on the other. Pushed to a URL rather than a remote's name, no branch of it is known here,
+  and a new ref is reviewed as a whole project.
 - A file the review ignores, by `[review] scan` and `third_party`, is read in no commit either: a credential there
   passes.
 - A file no rule can read — a binary one, a submodule, a Git LFS pointer, whose content is stored elsewhere — is a hole
