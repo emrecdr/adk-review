@@ -975,6 +975,28 @@ class TestTheCleanupAndThePitfalls:
         assert _codes(ruff_rule_findings(Pitfalls(), [test])) == [("PLW0129", "major")]
         assert ruff_rule_findings(Simplify(), [test]) == [], "cleanup in a test is not this rule's"
 
+    def test_a_fastapi_route_that_ignores_a_path_parameter_is_a_pitfall_and_a_repeated_model_a_tidy(self) -> None:
+        """Measured: FastAPI answers every item id the same when the function never takes `item_id`, so the route
+        misbehaves whenever it runs, a major. A `response_model` the return type already names says it twice. A router
+        of the project's own, with the same method name, is not FastAPI's, and nothing is found there."""
+        from adk_review.judge.rules.pitfalls import Pitfalls
+        from adk_review.judge.rules.simplify import Simplify
+
+        api = (
+            "from fastapi import FastAPI\nfrom pydantic import BaseModel\n\napp = FastAPI()\n\n\n"
+            "class Item(BaseModel):\n    name: str\n\n\n"
+            '@app.get("/items/{item_id}")\nasync def read_item() -> dict:\n    return {}\n\n\n'
+            '@app.get("/users/{user_id}")\nasync def read_user(user_id: int) -> dict:\n    return {"id": user_id}\n\n\n'
+            '@app.post("/items/", response_model=Item)\nasync def create_item(item: Item) -> Item:\n    return item\n'
+        )
+        assert _codes(ruff_rule_findings(Pitfalls(), [_entry("api.py", api)])) == [("FAST003", "major")]
+        assert _codes(ruff_rule_findings(Simplify(), [_entry("api.py", api)])) == [("FAST001", "minor")]
+        own = (
+            "class Router:\n    def get(self, path):\n        return lambda f: f\n\n\napp = Router()\n\n\n"
+            '@app.get("/items/{item_id}")\ndef read_item():\n    return {}\n'
+        )
+        assert ruff_rule_findings(Pitfalls(), [_entry("own.py", own)]) == []
+
     def test_no_code_is_named_by_two_of_the_rules_that_read_ruff(self) -> None:
         """Each of ruff's codes is one rule's, so a line ruff flags is one finding, at the severity its rule gives:
         asked of ruff itself, which resolves each rule's codes and leaves-out as it would run them."""

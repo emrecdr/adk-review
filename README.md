@@ -254,9 +254,10 @@ The rules shipped with the reviewer are written as a project writes its own:
   tool servers an agent starts, a CI workflow, a hook, a `.pth` file);
 - for Python beside `lint`, each reading ruff with codes no other rule names: `pitfalls` (code that does not do what it
   reads: a naive UTC datetime from `utcnow()`, a dataclass default evaluated once and shared, an exception built and
-  never raised, a `subprocess.run` whose failure goes unseen, an `assert` that always passes) and `simplify` (a simpler
-  form ruff names, each fix labelled safe or unsafe as ruff labels it, every code whose fix ruff documents as changing
-  what the code does left out; taste, such as an `else` after a `return` or a ternary, left out);
+  never raised, a `subprocess.run` whose failure goes unseen, an `assert` that always passes, a FastAPI route that
+  ignores a path parameter) and `simplify` (a simpler form ruff names, each fix labelled safe or unsafe as ruff labels
+  it, every code whose fix ruff documents as changing what the code does left out; taste, such as an `else` after a
+  `return` or a ternary, left out);
 - a project's own conventions, as examples: `no-print`, `private-patch` and `tests-offline`;
 - one small payments project's own rules, written for the demo repository and named `demo-` so none is taken for a rule
   a project needs: `demo-money-in-cents`, and the tree rules `demo-required-paths`, `demo-module-defines`,
