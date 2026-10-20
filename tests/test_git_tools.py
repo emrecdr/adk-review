@@ -1245,11 +1245,21 @@ class TestWhatALargeFileStoreHides:
         filled = head + pad + " " * (POINTER_BYTES - len((head + pad).encode()) - short)
         assert len(filled.encode()) == POINTER_BYTES - short
         assert pointer_text(filled + "\nimport os\nos.system(input())\n")
+        room = POINTER_BYTES - len(head.encode())
+        lead = " " if room % 3 == 0 else ""  # so the edge falls inside a three-byte space
+        crossing = head + lead + "\u3000" * ((room - len(lead)) // 3 + 1) + "\nimport os\n"
+        with pytest.raises(UnicodeDecodeError):
+            crossing.encode()[:POINTER_BYTES].decode()
+        assert not pointer_text(crossing), (
+            "a character the edge cuts is none of Go's spaces, and Git LFS reads no pointer"
+        )
 
-    def test_a_pointer_is_read_as_git_lfs_reads_one_over_random_texts(self) -> None:
+    def test_a_pointer_is_read_as_git_lfs_reads_one_over_random_texts(self, tmp_path: Path) -> None:
         """Random texts built of a pointer's pieces, the spaces Go and Python read apart, extension lines, and padding
         up to Git LFS's 1,024 bytes, each asked of git-lfs's `pointer --check` and of `pointer_text`: they agree on
-        every one. Two reviews in a row each found a text on which they did not."""
+        every one. Two reviews in a row each found a text on which they did not. Each text is asked from a file: Git LFS
+        reads a pointer in one read, which a pipe can end at macOS's 512 bytes, and measured on macOS's CI, a pointer
+        padded to its edge once read as none."""
         import shutil
         from concurrent.futures import ThreadPoolExecutor
 
@@ -1278,21 +1288,23 @@ class TestWhatALargeFileStoreHides:
         for _ in range(300):
             lines = [rng.choice(pieces[kind]) for kind in rng.choice(orders)]
             text = rng.choice(spaces) + rng.choice(["\n", "\r\n"]).join(lines) + "\n" + rng.choice(spaces)
-            if rng.random() < 0.2:  # padded toward Git LFS's 1,024 bytes, code after them
+            if rng.random() < 0.2:  # padded toward Git LFS's 1,024 bytes, or past it, code after them
                 pad = rng.choice([" ", "\u3000", "\xa0"])
-                text += (
-                    pad * ((1_024 - len(text.encode()) - rng.choice([0, 1, 2])) // len(pad.encode())) + "\nimport os\n"
+                count = (1_024 - len(text.encode()) - rng.choice([0, 1, 2])) // len(pad.encode()) + rng.choice(
+                    [0, 0, 1]
                 )
+                text += pad * count + "\nimport os\n"
             texts.append(text)
 
-        def checked(text: str) -> bool:
-            done = subprocess.run(
-                [git, "lfs", "pointer", "--check", "--stdin"], input=text.encode(), capture_output=True
-            )
+        def checked(at: int) -> bool:  # from a file: read whole, where a pipe may hand one read the first 512 bytes
+            done = subprocess.run([git, "lfs", "pointer", "--check", f"--file={written[at]}"], capture_output=True)
             return done.returncode == 0
 
+        written = [tmp_path / f"{at}.txt" for at in range(len(texts))]
+        for path, text in zip(written, texts, strict=True):
+            path.write_bytes(text.encode())
         with ThreadPoolExecutor(8) as pool:
-            theirs = list(pool.map(checked, texts))
+            theirs = list(pool.map(checked, range(len(texts))))
         differ = [(text, said) for text, said in zip(texts, theirs, strict=True) if pointer_text(text) is not said]
         assert any(theirs) and not all(theirs), "both kinds asked"
         assert differ == [], differ[:3]

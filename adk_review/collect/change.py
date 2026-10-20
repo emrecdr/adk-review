@@ -57,7 +57,9 @@ def pointer_text(text: str) -> bool:
     line before it was linted as Python and approved, and one with a shell line after its size, which Git LFS checks out
     as written, was named stored elsewhere; and read over 1,024 characters, a pointer padded with three-byte spaces to
     Git LFS's 1,024 bytes was read on into the code after them, and approved."""
-    window = text[:POINTER_BYTES].encode("utf-8", "surrogatepass")[:POINTER_BYTES].decode("utf-8", "ignore")
+    # Cut at Git LFS's bytes, a character the cut splits kept as one no space trims, as Go's trim keeps its bytes:
+    # measured, a pointer whose 1,024th byte fell inside a three-byte space was none to Git LFS.
+    window = text[:POINTER_BYTES].encode("utf-8", "surrogatepass")[:POINTER_BYTES].decode("utf-8", "replace")
     said: dict[str, str] = {}
     extensions: dict[str, str] = {}
     for line in window.strip(_GO_SPACE).split("\n"):
