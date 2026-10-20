@@ -41,6 +41,21 @@ _KEY_LINE = r"[+\- ]?[ \t]*(?:[A-Za-z0-9+/=]+|(?:Proc-Type|DEK-Info|Version|Comm
 #: sent the rest of the password to the model.
 _URL_LEAD = r"\b([a-z][a-z0-9+.-]{0,40}://[^\s:/@\"']+:)"
 _URL_PASSWORD = r"[^\s/\"']+"
+#: AWS Bedrock's API key: a long-term one, base64 after its prefix, or a short-term one, a signed request in base64
+#: whose host, `bedrock.amazonaws.com`, opens it, its query hundreds of characters on. Measured: with none required
+#: past the host, the shape matched its own source here, which a review of this file would name a blocker.
+_BEDROCK = r"\b(?:ABSK[A-Za-z0-9+/]{109,269}={0,2}|bedrock-api-key-YmVkcm9jay5hbWF6b25hd3MuY29t[A-Za-z0-9+/=]{40,})"
+#: A PuTTY key file: its header, then its own lines alone — a diff's marker, then a field PuTTY writes or base64 —
+#: to its MAC, so a header where no rule reads cannot reach a MAC further on, as a private key's block cannot.
+_PUTTY_LINE = (
+    r"[+\- ]?[ \t]*(?:[A-Za-z0-9+/=]+|(?:Encryption|Comment|Public-Lines|Private-Lines|Key-Derivation"
+    r"|Argon2-Memory|Argon2-Passes|Argon2-Parallelism|Argon2-Salt): [^\n]*)?[ \t]*\r?"
+)
+_PUTTY = (
+    r"\bPuTTY-User-Key-File-[23]: [^\n]*(?:\n(?:(?>"
+    + _PUTTY_LINE
+    + r"\n)){0,80}?[+\- ]?[ \t]*Private-MAC: [0-9a-fA-F]+)?"
+)
 #: The shapes a vendor's credential takes, or a URL's or a key file's: what the secrets rule finds.
 _VENDOR = (
     ("aws_access_key_id", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), "[REDACTED:aws_access_key_id]"),
@@ -54,9 +69,28 @@ _VENDOR = (
         re.compile(r"\b(?:gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{80,})\b"),
         "[REDACTED:github_token]",
     ),
-    ("gitlab_token", re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}"), "[REDACTED:gitlab_token]"),
-    ("slack_token", re.compile(r"\bxox[abposr]-[A-Za-z0-9-]{10,}"), "[REDACTED:slack_token]"),
-    ("slack_webhook", re.compile(r"https://hooks\.slack\.com/services/[A-Za-z0-9_/]+"), "[REDACTED:slack_webhook]"),
+    # GitLab's every token, Slack's app-level and refresh tokens and its workflows' webhooks, each by its prefix.
+    (
+        "gitlab_token",
+        re.compile(
+            r"\b(?:gl(?:pat|dt|rt|cbt|ptt|ft|imt|soat|ffct)-[A-Za-z0-9_-]{20,}|glagent-[A-Za-z0-9_-]{50,}"
+            r"|gloas-[A-Za-z0-9_-]{64,}|GR1348941[A-Za-z0-9_-]{20,})"
+        ),
+        "[REDACTED:gitlab_token]",
+    ),
+    (
+        "slack_token",
+        re.compile(
+            r"\b(?:xox[abposr]-[A-Za-z0-9-]{10,}|xoxe(?:\.xox[bp])?-\d-[A-Za-z0-9]{140,}"
+            r"|xapp-\d-[A-Za-z0-9]+-\d+-[A-Za-z0-9]{20,})"
+        ),
+        "[REDACTED:slack_token]",
+    ),
+    (
+        "slack_webhook",
+        re.compile(r"https://hooks\.slack\.com/(?:services|workflows|triggers)/[A-Za-z0-9_/]+"),
+        "[REDACTED:slack_webhook]",
+    ),
     ("stripe_key", re.compile(r"\b[rs]k_live_[A-Za-z0-9]{16,}"), "[REDACTED:stripe_key]"),
     ("google_api_key", re.compile(r"\bAIza[0-9A-Za-z_-]{35}"), "[REDACTED:google_api_key]"),
     # Measured by review: a key of each vendor below, held by a name that says no secret, was found by no rule and
@@ -68,7 +102,11 @@ _VENDOR = (
         re.compile(r"\bsk-(?:(?:proj|svcacct|admin)-[A-Za-z0-9_-]{40,}|[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}\b)"),
         "[REDACTED:openai_api_key]",
     ),
-    ("huggingface_token", re.compile(r"\bhf_[A-Za-z0-9]{34}\b"), "[REDACTED:huggingface_token]"),
+    (
+        "huggingface_token",
+        re.compile(r"\b(?:hf_[A-Za-z0-9]{34}|api_org_[A-Za-z]{34})\b"),
+        "[REDACTED:huggingface_token]",
+    ),
     ("npm_token", re.compile(r"\bnpm_[A-Za-z0-9]{36}\b"), "[REDACTED:npm_token]"),
     ("pypi_token", re.compile(r"\bpypi-AgE[A-Za-z0-9_-]{50,}"), "[REDACTED:pypi_token]"),
     # Its last segment may end in `-`, after which `\b` finds no edge before a quote.
@@ -87,6 +125,62 @@ _VENDOR = (
         re.compile(r"\btskey-(?:auth|api|client|scim|webhook)-[A-Za-z0-9]{6,}-[A-Za-z0-9]{16,}"),
         "[REDACTED:tailscale_key]",
     ),
+    # Measured by review: a key of each vendor below, held by a name that says no secret, was found by no rule and
+    # reached the model unredacted. Each is the vendor's shape as gitleaks or trufflehog knows it, and over 12.4
+    # million lines in 41,992 files of installed packages none matched. One that may end in `-` or `_` ends where no
+    # such character follows, since `\b` finds no edge there before a quote.
+    ("aws_bedrock_key", re.compile(_BEDROCK), "[REDACTED:aws_bedrock_key]"),
+    ("atlassian_api_token", re.compile(r"\bATATT3[A-Za-z0-9_\-=]{186}"), "[REDACTED:atlassian_api_token]"),
+    ("xai_api_key", re.compile(r"\bxai-[A-Za-z0-9]{80}\b"), "[REDACTED:xai_api_key]"),
+    ("groq_api_key", re.compile(r"\bgsk_[A-Za-z0-9]{52}\b"), "[REDACTED:groq_api_key]"),
+    ("perplexity_api_key", re.compile(r"\bpplx-[A-Za-z0-9]{48}\b"), "[REDACTED:perplexity_api_key]"),
+    ("docker_hub_token", re.compile(r"\bdckr_(?:pat|oat)_[A-Za-z0-9_-]{27,}"), "[REDACTED:docker_hub_token]"),
+    (
+        "google_oauth_client_secret",
+        re.compile(r"\bGOCSPX-[A-Za-z0-9_-]{28}(?![\w-])"),
+        "[REDACTED:google_oauth_client_secret]",
+    ),
+    ("google_oauth_token", re.compile(r"\bya29\.[A-Za-z0-9_-]{50,}"), "[REDACTED:google_oauth_token]"),
+    ("digitalocean_token", re.compile(r"\bdo[por]_v1_[a-f0-9]{64}\b"), "[REDACTED:digitalocean_token]"),
+    ("databricks_token", re.compile(r"\bdapi[a-f0-9]{32}(?:-\d)?\b"), "[REDACTED:databricks_token]"),
+    ("vault_token", re.compile(r"\bhvs\.[A-Za-z0-9_-]{90,120}(?![\w-])"), "[REDACTED:vault_token]"),
+    (
+        "terraform_token",
+        re.compile(r"\b[a-z0-9]{14}\.atlasv1\.[a-z0-9_=-]{60,70}(?![\w=-])"),
+        "[REDACTED:terraform_token]",
+    ),
+    (
+        "grafana_token",
+        re.compile(r"\b(?:glc_[A-Za-z0-9+/]{32,400}={0,3}|glsa_[A-Za-z0-9]{32}_[A-Fa-f0-9]{8}\b)"),
+        "[REDACTED:grafana_token]",
+    ),
+    (
+        "sentry_token",
+        re.compile(r"\b(?:sntryu_[a-f0-9]{64}\b|sntrys_eyJ[A-Za-z0-9+/=_]{40,})"),
+        "[REDACTED:sentry_token]",
+    ),
+    ("postman_api_key", re.compile(r"\bPMAK-[a-f0-9]{24}-[a-f0-9]{34}\b"), "[REDACTED:postman_api_key]"),
+    ("linear_api_key", re.compile(r"\blin_api_[A-Za-z0-9]{40}\b"), "[REDACTED:linear_api_key]"),
+    ("notion_token", re.compile(r"\bntn_[0-9]{11}[A-Za-z0-9]{35}\b"), "[REDACTED:notion_token]"),
+    ("heroku_api_key", re.compile(r"\bHRKU-AA[0-9A-Za-z_-]{58}(?![\w-])"), "[REDACTED:heroku_api_key]"),
+    (
+        "age_secret_key",
+        re.compile(r"\bAGE-SECRET-KEY-1[QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L]{58}\b"),
+        "[REDACTED:age_secret_key]",
+    ),
+    ("onepassword_token", re.compile(r"\bops_eyJ[A-Za-z0-9+/]{250,}={0,3}"), "[REDACTED:onepassword_token]"),
+    ("twilio_api_key", re.compile(r"\bSK[0-9a-fA-F]{32}\b"), "[REDACTED:twilio_api_key]"),
+    ("telegram_bot_token", re.compile(r"\b\d{8,10}:AA[0-9A-Za-z_-]{33}(?![\w-])"), "[REDACTED:telegram_bot_token]"),
+    (
+        "private_key_base64",  # `-----BEGIN`, then `PRIVATE KEY` within forty characters, at any of base64's offsets
+        re.compile(
+            r"\bLS0tLS1CRUdJTi[A-Za-z0-9+/]{0,40}?(?:UFJJVkFURSBLRV|BSSVZBVEUgS0VZ|QUklWQVRFIEtFW)[A-Za-z0-9+/=]*"
+        ),
+        "[REDACTED:private_key_base64]",
+    ),
+    # Its whole block as a private key's is, its header where a line is all there is: a key file's own lines only,
+    # each read once.
+    ("putty_private_key", re.compile(_PUTTY), "[REDACTED:putty_private_key]"),
     ("jwt", re.compile(r"\beyJ[A-Za-z0-9_-]{8,2000}\.eyJ[A-Za-z0-9_-]{8,2000}\.[A-Za-z0-9_-]{8,}"), "[REDACTED:jwt]"),
     (
         "url_credentials",
@@ -94,6 +188,22 @@ _VENDOR = (
         r"\1[REDACTED]\2",
     ),
     ("azure_account_key", re.compile(r"(?i)(AccountKey=)" + _STAND_IN + r"[A-Za-z0-9+/=]{20,}"), r"\1[REDACTED]"),
+    (
+        "azure_shared_access_key",
+        re.compile(r"(?i)(SharedAccessKey=)" + _STAND_IN + r"[A-Za-z0-9+/=]{20,}"),
+        r"\1[REDACTED]",
+    ),
+    ("azure_sas_signature", re.compile(r"([?&]sig=)" + _STAND_IN + r"[A-Za-z0-9%+/]{40,}={0,2}"), r"\1[REDACTED]"),
+    (
+        "azure_client_secret",  # three characters, a digit, `Q~`, and the rest: none of them may stand beside it
+        re.compile(r"(?<![\w~.-])[A-Za-z0-9_~.]{3}\dQ~[A-Za-z0-9_~.-]{31,34}(?![\w~.-])"),
+        "[REDACTED:azure_client_secret]",
+    ),
+    (
+        "discord_webhook",
+        re.compile(r"https://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/\d{17,20}/[A-Za-z0-9_-]{60,}"),
+        "[REDACTED:discord_webhook]",
+    ),
     (
         # The whole block where the text holds it, its header where a line is all there is. Each key line is matched
         # once, atomic, and no run reads past another header: measured by review, a header with 25 key lines and no

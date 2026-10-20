@@ -104,6 +104,84 @@ class TestTheSecretShapes:
         assert all(is_placeholder(v) for v in ("hf_...", "eyJhbGc…", "sk-1****cdef", "6xxxxxxx")), "cut or masked"
         assert not any(is_placeholder(v) for v in (pw, "correct horse battery", "a secret"))
 
+    def test_each_vendors_shape_is_found_and_hidden_where_no_name_says_secret(self) -> None:
+        """Measured by review: a key of each of these vendors, held by a name that says no secret, was found by no rule
+        and reached the model unredacted. Each shape is the vendor's as gitleaks or trufflehog knows it, tried here on
+        a token made at random, never a real one, and none matched a line of 12.4 million in 41,992 files of
+        installed packages."""
+        import base64
+        import random
+        import string
+
+        from adk_review.core.secrets import scrub, vendor_shape
+
+        rng = random.Random(7)
+
+        def made(alphabet: str, n: int) -> str:
+            return "".join(rng.choice(alphabet) for _ in range(n))
+
+        letters, digits, hexes = string.ascii_letters, string.digits, "0123456789abcdef"
+        alnum, b64 = letters + digits, letters + digits + "+/"
+        pem = b"-----BEGIN RSA PRIVATE KEY-----\n" + made(b64, 64).encode() + b"\n-----END RSA PRIVATE KEY-----\n"
+        tokens = {
+            "gitlab_token": "gl" + "dt-" + made(alnum, 20),
+            "slack_token": f"xapp-1-A{made(digits, 10)}-{made(digits, 13)}-{made(hexes, 64)}",
+            "slack_webhook": "https://hooks.slack.com/triggers/"
+            + f"T{made(alnum, 10)}/{made(digits, 13)}/{made(hexes, 32)}",
+            "huggingface_token": "api_org_" + made(letters, 34),
+            "aws_bedrock_key": "AB" + "SK" + made(b64, 132),
+            "azure_client_secret": made(alnum, 3) + "8Q~" + made(alnum + "_~.-", 34),
+            "azure_shared_access_key": "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=Root;"
+            + "SharedAccessKey="
+            + made(b64, 43)
+            + "=",
+            "azure_sas_signature": "https://acct.blob.core.windows.net/c/b?sv=2024-11-04&sp=r&sig="
+            + made(alnum, 43)
+            + "%3D",
+            "atlassian_api_token": "ATA" + "TT3" + made(alnum + "_-", 178) + "=" + made(hexes.upper(), 7),
+            "xai_api_key": "xai" + "-" + made(alnum, 80),
+            "groq_api_key": "gsk" + "_" + made(alnum, 52),
+            "perplexity_api_key": "pplx" + "-" + made(alnum, 48),
+            "docker_hub_token": "dckr" + "_pat_" + made(alnum + "_-", 27),
+            "google_oauth_client_secret": "GOC" + "SPX-" + made(alnum + "_-", 28),
+            "google_oauth_token": "ya29" + "." + made(alnum + "_-", 150),
+            "digitalocean_token": "dop" + "_v1_" + made(hexes, 64),
+            "databricks_token": "da" + "pi" + made(hexes, 32),
+            "vault_token": "hvs" + "." + made(alnum, 95),
+            "terraform_token": made(hexes, 14) + ".atlas" + "v1." + made(hexes, 67),
+            "grafana_token": "glsa" + "_" + made(alnum, 32) + "_" + made(hexes, 8),
+            "sentry_token": "sntryu" + "_" + made(hexes, 64),
+            "postman_api_key": "PM" + f"AK-{made(hexes, 24)}-{made(hexes, 34)}",
+            "linear_api_key": "lin_" + "api_" + made(alnum, 40),
+            "notion_token": "ntn" + "_" + made(digits, 11) + made(alnum, 35),
+            "heroku_api_key": "HRKU" + "-AA" + made(alnum + "_-", 58),
+            "age_secret_key": "AGE-SECRET" + "-KEY-1" + made("QPZRY9X8GF2TVDW0S3JN54KHCE6MUA7L", 58),
+            "onepassword_token": "ops" + "_eyJ" + made(b64, 300),
+            "twilio_api_key": "S" + "K" + made(hexes, 32),
+            "telegram_bot_token": made(digits, 10) + ":A" + "A" + made(alnum + "_-", 33),
+            "discord_webhook": f"https://discord.com/api/webhooks/{made(digits, 19)}/{made(alnum + '_-', 68)}",
+            "private_key_base64": base64.b64encode(pem).decode(),
+        }
+        for kind, token in tokens.items():
+            line = f'client = Client("{token}")'
+            assert vendor_shape(line) == kind, (kind, vendor_shape(line))
+            assert token not in scrub(line)[0], (kind, scrub(line)[0])
+
+        putty = [
+            "PuTTY-User-" + "Key-File-3: ssh-ed25519",  # split, as every key here is, so the rule never flags this file
+            "Encryption: none",
+            "Comment: eddsa-key-20260101",
+            "Public-Lines: 2",
+            made(b64, 64),
+            made(b64, 20),
+            "Private-Lines: 1",
+            made(b64, 44),
+            "Private-MAC: " + made(hexes, 64),
+        ]
+        assert vendor_shape(putty[0]) == "putty_private_key"
+        hidden, _count = scrub("\n".join(f"+{line}" for line in putty) + "\n x = 1\n")
+        assert putty[7] not in hidden and putty[8] not in hidden and " x = 1" in hidden, hidden
+
     def test_named_secrets_weighs_the_value_as_well_as_the_name(self) -> None:
         """A person chooses a password, which may be any words; a machine makes a token, a key or a secret, one run of
         eight characters or more with a digit. Measured over twelve published projects' source: the name alone flagged
