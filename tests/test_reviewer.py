@@ -452,7 +452,7 @@ class TestWhatTheSecretsGateKnows:
 
         started = time.perf_counter()
         cut_at("+" + "-eyJ" * 2**19, DIFF_CAP_CHARS, sep="\n")
-        assert time.perf_counter() - started < 0.5, "the search stops where no crossing credential could reach"
+        assert time.perf_counter() - started < 1.0, "it stops where no crossing credential could reach: 3.6 s before"
         block = (
             "+-----BEGIN RSA PRIVATE KEY-----\n"
             + "+MIIJKAIBAAKCAgEAyn3bRHQ5abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNO\n" * 100

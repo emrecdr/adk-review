@@ -398,27 +398,34 @@ class TestTheLintRule:
             tidies = frozenset({"guideline.complexity"})
             assert dedupe(found, tidies) == self._pairwise(found, tidies)
 
-    def test_the_fold_reads_ten_thousand_findings_in_one_file_in_linear_time(self) -> None:
+    def test_the_fold_compares_ten_thousand_findings_in_one_file_in_linear_time(self, monkeypatch) -> None:
         """Measured by review: the fold compared each finding with every one kept in its file, and 20,000 keys a line
         rule found in one file took 37 s, 2 x 10^8 comparisons. Through the kept spans, which never hold one another,
-        two searches find what a finding overlaps."""
-        import time
-
+        two searches find what a finding overlaps: the comparisons are counted, which no runner's speed changes, where
+        a timed bound was missed by a slow one."""
+        from adk_review.core import verdict
         from adk_review.core.findings import Finding
-        from adk_review.core.verdict import Sourced, dedupe
 
+        compared = 0
+        overlaps = verdict._overlaps
+
+        def counted(*args: object) -> bool:
+            nonlocal compared
+            compared += 1
+            return overlaps(*args)
+
+        monkeypatch.setattr(verdict, "_overlaps", counted)
         found = [
-            Sourced(
+            verdict.Sourced(
                 "rule.secrets",
                 Finding(file="keys.py", line=n, severity="blocker", title="t", evidence=f"k{n}", suggestion="s"),
                 (n, n),
             )
             for n in range(1, 10_001)
         ]
-        started = time.perf_counter()
-        kept, folded = dedupe(found)
+        kept, folded = verdict.dedupe(found)
         assert (len(kept), folded) == (10_000, [])
-        assert time.perf_counter() - started < 1.0, "linear, where it was quadratic"
+        assert compared < 10_000, f"{compared:,} comparisons, where every pair made 5 x 10^7"
 
     def test_the_more_severe_reading_of_a_line_survives_the_fold_whole(self) -> None:
         """Measured live: E501 first at minor, then a guideline's blocker on the same line — keeping the first title at
@@ -1219,7 +1226,7 @@ class TestTheShippedRules:
         started = time.perf_counter()
         found = run_rules({"files": [_entry("m.py", line + "\n")], "tree": None}, [Secrets()])["rule.secrets"].findings
         assert found and all("AKIA" not in f.evidence for f in found), found
-        assert time.perf_counter() - started < 3.0, "the rule's own reading, and no more"
+        assert time.perf_counter() - started < 6.0, "the rule's own reading, and no more: 9 s before"
 
     def test_named_secrets_reads_a_long_number_in_linear_time(self) -> None:
         """Measured by review: the pattern for a number had two ways to split a run of digits and tried each on a
