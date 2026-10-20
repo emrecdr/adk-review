@@ -295,6 +295,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | Ignored files the chat verdict names; it counts the rest | 20 | `judge/agents.py`, `IGNORED_NAMED` |
 | The steps the blast radius takes in all, one for each cycle of imports a walk reaches: past them, a radius is not counted, and says so | 2,000,000 steps | `core/blast.py`, `RADIUS_STEPS` |
 | One file at the head the rules and the radius read, and one file `--try` reads | 1,000,000 bytes | `collect/git.py`, `MAX_FILE_BYTES` |
+| The start of a file a link names in which a NUL makes it binary, as git reads one | 8,000 bytes | `collect/git.py`, `BINARY_BYTES` |
 | The head's Python files read for the tree rules and the radius, in all; and the changed files' texts, in all | 20,000,000 bytes | `collect/git.py`, `MAX_TREE_BYTES` |
 | The links one symbolic link is followed through, as Linux follows them: past them, it names no file | 40 links | `core/paths.py`, `LINK_HOPS` |
 | The parts of a path a review follows its links through, in all: past them, a link not yet followed is a hole for a rule that reads it whole and for each line rule | 2,000,000 parts | `core/paths.py`, `LINK_STEPS` |
