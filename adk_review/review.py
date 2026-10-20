@@ -933,6 +933,12 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
     for path in sorted(here.rglob("*")):
         if path.suffix in (".py", ".toml") and "__pycache__" not in path.parts:
             digest.update(path.relative_to(here).as_posix().encode() + b"\0" + path.read_bytes())
+    # What was read, byte for byte, a file at a time: the index has no commit to name it by, and a hash of a commit's
+    # diffs costs nothing beside the review it would spare. Joined first, the diffs were copied twice at once.
+    diffs = hashlib.sha256()
+    for f in (*evidence["files"], *evidence.get("unscanned", ())):
+        diffs.update(unreleased(f["diff"]).encode())
+        diffs.update(b"\0")
     pre = evidence["preflight"]
     said = {
         **{key: pre.get(key) for key in ("repo", "head", "head_sha", "base", "base_sha", "merge_base")},
@@ -948,11 +954,7 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
         # Each outside tool a rule that runs reads, as it would run: a newer ruff finds what an older one did not.
         "tools": {tool: IDENTITIES[tool]() for tool in tools},
         "previous": Path(args.previous).expanduser().read_bytes().hex() if args.previous else "",
-        # What was read, byte for byte: the index has no commit to name it by, and a hash of a commit's diffs costs
-        # nothing beside the review it would spare.
-        "diffs": hashlib.sha256(
-            "\0".join(unreleased(f["diff"]) for f in (*evidence["files"], *evidence.get("unscanned", ()))).encode()
-        ).hexdigest(),
+        "diffs": diffs.hexdigest(),
     }
     digest.update(json.dumps(said, sort_keys=True, default=str).encode())
     return Path(args.cache).expanduser() / f"{digest.hexdigest()[:32]}.json"
