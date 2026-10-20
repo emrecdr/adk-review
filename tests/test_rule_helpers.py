@@ -398,3 +398,22 @@ def test_a_guidelines_models_name_an_arm_and_a_model_or_it_is_refused() -> None:
     for wrong in ({"copilot": "claude-sonnet-4"}, "gpt-4.1", Models(copilot=4.1)):  # type: ignore[arg-type]
         Picked.models = wrong
         assert "'picked' has models" in (_guideline_problem(Picked()) or ""), wrong
+
+
+def test_a_guideline_takes_no_id_a_role_of_the_reviewer_has() -> None:
+    """Read by the sixth review: a guideline's id names its model's variable, `REVIEW_<ID>_MODEL`. A guideline named
+    `verifier` or `fallback` would read the variable of `--verify`'s model or of every role's fallback: refused."""
+    from adk_review.core.guidelines import RESERVED_IDS, Guideline
+    from adk_review.judge.catalog import _guideline_problem
+    from adk_review.judge.verify import VERIFIER
+
+    assert {VERIFIER, "fallback"} <= RESERVED_IDS
+
+    class Named(Guideline):
+        title = "a name"
+        role = "You judge the name."
+        thinking_budget = 0
+
+    for reserved in sorted(RESERVED_IDS):
+        Named.id = reserved
+        assert f"{reserved!r} is a role of the reviewer's own" in (_guideline_problem(Named()) or ""), reserved

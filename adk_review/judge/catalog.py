@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.findings import RANK
-from ..core.guidelines import Guideline, Models
+from ..core.guidelines import RESERVED_IDS, Guideline, Models
 from ..core.profiles import NAME, chosen, expand, expanded, nearest
 from ..core.rules import TOOLS, AnyRule, FileRule, Rule, TreeRule, raised_line
 from ..core.text import squash
@@ -123,6 +123,8 @@ def _guideline_problem(guideline: Guideline) -> str | None:
     """What keeps `guideline` from being one whole guideline, or None."""
     if not _words(guideline, "id", "title", "role"):
         return f"{type(guideline).__name__} needs an id, a title and a role"
+    if guideline.id in RESERVED_IDS:
+        return f"{guideline.id!r} is a role of the reviewer's own: REVIEW_{guideline.id.upper()}_MODEL names its model"
     if type(budget := getattr(guideline, "thinking_budget", None)) is not int or budget < 0:
         return f"{guideline.id!r} has thinking_budget {budget!r}, not a whole number of tokens"
     models = getattr(guideline, "models", Models())

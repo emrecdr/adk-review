@@ -13,6 +13,10 @@ from typing import ClassVar
 
 from .profiles import guideline_id
 
+#: Ids no guideline takes: each is a role of the reviewer's own, whose `REVIEW_<ID>_MODEL` names another model, the
+#: verifier's or every role's fallback. Read by the sixth review: a guideline `verifier` shared `--verify`'s variable.
+RESERVED_IDS = frozenset({"verifier", "fallback"})
+
 
 @dataclass(frozen=True)
 class Models:
