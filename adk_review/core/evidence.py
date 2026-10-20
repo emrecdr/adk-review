@@ -32,13 +32,14 @@ class Entry(TypedDict):
     unread: str  # why the guidelines could not read it whole, "" where they could
     cut: bool  # whether the guidelines' view of it is cut: at the diff cap, or past the block's
     text: str | None  # its text at the head, for the file rules; None where not read, or once let go
-    #: Why its text was not read whole, a hole for a rule that reads it whole, and for a link one for each line rule
-    #: too, from the start until the file it names is read; None otherwise.
+    #: Why its text was not read whole, a hole for a rule that reads it whole, and for a link the review reads one for
+    #: each line rule too, until the file it names is read; None otherwise.
     unread_text: str | None
     target: NotRequired[str]  # the file a symbolic link names, whose text it holds, every line new under its name
     #: A symbolic link, known from the change's own mode: its lines are the file it names, which the line rules read
-    #: as its text, and a hole for them where that file was not read or not followed. Read by review: marked only
-    #: where the link was followed, one in a tree git could not list was read as its own path and approved.
+    #: as its text, and a hole for them where that file was not read or not followed; one of a kind `scan` leaves
+    #: out is read as its own path. Read by review: marked only where the link was followed, one in a tree git could
+    #: not list was read as its own path and approved.
     link: NotRequired[bool]
     shown: NotRequired[
         dict[int, str] | None

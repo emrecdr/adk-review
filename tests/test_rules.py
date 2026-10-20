@@ -24,6 +24,7 @@ from conftest import (
     _link_staged,
     _with_profiles,
     catalog,
+    gathered,
     in_tags,
     run_review,
     run_rule,
@@ -1034,8 +1035,8 @@ class TestTheCleanupAndThePitfalls:
     def test_a_link_no_step_of_the_read_marks_is_a_hole_for_the_line_rules(
         self, cli, tmp_path: Path, capsys, monkeypatch
     ) -> None:
-        """Read by review, round after round: a link one step of the read passed over, not followed, not read, binary
-        or out of `scan`, was read as its own path and approved, and each fix marked one step more. A link is a hole
+        """Read by review, round after round: a link one step of the read passed over, not followed, not read or
+        binary, was read as its own path and approved, and each fix marked one step more. A link is a hole
         from the start, until the file it names is read as text: one the head's listing names no link is a hole too."""
         from adk_review.collect import git
 
@@ -1079,13 +1080,10 @@ class TestTheCleanupAndThePitfalls:
         assert "settings.yaml:2" in capsys.readouterr().out
 
     def test_a_link_to_a_git_lfs_pointer_is_named_not_read_as_the_pointer_is(self, cli, tmp_path: Path, capsys) -> None:
-        """Read by review: a link naming a Git LFS pointer was a hole for each rule that reads it, so `docs/hero.png`,
-        a link `scan` leaves out to a stored image, stopped every push, where a plain pointer of its kind is no hole.
-        It is named not read, as the pointer is, unless the skip list names it, and no rule's hole."""
-        repo = _link_on_branch(tmp_path, "assets/v2/hero.png", POINTER, "hero.png")
-        assert run_review(cli, repo, "--profile", "default-rules") == 0
-        repo = _link_on_branch(tmp_path / "py", "models/weights.bin", POINTER, "run.py")
-        assert run_review(cli, repo, "--profile", "default-rules") == 3, "a scanned one is named not read still"
+        """Read by review: a link naming a Git LFS pointer was a hole for each rule that reads it, where a plain pointer
+        is named not read, and a skip list naming it clears it. It is named not read, as the pointer is."""
+        repo = _link_on_branch(tmp_path, "models/weights.bin", POINTER, "run.py")
+        assert run_review(cli, repo, "--profile", "default-rules") == 3
         out = capsys.readouterr().out
         assert "run.py" in out and "a Git LFS pointer: the file's content is stored elsewhere" in out, out
 
@@ -1119,6 +1117,9 @@ class TestTheCleanupAndThePitfalls:
         _git_in(repo, "commit", "-qm", "more links to the config")
         assert run_review(cli, repo, "--profile", "default-rules") == 3
         assert "was not read whole" in capsys.readouterr().out
+        files = gathered(repo, HEAD, guidelines=False)
+        assert files["env00.yaml"]["text"] is not None, "a link within the budget is read"
+        assert files["env23.yaml"]["unread_text"] == "was not read whole", "one past it is a hole"
 
     def test_pitfalls_and_simplify_leave_fastapis_routes_alone(self) -> None:
         """Measured by review on FastAPI 0.141.1: a route whose dependency or request reads the path parameter answers

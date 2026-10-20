@@ -783,13 +783,13 @@ def read_texts(
     """Each changed file's text at the head, for the file rules, set on its entry as `text`: a plain file the head holds
     within the caps, read in one batch, and a link as the file it runs. `unread_text` names one the head holds that was
     not read — over its cap, past the tree's budget, a blob the batch did not give back, a tree that could not be
-    listed, a link whose way could not be followed — a hole for a rule that reads it whole, and for a link one for
-    each line rule too: a link is one from its birth, until the file it names is read as text, names no file here, or
-    is binary or a Git LFS pointer, which the report names not read; `shown` holds the lines its diff shows of
-    it, by number, the ones added and those kept around them, for a rule that reads no more. A file the head does not
-    hold, a binary, a Git LFS pointer, a link naming no text file there or a submodule has neither: nothing for a file
-    rule to read, and the report names a binary and a pointer under not read already. A pointer only its text shows, its
-    diff showing none of its opening, is named here, unless the operator's skip list, `skipped`, names it."""
+    listed, a link whose way could not be followed — a hole for a rule that reads it whole, and for a link one for each
+    line rule too: a link it reads is one from the start, until the file it names is read as text, names no file here,
+    or is binary or a Git LFS pointer, which the report names not read; `shown` holds the lines its diff shows of it, by
+    number, the ones added and those kept around them, for a rule that reads no more. A file the head does not hold, a
+    binary, a Git LFS pointer, a link naming no text file there or a submodule has neither: nothing for a file rule to
+    read, and the report names a binary and a pointer under not read already. A pointer only its text shows, its diff
+    showing none of its opening, is named here, unless the operator's skip list, `skipped`, names it."""
     for entry in files:
         # A link's lines are the file it names: a hole for each rule that reads it until that file is read as text.
         # Read by review, round after round, a link one step of the read passed over was read as its path and approved.
@@ -879,12 +879,10 @@ def gather(
     # file rules.
     read = tree_rules or (guidelines and any(Radius(entry["path"]).measured for entry in files))
     tree = tree_at_head(resolved, listing, third_party) if read else None
-    # A link the scan leaves out is followed too: the credential rules read it, as the file it names. Read by review,
-    # `notes.txt`, a link to a file holding a key, was read as its own path and approved.
     # A link of a kind `scan` leaves out is read by the credential rules as its own path, as its diff shows it and a
-    # secret scanner reads a link's blob: a key in the file it names is found where that file's own change adds it.
-    # Read by review, four rounds running: followed, it was a hole wherever its file could not be read, and each way
-    # round that let a key through.
+    # secret scanner reads a link's blob: a key in the file it names is found where the review reads that file's own
+    # change. Read by review, four rounds running: followed, it was a hole wherever its file could not be read, and each
+    # way round that let a key through.
     read_texts(resolved, files, listing, excluded)
     if guidelines:
         _links_unread(files, excluded, lambda path: in_review(path, scan, third_party))

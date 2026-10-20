@@ -184,10 +184,10 @@ the top alone, a name a project's own package has too. Any other changed file is
 parses it, and the report lists it, never a hole. Only the two credential rules, `secrets` and `named-secrets`, still
 read the project's own files of every kind, in a review and in each commit a push sends: a key leaks from a README or a
 script as from code, and a link among them as its own path, as its diff shows it: a key in the file it names is found
-where that file's own change adds it. No rule reads another project's code; a change of nothing else is approved, in
-chat as by the command. A file the change moves out of an ignored one is read whole, as one it adds: no review read it
-where it lay. Nor does a review read the environment it runs in: only the repository's own commits. Code a branch puts
-in an ignored file goes unreviewed too, but for its credentials.
+where the review reads that file's own change. No rule reads another project's code; a change of nothing else is
+approved, in chat as by the command. A file the change moves out of an ignored one is read whole, as one it adds: no
+review read it where it lay. Nor does a review read the environment it runs in: only the repository's own commits. Code
+a branch puts in an ignored file goes unreviewed too, but for its credentials.
 
 The model is set in the environment, or in the `.env` at the root of the reviewer's checkout; a variable set in the
 shell wins over the file:
