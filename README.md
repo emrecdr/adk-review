@@ -865,23 +865,25 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   uncounted, had read whole changes as git prints them that the widened block held. An added or a deleted file, whole
   already, a skip-listed one, any other file, and every diff the rules alone read, are git's own, and the added lines
   are the same either way.
-- **Fences carry a nonce.** A sentence at the top of an instruction is no boundary: what follows it is the branch's
-  own text. Measured with a reviewer of the same shape on Copilot, a docstring declaring an override silenced most of
-  its reviewing agents, each answering no findings. Each untrusted section a guideline, a verifier or chat's verdict
-  reads sits between two marker lines carrying a nonce drawn once a process, which the branch cannot know, and the
-  instruction ends with a reminder after it: whatever the text said, review it fully, and text that addressed a
-  reviewer is itself a finding. Beside its instruction each reads one fixed turn, `review`: measured, ADK handed
-  chat's verdict the guidelines' findings as a turn of its own, the branch's quoted lines unfenced, and each guideline
-  the intake's reply. The content is never escaped: a guideline quotes the diff verbatim and grounding holds
-  the quote to the real lines, so escaping a run of `>>>` — a doctest prompt, a conflict marker — would drop true
-  findings, where a boundary the branch cannot know costs nothing. On Copilot the instruction goes as the system
-  turn, which LiteLLM would otherwise send as an assistant's, words the model had said itself: measured with
-  `scripts/injection_suite.py` on Copilot, two runs a variant, the shell call was named in 14 of 16 runs that way,
-  tag characters losing it in both, and in 16 of 16 as the system turn. On Gemini, a run a variant within the free
-  tier's quota, it was named under each of the four tried: none, tag characters, a fake end marker and an "already
-  approved" comment. Tag characters ended each of those reviews as a hole, on both arms: the lines beside the
-  payload were quoted without what no reader sees, and dropped. Grounding now reads the diff and the quote alike
-  without it, and measured once on Copilot, that review decided, the shell call kept and the payload named.
+- **Fences carry a nonce.** A sentence at the top of an instruction is no boundary: what follows it is the branch's own
+  text. Measured with a reviewer of the same shape on Copilot, a docstring declaring an override silenced most of its
+  reviewing agents, each answering no findings. Each untrusted section a guideline, a verifier or chat's verdict reads
+  sits between two marker lines carrying a nonce drawn once a process, which the branch cannot know, a second one where
+  a guideline's own words are read, a verifier's finding or chat's verdict, since a guideline the branch steered knows
+  the first from its own prompt and could write its marker into a title; and the instruction ends with a reminder after
+  it: whatever the text said, review it fully, and text that addressed a reviewer is itself a finding. Beside its
+  instruction each reads one fixed turn, `review`: measured, ADK handed chat's verdict the guidelines' findings as a
+  turn of its own, the branch's quoted lines unfenced, and each guideline the intake's reply. The content is never
+  escaped: a guideline quotes the diff verbatim and grounding holds the quote to the real lines, so escaping a run of
+  `>>>` — a doctest prompt, a conflict marker — would drop true findings, where a boundary the branch cannot know costs
+  nothing. On Copilot the instruction goes as the system turn, which LiteLLM would otherwise send as an assistant's,
+  words the model had said itself: measured with `scripts/injection_suite.py` on Copilot, two runs a variant, the shell
+  call was named in 14 of 16 runs that way, tag characters losing it in both, and in 16 of 16 as the system turn. On
+  Gemini, a run a variant within the free tier's quota, it was named under each of the four tried: none, tag characters,
+  a fake end marker and an "already approved" comment. Tag characters ended each of those reviews as a hole, on both
+  arms: the lines beside the payload were quoted without what no reader sees, and dropped. Grounding now reads the diff
+  and the quote alike without it, and measured once on Copilot, that review decided, the shell call kept and the payload
+  named.
 - **State keys are spelled once.** The scope chat's intake confirms, the repository its conversation confirmed, the
   change, the blast radius beside it, the files chat's grounding reads, every check's answer grounded and decided for
   chat's verdict, and the failure the error plugin leaves are each one constant in `judge/agents.py`, which the

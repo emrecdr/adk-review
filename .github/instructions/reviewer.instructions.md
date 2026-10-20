@@ -74,9 +74,10 @@ applyTo: "adk_review/**"
   calls. The head is read whole only when a tree rule or a guideline runs; otherwise the radius says "not asked",
   neither a hole nor a leaf.
 - Every untrusted section a guideline, a verifier or the chat's verdict reads goes through `fenced(label, inside)` in
-  `judge/agents.py`: two marker lines carrying `BOUNDARY`, a nonce drawn once a process, and the instruction ends with
-  a reminder, `REMINDER` for the guidelines and the verifiers. Never escape or rewrite the content itself: a guideline
-  quotes the diff verbatim, and grounding holds the quote to the real lines.
+  `judge/agents.py`: two marker lines carrying `BOUNDARY`, a nonce drawn once a process, or `JUDGED_BOUNDARY`, a second
+  no guideline is shown, where a guideline's own words are read, and the instruction ends with a reminder, `REMINDER`
+  for the guidelines and the verifiers. Never escape or rewrite the content itself: a guideline quotes the diff
+  verbatim, and grounding holds the quote to the real lines.
 - A state key more than one module uses is a constant in `judge/agents.py` (`SCOPE`, `REPOSITORY`, `DIFF`, `BLAST`,
   `QUOTABLE`, `FINDINGS`, `FAILURE`), and an instruction reads a key through `placeholder(key)`; `tests/test_engine.py`
   holds every placeholder an instruction reads to a key something writes.

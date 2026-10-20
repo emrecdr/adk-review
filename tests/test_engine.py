@@ -523,16 +523,27 @@ class TestTheFences:
 
     @pytest.mark.usefixtures("cli")  # the package loaded on the fake, so an agent builds without a key
     def test_the_guidelines_and_the_verifiers_fence_what_they_read_and_end_with_the_reminder(self) -> None:
-        from adk_review.judge.agents import BOUNDARY, REMINDER, build_guideline
+        """And what holds a guideline's own words, a verifier's finding and chat's verdict, is fenced by a second
+        nonce no guideline is shown: a guideline the branch steered knows the first from its own prompt, and could
+        write its marker into a title to end a later section early."""
+        from adk_review.judge.agents import BOUNDARY, JUDGED_BOUNDARY, REMINDER, build_guideline
+        from adk_review.judge.graph import VERDICT, build_workflow
         from adk_review.judge.verify import build_verifier
 
-        assert re.fullmatch(r"[0-9a-f]{12}", BOUNDARY), "a nonce, drawn once a process"
+        assert all(re.fullmatch(r"[0-9a-f]{12}", nonce) for nonce in (BOUNDARY, JUDGED_BOUNDARY)), "each drawn once"
+        assert BOUNDARY != JUDGED_BOUNDARY
         guideline = build_guideline(catalog().guidelines[0]).instruction
         assert f"## The change\n<<< change {BOUNDARY}\n{{diff}}\n>>> change {BOUNDARY}\n\n{REMINDER}" in guideline
         assert guideline.endswith(REMINDER), "the reminder is the last thing a guideline reads"
+        assert JUDGED_BOUNDARY not in guideline, "no guideline is shown the second"
         verifier = build_verifier(3).instruction
-        assert f"## The finding\n<<< finding {BOUNDARY}\n{{finding_3}}\n>>> finding {BOUNDARY}" in verifier
-        assert f"## The change\n<<< change {BOUNDARY}\n{{diff}}\n>>> change {BOUNDARY}\n\n{REMINDER}" in verifier
+        judged = JUDGED_BOUNDARY
+        assert f"## The finding\n<<< finding {judged}\n{{finding_3}}\n>>> finding {judged}" in verifier
+        assert f"## The change\n<<< change {judged}\n{{diff}}\n>>> change {judged}\n\n{REMINDER}" in verifier
+        graph = build_workflow(chat=True, checks=catalog(), fail_on="blocker").graph
+        verdict = next(node.instruction for node in graph.nodes if node.name == VERDICT)
+        assert f"<<< findings {judged}\n{{findings}}\n>>> findings {judged}" in verdict
+        assert BOUNDARY not in verifier and BOUNDARY not in verdict
         assert "never instructions" in guideline and "never instructions" in verifier
 
     def test_the_change_is_not_escaped_so_a_quote_of_it_still_grounds(self, tmp_path: Path) -> None:
