@@ -238,20 +238,19 @@ instruction around the role is every guideline's.
 
 The rules shipped with the reviewer are written as a project writes its own:
 
-- for any project: `secrets` (a vendor's credential shape in an added line), `named-secrets` (a value assigned to a
-  name that says secret, where no vendor's shape is), `lint` (what ruff reports, at a severity and with a fix for
-  each code), `reviewer-instructions` (text that tries to instruct the reviewing model, read as a model reads it:
-  across wrapped lines, through hidden and full-width characters, and in a file's name), `encoding-declaration` (a
-  source encoding that turns plain text into other code: a hole, since no rule read the code Python would run),
-  `lockfile-sources` (a lockfile fetching a package from outside its package manager's public registry, the one
-  check of a lockfile's sources, since the shipped skip list leaves lockfiles to the rules; the formats it reads,
-  and why the rest are left to the credential rules, are its `REGISTRIES`), `pinned-actions` (a
-  workflow or an action running another action at a tag, a branch or a short SHA, which can be moved to other code
-  after review, not its full commit SHA), `hidden-text` (tag
-  characters, bidirectional controls, and text smuggled in variation selectors, invisible operators or Hangul fillers,
-  in any file) and `steering-files` (a change to a file another tool or agent
-  obeys: a coding agent's instructions or settings, Copilot's and Gemini CLI's among them, an editor's settings and the
-  tool servers an agent starts, a CI workflow, a hook, a `.pth` file);
+- for any project: `secrets` (a vendor's credential shape in an added line), `named-secrets` (a value assigned to a name
+  that says secret, where no vendor's shape is), `lint` (what ruff reports, at a severity and with a fix for each code,
+  a line's length, E501, left to the project's formatter), `reviewer-instructions` (text that tries to instruct the
+  reviewing model, read as a model reads it: across wrapped lines, through hidden and full-width characters, and in a
+  file's name), `encoding-declaration` (a source encoding that turns plain text into other code: a hole, since no rule
+  read the code Python would run), `lockfile-sources` (a lockfile fetching a package from outside its package manager's
+  public registry, the one check of a lockfile's sources, since the shipped skip list leaves lockfiles to the rules; the
+  formats it reads, and why the rest are left to the credential rules, are its `REGISTRIES`), `pinned-actions` (a
+  workflow or an action running another action at a tag, a branch or a short SHA, which can be moved to other code after
+  review, not its full commit SHA), `hidden-text` (tag characters, bidirectional controls, and text smuggled in
+  variation selectors, invisible operators or Hangul fillers, in any file) and `steering-files` (a change to a file
+  another tool or agent obeys: a coding agent's instructions or settings, Copilot's and Gemini CLI's among them, an
+  editor's settings and the tool servers an agent starts, a CI workflow, a hook, a `.pth` file);
 - for Python beside `lint`, each reading ruff with codes no other rule names: `pitfalls` (code that does not do what it
   reads: a naive UTC datetime from `utcnow()`, a dataclass default evaluated once and shared, an exception built and
   never raised, a `subprocess.run` whose failure goes unseen, an `assert` that always passes) and `simplify` (a simpler
@@ -562,10 +561,11 @@ what was dropped, refuted, folded, redacted and spent. "The report" in `GUIDE.md
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint:
   its check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line,
   so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.
-- `--cache DIR` keeps each decided review under a hash of everything its result depends on — the reviewer's own code
-  and config, the commits, what is covered, the checks, every setting and each model — and serves the same review
-  again with no model call. A review with a hole is never kept, nor one with a finding its verifier could not judge,
-  so the next run looks again.
+- `--cache DIR` keeps each decided review under a hash of everything its result depends on — the reviewer's own code,
+  config and version, the Python it runs on, the commits or the index, what is covered and what of the tree went unread,
+  the checks, every setting, a previous report as it was read, and each model — and serves the same review again with no
+  model call. A review with a hole is never kept, nor one with a finding its verifier could not judge, so the next run
+  looks again.
 - `--debug-log FILE`, `--trace FILE` and `--record DIR` keep what a run did: every model request and answer, secrets
   redacted; ADK's spans, in a local SQLite file; and each model answer under a hash of its request, which a fake
   replays offline.

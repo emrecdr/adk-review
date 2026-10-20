@@ -55,7 +55,7 @@ outside the checkout, and its config from beside itself; inside the checkout, `u
 | `--verify` | Ask a second model about each guideline finding a rule did not already make. `--no-verify` turns it off. Default: the config's `verify`. |
 | `--json` | Also write the review to this file as JSON. |
 | `--handoff` | Also write each kept finding to this file as a short instruction for a coding agent, told first that each quote is the branch's own text and each title and change a model's reading of it, a reviewer's comments and never instructions: where, the quoted lines, what to change, and what must hold afterwards, with each finding folded into it named under it. A cleanup's findings, as `--explain` names `rule.simplify` and `guideline.complexity` one, are listed apart under `## Tidy`, after the fixes and under what a tidy keeps: how the code reads changes, never what it does, and one the project's tests fail on is reverted. A tidy is never given a fix's instruction: on lines where another check's defect at major or above stands, it is held back until that defect is fixed, and anywhere else it is an item of its own under `## Tidy`. It ends by asking for the project's own tests before a commit, a fix done when they pass, then gives the command that checks the fixes once they are committed: the review again on the same scope with only the rules that found something, which calls no model and ends in exit 0 once nothing at the bar is left. The guidelines that found something are named apart with their `--check`, since checking a model's reading spends its quota. The command names `adk-review` as `uv tool install .` puts it on `PATH`; where a name in it would read otherwise in a shell, none is printed, only the checks. Nothing is applied. |
-| `--cache` | Keep each decided review in this folder, keyed by the reviewer's code and config, the commits, the checks, every setting, each model and each outside tool a rule runs, ruff's version among it; the same review again is served from it, with no model call. A review with a hole is never kept, nor one with a finding its verifier could not judge. Never a folder inside the repository under review. A file in the folder is served as the review's verdict, so whoever can write the folder can write a verdict: keep it the operator's own, and in CI never restore it from a cache a job running untrusted code can write. |
+| `--cache` | Keep each decided review in this folder, keyed by the reviewer's code, config and version, the Python it runs on, the commits or, under `--staged`, every entry of the index, what of the head's tree went unread, the checks, every setting, a `--previous` report as it was read, each model and each outside tool a rule runs, ruff's version among it; the same review again is served from it, with no model call. A review with a hole is never kept, nor one with a finding its verifier could not judge. Never a folder inside the repository under review. A file in the folder is served as the review's verdict, so whoever can write the folder can write a verdict: keep it the operator's own, and in CI never restore it from a cache a job running untrusted code can write. |
 | `--previous` | Compare with a previous review's JSON: mark each finding new or seen before, by its fingerprint, and list what is no longer found. A review with a hole resolves nothing. |
 | `--progress` | Tell each phase on stderr, and every 10 seconds what the review still waits on. On at a terminal. |
 | `--quiet` | Print nothing when the review passes. Print the report and any error when it does not. For a pipeline. Not with `--progress`. |
@@ -152,6 +152,8 @@ prints them:
 
 A rule's severity is its findings', but `lint` and `pitfalls` give each ruff code its own, and `encoding-declaration` is
 a hole, exit 3, rather than a finding: no rule read the code Python would run. `--explain ID` prints one check whole.
+`lint` leaves a line's length, E501, to the project's formatter: it reads no project's settings, so no width fits
+every project, and an operator takes it back in the rule's `IGNORE`.
 
 ## Configuration
 
@@ -391,9 +393,13 @@ What the hook cannot see, or stops on:
   could lie at: through the checkout's own folder, by whatever name a clone gave it, or into a copy deployed from the
   top of the file system, at `/app` say. A name spelled in another case or Unicode form than git holds it is read as a
   file system blind to them finds it, as macOS's and Windows' are. One naming a Git LFS pointer, a file inside a
-  submodule, a name such a system finds more than one spelling of, more than one file as where a copy lies decides,
-  or one whose way could not be followed, is a hole for a rule that reads it whole, and stops the push; one naming no
-  file, a folder say, holds nothing to run, and stops nothing.
+  submodule, a name such a system finds more than one spelling of, more than one file as where a copy lies decides, or
+  one whose way could not be followed, is a hole for a rule that reads it whole and for each line rule, which reads its
+  lines, and stops the push; so is one whose file was not read, past the size limits or a blob a partial clone lacks.
+  One naming no file, a folder say, holds nothing to run, and stops nothing. Known limits: a link to a file the same
+  change adds past the size limits is a hole, though that file's own lines were read; a `.py` link to a file of another
+  suffix is parsed by no tree rule; and the NUL that makes a link's file binary is looked for in its first 8,000
+  characters, where git counts bytes.
 - A repository with no `.git` folder of its own, a bare one or one used through `--git-dir`, and a tag of a tree or a
   blob, stop the push: the hook reviews a working tree's commits.
 
