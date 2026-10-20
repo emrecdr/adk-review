@@ -367,7 +367,6 @@ class TestTheLintRule:
 
         found = lint_findings(collect_evidence(str(demo_repo), BASE, HEAD))
         assert {(f.title.removeprefix("lint: ").split()[0], f.file, f.line, f.severity) for f in found} == {
-            ("E501", "src/payments/charge.py", 27, "minor"),
             ("S602", "src/payments/charge.py", 28, "major"),
             ("S105", "src/payments/config.py", 5, "major"),
         }
@@ -387,22 +386,26 @@ class TestTheLintRule:
         assert fix_of(FIX, "E722", None) == FIX["E"], "a family sentence true of every code"
         assert fix_of(FIX, "RUF006", None) == FIX["RUF006"] and fix_of(FIX, "ZZZ9", None) == "see ruff rule ZZZ9"
 
-    def test_what_the_rule_ignores_ruff_never_reports(self, cli, demo_repo: Path, monkeypatch, capsys) -> None:
-        """Measured on this repository's whole project: of the rule's 2,800 findings, 2,230 were lines past ruff's
-        88 characters, where the project holds 120, and 537 a test's `assert`. A project leaves such codes out in the
-        lint rule's own `IGNORE`, never in the reviewed repository's config, which the rule does not read."""
+    def test_what_the_rule_ignores_ruff_never_reports(self, cli, demo_repo: Path, capsys) -> None:
+        """Measured on this repository's whole project: of the rule's 2,800 findings, 2,230 were lines past ruff's 88
+        characters, where the project holds 120; on its own review of a day's work, 91 of 112. The rule reads no
+        project's settings, so no width fits every project: the shipped rule leaves line length to the project's
+        formatter, as the owner chose. An operator leaves another code out in `IGNORE`, never in the reviewed
+        repository's config, which the rule does not read."""
         from adk_review.judge.rules.lint import IGNORE, Lint
 
-        assert IGNORE == () and Lint.tool_settings["ignore"] == IGNORE, "the shipped rule ignores nothing"
-        monkeypatch.setattr(Lint, "tool_settings", {**Lint.tool_settings, "ignore": ("E501",)})
+        assert IGNORE == ("E501",) and Lint.tool_settings["ignore"] == IGNORE, "line length is the formatter's"
         assert run_review(cli, demo_repo, "--profile", "rules-only") == 1
         out = capsys.readouterr().out
         assert "S602" in out and "S105" in out and "E501" not in out, out
 
-    def test_the_quote_is_the_row_ruff_names_whatever_else_breaks_a_line(self) -> None:
+    def test_the_quote_is_the_row_ruff_names_whatever_else_breaks_a_line(self, monkeypatch) -> None:
         """Ruff counts a row at "\\n", "\\r\\n" or a lone "\\r"; `str.splitlines` breaks at a form feed, U+2028 and
         six more besides. Measured by review: after a form feed the finding quoted "", after a U+2028 the tail of
         the line above; the row was right, the quote wrong."""
+        from adk_review.judge.rules.lint import Lint
+
+        monkeypatch.setattr(Lint, "tool_settings", {**Lint.tool_settings, "ignore": ()})  # E501, taken back
         long = "y = '" + "a" * 100 + "'"
         text = f"x = 1\n\x0c\n# a\u2028b\r\n{long}\n"
         found = lint_findings({"files": [_entry("m.py", text)], "tree": None})
@@ -791,7 +794,7 @@ class TestTheLintRule:
         blocker, and the section read "- no findings" under a rule that had found `shell=True`."""
         assert run_review(cli, demo_repo) == 1
         out = capsys.readouterr().out
-        assert "### rule.lint" in out and "S602" in out and "E501" in out
+        assert "### rule.lint" in out and "S602" in out
         assert (
             "- **major** lint: S105" not in out
             and "- folded into `rule.secrets`'s finding on the same lines: lint: S105" in out
@@ -818,10 +821,12 @@ class TestTheLintRule:
         assert {("PLE2502", "major"), ("PLC2401", "minor")} <= codes, found
 
     def test_lint_holds_a_line_to_the_width_its_file_names(self, monkeypatch) -> None:
-        """`E501` fired at 88 columns where this project formats at 120. The width is a constant at the top of the
-        rule's file, as every rule's expectations are, passed to ruff; None is ruff's own, and the demo's stays."""
+        """`E501` fired at 88 columns where this project formats at 120. Where an operator takes E501 back, the width
+        is a constant at the top of the rule's file, as every rule's expectations are, passed to ruff; None is ruff's
+        own."""
         from adk_review.judge.rules import lint
 
+        monkeypatch.setattr(lint.Lint, "tool_settings", {**lint.Lint.tool_settings, "ignore": ()})
         text = "x = '" + "a" * 100 + "'\n"
         assert any(
             f.title.startswith("lint: E501") for f in lint_findings({"files": [_entry("m.py", text)], "tree": None})
