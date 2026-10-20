@@ -142,7 +142,7 @@ def picked(parser: argparse.ArgumentParser, made: dict[str, str], names: list[st
     usage error. Measured by review: a profile's own branches cost a third of the set, each review three to six
     calls, and Gemini's free tier allows twenty a day."""
     if unknown := sorted(set(names or ()) - set(made)):
-        parser.error(f"no branch named {', '.join(unknown)}; there are {', '.join(made)}")
+        parser.error(f"no branch named {', '.join(unknown)}. There are {', '.join(made)}")
     return {name: made[name] for name in names} if names else made
 
 

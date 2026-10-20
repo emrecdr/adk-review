@@ -66,7 +66,7 @@ def load_config(path: Path) -> dict:
         raise ValueError(f"{path.name}: {exc}") from None
     if strangers := sorted(set(config) - set(TABLES)):
         there = " and ".join(f"[{section}]" for section in TABLES)
-        raise ValueError(f"{path.name}: no section [{strangers[0]}]; there are {there}")
+        raise ValueError(f"{path.name}: no section [{strangers[0]}]. There are {there}")
     for section, of in TABLES.items():
         if type(config.setdefault(section, {})) is not dict:
             raise ValueError(f"{path.name}: [{section}] must be a table of {of}")
@@ -105,9 +105,9 @@ def _rule_problem(rule: AnyRule) -> str | None:
     if flagged := _flag_problem(rule, "reads_tests", "cleanup"):
         return flagged
     if (tool := getattr(rule, "tool", None)) is not None and tool not in TOOLS:
-        return f"{rule.id!r} names the tool {tool!r}, which no adapter runs; there are {', '.join(sorted(TOOLS))}"
+        return f"{rule.id!r} names the tool {tool!r}, which no adapter runs. There are {', '.join(sorted(TOOLS))}"
     if "hits" in vars(type(rule)):  # one way to write a rule of each kind: its author writes `check`
-        return f"{rule.id!r} writes its own `hits`; a rule writes `check`, and its kind finds the hits"
+        return f"{rule.id!r} writes its own `hits`. A rule writes `check`, and its kind finds the hits"
     return None
 
 
@@ -155,7 +155,7 @@ def _found(
                 why = f"a check's file holds one check, and this one holds {len(checks)}: {NO_CHECK[package]}"
             elif not (why := problem(checks[0])):
                 if checks[0].id != named:
-                    why = f"its id is {checks[0].id!r}; a check is named after its file: {named!r}"
+                    why = f"its id is {checks[0].id!r}. A check is named after its file: {named!r}"
                 elif not NAME.fullmatch(named):
                     why = f"{named!r} is no check's name: lower-case words joined by hyphens"
                 else:
@@ -221,7 +221,7 @@ def explained(found: Catalog, profiles: dict, check: str) -> dict:
     has."""
     one = next((c for c in (*found.rules, *found.guidelines) if c.check_id == check), None)
     if one is None:
-        raise ValueError(f"--explain names {check!r}, which no check is; {nearest(check, found.ids())}")
+        raise ValueError(f"--explain names {check!r}, which no check is. {nearest(check, found.ids())}")
     return _described(one, running(found, profiles))
 
 

@@ -133,7 +133,10 @@ class TestTheContractSaysWhatAKindTakes:
         ("returned", "said"),
         [
             (None, "check(file) returned None: it returns a list of line numbers, (line, what is wrong) pairs or Hits"),
-            (["a message"], "check(file) returned 'a message' among its hits: each is a line number, a (line, what"),
+            (
+                ["a message"],
+                "check(file) returned 'a message' among its hits. Each hit is a line number, a (line, what",
+            ),
             ([True], "check(file) returned True among its hits"),  # a bool is no line number
             ([99], "check(file) names line 99 of a.py, which has 2 line(s)"),
         ],
@@ -214,7 +217,7 @@ class TestTheContractSaysWhatAKindTakes:
                 return ["README.md"]
 
         checked = run_rule(Paths(), [], Tree(["README.md"], {}))
-        assert "check(tree) returned 'README.md' among its hits: each is a (path, what is wrong) pair" in (
+        assert "check(tree) returned 'README.md' among its hits. Each hit is a (path, what) pair" in (
             checked.could_not_look or ""
         )
         assert Paths._hit(Hit("a", None, "b")) == Hit("a", None, "b")
@@ -287,7 +290,7 @@ class TestTheCatalogHoldsARuleToItsExamples:
         body = '        return "MARK" in comment_of(line)\n\n    def hits(self, files, tree):\n        return []'
         text = RULE.format(id="own-hits", bad='"x = 1  # MARK"', good='"x = 1"', body=body)
         said = self._refused(rules_folder, "own_hits", text)
-        assert said.endswith("'own-hits' writes its own `hits`; a rule writes `check`, and its kind finds the hits")
+        assert said.endswith("'own-hits' writes its own `hits`. A rule writes `check`, and its kind finds the hits")
 
     def test_a_helper_in_the_rules_folder_points_to_the_helpers_folder(self, rules_folder) -> None:
         said = self._refused(rules_folder, "shared", "def is_money(name: str) -> bool:\n    return 'cents' in name\n")
@@ -328,7 +331,7 @@ def test_a_rule_names_a_tool_an_adapter_runs_or_is_refused(rules_folder) -> None
         "    def check(self, file: ChangedFile) -> list[int]:\n        return []\n"
     )
     rules_folder("no_tool", rule)
-    with pytest.raises(ValueError, match="names the tool 'gitleaks', which no adapter runs; there are ruff"):
+    with pytest.raises(ValueError, match=r"names the tool 'gitleaks', which no adapter runs\. There are ruff"):
         catalog()
 
 

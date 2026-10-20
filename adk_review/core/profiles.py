@@ -57,7 +57,7 @@ def chosen(profiles: dict, name: str, known: Sequence[str], groups: Mapping[str,
     found = expanded(profiles, known, groups)
     if name not in found:
         others = sorted(profile for profile in found if profile != DEFAULT)
-        raise ValueError(f"no profile {name!r}; there are {', '.join([DEFAULT, *others])}")
+        raise ValueError(f"no profile {name!r}. There are {', '.join([DEFAULT, *others])}")
     return found[name]
 
 
@@ -65,8 +65,8 @@ def nearest(stranger: str, known: Sequence[str], groups: Collection[str] = ()) -
     """What to say of a name that is no check's: the id or group it most resembles, `rule.secrets` for `secrets`,
     else every id and group there is. Measured by walking a first run: `--check secrets` was answered with every id."""
     if close := get_close_matches(stranger, [*known, *groups], n=1):
-        return f"did you mean {close[0]}?"
-    return f"known: {', '.join(known)}" + (f"; groups: {', '.join(groups)}" if groups else "")
+        return f"Did you mean {close[0]}?"
+    return f"Known checks: {', '.join(known)}." + (f" Groups: {', '.join(groups)}." if groups else "")
 
 
 def expand(ids: object, known: Sequence[str], groups: Mapping[str, Sequence[str]], what: str) -> list[str]:
@@ -77,7 +77,7 @@ def expand(ids: object, known: Sequence[str], groups: Mapping[str, Sequence[str]
         raise ValueError(f"{what} must be a list of check ids")
     if strangers := [check for check in ids if check not in known and check not in groups]:
         raise ValueError(
-            f"{what} names {strangers[0]!r}, which no check or group is; {nearest(strangers[0], known, groups)}"
+            f"{what} names {strangers[0]!r}, which no check or group is. {nearest(strangers[0], known, groups)}"
         )
     expanded = list(dict.fromkeys(check for named in ids for check in groups.get(named, [named])))
     if not expanded:

@@ -944,7 +944,8 @@ def _printed(node) -> str | None:
 
 def test_every_sentence_the_command_and_its_hook_print_is_short_and_one_command() -> None:
     """Asked by the owner: the app's own output follows ASD-STE100. Each sentence the command or the pre-push hook
-    prints, and each rule's title and fix, holds at most 20 words and one command; no `;` joins two."""
+    prints, each flag's help, and each rule's title and fix, holds at most 20 words and one command; no `;` joins
+    two."""
     import ast
     import re
     import sys
@@ -954,12 +955,42 @@ def test_every_sentence_the_command_and_its_hook_print_is_short_and_one_command(
         tree = ast.parse((ROOT / "adk_review" / module).read_text(encoding="utf-8"))
         calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_say"]
         said += [(module, text) for call in calls if call.args and (text := _printed(call.args[0])) is not None]
+        flags = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "add_argument"]
+        said += [
+            (module, text) for n in flags for kw in n.keywords if kw.arg == "help" and (text := _printed(kw.value))
+        ]
     said += [(rule.check_id, text) for rule in catalog().rules for text in (rule.title, rule.fix)]
     fixes = {rule.check_id: getattr(sys.modules[type(rule).__module__], "FIX", {}) for rule in catalog().rules}
     said += [(check, text) for check, table in fixes.items() for text in table.values()]  # a tool's code's own fix
     long = [
         (where, sentence)
         for where, text in said
+        for sentence in re.split(r"(?<=[.!?])\s+", text)
+        if len(sentence.split()) > 20 or ";" in sentence
+    ]
+    assert long == [], long
+
+
+def test_every_error_the_package_raises_or_answers_is_short_and_one_command() -> None:
+    """Asked by the owner: the app's own output follows ASD-STE100, its errors too. An error a check, the config or
+    git raises reaches a person through `_say`, and a tool's error envelope reaches chat. Each sentence holds at most
+    20 words and one command; no `;` joins two."""
+    import ast
+    import re
+
+    said = []
+    for path in sorted((ROOT / "adk_review").rglob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call) and node.exc.args:
+                said.append((f"{path.name}:{node.lineno}", _printed(node.exc.args[0])))
+            if isinstance(node, ast.Dict):
+                for key, value in zip(node.keys, node.values, strict=True):
+                    if isinstance(key, ast.Constant) and key.value == "error_message":
+                        said.append((f"{path.name}:{node.lineno}", _printed(value)))
+    long = [
+        (where, sentence)
+        for where, text in said
+        if text is not None
         for sentence in re.split(r"(?<=[.!?])\s+", text)
         if len(sentence.split()) > 20 or ";" in sentence
     ]
@@ -1298,7 +1329,7 @@ class TestWhatANewcomerReads:
     def test_a_check_named_without_its_kind_is_pointed_at_the_nearest_id(self, demo_repo: Path, cli, capsys) -> None:
         assert run_review(cli, demo_repo, "--check", "secrets") == 2
         said = capsys.readouterr().err
-        assert "did you mean rule.secrets?" in said and "known:" not in said, said
+        assert "Did you mean rule.secrets?" in said and "Known checks:" not in said, said
 
     def test_a_path_that_does_not_exist_is_said_so(self, tmp_path: Path, cli, capsys) -> None:
         assert cli.main([str(tmp_path / "nowhere"), "--base", BASE, "--profile", "rules-only"]) == 2

@@ -444,7 +444,7 @@ def test_a_live_script_reviews_under_the_profile_and_the_branches_it_is_named(mo
     assert measure.picked(parser, made, ["b"]) == {"b": "label/b"} and measure.picked(parser, made, None) == made
     with pytest.raises(SystemExit) as refused:
         measure.picked(parser, made, ["c"])
-    assert refused.value.code == 2 and "no branch named c; there are a, b" in capsys.readouterr().err
+    assert refused.value.code == 2 and "no branch named c. There are a, b" in capsys.readouterr().err
 
 
 def test_a_live_script_measures_one_guideline_alone_where_it_is_named(monkeypatch, capsys) -> None:
@@ -539,4 +539,4 @@ def test_the_copilot_login_is_a_command_of_the_install(monkeypatch, tmp_path: Pa
     monkeypatch.setenv("REVIEW_PROVIDER", "copilot")
     monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", str(tmp_path))
     why = require_ready()
-    assert why and "run `adk-review-login` once" in why and "scripts/" not in why, why
+    assert why and "Run `adk-review-login` once" in why and "scripts/" not in why, why

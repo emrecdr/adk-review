@@ -266,8 +266,8 @@ def _copilot_refused(named: list[tuple[str, str]]) -> str | None:
     """Why the Copilot arm cannot run with the models `named`, each by the variable that names it, or None."""
     if not ((token := copilot_token()).is_file() and token.stat().st_size):  # an empty file is no token
         return (
-            f"REVIEW_PROVIDER=copilot needs a cached token at {token}; "
-            f"run `adk-review-login` once (`uv run adk-review-login` in the checkout)"
+            f"REVIEW_PROVIDER=copilot needs a cached token at {token}. "
+            "Run `adk-review-login` once: `uv run adk-review-login` in the checkout"
         )
     # LiteLLM takes any model name and fails at the call, which is that guideline's own answer; but a model it
     # knows cannot judge at temperature zero it refuses before any call, so that is said here, as LiteLLM says it.

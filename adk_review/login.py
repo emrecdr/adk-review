@@ -72,7 +72,7 @@ def main(argv: list[str]) -> int:
                 os.environ.setdefault(key, value)  # the shell wins over the file, as it does for the reviewer
     except UnicodeDecodeError:
         print(
-            "[copilot] the central .env is not UTF-8; save it as UTF-8 (Windows PowerShell 5.1's `>` writes UTF-16)",
+            "[copilot] the central .env is not UTF-8. Save it as UTF-8: Windows PowerShell 5.1's `>` writes UTF-16",
             file=sys.stderr,
         )
         return 1
@@ -99,7 +99,7 @@ def main(argv: list[str]) -> int:
     # Flushed: with stdout redirected to a file, a buffered code would sit unseen until the flow ended.
     print(f"[copilot] open {info['verification_uri']} and enter the code {info['user_code']}", flush=True)
     print(
-        f"[copilot] the code is valid for about {expires_in // 60} minutes; waiting for your approval...\n", flush=True
+        f"[copilot] the code is valid for about {expires_in // 60} minutes. Waiting for your approval...\n", flush=True
     )
 
     url = os.getenv("GITHUB_COPILOT_ACCESS_TOKEN_URL", DEFAULT_GITHUB_ACCESS_TOKEN_URL)
@@ -125,7 +125,7 @@ def main(argv: list[str]) -> int:
                     token.unlink()  # kept, the reviewer would read it as ready and fail at its first call instead
                     print(f"[copilot] GitHub signed you in, but Copilot gave no key: {exc}", file=sys.stderr)
                     print(
-                        "[copilot] usually that account has no Copilot seat; a proxy that blocks api.github.com reads "
+                        "[copilot] usually that account has no Copilot seat. A proxy that blocks api.github.com reads "
                         "the same. Run this again with an account that has one",
                         file=sys.stderr,
                     )
@@ -139,7 +139,7 @@ def main(argv: list[str]) -> int:
             elif error != "authorization_pending":
                 print(f"[copilot] GitHub answered {error!r}: {data.get('error_description', '')}", file=sys.stderr)
                 return 1
-    print("[copilot] the code expired before it was approved; run this again", file=sys.stderr)
+    print("[copilot] the code expired before you approved it. Run this again", file=sys.stderr)
     return 1
 
 

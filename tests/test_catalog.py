@@ -210,7 +210,7 @@ class TestTheConfig:
                 "no section [reveiw]",
             ),
             # Lint's codes are the lint rule's own, in its file, as every rule's settings are.
-            (WHOLE_CONFIG + '[lint]\nrules = ["E"]\n', "no section [lint]; there are [review] and [profiles]"),
+            (WHOLE_CONFIG + '[lint]\nrules = ["E"]\n', "no section [lint]. There are [review] and [profiles]"),
             ('profiles = ["rule.secrets"]\n' + WHOLE_CONFIG, "[profiles] must be a table of named lists"),
             ("review = 5\n", "[review] must be a table of settings"),
             ("[review\n", "config.toml: "),
@@ -313,7 +313,7 @@ class TestTheRuleKinds:
             # One way to write a check: a file holds one, named after it.
             (
                 {"misnamed": RULE_FILE.format(body='    id, severity, title, fix = "x", "minor", "t", "f"')},
-                "its id is 'x'; a check is named after its file: 'misnamed'",
+                "its id is 'x'. A check is named after its file: 'misnamed'",
             ),
             ({"empty": "x = 1\n"}, "holds one check, and this one holds 0"),
         ],

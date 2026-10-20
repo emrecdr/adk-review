@@ -304,7 +304,9 @@ class TestTheTokenCeiling:
         out = capsys.readouterr().out
         assert code == 3, out
         for name in GUIDELINE_NAMES:
-            assert f"### guideline.{name} — FAILED: TOKEN_CEILING: the ceiling of 100 tokens would be passed" in out
+            assert (
+                f"### guideline.{name} — FAILED: TOKEN_CEILING: this call would pass the ceiling of 100 tokens" in out
+            )
         assert "### rule.secrets" in out and "hard-coded credential" in out, "what code found is still reported"
         assert (
             f"0 model call(s) completed of {len(GUIDELINE_NAMES)} attempted" in out and "- ceiling: 100 tokens" in out
@@ -326,7 +328,7 @@ class TestTheTokenCeiling:
         findings = Review.model_validate(CANNED_REVIEW).findings
         judged = await judge_findings(findings, "+x = 1", [UsageLedger(ceiling=100)])
         assert len(judged) == len(findings)
-        refused = "TOKEN_CEILING: the ceiling of 100 tokens"
+        refused = "TOKEN_CEILING: this call would pass the ceiling of 100 tokens"
         assert all(isinstance(reason, str) and reason.startswith(refused) for reason in judged)
 
     @pytest.mark.asyncio
@@ -414,7 +416,7 @@ class TestTheTokenCeiling:
         intake = SimpleNamespace(agent_name="intake", state={})
         request = LlmRequest(config=types.GenerateContentConfig(system_instruction="x" * 400))
         refused = await UsageLedger(ceiling=100).before_model_callback(callback_context=intake, llm_request=request)
-        said = "I could not reach the model: TOKEN_CEILING: the ceiling of 100 tokens would be passed"
+        said = "I could not reach the model: TOKEN_CEILING: this call would pass the ceiling of 100 tokens"
         assert refused.content.parts[0].text.startswith(said), refused
         assert intake.state[FAILURE].startswith("intake: TOKEN_CEILING"), intake.state
 

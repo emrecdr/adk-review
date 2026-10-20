@@ -44,7 +44,7 @@ def diagnose(
     other configuration; `line_length` the width it holds `E501` to, None for ruff's own."""
     ruff = beside() or on_path("ruff")  # by its full path: on Windows the current directory is searched first
     if ruff == "ruff":  # the name alone: found nowhere on PATH
-        return "ruff is not on PATH; `uv run` puts the project's own there"
+        return "ruff is not on PATH. `uv run` puts the project's own there"
     texts = {
         f["path"]: f["text"]
         for f in evidence["files"]

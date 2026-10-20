@@ -350,8 +350,8 @@ class FileRule(AnyRule):
                 return Hit(file.path, None, what)
         else:
             raise TypeError(
-                f"check(file) returned {item!r} among its hits: each is a line number, a (line, what is wrong) pair "
-                "or a Hit"
+                f"check(file) returned {item!r} among its hits. Each hit is a line number, "
+                "a (line, what) pair, or a Hit"
             )
         # A line the rule can see: its file's, or one its diff shows of a file not read whole, where a line it shows
         # none of is a hole, through `lines`, as any read of that file is.
@@ -501,6 +501,6 @@ class TreeRule(AnyRule):
         ):
             return Hit(*item)
         raise TypeError(
-            f"check(tree) returned {item!r} among its hits: each is a (path, what is wrong) pair, a (path, line, "
-            "what) triple or a Hit"
+            f"check(tree) returned {item!r} among its hits. Each hit is a (path, what) pair, a (path, line, what) "
+            "triple, or a Hit"
         )

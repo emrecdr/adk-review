@@ -47,6 +47,6 @@ def test_a_second_repository_in_one_conversation_is_refused_and_the_first_howeve
     context = tool_context(review_repo=str(first))
     guard, tool = _guard(), SimpleNamespace(name="inspect_repository")
     refused = guard(tool, {"repo": str(second), "base": "main", "head": "x"}, context)
-    assert refused and "start a new session" in refused["error_message"], refused
+    assert refused and "Start a new session" in refused["error_message"], refused
     spelled = str(tmp_path / "." / "first") + "/"
     assert guard(tool, {"repo": spelled, "base": "main", "head": "x"}, context) is None

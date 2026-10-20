@@ -247,75 +247,75 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
     parser.add_argument(
         "repo",
         nargs="?",
-        help="path to the repository under review; asked for at a terminal when not given, and required in a pipeline",
+        help="the repository to review. A terminal asks for it when it is missing. A pipeline must give it",
     )
     parser.add_argument("--head", help="the branch under review (default: the one checked out)")
     what = parser.add_mutually_exclusive_group()
     what.add_argument(
         "--base",
-        help="the branch the change will be merged into; with neither this nor --all, a person at a terminal is "
-        "asked, and anything else reviews the change against main, or master where there is no main, or else the "
-        "branch origin/HEAD names",
+        help="the branch the change merges into. Without it or --all, a terminal asks. A pipeline uses main, then "
+        "master, then the branch origin/HEAD names",
     )
     what.add_argument("--all", action="store_true", help="review every file at the head, not what it changes")
     what.add_argument(
         "--staged",
         action="store_true",
-        help="review what is staged — the index, as the next commit would hold it — against HEAD; nothing is written, "
-        "and a change not staged is not reviewed",
+        help="review the staged index against HEAD, as the next commit would hold it. The review writes nothing and "
+        "skips what is not staged",
     )
     parser.add_argument(
         "--path",
         action="append",
         default=[],
         metavar="DIR",
-        help="review only what lies under this folder of the repository; repeat it for more than one",
+        help="review only this folder of the repository. Repeat it for more folders",
     )
     parser.add_argument(
         "--fail-on",
         choices=list(RANK),
         default=review["fail_on"],
-        help=f"exit 1 at or above this severity (config.toml: {review['fail_on']}); what is below stays in the report",
+        help=f"exit 1 at or above this severity (config.toml: {review['fail_on']}). Findings below it stay in the "
+        "report",
     )
     parser.add_argument(
         "--max-tokens",
         type=setting("max_tokens"),
         default=review["max_tokens"],
-        help="stop spending past this many tokens, 0 for no ceiling (config.toml: "
-        f"{review['max_tokens']}); what was found by then is still reported, refused guidelines named",
+        help=f"stop spending past this many tokens (config.toml: {review['max_tokens']}). 0 means no ceiling. The "
+        "report keeps what the review found by then, and names refused guidelines",
     )
     parser.add_argument(
         "--diff-cap",
         type=setting("diff_cap"),
         default=review["diff_cap"],
         metavar="N",
-        help=f"characters of one file's diff a guideline reads (config.toml: {review['diff_cap']:,}); a file cut "
-        "there is named under not read, and the review ends in exit 3",
+        help=f"the characters of one file's diff a guideline reads (config.toml: {review['diff_cap']:,}). The report "
+        "names a file cut there under not read, and the review ends in exit 3",
     )
     parser.add_argument(
         "--skip",
         action="append",
         default=list(review["skip"]),
         metavar="GLOB",
-        help="a glob of changed files the guidelines leave to the rules, as the config's skip list does; each one "
-        "named, never a hole; repeat it for more than one",
+        help="a glob of changed files the guidelines leave to the rules, as the config's skip list does. The report "
+        "names each one, never as a hole. Repeat it for more globs",
     )
     parser.add_argument(
         "--scan",
         action="append",
         default=list(review["scan"]) or ["*"],  # every file, as an empty list reads: a glob added reads no fewer
         metavar="GLOB",
-        help="a glob of changed files a review reads, as the config's scan list does, Python's, notebooks' and "
-        "configs' by default, and always a file with no suffix: any other is ignored, only listed; repeat it for more "
-        "than one",
+        help="a glob of changed files a review reads, beside the config's scan list. The default reads Python, "
+        "notebooks and configs, and every file with no suffix. The review ignores any other file and only lists it. "
+        "Repeat it for more globs",
     )
     parser.add_argument(
         "--third-party",
         action="append",
         default=list(review["third_party"]),
         metavar="GLOB",
-        help="a glob of folders holding other projects' code, as the config's third_party list does: a file under "
-        "one is ignored, never read, only listed; repeat it for more than one",
+        help="a glob of folders that hold other projects' code, beside the config's third_party list. The review "
+        "never reads a file under one and only lists it. Repeat it for more globs",
     )
     parser.add_argument(
         "--verify",
@@ -328,97 +328,97 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
     which.add_argument(
         "--profile",
         default=DEFAULT,
-        help=f"the checks to run, as config.toml's [profiles] names them; its {DEFAULT} profile when not given",
+        help=f"the checks to run, as config.toml's [profiles] names them. Without it, the {DEFAULT} profile runs",
     )
     which.add_argument(
         "--check",
         action="append",
         default=[],
         metavar="ID",
-        help="run only this check this once — rule.<name>, guideline.<name>, or the groups rules and guidelines; "
-        "repeat it for more than one. How a check's author tries a check on a repository, with no profile edited",
+        help="run only this check, this once: rule.<name>, guideline.<name>, or the group rules or guidelines. Repeat "
+        "it for more checks. A check's author tries a check this way, with no profile edited",
     )
     parser.add_argument(
         "--json",
         metavar="FILE",
-        help="also write the review to FILE as JSON, for a pipeline: the verdict, its exit code and every finding "
-        "with its place; written whenever a review is decided, so never on exit 2",
+        help="also write the review to FILE as JSON, for a pipeline. It holds the verdict, its exit code and every "
+        "finding with its place. The review writes it whenever it decides, so never on exit 2",
     )
     parser.add_argument(
         "--handoff",
         metavar="FILE",
-        help="also write each kept finding to FILE as a short instruction for a coding agent: where, the lines "
-        "quoted, what to change, and what must hold afterwards; nothing is applied",
+        help="also write each kept finding to FILE as a short instruction for a coding agent. Each names the place, "
+        "the quoted lines, the change, and what must still hold. The review applies nothing",
     )
     parser.add_argument(
         "--cache",
         metavar="DIR",
-        help="keep each decided review in DIR, keyed by the reviewer's code and config, the commits, the checks, every "
-        "setting and each model; a review of the same inputs is served from it, with no model call; a review with a "
-        "hole, or with a finding no verifier could judge, is never kept",
+        help="keep each decided review in DIR. Its key holds the reviewer's code and config, the commits, the checks, "
+        "every setting and each model. The same inputs get the kept review, with no model call. The cache never keeps "
+        "a review with a hole, or with a finding no verifier could judge",
     )
     parser.add_argument(
         "--previous",
         metavar="FILE",
-        help="a previous review's --json report: mark each finding new or seen before, by its fingerprint, and list "
-        "what is no longer found; a review with a hole resolves nothing",
+        help="a previous review's --json report. The review marks each finding new or seen before, by its "
+        "fingerprint. It lists what it no longer finds. A review with a hole resolves nothing",
     )
     parser.add_argument(
         "--debug-log",
         metavar="FILE",
-        help="write every model request and answer to FILE, secrets redacted, the session's state left out: for "
-        "seeing what a guideline was asked and said",
+        help="write every model request and answer to FILE, secrets redacted, without the session's state. Use it to "
+        "see what a guideline was asked and what it said",
     )
     parser.add_argument(
         "--trace",
         metavar="FILE",
         help="record ADK's OpenTelemetry spans, with their timings and token counts, to FILE, a local SQLite "
-        "database; never sent anywhere",
+        "database. The review sends nothing anywhere",
     )
     parser.add_argument(
         "--record",
         metavar="DIR",
-        help="keep each model answer in DIR under a hash of the request as the model read it, secrets redacted: a "
-        "live run's answers, which a fake replays offline to measure a change to an instruction",
+        help="keep each model answer in DIR, under a hash of the request as the model read it, secrets redacted. A "
+        "fake model replays them offline to measure a change to an instruction",
     )
     told = parser.add_mutually_exclusive_group()
     told.add_argument(
         "--progress",
         action="store_true",
-        help="tell each phase on stderr, and every few seconds what the review still waits on; on at a terminal",
+        help="tell each phase on stderr, and every few seconds what the review still waits on. On at a terminal",
     )
     told.add_argument(
         "--quiet",
         action="store_true",
-        help="print nothing when the review passes; the report and any error when it does not, for a pipeline",
+        help="print nothing when the review passes. Print the report and any error when it does not. For a pipeline",
     )
     # A review, or one of four modes besides it, each stopping before a review would start: one at a time.
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
         "--dry-run",
         action="store_true",
-        help="resolve what would be reviewed — the revisions, the files, the profile, the model and whether it is "
-        "ready — print it and stop: no rule, no guideline, no model call",
+        help="resolve what a review would cover: the revisions, the files, the profile, the model and its readiness. "
+        "It prints that and stops. No rule, guideline or model call runs",
     )
     mode.add_argument(
         "--list-checks",
         action="store_true",
-        help="print every check — every rule and every guideline — with its kind, its severity and the profiles that "
-        "run it, then stop: no repository, no model, no key",
+        help="print every rule and guideline with its kind, severity and profiles. It then stops, with no repository, "
+        "model or key",
     )
     mode.add_argument(
         "--try",
         dest="try_paths",
         nargs="+",
         metavar="PATH",
-        help="run the profile's rules, or --check's, over these files or folders on disk, each read as wholly added: "
-        "how a rule's author sees a rule fire, with no repository, no commit and no model",
+        help="run the profile's rules, or --check's, over these files or folders on disk, each read as wholly added. "
+        "A rule's author sees a rule fire this way, with no repository, commit or model",
     )
     mode.add_argument(
         "--explain",
         metavar="ID",
-        help="print one check whole — what it reads, its severity, the profiles that run it, its file and its own "
-        "examples — then stop",
+        help="print one check whole: what it reads, its severity, the profiles that run it, its file and its own "
+        "examples. It then stops",
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {version()}")
     return parser
@@ -540,7 +540,7 @@ def _cleared(flag: str, given: str) -> None:
     if not path.resolve().parent.is_dir():
         raise ValueError(f"{flag} {given}: there is no such folder to write it in")
     if path.is_dir():
-        raise ValueError(f"{flag} {path}: that is a folder; name a file in it")
+        raise ValueError(f"{flag} {path}: that is a folder. Name a file in it")
     try:
         path.unlink(missing_ok=True)
     except OSError as exc:
@@ -632,7 +632,7 @@ def _compared(args: argparse.Namespace) -> tuple[str, str | None, str]:
     if args.cache and Path(args.cache).expanduser().resolve().is_relative_to(Path(repo).resolve()):
         raise ValueError(f"--cache {args.cache} lies in the repository under review: nothing is written into it")
     if args.staged and args.head:
-        raise ValueError("--staged reviews the index; it takes no --head")
+        raise ValueError("--staged reviews the index. It takes no --head")
     base, head = ("HEAD", "the index") if args.staged else target(repo, args.base, args.head, args.all)
     return repo, base, head
 
@@ -968,7 +968,7 @@ def main(argv: list[str] | None = None) -> int:
     as one sentence and exit 3, the report undelivered. Measured before: a traceback and 130, and exit 3 or Python's
     own 120 for a closed pipe. A reviewer that could not load says so, exit 3."""
     if UNLOADED is not None:
-        print(f"review: the reviewer could not load ({UNLOADED}); reinstall it with `uv sync`", file=sys.stderr)
+        print(f"review: the reviewer could not load ({UNLOADED}). Reinstall it with `uv sync`", file=sys.stderr)
         return 3  # EXIT_DEGRADED, which the imports that failed would have named
     try:
         return _review(argv)

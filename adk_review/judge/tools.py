@@ -72,7 +72,7 @@ async def changed_files(tool_context: ToolContext) -> dict:
     """
     scope = tool_context.state.get(SCOPE)
     if not scope:
-        return {"status": "error", "error_message": "call inspect_repository first; changed_files lists its change"}
+        return {"status": "error", "error_message": "call inspect_repository first. changed_files lists its change"}
     try:
         files = await asyncio.to_thread(list_changed, scope)
     except GitError as exc:
@@ -98,13 +98,13 @@ def one_repository(tool: BaseTool, args: dict[str, Any], tool_context: ToolConte
     if repo is None:
         return None
     if not Path(os.path.expanduser(str(repo))).is_dir():
-        return {"status": "error", "error_message": f"{repo} is not a directory; ask for the repository path"}
+        return {"status": "error", "error_message": f"{repo} is not a directory. Ask for the repository path"}
     # The first repository a conversation confirmed is its only one: a model a diff talked into naming another would
     # read that one's changes too. Before, any folder on the machine was let through.
     confirmed = tool_context.state.get(REPOSITORY)
     if confirmed and not same_folder(os.path.expanduser(str(repo)), confirmed):
         return {
             "status": "error",
-            "error_message": f"this conversation reviews {confirmed}; start a new session to review another repository",
+            "error_message": f"this conversation reviews {confirmed}. Start a new session to review another repository",
         }
     return None

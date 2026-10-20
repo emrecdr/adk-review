@@ -76,7 +76,9 @@ class RedactSecretsPlugin(BasePlugin):
                 llm_request.config.system_instruction, count = scrub(instruction)
                 self.redacted += count
             elif instruction is not None:  # ADK 2.9.2 writes a string: any other shape is refused, never sent unread
-                raise TypeError(f"the system instruction is a {type(instruction).__name__}; only a string is scrubbed")
+                raise TypeError(
+                    f"the system instruction is a {type(instruction).__name__}. The scrub reads only a string"
+                )
         except Exception as exc:  # noqa: BLE001 -- a broken scrubber must not send unscrubbed text
             return LlmResponse(error_code="REDACTION_FAILED", error_message=f"refusing to call the model: {exc}")
         return None
@@ -405,8 +407,8 @@ class UsageLedger(BasePlugin):
         estimate, in_flight = self._estimate(llm_request), sum(self.reserved.values())
         if self.spent + in_flight + estimate > self.ceiling:
             why = (
-                f"the ceiling of {self.ceiling:,} tokens would be passed: {self.spent:,} spent, "
-                f"{in_flight:,} in flight, this call about {estimate:,}; concluding with what was found"
+                f"this call would pass the ceiling of {self.ceiling:,} tokens: {self.spent:,} spent, "
+                f"{in_flight:,} in flight, this call about {estimate:,}. The review ends with what it found"
             )
             return _failed(callback_context, llm_request, "TOKEN_CEILING", why)
         self.reserved[callback_context.agent_name] = estimate
