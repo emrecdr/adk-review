@@ -38,7 +38,7 @@ from dataclasses import dataclass, field
 from typing import TextIO
 
 from .collect.git import GitError
-from .collect.history import push_scope, sent, tag_message
+from .collect.history import merged_tags, push_scope, sent, tag_messages, unseen
 from .core.evidence import entry
 from .core.findings import Finding, at_or_above
 from .core.paths import matches
@@ -60,26 +60,29 @@ PROFILE = "default-rules"
 HISTORY = "push-history"
 #: Where a commit's message is named, beside the files it changed.
 MESSAGE = "its message"
+#: Where the tags a merge carries in its own header are named.
+MERGED = "the tag it merges"
 #: A commit's id as git writes it, shortened where the hook names one.
 _SHA = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
-Pushed = list[tuple[str, str | None]]
+Pushed = list[tuple[str, str | None, str | None]]
 
 
 def refs(lines: Sequence[str]) -> Pushed:
-    """Each `(head, held)` git's lines ask to review: the commit a ref sends, and what the remote holds of that ref,
-    or None for a new ref; a deleted ref sends nothing to review. The local side is the push's own spelling, spaces and
-    all, `main^{/a message}:refs/heads/x`, so each line is read from its end: measured, a line split at every space was
-    passed over, and the commit it sent went unreviewed. At git's one space alone: split at U+2028, U+0085 or U+00A0
-    too, as `str.split` splits, a line was read as naming `main`. `ValueError` for a line that names no ref."""
+    """Each `(head, held, ref)` git's lines ask to review: the commit a ref sends, what the remote holds of that ref,
+    or None for a new ref, and the remote's ref it goes to; a deleted ref sends nothing to review. The local side is
+    the push's own spelling, spaces and all, `main^{/a message}:refs/heads/x`, so each line is read from its end:
+    measured, a line split at every space was passed over, and the commit it sent went unreviewed. At git's one space
+    alone: split at U+2028, U+0085 or U+00A0 too, as `str.split` splits, a line was read as naming `main`.
+    `ValueError` for a line that names no ref."""
     found: Pushed = []
     for line in filter(str.strip, lines):
         parts = line.rsplit(" ", 3)
         if len(parts) != 4:
             raise ValueError(f"git's line {line.strip()!r} names no ref")
-        _local, head, _remote, held = parts
+        _local, head, there, held = parts
         if head not in NONE:
-            found.append((head, None if held in NONE else held))
+            found.append((head, None if held in NONE else held, there))
     return found
 
 
@@ -102,8 +105,8 @@ def requested(argv: Sequence[str], environ: Mapping[str, str], stdin: TextIO) ->
     if not environ.get("PRE_COMMIT"):
         return None
     if remote := environ.get("PRE_COMMIT_REMOTE_NAME"):  # a push, which pre-commit names in full
-        return remote, [(environ.get("PRE_COMMIT_LOCAL_BRANCH") or "HEAD", None)]
-    return None, [(environ.get("PRE_COMMIT_TO_REF") or "HEAD", environ.get("PRE_COMMIT_FROM_REF"))]
+        return remote, [(environ.get("PRE_COMMIT_LOCAL_BRANCH") or "HEAD", None, None)]
+    return None, [(environ.get("PRE_COMMIT_TO_REF") or "HEAD", environ.get("PRE_COMMIT_FROM_REF"), None)]
 
 
 def _read(stdin: TextIO) -> str:
@@ -154,16 +157,19 @@ def in_history(repository: str, remote: str | None, head: str, held: str | None,
     config = load_config(CONFIG)
     rules = history_rules(config)  # first: a profile that cannot read a commit is refused before git runs
     skip = config["review"]["skip"]
-    tag = tag_message(repository, head)
-    said = [(head, tag, [])] if tag is not None else []  # a tag's words are in no commit
+    said = [(tag, message, []) for tag, message in tag_messages(repository, head)]  # a tag's words are in no commit
+    merged = merged_tags(repository, remote, head, held, read)
     found = []
     for commit, message, files in itertools.chain(said, sent(repository, remote, head, held, read)):
-        unread = [f["path"] for f in files if f.get("binary") and not matches(f["path"], *skip)]
-        found += [f"{_named(commit)}, {path}: a binary file, which no rule can read" for path in unread]
-        # As a line rule reads a change: a path and the lines added. The message is all added; a file's letter is
-        # not read here.
+        for f in files:
+            if (f.get("binary") or f.get("pointer")) and not matches(f["path"], *skip):
+                kind = "a binary file, which" if f.get("binary") else "a Git LFS pointer, whose file"
+                found.append(f"{_named(commit)}, {f['path']}: {kind} no rule can read")
+        # As a line rule reads a change: a path and the lines added. The message is all added, and so is a tag a merge
+        # carries; a file's letter is not read here.
         entries = [
             entry(MESSAGE, "A", None, list(enumerate(lines_of(message), 1))),
+            *([entry(MERGED, "A", None, list(enumerate(lines_of(merged[commit]), 1)))] if commit in merged else []),
             *(entry(f["path"], "M", None, f["added"]) for f in files),
         ]
         for rule in rules:
@@ -175,8 +181,12 @@ def in_history(repository: str, remote: str | None, head: str, held: str | None,
 
 
 def _where(finding: Finding) -> str:
-    """Where in a commit a finding is: a file's line, or its message's."""
-    return f"{MESSAGE}, line {finding.line}" if finding.file == MESSAGE else f"{finding.file}:{finding.line}"
+    """Where in a commit a finding is: a file's line, or its message's, or a tag's it merges."""
+    return (
+        f"{finding.file}, line {finding.line}"
+        if finding.file in (MESSAGE, MERGED)
+        else f"{finding.file}:{finding.line}"
+    )
 
 
 def _named(ref: str) -> str:
@@ -203,9 +213,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         return EXIT_USAGE
     remote, pushed = asked
     repository = os.getcwd()  # git runs a hook at the top of the working tree it pushes from, and so does pre-commit
+    lacked = [
+        ref.removeprefix("refs/heads/")
+        for _head, held, ref in pushed
+        if held is None and ref and ref.startswith("refs/heads/")
+    ]
+    if remote is not None and (missing := unseen(repository, remote, lacked)):
+        _say(
+            f"{remote} holds no {', '.join(missing)}, which this clone last saw there: its picture of {remote} is "
+            f"another server's or out of date, and what {remote} holds is not known; run git fetch --prune {remote}, "
+            "then push again"
+        )
+        return 1
     done = _Done()
     try:  # the first ref refused stops the push
-        return 0 if all(_passes(repository, remote, head, held, done) for head, held in dict.fromkeys(pushed)) else 1
+        refs_pushed = dict.fromkeys(pushed)
+        return 0 if all(_passes(repository, remote, head, held, done) for head, held, _ref in refs_pushed) else 1
     except KeyboardInterrupt:
         _say("interrupted: nothing was pushed")
         return EXIT_INTERRUPTED

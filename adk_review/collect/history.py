@@ -9,6 +9,7 @@ import re
 from collections.abc import Iterator, Sequence
 from itertools import batched
 
+from .change import lfs_pointer
 from .diff import file_added, readable
 
 # git.py's own verbs: this module was its push half, split off for its weight, and reads git as it does.
@@ -104,14 +105,60 @@ def _added_by(repo: str, commits: Sequence[str], attributes: str) -> dict[str, l
     for commit, body in zip(parts[1::2], parts[2::2], strict=True):
         files = found.setdefault(commit.decode(), [])
         for piece in body.split(b"\ndiff --git "):
-            if (file := file_added(readable(_text(piece)))) is not None:
-                files.append(file)
+            if (file := file_added(diff := readable(_text(piece)))) is not None:
+                # A Git LFS pointer's lines are not the file: Git LFS's own hook uploads the file it names. Read by
+                # review: a key store's pointer one commit added and the next took out passed unnamed, uploaded.
+                files.append({"path": file["path"], "added": [], "pointer": True} if lfs_pointer(diff) else file)
     return found
 
 
-def tag_message(repo: str, ref: str) -> str | None:
-    """The message of the annotated tag `ref` names, or None where it names no tag: what a pushed tag says, which no
-    commit holds. `GitError` where git cannot answer."""
-    if (named := _sha(repo, ref, "tag")) is None:  # a branch, a commit or a light tag
-        return None
-    return _git(repo, "cat-file", "tag", named, strip=False)[1].partition("\n\n")[2].rstrip("\n")
+#: How many tags one tag is read through, each made of the next: git warns of a tag made of a tag, and a longer chain is
+#: no release a person made. Past it, the push waits: what the rest say is not known.
+TAG_CHAIN = 64
+
+
+def tag_messages(repo: str, ref: str) -> list[tuple[str, str]]:
+    """What the annotated tag `ref` names says, as `(tag, message)`, and each tag it was made of after it, a push of a
+    tag of a tag sending both; none where `ref` names no tag: a branch, a commit or a light tag. What a pushed tag says
+    no commit holds. Read by review: only the outer tag's message was read, and the inner one's token reached the
+    remote. `GitError` where git cannot answer, or past `TAG_CHAIN` tags."""
+    said: list[tuple[str, str]] = []
+    named = _sha(repo, ref, "tag")
+    while named is not None:
+        if len(said) == TAG_CHAIN:
+            raise GitError(f"{ref} is a chain of more than {TAG_CHAIN} tags")
+        head, _, message = _git(repo, "cat-file", "tag", named, strip=False)[1].partition("\n\n")
+        said.append((named, message.rstrip("\n")))
+        fields = dict(line.split(" ", 1) for line in head.split("\n") if " " in line)
+        named = fields.get("object") if fields.get("type") == "tag" else None
+    return said
+
+
+def merged_tags(repo: str, remote: str | None, head: str, held: str | None, read: Sequence[str] = ()) -> dict[str, str]:
+    """The tags each merge a push of `head` sends carries in a header of its own, `mergetag`, by the merge: a signed
+    tag's text, its message and all, which goes with the merge though the tag itself is never pushed. The merges are
+    `sent`'s. Read by review: a token in a merged tag's message reached the remote, the merge's message all that was
+    read. `GitError` where git cannot answer."""
+    pushed = _commit(repo, head)
+    _, raw = _git(repo, "rev-list", "--merges", "--format=raw", pushed, "--not", *_held(repo, remote, held), *read)
+    found: dict[str, list[str]] = {}
+    commit, tag = "", None
+    for line in raw.split("\n"):
+        if line.startswith("commit "):
+            commit, tag = line.removeprefix("commit "), None
+        elif line.startswith("mergetag "):
+            found.setdefault(commit, []).append(line.removeprefix("mergetag "))
+            tag = found[commit]
+        elif tag is not None and line.startswith(" "):  # a header's own lines go on after a space
+            tag[-1] += "\n" + line[1:]
+        else:
+            tag = None
+    return {merge: "\n".join(tags) for merge, tags in found.items()}
+
+
+def unseen(repo: str, remote: str, branches: Sequence[str]) -> list[str]:
+    """Each of `branches`, which git says `remote` does not hold, that this clone still has as the remote's: where it
+    does, the clone's picture of the remote is not the remote's, and what the remote holds, read off that picture,
+    is not known. Read by review: after `git remote set-url` to another server, or with a `pushurl` naming one, the
+    old server's branches counted as held, and a token in their history reached the new server unread."""
+    return [branch for branch in branches if _sha(repo, f"refs/remotes/{remote}/{branch}") is not None]

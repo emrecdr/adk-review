@@ -21,6 +21,8 @@ from ..rule_helpers import (
     SECRET_WORDS,
     Rule,
     is_placeholder,
+    is_python,
+    is_test,
     named_at,
     named_values,
     vendor_shape,
@@ -64,10 +66,13 @@ WRITTEN_MAX_CHARS = 1_000
 class NamedSecrets(Rule):
     """A password or a token written into the code is in its history for good, as a vendor's key is. A name about a
     secret — where one lives, its type, its field — holds none; a placeholder is none; and a test's fixture, a user
-    made with a password of the test's own, is a test's: each left alone, while a vendor's key is `secrets`' to find in
-    a test as anywhere. Measured: 4 of 6 test fixtures were flagged as blockers."""
+    made with a password of the test's own in its Python code, is a test's: each left alone, while a vendor's key is
+    `secrets`' to find in a test as anywhere. Measured: 4 of 6 test fixtures were flagged as blockers. Read by review:
+    any file in a folder named `test` read as a test's, so a password in `deploy/test/db.env`, an environment's
+    config, passed; every file but a test's Python code is read."""
 
     id = "named-secrets"
+    reads_tests = True  # all but a test's Python code, which `check` passes over
     severity = "blocker"
     title = "a value assigned to a name that says secret"
     fix = "Read it from the environment or a secret store, remove it from history, and rotate it."
@@ -90,7 +95,9 @@ class NamedSecrets(Rule):
         'api_key="hf_..."',
     )
 
-    def check(self, path: str, line: str) -> bool:  # noqa: ARG002 -- any file but a test, as every rule reads
+    def check(self, path: str, line: str) -> bool:
+        if is_test(path) and is_python(path, lambda: ""):  # a test's Python code, by its suffix: a fixture's own
+            return False
         # The generic shape first, which nearly every line lacks; then the line with its examples blanked, which must
         # hold no vendor's shape: a vendor's is `secrets`' finding, one credential, one finding. An example is blanked
         # as `[REDACTED]`, which no shape takes for a value, so what is left of one is no value either: measured by

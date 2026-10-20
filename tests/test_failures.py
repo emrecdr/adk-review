@@ -713,7 +713,7 @@ def test_what_a_push_sends_is_read_from_git(tmp_path) -> None:
     remote's newer `main` into a branch it held was reviewed with `main`'s own changes, and a clean push stopped.
     `sent` reads each of those commits as it was made, and what it says; `tag_message`, what a pushed tag says."""
     from adk_review.collect.git import GitError
-    from adk_review.collect.history import push_scope, sent, tag_message
+    from adk_review.collect.history import push_scope, sent, tag_messages
 
     _remote, work = _pushed_from(tmp_path)
 
@@ -768,8 +768,8 @@ def test_what_a_push_sends_is_read_from_git(tmp_path) -> None:
     assert {commit for commit, _, _ in sent(repo, None, removed, added)} == {removed}, "a range a person named"
     git("tag", "-a", "v1", "-m", "release notes", joined)
     git("tag", "light", joined)
-    assert tag_message(repo, "v1") == "release notes"
-    assert tag_message(repo, "light") is None and tag_message(repo, joined) is None, "only a tag object says anything"
+    assert tag_messages(repo, "v1") == [(git("rev-parse", "v1"), "release notes")]
+    assert tag_messages(repo, "light") == tag_messages(repo, joined) == [], "only a tag object says anything"
 
 
 def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
@@ -789,10 +789,11 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
     push = importlib.import_module("adk_review.push")
     sha, held, zero = "a" * 40, "b" * 40, "0" * 40
     lines = [f"refs/heads/x {sha} refs/heads/x {held}", f"main^{{/add the key}} {sha} refs/heads/n {zero}", ""]
-    assert push.refs([*lines, f"refs/heads/d {zero} refs/heads/d {held}"]) == [(sha, held), (sha, None)]
+    expected = [(sha, held, "refs/heads/x"), (sha, None, "refs/heads/n")]
+    assert push.refs([*lines, f"refs/heads/d {zero} refs/heads/d {held}"]) == expected
     for space in SPACES:  # in a ref's name, where `str.split` breaks: once read as `main`
         named = f"refs/heads/main{space}x"
-        assert push.refs([f"{named} {sha} {named} {zero}"]) == [(sha, None)], repr(space)
+        assert push.refs([f"{named} {sha} {named} {zero}"]) == [(sha, None, named)], repr(space)
     with pytest.raises(ValueError, match="names no ref"):
         push.refs(["noise"])
     assert push.command("r", sha, None) == ["r", "--head", sha, "--all", "--profile", "default-rules"]
@@ -964,6 +965,85 @@ def test_a_binary_file_one_commit_adds_and_a_later_takes_out_stops_the_push(tmp_
     _git_in(work, "commit", "-qm", "take them out")
     found = push.in_history(str(work), "origin", "HEAD", None, [])
     assert found == [f"{push._named(stored)}, prod.p12: a binary file, which no rule can read"], found
+
+
+def test_a_push_the_clone_misreads_the_remote_for_stops_and_says_to_fetch(tmp_path, monkeypatch, capsys) -> None:
+    """Read by review: what a remote holds was read off this clone's last fetch of it, so after `git remote set-url` to
+    another server, or with a `pushurl` naming one, the old server's branches counted as held, and a token one commit
+    added and the next took out reached the new server unread. Where git says the remote holds no branch this clone
+    saw there, its picture of the remote is wrong, and the push stops, saying to fetch it with `--prune` first."""
+    import io
+
+    push = importlib.import_module("adk_review.push")
+    (old, work), token = _pushed_from(tmp_path), "ghp_" + "a1B2" * 9
+    _committed(work, "settings.py", f'TOKEN = "{token}"\n', "add settings")
+    _committed(work, "settings.py", "TOKEN = None\n", "take the token out")
+    _git_in(work, "push", "-q", "origin", "main")  # from a clone with no hook: the old server holds it all
+    new = tmp_path / "new.git"
+    _git_in(tmp_path, "init", "-q", "--bare", "-b", "main", str(new))
+    monkeypatch.chdir(work)
+    local = _git_in(work, "rev-parse", "main")
+    for moved in (("remote", "set-url", "origin", str(new)), ("config", "remote.origin.pushurl", str(new))):
+        _git_in(work, "remote", "set-url", "origin", str(old))
+        _git_in(work, *moved)
+        monkeypatch.setattr(sys, "stdin", io.StringIO(f"refs/heads/main {local} refs/heads/main {'0' * 40}\n"))
+        assert push.main(["origin", str(new)]) == 1, moved
+        said = capsys.readouterr().out
+        assert "git fetch --prune origin" in said and "main" in said, said
+
+
+def test_a_large_file_stores_pointer_one_commit_adds_and_a_later_takes_out_stops_the_push(tmp_path) -> None:
+    """Read by review: a key store tracked by Git LFS, one commit adding its pointer and the next taking it out, passed
+    the hook unnamed, and Git LFS's own hook uploaded the stored file it names; a binary file so added was a hole."""
+    push = importlib.import_module("adk_review.push")
+    _remote, work = _pushed_from(tmp_path)
+    _committed(work, "a.py")
+    _git_in(work, "push", "-q", "origin", "main")
+    _git_in(work, "checkout", "-q", "-b", "undone")
+    pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:" + "a" * 64 + "\nsize 9\n"
+    stored = _committed(work, "prod.p12", pointer, "add a key store")
+    _git_in(work, "rm", "-q", "prod.p12")
+    _git_in(work, "commit", "-qm", "take it out")
+    found = push.in_history(str(work), "origin", "HEAD", None, [])
+    assert found == [f"{push._named(stored)}, prod.p12: a Git LFS pointer, whose file no rule can read"], found
+
+
+def test_what_a_tag_of_a_tag_and_a_merged_signed_tag_say_is_read(tmp_path, monkeypatch, capsys, cli) -> None:
+    """Read by review: a tag made of another tag sends both, and only the outer one's message was read, the inner's
+    token reaching the remote; and a merge of a signed tag carries the tag's message in its own header, `mergetag`,
+    which was not read, a token in it reaching the remote with the tag itself never pushed. Each tag a chain names is
+    read, and each tag a merge carries."""
+    import io
+
+    push = importlib.import_module("adk_review.push")
+    (remote, work), token = _pushed_from(tmp_path), "ghp_" + "a1B2" * 9
+    first = _committed(work, "a.py")
+    _git_in(work, "push", "-q", "origin", "main")
+    monkeypatch.chdir(work)
+    monkeypatch.setattr(push, "review", cli.main)
+
+    def pushed(ref: str, held: str | None, name: str) -> int:
+        local = _git_in(work, "rev-parse", ref)
+        monkeypatch.setattr(sys, "stdin", io.StringIO(f"{name} {local} {name} {held or '0' * 40}\n"))
+        return push.main(["origin", str(remote)])
+
+    _git_in(work, "tag", "-a", "v1.0-rc1", "-m", f"rc1: deploy with {token}", first)
+    inner = _git_in(work, "rev-parse", "v1.0-rc1")
+    _git_in(work, "tag", "-a", "v1.0", "v1.0-rc1", "-m", "release 1.0")
+    assert pushed("v1.0", None, "refs/tags/v1.0") == 1
+    assert f"{inner[:9]}, its message, line 1" in capsys.readouterr().out
+
+    _git_in(work, "checkout", "-q", "-b", "side")
+    side = _committed(work, "s.py", "x = 2\n", "a side")
+    _git_in(work, "checkout", "-q", "main")
+    signed = f"object {side}\ntype commit\ntag v1-rc\ntagger t <t@t> 1700000000 +0000\n\ndeploy with {token}\n"
+    signed += "-----BEGIN PGP SIGNATURE-----\nabc\n-----END PGP SIGNATURE-----\n"
+    _git_in(work, "update-ref", "refs/tags/v1-rc", _git_in(work, "mktag", stdin=signed))
+    _git_in(work, "merge", "-q", "--no-ff", "-m", "Merge the release", "v1-rc")
+    _git_in(work, "tag", "-d", "v1-rc")
+    merge = _git_in(work, "rev-parse", "HEAD")
+    assert pushed("main", first, "refs/heads/main") == 1
+    assert f"{merge[:9]}, the tag it merges, line " in capsys.readouterr().out
 
 
 def test_the_history_a_push_sends_is_read_with_the_push_history_profile(tmp_path, monkeypatch) -> None:

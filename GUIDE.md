@@ -318,8 +318,9 @@ change with `default-rules`, against the commit they grow from on the remote's s
 holds none of their history. A merge grows from more than one: the change is reviewed against each, and passes when
 one review passes, since a line the remote holds nowhere is new to every one of them. Then the rules `push-history`
 names, the credential rules `secrets` and `named-secrets`, read each of those commits as it was made, and what each
-says, a pushed tag's words too: a credential one commit adds and a later one takes out stops the push, though the
-change as a whole no longer holds it. A commit is read line by line, so the profile names line rules alone, and a
+says, a pushed tag's words too, those of each tag it was made of, and those of a signed tag a merge carries in its own
+header: a credential one commit adds and a later one takes out stops the push, though the change as a whole no longer
+holds it. A commit is read line by line, so the profile names line rules alone, and a
 commit a push sends under two names, a branch and its tag, is reviewed and read once. Any exit but 0 stops the push
 and prints why; so does a `git` the hook cannot find, or a line from git it
 cannot read. A push that sends nothing new, or commits that change nothing, says nothing. Through pre-commit by hand,
@@ -331,10 +332,13 @@ What the hook cannot see, or stops on:
 
 - pre-commit reads git's lines itself and hands its hook one ref: the first not deleted, passing over a new ref whose
   commits the remote already holds. A push of several refs is reviewed whole by git's own hook alone.
-- In a commit before the last, only a credential stops the push, or a binary file no rule can read, unless
-  `[review] skip` names it. What a merge's own resolution adds and a later commit takes out is read in no commit.
+- In a commit before the last, only a credential stops the push, or a file no rule can read, a binary one or a Git
+  LFS pointer, whose file Git LFS's own hook uploads, unless `[review] skip` names it. What a merge's own resolution adds and a later commit takes out is read in no commit.
 - The remote's branches are as this clone last fetched them: one deleted or rewritten there still counts as held here,
   so fetch before a push that follows a rewrite, and let a fetch prune deleted ones (`git config fetch.prune true`).
+  Where git says the remote holds no branch this clone last saw there — its URL changed, a `pushurl` names another
+  server, or the branch was deleted there — the push stops until `git fetch --prune` brings the clone's picture back
+  to the remote's.
   Pushed to a URL rather than a remote's name, no branch of it is known here, and a new ref is reviewed as a whole
   project.
 - A file no rule can read — a binary one, a submodule, a Git LFS pointer, whose content is stored elsewhere — is a hole

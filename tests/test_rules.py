@@ -182,6 +182,18 @@ class TestTheSecretShapes:
         hidden, _count = scrub("\n".join(f"+{line}" for line in putty) + "\n x = 1\n")
         assert putty[7] not in hidden and putty[8] not in hidden and " x = 1" in hidden, hidden
 
+    def test_named_secrets_reads_a_test_environments_config(self) -> None:
+        """Read by review: any file in a folder named `test` read as a test's, so a password in `deploy/test/db.env`, an
+        environment's config, passed `named-secrets`, in the review and in the pre-push hook's history alike. A test's
+        Python code, where a user made with a password of the test's own is a fixture, is still left alone."""
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.named_secrets import NamedSecrets
+
+        line = "DB_PASSWORD=Xk9mQ2vR7t4p\n"
+        for path in ("deploy/test/db.env", "k8s/overlays/test/secrets.env", "tests/e2e/.env"):
+            assert lines_hit(NamedSecrets(), path, line) == [1], path
+        assert lines_hit(NamedSecrets(), "tests/test_login.py", 'user = User(password="Xk9mQ2vR7t4p")\n') == []
+
     def test_named_secrets_weighs_the_value_as_well_as_the_name(self) -> None:
         """A person chooses a password, which may be any words; a machine makes a token, a key or a secret, one run of
         eight characters or more with a digit. Measured over twelve published projects' source: the name alone flagged
