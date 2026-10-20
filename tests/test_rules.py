@@ -989,7 +989,7 @@ class TestTheCleanupAndThePitfalls:
         from adk_review.judge.rules.secrets import Secrets
 
         link = entry("settings.yaml", "A", None, [(1, "conf/real.yaml")])
-        link |= {"target": "conf/real.yaml", "unread_text": "was not read whole"}
+        link |= {"link": True, "target": "conf/real.yaml", "unread_text": "was not read whole"}
         checked = run_rule(Secrets(), [link], None)
         assert checked.could_not_look is not None, "a link not read is a hole, never silence"
         assert "settings.yaml was not read whole" in checked.could_not_look, checked.could_not_look
@@ -1012,6 +1012,26 @@ class TestTheCleanupAndThePitfalls:
         _git_in(repo, "commit", "-qm", "the link moved whole")
         assert cli.main([str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules"]) == 3
         assert "settings.yaml was not followed to the file it names" in capsys.readouterr().out
+
+    def test_a_link_is_a_hole_for_the_line_rules_where_the_heads_tree_was_not_listed(
+        self, cli, tmp_path: Path, capsys, monkeypatch
+    ) -> None:
+        """Read by review: where git could not list the head's tree, no link was followed, so none was marked, and each
+        line rule read only a link's own path: a link to an unchanged file holding a token was approved, exit 0. A
+        link is known from the change's own mode, as the head's tree need not be listed to know it."""
+        from adk_review.collect import git
+
+        repo = tmp_path / "r"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "conf/real.yaml", "github_token: ghp_" + "a1B2c3D4e5" * 4 + "\n")
+        _git_in(repo, "checkout", "-qb", HEAD)
+        link = _git_in(repo, "hash-object", "-w", "--stdin", stdin="conf/real.yaml")
+        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{link},settings.yaml")
+        _git_in(repo, "commit", "-qm", "a link to the file holding the token")
+        monkeypatch.setattr(git, "head_listing", lambda *_args, **_kwargs: None)
+        assert run_review(cli, repo, "--profile", "default-rules") == 3
+        assert "settings.yaml was not read" in capsys.readouterr().out
 
     def test_pitfalls_and_simplify_leave_fastapis_routes_alone(self) -> None:
         """Measured by review on FastAPI 0.141.1: a route whose dependency or request reads the path parameter answers

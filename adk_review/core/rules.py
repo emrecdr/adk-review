@@ -118,7 +118,7 @@ def added_to(entry: Entry) -> list[tuple[int, str]]:
     which is the file the link names and new under the link's name, though its diff adds one line, that file's path.
     Measured by review: the shell call of `run.py`, a link to an image holding Python, was counted as a line the change
     did not add."""
-    if "target" in entry and entry["text"] is not None:
+    if entry.get("link") and entry["text"] is not None:
         return list(enumerate(lines_of(entry["text"]), 1))
     return unreleased(entry["added"])
 
@@ -144,7 +144,7 @@ class Rule(AnyRule):
         # not look.
         # Read by review: a key in a blob a partial clone lacked was approved, named nowhere, and kept in the cache.
         missed = [
-            f"{entry['path']} {entry['unread_text']}" for entry in read if "target" in entry and entry["unread_text"]
+            f"{entry['path']} {entry['unread_text']}" for entry in read if entry.get("link") and entry["unread_text"]
         ]
         if missed:
             raise UnreadError("; ".join(missed), found)

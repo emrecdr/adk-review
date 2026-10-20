@@ -157,6 +157,8 @@ def shown_to_guidelines(
     room, left_out, excluded = BLOCK_CAP_CHARS, 0, {}
     for listed, diff in zip(entries, diffs, strict=True):
         file = entry(listed["path"], listed["status"], diff, added_lines(diff), old=listed.get("old"))
+        if listed.get("mode") == "120000":  # a symbolic link, known with no tree listed
+            file["link"] = True
         files.append(file)
         # A file the operator's skip list names: the rules read it as any other, the guidelines are not shown it,
         # and it is named and counted, never a hole. The operator chose it, in the tool's own config: a branch

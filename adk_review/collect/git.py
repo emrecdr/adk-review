@@ -594,8 +594,8 @@ def _followed(
 ) -> list[tuple[Entry, str]]:
     """Each changed link with the plain file at the head it runs as, as `Links.follow` follows it: every link at the
     head read in one batch, the changed ones first within the tree's budget. One whose way is not known is named on
-    its entry, `unread_text`, with no `target`, a hole for a rule that reads it whole and for a line rule; one naming
-    no file here has no text, as before: there is nothing here to run."""
+    its entry, `unread_text`, a hole for a rule that reads it whole and for a line rule; one naming no file here has
+    no text, as before: there is nothing here to run."""
     links = _links(listing)
     starts = [entry for entry in files if entry["path"] in links]
     if not starts:
@@ -610,8 +610,7 @@ def _followed(
         try:
             target = head.follow(entry["path"])
         except UnfollowedError as why:
-            # A link still, its way not known: read by review, a line rule read only its own path and approved it.
-            entry["target"], entry["unread_text"] = None, f"was not followed to the file it names: {why}"
+            entry["unread_text"] = f"was not followed to the file it names: {why}"
             continue
         if target is not None:
             through.append((entry, target))
