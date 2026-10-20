@@ -941,7 +941,7 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
         diffs.update(b"\0")
     pre = evidence["preflight"]
     said = {
-        **{key: pre.get(key) for key in ("repo", "head", "head_sha", "base", "base_sha", "merge_base")},
+        **{key: pre.get(key) for key in ("repo", "head", "head_sha", "index_sha", "base", "base_sha", "merge_base")},
         "scope": evidence["scope"],
         "whole": evidence["whole"],
         "profile": chosen.name,

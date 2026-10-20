@@ -1062,6 +1062,26 @@ class TestWhatAReviewKeeps:
         assert "served from the cache" not in said.err, said.err
         assert re.search(r"\b1 \S+ file\(s\) outside it", said.out), said.out
 
+    def test_the_cache_key_reads_the_whole_index_under_staged(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: --staged names the index by a constant, and the key read only the diffs reviewed, so a
+        change staged to the rest of the index, which tree rules, the blast radius and a link's target read, served a
+        stale verdict. The key reads every entry the index lists."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "app/x.py", "x = 1\n")
+        _committed(repo, "lib/b.py", "y = 1\n", "base")
+        (repo / "app" / "x.py").write_text("x = 2\n", encoding="utf-8", newline="\n")
+        (repo / "lib" / "b.py").write_text("from app import x\n", encoding="utf-8", newline="\n")
+        _git_in(repo, "add", "app/x.py", "lib/b.py")
+        argv = [str(repo), "--staged", "--path", "app", "--profile", "default-rules", "--cache", str(tmp_path / "c")]
+        assert cli.main(argv) == 0
+        capsys.readouterr()
+        (repo / "lib" / "b.py").write_text("y = 2\n", encoding="utf-8", newline="\n")
+        _git_in(repo, "add", "lib/b.py")
+        assert cli.main(argv) == 0
+        assert "served from the cache" not in capsys.readouterr().err
+
     def test_a_debug_log_holds_what_each_guideline_was_asked_and_no_secret(
         self, cli, demo_repo: Path, tmp_path: Path
     ) -> None:

@@ -14,6 +14,7 @@ tools that wrap these live in `judge/tools.py`.
 from __future__ import annotations
 
 import functools
+import hashlib
 import os
 import re
 import shutil
@@ -360,6 +361,9 @@ def preflight_staged(repo: str) -> dict:
     try:
         _refused(repo, root)
         head = _sha(root, "HEAD") or _empty_tree(root)  # no commit yet: the index against the empty tree
+        # What names the index as a commit names its tree: each entry `ls-files -s` lists, its mode, blob and path.
+        # Read by review: named by a constant, a change staged outside the diffs reviewed served a stale verdict.
+        _, listed = _git(root, "ls-files", "-s", "-z", strip=False)
     except (GitError, _ScopeError) as exc:
         return {"status": "error", "error_message": str(exc)}
     return {
@@ -369,6 +373,7 @@ def preflight_staged(repo: str) -> dict:
         "base_sha": head,
         "head": "the index",
         "head_sha": "staged",
+        "index_sha": hashlib.sha256(listed.encode()).hexdigest(),
         "merge_base": head,
         "commits_ahead": 0,
         "base_ref": "",
