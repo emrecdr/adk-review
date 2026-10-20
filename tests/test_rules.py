@@ -211,6 +211,35 @@ class TestTheSecretShapes:
         for path, line in quiet.items():
             assert lines_hit(NamedSecrets(), path, line) == [], path
 
+    def test_named_secrets_reads_a_compose_files_list_of_variables(self) -> None:
+        """Found when the owner chose it: a compose file sets a service's variables as a list as often as a map, `-
+        DB_PASSWORD=...`, the whole item quoted or not, and neither the rule nor the redaction before every model call
+        read that form, so a password there passed every review and reached each guideline. Each is read and hidden;
+        a variable, a name with no value and a setting are not credentials."""
+        from adk_review.core.secrets import named_at, scrub
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.named_secrets import NamedSecrets
+
+        read = {
+            "docker-compose.yml": "      - DB_PASSWORD=Sup3rS3cret-db9\n",
+            "compose.yaml": '      - "API_KEY=4f8a1c2e9b7d6035"\n',
+            "deploy/docker-compose.prod.yml": "    - 'SECRET_KEY=8d0e5f2a9c4b7e13'\n",
+        }
+        for path, line in read.items():
+            assert lines_hit(NamedSecrets(), path, line) == [1], path
+            hidden, count = scrub(line)
+            assert count == 1 and "[REDACTED]" in hidden and "-" in hidden, (path, hidden)
+        assert (named_at('  - "DB_PASSWORD=Sup3rS3cret-db9"') or ("",))[0] == "DB_PASSWORD", "the name, not the dash"
+        assert scrub('  - "API_KEY=4f8a1c2e9b7d6035"')[0] == '  - "API_KEY=[REDACTED]"', "the quotes kept"
+        quiet = {
+            "docker-compose.yml": "      - API_KEY=${API_KEY}\n",
+            "compose.yaml": "      - GITHUB_TOKEN\n",
+            "compose.override.yaml": "      - DEBUG=true\n",
+            "docker-compose.dev.yml": '      - "PASSWORD=changeme"\n',
+        }
+        for path, line in quiet.items():
+            assert lines_hit(NamedSecrets(), path, line) == [], path
+
     def test_named_secrets_reads_a_test_environments_config(self) -> None:
         """Read by review: any file in a folder named `test` read as a test's, so a password in `deploy/test/db.env`, an
         environment's config, passed `named-secrets`, in the review and in the pre-push hook's history alike. A test's

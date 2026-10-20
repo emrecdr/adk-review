@@ -104,12 +104,14 @@ class NamedSecrets(Rule):
         ("settings.yaml", "api_key: 4f8a1c2e9b7d6035"),
         '{"token_type": "bearer", "access_token": "9f8e7d6c5b4a3f2e"}',
         ("Dockerfile", "ENV DB_PASSWORD=Sup3rS3cret-db9"),
+        ("docker-compose.yml", "      - DB_PASSWORD=Sup3rS3cret-db9"),
     )
     good = (
         'token_url = "https://auth.example.com/token"',
         'password_field = "password-input"',
         'password = os.environ["PASSWORD"]',
         ("Dockerfile", "ENV API_KEY=${API_KEY}"),
+        ("docker-compose.yml", "      - API_KEY=${API_KEY}"),
         'api_key = "your-api-key-here"',
         'PASSWORD = "changeme"',
         ("tests/test_login.py", 'user = User(password="testpassword")'),

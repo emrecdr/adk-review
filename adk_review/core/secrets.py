@@ -244,6 +244,17 @@ _GENERIC = (
         ),
         r"\1[REDACTED]",
     ),
+    (
+        "generic_secret",  # a compose file's list item, `- NAME=value`, the whole item quoted or not: a literal
+        re.compile(
+            r"(?im)^([+ -]?[^\S\n]*-[^\S\n]+([\"']?)[\w.-]{0,80}?"
+            + _NAMED
+            + r"=)"
+            + _STAND_IN
+            + r"([^\s\"']{6,})\2[^\S\n]*(?:#[^\n]*)?$"
+        ),
+        r"\1[REDACTED]\2",
+    ),
 )
 #: A named value in quotes running to the end of a text cut from a longer one, its closing quote past the cut: read
 #: only where the text was cut there. Read by review: a scrub that read as far as a cut and a credential crossing it
@@ -367,14 +378,20 @@ def named_values(text: str) -> list[tuple[str, str, bool]]:
     return [_named(match) for match in found]
 
 
-#: A name as code, a `.env` line, YAML or a Dockerfile spells it, past a diff's marker and an `export`, `ENV` or `ARG`.
-_NAME = re.compile(r"(?i)[+ -]?\s*(?:(?:export|env|arg)\s+)?([\w.-]+)")
+#: A name as code, a `.env` line, YAML or a Dockerfile spells it, past a diff's marker and an `export`, `ENV` or `ARG`,
+#: and a compose file's list item, `- "NAME=value"`, past its dash and its quote.
+_NAME = re.compile(r"(?i)[+ -]?\s*(?:-\s+[\"']?)?(?:(?:export|env|arg)\s+)?([\w.-]+)")
 
 
 def _named(found: re.Match[str]) -> tuple[str, str, bool]:
-    """A generic shape's match as `(name, value, quoted)`: the first shape is the quoted one."""
+    """A generic shape's match as `(name, value, quoted)`: quoted, a literal, but for the unquoted line, which may be
+    code; a compose file's list item is a literal, quoted or not."""
     name = _NAME.match(found.group(1))
-    return (name.group(1) if name else found.group(1)), found.group(found.lastindex or 0), found.re is _GENERIC[0][1]
+    return (
+        (name.group(1) if name else found.group(1)),
+        found.group(found.lastindex or 0),
+        found.re is not _GENERIC[1][1],
+    )
 
 
 #: A value that only stands for a secret: a run of one character, `****` or `...` among them; the word that names its
