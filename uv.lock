@@ -17,6 +17,7 @@ source = { editable = "." }
 dependencies = [
     { name = "google-adk", extra = ["extensions"] },
     { name = "litellm" },
+    { name = "pyrefly" },
     { name = "python-dotenv" },
     { name = "ruff" },
     { name = "truststore" },
@@ -24,7 +25,6 @@ dependencies = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "pyrefly" },
     { name = "pytest" },
     { name = "pytest-asyncio" },
 ]
@@ -33,6 +33,7 @@ dev = [
 requires-dist = [
     { name = "google-adk", extras = ["extensions"], specifier = "==2.9.2" },
     { name = "litellm", specifier = "==1.105.1" },
+    { name = "pyrefly", specifier = ">=1.3.2" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "ruff", specifier = ">=0.12.8" },
     { name = "truststore", specifier = ">=0.10" },
@@ -40,7 +41,6 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "pyrefly", specifier = ">=1.3.2" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
 ]

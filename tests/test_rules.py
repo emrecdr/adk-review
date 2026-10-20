@@ -26,6 +26,7 @@ from conftest import (
     catalog,
     gathered,
     in_tags,
+    profiles_of,
     run_review,
     run_rule,
 )
@@ -951,6 +952,66 @@ def ruff_rule_findings(rule, files: list[dict]) -> list:
     return answer.findings
 
 
+class TestTypesReadsWhatPyreflyFinds:
+    """`types` runs pyrefly on each changed Python file alone, a name it imports read as `Any`, and keeps what pyrefly
+    finds on the lines the change added, of the kinds measured to be defects: 27 of 30 planted ones, where ruff found 3,
+    and 0.47 a thousand lines on four libraries' correct code."""
+
+    CHECKOUT = (
+        "def total(prices: list[int], tax: int) -> int:\n"
+        "    return sum(prices) + tax\n"
+        "\n"
+        "\n"
+        "def checkout(prices: list[int]) -> int:\n"
+        "    return total(prices)\n"
+    )
+
+    def test_a_missing_argument_on_an_added_line_is_a_major_finding(self) -> None:
+        from adk_review.judge.rules.types import Types
+
+        found = ruff_rule_findings(Types(), [_entry("shop/orders.py", self.CHECKOUT)])
+        assert [(f.line, f.severity) for f in found] == [(6, "major")], found
+        assert "missing-argument" in found[0].title, found[0].title
+
+    def test_only_the_kinds_kept_on_the_lines_the_change_added_are_findings(self) -> None:
+        """A module pyrefly cannot find is the layout's, never the change's, and a line the change kept is not its."""
+        from adk_review.judge.rules.types import Types
+
+        text = "from shop.money import Cents\n\n\ndef name(x: int) -> str:\n    return x\n\n\n" + self.CHECKOUT
+        entry = _entry("shop/orders.py", text)
+        entry["added"] = [(number, line) for number, line in entry["added"] if number != 5]  # `return x` kept
+        found = ruff_rule_findings(Types(), [entry])
+        assert [(f.line, f.severity) for f in found] == [(13, "major")], [(f.line, f.title) for f in found]
+
+    def test_a_branch_cannot_silence_it_with_an_ignore_comment(self) -> None:
+        """As ruff runs `--ignore-noqa`: a branch would otherwise judge itself."""
+        from adk_review.judge.rules.types import Types
+
+        silenced = self.CHECKOUT.replace("total(prices)\n", "total(prices)  # type: ignore\n")
+        found = ruff_rule_findings(Types(), [_entry("shop/orders.py", silenced)])
+        assert [f.line for f in found] == [6], found
+
+    def test_a_file_that_is_not_python_is_not_read(self) -> None:
+        from adk_review.judge.rules.types import Types
+
+        assert ruff_rule_findings(Types(), [_entry("config/app.yaml", "name: app\n")]) == []
+
+    def test_without_pyrefly_the_rule_could_not_look(self, monkeypatch) -> None:
+        from adk_review.collect import pyrefly
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.types import Types
+
+        monkeypatch.setattr(pyrefly, "beside", lambda: None)
+        monkeypatch.setattr(pyrefly, "on_path", lambda name: name)
+        answer = run_rules({"files": [_entry("shop/orders.py", self.CHECKOUT)], "tree": None}, [Types()])
+        assert "pyrefly is not on PATH" in (answer["rule.types"].could_not_look or ""), answer
+
+    def test_it_runs_where_a_profile_asks_for_it_and_never_in_the_default(self) -> None:
+        profiles = profiles_of()
+        assert "rule.types" in profiles["rules-only"] and "rule.types" in profiles["full"]
+        assert "rule.types" not in profiles["default"] and "rule.types" not in profiles["default-rules"]
+
+
 def _codes(findings: list) -> list[tuple[str, str]]:
     """Each finding's ruff code and severity, in the order the rule gave them."""
     return [(f.title.split(": ", 1)[1].split(" ", 1)[0], f.severity) for f in findings]
@@ -1225,7 +1286,7 @@ class TestWhatTheBranchCannotTellTheRules:
         def refuse(*_args, **_kwargs):
             raise OSError(22, "Invalid argument")
 
-        monkeypatch.setattr(ruff, "_laid_out", refuse)
+        monkeypatch.setattr(ruff, "laid_out", refuse)
         said = "a changed file could not be written to lint (Invalid argument), so the rule did not look"
         assert lint_findings(evidence) == said
 
@@ -1313,7 +1374,7 @@ class TestWhatTheBranchCannotTellTheRules:
         assert sorted(f.file for f in found if f.title.startswith("lint: F401")) == sorted(names), found
         folder = tmp_path / "outer" / "rule"
         folder.mkdir(parents=True)
-        targets, _lines = ruff._laid_out(str(folder), dict.fromkeys(names, "import os\n"))
+        targets, _lines = ruff.laid_out(str(folder), dict.fromkeys(names, "import os\n"))
         written = sorted(path.relative_to(folder).as_posix() for path in folder.rglob("*.py"))
         assert written == targets == ["0/module.py", "1/module.py", "2/module.py", "3/module.py", "4/__init__.py"]
         assert not (tmp_path / "outer" / "escape.py").exists(), "written outside the rule's folder"

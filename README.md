@@ -185,7 +185,7 @@ points the wrong way.
 | Package | May import | Holds |
 |---|---|---|
 | `core/` | nothing else | `findings.py` (`Finding`, `Review`, `Checked`, the severity scale), `rules.py` (what a rule is: the `Rule`, the `FileRule` and the `TreeRule`, the `ChangedFile` and the `Tree` they read, the `Diagnostic` an outside tool hands a file rule, `Hit`, `UnreadError`, and `run_rule`, which runs any of them the same way), `guidelines.py` (what a guideline is), `health.py` (a whole project's measures under `--all`: what was read, size, McCabe complexity bands, each rule's findings in source and tests), `profiles.py` (a check's id and its state key, and the checks a profile turns on), `blast.py` (what at the head depends on each changed file, read from the syntax tree), `evidence.py` (what a review reads, each key spelled once: the `Evidence`, the `Change` of it the rules read, the `Failure` in its place, and each changed file in it, an `Entry`), `paths.py` (whether a glob names a path, as `.gitignore` reads one: the skip list's question, and a rule's; and `Links`, the file a symbolic link runs as, followed a part at a time as a system follows it), `secrets.py` (the credential shapes: what redaction hides and what the secrets rules ask), `text.py` (flat whitespace, a cut that names itself, lines as git numbers them), `verdict.py` (grounding, folding, deciding, `Outcome`, the exit codes) |
-| `collect/` | `core` | `git.py` (read-only git: what a review covers, each file's diff and its text at the head, the head's tree, `collect_evidence`), `change.py` (the change as the evidence holds it, decided from the diffs alone: what the guidelines are shown of each file and the block they read, what no one could read, the blast radius), `history.py` (what a push sends, commit by commit, for the pre-push hook), `diff.py` (a unified diff read without git: the lines it adds, the cap, the fence each guideline reads it in), `ruff.py` (ruff over the changed Python files' texts, in a folder of its own), `tools.py` (each outside tool a rule may name, and the adapter that runs it: ruff's) |
+| `collect/` | `core` | `git.py` (read-only git: what a review covers, each file's diff and its text at the head, the head's tree, `collect_evidence`), `change.py` (the change as the evidence holds it, decided from the diffs alone: what the guidelines are shown of each file and the block they read, what no one could read, the blast radius), `history.py` (what a push sends, commit by commit, for the pre-push hook), `diff.py` (a unified diff read without git: the lines it adds, the cap, the fence each guideline reads it in), `ruff.py` (ruff over the changed Python files' texts, in a folder of its own), `pyrefly.py` (pyrefly over the same copies, each file alone, under the reviewer's own configuration), `tools.py` (each outside tool a rule may name, and the adapter that runs it: ruff's) |
 | `judge/` | `core`, `collect` | `rules/` (every rule, one file each, and nothing else), `guidelines/` (every guideline, one file each, and nothing else), `rule_helpers/` (the one door a rule imports: the contract, passed on from `core`, and helpers named after what they read), `catalog.py` (finds every check, reads `config.toml`, chooses what a profile runs, for the command and chat alike), `checks.py` (`run_rules`, every rule over a `Change`, and the node that runs it before the guidelines, in both shapes), `agents.py` (a guideline as an agent: the instruction around its role, the fences, the state keys spelled once, the read-back), `settings.py` (what the environment says: the arm, each role's model name, the fallback, Copilot's token path; read, nothing built, so the login and a rules-only review's cache key import no engine), `config.py` (the models built from it, and the request every call carries: temperature zero, a deadline, retries; readiness), `plugins.py` (redaction, the ledger and its ceiling, provider errors, progress, the recorder, and in chat the readiness check and the judging agents' one turn), `graph.py` (the graph and the `App` in both shapes; not `agent.py`, since `adk web` lists any folder holding one as an agent), `run.py` (one seeded run through the engine, guarded, and what it left in state read back), `tools.py` (chat's model-facing tools and the guardrail in front of them), `verify.py` (the second opinion) |
 | `deliver/` | `core` alone: the driver hands it the rest | `report.py` (the text report, the JSON, the hand-off, a previous report read back for `--previous`, what `--dry-run`, `--list-checks`, `--explain` and `--try` print, and the rules that keep the branch's text from forging any of them) |
 | the root | everything | `review.py` (the command: the driver that fixes the order of the steps; a profile with no guideline runs the rules as `--try` does, the engine never imported), `push.py` (the pre-push hook: what a push sends, reviewed with `default-rules`, and each of its commits read with `push-history`, the credential rules, for git's hook and pre-commit's alike), `login.py` (the Copilot arm's one-time login, `adk-review-login`: GitHub's device flow, the token cached where LiteLLM reads it), `agent.py` (the chat `App` for ADK's loader, `adk web` and `adk run`, the one place that wants it), `__init__.py` (answers `agent` without loading it, so `core/` imports alone), `config.toml` (the one config file) |
@@ -453,8 +453,8 @@ What a rule may do, and may not:
   to it — and imports the door, `judge/rule_helpers/`, alone; `tests/test_layering.py` keeps it so.
 - A rule that needs an outside tool's output names the tool and is handed it: `lint`, `pitfalls` and `simplify` name
   `ruff`, each with its own codes as its `tool_settings`, no code named by two of them, and `collect/ruff.py` runs ruff
-  for each. Another tool is one adapter more in
-  `collect/tools.py`, and the contract stays as it is.
+  for each; `types` names `pyrefly`, with the kinds it reads, and `collect/pyrefly.py` runs it. Another tool is one
+  adapter more in `collect/tools.py`, and the contract stays as it is.
 - It never reads the repository under review's configuration: a branch must not be able to switch off the rule that
   judges it.
 - It reads no test unless it says so: a rule about the product's code is handed no file `is_test` names, so a test's
@@ -563,9 +563,9 @@ what was dropped, refuted, folded, redacted and spent. "The report" in `GUIDE.md
   so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.
 - `--cache DIR` keeps each decided review under a hash of everything its result depends on — the reviewer's own code,
   config and version, the Python it runs on, the commits or the index, what is covered and what of the tree went unread,
-  the checks, every setting, a previous report as it was read, each model, and each outside tool a rule runs, ruff's
-  version among it — and serves the same review again with no model call. A review with a hole is never kept, nor one
-  with a finding its verifier could not judge, so the next run looks again.
+  the checks, every setting, a previous report as it was read, each model, and each outside tool a rule runs, ruff's and
+  pyrefly's versions among them — and serves the same review again with no model call. A review with a hole is never
+  kept, nor one with a finding its verifier could not judge, so the next run looks again.
 - `--debug-log FILE`, `--trace FILE` and `--record DIR` keep what a run did: every model request and answer, secrets
   redacted; ADK's spans, in a local SQLite file; and each model answer under a hash of its request, which a fake
   replays offline.
@@ -782,7 +782,12 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   `python -O` strips it, and minor in a test, where it is how pytest checks. Without ruff, or with one that fails, the
   rule did not look and says so, exit 3. Its answer is read a finding at a time, as ruff writes one a line, each kept as
   no more than the rule reads, and past 500,000 findings what it named is a hole: measured by review, three files of
-  unary minus chains made ruff write 589 MB of JSON each, read whole in 90 s and 4.5 GB.
+  unary minus chains made ruff write 589 MB of JSON each, read whole in 90 s and 4.5 GB. `types` reads the same copies
+  through pyrefly, each file alone, under a configuration of the reviewer's: the `default` preset, no installed package
+  and no interpreter asked, so a name a file imports from beyond itself reads as `Any`, and no ignore comment honoured,
+  as ruff runs `--ignore-noqa`. Measured over four libraries' source and 60 planted edits, each file alone found 27 of
+  30 type defects on their own lines, as the whole package did, at 0.1 s a file where the package took up to 5 s, with a
+  third of the false alarms.
 - **Grounding.** A guideline's finding must quote, verbatim, whole lines of its own file's diff, within one hunk, as the
   guideline saw them: secrets redacted, diff markers gone, whitespace not counted. Where a quote's line breaks were
   lost, its lines begin and end where the file's do, a diff marker or a fence run into them or not: measured live on

@@ -313,16 +313,17 @@ class TestTheCatalogHoldsARuleToItsExamples:
         shipped rule carries a bad one and a good one, the pattern a project's rule copies."""
         rules = catalog().rules
         bare = [rule.id for rule in rules if not (rule.bad and rule.good)]
-        assert bare == [rule.id for rule in rules if getattr(rule, "tool", None)] == ["lint", "pitfalls", "simplify"]
+        named = [rule.id for rule in rules if getattr(rule, "tool", None)]
+        assert bare == named == ["lint", "pitfalls", "simplify", "types"]
 
 
 def test_a_rule_names_a_tool_an_adapter_runs_or_is_refused(rules_folder) -> None:
-    """A rule names its outside tool; `collect/tools.py` holds one adapter a tool, ruff's first, and the core names
-    them, so the catalog refuses a name no adapter runs without loading what runs one."""
+    """A rule names its outside tool; `collect/tools.py` holds one adapter a tool, ruff's and pyrefly's, and the core
+    names them, so the catalog refuses a name no adapter runs without loading what runs one."""
     from adk_review.collect.tools import ADAPTERS
     from adk_review.core.rules import TOOLS
 
-    assert set(ADAPTERS) == TOOLS == {"ruff"}
+    assert set(ADAPTERS) == TOOLS == {"ruff", "pyrefly"}
     rule = (
         '"""A rule naming a tool no adapter runs."""\n\nfrom __future__ import annotations\n\n'
         "from ..rule_helpers import ChangedFile, FileRule\n\n\nclass NoTool(FileRule):\n"
@@ -331,7 +332,7 @@ def test_a_rule_names_a_tool_an_adapter_runs_or_is_refused(rules_folder) -> None
         "    def check(self, file: ChangedFile) -> list[int]:\n        return []\n"
     )
     rules_folder("no_tool", rule)
-    with pytest.raises(ValueError, match=r"names the tool 'gitleaks', which no adapter runs\. There are ruff"):
+    with pytest.raises(ValueError, match=r"names the tool 'gitleaks', which no adapter runs\. There are pyrefly, ruff"):
         catalog()
 
 

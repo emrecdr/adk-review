@@ -281,7 +281,7 @@ def _whole(line: object) -> bool:
 
 #: The outside tools a rule may name, each run by its adapter in `collect/tools.py`: named here, in the pure core, so
 #: the catalog refuses a name no adapter runs without loading what runs one. A test holds the two to each other.
-TOOLS = frozenset({"ruff"})
+TOOLS = frozenset({"ruff", "pyrefly"})
 
 
 class FileRule(AnyRule):

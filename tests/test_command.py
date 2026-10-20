@@ -1456,7 +1456,7 @@ class TestWhatANewcomerReads:
         assert "## Verdict: REQUEST_CHANGES, 2 findings at or above `--fail-on blocker`\n" in out, out
         assert out.count("- no findings") == 0 and "### rule.secrets\n" in out and "### rule.no-print" not in out
         silent = out.split("### no findings from ", 1)[1].split("\n", 1)[0]
-        assert silent.startswith("15 checks"), silent
+        assert silent.startswith("16 checks"), silent
         assert "`rule.no-print`" in out.split("### no findings from ", 1)[1].split("\n\n", 1)[0]
 
     def test_a_check_named_without_its_kind_is_pointed_at_the_nearest_id(self, demo_repo: Path, cli, capsys) -> None:

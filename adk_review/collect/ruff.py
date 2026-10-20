@@ -73,7 +73,7 @@ def _run(
     path, or it raises — ruff failing, or past its timeout — for `diagnose` to name. Under `--exit-zero` a diagnostic
     never fails ruff, so any other exit is a ruff that could not run."""
     with tempfile.TemporaryDirectory() as tmp:
-        targets, sources = _laid_out(tmp, texts)
+        targets, sources = laid_out(tmp, texts)
         # Every file by name, never a folder: ruff's default excludes skipped a `.venv/` or `node_modules/` a branch
         # had changed, never a file it is named. `--ignore-noqa`: an inline noqa comment in the branch silenced it.
         # `--no-cache`: nothing is written beside the files, which Windows could hold open when the folder goes.
@@ -87,9 +87,9 @@ def _run(
             return _parsed(answer, sources)
 
 
-def _laid_out(folder: str, texts: dict[str, str]) -> tuple[list[str], dict[str, list[str]]]:
-    """Each file written into `folder`, and the names ruff is given for them, with each file's lines as ruff counts
-    them, by path."""
+def laid_out(folder: str, texts: dict[str, str]) -> tuple[list[str], dict[str, list[str]]]:
+    """Each file written into `folder`, and the names a tool is given for them, with each file's lines as ruff and
+    pyrefly count them, by path: ruff's, and `collect/pyrefly.py`'s."""
     sources: dict[str, list[str]] = {}
     targets = []
     for index, (path, text) in enumerate(texts.items()):

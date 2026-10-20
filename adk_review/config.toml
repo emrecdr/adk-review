@@ -92,13 +92,13 @@ push-history = ["rule.secrets", "rule.named-secrets"]
 rules-only = [
     "rule.encoding-declaration", "rule.hidden-text", "rule.lint", "rule.lockfile-sources", "rule.named-secrets",
     "rule.no-print", "rule.pinned-actions", "rule.pitfalls", "rule.private-patch", "rule.reviewer-instructions",
-    "rule.secrets", "rule.simplify", "rule.steering-files", "rule.tests-offline",
+    "rule.secrets", "rule.simplify", "rule.steering-files", "rule.tests-offline", "rule.types",
 ]
 # Every check there is but the payments demo's rules: `rules-only`'s and every guideline.
 full = [
     "rule.encoding-declaration", "rule.hidden-text", "rule.lint", "rule.lockfile-sources", "rule.named-secrets",
     "rule.no-print", "rule.pinned-actions", "rule.pitfalls", "rule.private-patch", "rule.reviewer-instructions",
-    "rule.secrets", "rule.simplify", "rule.steering-files", "rule.tests-offline", "guidelines",
+    "rule.secrets", "rule.simplify", "rule.steering-files", "rule.tests-offline", "rule.types", "guidelines",
 ]
 # A simplify pass, as Claude Code's /simplify reads a change: the cleanup ruff can name, and the complexity, the
 # wasted work and the fix at the wrong depth a model judges, three calls. lint and pitfalls run beside them, at no cost,
