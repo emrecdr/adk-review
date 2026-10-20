@@ -101,9 +101,10 @@ applyTo: "adk_review/**"
 - The plugins are `StopAtRateLimit`, which after a 429 no retry or fallback got past answers each later call of the
   review `RATE_LIMITED`, unsent, then `RedactSecretsPlugin`, then the optional `DebugLoggingPlugin` (`--debug-log`,
   never the session's state) and `Recorder` (`--record`), then `UsageLedger`, `ReportProviderErrors` and `Progress`,
-  which times each agent and, at a terminal or with `--progress`, tells each guideline's start and finish on stderr; the
-  first plugin to answer short-circuits the rest. Chat puts `RefuseUnready` before it and `OneTurn` after it: each
-  judging agent reads its instruction and one fixed turn, never a turn ADK would make of another agent's output.
+  which times each agent and, at a terminal or with `--progress`, tells each guideline's start and finish on stderr, the
+  command telling every `HEARTBEAT_SECONDS` which it still waits on, and `--quiet` silencing both; the first plugin to
+  answer short-circuits the rest. Chat puts `RefuseUnready` before it and `OneTurn` after it: each judging agent reads
+  its instruction and one fixed turn, never a turn ADK would make of another agent's output.
 - In chat the scope is a `temp:` key, which ADK keeps for one turn, and a gate after the intake goes on only for a
   scope that turn confirmed; the intake is told the repository its conversation confirmed (`{review_repo?}`).
 - Under `--all` the report adds a Health section, `core/health.py`: what was read, the source and the tests apart,

@@ -868,6 +868,65 @@ class TestTheJsonReport:
         assert stopped.value.code == 0 and capsys.readouterr().out == f"adk-review {cli.version()}\n"
 
 
+class TestWhatTheCommandTells:
+    """Asked by the owner: a person at a terminal sees the review move, never a silence that reads as a hang. A
+    pipeline's log stays empty unless the review finds an issue or fails."""
+
+    @staticmethod
+    def _review(cli, root: Path, text: str, *flags: str) -> int:
+        repo = _branch_off_empty(root / "repo", "feature", base="main")
+        _committed(repo, "app.py", text)
+        return cli.main([str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules", *flags])
+
+    def test_quiet_prints_nothing_when_the_review_passes(self, cli, tmp_path: Path, capsys) -> None:
+        assert self._review(cli, tmp_path, "x = 1\n", "--quiet") == 0
+        said = capsys.readouterr()
+        assert (said.out, said.err) == ("", ""), said
+
+    def test_quiet_prints_the_report_when_the_review_stops(self, cli, tmp_path: Path, capsys) -> None:
+        assert self._review(cli, tmp_path, 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "--quiet") == 1
+        assert "## Verdict: REQUEST_CHANGES" in capsys.readouterr().out
+
+    def test_quiet_and_progress_cannot_run_together(self, cli, tmp_path: Path, capsys) -> None:
+        with pytest.raises(SystemExit) as stopped:
+            self._review(cli, tmp_path, "x = 1\n", "--quiet", "--progress")
+        assert stopped.value.code == 2 and "not allowed with argument" in capsys.readouterr().err
+
+    def test_progress_tells_each_phase_and_a_long_wait(self, cli, tmp_path: Path, monkeypatch, capsys) -> None:
+        """A rules-only review tells what it read, when its rules start and when they finish. A phase that runs past
+        the heartbeat is told again, so a long wait never reads as a hang."""
+        import time
+
+        slow = cli.run_rules
+
+        def slowly(*args, **kwargs):
+            time.sleep(0.2)
+            return slow(*args, **kwargs)
+
+        monkeypatch.setattr(cli, "HEARTBEAT_SECONDS", 0.02)
+        monkeypatch.setattr(cli, "run_rules", slowly)
+        assert self._review(cli, tmp_path, "x = 1\n", "--progress") == 0
+        said = capsys.readouterr().err.splitlines()
+        phases = [line for line in said if not line.startswith("review: still ")]
+        assert phases[:2] == ["review: reading feature against main", "review: read 1 file(s), 0 ignored"], said
+        assert phases[2].startswith("review: running ") and phases[2].endswith(" rule(s)"), said
+        assert phases[3].startswith("review: rules done in ") and phases[3].endswith(" s") and len(phases) == 4, said
+        assert any(line.startswith("review: still running the rules: ") for line in said), said
+
+    @pytest.mark.asyncio
+    async def test_a_wait_names_the_guidelines_still_running(self, cli) -> None:
+        from types import SimpleNamespace
+
+        from adk_review.judge.plugins import Progress
+
+        progress = Progress(named={"security": "guideline.security"})
+        await progress.before_agent_callback(agent=SimpleNamespace(name="security"), callback_context=None)
+        await progress.before_agent_callback(agent=SimpleNamespace(name="verifier"), callback_context=None)
+        assert cli._waiting(progress.running()) == "waiting on guideline.security"
+        await progress.after_agent_callback(agent=SimpleNamespace(name="security"), callback_context=None)
+        assert cli._waiting(progress.running()) == "working"
+
+
 class TestWhatAReviewKeeps:
     """What a review keeps beside its report: the cache, a recorded run, a debug log and a trace."""
 

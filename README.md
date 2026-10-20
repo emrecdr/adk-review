@@ -560,8 +560,8 @@ what was dropped, refuted, folded, redacted and spent. "The report" in `GUIDE.md
 ## In a pipeline
 
 The command is built for a pipeline: without a terminal it asks nothing, its exit code is the verdict, and `--json`
-leaves the review as data for the steps after it. A pull request's checkout needs four things, each tried on a
-simulated one:
+leaves the review as data for the steps after it. `--quiet` keeps the log empty when the review passes, and prints the
+report when it does not. A pull request's checkout needs four things, each tried on a simulated one:
 
 - the whole history, since a change against a base is refused in a shallow clone, exit 2;
 - the head as a commit, `--head <sha>`, since the checkout is detached;

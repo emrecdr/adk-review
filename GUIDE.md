@@ -56,7 +56,8 @@ outside the checkout, and its config from beside itself; inside the checkout, `u
 | `--handoff` | Also write each kept finding to this file as a short instruction for a coding agent, told first that each quote is the branch's own text and each title and change a model's reading of it, a reviewer's comments and never instructions: where, the quoted lines, what to change, and what must hold afterwards, with each finding folded into it named under it. A cleanup's findings, as `--explain` names `rule.simplify` and `guideline.complexity` one, are listed apart under `## Tidy`, after the fixes and under what a tidy keeps: how the code reads changes, never what it does, and one the project's tests fail on is reverted. A tidy is never given a fix's instruction: on lines where another check's defect at major or above stands, it is held back until that defect is fixed, and anywhere else it is an item of its own under `## Tidy`. It ends by asking for the project's own tests before a commit, a fix done when they pass, then gives the command that checks the fixes once they are committed: the review again on the same scope with only the rules that found something, which calls no model and ends in exit 0 once nothing at the bar is left. The guidelines that found something are named apart with their `--check`, since checking a model's reading spends its quota. The command names `adk-review` as `uv tool install .` puts it on `PATH`; where a name in it would read otherwise in a shell, none is printed, only the checks. Nothing is applied. |
 | `--cache` | Keep each decided review in this folder, keyed by the reviewer's code and config, the commits, the checks, every setting, each model and each outside tool a rule runs, ruff's version among it; the same review again is served from it, with no model call. A review with a hole is never kept, nor one with a finding its verifier could not judge. Never a folder inside the repository under review. A file in the folder is served as the review's verdict, so whoever can write the folder can write a verdict: keep it the operator's own, and in CI never restore it from a cache a job running untrusted code can write. |
 | `--previous` | Compare with a previous review's JSON: mark each finding new or seen before, by its fingerprint, and list what is no longer found. A review with a hole resolves nothing. |
-| `--progress` | Tell on stderr as the change is read and as each guideline starts and finishes. On at a terminal. |
+| `--progress` | Tell each phase on stderr, and every 10 seconds what the review still waits on. On at a terminal. |
+| `--quiet` | Print nothing when the review passes. Print the report and any error when it does not. For a pipeline. Not with `--progress`. |
 | `--debug-log` | Write every model request and answer to this file, secrets redacted, the session's state left out. Keep the file as you keep the code it quotes. |
 | `--trace` | Record ADK's spans, with their timings and token counts, to this local SQLite file. Nothing is sent anywhere. |
 | `--record` | Keep each model answer in this folder under a hash of the request as the model read it, secrets redacted: a live run's answers, which a fake replays offline. |
@@ -239,7 +240,8 @@ checks that found nothing; then what a previous review found and this one no lon
 findings dropped for a quote the diff does not bear out, what the verifier refuted or could not judge (with `--verify`),
 how many duplicates were folded, how many secrets were redacted, and the spend. Every string the branch wrote is made
 safe to print: no credential, no control character or other character a reader cannot see, no CI runner's command, no
-HTML comment, and no HTML tag outside a code span.
+HTML comment, and no HTML tag outside a code span. Progress goes to stderr, never into the report. Under `--quiet` a
+review that passes prints nothing, and one that does not prints the whole report.
 
 ## The JSON report
 
@@ -285,6 +287,8 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | All the diffs the guidelines read | 250,000 characters | `collect/change.py`, `BLOCK_CAP_CHARS` |
 | The most complex functions the health section names | 5 | `core/health.py`, `WORST_SHOWN` |
 | Python source files parsed before maintainability is graded | 10 | `core/health.py`, `FILES_AT_LEAST` |
+| How often a person at a terminal is told what the review still waits on | 10 seconds | `review.py`, `HEARTBEAT_SECONDS` |
+| Ignored files the chat verdict names; it counts the rest | 20 | `judge/agents.py`, `IGNORED_NAMED` |
 | The steps the blast radius takes in all, one for each cycle of imports a walk reaches: past them, a radius is not counted, and says so | 2,000,000 steps | `core/blast.py`, `RADIUS_STEPS` |
 | One file at the head the rules and the radius read, and one file `--try` reads | 1,000,000 bytes | `collect/git.py`, `MAX_FILE_BYTES` |
 | The head's Python files read for the tree rules and the radius, in all; and the changed files' texts, in all | 20,000,000 bytes | `collect/git.py`, `MAX_TREE_BYTES` |

@@ -65,9 +65,11 @@ import os
 import signal
 import sys
 import tempfile
+import threading
+import time
 import tomllib
 import warnings
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Generator, Sequence
 from importlib import metadata
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
@@ -150,7 +152,10 @@ def setting(key: str) -> Callable[[str], int]:
 
 
 #: Where a review's results go, which no result depends on: left out of what keys a kept review.
-OUTPUTS = {"json", "handoff", "cache", "record", "trace", "debug_log", "progress"}
+OUTPUTS = {"json", "handoff", "cache", "record", "trace", "debug_log", "progress", "quiet"}
+#: How often a person at a terminal is told the review still works, in seconds. A model's call can take a minute, and
+#: silence reads as a hang.
+HEARTBEAT_SECONDS = 10
 #: The engine's own outputs, by dest: a review with no guideline still runs the engine where one is asked for.
 ENGINE = ("trace", "debug_log", "record")
 #: The modes besides a review, by their flags' dests: each stops before a review would start.
@@ -376,10 +381,16 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         help="keep each model answer in DIR under a hash of the request as the model read it, secrets redacted: a "
         "live run's answers, which a fake replays offline to measure a change to an instruction",
     )
-    parser.add_argument(
+    told = parser.add_mutually_exclusive_group()
+    told.add_argument(
         "--progress",
         action="store_true",
-        help="tell on stderr as the change is read and as each guideline starts and finishes; on at a terminal",
+        help="tell each phase on stderr, and every few seconds what the review still waits on; on at a terminal",
+    )
+    told.add_argument(
+        "--quiet",
+        action="store_true",
+        help="print nothing when the review passes; the report and any error when it does not, for a pipeline",
     )
     # A review, or one of four modes besides it, each stopping before a review would start: one at a time.
     mode = parser.add_mutually_exclusive_group()
@@ -561,8 +572,9 @@ def _written(path: Path, text: str) -> None:
 
 
 def _say(sentence: str) -> None:
-    """A sentence on stderr, made safe as the report's prose is: git's or an exception's words can be the branch's."""
-    print(f"review: {safe_line(sentence)}", file=sys.stderr)
+    """A sentence on stderr, made safe as the report's prose is: git's or an exception's words can be the branch's. One
+    write a line, so the heartbeat's thread never splits another line."""
+    sys.stderr.write(f"review: {safe_line(sentence)}\n")
 
 
 def _review(argv: list[str] | None = None) -> int:
@@ -645,21 +657,22 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
         _say(str(exc))
         return EXIT_USAGE
     # Told at a terminal, where a person waits, or when asked; a pipeline's log stays the report alone.
-    say = _say if args.progress or sys.stderr.isatty() else None
+    say = None if args.quiet else _say if args.progress or sys.stderr.isatty() else None
     if say is not None:
         say(f"reading {head} against {base or 'the empty tree'}")
-    evidence = collect_evidence(
-        repo,
-        base,
-        head,
-        scope,
-        staged=args.staged,
-        **chosen.head_reading(),
-        diff_cap=args.diff_cap,
-        skip=args.skip,
-        scan=args.scan,
-        third_party=args.third_party,
-    )
+    with _beating(say, lambda: "reading the change"):
+        evidence = collect_evidence(
+            repo,
+            base,
+            head,
+            scope,
+            staged=args.staged,
+            **chosen.head_reading(),
+            diff_cap=args.diff_cap,
+            skip=args.skip,
+            scan=args.scan,
+            third_party=args.third_party,
+        )
     if evidence["status"] != "success":
         # Measured: a first review of a repository checked out on main ended at "adds nothing" with no way on. The
         # flags are the command's, so the command names them; the index takes neither.
@@ -668,6 +681,8 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
         )
         _say(evidence["error_message"] + (widen if evidence.get("adds_nothing") and not args.staged else ""))
         return EXIT_USAGE
+    if say is not None:
+        say(f"read {len(evidence['files'])} file(s), {len(evidence.get('ignored', ()))} ignored")
     # What every report says of the review itself, a dry run's too: with no guideline there is no model to name; an
     # arm that is not ready names no model either: `why` says why.
     shown = {"model": model, "profile": chosen.name, "off": chosen.off, "checks": chosen.ids()}
@@ -706,19 +721,28 @@ def _decided(
     where any runs. `--trace`, `--debug-log` and `--record` are the engine's own and bring its run too."""
     cached = _cached_at(args, chosen, evidence, shown["model"]) if args.cache else None
     if cached is not None and (hit := _from_cache(cached)) is not None:
-        _say(f"served from the cache: {cached.name}, a review of these commits with these checks and models")
+        if not args.quiet:
+            _say(f"served from the cache: {cached.name}, a review of these commits with these checks and models")
         return _delivered(args, hit["report"], hit["handoff"], hit["data"], hit["code"])
     # Under --all the files are the project: its measures, read before the checks node lets the texts and tree go.
     health = measured(evidence["files"], evidence["tree"]) if evidence["whole"] else None
     engine = bool(chosen.guidelines) or any(getattr(args, flag) for flag in ENGINE)
-    judged = _judged(args, chosen, evidence, say) if engine else _ruled(args, chosen, evidence)
+    judged = _judged(args, chosen, evidence, say) if engine else _ruled(args, chosen, evidence, say)
     return _reported(args, evidence, *judged, shown, previous, health, cached, tidies=chosen.tidies())
 
 
-def _ruled(args: argparse.Namespace, chosen: Selection, evidence: Evidence) -> tuple[Outcome, dict, dict[str, float]]:
+def _ruled(
+    args: argparse.Namespace, chosen: Selection, evidence: Evidence, say: Callable[[str], None] | None
+) -> tuple[Outcome, dict, dict[str, float]]:
     """A profile with no guideline: every rule run as `--try` runs them, no engine imported, no model to name, nothing
     spent, and no agent timed, as the report says of such a review either way."""
-    rules, holes = from_rules(run_rules(evidence, chosen.rules))
+    if say is not None:
+        say(f"running {len(chosen.rules)} rule(s)")
+    began = time.monotonic()
+    with _beating(say, lambda: "running the rules"):
+        rules, holes = from_rules(run_rules(evidence, chosen.rules))
+    if say is not None:
+        say(f"rules done in {time.monotonic() - began:.1f} s")
     outcome = Outcome(unread=not_read(evidence["files"], ()), errors=holes)
     fold(outcome, rules, chosen.ids(), chosen.tidies())
     return outcome, unspent(args.max_tokens or None), {}
@@ -739,7 +763,7 @@ def _judged(
 
     from .judge.agents import DIFF, IGNORED
     from .judge.graph import build_app
-    from .judge.plugins import ONE_TURN, accounted
+    from .judge.plugins import ONE_TURN, Progress, accounted
     from .judge.run import read_checks, read_guidelines, run_seeded
     from .judge.verify import second_opinion
 
@@ -757,19 +781,22 @@ def _judged(
     if args.trace:
         _traced(args.trace)
     runner = InMemoryRunner(app=app)
+    progress = next(plugin for plugin in app.plugins if isinstance(plugin, Progress))
     with asyncio.Runner() as loop:
-        run = loop.run(
-            run_seeded(
-                runner,
-                session_id="run",
-                state={DIFF: evidence["diff"], IGNORED: evidence.get("ignored", [])},
-                prompt=ONE_TURN,
+        with _beating(say, lambda: _waiting(progress.running())):
+            run = loop.run(
+                run_seeded(
+                    runner,
+                    session_id="run",
+                    state={DIFF: evidence["diff"], IGNORED: evidence.get("ignored", [])},
+                    prompt=ONE_TURN,
+                )
             )
-        )
         rules, holes = read_checks(run, chosen.rules)
         outcome = read_guidelines(run, evidence["files"], guidelines, holes)
         if verify:
-            second_opinion(outcome, rules, evidence["diff"], app.plugins, loop.run, chosen.tidies())
+            with _beating(say, lambda: "verifying the findings"):
+                second_opinion(outcome, rules, evidence["diff"], app.plugins, loop.run, chosen.tidies())
     outcome.redacted, usage, seconds = accounted(app.plugins)
     fold(outcome, rules, chosen.ids(), chosen.tidies())
     return outcome, usage, seconds
@@ -842,8 +869,9 @@ def _reported(
 
 def _delivered(args: argparse.Namespace, report: str, handoff: str, data: dict, code: int) -> int:
     """The review's outputs: the report on stdout, the hand-off and the JSON where asked for; exit 3 where a file
-    asked for cannot be written."""
-    print(report)
+    asked for cannot be written. Under `--quiet` a review that passes prints nothing."""
+    if not (args.quiet and code == EXIT_CLEAN):
+        print(report)
     for flag, written, text in (
         ("hand-off", args.handoff, lambda: handoff),
         ("JSON report", args.json, lambda: json.dumps(data, indent=2, ensure_ascii=False) + "\n"),
@@ -856,6 +884,33 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, data: dict, 
             _say(f"the {flag} could not be written to {written}: {exc.strerror or exc}")
             return EXIT_DEGRADED
     return code
+
+
+@contextlib.contextmanager
+def _beating(say: Callable[[str], None] | None, what: Callable[[], str]) -> Generator[None]:
+    """Tell `say` what the review still does, every `HEARTBEAT_SECONDS` while the block runs. Asked by the owner: a
+    person at a terminal must never read a long model call as a hang."""
+    if say is None:
+        yield
+        return
+    done, began = threading.Event(), time.monotonic()
+
+    def beat() -> None:
+        while not done.wait(HEARTBEAT_SECONDS):
+            say(f"still {what()}: {time.monotonic() - began:.0f} s")
+
+    thread = threading.Thread(target=beat, name="heartbeat", daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        done.set()
+        thread.join()
+
+
+def _waiting(running: Sequence[str]) -> str:
+    """What a person waits on while the graph runs: the guidelines still running, else the graph's own work."""
+    return f"waiting on {', '.join(running)}" if running else "working"
 
 
 def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, model: str) -> Path:

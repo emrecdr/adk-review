@@ -329,6 +329,10 @@ class Progress(BasePlugin):
             self.say(f"{self.named[agent.name]} done in {took:.1f} s")
         return None
 
+    def running(self) -> list[str]:
+        """The check ids of the named agents started and not yet finished: what a person waits on."""
+        return [self.named[name] for name in list(self.started) if name in self.named]
+
     def summary(self) -> dict[str, float]:
         """Each agent's seconds, for the JSON report, by the name the report uses."""
         return {self.named.get(name, name): seconds for name, seconds in sorted(self.seconds.items())}

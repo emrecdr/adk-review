@@ -21,7 +21,7 @@ uv run pyrefly check                                  # types: the package and s
 
 uv run python scripts/make_demo_repo.py          # build <tmp>/adk-demo-repo: main + feature/payments with 4 planted defects
 uv run python scripts/make_demo_repo.py --fix    # commit the two fixes on feature/payments
-uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--handoff FILE] [--cache DIR] [--previous FILE] [--progress] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
+uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--handoff FILE] [--cache DIR] [--previous FILE] [--progress | --quiet] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
 uv run adk-review <demo repo> --head feature/payments --base main --profile demo   # every rule, the demo's own among them, no model call, no key
 uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # what a review would cover and run, nothing run
 uv run adk-review-login                          # one-time GitHub device-flow login for the Copilot arm
@@ -157,10 +157,11 @@ Load-bearing rules the tests enforce:
   the verifiers' included, answering each `RATE_LIMITED` (in chat, until the turn ends), then `RedactSecretsPlugin`,
   ADK's `DebugLoggingPlugin` and `Recorder` where `--debug-log` and `--record` ask, `UsageLedger`,
   `ReportProviderErrors`, and `Progress`, which times each agent and, at a terminal or with `--progress`, tells each
-  guideline's start and finish on stderr; in chat, first, `RefuseUnready`, which asks `require_ready` once a turn, as
-  the command asks before it builds anything, and while the arm cannot run answers the turn with its sentence before any
-  agent runs, and after `StopAtRateLimit`, `OneTurn`, which gives each judging agent one fixed turn, `review`, as the
-  command's read: ADK would hand the verdict the guidelines' findings unfenced as a turn.
+  guideline's start and finish on stderr, the command telling every `HEARTBEAT_SECONDS` which it still waits on, and
+  `--quiet` silencing both; in chat, first, `RefuseUnready`, which asks `require_ready` once a turn, as the command asks
+  before it builds anything, and while the arm cannot run answers the turn with its sentence before any agent runs, and
+  after `StopAtRateLimit`, `OneTurn`, which gives each judging agent one fixed turn, `review`, as the command's read:
+  ADK would hand the verdict the guidelines' findings unfenced as a turn.
 - **Layering** (`tests/test_layering.py`): `core` → `collect` → `judge` → `deliver`, with imports pointing one way
   only, never spelled from the top (`adk_review.…`), `deliver/` importing `core` alone, a guideline importing `core`
   alone, and a rule importing one door, `judge/rule_helpers/`, alone, which imports `core` alone and lists in `__all__`
