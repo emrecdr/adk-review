@@ -10,10 +10,14 @@ first, and `adk web` before it imports this module.
 
 from __future__ import annotations
 
+import asyncio
+import functools
 import json
 import logging
 import os
 import re
+from collections.abc import AsyncGenerator
+from typing import Any
 from urllib.parse import urlsplit
 
 import truststore
@@ -107,17 +111,19 @@ def build_model(*, role: str = "") -> str | BaseLlm:
     """The model for `REVIEW_PROVIDER`: a name ADK resolves natively on Gemini, a LiteLLM model otherwise — and, when
     `REVIEW_FALLBACK_MODEL` names one, ADK's `FallbackModel` over both.
 
-    A fallback moves a call to the next model on a 429 or a 5xx, each model
-    tried once, the request's own retries spent first. Seen live on Gemini's
-    free tier: the quota is per model, twenty requests a day, and a run past
-    it was ten named 429s where a second model would have answered. A model
-    the key does not serve is a 404, not a fallback: the plugin names it.
+    A fallback moves a call to the next model on a 429, a 5xx or a timeout,
+    each model tried once, the request's own retries spent first. Seen live on
+    Gemini's free tier: the quota is per model, twenty requests a day, and a
+    run past it was ten named 429s where a second model would have answered. A
+    model the key does not serve is a 404, not a fallback: the plugin names it.
+    ADK leaves a timeout out, since one may have been answered and paid for;
+    a review's call is read, never acted on, and an operator who names a
+    fallback has chosen to pay for a second answer.
     """
     names = [model_name(role)] + ([fallback] if (fallback := fallback_name()) else [])
     if provider() == "gemini":
-        return names[0] if len(names) == 1 else FallbackModel(models=names)
+        return names[0] if len(names) == 1 else FallbackModel(models=names, retriable_status_codes=_FALL_BACK_ON)
     litellm = _litellm()
-    from google.adk.models.lite_llm import LiteLlm
 
     litellm.suppress_debug_info = True  # else a red "Give Feedback" banner on stdout with every error
     # The instruction as Copilot's system turn. Measured by review: LiteLLM sent it as an assistant turn unless told
@@ -129,8 +135,40 @@ def build_model(*, role: str = "") -> str | BaseLlm:
     logging.getLogger("LiteLLM").addFilter(_HIDE_BEARER)  # once: a filter already there is not added again
     # Copilot's attempts are the OpenAI SDK's own retries, spaced and waiting out a Retry-After, `RETRY_ATTEMPTS` in
     # all: the reviewer's constant, where LiteLLM's default of two retries made them before, unwritten here.
-    models = [LiteLlm(model=f"{COPILOT}/{name}", max_retries=RETRY_ATTEMPTS - 1) for name in names]
-    return models[0] if len(models) == 1 else FallbackModel(models=models)
+    bounded = _bounded()
+    models = [bounded(model=f"{COPILOT}/{name}", max_retries=RETRY_ATTEMPTS - 1) for name in names]
+    return models[0] if len(models) == 1 else FallbackModel(models=models, retriable_status_codes=_FALL_BACK_ON)
+
+
+#: What a fallback model moves a call on from: ADK's codes, and a timeout.
+_FALL_BACK_ON = FallbackModel.DEFAULT_STATUS_CODES | {408}
+
+
+class CallTimeoutError(TimeoutError):
+    """A call no answer came back to within `REQUEST_TIMEOUT_S`, the client's own retries included: a timeout, 408,
+    which a fallback model moves on from."""
+
+    status_code = 408
+
+
+@functools.cache
+def _bounded() -> type[BaseLlm]:
+    """Copilot's model under one deadline for a call and every retry the OpenAI SDK makes of it, where each attempt
+    had a deadline of its own. Measured offline against a server that never answered: each call was sent three times,
+    each waiting out 180 s, nine minutes a guideline, and the fallback never asked. Built where the arm is, as LiteLLM
+    is imported."""
+    from google.adk.models.lite_llm import LiteLlm
+
+    class Bounded(LiteLlm):
+        async def generate_content_async(self, llm_request: Any, stream: bool = False) -> AsyncGenerator[Any]:
+            try:
+                async with asyncio.timeout(REQUEST_TIMEOUT_S):
+                    async for response in super().generate_content_async(llm_request, stream):
+                        yield response
+            except TimeoutError as exc:
+                raise CallTimeoutError(f"no answer within {REQUEST_TIMEOUT_S:g} s, the retries included") from exc
+
+    return Bounded
 
 
 def _litellm():  # unannotated: a checker then knows the module and its typed flags, where `ModuleType` names none

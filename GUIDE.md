@@ -176,7 +176,7 @@ shell wins over the file:
 | `REVIEW_PROVIDER` | The arm: `copilot` or `gemini`. Default: `copilot`. |
 | `REVIEW_MODEL` | The model. Blank: `gpt-4.1` on Copilot, `gemini-2.5-flash` on Gemini. GitHub has deprecated `gpt-4.1` in Copilot: it answers while Copilot serves it, under per-user rate limits GitHub does not publish, so name a model the seat's plan serves. On the Gemini arm, a model ADK sends to another provider, `gpt-*` or `claude-*`, is refused, exit 2; on Copilot, one that cannot judge at temperature 0, `gpt-5`, `gpt-5.5` or the o-series, as LiteLLM says before any call. |
 | `REVIEW_VERIFIER_MODEL` | The model `--verify` asks. Blank: `REVIEW_MODEL`. |
-| `REVIEW_FALLBACK_MODEL` | A second model behind every role's first, tried on a 429 or a 5xx. Blank: none. |
+| `REVIEW_FALLBACK_MODEL` | A second model behind every role's first, tried on a 429, a 5xx or a timeout. Blank: none. |
 | `GOOGLE_API_KEY` | The Gemini arm's key. |
 | `GOOGLE_GENAI_USE_ENTERPRISE` | `true` sends the Gemini arm through Vertex AI. |
 | `GOOGLE_CLOUD_PROJECT` | Vertex AI's project, signed in with Application Default Credentials (`gcloud auth application-default login`); no `GOOGLE_API_KEY` is needed, a key being Vertex AI's express mode. Blank: the project the credentials name, gcloud's own or a service account's, as on Cloud Run or GKE. |
@@ -275,7 +275,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | One git call | 30 seconds | `collect/git.py`, `GIT_TIMEOUT_S` |
 | One ruff run | 60 seconds | `collect/ruff.py`, `RUFF_TIMEOUT_S` |
 | The findings one ruff run names that the rules read: past them, a hole | 500,000 findings | `collect/ruff.py`, `RUFF_FINDINGS_MAX` |
-| One model call | 180 seconds | `judge/config.py`, `REQUEST_TIMEOUT_S` |
+| One model call, every retry Copilot's client makes of it included | 180 seconds | `judge/config.py`, `REQUEST_TIMEOUT_S` |
 | One run of the guidelines, or of the verifiers | 600 seconds | `judge/config.py`, `RUN_DEADLINE_S` |
 | Model calls in flight at once | 3 | `judge/config.py`, `CONCURRENCY` |
 | The radius a guideline is shown | 20,000 characters | `judge/agents.py`, `BLAST_CAP_CHARS` |

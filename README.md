@@ -799,20 +799,23 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   `shell=True`.
 - **Retries live in the clients.** One constant, `RETRY_ATTEMPTS`, sets them on both arms. Gemini's are on the request,
   as the deadline is: genai retries the status codes it deems transient, with backoff. Copilot's are the OpenAI SDK's
-  own, `max_retries` on the model, backing off and waiting out the server's Retry-After, and its request asks for none:
-  ADK's LiteLLM wrapper forwards the request's attempts as `num_retries`, a retry around the SDK's. Measured, asked for
-  three the two made seven, and against a local server answering 429, asking for one added LiteLLM's own retry twenty
-  milliseconds after the SDK's last, its Retry-After unread, where asking for none spaced the same three requests. ADK's
-  node `retry_config` would re-run a whole guideline, and with the error plugin turning errors into answers it would
-  never see one. A quota window outlasts any retry: `REVIEW_FALLBACK_MODEL` puts a second model behind every role's
-  first, through ADK's `FallbackModel`, each model tried once on a 429 or a 5xx, since Gemini's free tier counts its
-  quota per model and Copilot's rate limits differ by model. Seen live on Gemini's free tier: five requests a minute per
-  model, and `--verify` made ten, so the last verifiers met a 429 asking for 39 seconds, and their findings were kept
-  and named with it; and twenty a day, so a key on that tier reviews about six changes a day under `default`, and a live
-  script, three reviews of each branch by default, needs a paid tier or `--pause` over several days. A 429 that no retry
-  and no fallback got past ends what the review spends: `StopAtRateLimit` sends no later call of it, the verifiers'
-  included, each named `RATE_LIMITED` and never counted as attempted, since Copilot's limit for utility models lasts
-  hours and a review with a hole is run again; a live script stops at the first run that met one.
+  own, `max_retries` on the model, backing off and waiting out the server's Retry-After, all within one deadline for the
+  call, `REQUEST_TIMEOUT_S`, where each attempt had its own: measured offline against a server that never answered,
+  three attempts of 180 s each, nine minutes, the fallback never asked, where a timeout now ends the call, a 408 the
+  fallback moves on from. Its request asks for none: ADK's LiteLLM wrapper forwards the request's attempts as
+  `num_retries`, a retry around the SDK's. Measured, asked for three the two made seven, and against a local server
+  answering 429, asking for one added LiteLLM's own retry twenty milliseconds after the SDK's last, its Retry-After
+  unread, where asking for none spaced the same three requests. ADK's node `retry_config` would re-run a whole
+  guideline, and with the error plugin turning errors into answers it would never see one. A quota window outlasts any
+  retry: `REVIEW_FALLBACK_MODEL` puts a second model behind every role's first, through ADK's `FallbackModel`, each
+  model tried once on a 429, a 5xx or a timeout, since Gemini's free tier counts its quota per model and Copilot's rate
+  limits differ by model. Seen live on Gemini's free tier: five requests a minute per model, and `--verify` made ten, so
+  the last verifiers met a 429 asking for 39 seconds, and their findings were kept and named with it; and twenty a day,
+  so a key on that tier reviews about six changes a day under `default`, and a live script, three reviews of each branch
+  by default, needs a paid tier or `--pause` over several days. A 429 that no retry and no fallback got past ends what
+  the review spends: `StopAtRateLimit` sends no later call of it, the verifiers' included, each named `RATE_LIMITED` and
+  never counted as attempted, since Copilot's limit for utility models lasts hours and a review with a hole is run
+  again; a live script stops at the first run that met one.
 - **A ceiling reserves first.** The guidelines call at once, so a ceiling that counted only tokens already spent would
   let them all through and be passed by all of them. Each call reserves its cost before it is sent — its request's
   characters over four, room for an answer and the thinking its budget allows — and the call that would pass the ceiling

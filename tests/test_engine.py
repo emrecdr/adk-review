@@ -79,6 +79,41 @@ class TestRetriesOnBothArms:
         sent = GithubCopilotConfig()._transform_messages(asked, "gpt-4.1")
         assert [message["role"] for message in sent] == ["system", "user"], sent
 
+    def test_a_copilot_call_that_hangs_ends_at_one_deadline_and_its_fallback_answers(
+        self, demo_repo: Path, monkeypatch, tmp_path: Path, capsys
+    ) -> None:
+        """Measured offline against a server that never answered: each call was sent three times, each waiting out
+        the 180 s deadline, nine minutes, and the fallback model was never asked, a timeout being no status ADK's
+        fallback reads. One deadline holds a call and every retry the client makes of it now, and past it the call is
+        a timeout, 408, which the fallback moves on from: here each guideline is asked of the primary once and of the
+        fallback once, and the review decides in seconds."""
+        import asyncio
+
+        from google.adk.models.lite_llm import LiteLLMClient
+
+        asked: list[str] = []
+
+        async def answer(_client, model, **_request):
+            asked.append(model)
+            if model == "github_copilot/gpt-4.1":
+                await asyncio.sleep(60)  # the primary never answers
+            return litellm.ModelResponse(
+                choices=[{"message": {"role": "assistant", "content": '{"findings": [], "summary": "Nothing."}'}}],
+                usage={"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120},
+            )
+
+        monkeypatch.setattr(LiteLLMClient, "acompletion", answer)
+        _cached_copilot_token(monkeypatch, tmp_path)
+        monkeypatch.setenv("REVIEW_FALLBACK_MODEL", "gpt-4o")
+        cli, data = load_command(monkeypatch, "copilot", "gpt-4.1"), tmp_path / "review.json"
+        monkeypatch.setattr(importlib.import_module("adk_review.judge.config"), "REQUEST_TIMEOUT_S", 0.5)
+        started = time.perf_counter()
+        assert run_review(cli, demo_repo, "--json", str(data)) == 1, capsys.readouterr().out
+        assert time.perf_counter() - started < 20, "a deadline a call, not one an attempt"
+        report, calls = json.loads(data.read_text(encoding="utf-8")), len(GUIDELINE_NAMES)
+        assert sorted(asked) == ["github_copilot/gpt-4.1"] * calls + ["github_copilot/gpt-4o"] * calls, asked
+        assert report["could_not_look"] == {}, "each guideline answered by the fallback"
+
     def test_the_planted_review_runs_end_to_end_on_the_copilot_arm(
         self, demo_repo: Path, monkeypatch, tmp_path: Path, capsys
     ) -> None:
