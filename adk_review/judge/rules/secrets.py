@@ -34,7 +34,7 @@ class Secrets(Rule):
         ("deploy.yaml", "url: https://hooks.slack.com/services/T0/B0/x"),
         'DATABASE_URL = "postgresql://app:' + "Xk9mQ2vR7t" + '@db.internal.acme.io/app"',
         'URL = "mssql://sa:' + "P@ssw0rd" + '@sqlserver.corp.acme.io/db"',
-        ("README.md", "curl https://x-access-token:ghp_" + "a1B2" * 9 + "@api.example.com/repos"),
+        ("scripts/release", "curl https://x-access-token:ghp_" + "a1B2" * 9 + "@api.example.com/repos"),
     )
     good = (
         "token = get_token(request)",

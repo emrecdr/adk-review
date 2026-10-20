@@ -45,6 +45,10 @@ def backticks(text: str) -> int:
     return max((len(run) for run in re.findall(r"`+", text)), default=0)
 
 
+#: How a cut names itself after what it kept: a reader of a capped text knows it is not whole.
+CUT_MARK = "[… cut at "
+
+
 def cut_at(text: str, limit: int, *, sep: str = " ") -> str:
     """`text` cut at `limit` characters with the cut named, as every cap in the reviewer names its cut, and never inside
     a credential: the cut moves to the start of one it would split, and names where it fell. Half a credential matches
@@ -59,4 +63,4 @@ def cut_at(text: str, limit: int, *, sep: str = " ") -> str:
     found = spans(text[:read], cut=len(text) > read)  # one crossing the cut starts before it
     while straddled := [start for start, end in found if start < limit < end]:
         limit = min(straddled)
-    return f"{text[:limit]}{sep}[… cut at {limit:,} characters]"
+    return f"{text[:limit]}{sep}{CUT_MARK}{limit:,} characters]"

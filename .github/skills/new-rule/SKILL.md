@@ -19,13 +19,15 @@ The shape of a rule — the three kinds, the constants it names, what it may imp
    the head's paths or every module. Every name comes from one import line, `from ..rule_helpers import …`, the door in
    `adk_review/judge/rule_helpers/`.
 2. Keep the rule's expectations as constants at the top of its file, as `REQUIRED` is in `demo_required_paths.py`, and
-   give it `bad` and `good` examples: the catalog holds the rule to them, and to firing on nothing in its own source,
-   at every start. The folder holds rules and nothing else: no helper module and no guide; a helper several rules
-   share belongs in `adk_review/judge/rule_helpers/`, in the module named after what it reads, and in the
-   door's `__all__`. A rule reads no test by default; set `reads_tests = True` when what it finds matters in a test
-   too — a credential, hidden text, a workflow named `test_*.yml` — and a `bad` example at a test's path proves it.
-   Set `cleanup = True` when what it finds changes how code reads and never what it does, as `simplify`'s does: the
-   hand-off then lists it as a tidy, apart from the fixes.
+   give it `bad` and `good` examples: the catalog holds the rule to them, and to firing on nothing in its own source, at
+   every start. A `(path, text)` example names a file the shipped `[review] scan` reads, or the rule never fires where
+   it was made to: `tests/test_catalog.py` holds every line and file rule to it, so a new kind of file is a glob in
+   `scan` too. The folder holds rules and nothing else: no helper module and no guide; a helper several rules share
+   belongs in `adk_review/judge/rule_helpers/`, in the module named after what it reads, and in the door's `__all__`. A
+   rule reads no test by default; set `reads_tests = True` when what it finds matters in a test too — a credential,
+   hidden text, a workflow named `test_*.yml` — and a `bad` example at a test's path proves it. Set `cleanup = True`
+   when what it finds changes how code reads and never what it does, as `simplify`'s does: the hand-off then lists it as
+   a tidy, apart from the fixes.
 3. Profiles in `adk_review/config.toml`: add `rule.<name>` to `rules-only` and `full`, which a test holds to every
    rule whose id does not start with `demo-`, the prefix a rule written for the demo alone takes; `demo` runs every
    rule through the group `rules`. Add it to `default` only when every review should run it, since `default` holds

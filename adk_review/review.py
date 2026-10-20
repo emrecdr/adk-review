@@ -298,7 +298,7 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
     parser.add_argument(
         "--scan",
         action="append",
-        default=list(review["scan"]),
+        default=list(review["scan"]) or ["*"],  # every file, as an empty list reads: a glob added reads no fewer
         metavar="GLOB",
         help="a glob of changed files a review reads, as the config's scan list does, Python's, notebooks' and "
         "configs' by default, and always a file with no suffix: any other is ignored, only listed; repeat it for more "
@@ -737,7 +737,7 @@ def _judged(
 
     from google.adk.runners import InMemoryRunner
 
-    from .judge.agents import DIFF
+    from .judge.agents import DIFF, IGNORED
     from .judge.graph import build_app
     from .judge.plugins import ONE_TURN, accounted
     from .judge.run import read_checks, read_guidelines, run_seeded
@@ -758,7 +758,14 @@ def _judged(
         _traced(args.trace)
     runner = InMemoryRunner(app=app)
     with asyncio.Runner() as loop:
-        run = loop.run(run_seeded(runner, session_id="run", state={DIFF: evidence["diff"]}, prompt=ONE_TURN))
+        run = loop.run(
+            run_seeded(
+                runner,
+                session_id="run",
+                state={DIFF: evidence["diff"], IGNORED: evidence.get("ignored", [])},
+                prompt=ONE_TURN,
+            )
+        )
         rules, holes = read_checks(run, chosen.rules)
         outcome = read_guidelines(run, evidence["files"], guidelines, holes)
         if verify:

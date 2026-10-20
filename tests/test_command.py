@@ -31,6 +31,7 @@ from conftest import (
     as_json,
     catalog,
     confirms,
+    load_agent,
     profiles_of,
     run_review,
     run_turn,
@@ -277,6 +278,23 @@ class TestWhatAReviewCovers:
         _committed(repo, "app.py")
         cli.main(reviewed)
         assert head_reads == [1], "a changed Python file is measured over the head"
+
+    @pytest.mark.asyncio
+    async def test_chat_approves_a_change_of_only_ignored_files_and_names_them(
+        self, tmp_path: Path, monkeypatch, fake_provider
+    ) -> None:
+        """Read by review: chat read the empty change a gather of only ignored files writes as one it could not
+        gather, and ended DEGRADED, every guideline "could not look", where the command approves; and it named none
+        of them. It approves, no model shown nothing, and names them."""
+        from adk_review.judge.agents import FINDINGS
+
+        repo = _branch_off_empty(tmp_path / "repo", "feature", base="main")
+        _committed(repo, "README.md", "# A project\n")
+        module = load_agent(monkeypatch)
+        confirms(fake_provider, repo, head="feature")
+        _final, state = await run_turn(module, "Review feature against main.")
+        said = state.get(FINDINGS, "")
+        assert said.startswith("verdict: APPROVED") and "README.md" in said, said
 
     @pytest.mark.asyncio
     async def test_chat_reads_the_head_whole_only_where_its_checks_do(

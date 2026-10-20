@@ -26,7 +26,7 @@ from ..core.findings import Checked, Review
 from ..core.profiles import state_key
 from ..core.rules import AnyRule
 from ..core.verdict import Outcome, Sourced, decide, drop_ungrounded, fold, from_rules, not_read
-from .agents import FINDINGS, QUOTABLE, for_the_verdict, read_back, unjudged
+from .agents import FINDINGS, IGNORED, QUOTABLE, for_the_verdict, read_back, unjudged
 from .checks import NAME as CHECKS
 from .config import RUN_DEADLINE_S
 
@@ -151,4 +151,4 @@ def decided(state: Mapping, errors: Mapping[str, str], checks: Catalog, fail_on:
     outcome = read_guidelines(run, files, tuple(guideline.check_id for guideline in checks.guidelines), holes)
     fold(outcome, rules, checks.ids(), checks.tidies())
     verdict, _code = decide(outcome, fail_on)
-    return for_the_verdict(outcome, checks.ids(), verdict)
+    return for_the_verdict(outcome, checks.ids(), verdict, state.get(IGNORED) or ())

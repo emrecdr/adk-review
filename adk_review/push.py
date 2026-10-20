@@ -44,7 +44,7 @@ from .core.evidence import entry
 from .core.findings import Finding, at_or_above
 from .core.paths import in_review, matches
 from .core.rules import AnyRule, run_rule
-from .core.text import lines_of
+from .core.text import CUT_MARK, lines_of
 from .core.verdict import EXIT_INTERRUPTED, EXIT_USAGE
 from .deliver.report import safe_line
 from .judge.catalog import CONFIG, catalog, load_config, select
@@ -153,6 +153,8 @@ def _stops(report: dict) -> frozenset[tuple[str, ...]] | None:
     check could not look, one a file, so a file every review of a merge could not read stops it, and each side's own
     does not. None where it says of none, a review stopped for another reason, which no other review clears."""
     bar = report.get("fail_on", "blocker")
+    if any(CUT_MARK in why for why in report.get("could_not_look", {}).values()):
+        return None  # read by review: a reason the JSON cut names not every file, and a new one past the cut passed
     stops = frozenset(
         [("finding", f["check"], f["file"], str(f["line"]), f["title"]) for f in report.get("findings", ())
          if at_or_above(f["severity"], bar)]

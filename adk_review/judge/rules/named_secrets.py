@@ -21,6 +21,7 @@ from ..rule_helpers import (
     SECRET_WORDS,
     Rule,
     is_placeholder,
+    is_python,
     is_test,
     named_at,
     named_values,
@@ -57,7 +58,10 @@ _CODE_MARK = re.compile(r"[{};]")
 _SCHEME = re.compile(r"(?i)\A(?:bearer|basic|token)\s+(?=\S+$)")
 #: An environment's file, which a folder named `test` holds as config, never as a test's fixture: `.env`, `db.env`,
 #: `.env.test`. Read by review: any file in such a folder was a test's, and a password in `deploy/test/db.env` passed.
-_ENV_FILE = re.compile(r"(?:^|/)(?:[^/]*\.env|\.env(?:\.[^/]*)?)$")
+_ENV_FILE = re.compile(r"(?:^|/)(?:[^/]*\.env|\.env(?:\.[^/]*)?|\.envrc)$")
+#: A test suite's own folder, where a fixture in any language is the test's: `tests`, never `test`, which names an
+#: environment as often. Read by review: `deploy/test/config.yaml` and `k8s/test/secret.yaml` passed as fixtures.
+_SUITE = re.compile(r"(?:^|/)tests/")
 #: The shortest credential a machine makes: shorter is a documentation's example, `sk-1234`.
 MADE_MIN_CHARS = 8
 #: The widest line a person writes: wider is generated, a minified bundle or data, where a name says nothing of who
@@ -71,10 +75,10 @@ class NamedSecrets(Rule):
     made with a password of the test's own, in any language, is a test's: each left alone, while a vendor's key is
     `secrets`' to find in a test as anywhere. Measured: 4 of 6 test fixtures were flagged as blockers. Read by review:
     any file in a folder named `test` read as a test's, so a password in `deploy/test/db.env`, an environment's
-    config, passed; an env file is read wherever it lies."""
+    config, passed; a test's code and a fixture under `tests` are left alone, an env file read wherever it lies."""
 
     id = "named-secrets"
-    reads_tests = True  # an env file in a test's folder, which `check` reads, and no test's own fixture
+    reads_tests = True  # all but a test's own code and its suite's fixtures, which `check` passes over
     severity = "blocker"
     title = "a value assigned to a name that says secret"
     fix = "Read it from the environment or a secret store, remove it from history, and rotate it."
@@ -98,8 +102,8 @@ class NamedSecrets(Rule):
     )
 
     def check(self, path: str, line: str) -> bool:
-        if is_test(path) and not _ENV_FILE.search(path):  # a test's own fixture, in any language; an env file is config
-            return False
+        if is_test(path) and not _ENV_FILE.search(path) and (is_python(path, lambda: "") or _SUITE.search(path)):
+            return False  # a test's own code, or a fixture under its suite's folder; an env file is config
         # The generic shape first, which nearly every line lacks; then the line with its examples blanked, which must
         # hold no vendor's shape: a vendor's is `secrets`' finding, one credential, one finding. An example is blanked
         # as `[REDACTED]`, which no shape takes for a value, so what is left of one is no value either: measured by

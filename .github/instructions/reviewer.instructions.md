@@ -24,25 +24,25 @@ applyTo: "adk_review/**"
   own `hits`, or fails its own examples. No other folder is read for checks: one place for each kind, one way.
 - A rule names `id` (its file's name with `-` for `_`), `severity` (`blocker`, `major` or `minor`), `title` and `fix` as
   class constants, its expectations as constants in its file, `bad` and `good` examples (a text, read at `example.py`; a
-  `(path, text)` pair; or `{path: text}`), `reads_tests = True` where what it finds matters in a test too (a credential,
-  hidden text, a workflow named `test_*.yml`; no test's file reaches any other rule, though `file.changed` and
-  `tree.paths` list them all), `cleanup = True` where its findings change how code reads and never what it does (the
-  hand-off lists them as tidies), and one `check` of three kinds — a line, a file, the tree: a `Rule` with
-  `check(path, line) -> bool` over each added line; a `FileRule` with `check(file)` returning line numbers, which the
-  report quotes, or `(line, what is wrong)` pairs over each changed file whole at the head (`file.lines`, `file.added`,
-  `file.changed`, `file.module`, `file.arrived(*globs)` where a file renamed or copied into a rule's paths brings every
-  line of it there, `file.line(n)`, `file.near(n)` for a file past the size limits, as far as its diff shows it, and
-  `file.diagnostics`, an outside tool's, for a rule that names its `tool`, whose adapter is in `collect/tools.py`); a
-  `TreeRule` with `check(tree)` returning `(path, what)` or `(path, line, what)` over the head's paths and parsed
-  modules (`tree.paths`, `tree.has`, `tree.module`, `tree.modules`). Any other shape is a sentence. The helpers come
-  through the door: `is_test`, `matches`, `calls`, `comment_of`, `words`, `tokens`, `calls_in`, `argument`,
-  `functions_in`, `imports_in`, `defined`, `classes`, `parameters` and the rest. A hit may be a `Hit` naming its own
-  title, severity or fix, as `lint` does for ruff's codes. `secrets` and `lint` are written like any other rule;
-  redaction is not a check, and `core/secrets.py` keeps the shapes it scrubs with. A file's lines are numbered as git
-  numbers them (`core/text.py`'s `lines_of`), and a changed file the collector did not read whole is the hole of the
-  file rule that asks for its text — its lines, its module, ruff's diagnostics — and of no other; what that rule found
-  on the files it read stands beside the hole. No rule reads the head for itself. A rule's tests use `try_rule`,
-  `lines_hit` and `self_check` from `judge/rule_helpers/`.
+  `(path, text)` pair, at a path the shipped `scan` reads, as `tests/test_catalog.py` holds; or `{path: text}`),
+  `reads_tests = True` where what it finds matters in a test too (a credential, hidden text, a workflow named
+  `test_*.yml`; no test's file reaches any other rule, though `file.changed` and `tree.paths` list them all), `cleanup =
+  True` where its findings change how code reads and never what it does (the hand-off lists them as tidies), and one
+  `check` of three kinds — a line, a file, the tree: a `Rule` with `check(path, line) -> bool` over each added line; a
+  `FileRule` with `check(file)` returning line numbers, which the report quotes, or `(line, what is wrong)` pairs over
+  each changed file whole at the head (`file.lines`, `file.added`, `file.changed`, `file.module`, `file.arrived(*globs)`
+  where a file renamed or copied into a rule's paths brings every line of it there, `file.line(n)`, `file.near(n)` for a
+  file past the size limits, as far as its diff shows it, and `file.diagnostics`, an outside tool's, for a rule that
+  names its `tool`, whose adapter is in `collect/tools.py`); a `TreeRule` with `check(tree)` returning `(path, what)` or
+  `(path, line, what)` over the head's paths and parsed modules (`tree.paths`, `tree.has`, `tree.module`,
+  `tree.modules`). Any other shape is a sentence. The helpers come through the door: `is_test`, `matches`, `calls`,
+  `comment_of`, `words`, `tokens`, `calls_in`, `argument`, `functions_in`, `imports_in`, `defined`, `classes`,
+  `parameters` and the rest. A hit may be a `Hit` naming its own title, severity or fix, as `lint` does for ruff's
+  codes. `secrets` and `lint` are written like any other rule; redaction is not a check, and `core/secrets.py` keeps the
+  shapes it scrubs with. A file's lines are numbered as git numbers them (`core/text.py`'s `lines_of`), and a changed
+  file the collector did not read whole is the hole of the file rule that asks for its text — its lines, its module,
+  ruff's diagnostics — and of no other; what that rule found on the files it read stands beside the hole. No rule reads
+  the head for itself. A rule's tests use `try_rule`, `lines_hit` and `self_check` from `judge/rule_helpers/`.
 - A guideline names `id`, `title`, `role` (the instruction's opening: who the model is and what it judges) and
   `thinking_budget`, and `cleanup = True` where its findings change how code reads and never what it does, as
   `complexity`'s do (the hand-off lists them as tidies); `judge/agents.py` builds every guideline's agent the same way

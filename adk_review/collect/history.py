@@ -95,12 +95,17 @@ def sent(
         yield from ((commit, said[commit], added.get(commit, [])) for commit in batch)
 
 
+#: A commit's patch with no rename found, a file moved added whole: read by review, a token added in `notes.txt`, which
+#: the review ignores, and moved into `app.py` showed no line added there, and passed the hook unread.
+_WHOLE = (*(flag for flag in _PLAIN if flag != "-M"), "--no-renames")
+
+
 def _added_by(repo: str, commits: Sequence[str], attributes: str) -> dict[str, list[dict]]:
     """Each commit's files with the lines it added, a first commit's against the empty tree, in one call:
     `diff-tree --stdin` names each commit on a line of its own before its patch, and a merge not at all."""
     found: dict[str, list[dict]] = {}
     stdin = "".join(f"{commit}\n" for commit in commits).encode()
-    patch = _git_raw(repo, attributes, "diff-tree", "--stdin", "-r", "-p", "--root", *_PLAIN, stdin=stdin).stdout
+    patch = _git_raw(repo, attributes, "diff-tree", "--stdin", "-r", "-p", "--root", *_WHOLE, stdin=stdin).stdout
     parts = _A_COMMIT.split(patch)  # what came before the first commit's line, then each commit and its patch
     for commit, body in zip(parts[1::2], parts[2::2], strict=True):
         files = found.setdefault(commit.decode(), [])

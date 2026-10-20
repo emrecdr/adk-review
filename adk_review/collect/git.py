@@ -19,7 +19,7 @@ import re
 import shutil
 import string
 import subprocess
-from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -637,11 +637,22 @@ def _as_linked(through: list[tuple[Entry, str]], texts: Mapping[str, str]) -> No
             entry["text"], entry["added_at"] = text, frozenset(range(1, len(lines_of(text)) + 1))
 
 
-def _links_unread(files: list[Entry], links: Collection[str], skipped: Mapping[str, str]) -> None:
+def _reviewed(entry: Mapping[str, str], scan: Sequence[str], third_party: Sequence[str]) -> bool:
+    """Whether a review reads a changed file, as `in_review` says; a submodule, another repository's commit and a hole,
+    by its folder alone. Read by review: one named `nanopb-0.4.7` read as a file with the suffix `.7`, ignored."""
+    if entry["mode"] == "160000":
+        return not matches(entry["path"], *third_party)
+    return in_review(entry["path"], scan, third_party)
+
+
+def _links_unread(
+    files: list[Entry], links: Collection[str], skipped: Mapping[str, str], read: Callable[[str], bool]
+) -> None:
     """A symbolic link runs as the file it names, which its diff never shows: for the guidelines a hole, named on the
-    link, unless the change showed them that file whole, as it shows a file it adds. Read by review: `run.py`, a link
-    to a skip-listed image holding Python, was approved, read by no one; a file the change only modified counted as
-    shown whole, one hunk of it shown; and a link moved whole, which prints no mode, was not known for one."""
+    link, unless the change showed them that file whole, as it shows a file it adds, or the file is a kind the review
+    `read`s not, which no guideline is shown. Read by review: `run.py`, a link to a skip-listed image holding Python,
+    was approved, read by no one; a file the change only modified counted as shown whole, one hunk of it shown; a link
+    moved whole, which prints no mode, was not known for one; and a link to an ignored script was a hole for good."""
     whole = {
         entry["path"]
         for entry in files
@@ -652,7 +663,8 @@ def _links_unread(files: list[Entry], links: Collection[str], skipped: Mapping[s
     }
     for entry in files:
         held = entry["path"] in links and entry["path"] not in skipped and not entry["unread"]
-        if held and entry.get("target") not in whole:
+        target = entry.get("target")
+        if held and target not in whole and (target is None or read(target)):
             entry["unread"] = (
                 "a symbolic link: the guidelines read the path it names, and were not shown that file whole"
             )
@@ -784,8 +796,12 @@ def gather(
     try:
         listed = list_changed(resolved)
         entries = [entry for entry in listed if in_scope(entry["path"], scope)]
-        own = [entry for entry in entries if in_review(entry["path"], scan, third_party)]
+        own = [entry for entry in entries if _reviewed(entry, scan, third_party)]
         ignored = sorted({entry["path"] for entry in entries} - {entry["path"] for entry in own})
+        for entry in own:  # moved or copied out of a file the review ignores, which no review read: all of it is new
+            if "old" in entry and not in_review(entry["old"], scan, third_party):
+                del entry["old"]
+                entry["status"] = "A"
         files, block, excluded = _read_change(resolved, own, scope, guidelines=guidelines, diff_cap=diff_cap, skip=skip)
         away = untracked(resolved) if resolved.get("staged") else None
     except GitError as exc:  # the change half read is not the change: named, never reviewed as it stands
@@ -800,7 +816,8 @@ def gather(
     tree = tree_at_head(resolved, listing, third_party) if read else None
     read_texts(resolved, files, listing, excluded)
     if guidelines:
-        _links_unread(files, {entry["path"] for entry in entries if entry["mode"] == "120000"}, excluded)
+        links = {entry["path"] for entry in entries if entry["mode"] == "120000"}
+        _links_unread(files, links, excluded, lambda path: in_review(path, scan, third_party))
     return {
         "status": "success",
         "preflight": resolved,

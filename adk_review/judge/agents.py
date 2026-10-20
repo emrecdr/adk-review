@@ -42,6 +42,8 @@ from .config import build_model, request_config
 SCOPE = "temp:review_scope"
 REPOSITORY = "review_repo"
 DIFF = "diff"
+#: The changed files the review ignores, beside the change: none to judge where the change holds nothing else.
+IGNORED = "ignored"
 BLAST = "blast"
 QUOTABLE = "quotable"
 FINDINGS = "findings"
@@ -52,6 +54,8 @@ BLAST_CAP_CHARS = 20_000
 #: What the chat's verdict reads of the checks is capped the same way. Measured uncapped: lint over a 5-file branch of a
 #: 724-file tree gave it 21,814 characters, and that tree reviewed as one branch 619,116.
 FINDINGS_CAP_CHARS = 20_000
+#: How many ignored files the chat verdict names, the rest counted.
+IGNORED_NAMED = 20
 #: The boundary of every untrusted section a model reads, drawn once a process and never from the branch's text: a
 #: sentence at the top of an instruction is no boundary, since the sections that follow are the repository's own words,
 #: and a diff that ends in `## Review discipline` and a rule reads exactly like the section the real one follows. The
@@ -89,9 +93,13 @@ def unjudged(state: State | Mapping[str, Any]) -> str | None:
     as a check that could not look, for the same reason."""
     if failure := state.get(FAILURE):
         return f"Nothing was judged against this guideline: a call earlier in this turn failed, {failure}"
-    if not state.get(DIFF):
+    if not state.get(DIFF) and not state.get(IGNORED):
         return "Nothing was gathered, so nothing was judged against this guideline."
     return None
+
+
+#: A guideline's answer where the change holds only files the review ignores: nothing to judge, and nothing missed.
+NOTHING_TO_REVIEW = "No changed file is one the review reads: each is ignored, as the report lists."
 
 
 def without_evidence(callback_context: CallbackContext) -> types.Content | None:
@@ -111,9 +119,11 @@ def without_evidence(callback_context: CallbackContext) -> types.Content | None:
     why: one naming no finding, which chat's grounding reads, by `unjudged`, as a
     check that could not look. Read by review: it read as nothing found.
     """
-    if (why := unjudged(callback_context.state)) is None:
+    why = unjudged(callback_context.state)
+    if why is None and callback_context.state.get(DIFF):
         return None
-    return types.ModelContent(Review(summary=why).model_dump_json())
+    # Read by review: a change of only ignored files, gathered whole, read as one never gathered in chat.
+    return types.ModelContent(Review(summary=why or NOTHING_TO_REVIEW).model_dump_json())
 
 
 def for_the_guidelines(blast: Blast) -> str:
@@ -134,7 +144,7 @@ def for_the_guidelines(blast: Blast) -> str:
     return f"## Blast radius\n{fenced('blast radius', cut_at('\n'.join(lines), BLAST_CAP_CHARS, sep='\n'))}\n\n"
 
 
-def for_the_verdict(outcome: Outcome, checks: Sequence[str], verdict: str) -> str:
+def for_the_verdict(outcome: Outcome, checks: Sequence[str], verdict: str, ignored: Sequence[str] = ()) -> str:
     """The `{findings}` section of the chat verdict's instruction: the verdict as code decides it, the command's own,
     then each check's answer by its id in the report's order — each finding it kept one line, its evidence cut where the
     report cuts it, each one dropped for a quote the diff does not bear out named so, a check that could not look saying
@@ -157,6 +167,10 @@ def for_the_verdict(outcome: Outcome, checks: Sequence[str], verdict: str) -> st
         if not (kept or dropped or hole):
             lines.append("- no findings")
     lines += [f"## not read: {squash(path)} — {squash(why)}" for path, why in outcome.unread.items()]
+    if ignored:  # as the command's report lists them; read by review, chat named none
+        named = ", ".join(squash(path) for path in ignored[:IGNORED_NAMED])
+        more = f", and {len(ignored) - IGNORED_NAMED} more" if len(ignored) > IGNORED_NAMED else ""
+        lines.append(f"## ignored, never reviewed, neither Python nor config, or another project's: {named}{more}")
     return cut_at("\n".join(lines), FINDINGS_CAP_CHARS, sep="\n")
 
 

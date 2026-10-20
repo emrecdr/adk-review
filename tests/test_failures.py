@@ -1158,6 +1158,30 @@ def test_a_file_every_review_of_a_merge_could_not_read_stops_it_and_each_sides_o
 
     assert stops("new.py", "theirs.py") & stops("new.py"), "the new file goes unread in every review"
     assert not stops("theirs.py") & stops("ours.py"), "each review reads the other side's file, which the remote holds"
+    # Read by the next review: the JSON cuts a reason at its cap, so a file named past the cut was weighed by none.
+    from adk_review.core.text import REASON_MAX_CHARS, cut_at
+
+    long = "; ".join(f"{'x' * 140}_{n}_pb2.py was not read whole" for n in range(4))
+    said = cut_at(f"rule lint could not look: {long}", REASON_MAX_CHARS)
+    assert push._stops({"could_not_look": {"rule.lint": said}}) is None, "what stopped it is not known whole"
+
+
+def test_a_file_a_push_moves_out_of_an_ignored_one_is_read_in_its_commit(tmp_path) -> None:
+    """Read by review: the history read paired a renamed file with its old path, so a token added in `notes.txt`,
+    which the review ignores, moved to `app.py` and taken out, passed the hook unread: no commit added a line of
+    `app.py`. Each commit's files are read with no rename found, a moved file added whole."""
+    push = importlib.import_module("adk_review.push")
+    _remote, work = _pushed_from(tmp_path)
+    _committed(work, "a.py")
+    _git_in(work, "push", "-q", "origin", "main")
+    _git_in(work, "checkout", "-q", "-b", "moved")
+    _committed(work, "notes.txt", 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "a note")
+    _git_in(work, "mv", "notes.txt", "app.py")
+    _git_in(work, "commit", "-qm", "move it")
+    _git_in(work, "rm", "-q", "app.py")
+    _git_in(work, "commit", "-qm", "take it out")
+    found = push.in_history(str(work), "origin", "HEAD", None, [])
+    assert len(found) == 1 and "app.py" in found[0], found
 
 
 def test_the_check_for_a_misread_remote_is_exact_quiet_where_a_push_address_is_set_and_never_a_traceback(

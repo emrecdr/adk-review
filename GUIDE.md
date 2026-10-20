@@ -166,18 +166,22 @@ hole, and lockfiles, which the rules read whole and no guideline judges. `rule.l
 Yarn's, pnpm's, bun's, uv's, Poetry's, PDM's, Pipenv's, Cargo's, Bundler's, Dart's, Mix's and CocoaPods' lockfiles fetch
 from; the other lockfiles the list names are read by the credential rules alone: `go.sum`, `gradle.lockfile` and NuGet's
 `packages.lock.json` name no source, Swift's `Package.resolved`, Nix's `flake.lock` and Composer's `composer.lock` name
-a URL for every package, and Deno's `deno.lock` imports from URLs by design. An archive, a keystore or a document can
-carry a credential, and stays a hole until the list names it. A text file a glob names is still read by the rules, as
-any changed file is.
+a URL for every package, and Deno's `deno.lock` imports from URLs by design. A keystore can carry a credential, and
+`scan` names it, so it stays a hole until the list names it too; an archive or a document is no file `scan` names, and
+is ignored. A text file a glob names is still read by the rules, as any file the review reads is.
 
 A review reads the change between two local branches, and of it only the files `scan` names — Python's and notebooks,
-the configs beside them (TOML, CFG, INI, YAML, JSON, `.env`, requirements, lockfiles, Dockerfiles) and a credential's
-own files, keys and key stores — and every file with no suffix, which a script that runs Python can be, as only its
-first line tells. It never reads a file under a folder `third_party` names, other projects' code, vendored or installed:
-those named `vendor`, `third_party`, `_vendor`, `node_modules`, `site-packages`, `.venv` and their like. Any other
-changed file is ignored: read by no rule and no guideline, parsed into no tree, read in no commit by the pre-push hook,
-and listed in the report, never a hole; a change of nothing else is approved. Nor does a review read the environment it
-runs in: only the repository's own commits. Code a branch puts in an ignored file goes unreviewed too.
+the configs beside them (TOML, CFG, INI, YAML, JSON, `.env`, requirements, lockfiles, Dockerfiles), a credential's own
+files, keys and key stores, and what a coding agent or another tool obeys, each file `rule.steering-files` names — and
+every file with no suffix, which a script that runs Python can be, as only its first line tells, and a submodule, a hole
+no rule can read. It never reads a file under a folder `third_party` names, other projects' code, vendored or installed:
+those named `vendor`, `third_party`, `_vendor`, `node_modules`, `site-packages`, `.venv` and their like, and `venv` at
+the top alone, a name a project's own package has too. Any other changed file is ignored: read by no rule and no
+guideline, parsed into no tree, read in no commit by the pre-push hook, and listed in the report, never a hole; a change
+of nothing else is approved, in chat as by the command. A file the change moves out of an ignored one is read whole, as
+one it adds: no review read it where it lay. Nor does a review read the environment it runs in: only the repository's
+own commits. Code a branch puts in an ignored file goes unreviewed too, a credential in a `README.md` or a shell script
+among it.
 
 The model is set in the environment, or in the `.env` at the root of the reviewer's checkout; a variable set in the
 shell wins over the file:
@@ -359,8 +363,8 @@ What the hook cannot see, or stops on:
 - pre-commit reads git's lines itself and hands its hook one ref: the first not deleted, passing over a new ref whose
   commits the remote already holds. A push of several refs is reviewed whole by git's own hook alone.
 - In a commit before the last, only a credential stops the push, or a file no rule can read, a binary one or a Git LFS
-  pointer, whose file Git LFS's own hook uploads, unless `[review] skip` names it. What a merge's own resolution adds
-  and a later commit takes out is read in no commit.
+  pointer, whose file Git LFS's own hook uploads, unless `[review] skip` names it. A file a commit moves is read whole
+  there, as one it adds. What a merge's own resolution adds and a later commit takes out is read in no commit.
 - The remote's branches are as this clone last fetched them: one deleted or rewritten there, or held by the server a
   changed URL named before, still counts as held here, so fetch before a push that follows a rewrite or a new URL, and
   let a fetch prune deleted ones (`git config fetch.prune true`). Where git says the remote holds no branch this clone

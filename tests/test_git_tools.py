@@ -1143,6 +1143,66 @@ class TestWhatIsThirdParty:
         assert [f["path"] for f in evidence["files"]] == ["analysis.ipynb", "bin/manage"]
         assert evidence["ignored"] == ["notes.md"]
 
+    def test_a_file_moved_out_of_an_ignored_one_is_read_whole(self, tmp_path: Path) -> None:
+        """Read by review: git pairs a file renamed from an ignored one with it, so `notes.txt` moved to `settings.py`,
+        or a vendored module moved into the project, showed no line added, and a token in either was read by no
+        review, though none had read it where it lay. Such a file is read as one the change adds."""
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.secrets import Secrets
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        token = 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n'
+        _committed(repo, "notes.txt", token)
+        _committed(repo, "vendor/lib/creds.py", token, "base")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _git_in(repo, "mv", "notes.txt", "settings.py")
+        _git_in(repo, "mv", "vendor/lib/creds.py", "creds.py")
+        _git_in(repo, "commit", "-qm", "move them in")
+        evidence = importlib.import_module("adk_review.collect.git").collect_evidence(
+            str(repo), BASE, "change", **self._shipped()
+        )
+        found = run_rules(evidence, [Secrets()])["rule.secrets"].findings
+        assert sorted(f.file for f in found) == ["creds.py", "settings.py"], found
+
+    def test_a_submodule_is_a_hole_whatever_its_name(self, tmp_path: Path) -> None:
+        """Read by review: a submodule has no suffix to scan by, and one named `nanopb-0.4.7` read as one with the
+        suffix `.7`, ignored, where `nanopb` was a hole: another repository's commit is the change's, a hole wherever
+        it lies, unless a folder `third_party` names holds it."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        commit = _committed(repo, "app.py", "x = 1\n", "base")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        for path in ("deps/nanopb-0.4.7", "deps/nanopb", "vendor/nanopb-0.4.7"):
+            _git_in(repo, "update-index", "--add", "--cacheinfo", f"160000,{commit},{path}")
+        _git_in(repo, "commit", "-qm", "submodules")
+        evidence = importlib.import_module("adk_review.collect.git").collect_evidence(
+            str(repo), BASE, "change", **self._shipped()
+        )
+        assert [f["path"] for f in evidence["files"]] == ["deps/nanopb", "deps/nanopb-0.4.7"]
+        assert evidence["ignored"] == ["vendor/nanopb-0.4.7"]
+
+    def test_a_link_to_a_file_the_review_ignores_is_no_hole(self, tmp_path: Path) -> None:
+        """Read by review: a link to a file `scan` leaves out, `bin/run` to a shell script, was a hole for the
+        guidelines no change could clear, as they are shown no ignored file; the rules still read it through the
+        link, which the review reads."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "app.py", "x = 1\n", "base")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "scripts/run.sh", "#!/bin/sh\necho hi\n")
+        blob = _git_in(repo, "hash-object", "-w", "--stdin", stdin="../scripts/run.sh")
+        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{blob},bin/run")
+        _git_in(repo, "commit", "-qm", "a link")
+        evidence = importlib.import_module("adk_review.collect.git").collect_evidence(
+            str(repo), BASE, "change", guidelines=True, **self._shipped()
+        )
+        assert [f["path"] for f in evidence["files"]] == ["bin/run"] and evidence["ignored"] == ["scripts/run.sh"]
+        assert not evidence["files"][0]["unread"], evidence["files"][0]["unread"]
+
     def test_a_whole_project_reads_no_third_party_module(self, tmp_path: Path) -> None:
         """Under `--all`, the head's tree: a third-party module is never parsed for the tree rules or the radius, and
         never counted among the project's files."""

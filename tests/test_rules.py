@@ -185,22 +185,29 @@ class TestTheSecretShapes:
     def test_named_secrets_reads_a_test_environments_config(self) -> None:
         """Read by review: any file in a folder named `test` read as a test's, so a password in `deploy/test/db.env`, an
         environment's config, passed `named-secrets`, in the review and in the pre-push hook's history alike. A test's
-        own fixture, in any language, a user made with a password of its own, is still left alone."""
+        Python code, and a fixture under a test suite's `tests` folder in any language, a user made with a password of
+        its own, is still left alone; read by the next review, a folder named `test` is an environment's as often."""
         from adk_review.judge.rule_helpers import lines_hit
         from adk_review.judge.rules.named_secrets import NamedSecrets
 
         line = "DB_PASSWORD=Xk9mQ2vR7t4p\n"
-        for path in ("deploy/test/db.env", "k8s/overlays/test/secrets.env", "tests/e2e/.env"):
+        for path in ("deploy/test/db.env", "k8s/overlays/test/secrets.env", "tests/e2e/.env", "deploy/test/.envrc"):
             assert lines_hit(NamedSecrets(), path, line) == [1], path
         assert lines_hit(NamedSecrets(), "tests/test_login.py", 'user = User(password="Xk9mQ2vR7t4p")\n') == []
         # Read by review: a test's fixtures in any language are its own, Django's, a docker-compose's, Java's.
         fixtures = {
             "myapp/tests/fixtures/users.json": '{"password": "pbkdf2_sha256$600000$abc$def"}\n',
             "tests/integration/docker-compose.yml": "POSTGRES_PASSWORD: Xk9mQ2vR7t4p\n",
-            "src/test/resources/application-test.properties": "spring.datasource.password=Xk9mQ2vR7t4p\n",
         }
         for path, text in fixtures.items():
             assert lines_hit(NamedSecrets(), path, text) == [], path
+        configs = {
+            "deploy/test/config.yaml": 'password: "Xk9mQ2vR7t4p"\n',
+            "k8s/test/secret.yaml": 'db_password: "Xk9mQ2vR7t4p"\n',
+            "config/test/settings.ini": "password = Xk9mQ2vR7t4p\n",
+        }
+        for path, text in configs.items():
+            assert lines_hit(NamedSecrets(), path, text) == [1], path
 
     def test_named_secrets_weighs_the_value_as_well_as_the_name(self) -> None:
         """A person chooses a password, which may be any words; a machine makes a token, a key or a secret, one run of
@@ -1008,7 +1015,9 @@ class TestWhatTheBranchCannotTellTheRules:
 
     def test_each_commit_a_push_sends_reads_its_files_as_diff_of_does(self, hostile_repo) -> None:
         """Measured by review: a file a commit holds before another kept its CRLF last line's `\\r`, and the pre-push
-        hook flagged `TOKEN_EXPIRY_MS=86400000` in `.env` as a password where the branch's review let it go."""
+        hook flagged `TOKEN_EXPIRY_MS=86400000` in `.env` as a password where the branch's review let it go. A file a
+        commit moves is read whole there, past what the review shows: read by review, a token moved out of a file the
+        review ignores was read by no one."""
         from adk_review.collect import diff, git, history
 
         for branch in ("carriage", "spaced", "crlf", "renamed"):
@@ -1019,7 +1028,11 @@ class TestWhatTheBranchCannotTellTheRules:
                 if (added := diff.added_lines(git.diff_of(resolved, entry["path"], entry.get("old", ""))))
             }
             sent = history.sent(str(hostile_repo), None, branch, BASE)
-            assert {file["path"]: file["added"] for _, _, files in sent for file in files} == shown, branch
+            read = {file["path"]: file["added"] for _, _, files in sent for file in files}
+            if branch == "renamed":
+                assert all(set(lines) <= set(read[path]) for path, lines in shown.items()), branch
+            else:
+                assert read == shown, branch
 
     def test_a_file_that_does_not_parse_is_a_major_finding(self, hostile_repo) -> None:
         """Measured before: `invalid-syntax` was rated minor, by its first letter, and ruff reads no other rule in a

@@ -23,24 +23,37 @@ skip = [
     "pnpm-lock.yaml", "bun.lock", "deno.lock", "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock", "mix.lock",
     "pubspec.lock", "Podfile.lock", "Package.resolved", "packages.lock.json", "gradle.lockfile", "flake.lock",
 ]
-# Globs of the changed files a review reads, at any depth: Python's and notebooks, the configs beside them, and a
-# credential's own files, keys and key stores; --scan adds more for one run, and an empty list reads every file. A file
-# with no suffix is read whatever this names: a script that runs Python is one, which only its first line tells. Any
-# other changed file is ignored: read by no rule and no guideline, parsed into no tree, read in no commit by the
+# Globs of the changed files a review reads, at any depth: Python's and notebooks, the configs beside them, a
+# credential's own files, keys and key stores, and what a coding agent or another tool obeys; --scan adds more for one
+# run, and an empty list reads every file. A file with no suffix is read whatever this names: a script that runs Python
+# is one, which only its first line tells; and so is a submodule, another repository's commit, a hole no rule can read.
+# Any other changed file is ignored: read by no rule and no guideline, parsed into no tree, read in no commit by the
 # pre-push hook, and listed in the report, never a hole.
 scan = [
-    "*.py", "*.pyi", "*.pyw", "*.ipynb", "*.toml", "*.cfg", "*.ini", "*.conf", "*.yaml", "*.yml", "*.json",
-    ".env", "*.env", ".env.*", "requirements*.txt", "constraints*.txt", "Pipfile", "*.lock", "Dockerfile*",
-    "*.pem", "*.key", "*.p12", "*.pfx", "*.jks",
+    # Python's own files, notebooks, and a `.pth`, which Python runs at every start
+    "*.py", "*.pyi", "*.pyw", "*.pth", "*.ipynb",
+    # the configs beside them, requirements and lockfiles among them
+    "*.toml", "*.cfg", "*.ini", "*.conf", "*.yaml", "*.yml", "*.json", ".env", "*.env", ".env.*", "Pipfile",
+    "requirements*.txt", "requirements*.in", "constraints*.txt", "**/requirements/*.txt", "**/requirements/*.in",
+    "*.lock", "go.sum", "gradle.lockfile", "Package.resolved", "Dockerfile*", "*.Dockerfile",
+    # a credential's own files, keys and key stores
+    "*.pem", "*.key", "*.p8", "*.p12", "*.pfx", "*.jks", "*.keystore", "*.ppk", "*.gpg", "*.asc",
+    # what a coding agent or another tool obeys, each folder `rule.steering-files` names read whole
+    "CLAUDE.md", "AGENTS.md", "GEMINI.md", ".cursorrules", ".windsurfrules", ".clinerules", "*.code-workspace",
+    ".github/copilot-instructions.md", ".github/instructions/", ".github/agents/", ".github/prompts/",
+    ".github/skills/", ".github/chatmodes/", ".github/workflows/", ".claude/", ".gemini/", ".agents/", ".agent/",
+    ".cursor/", ".clinerules/", ".windsurf/", ".kiro/", ".junie/", ".roo/", ".amazonq/", ".continue/",
+    ".devcontainer/",
 ]
 # Globs of the folders holding other projects' code a repository keeps beside its own, vendored or installed, at any
-# depth; --third-party adds more for one run. A review is of a project's own code, never of a library it keeps: a file
-# under one is ignored, whatever `scan` names. Code a branch puts under one goes unreviewed too, so a folder belongs here
-# only where what it holds is another project's.
+# depth, and a virtual environment's `venv` at the top alone, a name a project's own package has too: read by review,
+# Hatch's `src/hatch/venv/` was ignored. --third-party adds more for one run. A review is of a project's own code, never
+# of a library it keeps: a file under one is ignored, whatever `scan` names. Code a branch puts under one goes
+# unreviewed too, so a folder belongs here only where what it holds is another project's.
 third_party = [
     "**/vendor/**", "**/vendored/**", "**/_vendor/**", "**/third_party/**", "**/third-party/**", "**/thirdparty/**",
     "**/node_modules/**", "**/bower_components/**", "**/jspm_packages/**", "**/site-packages/**",
-    "**/dist-packages/**", "**/.venv/**", "**/venv/**", "**/__pypackages__/**", "**/Pods/**", "**/Carthage/**",
+    "**/dist-packages/**", "**/.venv/**", "venv/**", "**/__pypackages__/**", "**/Pods/**", "**/Carthage/**",
 ]
 
 # Named lists of the checks a review runs, chosen with --profile NAME; with no --profile a review runs `default`.

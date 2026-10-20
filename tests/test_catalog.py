@@ -67,6 +67,16 @@ class TestTheConfig:
         read = ("app.py", "src/pkg/types.pyi", "pyproject.toml", ".github/workflows/ci.yml", "requirements-dev.txt")
         assert all(matches(path, *scan) for path in (*read, "setup.cfg", "config/.env", "uv.lock", "Dockerfile"))
         assert not any(matches(path, *scan) for path in ("README.md", "web/app.js", "run.sh", "logo.png")), "neither"
+        from adk_review.core.paths import in_review
+
+        # Read by review: each is a kind `scan` says it reads, or a project's own package named as an environment is.
+        kinds = (
+            "requirements/base.txt", "requirements.in", "requirements/dev.in", "api.Dockerfile", "src/paths.pth",
+            "ios/AuthKey_ABC123DEF4.p8", "android/app/release.keystore", "keys/deploy.ppk", "keys/signing.gpg",
+            "KEYS.asc", "go.sum", "gradle.lockfile", "Package.resolved", "src/hatch/venv/core.py",
+        )  # fmt: skip
+        assert [path for path in kinds if not in_review(path, scan, third_party)] == []
+        assert not in_review("venv/bin/activate", scan, third_party), "a virtual environment at the top is installed"
         cap = importlib.import_module(f"{cli.__package__}.collect.git").DIFF_CAP_CHARS  # the limit GUIDE.md names
         assert config["review"] == {"fail_on": "blocker", "max_tokens": 0, "verify": False, "diff_cap": cap}
         kept = ("vendor/github.com/x/y.go", "src/vendor/six.py", "web/node_modules/a/i.js", ".venv/lib/site.py")
@@ -116,6 +126,21 @@ class TestTheConfig:
             "guideline.complexity",
         ], "default is unchanged until a live measurement says otherwise"
 
+    def test_every_file_a_rule_is_shown_by_example_is_one_the_shipped_scan_reads(self, cli) -> None:
+        """Read by review: `steering-files` named `CLAUDE.md`, a `SKILL.md` and a `.pth` by example, and the shipped
+        `scan` read none of them, so the rule never fired where it was made to; its examples ran through `try_rule`,
+        which no scan stands before. Each file a line or file rule shows by example, and each kind `steering-files`
+        names, is one the shipped `scan` reads."""
+        from adk_review.core.paths import in_review
+        from adk_review.judge.catalog import catalog as checks
+        from adk_review.judge.rules.steering_files import STEERS
+
+        review = cli.load_config(cli.CONFIG)["review"]
+        shown = [ex[0] for rule in checks().rules if rule.kind != "tree" for ex in rule.bad if isinstance(ex, tuple)]
+        named = [glob.replace("*", "x") + ("x.md" if glob.endswith("/") else "") for glob in STEERS]
+        unread = [path for path in (*shown, *named) if not in_review(path, review["scan"], review["third_party"])]
+        assert unread == [], unread
+
     def test_the_config_gives_the_flags_their_defaults_and_a_flag_wins_for_one_run(self, cli) -> None:
         policy = {"fail_on": "major", "max_tokens": 500, "verify": True, "diff_cap": 9000, "skip": ["*.png"]}
         parser = cli.build_parser({**policy, "scan": ["*.py"], "third_party": ["**/vendor/**"]})
@@ -125,6 +150,10 @@ class TestTheConfig:
         more = parser.parse_args(["--third-party", "**/deps/**"]).third_party
         assert args.third_party == ["**/vendor/**"] and more == ["**/vendor/**", "**/deps/**"]
         assert parser.parse_args(["--scan", "*.sh"]).scan == ["*.py", "*.sh"]
+        from adk_review.core.paths import in_review
+
+        every = cli.build_parser({**policy, "scan": [], "third_party": []}).parse_args(["--scan", "*.md"]).scan
+        assert in_review("deploy.sh", every, []), "an empty `scan` reads every file, and a glob added reads no fewer"
         flags = ["--fail-on", "blocker", "--max-tokens", "0", "--no-verify", "--diff-cap", "100"]
         args = parser.parse_args(["--head", "x", *flags])
         assert (args.fail_on, args.max_tokens, args.verify, args.diff_cap) == ("blocker", 0, False, 100)

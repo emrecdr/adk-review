@@ -117,7 +117,7 @@ def build_checks(
 
     from google.adk.workflow import FunctionNode
 
-    from .agents import BLAST, DIFF, QUOTABLE, SCOPE, for_the_guidelines
+    from .agents import BLAST, DIFF, IGNORED, QUOTABLE, SCOPE, for_the_guidelines
 
     async def run(ctx: Context) -> None:
         # A stopped review stops here too: measured, a SIGTERM one second into the rules of a 2,683-file `--all`
@@ -149,6 +149,7 @@ def build_checks(
         # reads it, beside it: chat grounds the guidelines' findings before its verdict, as the command does after.
         if evidence is None:
             ctx.state[DIFF] = found["diff"] if isinstance(found, dict) else ""
+            ctx.state[IGNORED] = found.get("ignored", []) if isinstance(found, dict) else []
             ctx.state[QUOTABLE] = {
                 f["path"]: {key: f[key] for key in ("quotable", "framing", "unread", "cut")}
                 for f in (found["files"] if isinstance(found, dict) else ())
