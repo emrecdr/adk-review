@@ -114,7 +114,7 @@ def unread(entry: Entry, diff: str, cut: bool, fits: bool, cap: int) -> str:
     if lfs_pointer(diff):
         return POINTER_UNREAD
     if not fits:
-        return f"past the {BLOCK_CAP_CHARS:,} characters the guidelines read in all; --path narrows a review"
+        return f"past the {BLOCK_CAP_CHARS:,} characters the guidelines read in all. --path narrows a review"
     if cut:
         return f"cut at {cap:,} characters: the guidelines read only its start"
     return ""

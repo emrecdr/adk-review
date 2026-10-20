@@ -1256,7 +1256,8 @@ class TestWhatIsThirdParty:
         code = cli.main([str(repo), "--head", "change", "--base", BASE, "--profile", "default-rules"])
         said = capsys.readouterr().out
         assert code == 0 and "## Verdict: APPROVED" in said, said
-        assert "- ignored      2 file(s), out of scope; credential rules still read the project's own:" in said, said
+        ignored = "- ignored      2 file(s), out of scope, but credential rules still read the project's own:"
+        assert ignored in said, said
 
 
 class TestWhatTheBudgetReadsFirst:

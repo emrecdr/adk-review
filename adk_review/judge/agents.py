@@ -170,7 +170,7 @@ def for_the_verdict(outcome: Outcome, checks: Sequence[str], verdict: str, ignor
     if ignored:  # as the command's report lists them; read by review, chat named none
         named = ", ".join(squash(path) for path in ignored[:IGNORED_NAMED])
         more = f", and {len(ignored) - IGNORED_NAMED} more" if len(ignored) > IGNORED_NAMED else ""
-        lines.append(f"## ignored, out of scope; credential rules still read the project's own: {named}{more}")
+        lines.append(f"## ignored, out of scope, but credential rules still read the project's own: {named}{more}")
     return cut_at("\n".join(lines), FINDINGS_CAP_CHARS, sep="\n")
 
 

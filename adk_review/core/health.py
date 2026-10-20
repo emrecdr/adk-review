@@ -192,9 +192,9 @@ def grade(health: Health) -> tuple[str | None, str]:
     and why, where too little of the source parsed, or too little of it was there, to grade."""
     eligible, parsed = health.python
     if parsed < FILES_AT_LEAST:
-        return None, f"{parsed} Python source file(s) parsed; a grade needs {FILES_AT_LEAST}"
+        return None, f"{parsed} Python source file(s) parsed. A grade needs {FILES_AT_LEAST}"
     if parsed < PARSED_AT_LEAST * eligible:
-        return None, f"{parsed} of {eligible} Python source files parsed; a grade needs {PARSED_AT_LEAST:.0%}"
+        return None, f"{parsed} of {eligible} Python source files parsed. A grade needs {PARSED_AT_LEAST:.0%}"
     total = sum(lines for _label, lines in health.bands)
     if not total:
         return None, "no function measured"

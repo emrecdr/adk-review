@@ -581,7 +581,7 @@ def _review(argv: list[str] | None = None) -> int:
     try:
         load_dotenv(ROOT / ".env")
     except UnicodeDecodeError:
-        _say("the central .env is not UTF-8; save it as UTF-8 (Windows PowerShell 5.1's `>` writes UTF-16)")
+        _say("the central .env is not UTF-8. Save it as UTF-8: Windows PowerShell 5.1's `>` writes UTF-16")
         return EXIT_USAGE
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # a Windows console is not UTF-8 by default
@@ -676,9 +676,7 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
     if evidence["status"] != "success":
         # Measured: a first review of a repository checked out on main ended at "adds nothing" with no way on. The
         # flags are the command's, so the command names them; the index takes neither.
-        widen = (
-            f"; name the branch to review with --head, or review every file at {head!r} with --all in place of --base"
-        )
+        widen = f". Name the branch to review with --head. Or review every file at {head!r} with --all, not --base"
         _say(evidence["error_message"] + (widen if evidence.get("adds_nothing") and not args.staged else ""))
         return EXIT_USAGE
     if say is not None:
@@ -881,7 +879,7 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, data: dict, 
         try:
             _written(Path(written).expanduser(), text())
         except OSError as exc:  # the folder was there when the review began; a full or read-only disk is not
-            _say(f"the {flag} could not be written to {written}: {exc.strerror or exc}")
+            _say(f"could not write the {flag} to {written}: {exc.strerror or exc}")
             return EXIT_DEGRADED
     return code
 
@@ -983,7 +981,7 @@ def main(argv: list[str] | None = None) -> int:
     except BrokenPipeError:
         with contextlib.suppress(OSError, ValueError):  # Python flushes stdout at exit, into the same closed pipe
             os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
-        _say("the report's reader closed it before its end: the verdict was not delivered")
+        _say("the report's reader closed it before its end. It never got the verdict")
         return EXIT_DEGRADED
     except Exception as exc:  # noqa: BLE001 -- a crash must never read as a verdict
         _say(f"the review did not finish: {type(exc).__name__}: {exc}")

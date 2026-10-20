@@ -108,13 +108,13 @@ def _blast(blast: Blast) -> list[str]:
     lines = ["## Blast radius", ""]
     lines += [f"- {code_span(one_line(r.path))}: {prose(describe(r, blast.floor))}" for r in blast.radii]
     if not blast.asked:
-        lines.append("- not asked: no tree rule and no guideline ran, so the head was not read whole")
+        lines.append("- not asked: no tree rule or guideline ran, so the review did not read the head whole")
     elif not blast.listed:
-        lines.append("- not read: the head's tree could not be listed; every count above is a floor")
+        lines.append("- not read: git could not list the head's tree. Every count above is a floor")
     elif blast.floor:
         lines.append(
             f"- not read: {len(blast.unparsed)} file(s) the parser refused, {blast.skipped} over a cap, past a timeout"
-            " or not in the clone; every count above is a floor, and so is any rule over the tree"
+            " or not in the clone. Every count above is a floor, and so is any rule over the tree"
         )
     return [*lines, ""]
 
@@ -126,8 +126,8 @@ TIDY_KEEPS = (
     "Each below changes how the code reads, never what it does: its return values, its exceptions and their",
     "messages, its log lines, its evaluation order, laziness and concurrency stay as they are, its public names and",
     "signatures stay, and no dependency is added. Make one only where it is the same by construction, or where tests",
-    "cover its lines and pass; leave any other, and say why, and revert one the project's tests fail on, never",
-    "changing it further. A tidy never turns a list into a generator, `.get()` into an index, a call async, or awaits",
+    "cover its lines and pass. Leave any other, and say why. Revert one the project's tests fail on, and change it no",
+    "further. A tidy never turns a list into a generator, `.get()` into an index, a call async, or awaits",
     "into one gather.",
 )
 #: What a coding agent runs before it commits, ahead of the review that checks its work: the project's own tests,
@@ -175,7 +175,7 @@ def render_handoff(
     if not outcome.kept:
         lines.append("Nothing to fix: no finding was kept.")
     if outcome.errors or outcome.unread:
-        lines += ["", "This review could not look at everything; what it did not read may hold more to fix."]
+        lines += ["", "This review could not look at everything. What it did not read may hold more to fix."]
     if outcome.kept:
         lines += _check_again(
             evidence, {item.source for item in outcome.kept + [f for f, _ in outcome.folded]}, fail_on
@@ -292,8 +292,8 @@ def _check_again(evidence: Evidence, found: set[str], fail_on: str) -> list[str]
         named = [arg for check in rules for arg in ("--check", check)]
         lines += [
             "",
-            "Then run the rules that found them again. No model is called and nothing is written; the review",
-            "ends in exit 0 once nothing at the bar is left, and its report lists whatever is:",
+            "Then run the rules that found them again. This calls no model and writes nothing. The review ends",
+            "in exit 0 once nothing at the bar is left. Its report lists whatever is:",
             "",
         ]
         if command := _pasted(["adk-review", pre["repo"], *scope, "--fail-on", fail_on, *named]):
@@ -404,7 +404,7 @@ def render_checks(rows: list[tuple[str, str, str, str, str, str]]) -> str:
         lines.append("| " + " | ".join(cells) + " |")
     lines += [
         "",
-        "To write one: “Write a rule” and “Write a guideline” in README.md say how; --check ID runs one check alone.",
+        "To write one, read “Write a rule” and “Write a guideline” in README.md. --check ID runs one check alone.",
     ]
     return "\n".join(lines)
 
@@ -455,7 +455,7 @@ def header(evidence: Evidence, *, model: str, profile: str, off: Sequence[str], 
         ),
         *(
             [
-                f"- ignored      {len(left)} file(s), out of scope; credential rules still read the project's own: "
+                f"- ignored      {len(left)} file(s), out of scope, but credential rules still read the project's own: "
                 f"{_spans(left)}"
             ]
             if (left := evidence.get("ignored"))

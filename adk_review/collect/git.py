@@ -299,7 +299,7 @@ def _full_ref(root: str, label: str, ref: str | None) -> str:
     the name could mean more than one."""
     names = _namesakes(root, ref) if ref is not None else []
     if len(names) > 1:
-        raise _ScopeError(f"{label} {ref!r} is ambiguous: {' and '.join(names)}; name one in full")
+        raise _ScopeError(f"{label} {ref!r} is ambiguous: {' and '.join(names)}. Name one in full")
     return names[0] if names else ""
 
 

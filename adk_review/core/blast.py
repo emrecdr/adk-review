@@ -401,15 +401,15 @@ def describe(radius: Radius, floor: bool) -> str:
     if not radius.measured:
         return "not measured: not a Python file"
     if not radius.counted:
-        named = f"; imported directly by {_names(radius)}" if radius.direct else ""
+        named = f". Direct importers: {_names(radius)}" if radius.direct else ""
         return f"not counted: the radii spent the {RADIUS_STEPS:,} steps they take in all before it{named}"
     if not radius.reach:
         if floor:
-            said = "nothing that was read imports it; the tree was not read whole"
+            said = "nothing read imports it. The review did not read the tree whole"
         else:
             said = "nothing at the head imports it"
         if radius.deleted:
-            return f"deleted by this change; {said}"
+            return f"deleted by this change. {said[:1].upper()}{said[1:]}"
         return said if floor else f"a leaf: {said}"
     parts = [_count(radius.modules, "module")] if radius.modules else []
     parts += [_count(radius.tests, "test")] if radius.tests else []

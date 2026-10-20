@@ -72,8 +72,8 @@ class TestWhatAReviewCovers:
         assert cli.main([str(demo_repo), "--head", "main", "--base", "main", "--profile", "rules-only"]) == 2
         err = capsys.readouterr().err
         assert (
-            "'main' adds nothing to 'main': no change to review; name the branch to review with --head, or review"
-            " every file at 'main' with --all in place of --base"
+            "'main' adds nothing to 'main': no change to review. Name the branch to review with --head. Or review"
+            " every file at 'main' with --all, not --base"
         ) in err, err
         assert cli.main([str(demo_repo), "--head", "main", "--all", "--profile", "rules-only"]) != 2, "as it says"
 
@@ -231,7 +231,7 @@ class TestWhatAReviewCovers:
         evidence = git.collect_evidence(str(demo_repo), BASE, HEAD)
         assert evidence["diff"] == f"{first}\n\n[… 3 more file(s) not shown: past {len(first):,} characters in all]"
         left = [f for f in evidence["files"] if f["path"] != "src/payments/charge.py"]
-        why = f"past the {len(first):,} characters the guidelines read in all; --path narrows a review"
+        why = f"past the {len(first):,} characters the guidelines read in all. --path narrows a review"
         assert all(f["unread"] == why and f["cut"] and not f["quotable"] for f in left), left
         assert run_review(cli, demo_repo) == 3, "with guidelines on, what they never read is a hole"
         assert f"- not read     `src/payments/config.py`: {why}\n" in capsys.readouterr().out
@@ -254,7 +254,7 @@ class TestWhatAReviewCovers:
         assert run_review(cli, demo_repo, "--profile", "default-rules") in (0, 1)
         alone = capsys.readouterr().out
         assert head_reads == [], "neither a tree rule nor a guideline ran"
-        assert "- not asked: no tree rule and no guideline ran, so the head was not read whole" in alone
+        assert "- not asked: no tree rule or guideline ran, so the review did not read the head whole" in alone
         picked = [arg for check in (*rules, "rule.demo-required-paths") for arg in ("--check", check)]
         assert run_review(cli, demo_repo, *picked) in (0, 1)
         beside = capsys.readouterr().out
@@ -925,6 +925,45 @@ class TestWhatTheCommandTells:
         assert cli._waiting(progress.running()) == "waiting on guideline.security"
         await progress.after_agent_callback(agent=SimpleNamespace(name="security"), callback_context=None)
         assert cli._waiting(progress.running()) == "working"
+
+
+def _printed(node) -> str | None:
+    """A sentence `_say` prints, from its own literals, each value it formats read as one word; None where another
+    module made the sentence, an exception's or a check's."""
+    import ast
+
+    if isinstance(node, ast.Constant) and isinstance(node.value, str):
+        return node.value
+    if isinstance(node, ast.JoinedStr):
+        return "".join(part.value if isinstance(part, ast.Constant) else "X" for part in node.values)
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left, right = _printed(node.left), _printed(node.right)
+        return None if left is None or right is None else left + right
+    return None
+
+
+def test_every_sentence_the_command_and_its_hook_print_is_short_and_one_command() -> None:
+    """Asked by the owner: the app's own output follows ASD-STE100. Each sentence the command or the pre-push hook
+    prints, and each rule's title and fix, holds at most 20 words and one command; no `;` joins two."""
+    import ast
+    import re
+    import sys
+
+    said = []
+    for module in ("review.py", "push.py"):
+        tree = ast.parse((ROOT / "adk_review" / module).read_text(encoding="utf-8"))
+        calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_say"]
+        said += [(module, text) for call in calls if call.args and (text := _printed(call.args[0])) is not None]
+    said += [(rule.check_id, text) for rule in catalog().rules for text in (rule.title, rule.fix)]
+    fixes = {rule.check_id: getattr(sys.modules[type(rule).__module__], "FIX", {}) for rule in catalog().rules}
+    said += [(check, text) for check, table in fixes.items() for text in table.values()]  # a tool's code's own fix
+    long = [
+        (where, sentence)
+        for where, text in said
+        for sentence in re.split(r"(?<=[.!?])\s+", text)
+        if len(sentence.split()) > 20 or ";" in sentence
+    ]
+    assert long == [], long
 
 
 class TestWhatAReviewKeeps:

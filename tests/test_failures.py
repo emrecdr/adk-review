@@ -340,7 +340,7 @@ def test_an_error_nothing_named_is_a_sentence_and_exit_3_never_a_verdict(monkeyp
     ("raised", "code", "said"),
     [
         (KeyboardInterrupt, 130, "interrupted: the review did not finish"),
-        (BrokenPipeError, 3, "the report's reader closed it before its end: the verdict was not delivered"),
+        (BrokenPipeError, 3, "the report's reader closed it before its end. It never got the verdict"),
     ],
 )
 def test_ctrl_c_and_a_closed_pipe_are_one_sentence_each(
@@ -831,7 +831,7 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
     assert ran[0][-2] == "--json", "each review says what stopped it, for a merge's reviews to be weighed together"
     said = capsys.readouterr().out
     assert said.count("## Verdict: REQUEST_CHANGES") == 3, "the report is printed where the push stops, only there"
-    assert "ended in exit 1; push with --no-verify to skip it" in said
+    assert "ended in exit 1. Push with --no-verify to skip it" in said
 
     # Git's own lines decide whatever a shell holds; pre-commit's environment, where pre-commit runs the hook.
     monkeypatch.setenv("PRE_COMMIT_TO_REF", first)
@@ -873,7 +873,7 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
     pushing("refs/heads/undo-Á", git("rev-parse", "HEAD"))  # a branch named in any script
     assert push.main(["origin"]) == 0 and not ran, "commits that change nothing between them: nothing to review"
     pushing("refs/heads/gone", "c" * 40)
-    assert push.main(["origin"]) == 1 and "could not be listed" in capsys.readouterr().out, "a hole never approves"
+    assert push.main(["origin"]) == 1 and "could not list" in capsys.readouterr().out, "a hole never approves"
     monkeypatch.setattr(sys, "stdin", io.StringIO("noise\n"))
     assert push.main(["origin"]) == 1 and "names no ref" in capsys.readouterr().out, "nor does a line it cannot read"
     monkeypatch.setattr(sys, "stdin", SimpleNamespace(isatty=lambda: True))
@@ -1220,7 +1220,7 @@ def test_the_check_for_a_misread_remote_is_exact_quiet_where_a_push_address_is_s
         raise GitError("git could not start")
 
     monkeypatch.setattr(push, "unseen", fails)
-    assert pushed() == 1 and "could not be listed" in capsys.readouterr().out
+    assert pushed() == 1 and "could not list" in capsys.readouterr().out
 
 
 def test_the_history_a_push_sends_is_read_with_the_push_history_profile(tmp_path, monkeypatch) -> None:

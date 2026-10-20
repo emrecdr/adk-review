@@ -49,7 +49,7 @@ class LockfileSources(FileRule):
     severity = "minor"
     reads_tests = True  # a lock file a test installs from fetches what it names all the same
     title = "a lockfile fetches a package from outside its public registry"
-    fix = "Confirm the source is the one meant, a registry or a mirror the team trusts, over TLS, before it is fetched."
+    fix = "Confirm the source before an install fetches it. Use a registry or a mirror the team trusts, over TLS."
     bad = (
         ("uv.lock", 'source = { registry = "https://pypi.evil.example/simple" }\n'),
         ("web/package-lock.json", '"resolved": "http://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",\n'),

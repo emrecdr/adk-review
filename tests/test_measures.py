@@ -122,9 +122,7 @@ class TestTheBlastRadius:
         assert (by_path["m9.py"].modules, by_path["m9.py"].counted) == (9, True), "ten steps, one a module"
         assert not by_path["m1.py"].counted and by_path["m1.py"].direct == ("m0.py",)
         said = blast.describe(by_path["m1.py"], found.floor)
-        assert (
-            said == "not counted: the radii spent the 10 steps they take in all before it; imported directly by m0.py"
-        )
+        assert said == "not counted: the radii spent the 10 steps they take in all before it. Direct importers: m0.py"
 
     def test_a_deep_path_is_found_by_its_last_parts_and_indexed_by_no_more(self) -> None:
         """Measured by review: 100 files 1,000 folders deep took 20 s and 432 MB to index, every tail of every path a
@@ -158,9 +156,9 @@ class TestTheBlastRadius:
             "deleted by this change, yet 1 module at the head still depends on it"
             " (at least: the tree was not read whole): user.py"
         )
-        assert by_path["lonely.py"] == "nothing that was read imports it; the tree was not read whole"
+        assert by_path["lonely.py"] == "nothing read imports it. The review did not read the tree whole"
         assert by_path["gone.py"] == (  # measured before: a deleted file said "nothing imports it" over a partial read
-            "deleted by this change; nothing that was read imports it; the tree was not read whole"
+            "deleted by this change. Nothing read imports it. The review did not read the tree whole"
         )
 
     @pytest.mark.parametrize("clone", ["cut_off_clone", "partial_clone"])
@@ -180,7 +178,7 @@ class TestTheBlastRadius:
         assert blast.listed and blast.skipped and missing_objects(repo) == missing
         said = [describe(r, blast.floor) for r in blast.radii if r.measured]
         assert said and [s for s in said if "a leaf" in s] == []
-        assert any("or not in the clone; every count above is a floor" in line for line in _blast(blast))
+        assert any("or not in the clone. Every count above is a floor" in line for line in _blast(blast))
 
     def test_the_audited_code_is_parsed_never_run(self, tmp_path: Path) -> None:
         from adk_review.core.blast import blast_radius, parsed
@@ -359,7 +357,7 @@ class TestTheBlastRadius:
         monkeypatch.setattr(git, "_run", only("ls-tree"))
         unlisted = change.radius_of(git.tree_at_head(resolved, git.head_listing(resolved)), files)
         assert git.tree_at_head(resolved, git.head_listing(resolved)) is None and not unlisted.listed and unlisted.floor
-        assert "- not read: the head's tree could not be listed; every count above is a floor" in _blast(unlisted)
+        assert "- not read: git could not list the head's tree. Every count above is a floor" in _blast(unlisted)
         monkeypatch.setattr(git, "_run", only("cat-file"))
         tree = git.tree_at_head(resolved, git.head_listing(resolved))
         assert list(tree.modules()) == [] and tree.unread and change.radius_of(tree, files).floor
@@ -491,10 +489,10 @@ class TestTheHealthOfAWholeProject:
         assert grade(profile(64, 31, 5, 0))[0] == "C" and grade(profile(50, 40, 10, 0))[0] == "C"
         assert grade(profile(30, 50, 15, 5))[0] == "D" and grade(profile(50, 30, 14, 6))[0] == "E"
         assert grade(profile(75, 25, 0, 0))[1] == "25.0% moderate, 0.0% high, 0.0% very high"
-        assert grade(profile(75, 25, 0, 0, python=(9, 9))) == (None, "9 Python source file(s) parsed; a grade needs 10")
+        assert grade(profile(75, 25, 0, 0, python=(9, 9))) == (None, "9 Python source file(s) parsed. A grade needs 10")
         assert grade(profile(75, 25, 0, 0, python=(100, 89))) == (
             None,
-            "89 of 100 Python source files parsed; a grade needs 90%",
+            "89 of 100 Python source files parsed. A grade needs 90%",
         )
 
     def test_a_whole_project_review_reports_its_health_and_a_change_does_not(
@@ -512,8 +510,8 @@ class TestTheHealthOfAWholeProject:
         health = json.loads(first.read_text(encoding="utf-8"))["health"]
         assert set(health) == {"files", "source", "tests", "complexity", "found"}
         assert set(health["complexity"]["bands"]) == {"1-10", "11-20", "21-50", "over 50"}
-        assert health["complexity"]["grade"] is None and "a grade needs 10" in health["complexity"]["why"]
-        assert "- maintainability  not graded: 5 Python source file(s) parsed; a grade needs 10" in out
+        assert health["complexity"]["grade"] is None and "A grade needs 10" in health["complexity"]["why"]
+        assert "- maintainability  not graded: 5 Python source file(s) parsed. A grade needs 10" in out
         assert health["found"]["rule.secrets"]["source"]["blocker"] >= 1
         assert cli.main([*whole, "--previous", str(first), "--json", str(second)]) in (1, 3)
         assert "(was " in capsys.readouterr().out

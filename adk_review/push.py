@@ -237,10 +237,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         asked = requested(sys.argv[1:] if argv is None else argv, os.environ, sys.stdin)
     except ValueError as exc:  # a hole never approves
-        _say(f"{exc}; nothing was reviewed, so push with --no-verify to skip the review")
+        _say(f"{exc}. The hook reviewed nothing. Push with --no-verify to skip the review")
         return 1
     if asked is None:
-        _say("a pre-push hook, run by git or pre-commit with what a push sends; adk-review reviews a branch")
+        _say("a pre-push hook: git or pre-commit runs it with what a push sends. Run adk-review to review a branch")
         return EXIT_USAGE
     remote, pushed = asked
     if remote == ".":  # `git push . a:b` moves a branch here: nothing leaves the machine
@@ -254,13 +254,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         missing = unseen(repository, remote, lacked) if remote is not None else []
     except GitError as exc:
-        _say(f"the branches this clone saw on {remote} could not be listed ({exc}); push with --no-verify")
+        _say(f"git could not list the branches this clone saw on {remote} ({exc}). Push with --no-verify")
         return 1
     if missing:
         _say(
-            f"{remote} holds no {', '.join(missing)}, which this clone last saw there: its picture of {remote} is "
-            f"another server's or out of date, and what {remote} holds is not known; run git fetch --prune {remote}, "
-            "then push again"
+            f"{remote} holds no {', '.join(missing)}, which this clone last saw there. This clone's picture of "
+            f"{remote} is out of date, or another server's. Run git fetch --prune {remote}. Then push again"
         )
         return 1
     done = _Done()
@@ -268,7 +267,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         refs_pushed = dict.fromkeys(pushed)
         return 0 if all(_passes(repository, remote, head, held, done) for head, held, _ref in refs_pushed) else 1
     except KeyboardInterrupt:
-        _say("interrupted: nothing was pushed")
+        _say("interrupted: git sent nothing")
         return EXIT_INTERRUPTED
 
 
@@ -288,13 +287,13 @@ def _passes(repository: str, remote: str | None, head: str, held: str | None, do
     try:
         scope = push_scope(repository, remote, head, held)
     except GitError as exc:
-        _say(f"what {_named(head)} sends could not be listed ({exc}); push with --no-verify")
+        _say(f"git could not list what {_named(head)} sends ({exc}). Push with --no-verify")
         return False
     if scope is not None and (change := (scope[0], *scope[1])) not in done.changes:
         if (stopped := reviewed(repository, *scope)) is not None:
             code, said = stopped
             sys.stdout.write(said)  # the review's own report, made safe as it was written
-            _say(f"the review of {_named(head)} ended in exit {code}; push with --no-verify to skip it")
+            _say(f"the review of {_named(head)} ended in exit {code}. Push with --no-verify to skip it")
             return False
         done.changes.add(change)
     if remote is None and held is None:  # by hand, the whole project: nothing is sent, no history to read
@@ -302,16 +301,16 @@ def _passes(repository: str, remote: str | None, head: str, held: str | None, do
     try:
         found = in_history(repository, remote, head, held, done.heads)
     except (GitError, ValueError) as exc:
-        _say(f"the commits {_named(head)} sends could not be read ({exc}); push with --no-verify")
+        _say(f"git could not read the commits {_named(head)} sends ({exc}). Push with --no-verify")
         return False
     done.heads.append(head)
     if found:
-        _say(f"the history {_named(head)} sends holds a credential, or a file no rule can read, commit by commit:")
+        _say(f"the history {_named(head)} sends holds a credential, or a file no rule can read:")
         for place in found:
             _say(place, lead="  ")
         _say(
-            "rewrite the commits or the tag that hold it (git rebase -i), and rotate a credential that has left this "
-            "machine; push with --no-verify to skip the review"
+            "rewrite the commits or the tag that hold it with git rebase -i. Rotate any credential that left this "
+            "machine. Push with --no-verify to skip the review"
         )
     return not found
 
