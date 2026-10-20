@@ -653,22 +653,24 @@ def _not_read(entry: Entry, why: str, skipped: Collection[str]) -> None:
 
 def _as_linked(through: list[tuple[Entry, str]], texts: Mapping[str, str], skipped: Collection[str]) -> None:
     """Each link's text, `texts` holding it under the link's path, read as the file it runs: a binary one, as git reads
-    one by its first 8,000 bytes, named not read as a binary file is, and no hole of the rules'; one not read, or a
-    Git LFS pointer, its file stored elsewhere, which read by review was linted line by line, a hole still, its why
-    named; else every line of it added under the link's name, for the report as for the rules, and no hole."""
+    one by its first 8,000 bytes, or a Git LFS pointer, its file stored elsewhere, named not read as that file is, and
+    no hole of the rules'; one not read a hole still, its why named; else every line of it added under the link's
+    name, for the report as for the rules, and no hole."""
     for entry, target in through:
         text = texts.get(entry["path"])
-        # Named not read as the binary file is: read by review, the link was read as its own path and approved, with
-        # no model, where the file was a hole.
-        if text is not None and _binary(text):
+        unread = (
+            "" if text is None else BINARY_UNREAD if _binary(text) else POINTER_UNREAD if pointer_text(text) else ""
+        )
+        # Named not read as the file itself is, unless the skip list names it. Read by review: a link to a binary file
+        # was read as its own path and approved, with no model, where the file was a hole; and one to a pointer, a
+        # hole for each rule, stopped every push where a plain pointer of its kind was no hole.
+        if unread:
             entry["unread_text"] = None
-            _not_read(entry, BINARY_UNREAD, skipped)
+            _not_read(entry, unread, skipped)
             continue
         entry["target"] = target
         if text is None:
             entry["unread_text"] = "was not read whole"
-        elif pointer_text(text):
-            entry["unread_text"] = "names a Git LFS pointer: the file it runs is stored elsewhere, and was not read"
         else:
             entry["text"], entry["unread_text"] = text, None
             entry["added_at"] = frozenset(range(1, len(lines_of(text)) + 1))
@@ -729,18 +731,23 @@ def _links_unread(files: list[Entry], skipped: Mapping[str, str], read: Callable
 
 
 def _budgeted(blobs: Iterable[tuple[str, str, str]]) -> tuple[list[tuple[str, str]], list[str]]:
-    """Which of the `(path, sha, size)` blobs to read, each within its cap and all within the tree's budget, in
-    order; and the paths left unread — one over its cap, past the budget, or sized "BAD", as a partial clone lists
-    a blob it lacks, which nothing fetches to size."""
+    """Which of the `(path, sha, size)` blobs to read, each within its cap and all within the tree's budget, in order, a
+    blob charged once however many paths hold it; and the paths left unread — one over its cap, past the budget, or
+    sized "BAD", as a partial clone lists a blob it lacks, which nothing fetches to size."""
     wanted: list[tuple[str, str]] = []
     unread: list[str] = []
     budget = MAX_TREE_BYTES
+    taken: set[str] = set()
     for path, sha, size_field in blobs:
         size = int(size_field) if size_field.isdigit() else None
-        if size is None or size > min(MAX_FILE_BYTES, budget):
+        # Read by review: 24 links to one 891 KB page charged it 24 times, and the last two were holes.
+        if sha in taken:  # read once for another path already: it costs the budget nothing more
+            wanted.append((path, sha))
+        elif size is None or size > min(MAX_FILE_BYTES, budget):
             unread.append(path)
         else:
             wanted.append((path, sha))
+            taken.add(sha)
             budget -= size
     return wanted, unread
 
@@ -750,11 +757,12 @@ def _texts(resolved: dict, blobs: Iterable[tuple[str, str, str]]) -> tuple[dict[
     over a cap or past the tree's budget, not given back by the batch, or read by no batch at all, one that failed
     or timed out — for the caller to name unread."""
     wanted, unread = _budgeted(blobs)
+    shas = list(dict.fromkeys(sha for _path, sha in wanted))  # a blob read once, however many paths hold it
     try:
-        texts = _blobs(resolved, [sha for _path, sha in wanted]) if wanted else []
+        texts = dict(zip(shas, _blobs(resolved, shas), strict=True)) if shas else {}
     except GitError:
-        texts = [None] * len(wanted)
-    read = {path: text for (path, _sha), text in zip(wanted, texts, strict=True) if text is not None}
+        texts = {}
+    read = {path: text for path, sha in wanted if (text := texts.get(sha)) is not None}
     return read, unread + [path for path, _sha in wanted if path not in read]
 
 
@@ -774,7 +782,7 @@ def read_texts(
     """Each changed file's text at the head, for the file rules, set on its entry as `text`: a plain file the head holds
     within the caps, read in one batch, and a link as the file it runs. `unread_text` names one the head holds that was
     not read — over its cap, past the tree's budget, a blob the batch did not give back, a tree that could not be
-    listed, a link whose way could not be followed or that names a Git LFS pointer — a hole for a rule that reads it
+    listed, a link whose way could not be followed — a hole for a rule that reads it
     whole, and for a link one for each line rule too: a link is one from the start, until the file it names is read as
     text, names no file here, or is binary, which the report names not read; `shown` holds the lines its diff shows of
     it, by number, the ones added and those kept around them, for a rule that reads no more. A file the head does not

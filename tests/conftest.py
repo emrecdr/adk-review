@@ -340,7 +340,8 @@ def _link_staged(repo: Path, path: str, target: str) -> str:
 
 
 def _link_on_branch(root: Path, target: str, text: str | bytes, path: str) -> Path:
-    """A repository whose `BASE` holds `text` at `target`, and whose `HEAD` adds `path`, a link naming it."""
+    """A repository whose `BASE` holds `text` at `target`, and whose `HEAD` adds `path`, a link naming it: the link's
+    text is `target` as it stands, which a system reads from the link's own folder."""
     repo = root / "r"
     repo.mkdir()
     _git_in(repo, "init", "-q", "-b", BASE)

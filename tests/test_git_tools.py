@@ -1072,13 +1072,15 @@ class TestWhatALinkPointsAt:
         monkeypatch.setattr(git, "_run", unlisted)
         assert "symbolic link" in gathered(repo, "change")["run.py"]["unread"]
 
-    def test_a_link_to_a_large_file_stores_pointer_is_a_hole_for_a_rule_reading_it(self, tmp_path: Path) -> None:
+    def test_a_link_to_a_large_file_stores_pointer_is_named_not_read_as_the_pointer_is(self, tmp_path: Path) -> None:
         """Read by review: a link's target was read as text unless it was binary, so `run.py`, naming a Git LFS
         pointer, was linted as Python, three findings of invalid syntax on the pointer's lines, and the file it runs,
-        stored elsewhere, read by no one. Its text is no one's, and a rule reading it whole could not look."""
+        stored elsewhere, read by no one. Its text is no one's, and it is named not read, as the pointer is."""
+        from adk_review.collect.change import POINTER_UNREAD
+
         pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:" + "a" * 64 + "\nsize 9\n"
         link = gathered(self._linked(tmp_path, "model.py", target_text=pointer), "change", guidelines=False)["run.py"]
-        assert link["text"] is None and "Git LFS" in (link["unread_text"] or ""), (link["text"], link["unread_text"])
+        assert link["text"] is None and link["unread"] == POINTER_UNREAD, (link["text"], link["unread"])
 
 
 class TestWhatIsThirdParty:
@@ -1324,14 +1326,14 @@ class TestWhatALargeFileStoreHides:
         """Read by review: one spelling of a pointer was known, where Git LFS 3.8.0 also reads the two version lines it
         took before the spec's, CRLF line ends, blank lines and spaces before it and extension lines after it, and
         smudges each into the stored file: a pointer committed as `tool.py` in any of those was linted as Python, its
-        lines eight findings of invalid syntax, and a link to one so too, approved."""
+        lines eight findings of invalid syntax, and a link to one so too, approved. Both are named not read."""
         text = pointer.format(oid="a" * 64)
         repo = _branch_off_empty(tmp_path / "repo", "change")
         _committed(repo, "tool.py", text)
         assert "Git LFS" in gathered(repo, "change")["tool.py"]["unread"]
         linked = TestWhatALinkPointsAt._linked(tmp_path / "linked", "model.py", target_text=text)
         link = gathered(linked, "change", guidelines=False)["run.py"]
-        assert link["text"] is None and "Git LFS" in (link["unread_text"] or ""), (link["text"], link["unread_text"])
+        assert link["text"] is None and "Git LFS" in link["unread"], (link["text"], link["unread"])
 
     def test_a_pointer_its_diff_shows_no_opening_of_is_known_by_its_text(self, tmp_path: Path) -> None:
         """Read by review: a pointer was known by the lines its diff showed from the first, so one Git LFS reads with

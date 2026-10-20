@@ -1069,6 +1069,31 @@ class TestTheCleanupAndThePitfalls:
         assert run_review(cli, repo, "--profile", "default-rules") == 3
         assert "binary: no line of it can be read or quoted" in capsys.readouterr().out
 
+    def test_a_link_to_a_git_lfs_pointer_is_named_not_read_as_the_pointer_is(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: a link naming a Git LFS pointer was a hole for each rule that reads it, so `docs/hero.png`,
+        a link `scan` leaves out to a stored image, stopped every push, where a plain pointer of its kind is no hole.
+        It is named not read, as the pointer is, unless the skip list names it, and no rule's hole."""
+        pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:" + "a" * 64 + "\nsize 9\n"
+        repo = _link_on_branch(tmp_path, "assets/v2/hero.png", pointer, "hero.png")
+        assert run_review(cli, repo, "--profile", "default-rules") == 0
+        (tmp_path / "py").mkdir()
+        repo = _link_on_branch(tmp_path / "py", "models/weights.bin", pointer, "run.py")
+        assert run_review(cli, repo, "--profile", "default-rules") == 3, "a scanned one is named not read still"
+        out = capsys.readouterr().out
+        assert "run.py" in out and "a Git LFS pointer: the file's content is stored elsewhere" in out, out
+
+    def test_links_that_name_one_file_spend_the_budget_on_it_once(self, cli, tmp_path: Path) -> None:
+        """Read by review: each link charged the file it names to the tree's budget again, so 24 links to one 891 KB
+        page spent 21 MB, and the last two were holes. A blob is read once, however many paths hold it."""
+        from adk_review.collect.git import MAX_FILE_BYTES, MAX_TREE_BYTES
+
+        size = MAX_FILE_BYTES * 9 // 10
+        repo = _link_on_branch(tmp_path, "docs/big.md", "lorem ipsum\n" * (size // 12), "l00.md")
+        for n in range(1, MAX_TREE_BYTES // size + 2):  # past the budget, were each link charged for the page
+            _link_staged(repo, f"l{n:02}.md", "docs/big.md")
+        _git_in(repo, "commit", "-qm", "more links to the page")
+        assert run_review(cli, repo, "--profile", "default-rules") == 0
+
     def test_the_credential_rules_read_the_file_a_link_out_of_scan_names(self, cli, tmp_path: Path, capsys) -> None:
         """Read by review: the credential rules read the project's own files of every kind, but a link of a kind
         `scan` leaves out was never followed, so they read only its path: `notes.txt`, a link to a file holding a key,
