@@ -563,9 +563,9 @@ what was dropped, refuted, folded, redacted and spent. "The report" in `GUIDE.md
   so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.
 - `--cache DIR` keeps each decided review under a hash of everything its result depends on — the reviewer's own code,
   config and version, the Python it runs on, the commits or the index, what is covered and what of the tree went unread,
-  the checks, every setting, a previous report as it was read, and each model — and serves the same review again with no
-  model call. A review with a hole is never kept, nor one with a finding its verifier could not judge, so the next run
-  looks again.
+  the checks, every setting, a previous report as it was read, each model, and each outside tool a rule runs, ruff's
+  version among it — and serves the same review again with no model call. A review with a hole is never kept, nor one
+  with a finding its verifier could not judge, so the next run looks again.
 - `--debug-log FILE`, `--trace FILE` and `--record DIR` keep what a run did: every model request and answer, secrets
   redacted; ADK's spans, in a local SQLite file; and each model answer under a hash of its request, which a fake
   replays offline.

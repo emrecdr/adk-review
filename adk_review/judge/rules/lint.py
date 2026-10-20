@@ -25,9 +25,10 @@ SELECT = (
     "PLE2502", "PLC2401",
 )  # fmt: skip
 #: ruff codes the rule leaves out. E501, a line's length, is a project's formatter's, and the rule reads no project's
-#: settings, so no width fits every project. Measured at ruff's 88 over whole projects: 83% of litellm's findings,
-#: 89% of pydantic's, 36% of google-adk's and 99% of this one's, formatted at 120; none of httpx's, formatted at 88,
-#: where its formatter holds the width already. An operator takes E501 back by leaving it out of here.
+#: settings, so no width fits every project. Measured at ruff's 88 over each project's library code, its tests left out:
+#: 83% of litellm's findings, 89% of pydantic's, 36% of google-adk's and 99% of this one's, formatted at 120 (80% with
+#: its tests); none of httpx's, formatted at 88, where its formatter holds the width already. An operator takes E501
+#: back by leaving it out of here.
 IGNORE: tuple[str, ...] = ("E501",)
 #: The line length `E501` holds a line to, where an operator takes it back: None is ruff's own, 88.
 LINE_LENGTH: int | None = None

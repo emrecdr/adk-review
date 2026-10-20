@@ -152,8 +152,8 @@ prints them:
 
 A rule's severity is its findings', but `lint` and `pitfalls` give each ruff code its own, and `encoding-declaration` is
 a hole, exit 3, rather than a finding: no rule read the code Python would run. `--explain ID` prints one check whole.
-`lint` leaves a line's length, E501, to the project's formatter: it reads no project's settings, so no width fits
-every project, and an operator takes it back in the rule's `IGNORE`.
+`lint` leaves a line's length, E501, to the project's formatter: it reads no project's settings, so no width fits every
+project, and an operator takes it back in the rule's `IGNORE` and sets its width in `LINE_LENGTH`, ruff's 88 when unset.
 
 ## Configuration
 
@@ -398,8 +398,8 @@ What the hook cannot see, or stops on:
   one whose way could not be followed, is a hole for a rule that reads it whole and for each line rule, which reads its
   lines, and stops the push; so is one whose file was not read, past the size limits or a blob a partial clone lacks.
   One naming no file, a folder say, holds nothing to run, and stops nothing. Known limits: a link to a file the same
-  change adds past the size limits is a hole, though that file's own lines were read; a `.py` link to a file of another
-  suffix is parsed by no tree rule.
+  change adds past the size limits is a hole, though that file's own lines were read; a `.py` link is parsed under its
+  own name by no tree rule and counted by no blast radius, even one to a `.py` file.
 - A repository with no `.git` folder of its own, a bare one or one used through `--git-dir`, and a tag of a tree or a
   blob, stop the push: the hook reviews a working tree's commits.
 
