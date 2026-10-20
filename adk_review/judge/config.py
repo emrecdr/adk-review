@@ -187,6 +187,14 @@ def _litellm():  # unannotated: a checker then knows the module and its typed fl
     return litellm
 
 
+def _gemini_retried() -> list[int]:
+    """The statuses genai retries: a timeout and each 5xx, and a 429 only through Vertex AI, whose shared quota throws
+    429s that a moment's wait passes. AI Studio's names a quota spent for most of a minute or the day: measured
+    offline, genai retried it after 1.3 s and 2.7 s, each retry a request more against the quota and none able to pass
+    it, where unretried it ends what the review spends at once (`StopAtRateLimit`)."""
+    return [408, *([429] if is_enterprise_mode_enabled() else []), 500, 502, 503, 504]
+
+
 def request_config(thinking_budget: int | None = None) -> types.GenerateContentConfig:
     """What every judging call carries, on both arms: temperature zero and a deadline; on Gemini its retries, which
     Copilot's OpenAI SDK makes itself (`build_model`); and a guideline's thinking budget, where the provider has one.
@@ -220,7 +228,11 @@ def request_config(thinking_budget: int | None = None) -> types.GenerateContentC
         thinking_config=types.ThinkingConfig(thinking_budget=thinking_budget) if thinking_budget and gemini else None,
         http_options=types.HttpOptions(
             timeout=int(REQUEST_TIMEOUT_S * 1000),
-            retry_options=types.HttpRetryOptions(attempts=RETRY_ATTEMPTS, initial_delay=1.0) if gemini else None,
+            retry_options=types.HttpRetryOptions(
+                attempts=RETRY_ATTEMPTS, initial_delay=1.0, http_status_codes=_gemini_retried()
+            )
+            if gemini
+            else None,
         ),
     )
 

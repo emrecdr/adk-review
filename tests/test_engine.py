@@ -65,6 +65,21 @@ class TestRetriesOnBothArms:
             assert options.retry_options is None, "the SDK's own retries, spaced, and nothing around them"
         assert options.timeout == REQUEST_TIMEOUT_S * 1000
 
+    @pytest.mark.parametrize("vertex", [False, True])
+    def test_gemini_retries_a_rate_limit_only_where_its_quota_is_shared(self, vertex: bool, monkeypatch) -> None:
+        """Measured offline: genai retried AI Studio's 429, which names a wait of most of a minute or a day's quota
+        spent, after 1.3 s and 2.7 s, each retry a request more against the quota and none able to pass it. On AI
+        Studio a 429 is not retried, and the review stops its spending at once; on Vertex AI, whose shared quota throws
+        429s that pass, it is; a timeout and each 5xx are retried on both."""
+        from adk_review.judge.config import request_config
+
+        monkeypatch.setenv("REVIEW_PROVIDER", "gemini")
+        monkeypatch.setenv("GOOGLE_GENAI_USE_ENTERPRISE", "TRUE" if vertex else "FALSE")
+        retries = request_config().http_options.retry_options
+        assert retries is not None and retries.http_status_codes is not None
+        assert (429 in retries.http_status_codes) == vertex, retries.http_status_codes
+        assert {408, 500, 502, 503, 504} <= set(retries.http_status_codes)
+
     def test_copilot_is_sent_the_instruction_as_its_system_turn(self, monkeypatch) -> None:
         """Measured by review: LiteLLM sends Copilot each system message as an assistant turn unless told not to, so
         the fences around the branch's text, and the reminder after them, reached Copilot as words the model had said
