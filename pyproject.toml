@@ -6,6 +6,10 @@ requires-python = ">=3.13"
 dependencies = [
     # `extensions` brings litellm, which is the Copilot arm. Pinned: every measurement in the docs was taken on it.
     "google-adk[extensions]==2.9.2",
+    # The Copilot arm, pinned at the lock's own version for an install that reads no lock: `uv tool install`, pip and
+    # pre-commit resolve afresh, and ADK asks only for `litellm>=1.84`. Measured: `uv tool install .` took a release
+    # three days old or less, as LiteLLM 1.82.7 and 1.82.8 were when they shipped a credential stealer.
+    "litellm==1.105.1",
     "python-dotenv>=1.0",
     # Certificates verified through the operating system's own store: a company proxy's root the machine trusts,
     # Python trusts too. judge/config.py injects it before any client is built, and so does the login.

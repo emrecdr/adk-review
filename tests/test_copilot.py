@@ -60,6 +60,27 @@ def test_the_setup_workflow_is_the_one_copilot_picks_up() -> None:
     assert minutes and int(minutes.group(1)) <= 59, "Copilot reads a timeout of at most 59 minutes"
 
 
+def test_every_pipeline_runs_one_uv_and_one_the_lock_asks_for() -> None:
+    """Measured by review: `required-version` reads as a floor, so setup-uv took the newest uv on every run, a release
+    of any age, and Azure's pip took whatever was newest too. Each pipeline, and the README's for a pull request, names
+    one exact uv, the same everywhere, and one the project's own `required-version` admits."""
+    named = {
+        workflow.name: re.findall(
+            r"setup-uv@\S+[^\n]*\n\s+with:\n\s+version: \"([\d.]+)\"", workflow.read_text(encoding="utf-8")
+        )
+        for workflow in WORKFLOWS
+        if "setup-uv@" in workflow.read_text(encoding="utf-8")
+    }
+    named["azure-pipelines.yml"] = re.findall(
+        r"pip install uv==([\d.]+)", (ROOT / "azure-pipelines.yml").read_text(encoding="utf-8")
+    )
+    named["README.md"] = re.findall(r"version: \"([\d.]+)\" # pinned", (ROOT / "README.md").read_text(encoding="utf-8"))
+    assert all(len(found) == 1 for found in named.values()), named
+    (uv,) = {found[0] for found in named.values()}
+    floor = re.search(r'required-version = ">=([\d.]+)"', (ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert floor and tuple(map(int, uv.split("."))) >= tuple(map(int, floor.group(1).split("."))), (uv, floor)
+
+
 def test_every_workflow_action_is_pinned_by_commit_and_to_one_commit_across_workflows() -> None:
     pinned: dict[str, set[str]] = {}
     for workflow in WORKFLOWS:

@@ -24,11 +24,14 @@ change against `main` is nothing, exit 2, and the sentence names `--head` and `-
 guidelines: they need a model, set as "Configuration" below says. `uv run python -m adk_review.review` is the same
 command spelled long.
 
-To run it from any folder, install it as a command: `uv tool install .` in this checkout, or with none
-`uv tool install git+https://github.com/emrecdr/adk-review`, the `git+` being uv's own, puts `adk-review`, its pre-push
-hook, `adk-review-push`, and the Copilot login, `adk-review-login`, on `PATH`: the reviewer alone, with ruff beside it.
-An installed reviewer reads the model's settings from the shell alone, no `.env` being read outside the checkout, and
-its config from beside itself; inside the checkout, `uv run adk-review` is the same command.
+To run it from any folder, install it as a command: `make install` in this checkout, which exports the lock and hands it
+to `uv tool install --constraints`, every dependency at the version the lock holds, or with none
+`uv tool install --exclude-newer P3D git+https://github.com/emrecdr/adk-review`, the `git+` being uv's own and `P3D` the
+three days' cooldown the lock keeps, since `uv tool install` reads no lock: measured, the install without either took a
+LiteLLM three days old or less, the window LiteLLM 1.82.7 and 1.82.8 shipped a credential stealer in. Either puts
+`adk-review`, its pre-push hook, `adk-review-push`, and the Copilot login, `adk-review-login`, on `PATH`: the reviewer
+alone, with ruff beside it. An installed reviewer reads the model's settings from the shell alone, no `.env` being read
+outside the checkout, and its config from beside itself; inside the checkout, `uv run adk-review` is the same command.
 
 ## Flags
 

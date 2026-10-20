@@ -26,25 +26,27 @@ uv run adk-review <demo repo> --head feature/payments --base main --profile demo
 uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # what a review would cover and run, nothing run
 uv run adk-review-login                          # one-time GitHub device-flow login for the Copilot arm
 uv run adk web .                                 # the chat in a browser, over the same graph
-hook="$(git -C <repo> rev-parse --path-format=absolute --git-path hooks)/pre-push" && mkdir -p "${hook%/*}" && printf '#!/bin/sh\nexec adk-review-push "$@"\n' > "$hook" && chmod +x "$hook"   # after `uv tool install .`: default-rules on what a push sends, push-history's credential rules on each commit and message; pre-commit's adk-review hook runs the same; --no-verify skips
+hook="$(git -C <repo> rev-parse --path-format=absolute --git-path hooks)/pre-push" && mkdir -p "${hook%/*}" && printf '#!/bin/sh\nexec adk-review-push "$@"\n' > "$hook" && chmod +x "$hook"   # after `make install`: default-rules on what a push sends, push-history's credential rules on each commit and message; pre-commit's adk-review hook runs the same; --no-verify skips
 uv run python scripts/injection_suite.py --runs 3 [--profile NAME | --check ID] [--branch NAME] [--build-only]   # live: does a payload make a guideline lose the planted shell call
 uv run python scripts/labelled_set.py --runs 3 [--profile NAME | --check ID] [--branch NAME] [--build-only]      # live: one known defect a branch, or none: found (and by which guideline), missed, invented
 uv run python scripts/measure.py --runs 5 [--all] [--profile NAME | --check ID] # live: per planted defect, how often a guideline names it (--all: as a whole project)
 ```
 
-`uv tool install .` puts `adk-review`, `adk-review-push` and `adk-review-login` on `PATH` anywhere. With no `repo`, the
-command assumes none: a terminal is asked for the path, a pipeline is refused with exit 2. Exit codes: 0 approved, 1 a
-finding at the `--fail-on` bar (`blocker` unless set), 2 a usage error before any model call (an arm that is not ready,
-a branch that adds nothing: "no change to review", a `config.toml`, profile or rule file that cannot run, nothing under
-`--path`, or no choice made at the question asked when neither `--base` nor `--all` is given), 3 a hole: a rule or a
-guideline failed, a rule could not look (the head's tree not listed, or a file it holds not read whole), a changed file
-no guideline read whole — binary, a submodule, a Git LFS pointer, a symbolic link to a file they were not shown whole,
-cut at the diff cap or past the guidelines' block cap — named under "not read", a finding at the `--fail-on` bar whose
-quote the diff does not bear out or that a verifier refuted, a guideline's call the token ceiling refused (a verifier's
-leaves its finding unverified), a `--json` or `--handoff` file that cannot be written, any error nothing else names
-(`main` wraps the command: a sentence, never Python's own exit 1, which would read as a blocker), a reader that closes
-the pipe early, and a reviewer that cannot load (a broken install). Ctrl-C is one sentence and 130, the shell's own code
-for it, and a job's SIGTERM 143.
+`make install` puts `adk-review`, `adk-review-push` and `adk-review-login` on `PATH` anywhere, every dependency at the
+lock's version, since `uv tool install` reads no lock; with no checkout,
+`uv tool install --exclude-newer P3D git+<address>` keeps the cooldown. With no `repo`, the command assumes none: a
+terminal is asked for the path, a pipeline is refused with exit 2. Exit codes: 0 approved, 1 a finding at the
+`--fail-on` bar (`blocker` unless set), 2 a usage error before any model call (an arm that is not ready, a branch that
+adds nothing: "no change to review", a `config.toml`, profile or rule file that cannot run, nothing under `--path`, or
+no choice made at the question asked when neither `--base` nor `--all` is given), 3 a hole: a rule or a guideline
+failed, a rule could not look (the head's tree not listed, or a file it holds not read whole), a changed file no
+guideline read whole — binary, a submodule, a Git LFS pointer, a symbolic link to a file they were not shown whole, cut
+at the diff cap or past the guidelines' block cap — named under "not read", a finding at the `--fail-on` bar whose quote
+the diff does not bear out or that a verifier refuted, a guideline's call the token ceiling refused (a verifier's leaves
+its finding unverified), a `--json` or `--handoff` file that cannot be written, any error nothing else names (`main`
+wraps the command: a sentence, never Python's own exit 1, which would read as a blocker), a reader that closes the pipe
+early, and a reviewer that cannot load (a broken install). Ctrl-C is one sentence and 130, the shell's own code for it,
+and a job's SIGTERM 143.
 
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so. A

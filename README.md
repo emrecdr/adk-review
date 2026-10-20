@@ -30,8 +30,12 @@ Or, with no checkout, install it as a command, which puts `adk-review`, `adk-rev
 `PATH`, each command below then dropping its `uv run`; step 3's demo needs the checkout, its script not installed:
 
 ```bash
-uv tool install git+https://github.com/emrecdr/adk-review    # the git+ is uv's: it refuses the plain address
+uv tool install --exclude-newer P3D git+https://github.com/emrecdr/adk-review    # the git+ is uv's: it refuses the plain address
 ```
+
+`uv tool install` reads no lock, so `--exclude-newer P3D` takes no release newer than three days, the cooldown the
+lock keeps: measured, without it the install took a LiteLLM three days old or less. From a checkout, `make install`
+installs every dependency at the version the lock holds.
 
 ### 3. Review the demo
 
@@ -79,9 +83,9 @@ Then drop `--profile`: `uv run adk-review <repo> --base main` runs the rules, th
 
 ### 6. Review every push
 
-The pre-push hook, `adk-review-push`, comes with the installed command, from step 2's address or from this checkout
-with `uv tool install .`. It reviews what a push sends with the default profile's rules, no model, and "Before a push"
-in `GUIDE.md` installs it in a repository. On a pull request, "In a pipeline" below runs the same command in CI.
+The pre-push hook, `adk-review-push`, comes with the installed command, from step 2's address or from this checkout with
+`make install`. It reviews what a push sends with the default profile's rules, no model, and "Before a push" in
+`GUIDE.md` installs it in a repository. On a pull request, "In a pipeline" below runs the same command in CI.
 
 ### Every mode
 
@@ -110,8 +114,8 @@ uv run adk-review --explain rule.lint                           # one check whol
 that names none is refused, exit 2. `--help` prints every flag, and `uv run python -m adk_review.review` is the same
 command spelled long.
 
-Installed as a command, from this checkout with `uv tool install .` or from its address as step 2 says, the reviewer is
-on `PATH` alone, with ruff beside it. An installed reviewer reads the model's settings from the shell alone, no `.env`
+Installed as a command, from this checkout with `make install` or from its address as step 2 says, the reviewer is on
+`PATH` alone, with ruff beside it. An installed reviewer reads the model's settings from the shell alone, no `.env`
 being read outside the checkout, and its config from beside itself: a team that wants another policy changes
 `config.toml` in its checkout and installs from there, `--editable` so a change applies at once, or passes flags.
 
@@ -595,7 +599,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
-          version: "0.12.23" # pinned, as the reviewer's own lock file is
+          version: "0.13.1" # pinned, as the reviewer's own lock file is
       - name: Review
         shell: bash # -o pipefail, so the review's exit code survives the tee
         working-directory: reviewer
