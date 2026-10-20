@@ -80,6 +80,6 @@ the fixtures, the naming, async — is in `.github/instructions/tests.instructio
 ## Style
 
 Ruff, line length 120, Python 3.13. Comments and docstrings are plain prose that says why; commit subjects are
-plain-prose sentences stating what changed and what was learned. A pull request comes with lint, the type check and
-the suite green on the three platforms CI runs (`.github/workflows/ci.yml`, `azure-pipelines.yml`), and a workflow
-action is pinned by its commit SHA.
+plain-prose sentences stating what changed and what was learned. A pull request comes with lint, the type check and the
+suite green on the three platforms CI runs (`.github/workflows/ci.yml`, `azure-pipelines.yml`), and a workflow action is
+pinned by its commit SHA, and uv by one exact version in every pipeline.
