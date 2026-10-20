@@ -49,7 +49,7 @@ outside the checkout, and its config from beside itself; inside the checkout, `u
 | `--max-tokens` | Stop spending past this many tokens; 0 is no ceiling. Default: the config's `max_tokens`. |
 | `--diff-cap` | Characters of one file's diff a guideline reads; a file cut there is named "not read". A Python file's diff shows each hunk within the function or class around it, and one that would pass the cap so shows git's three lines of context instead. Default: the config's `diff_cap`. |
 | `--skip` | A glob of changed files the guidelines leave to the rules: each is named, never a hole. A submodule, which no rule reads, is never skipped. Adds to the config's `skip`. Repeat it for more than one. |
-| `--scan` | A glob of changed files a review reads, beside the config's `scan`: Python's and configs' by default. Any other changed file is ignored, only listed. Repeat it for more than one. |
+| `--scan` | A glob of changed files a review reads, beside the config's `scan`: Python's, notebooks' and configs' by default, and always a file with no suffix. Any other changed file is ignored, only listed. Repeat it for more than one. |
 | `--third-party` | A glob of folders holding other projects' code, vendored or installed: a changed file under one is ignored, never read, only listed. Adds to the config's `third_party`. Repeat it for more than one. |
 | `--verify` | Ask a second model about each guideline finding a rule did not already make. `--no-verify` turns it off. Default: the config's `verify`. |
 | `--json` | Also write the review to this file as JSON. |
@@ -170,13 +170,14 @@ a URL for every package, and Deno's `deno.lock` imports from URLs by design. An 
 carry a credential, and stays a hole until the list names it. A text file a glob names is still read by the rules, as
 any changed file is.
 
-A review reads the change between two local branches, and of it only the files `scan` names: Python's, the configs
-beside them (TOML, CFG, INI, YAML, JSON, `.env`, requirements, lockfiles, Dockerfiles) and a credential's own files,
-keys and key stores. It never reads a file under a folder `third_party` names, other projects' code, vendored or
-installed: those named `vendor`, `third_party`, `_vendor`, `node_modules`, `site-packages`, `.venv` and their like. Any
-other changed file is ignored: read by no rule and no guideline, parsed into no tree, read in no commit by the pre-push
-hook, and listed in the report, never a hole; a change of nothing else is approved. Nor does a review read the
-environment it runs in: only the repository's own commits. Code a branch puts in an ignored file goes unreviewed too.
+A review reads the change between two local branches, and of it only the files `scan` names — Python's and notebooks,
+the configs beside them (TOML, CFG, INI, YAML, JSON, `.env`, requirements, lockfiles, Dockerfiles) and a credential's
+own files, keys and key stores — and every file with no suffix, which a script that runs Python can be, as only its
+first line tells. It never reads a file under a folder `third_party` names, other projects' code, vendored or installed:
+those named `vendor`, `third_party`, `_vendor`, `node_modules`, `site-packages`, `.venv` and their like. Any other
+changed file is ignored: read by no rule and no guideline, parsed into no tree, read in no commit by the pre-push hook,
+and listed in the report, never a hole; a change of nothing else is approved. Nor does a review read the environment it
+runs in: only the repository's own commits. Code a branch puts in an ignored file goes unreviewed too.
 
 The model is set in the environment, or in the `.env` at the root of the reviewer's checkout; a variable set in the
 shell wins over the file:

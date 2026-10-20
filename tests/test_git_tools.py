@@ -1125,6 +1125,24 @@ class TestWhatIsThirdParty:
         assert "vendor" not in evidence["diff"] and "ghp_" not in evidence["diff"], "no guideline is shown one"
         assert run_rules(evidence, [Lint()])["rule.lint"].findings == [], "nor does any rule read one"
 
+    def test_a_script_with_no_suffix_and_a_notebook_are_read(self, tmp_path: Path) -> None:
+        """Read by review: `scan` names Python's files by suffix, and a script with none, which only its first line
+        tells runs Python, `manage` say, once measured unlinted, was ignored, and so was a notebook. A file with no
+        suffix is read whatever `scan` names, and a notebook is Python's; a page with a suffix of its own is not."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "app.py", "x = 1\n", "base")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "bin/manage", "#!/usr/bin/env python3\nimport os\n")
+        _committed(repo, "analysis.ipynb", '{"cells": []}\n')
+        _committed(repo, "notes.md", "# notes\n")
+        evidence = importlib.import_module("adk_review.collect.git").collect_evidence(
+            str(repo), BASE, "change", **self._shipped()
+        )
+        assert [f["path"] for f in evidence["files"]] == ["analysis.ipynb", "bin/manage"]
+        assert evidence["ignored"] == ["notes.md"]
+
     def test_a_whole_project_reads_no_third_party_module(self, tmp_path: Path) -> None:
         """Under `--all`, the head's tree: a third-party module is never parsed for the tree rules or the radius, and
         never counted among the project's files."""

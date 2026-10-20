@@ -227,8 +227,10 @@ def _fold(path: str) -> str:
 
 def in_review(path: str, scan: Sequence[str], third_party: Sequence[str]) -> bool:
     """Whether a review reads `path`: one `scan` names, Python's or a config's, every file where it names none, and
-    none under a folder `third_party` names, another project's code. Any other is ignored, never read or scanned."""
-    return (not scan or matches(path, *scan)) and not matches(path, *third_party)
+    one with no suffix, which may be a script that runs Python, as only its first line tells; and none under a folder
+    `third_party` names, another project's code. Any other is ignored, never read or scanned."""
+    named = not scan or matches(path, *scan) or not PurePosixPath(path).suffix
+    return named and not matches(path, *third_party)
 
 
 def matching(paths: Iterable[str], *globs: str) -> list[str]:

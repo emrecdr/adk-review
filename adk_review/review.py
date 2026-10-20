@@ -300,8 +300,9 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         action="append",
         default=list(review["scan"]),
         metavar="GLOB",
-        help="a glob of changed files a review reads, as the config's scan list does, Python's and configs' by "
-        "default: any other is ignored, only listed; repeat it for more than one",
+        help="a glob of changed files a review reads, as the config's scan list does, Python's, notebooks' and "
+        "configs' by default, and always a file with no suffix: any other is ignored, only listed; repeat it for more "
+        "than one",
     )
     parser.add_argument(
         "--third-party",

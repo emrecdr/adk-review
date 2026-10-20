@@ -23,13 +23,15 @@ skip = [
     "pnpm-lock.yaml", "bun.lock", "deno.lock", "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock", "mix.lock",
     "pubspec.lock", "Podfile.lock", "Package.resolved", "packages.lock.json", "gradle.lockfile", "flake.lock",
 ]
-# Globs of the changed files a review reads, at any depth: Python's, the configs beside them, and a credential's own
-# files, keys and key stores; --scan adds more for one run, and an empty list reads every file. Any other changed file is ignored: read by no rule and no guideline,
-# parsed into no tree, read in no commit by the pre-push hook, and listed in the report, never a hole.
+# Globs of the changed files a review reads, at any depth: Python's and notebooks, the configs beside them, and a
+# credential's own files, keys and key stores; --scan adds more for one run, and an empty list reads every file. A file
+# with no suffix is read whatever this names: a script that runs Python is one, which only its first line tells. Any
+# other changed file is ignored: read by no rule and no guideline, parsed into no tree, read in no commit by the
+# pre-push hook, and listed in the report, never a hole.
 scan = [
-    "*.py", "*.pyi", "*.pyw", "*.toml", "*.cfg", "*.ini", "*.conf", "*.yaml", "*.yml", "*.json", ".env", "*.env",
-    ".env.*", "requirements*.txt", "constraints*.txt", "Pipfile", "*.lock", "Dockerfile*", "*.pem", "*.key", "*.p12",
-    "*.pfx", "*.jks",
+    "*.py", "*.pyi", "*.pyw", "*.ipynb", "*.toml", "*.cfg", "*.ini", "*.conf", "*.yaml", "*.yml", "*.json",
+    ".env", "*.env", ".env.*", "requirements*.txt", "constraints*.txt", "Pipfile", "*.lock", "Dockerfile*",
+    "*.pem", "*.key", "*.p12", "*.pfx", "*.jks",
 ]
 # Globs of the folders holding other projects' code a repository keeps beside its own, vendored or installed, at any
 # depth; --third-party adds more for one run. A review is of a project's own code, never of a library it keeps: a file
