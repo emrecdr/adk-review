@@ -1197,6 +1197,26 @@ def test_a_merge_one_review_passes_is_pushed_though_another_stopped_on_a_reason_
     assert merged(passes="neither") is not None, "no review passes, and what stopped one is not known whole"
 
 
+def test_a_merge_review_that_ends_with_no_report_stops_the_push_at_once(monkeypatch) -> None:
+    """Read by review: once each base of a merge was reviewed, a review cut short, Ctrl-C's 130 or a job's SIGTERM,
+    143, wrote no report, which read as a reason not known, and the next base's review ran and, passing, let the push
+    through. A review that ends with no report, interrupted or failed, stops the push at once."""
+    push = importlib.import_module("adk_review.push")
+    ran = []
+
+    def review(argv: list[str]) -> int:
+        base = argv[argv.index("--base") + 1]
+        ran.append(base)
+        if base == "theirs":
+            return 130  # interrupted: no report written
+        Path(argv[argv.index("--json") + 1]).write_text("{}", encoding="utf-8")
+        return 0
+
+    monkeypatch.setattr(push, "review", review)
+    assert push.reviewed("repo", "merge", ["theirs", "ours"]) == (130, "")
+    assert ran == ["theirs"], "no review runs after one cut short"
+
+
 def test_a_file_a_push_moves_out_of_an_ignored_one_is_read_in_its_commit(tmp_path) -> None:
     """Read by review: the history read paired a renamed file with its old path. A vendored module's token, moved into
     the project's `app.py` and taken out, passed the hook unread: no commit added a line of `app.py`. Each commit is
