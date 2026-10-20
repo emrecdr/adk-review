@@ -332,24 +332,38 @@ def _committed(repo: Path, name: str, text: str | bytes = "x = 1\n", message: st
     return _git_in(repo, "rev-parse", "HEAD")
 
 
-def _link_staged(repo: Path, path: str, target: str) -> str:
-    """A link at `path` naming `target`, staged through git's plumbing, so no file system need hold one: its blob."""
+def _link_staged(repo: Path, path: str, target: str) -> None:
+    """A link at `path` naming `target`, staged through git's plumbing, so no file system need hold one."""
     blob = _git_in(repo, "hash-object", "-w", "--stdin", stdin=target)
     _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{blob},{path}")
-    return blob
 
 
-def _link_on_branch(root: Path, target: str, text: str | bytes, path: str) -> Path:
-    """A repository whose `BASE` holds `text` at `target`, and whose `HEAD` adds `path`, a link naming it: the link's
-    text is `target` as it stands, which a system reads from the link's own folder."""
+def _link_on_branch(
+    root: Path, target: str, text: str | bytes | None, path: str = "run.py", *, adding: tuple[str, str] | None = None
+) -> Path:
+    """A repository whose `BASE` holds `text` at `target`, or with no text a page alone, and whose `HEAD` adds the
+    `(path, text)` file `adding`, where given, then `path`, a link naming `target`: the link's text is `target` as it
+    stands, which a system reads from the link's own folder."""
     repo = root / "r"
-    repo.mkdir()
+    repo.mkdir(parents=True)
     _git_in(repo, "init", "-q", "-b", BASE)
-    _committed(repo, target, text)
+    _committed(repo, target if text is not None else "README.md", text if text is not None else "# readme\n")
     _git_in(repo, "checkout", "-qb", HEAD)
+    if adding:  # before the link: `_committed` adds every change, and the link is in no working tree
+        _committed(repo, *adding)
     _link_staged(repo, path, target)
     _git_in(repo, "commit", "-qm", f"{path}, a link to {target}")
     return repo
+
+
+def _cut_reason(rule: str, why: str) -> str:
+    """A reason the JSON cuts, as `rule` gives it for four files named past the cap, each a path then `why`: sized
+    from the cap, so one raised leaves it past the cap still."""
+    from adk_review.core.text import REASON_MAX_CHARS, cut_at
+
+    width = REASON_MAX_CHARS // 3  # four files whose names pass the cap together, none alone
+    long = "; ".join(f"{'x' * width}_{n}{why}" for n in range(4))
+    return cut_at(f"rule {rule} could not look: {long}", REASON_MAX_CHARS)
 
 
 def gathered(repo: Path, head: str, base: str = BASE, **options) -> dict[str, dict]:
@@ -468,6 +482,8 @@ def misled_clone(tmp_path_factory) -> Path:
 
 #: The key every hostile branch plants: Amazon's documented example, nothing real.
 KEY_LINE = 'AWS_ACCESS_KEY_ID = "AKIAIOSFODNN7EXAMPLE"\n'
+#: A Git LFS pointer, as Git LFS commits one in place of the file it stores elsewhere.
+POINTER = "version https://git-lfs.github.com/spec/v1\noid sha256:" + "a" * 64 + "\nsize 9\n"
 #: The branches of `hostile_repo` that hide the key from a review reading git's output as it comes, and where.
 HIDDEN = {
     "pathspec": ":config.py",  # a path git read as pathspec magic: its diff came back empty

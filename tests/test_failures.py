@@ -17,6 +17,7 @@ from conftest import (
     CANNED_REVIEW,
     GUIDELINE_NAMES,
     INTAKE,
+    POINTER,
     QUOTA_TEXT,
     REVIEW_REQUEST,
     ROOT,
@@ -24,6 +25,7 @@ from conftest import (
     Chat,
     _cached_copilot_token,
     _committed,
+    _cut_reason,
     _file_url,
     _git_in,
     _pushed_from,
@@ -999,8 +1001,7 @@ def test_a_large_file_stores_pointer_one_commit_adds_and_a_later_takes_out_stops
     _committed(work, "a.py")
     _git_in(work, "push", "-q", "origin", "main")
     _git_in(work, "checkout", "-q", "-b", "undone")
-    pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:" + "a" * 64 + "\nsize 9\n"
-    stored = _committed(work, "prod.p12", pointer, "add a key store")
+    stored = _committed(work, "prod.p12", POINTER, "add a key store")
     _git_in(work, "rm", "-q", "prod.p12")
     _git_in(work, "commit", "-qm", "take it out")
     found = push.in_history(str(work), "origin", "HEAD", None, [])
@@ -1145,16 +1146,6 @@ def test_the_history_a_push_sends_reads_no_third_party_code(tmp_path) -> None:
     _committed(work, "notes.md", 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "a page")
     found = push.in_history(str(work), "origin", "HEAD", None, [])
     assert found and all("notes.md:1" in place for place in found), found
-
-
-def _cut_reason(rule: str, why: str) -> str:
-    """A reason the JSON cuts, as `rule` gives it for four files named past the cap, each a path then `why`: sized
-    from the cap, so one raised leaves it past the cap still."""
-    from adk_review.core.text import REASON_MAX_CHARS, cut_at
-
-    width = REASON_MAX_CHARS // 3  # four files whose names pass the cap together, none alone
-    long = "; ".join(f"{'x' * width}_{n}{why}" for n in range(4))
-    return cut_at(f"rule {rule} could not look: {long}", REASON_MAX_CHARS)
 
 
 def test_a_file_every_review_of_a_merge_could_not_read_stops_it_and_each_sides_own_does_not() -> None:

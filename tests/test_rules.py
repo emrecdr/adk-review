@@ -13,6 +13,7 @@ from conftest import (
     GUIDELINE_NAMES,
     HEAD,
     KEY_LINE,
+    POINTER,
     PROFILES,
     _branch_off_empty,
     _broken,
@@ -1073,11 +1074,9 @@ class TestTheCleanupAndThePitfalls:
         """Read by review: a link naming a Git LFS pointer was a hole for each rule that reads it, so `docs/hero.png`,
         a link `scan` leaves out to a stored image, stopped every push, where a plain pointer of its kind is no hole.
         It is named not read, as the pointer is, unless the skip list names it, and no rule's hole."""
-        pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:" + "a" * 64 + "\nsize 9\n"
-        repo = _link_on_branch(tmp_path, "assets/v2/hero.png", pointer, "hero.png")
+        repo = _link_on_branch(tmp_path, "assets/v2/hero.png", POINTER, "hero.png")
         assert run_review(cli, repo, "--profile", "default-rules") == 0
-        (tmp_path / "py").mkdir()
-        repo = _link_on_branch(tmp_path / "py", "models/weights.bin", pointer, "run.py")
+        repo = _link_on_branch(tmp_path / "py", "models/weights.bin", POINTER, "run.py")
         assert run_review(cli, repo, "--profile", "default-rules") == 3, "a scanned one is named not read still"
         out = capsys.readouterr().out
         assert "run.py" in out and "a Git LFS pointer: the file's content is stored elsewhere" in out, out
