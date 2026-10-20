@@ -4,11 +4,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repository is
 
-`adk-review`: a git-branch code reviewer on Google ADK (pinned `google-adk[extensions]==2.9.2`, Python 3.13, `uv`).
-Every check is one file: a rule, decided by code, in `adk_review/judge/rules/`, or a guideline, judged by a model, in
-`adk_review/judge/guidelines/`. The command line is the main entry point; `adk web` serves the same graph as a chat.
-`README.md` is the developer's guide — the architecture, and how to write a rule or a guideline — and `GUIDE.md` the
-user's: every flag, check, JSON field and limit, held to the code by tests.
+`adk-review`: a git-branch code reviewer for Python projects, on Google ADK (pinned `google-adk[extensions]==2.9.2`,
+Python 3.13, `uv`). Every check is one file: a rule, decided by code, in `adk_review/judge/rules/`, or a guideline,
+judged by a model, in `adk_review/judge/guidelines/`. The command line is the main entry point; `adk web` serves the
+same graph as a chat. `README.md` is the developer's guide — the architecture, and how to write a rule or a guideline —
+and `GUIDE.md` the user's: every flag, check, JSON field and limit, held to the code by tests.
 
 ## Commands
 

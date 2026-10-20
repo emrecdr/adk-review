@@ -1,9 +1,14 @@
 # adk-review
 
-A code reviewer for a git branch, built on Google ADK. It reads what a branch changes and judges it two ways. Rules,
-decided by code, read every line the change added. Guidelines, judged by a model, read the diff. Code then decides the
-verdict and the exit code: a model never decides whether a build passes. The repository under review is only read,
-through read-only git: none of its code runs, no setting of the review comes from it, and nothing is written into it.
+A code reviewer for a Python project's git branch, built on Google ADK. It reads what a branch changes and judges it two
+ways. Rules, decided by code, read every line the change added. Guidelines, judged by a model, read the diff. Code then
+decides the verdict and the exit code: a model never decides whether a build passes. The repository under review is only
+read, through read-only git: none of its code runs, no setting of the review comes from it, and nothing is written into
+it.
+
+It is built for Python projects. Its rules read Python with ruff and Python's own parser, and its default scan reads
+Python's files and the configs beside them. Only the credential rules read files of every kind: another language's code
+gets no other review.
 
 `GUIDE.md`, beside this file, is the user's guide: every flag, exit code, check, setting, JSON field and limit, held
 to the code by a test. This file starts with a first review, then says how a review runs, how its code is laid
@@ -698,6 +703,11 @@ editor's lint and type check the same as CI's, and binds this folder to that pro
    profile, a rule turned off on the server turned off in the editor too, and what it finds is in the Problems panel.
    In another editor the same extension, for JetBrains IDEs or Visual Studio, asks for the same three things by hand:
    the server `http://localhost:9000`, the token, and the project key `adk-review`.
+5. **Raise Cognitive Complexity to 20.** The built-in Sonar way profile cannot change, so copy it: Quality Profiles,
+   Sonar way for Python, Copy, named `adk-review`. In the copy, change rule `python:S3776`'s threshold from 15 to 20. 
+   Then pick `adk-review` as the project's Python profile, under Project Settings, Quality Profiles. The IDE follows the
+   server, so the editor holds 20 too. Set when the five functions past 20 were split: the limit flags a new outlier,
+   never a function that reads as one decision.
 
 `docker compose stop` stops the server and keeps its data; `docker compose down -v` removes the server and every
 analysis with it. H2 is the database SonarQube keeps for development and trials, which this is: should the server not

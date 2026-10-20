@@ -1,19 +1,19 @@
 # Copilot instructions for this repository
 
-This repository is `adk-review`, a git-branch code reviewer on Google ADK (`google-adk[extensions]==2.9.2`, Python 3.13,
-`uv`). It is grouped by the steps of a review — `core`, `collect`, `judge`, `deliver` — and every check is one file: a
-rule, decided by code, in `adk_review/judge/rules/`, importing one door, `adk_review/judge/rule_helpers/`, and held to
-its own examples; a guideline, judged by a model, in `adk_review/judge/guidelines/`; each named after its file and
-chosen by profile in `adk_review/config.toml`. Around them: the rules as one node before the guidelines, retries, a
-token ceiling, `--verify`, each file's blast radius, fences with a nonce around all the guidelines read, what a review
-covers (`--path`, `--all`, `--staged`) and reads (`[review] scan`: Python's files and the configs beside them, never
-another project's code under `third_party`, the credential rules alone reading the project's own files of every kind), a
-JSON report for pipelines (`--json`), `--quiet` for a pipeline's silent log, progress with a heartbeat at a terminal,
-and a pre-push hook. `CLAUDE.md` at the root is the long form of these instructions, which Copilot in VS Code and the
-cloud agent read as well, so the two agree; `README.md` is the developer's guide and `GUIDE.md` the user's.
-Path-specific rules sit in `.github/instructions/`, and the recurring tasks in `.github/skills/`, each a slash command
-in VS Code's chat: `/new-rule`, `/new-guideline`, `/review-a-branch` and `/update-docs`, which keeps the docs true after
-a change.
+This repository is `adk-review`, a git-branch code reviewer for Python projects, on Google ADK
+(`google-adk[extensions]==2.9.2`, Python 3.13, `uv`). It is grouped by the steps of a review — `core`, `collect`,
+`judge`, `deliver` — and every check is one file: a rule, decided by code, in `adk_review/judge/rules/`, importing one
+door, `adk_review/judge/rule_helpers/`, and held to its own examples; a guideline, judged by a model, in
+`adk_review/judge/guidelines/`; each named after its file and chosen by profile in `adk_review/config.toml`. Around
+them: the rules as one node before the guidelines, retries, a token ceiling, `--verify`, each file's blast radius,
+fences with a nonce around all the guidelines read, what a review covers (`--path`, `--all`, `--staged`) and reads
+(`[review] scan`: Python's files and the configs beside them, never another project's code under `third_party`, the
+credential rules alone reading the project's own files of every kind), a JSON report for pipelines (`--json`), `--quiet`
+for a pipeline's silent log, progress with a heartbeat at a terminal, and a pre-push hook. `CLAUDE.md` at the root is
+the long form of these instructions, which Copilot in VS Code and the cloud agent read as well, so the two agree;
+`README.md` is the developer's guide and `GUIDE.md` the user's. Path-specific rules sit in `.github/instructions/`, and
+the recurring tasks in `.github/skills/`, each a slash command in VS Code's chat: `/new-rule`, `/new-guideline`,
+`/review-a-branch` and `/update-docs`, which keeps the docs true after a change.
 
 ## Secrets and configuration
 

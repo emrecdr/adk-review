@@ -1,10 +1,11 @@
 # adk-review: user's guide
 
-The reviewer reads a git branch and judges it two ways. Rules, decided by code, read every line the change added.
-Guidelines, judged by a model, read the diff. Code decides the verdict and the exit code. Nothing is read from the
-repository under review but what git holds of it — its commits, or under `--staged` its index — and nothing is
-written into it. `README.md`, beside this file, says how the reviewer works; this guide is the reference, and a test
-holds its flags, checks, JSON fields and limits to the code.
+The reviewer reads a Python project's git branch and judges it two ways. Its rules read Python, and other languages'
+code gets the credential rules alone. Rules, decided by code, read every line the change added. Guidelines, judged by a
+model, read the diff. Code decides the verdict and the exit code. Nothing is read from the repository under review but
+what git holds of it — its commits, or under `--staged` its index — and nothing is written into it. `README.md`, beside
+this file, says how the reviewer works; this guide is the reference, and a test holds its flags, checks, JSON fields and
+limits to the code.
 
 ## First run
 

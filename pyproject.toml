@@ -1,7 +1,7 @@
 [project]
 name = "adk-review"
 version = "0.1.0"
-description = "A git-branch code reviewer on Google ADK: rules decided by code, guidelines judged by a model, on Copilot and on Gemini."
+description = "A git-branch code reviewer for Python projects, on Google ADK: rules decided by code, guidelines judged by a model, on Copilot and on Gemini."
 requires-python = ">=3.13"
 dependencies = [
     # `extensions` brings litellm, which is the Copilot arm. Pinned: every measurement in the docs was taken on it.
