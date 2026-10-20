@@ -233,6 +233,28 @@ class TestTheSecretShapes:
         }
         for path, text in real.items():
             assert lines_hit(NamedSecrets(), path, text) == [1], path
+        # Read by the fourth review: `is_test` takes any folder named `test` for a suite, so source code in an
+        # environment's `test` folder passed; and other languages' suites were no suite. A `test` folder below the top
+        # is an environment's, read; each language's own suite folder is the suite's.
+        environments = {
+            "deploy/test/db.js": 'password: "Sup3rS3cret-db9",\n',
+            "environments/test/config.go": 'var password = "Sup3rS3cret-db9"\n',
+            "deploy/test/settings.py": 'password = "Sup3rS3cret-db9"\n',
+        }
+        for path, text in environments.items():
+            assert lines_hit(NamedSecrets(), path, text) == [1], path
+        suites = {
+            "Tests/AppTests/LoginTests.swift": 'let password = "Tr0ub4dor-horse"\n',
+            "MyAppTests/LoginTests.swift": 'let password = "Tr0ub4dor-horse"\n',
+            "test/my_app/accounts_test.exs": 'register_user(%{email: "a@b.c", password: "Tr0ub4dor-horse"})\n',
+            "app/src/androidTest/java/x/LoginTest.kt": 'val password = "Tr0ub4dor-horse"\n',
+            "shared/src/commonTest/kotlin/LoginTest.kt": 'val password = "Tr0ub4dor-horse"\n',
+            "MyApp.Tests/LoginTests.cs": 'var password = "Tr0ub4dor-horse";\n',
+            "test/widget_test.dart": 'final password = "Tr0ub4dor-horse";\n',
+            "pkg/auth/testdata/config.yaml": "password: Tr0ub4dor-horse\n",
+        }
+        for path, text in suites.items():
+            assert lines_hit(NamedSecrets(), path, text) == [], path
 
     def test_named_secrets_weighs_the_value_as_well_as_the_name(self) -> None:
         """A person chooses a password, which may be any words; a machine makes a token, a key or a secret, one run of

@@ -21,7 +21,6 @@ from ..rule_helpers import (
     SECRET_WORDS,
     Rule,
     is_placeholder,
-    is_test,
     named_at,
     named_values,
     vendor_shape,
@@ -58,16 +57,21 @@ _SCHEME = re.compile(r"(?i)\A(?:bearer|basic|token)\s+(?=\S+$)")
 #: An environment's file, which a folder named `test` holds as config, never as a test's fixture: `.env`, `db.env`,
 #: `.env.test`. Read by review: any file in such a folder was a test's, and a password in `deploy/test/db.env` passed.
 _ENV_FILE = re.compile(r"(?:^|/)(?:[^/]*\.env|\.env(?:\.[^/]*)?|\.envrc)$")
-#: A test suite's own folder, where a fixture in any language is the test's: `tests`, never `test`, which names an
-#: environment as often. Read by review: `deploy/test/config.yaml` and `k8s/test/secret.yaml` passed as fixtures.
-_SUITE = re.compile(r"(?:^|/)(?:tests|src/test)/")
-#: A test's own code by its language's names, beside `is_test`'s Python and Go `*_test`: `__tests__/`,
-#: `login.test.ts`, `user.spec.js`, `user_spec.rb`. A Java test is known by Maven's `src/test/`. Read by the third
-#: review: `_spec.` and `Test.` in any language skipped `pod_spec.py` and `ABTest.java`, production code.
-_TEST_ELSEWHERE = re.compile(r"(?:^|/)__tests__/|\.(?:test|spec)\.[cm]?[jt]sx?$|_spec\.rb$")
-#: A source file's suffix: in a test's folder, only code is the test's own. Read by the third review: every suffix
-#: but a config's was skipped there, and a password in `infra/test/terraform.tfvars` passed.
-_SOURCE = re.compile(r"\.(?:pyi?|go|java|kts?|scala|[cm]?[jt]sx?|rb|cs|swift|php|rs|c|cc|cpp|h|hpp)$")
+#: A test suite's own folder, by each language's layout. At any depth: `tests/`, Jest's `__tests__/`, Go's
+#: `testdata/`. At the top, as a package keeps its suite: `test/`, RSpec's `spec/`, Swift's `Tests/`, Xcode's
+#: `MyAppTests/`, .NET's `MyApp.Tests/`. Maven's `src/test/`, Android's `src/androidTest/`. A `test/` folder below the
+#: top names an environment as often, `deploy/test/`, and is read. Read by the fourth review: any folder named `test`
+#: was a suite, and a password in `deploy/test/db.js` passed.
+_SUITE = re.compile(
+    r"(?:^|/)(?:tests|__tests__|testdata)/|^(?:test|spec|\w*Tests|[\w.]+\.Tests)/|(?:^|/)src/(?:test|\w+Test)/"
+)
+#: A test file by its own name, in the languages that name one: `test_login.py`, `conftest.py`, `login_test.go`,
+#: `login.test.ts`, `login.spec.js`, `login_spec.rb`. Each name is bound to its language: `pod_spec.py` is production
+#: code, as the third review found.
+_TEST_NAME = re.compile(
+    r"(?:^|/)(?:test_\w*\.pyi?|conftest\.py)$|_test\.(?:pyi?|go|rb|exs?|dart|rs)$|\.(?:test|spec)\.[cm]?[jt]sx?$"
+    r"|_spec\.rb$"
+)
 #: The shortest credential a machine makes: shorter is a documentation's example, `sk-1234`.
 MADE_MIN_CHARS = 8
 #: The widest line a person writes: wider is generated, a minified bundle or data, where a name says nothing of who
@@ -76,13 +80,9 @@ WRITTEN_MAX_CHARS = 1_000
 
 
 def _tests_own(path: str) -> bool:
-    """Whether `path` is a test's own, its password a fixture's: any file under a test suite's folder, and a test's
-    code in any language. Never an env file: an environment's config even in a folder named `test`."""
-    if _ENV_FILE.search(path):
-        return False
-    if _SUITE.search(path):
-        return True
-    return bool(_SOURCE.search(path) and (is_test(path) or _TEST_ELSEWHERE.search(path)))
+    """Whether `path` is a test's own, its password a fixture's: a file under a suite's folder, or named as a test.
+    Never an env file: an environment's config even in a folder named `test`."""
+    return not _ENV_FILE.search(path) and bool(_SUITE.search(path) or _TEST_NAME.search(path))
 
 
 class NamedSecrets(Rule):
