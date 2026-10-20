@@ -21,7 +21,6 @@ from ..rule_helpers import (
     SECRET_WORDS,
     Rule,
     is_placeholder,
-    is_python,
     is_test,
     named_at,
     named_values,
@@ -61,7 +60,13 @@ _SCHEME = re.compile(r"(?i)\A(?:bearer|basic|token)\s+(?=\S+$)")
 _ENV_FILE = re.compile(r"(?:^|/)(?:[^/]*\.env|\.env(?:\.[^/]*)?|\.envrc)$")
 #: A test suite's own folder, where a fixture in any language is the test's: `tests`, never `test`, which names an
 #: environment as often. Read by review: `deploy/test/config.yaml` and `k8s/test/secret.yaml` passed as fixtures.
-_SUITE = re.compile(r"(?:^|/)tests/")
+_SUITE = re.compile(r"(?:^|/)(?:tests|src/test)/")
+#: A test's own code by other languages' names, beside `is_test`'s Python and Go `*_test`: `__tests__/`,
+#: `login.test.ts`, `user.spec.js`, `LoginTest.java`, `user_spec.rb`. Read by the second review: the rule reads every
+#: language now, and a Go test's fixture password stopped a push.
+_TEST_ELSEWHERE = re.compile(r"(?:^|/)__tests__/|\.(?:test|spec)\.\w+$|Tests?\.\w+$|_spec\.\w+$")
+#: A config's suffix. One in a test's folder is read, since an environment's folder is named `test` as often.
+_CONFIG = re.compile(r"\.(?:ya?ml|json|toml|ini|cfg|conf|properties|xml)$")
 #: The shortest credential a machine makes: shorter is a documentation's example, `sk-1234`.
 MADE_MIN_CHARS = 8
 #: The widest line a person writes: wider is generated, a minified bundle or data, where a name says nothing of who
@@ -103,8 +108,9 @@ class NamedSecrets(Rule):
     )
 
     def check(self, path: str, line: str) -> bool:
-        if is_test(path) and not _ENV_FILE.search(path) and (is_python(path, lambda: "") or _SUITE.search(path)):
-            return False  # a test's own code, or a fixture under its suite's folder; an env file is config
+        test = is_test(path) or _TEST_ELSEWHERE.search(path)
+        if test and not _ENV_FILE.search(path) and (not _CONFIG.search(path) or _SUITE.search(path)):
+            return False  # a test's code in any language, or a config under its suite's folder: never an env file
         # The generic shape first, which nearly every line lacks; then the line with its examples blanked, which must
         # hold no vendor's shape: a vendor's is `secrets`' finding, one credential, one finding. An example is blanked
         # as `[REDACTED]`, which no shape takes for a value, so what is left of one is no value either: measured by

@@ -882,7 +882,7 @@ def as_data(
     pre, whole = evidence["preflight"], evidence["whole"]
     identities = _identified(outcome.kept)
     # The added lines' numbers, kept when the rules let the lines go; a deleted or binary file has none.
-    added = {f["path"]: f["added_at"] for f in evidence["files"]}
+    added = {f["path"]: f["added_at"] for f in (*evidence["files"], *evidence.get("unscanned", ()))}
     return {
         "schema": SCHEMA,
         "verdict": verdict,

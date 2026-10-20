@@ -208,6 +208,16 @@ class TestTheSecretShapes:
         }
         for path, text in configs.items():
             assert lines_hit(NamedSecrets(), path, text) == [1], path
+        # Read by the second review: test code in any language is the test's own, now the rule reads every language.
+        code = {
+            "pkg/auth/login_test.go": 'var password = "Tr0ub4dor-horse"\n',
+            "src/test/java/LoginTest.java": 'String password = "Tr0ub4dor-horse";\n',
+            "web/src/__tests__/login.test.ts": 'const password = "Tr0ub4dor-horse";\n',
+            "src/test/resources/application-test.properties": "spring.datasource.password=Xk9mQ2vR7t4p\n",
+        }
+        for path, text in code.items():
+            assert lines_hit(NamedSecrets(), path, text) == [], path
+        assert lines_hit(NamedSecrets(), "pkg/auth/login.go", code["pkg/auth/login_test.go"]) == [1], "not a test"
 
     def test_named_secrets_weighs_the_value_as_well_as_the_name(self) -> None:
         """A person chooses a password, which may be any words; a machine makes a token, a key or a secret, one run of

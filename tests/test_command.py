@@ -701,6 +701,17 @@ class TestThePreviousReportAndTheHandoff:
 class TestTheJsonReport:
     """`--json FILE`: the review the text report prints, as data a pipeline reads, under the same safety rules."""
 
+    def test_a_finding_in_a_file_scan_leaves_out_is_on_its_added_line(self, cli, tmp_path: Path) -> None:
+        """Read by review: the JSON found a finding's line among the added lines of the scanned files alone. A token
+        added to a README read `on_added_line: false`."""
+        repo = _branch_off_empty(tmp_path / "repo", "feature", base="main")
+        _committed(repo, "README.md", "Clone with https://x-access-token:ghp_" + "a1B2" * 9 + "@github.com/a/b\n")
+        data = tmp_path / "review.json"
+        argv = [str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules", "--json", str(data)]
+        assert cli.main(argv) == 1
+        found = json.loads(data.read_text(encoding="utf-8"))["findings"]
+        assert found and all(f["file"] == "README.md" and f["on_added_line"] for f in found), found
+
     def test_a_finding_keeps_its_fingerprint_when_its_lines_move(self) -> None:
         """A finding's identity across runs, for a pipeline that tracks findings: built from its check, its file and
         its evidence, spaces and secrets aside, never its line, which a line added above it moves. Two findings sharing
@@ -913,6 +924,16 @@ class TestWhatTheCommandTells:
         assert phases[3].startswith("review: rules done in ") and phases[3].endswith(" s") and len(phases) == 4, said
         assert any(line.startswith("review: still running the rules: ") for line in said), said
 
+    def test_a_closed_stderr_still_ends_in_the_verdict(self, cli, tmp_path: Path, monkeypatch, capsys) -> None:
+        """Read by review: with stderr closed (`2>&-`), Python's `sys.stderr` is None. A sentence written to it raised
+        in main's last resort, and the review ended in exit 1, which reads as a blocker. It ends by its verdict now.
+        A sentence falls back to stdout, as `print` does."""
+        monkeypatch.setattr(sys, "stderr", None)
+        assert self._review(cli, tmp_path, "x = 1\n") == 0
+        assert "## Verdict: APPROVED" in capsys.readouterr().out
+        cli._say("a sentence")
+        assert "review: a sentence" in capsys.readouterr().out
+
     @pytest.mark.asyncio
     async def test_a_wait_names_the_guidelines_still_running(self, cli) -> None:
         from types import SimpleNamespace
@@ -999,6 +1020,25 @@ def test_every_error_the_package_raises_or_answers_is_short_and_one_command() ->
 
 class TestWhatAReviewKeeps:
     """What a review keeps beside its report: the cache, a recorded run, a debug log and a trace."""
+
+    def test_the_cache_key_reads_the_files_the_review_ignores(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: under --staged the index has no commit to name it, and a staged change to a vendored file
+        changed no key. The cache served a report that left the file out of its ignored list."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "app.py", "x = 1\n")
+        _committed(repo, "vendor/lib.py", "y = 1\n", "base")
+        (repo / "app.py").write_text("x = 2\n", encoding="utf-8", newline="\n")
+        _git_in(repo, "add", "app.py")
+        argv = [str(repo), "--staged", "--profile", "default-rules", "--cache", str(tmp_path / "cache")]
+        assert cli.main(argv) == 0
+        capsys.readouterr()
+        (repo / "vendor" / "lib.py").write_text("y = 2\n", encoding="utf-8", newline="\n")
+        _git_in(repo, "add", "vendor/lib.py")
+        assert cli.main(argv) == 0
+        said = capsys.readouterr()
+        assert "served from the cache" not in said.err and "vendor/lib.py" in said.out, said
 
     def test_a_debug_log_holds_what_each_guideline_was_asked_and_no_secret(
         self, cli, demo_repo: Path, tmp_path: Path

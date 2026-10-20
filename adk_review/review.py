@@ -72,6 +72,7 @@ import warnings
 from collections.abc import Callable, Generator, Sequence
 from importlib import metadata
 from pathlib import Path, PurePosixPath, PureWindowsPath
+from typing import TextIO
 
 #: Why the reviewer could not load, if it could not: a broken install is one sentence and exit 3 like every other
 #: failure, never Python's own exit 1, which reads as a blocker. Measured before: a package that would not import
@@ -490,7 +491,7 @@ def _a_terminal() -> bool:
     """Whether a question can be asked: stdin and stderr are both the terminal, the answer's end and the question's.
     Measured with stderr sent to a file: the question went there, and the command waited on a terminal that showed
     nothing."""
-    return sys.stdin.isatty() and sys.stderr.isatty()
+    return _terminal(sys.stdin) and _terminal(sys.stderr)
 
 
 def _answer(prompt: str) -> str:
@@ -571,10 +572,15 @@ def _written(path: Path, text: str) -> None:
             raise
 
 
+def _terminal(stream: TextIO | None) -> bool:
+    """Whether `stream` is a terminal. A closed one is none: Python holds it as None, as under `2>&-`."""
+    return stream is not None and stream.isatty()
+
+
 def _say(sentence: str) -> None:
     """A sentence on stderr, made safe as the report's prose is: git's or an exception's words can be the branch's. One
     write a line, so the heartbeat's thread never splits another line."""
-    sys.stderr.write(f"review: {safe_line(sentence)}\n")
+    print(f"review: {safe_line(sentence)}\n", end="", file=sys.stderr)
 
 
 def _review(argv: list[str] | None = None) -> int:
@@ -657,7 +663,7 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
         _say(str(exc))
         return EXIT_USAGE
     # Told at a terminal, where a person waits, or when asked; a pipeline's log stays the report alone.
-    say = None if args.quiet else _say if args.progress or sys.stderr.isatty() else None
+    say = None if args.quiet else _say if args.progress or _terminal(sys.stderr) else None
     if say is not None:
         say(f"reading {head} against {base or 'the empty tree'}")
     with _beating(say, lambda: "reading the change"):
@@ -935,6 +941,7 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
         # Everything the run was asked but where its outputs go: a flag added later is in the key from the start.
         "asked": {key: value for key, value in sorted(vars(args).items()) if key not in OUTPUTS},
         "untracked": evidence.get("untracked"),  # `--staged`'s note: a new untracked file is a new report
+        "ignored": evidence.get("ignored"),  # read by review: a staged change to a vendored file served a stale list
         "models": [model, fallback_name()],  # the verifier's among `model`'s roles under --verify
         # Each outside tool a rule that runs reads, as it would run: a newer ruff finds what an older one did not.
         "tools": {tool: IDENTITIES[tool]() for tool in tools},
