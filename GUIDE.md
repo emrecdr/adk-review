@@ -266,6 +266,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | All the diffs the guidelines read | 250,000 characters | `collect/change.py`, `BLOCK_CAP_CHARS` |
 | The most complex functions the health section names | 5 | `core/health.py`, `WORST_SHOWN` |
 | Python source files parsed before maintainability is graded | 10 | `core/health.py`, `FILES_AT_LEAST` |
+| The steps the blast radius takes in all, one for each cycle of imports a walk reaches: past them, a radius is not counted, and says so | 2,000,000 steps | `core/blast.py`, `RADIUS_STEPS` |
 | One file at the head the rules and the radius read, and one file `--try` reads | 1,000,000 bytes | `collect/git.py`, `MAX_FILE_BYTES` |
 | The head's Python files read for the tree rules and the radius, in all; and the changed files' texts, in all | 20,000,000 bytes | `collect/git.py`, `MAX_TREE_BYTES` |
 | One git call | 30 seconds | `collect/git.py`, `GIT_TIMEOUT_S` |

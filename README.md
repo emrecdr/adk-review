@@ -817,17 +817,22 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   reading of a key the secrets rule had found. It is the guidelines' shape again, one agent per finding under the
   same plugins, so the redaction, the ledger and the ceiling cover each call.
 - **The blast radius says where to read.** What at the head depends on each changed Python file, directly or through
-  another, tests counted apart: read from git in one batch and parsed with Python's own `ast`, never run. The
-  guidelines read it beside the diff, told to weigh a change to shared behaviour by how far it reaches, as context
-  and never as evidence: a finding that quotes it is dropped. The report shows it under the verdict, widest first —
-  the most modules importing a file directly, then the most reached — and the verdict never reads it: severity
-  decides. An import graph is a floor of what a change reaches, since a module loaded by name, a subprocess, a web
-  route or a plugin registry is invisible to it. Where the head was not read whole — a file the parser refused, one
-  past a cap, a tree that could not be listed — every count says it is a floor, and only a rule that asks for an
-  unread file by name is a hole. The head is read whole only for what reads it, a tree rule or a guideline; with
-  neither, as under `default-rules`, the radius says it was not asked, which is neither a hole nor a leaf. For a
-  guideline alone it is read only when a changed file is Python, all the radius measures: measured on a 2,040-file
-  tree, a change to a Markdown file collected its evidence in 56 ms where reading the head took over a second.
+  another, tests counted apart: read from git in one batch and parsed with Python's own `ast`, never run. The guidelines
+  read it beside the diff, told to weigh a change to shared behaviour by how far it reaches, as context and never as
+  evidence: a finding that quotes it is dropped. The report shows it under the verdict, widest first — the most modules
+  importing a file directly, then the most reached — and the verdict never reads it: severity decides. An import graph
+  is a floor of what a change reaches, since a module loaded by name, a subprocess, a web route or a plugin registry is
+  invisible to it. Where the head was not read whole — a file the parser refused, one past a cap, a tree that could not
+  be listed — every count says it is a floor, and only a rule that asks for an unread file by name is a hole. The head
+  is read whole only for what reads it, a tree rule or a guideline; with neither, as under `default-rules`, the radius
+  says it was not asked, which is neither a hole nor a leaf. For a guideline alone it is read only when a changed file
+  is Python, all the radius measures: measured on a 2,040-file tree, a change to a Markdown file collected its evidence
+  in 56 ms where reading the head took over a second. A radius is counted, never listed, its own importers named: the
+  files in an import cycle reach each other, so a cycle is walked once, and the walks share what they read, within
+  2,000,000 steps in all, past which a radius says it was not counted. Measured by review: a walk from each changed file
+  listed every module it reached, and a cycle of 4,000 took 9.3 s where it takes 0.09, litellm's 2,685 files 5.0 s where
+  they take 0.69, and a path is indexed by no more of its tail than an import can name, where 100 files 1,000 folders
+  deep took 20 s.
 - **What the guidelines read is capped.** Each file's diff is cut at `diff_cap`, and the block of diffs in all: a
   file past the block's cap is left out whole, the block's end tells the guidelines how many, and the report names
   each under "not read", a hole. With no cap, `--all` over 4,826 files gave each guideline and each verifier 14.9 MB.

@@ -56,7 +56,7 @@ import ast
 import functools
 import sys
 from collections import defaultdict
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import PurePosixPath
 
@@ -64,6 +64,13 @@ from .evidence import Entry
 
 #: A file that depends on a changed one is named; past this many, the rest are counted.
 NAMES_SHOWN = 5
+#: A dotted name is read to its first parts, and a path looked up by its last, this many: measured by review, 100
+#: files 1,000 folders deep took 20 s and 432 MB to index, every tail of every path a key.
+_PARTS_READ = 32
+#: The steps the radii take in all, one for each component of import cycles a walk from a changed file reaches, its
+#: own included: past them a radius is not counted, and says so. Measured by review, a walk from each changed file
+#: read a cycle of 4,000 modules again from each, 9.3 s, and litellm's whole project, 2,685 files, 5.0 s.
+RADIUS_STEPS = 2_000_000
 #: Measured on a namespace package, a folder with no `__init__.py`: its `typing.py` was read as imported by 81 files,
 #: where 7 import it. `import typing` is the standard library's, wherever a root is inferred.
 _STDLIB = frozenset(sys.stdlib_module_names)
@@ -71,14 +78,18 @@ _STDLIB = frozenset(sys.stdlib_module_names)
 
 @dataclass(frozen=True)
 class Radius:
-    """What depends on one changed file at the head: modules and tests, directly or through others."""
+    """What depends on one changed file at the head: how many modules and tests, directly or through others, and those
+    that import it themselves, by name. Counted, never listed: a cycle of thousands of modules listed every one of
+    them for each, measured by review at 2.15 GB, where only the counts and the names of its importers are read."""
 
     path: str
-    modules: tuple[str, ...] = ()
-    tests: tuple[str, ...] = ()
+    modules: int = 0
+    tests: int = 0
     deleted: bool = False
     #: Of those, the ones that import the file themselves, modules first: the call sites a change meets.
     direct: tuple[str, ...] = ()
+    #: False where the radii's steps ran out before it: its importers are named, and what imports them not counted.
+    counted: bool = True
 
     @property
     def measured(self) -> bool:
@@ -87,7 +98,7 @@ class Radius:
 
     @property
     def reach(self) -> int:
-        return len(self.modules) + len(self.tests)
+        return self.modules + self.tests
 
 
 @dataclass(frozen=True)
@@ -146,13 +157,25 @@ class _Tree:
         self.exact: dict[tuple[str, ...], str] = {}
         self.by_tail: dict[tuple[str, ...], set[str]] = defaultdict(set)
         self.packages = {PurePosixPath(p).parent for p in paths if PurePosixPath(p).name == "__init__.py"}
+        trie: dict = {}  # the packages' folders, a part a level, `None` marking one that is a package
+        for folder in self.packages:
+            node = trie
+            for part in folder.parts:
+                node = node.setdefault(part, {})
+            node[None] = True
         for path in paths:
             parts = _module(path)
             if parts:
                 self.exact[parts] = path
-                for start in range(len(parts)):  # each root above the first package, where a short name is looked up
-                    if PurePosixPath(*parts[:start]) in self.packages:
+                # Each root above the first package, where a short name is looked up, and a tail no longer than an
+                # import is read: the first package found in one walk down the path's folders.
+                first, node = len(parts), trie
+                for start in range(len(parts)):
+                    if None in node:
+                        first = start
                         break
+                    node = node.get(parts[start], {})
+                for start in range(max(0, len(parts) - _PARTS_READ), first):
                     self.by_tail[parts[start:]].add(path)
 
     def absolute(self, importer: str, dotted: str | None, names: list[str]) -> set[str]:
@@ -188,6 +211,7 @@ def _resolve(lookup: Callable[[tuple[str, ...]], set[str]], base: tuple[str, ...
     submodule of it. One rule for both lookups; measured before it, a changed `pkg/__init__.py` that three files
     reached through `pkg.x` was called a leaf."""
     found: set[str] = set()
+    base = base[:_PARTS_READ]
     for depth in range(1, len(base) + 1):  # each package on the way runs its `__init__.py`; `base` is the last
         found |= lookup(base[:depth])
     for name in names:
@@ -251,26 +275,118 @@ def blast_radius(
 
     # Asked once per file, never per file reached: measured as --all reads 4,340 files, the radii took 20.6 s, now 7.4.
     test_files = {path for path in modules if is_test(path)}
+    measured = [entry["path"] for entry in changed if entry["path"].endswith(".py")]
+    component = _components(dependents, measured)
+    reached = _Reached(dependents, component, test_files)
     radii = []
     for entry in changed:
         path = entry["path"]
         if not path.endswith(".py"):
             radii.append(Radius(path))
             continue
-        seen: set[str] = set()
-        frontier = [path]
-        while frontier:  # everything that imports the file, or imports something that does
-            for dependent in dependents[frontier.pop()] - seen - {path}:
-                seen.add(dependent)
-                frontier.append(dependent)
-        importers = dependents[path]  # every one also reached, so `direct` is a part of `modules` and `tests`
-        reached, tested = tuple(sorted(seen - test_files)), tuple(sorted(seen & test_files))
+        importers = dependents.get(path, set())  # each one also reached, so `direct` is a part of the counts
         direct = (*sorted(importers - test_files), *sorted(importers & test_files))
-        radii.append(Radius(path, reached, tested, deleted=path in deleted, direct=direct))
+        counts = reached.counts(component[path])  # what imports the file, or imports something that does
+        if counts is None:
+            radii.append(Radius(path, deleted=path in deleted, direct=direct, counted=False))
+            continue
+        modules_reached, tests_reached = counts
+        own = (0, 1) if path in test_files else (1, 0)  # the file itself, in its own component, is no dependent
+        radii.append(Radius(path, modules_reached - own[0], tests_reached - own[1], path in deleted, direct))
     # Widest first: the most modules importing it themselves, then the most reached. By reach alone, measured on ADK,
     # its `__init__.py`, which 613 modules import, came after 88 files reaching one module more, one imported once.
-    radii.sort(key=lambda r: (not r.measured, -len(set(r.direct) - test_files), -len(r.modules), -len(r.tests), r.path))
+    radii.sort(
+        key=lambda r: (not r.measured, not r.counted, -len(set(r.direct) - test_files), -r.modules, -r.tests, r.path)
+    )
     return Blast(tuple(radii), tuple(sorted(unparsed)), skipped, listed)
+
+
+def _components(edges: Mapping[str, set[str]], roots: Iterable[str]) -> dict[str, int]:
+    """Each file a walk from `roots` along `edges` reaches, by the number of its component: files that reach each other
+    share one, a cycle of imports read as one. Only what the roots reach is read."""
+    found = _Tarjan(edges)
+    for root in roots:
+        found.walk(root)
+    return found.component
+
+
+class _Tarjan:
+    """Tarjan's components, an edge a turn on a list of its own, so a cycle of any length costs no recursion."""
+
+    def __init__(self, edges: Mapping[str, set[str]]) -> None:
+        self.edges = edges
+        self.index: dict[str, int] = {}
+        self.low: dict[str, int] = {}
+        self.stack: list[str] = []
+        self.held: set[str] = set()
+        self.component: dict[str, int] = {}
+
+    def walk(self, root: str) -> None:
+        work = [] if root in self.index else [self._enter(root)]
+        while work:
+            node, onward = work[-1]
+            nxt = next(onward, None)
+            if nxt is None:  # every edge of it read
+                work.pop()
+                if work:
+                    self.low[work[-1][0]] = min(self.low[work[-1][0]], self.low[node])
+                self._leave(node)
+            elif nxt not in self.index:
+                work.append(self._enter(nxt))
+            elif nxt in self.held:
+                self.low[node] = min(self.low[node], self.index[nxt])
+
+    def _enter(self, node: str) -> tuple[str, Iterator[str]]:
+        self.index[node] = self.low[node] = len(self.index)
+        self.stack.append(node)
+        self.held.add(node)
+        return node, iter(self.edges.get(node, ()))
+
+    def _leave(self, node: str) -> None:
+        """A component's root takes itself and all above it on the stack, numbered by it."""
+        if self.low[node] == self.index[node]:
+            member = ""
+            while member != node:
+                member = self.stack.pop()
+                self.held.discard(member)
+                self.component[member] = self.index[node]
+
+
+class _Reached:
+    """How many modules and tests each component reaches, its own members included: walked once a component, shared by
+    every changed file in it, every walk spending the radii's `RADIUS_STEPS`. None past them."""
+
+    def __init__(self, edges: Mapping[str, set[str]], component: Mapping[str, int], tests: set[str]) -> None:
+        self.onward: dict[int, set[int]] = defaultdict(set)
+        self.members: dict[int, list[int]] = defaultdict(lambda: [0, 0])  # a component's modules and tests
+        for node, number in component.items():
+            self.members[number][node in tests] += 1
+            self.onward[number].update(component[nxt] for nxt in edges.get(node, ()) if component[nxt] != number)
+        self.known: dict[int, tuple[int, int]] = {}
+        self.steps = RADIUS_STEPS
+
+    def counts(self, start: int) -> tuple[int, int] | None:
+        if start in self.known:
+            return self.known[start]
+        seen, frontier, totals = {start}, [start], [0, 0]
+        while frontier:
+            if self.steps <= 0:
+                return None
+            self.steps -= 1
+            number = frontier.pop()
+            totals[0] += self.members[number][0]
+            totals[1] += self.members[number][1]
+            for nxt in self.onward[number] - seen:
+                seen.add(nxt)
+                frontier.append(nxt)
+        self.known[start] = (totals[0], totals[1])
+        return self.known[start]
+
+
+def _names(radius: Radius) -> str:
+    """The files that import it themselves, `NAMES_SHOWN` of them named and the rest counted."""
+    shown = ", ".join(radius.direct[:NAMES_SHOWN])
+    return shown + (f", and {len(radius.direct) - NAMES_SHOWN} more" if len(radius.direct) > NAMES_SHOWN else "")
 
 
 def _count(n: int, noun: str) -> str:
@@ -284,6 +400,9 @@ def describe(radius: Radius, floor: bool) -> str:
     """
     if not radius.measured:
         return "not measured: not a Python file"
+    if not radius.counted:
+        named = f"; imported directly by {_names(radius)}" if radius.direct else ""
+        return f"not counted: the radii spent the {RADIUS_STEPS:,} steps they take in all before it{named}"
     if not radius.reach:
         if floor:
             said = "nothing that was read imports it; the tree was not read whole"
@@ -292,13 +411,11 @@ def describe(radius: Radius, floor: bool) -> str:
         if radius.deleted:
             return f"deleted by this change; {said}"
         return said if floor else f"a leaf: {said}"
-    parts = [_count(len(radius.modules), "module")] if radius.modules else []
-    parts += [_count(len(radius.tests), "test")] if radius.tests else []
+    parts = [_count(radius.modules, "module")] if radius.modules else []
+    parts += [_count(radius.tests, "test")] if radius.tests else []
     who = " and ".join(parts)
     # The counts are all that depends on it; the names are those that import it themselves, the call sites to read.
-    shown = ", ".join(radius.direct[:NAMES_SHOWN])
-    if len(radius.direct) > NAMES_SHOWN:
-        shown += f", and {len(radius.direct) - NAMES_SHOWN} more"
+    shown = _names(radius)
     directly = f", {len(radius.direct)} of them directly" if len(radius.direct) < radius.reach else ""
     verb = "depends" if radius.reach == 1 else "depend"
     at_least = " (at least: the tree was not read whole)" if floor else ""

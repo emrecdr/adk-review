@@ -36,7 +36,11 @@ class TestTheBlastRadius:
         changed = [{"path": "src/payments/charge.py", "status": "M"}, {"path": "src/payments/report.py", "status": "A"}]
         blast = blast_radius(parsed(self.PAYMENTS), changed)
         charge, report = blast.radii
-        assert charge.modules == ("src/payments/refund.py",) and charge.tests == ("tests/test_charge.py",)
+        assert (charge.modules, charge.tests, charge.direct) == (
+            1,
+            1,
+            ("src/payments/refund.py", "tests/test_charge.py"),
+        )
         assert describe(charge, blast.floor) == (
             "1 module and 1 test depend on it at the head: src/payments/refund.py, tests/test_charge.py"
         )
@@ -47,7 +51,7 @@ class TestTheBlastRadius:
 
         sources = {"a.py": "import b\n", "b.py": "from c import thing\n", "c.py": ""}
         radii = blast_radius(parsed(sources), [{"path": "a.py", "status": "M"}, {"path": "c.py", "status": "M"}]).radii
-        assert [(r.path, r.modules) for r in radii] == [("c.py", ("a.py", "b.py")), ("a.py", ())]
+        assert [(r.path, r.modules, r.direct) for r in radii] == [("c.py", 2, ("b.py",)), ("a.py", 0, ())]
 
     def test_the_names_are_what_imports_it_and_the_most_imported_comes_first(self) -> None:
         """Measured over 30 installed trees: in 23, most files reach over half the tree through other files, one
@@ -84,8 +88,57 @@ class TestTheBlastRadius:
             "other.py": "from pkg import thing\n",
         }
         changed = [{"path": "pkg/x.py", "status": "M"}, {"path": "pkg/__init__.py", "status": "M"}]
-        by_path = {r.path: r.modules for r in blast_radius(parsed(sources), changed).radii}
-        assert by_path == {"pkg/x.py": ("pkg/y.py", "user.py"), "pkg/__init__.py": ("other.py", "pkg/y.py", "user.py")}
+        by_path = {r.path: (r.modules, r.direct) for r in blast_radius(parsed(sources), changed).radii}
+        assert by_path == {
+            "pkg/x.py": (2, ("pkg/y.py", "user.py")),
+            "pkg/__init__.py": (3, ("other.py", "pkg/y.py", "user.py")),
+        }
+
+    def test_a_cycle_of_imports_is_walked_once_and_counted_whole(self) -> None:
+        """Measured by review: a walk from each changed file read a cycle of 4,000 modules again from each, 9.3 s, every
+        module listed in every radius. Its members reach each other, so the cycle is walked once, each counted."""
+        import time
+
+        from adk_review.core.blast import blast_radius, parsed
+
+        n = 3_000
+        sources = {f"m{i}.py": f"import m{(i + 1) % n}\n" for i in range(n)}
+        modules, changed = parsed(sources), [{"path": path, "status": "M"} for path in sources]
+        started = time.perf_counter()
+        radii = blast_radius(modules, changed).radii
+        assert time.perf_counter() - started < 2.0, "once, where it was once a file"
+        assert {(r.modules, r.tests, len(r.direct)) for r in radii} == {(n - 1, 0, 1)}
+
+    def test_a_radius_past_the_steps_is_not_counted_and_says_so(self, monkeypatch) -> None:
+        """A chain of imports is no cycle, and a walk from each of its files reads the rest: past the steps the radii
+        take in all, a radius is not counted, and says so, its own importers named; never a leaf."""
+        from adk_review.core import blast
+
+        monkeypatch.setattr(blast, "RADIUS_STEPS", 10)
+        sources = {f"m{i}.py": f"import m{i + 1}\n" for i in range(9)} | {"m9.py": ""}
+        changed = [{"path": f"m{i}.py", "status": "M"} for i in (9, 1)]
+        found = blast.blast_radius(blast.parsed(sources), changed)
+        by_path = {r.path: r for r in found.radii}
+        assert (by_path["m9.py"].modules, by_path["m9.py"].counted) == (9, True), "ten steps, one a module"
+        assert not by_path["m1.py"].counted and by_path["m1.py"].direct == ("m0.py",)
+        said = blast.describe(by_path["m1.py"], found.floor)
+        assert (
+            said == "not counted: the radii spent the 10 steps they take in all before it; imported directly by m0.py"
+        )
+
+    def test_a_deep_path_is_found_by_its_last_parts_and_indexed_by_no_more(self) -> None:
+        """Measured by review: 100 files 1,000 folders deep took 20 s and 432 MB to index, every tail of every path a
+        key. A tail no import is long enough to name is no key, and a short name still finds its file."""
+        import time
+
+        from adk_review.core.blast import blast_radius, parsed
+
+        deep = "/".join(["a"] * 1_000)
+        sources = {f"{deep}/f{i}.py": "x = 1\n" for i in range(100)} | {"app.py": "import f7\n"}
+        started = time.perf_counter()
+        (radius,) = blast_radius(parsed(sources), [{"path": f"{deep}/f7.py", "status": "M"}]).radii
+        assert time.perf_counter() - started < 2.0, "a key no longer than an import"
+        assert radius.direct == ("app.py",), radius
 
     def test_what_was_not_read_is_named_and_never_reads_as_a_leaf(self) -> None:
         from adk_review.core.blast import blast_radius, describe, parsed
@@ -168,13 +221,13 @@ class TestTheBlastRadius:
             "tests/conftest.py",
         ]
         changed = [{"path": path, "status": "M"} for path in paths]
-        by_path = {r.path: (r.modules, r.tests) for r in blast_radius(parsed(sources), changed).radii}
+        by_path = {r.path: (r.modules, r.tests, r.direct) for r in blast_radius(parsed(sources), changed).radii}
         assert by_path == {
-            "pkg/types.py": ((), ()),
-            "pkg/files/types.py": (("pkg/client.py",), ()),
-            "pkg/llms/openai.py": ((), ()),
-            "pkg/tests/helpers.py": ((), ("pkg/tests/test_x.py",)),
-            "tests/conftest.py": ((), ("tests/test_user.py",)),
+            "pkg/types.py": (0, 0, ()),
+            "pkg/files/types.py": (1, 0, ("pkg/client.py",)),
+            "pkg/llms/openai.py": (0, 0, ()),
+            "pkg/tests/helpers.py": (0, 1, ("pkg/tests/test_x.py",)),
+            "tests/conftest.py": (0, 1, ("tests/test_user.py",)),
         }
 
     def test_a_standard_library_name_lands_only_on_a_file_at_the_top(self) -> None:
@@ -280,7 +333,7 @@ class TestTheBlastRadius:
         monkeypatch.setattr(git, "MAX_FILE_BYTES", 30)  # refund.py, the one module importing charge.py, is longer
         blast = git.collect_evidence(str(demo_repo), BASE, HEAD)["blast"]
         charge = next(r for r in blast.radii if r.path == "src/payments/charge.py")
-        assert blast.skipped and "src/payments/refund.py" not in charge.modules
+        assert blast.skipped and "src/payments/refund.py" not in charge.direct and charge.modules == 0
         assert blast.floor, "a count over a tree not read whole is a floor"
 
     def test_a_tree_read_past_its_timeout_is_not_read_and_every_count_is_a_floor(
