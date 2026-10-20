@@ -856,9 +856,14 @@ class TestWhatRanUntested:
         assert isinstance(said, str) and said, said
 
     def test_the_package_answers_its_agent_lazily_and_nothing_else(self, monkeypatch) -> None:
+        """`adk eval` reads `agent` off the package, `getattr(package, "agent", package)`, before any import of the
+        submodule: the hook answers it. Measured by review: with the submodule imported first, as before here, the
+        attribute was set by the import, the hook never ran, and the test passed with it deleted."""
         load_agent(monkeypatch)
         import adk_review
 
-        assert adk_review.agent.root_agent.name == "adk_review"
+        monkeypatch.delitem(sys.modules, "adk_review.agent")
+        monkeypatch.delattr(adk_review, "agent")
+        assert adk_review.agent.root_agent.name == "adk_review", "answered by the hook, the submodule imported anew"
         with pytest.raises(AttributeError):
             adk_review.nothing_here  # noqa: B018
