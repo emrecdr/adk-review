@@ -388,6 +388,7 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
             hits = rule.hits(files, tree)
         except UnreadError as exc:
             hits, could_not_look = exc.found, f"rule {rule.id} could not look: {exc}"
+        read = EVIDENCE_MAX_CHARS + CREDENTIAL_REACH
         findings = [
             Finding(
                 file=hit.path,
@@ -397,7 +398,7 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
                 # The report never prints a secret, a rule's evidence included, and the line is cut once, after a
                 # scrub reading as far as a credential crossing the cut could run: measured by review, a 10 MB line
                 # was scrubbed again by every later reader, 160 s in all, and one 2 MB line whole took 9 s.
-                evidence=cut_at(scrub(hit.text[: EVIDENCE_MAX_CHARS + CREDENTIAL_REACH])[0], EVIDENCE_MAX_CHARS),
+                evidence=cut_at(scrub(hit.text[:read], cut=len(hit.text) > read)[0], EVIDENCE_MAX_CHARS),
                 suggestion=hit.fix or rule.fix,
             )
             for hit in hits

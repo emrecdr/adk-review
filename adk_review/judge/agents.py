@@ -12,10 +12,12 @@ the chat's verdict, capped, as the blast radius is rendered for the guidelines.
 from __future__ import annotations
 
 import secrets
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from google.adk.agents import LlmAgent
 from google.adk.agents.callback_context import CallbackContext
+from google.adk.sessions.state import State
 from google.genai import types
 from pydantic import BaseModel, ValidationError
 
@@ -80,6 +82,18 @@ def fenced(label: str, inside: str, boundary: str = BOUNDARY) -> str:
     return f"<<< {label} {boundary}\n{inside}\n>>> {label} {boundary}"
 
 
+def unjudged(state: State | Mapping[str, Any]) -> str | None:
+    """Why no guideline judges the change this turn, or None where each does: no change gathered, or a provider that
+    failed earlier in the turn, the intake's after its tool confirmed the scope, which the error plugin notes under
+    `temp:failure` for this invocation. The guard skips every guideline on it, and chat's grounding reads every one
+    as a check that could not look, for the same reason."""
+    if failure := state.get(FAILURE):
+        return f"Nothing was judged against this guideline: a call earlier in this turn failed, {failure}"
+    if not state.get(DIFF):
+        return "Nothing was gathered, so nothing was judged against this guideline."
+    return None
+
+
 def without_evidence(callback_context: CallbackContext) -> types.Content | None:
     """A guideline judges evidence and does not run without it: skipped, answering its schema, when there is none.
 
@@ -94,15 +108,12 @@ def without_evidence(callback_context: CallbackContext) -> types.Content | None:
     Returning content from `before_agent_callback` skips the agent, and ADK
     saves that content under the guideline's `output_key` through its schema — so
     the answer is a `Review` whose summary says the guideline did not look, and
-    why, which the verdict agent is told never to approve on.
+    why: one naming no finding, which chat's grounding reads, by `unjudged`, as a
+    check that could not look. Read by review: it read as nothing found.
     """
-    failure = callback_context.state.get(FAILURE)
-    if not failure and callback_context.state.get(DIFF):
+    if (why := unjudged(callback_context.state)) is None:
         return None
-    summary = "Nothing was gathered, so nothing was judged against this guideline" + (
-        f": {failure}" if failure else "."
-    )
-    return types.ModelContent(Review(summary=summary).model_dump_json())
+    return types.ModelContent(Review(summary=why).model_dump_json())
 
 
 def for_the_guidelines(blast: Blast) -> str:

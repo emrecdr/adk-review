@@ -229,11 +229,8 @@ _VENDOR = (
 #: A value a name alone says is secret, with no vendor's shape: what `named-secrets` weighs.
 _GENERIC = (
     (
-        # A named value in quotes: code, JSON, YAML. Or one that runs to the end of the text read: read by review, a
-        # scrub that read as far as a cut and a credential crossing it could run found no closing quote for a token
-        # longer than that, and its first 385 characters were printed as a rule's evidence.
-        "generic_secret",
-        re.compile(r"(?i)(" + _NAMED + r"[\"']?\s*[:=]\s*)([\"'])" + _STAND_IN + r"([^\"'\n]{6,})(?:\2|\Z)"),
+        "generic_secret",  # a named value in quotes: code, JSON, YAML
+        re.compile(r"(?i)(" + _NAMED + r"[\"']?\s*[:=]\s*)([\"'])" + _STAND_IN + r"([^\"'\n]{6,})\2"),
         r"\1\2[REDACTED]\2",
     ),
     (
@@ -247,6 +244,17 @@ _GENERIC = (
         ),
         r"\1[REDACTED]",
     ),
+)
+#: A named value in quotes running to the end of a text cut from a longer one, its closing quote past the cut: read
+#: only where the text was cut there. Read by review: a scrub that read as far as a cut and a credential crossing it
+#: could run found no closing quote for a token longer than that, and its first 385 characters were printed as a rule's
+#: evidence; and read at the end of every text, it took the first line of a value written over lines for a whole one,
+#: `PASSWORD_RULES="at least twelve characters,` a blocker of named-secrets, and a guideline's quote of such a line
+#: scrubbed where its hunk was not, the finding dropped.
+_OPEN_AT_THE_CUT = (
+    "generic_secret",
+    re.compile(r"(?i)(" + _NAMED + r"[\"']?\s*[:=]\s*)([\"'])" + _STAND_IN + r"([^\"'\n]{6,})\Z"),
+    r"\1\2[REDACTED]",
 )
 #: Every shape, a vendor's first: what redaction scrubs, and what a cut never falls inside.
 _PATTERNS = (*_VENDOR, *_GENERIC)
@@ -267,14 +275,15 @@ _VENDOR_REST = tuple(shape for shape in _VENDOR if shape not in _PREFIXED)
 _PATTERNS_REST = (*_VENDOR_REST, *_GENERIC)
 
 
-def scrub(text: str) -> tuple[str, int]:
-    """`text` with every known secret shape replaced, and how many were. A prefixed shape none of which is in the text
-    is passed over until a shape rewrites it, since a rewrite can make one: `[REDACTED…]` is the word's edge a token
-    glued to the value before it opens on. Measured by review: nine prefixed shapes more took scrubbing a request at
-    the block cap from 36 ms to 54, every request of every review, each on the event loop; passed over, 23."""
+def scrub(text: str, *, cut: bool = False) -> tuple[str, int]:
+    """`text` with every known secret shape replaced, and how many were; `cut` where `text` was cut from a longer one,
+    so a quoted value running to its end is one. A prefixed shape none of which is in the text is passed over until a
+    shape rewrites it, since a rewrite can make one: `[REDACTED…]` is the word's edge a token glued to the value
+    before it opens on. Measured by review: nine prefixed shapes more took scrubbing a request at the block cap from
+    36 ms to 54, every request of every review, each on the event loop; passed over, 23."""
     total = 0
     unprefixed = not _ANY_PREFIXED.search(text)
-    for shape in _PATTERNS:
+    for shape in (*_PATTERNS, _OPEN_AT_THE_CUT) if cut else _PATTERNS:
         if unprefixed and shape in _PREFIXED:
             continue
         text, count = shape[1].subn(shape[2], text)
@@ -289,10 +298,12 @@ def scrub(text: str) -> tuple[str, int]:
 CREDENTIAL_REACH = 16_384
 
 
-def spans(text: str) -> list[tuple[int, int]]:
+def spans(text: str, *, cut: bool = False) -> list[tuple[int, int]]:
     """Where each known secret shape sits in `text`, as `(start, end)`: what a cut must never fall inside, since half a
-    credential no longer matches its shape and would be sent unredacted."""
+    credential no longer matches its shape and would be sent unredacted. `cut` as `scrub` takes it."""
     table = _PATTERNS if _ANY_PREFIXED.search(text) else _PATTERNS_REST
+    if cut:
+        table = (*table, _OPEN_AT_THE_CUT)
     return [match.span() for _kind, pattern, _replacement in table for match in pattern.finditer(text)]
 
 

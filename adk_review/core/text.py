@@ -55,7 +55,8 @@ def cut_at(text: str, limit: int, *, sep: str = " ") -> str:
     """
     if len(text) <= limit:
         return text
-    found = spans(text[: limit + CREDENTIAL_REACH])  # one crossing the cut starts before it
+    read = limit + CREDENTIAL_REACH
+    found = spans(text[:read], cut=len(text) > read)  # one crossing the cut starts before it
     while straddled := [start for start, end in found if start < limit < end]:
         limit = min(straddled)
     return f"{text[:limit]}{sep}[… cut at {limit:,} characters]"

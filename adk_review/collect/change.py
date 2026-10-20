@@ -34,6 +34,13 @@ def radius_of(tree: Tree | None, files: list[Entry]) -> Blast:
 LFS_VERSION = "version https://git-lfs.github.com/spec/v1"
 
 
+def pointer_text(text: str) -> bool:
+    """Whether `text`, a file's whole, is a Git LFS pointer, as `lfs_pointer` reads one off a diff: the spec's version
+    its first line, and the object's id its second."""
+    first, _, rest = text.partition("\n")
+    return first == LFS_VERSION and rest.startswith("oid sha256:")
+
+
 def lfs_pointer(diff: str) -> bool:
     """Whether the file the diff leaves is an LFS pointer: its first two lines as the diff shows them, whatever lines
     it removed before them. A page quoting the format holds those lines further down. Read by review: four lines of

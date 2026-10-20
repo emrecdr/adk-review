@@ -22,7 +22,7 @@ class Entry(TypedDict):
     names it."""
 
     path: str  # repository-relative, as git spells it
-    status: str  # A, M, D, R, C or T, as `diff-tree --name-status` letters it
+    status: str  # A, M, D, R, C or T, as `diff-tree` letters it
     old: NotRequired[str]  # a renamed or copied file's former path, under R and C alone
     diff: str | None  # its whole diff as git printed it, for the rules; None once the checks node let it go
     added: list[tuple[int, str]] | None  # each line the change added, numbered in the new file; None once let go

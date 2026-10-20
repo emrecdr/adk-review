@@ -87,7 +87,7 @@ def test_a_guideline_with_nothing_gathered_or_a_failure_before_it_says_so_and_wh
     assert guarded(**{agents.DIFF: "+x = 1"}) is None
     assert "Nothing was gathered, so nothing was judged against this guideline." in guarded(**{agents.DIFF: ""})
     said = guarded(**{agents.DIFF: "+x = 1", agents.FAILURE: f"intake: {QUOTA_TEXT}"})
-    assert "Nothing was gathered" in said and QUOTA_TEXT in said, said
+    assert "Nothing was judged" in said and QUOTA_TEXT in said, said
 
 
 @pytest.mark.asyncio
@@ -153,6 +153,32 @@ async def test_a_guideline_that_fails_in_a_later_turn_never_reads_as_its_earlier
     fake_provider.raises_when(SECURITY, quota())
     asked.clear()
     await chat.say(REVIEW_REQUEST)
+    (read,) = [system for system, _turns in asked if THE_VERDICT in system]
+    assert "## guideline.security — could not look:" in read and "verdict: DEGRADED" in read, read
+
+
+@pytest.mark.asyncio
+async def test_a_guideline_its_guard_skipped_reads_as_one_that_could_not_look(
+    monkeypatch, fake_provider, asked, demo_repo
+):
+    """Read by review: the intake's call after its tool confirmed the scope failed, the checks gathered the change,
+    and every guideline's guard skipped it, its answer a review naming no finding, which code read as nothing found:
+    approved, no guideline having judged anything. A guideline its guard skipped could not look."""
+    from conftest import FakeModel
+
+    module = load_agent(monkeypatch)
+    confirms(fake_provider, demo_repo)
+    answer = FakeModel.generate_content_async
+
+    async def fails_after_its_tool(self, llm_request, stream=False):
+        last = (llm_request.contents[-1].parts or ()) if llm_request.contents else ()
+        if INTAKE in str(llm_request.config.system_instruction or "") and any(p.function_response for p in last):
+            raise RuntimeError("upstream connect error: reset before headers")
+        async for response in answer(self, llm_request, stream):
+            yield response
+
+    monkeypatch.setattr(FakeModel, "generate_content_async", fails_after_its_tool)
+    await Chat(module).say(REVIEW_REQUEST)
     (read,) = [system for system, _turns in asked if THE_VERDICT in system]
     assert "## guideline.security — could not look:" in read and "verdict: DEGRADED" in read, read
 

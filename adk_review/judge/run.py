@@ -26,7 +26,7 @@ from ..core.findings import Checked, Review
 from ..core.profiles import state_key
 from ..core.rules import AnyRule
 from ..core.verdict import Outcome, Sourced, decide, drop_ungrounded, fold, from_rules, not_read
-from .agents import FINDINGS, QUOTABLE, for_the_verdict, read_back
+from .agents import FINDINGS, QUOTABLE, for_the_verdict, read_back, unjudged
 from .checks import NAME as CHECKS
 from .config import RUN_DEADLINE_S
 
@@ -126,6 +126,12 @@ def build_grounding(checks: Catalog, fail_on: str) -> FunctionNode:
         errors = {e.author: f"{e.error_code}: {e.error_message}" for e in turn if e.error_code}
         written = {key for event in turn for key in event.actions.state_delta or {}}
         state = {key: value for key, value in ctx.state.to_dict().items() if key in written}
+        # And a guideline its guard skipped could not look: read by review, its answer, a review naming no finding,
+        # read as nothing found, and code approved with no guideline having judged anything.
+        if why := unjudged(ctx.state):
+            for guideline in checks.guidelines:
+                state.pop(key := state_key(guideline.check_id), None)
+                errors[key] = why
         ctx.state[FINDINGS] = decided(state, errors, checks, fail_on)
 
     return FunctionNode(func=ground, name="grounded")

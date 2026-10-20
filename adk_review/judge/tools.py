@@ -82,7 +82,7 @@ async def changed_files(tool_context: ToolContext) -> dict:
         room -= len(f["path"]) + len(f.get("old", ""))
         if room < 0:
             break
-        listed.append(f)
+        listed.append({key: f[key] for key in ("path", "status", "old") if key in f})  # the mode is the collector's
     reply = {"status": "success", "files": listed, "count": len(files)}
     if len(listed) < len(files):
         reply["cut"] = (

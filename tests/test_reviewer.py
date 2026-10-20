@@ -433,6 +433,14 @@ class TestWhatTheSecretsGateKnows:
             scrub(header + " " * 40_000 + "!\n")
             assert time.perf_counter() - started < 1.0, header
 
+    def test_a_cut_never_falls_inside_a_quoted_value_longer_than_it_reads(self) -> None:
+        """A cut reads as far as a credential crossing it could run, and a quoted value longer than that holds no
+        closing quote there: it runs to the end of what the cut read, and the cut falls before it."""
+        from adk_review.core.text import cut_at
+
+        cut = cut_at('notes = 1\nAPI_TOKEN = "' + "x" * 20_000 + '"\n', 40)
+        assert "xxxxxxxx" not in cut, cut[:80]
+
     def test_the_cut_never_falls_inside_a_credential(self) -> None:
         """Measured before: a file's diff was cut at its cap, then scrubbed, and half a credential matches no shape:
         30 of an AWS secret's 40 characters reached every lane, and four lines of a key's body. The cut moves to before
@@ -548,6 +556,13 @@ class TestWhatGroundingKeeps:
             kept, dropped = drop_ungrounded(Review(findings=[finding], summary="s"), {"a.py": [hunk]}, {"a.py": []})
             assert time.perf_counter() - started < 1.0, f"a quote of {lines:,} lines"
             assert (len(kept), dropped) == (1, []), "and still placed"
+
+    def test_a_quote_of_a_value_written_over_lines_grounds(self) -> None:
+        """Read by review: a quoted value open at the end of a text read as a secret there, so a guideline's quote of
+        the first line of a YAML value written over two lines was scrubbed alone, where the hunk, the next line read
+        with it, was not: a blocker quoting the line as it was shown was dropped, and the review held back."""
+        hunk = ["+deploy:", '+  password_policy: "Use at least twelve characters and', '+    one digit"']
+        assert _grounds(hunk, '  password_policy: "Use at least twelve characters and')
 
     @pytest.mark.parametrize(
         ("quotable", "quote"),

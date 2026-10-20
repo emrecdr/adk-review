@@ -19,17 +19,17 @@ import re
 import shutil
 import string
 import subprocess
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 from ..core.blast import Radius
 from ..core.evidence import Entry, Evidence, Failure, unreleased
-from ..core.paths import linked
+from ..core.paths import Links, UnfollowedError
 from ..core.rules import Tree
 from ..core.text import lines_of
-from .change import lfs_pointer, no_change, radius, shown_to_guidelines, widens
+from .change import lfs_pointer, no_change, pointer_text, radius, shown_to_guidelines, widens
 from .diff import (
     BINARY,
     DIFF_CAP_CHARS,
@@ -46,8 +46,6 @@ MAX_TREE_BYTES = 20_000_000
 MAX_FILE_BYTES = 1_000_000
 #: Git reads a file as binary where a NUL lies in its first 8,000 bytes, and the rules read a link's target so too.
 BINARY_BYTES = 8_000
-#: How many links one link is followed through, as Linux follows them: past it, the link names no file.
-LINK_HOPS = 40
 #: The tree of no files, by the repository's hash: git knows it without storing it. A whole-project review diffs the
 #: head against it, so every file reads as added and goes through the rules, the guidelines and grounding as a change
 #: does.
@@ -379,30 +377,24 @@ def preflight_staged(repo: str) -> dict:
 
 
 def list_changed(resolved: dict) -> list[dict[str, str]]:
-    """`[{"path", "status"}]` for the change, from NUL-separated records so odd paths survive; a rename also carries
-    its `old` path, `-M` finding renames whatever the reviewer's `diff.renames` says."""
+    """`[{"path", "status", "mode"}]` for the change, from NUL-separated records so odd paths survive: `mode` the
+    file's at the head, `120000` a link's, known from the change itself, where a link moved whole shows no mode in its
+    diff and the head's tree may not be listed; a rename also carries its `old` path, `-M` finding renames whatever
+    the reviewer's `diff.renames` says."""
     if resolved.get("staged"):  # the index against the base: what the next commit would change
-        _, out = _git(
-            resolved["repo"], "diff-index", "--cached", "-r", "--name-status", "-z", "-M", resolved["merge_base"]
-        )
+        _, out = _git(resolved["repo"], "diff-index", "--cached", "-r", "--raw", "-z", "-M", resolved["merge_base"])
     else:
         _, out = _git(
-            resolved["repo"],
-            "diff-tree",
-            "-r",
-            "--name-status",
-            "-z",
-            "-M",
-            resolved["merge_base"],
-            resolved["head_sha"],
+            resolved["repo"], "diff-tree", "-r", "--raw", "-z", "-M", resolved["merge_base"], resolved["head_sha"]
         )
     parts = iter(p for p in out.split("\0") if p)
     files: list[dict[str, str]] = []
     for field in parts:
-        status = field[0]
-        # A rename (`R<score>`) or a copy (`C<score>`) names the old path first; the new one exists.
-        old = {"old": next(parts)} if status in "RC" else {}
-        files.append({"path": next(parts), "status": status, **old})
+        # `:<mode> <mode> <sha> <sha> <status>`, the base's then the head's; a rename (`R<score>`) or a copy
+        # (`C<score>`) names the old path first, and the new one exists.
+        _was, mode, _old, _new, status = field.removeprefix(":").split(" ")
+        old = {"old": next(parts)} if status[0] in "RC" else {}
+        files.append({"path": next(parts), "status": status[0], "mode": mode, **old})
     return sorted(files, key=lambda f: f["path"])
 
 
@@ -582,32 +574,53 @@ def _links(listing: list[tuple[str, str, str, str, str]] | None) -> dict[str, tu
     return {path: (sha, size) for mode, kind, sha, size, path in listing or () if kind == "blob" and mode == "120000"}
 
 
-def _link_targets(
-    resolved: dict, starts: list[str], links: dict[str, tuple[str, str]], blobs: Mapping[str, object]
-) -> dict[str, str]:
-    """The plain file each of `starts`, a link, names at the head, followed through links up to `LINK_HOPS`, by the
-    link's path; none for one that names a folder, a path out of the repository, nothing, or a chain past the hops.
-    Each link's blob read once. Read by review: one link read through, a link to a link to an image holding Python
-    was read by no rule."""
-    named: dict[str, str] = {}
-    at = {start: start for start in starts}
-    found: dict[str, str] = {}
-    for _hop in range(LINK_HOPS):
-        unread = sorted({place for place in at.values() if place in links and place not in named})
-        if unread:
-            named.update(_texts(resolved, ((place, *links[place]) for place in unread))[0])
-        onward = {}
-        for start, place in at.items():
-            if place in blobs:
-                found[start] = place
-            elif place in named and (target := linked(place, named[place])) is not None:
-                onward[start] = target
-        if not (at := onward):
-            break
-    return found
+def _followed(
+    resolved: dict, files: list[Entry], listing: list[tuple[str, str, str, str, str]], blobs: Mapping[str, object]
+) -> list[tuple[Entry, str]]:
+    """Each changed link with the plain file at the head it runs as, as `Links.follow` follows it: every link at the
+    head read in one batch, the changed ones first within the tree's budget. One whose way is not known is named on
+    its entry, `unread_text`, a hole for a rule that reads it whole; one naming no file here has no text, as before:
+    there is nothing here to run."""
+    links = _links(listing)
+    starts = [entry for entry in files if entry["path"] in links]
+    if not starts:
+        return []
+    first = {entry["path"] for entry in starts}
+    order = sorted(links, key=lambda path: path not in first)
+    read, _unread = _texts(resolved, ((path, *links[path]) for path in order))
+    modules = (path for _mode, kind, _sha, _size, path in listing if kind == "commit")
+    head = Links(blobs, {path: read.get(path) for path in links}, modules)
+    through = []
+    for entry in starts:
+        try:
+            target = head.follow(entry["path"])
+        except UnfollowedError as why:
+            entry["unread_text"] = f"was not followed to the file it names: {why}"
+            continue
+        if target is not None:
+            through.append((entry, target))
+    return through
 
 
-def _links_unread(files: list[Entry], links: Mapping[str, object], skipped: Mapping[str, str]) -> None:
+def _as_linked(through: list[tuple[Entry, str]], texts: Mapping[str, str]) -> None:
+    """Each link's text, `texts` holding it under the link's path, read as the file it runs: none for a binary, as git
+    reads one; a hole for a rule that reads it whole where it was not read, or is a Git LFS pointer, its file stored
+    elsewhere, which read by review was linted line by line; else every line of it added under the link's name, for
+    the report as for the rules."""
+    for entry, target in through:
+        text = texts.get(entry["path"])
+        if text is not None and "\x00" in text[:BINARY_BYTES]:
+            continue
+        entry["target"] = target
+        if text is None:
+            entry["unread_text"] = "was not read whole"
+        elif pointer_text(text):
+            entry["unread_text"] = "names a Git LFS pointer: the file it runs is stored elsewhere, and was not read"
+        else:
+            entry["text"], entry["added_at"] = text, frozenset(range(1, len(lines_of(text)) + 1))
+
+
+def _links_unread(files: list[Entry], links: Collection[str], skipped: Mapping[str, str]) -> None:
     """A symbolic link runs as the file it names, which its diff never shows: for the guidelines a hole, named on the
     link, unless the change showed them that file whole, as it shows a file it adds. Read by review: `run.py`, a link
     to a skip-listed image holding Python, was approved, read by no one; a file the change only modified counted as
@@ -667,9 +680,10 @@ def _no_text(diff: str) -> bool:
 
 def read_texts(resolved: dict, files: list[Entry], listing: list[tuple[str, str, str, str, str]] | None) -> None:
     """Each changed file's text at the head, for the file rules, set on its entry as `text`: a plain file the head
-    holds within the caps, read in one batch. `unread_text` names one the head holds that was not read — over its
-    cap, past the tree's budget, a blob the batch did not give back, or a tree that could not be listed — a hole for
-    a rule that reads it whole; `shown` holds the lines its diff shows of it, by number, the ones added and those kept
+    holds within the caps, read in one batch, and a link as the file it runs. `unread_text` names one the head holds
+    that was not read — over its cap, past the tree's budget, a blob the batch did not give back, a tree that could
+    not be listed, a link whose way could not be followed or that names a Git LFS pointer — a hole for a rule that
+    reads it whole; `shown` holds the lines its diff shows of it, by number, the ones added and those kept
     around them, for a rule that reads no more. A file the head does not hold, a binary, a Git LFS pointer, a link
     naming no text file there or a submodule has neither: nothing for a file rule to read, and the report names a
     binary and a pointer under not read already."""
@@ -683,20 +697,11 @@ def read_texts(resolved: dict, files: list[Entry], listing: list[tuple[str, str,
         blobs = {path: (sha, size) for path, sha, size in _plain(listing)}
         changed = [entry for entry in files if entry["path"] in blobs and not _no_text(unreleased(entry["diff"]))]
         # A link runs as the file it names, so the rules read that file under the link's name. Read by review: a link
-        # had no text, and `run.py` naming an image that held Python was linted by no rule. One naming no file of the
-        # head, a folder or a path out of the repository, has no text, as before: there is nothing here to run.
-        links = _links(listing)
-        found = _link_targets(resolved, [entry["path"] for entry in files if entry["path"] in links], links, blobs)
-        through = [(entry, found[entry["path"]]) for entry in files if entry["path"] in found]
+        # had no text, and `run.py` naming an image that held Python was linted by no rule.
+        through = _followed(resolved, files, listing, blobs)
         wanted = [(entry["path"], *blobs[entry["path"]]) for entry in changed]
         texts, _unread = _texts(resolved, [*wanted, *((entry["path"], *blobs[target]) for entry, target in through)])
-        for entry, target in through:
-            text = texts.get(entry["path"])
-            if "\x00" not in (text or "")[:BINARY_BYTES]:
-                entry["target"] = target
-                changed.append(entry)
-                if text is not None:  # every line of it added under the link's name, for the report as for the rules
-                    entry["added_at"] = frozenset(range(1, len(lines_of(text)) + 1))
+        _as_linked(through, texts)
         unread = []
         for entry in changed:
             entry["text"] = texts.get(entry["path"])
@@ -760,7 +765,7 @@ def gather(
     tree = tree_at_head(resolved, listing) if read else None
     read_texts(resolved, files, listing)
     if guidelines:
-        _links_unread(files, _links(listing), excluded)
+        _links_unread(files, {entry["path"] for entry in entries if entry["mode"] == "120000"}, excluded)
     return {
         "status": "success",
         "preflight": resolved,

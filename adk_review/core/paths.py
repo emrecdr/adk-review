@@ -1,12 +1,11 @@
 """A path, whether a glob names it: the operator's skip list's question of each changed file, and a rule's of a path,
-through the door; and the path a symbolic link names. Whether a path is a test is `blast.py`'s `is_test`, which the
+through the door; and the file a symbolic link runs as. Whether a path is a test is `blast.py`'s `is_test`, which the
 blast radius asks too."""
 
 from __future__ import annotations
 
 import functools
-import posixpath
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from fnmatch import fnmatchcase
 from pathlib import PurePosixPath
 
@@ -31,13 +30,79 @@ def _matches(path: str, glob: str) -> bool:
     return fnmatchcase(path.rpartition("/")[2], glob)
 
 
-def linked(path: str, named: str) -> str | None:
-    """The path a symbolic link at `path` names, `named` as git stores it, relative to the link's folder; None for
-    one that names no path inside the repository: absolute, a drive's, or climbing out of it."""
-    if not named or named.startswith(("/", "\\")) or named[1:2] == ":":
-        return None
-    joined = posixpath.normpath(posixpath.join(posixpath.dirname(path), named))
-    return None if joined == "." or joined.split("/")[0] == ".." else joined
+#: How many links one path is followed through, as Linux follows them: past forty, a loop, and it names no file.
+LINK_HOPS = 40
+#: The parts of a path a review follows its links through, in all: past them, where a link leads is not known, a hole
+#: for a rule that reads it whole. Measured: an ordinary link took 7; a branch of 2,000 links, each heading a chain of
+#: links whose paths ran 2,000 parts through `a/..`, took 78,041 a link and 17 s in all, which stops here in 24 ms.
+LINK_STEPS = 200_000
+
+
+class UnfollowedError(Exception):
+    """Where a link leads is not known: a link on the way was not read, or the review's `LINK_STEPS` ran out."""
+
+
+class Links:
+    """The head as a symbolic link reads it: its plain files, each link with the path it names, None for one not read,
+    and every folder their paths hold. `others`, a submodule's path say, is no file and no link here, and still holds
+    up the folders it lies in. One a review, its steps counted across every link it follows."""
+
+    def __init__(self, files: Iterable[str], links: Mapping[str, str | None], others: Iterable[str] = ()) -> None:
+        self.files = set(files)
+        self.links = links
+        self.folders: set[str] = set()
+        for path in (*self.files, *links, *others):
+            end = path.rfind("/")
+            while end > 0 and (folder := path[:end]) not in self.folders:
+                self.folders.add(folder)
+                end = path.rfind("/", 0, end)
+        self.steps = LINK_STEPS
+
+    def follow(self, path: str) -> str | None:
+        """The plain file `path`, a link, runs as: each part followed in turn as a system follows it, a link on the
+        way read from the folder it lies in and a `..` climbing from where the link before it led, up to `LINK_HOPS`
+        links. None where it names no file here: a folder, a submodule, nothing, a file read as a folder, a path out
+        of the repository, or a loop. `UnfollowedError` where a link on the way was not read, or the steps ran out.
+        Read by review: a link was looked up whole and made plain as text first, so one through a link to a folder
+        named no file, and `lib/../notes.txt`, `lib` a link to `assets/pkg`, read as `notes.txt` where a system runs
+        `assets/notes.txt`."""
+        self._spend(path.count("/") + 1)  # each part counted as it is stacked, before any list of them is made
+        parts = path.split("/")[::-1]  # a stack, the next part last
+        folder, ends = "", []  # where the walk stands, and where each folder on the way to it ends in it
+        hops = 0
+        while parts:
+            part = parts.pop()
+            if part in ("", "."):
+                continue
+            if part == "..":
+                if not ends:
+                    return None  # out of the repository
+                ends.pop()
+                folder = folder[: ends[-1]] if ends else ""
+                continue
+            here = f"{folder}/{part}" if folder else part
+            if here in self.links:
+                if hops == LINK_HOPS:
+                    return None  # a loop, as a system reads one past its forty
+                hops += 1
+                named = self.links[here]
+                if named is None:
+                    raise UnfollowedError(f"the link {here} was not read")
+                if not named or named.startswith(("/", "\\")) or named[1:2] == ":":
+                    return None  # out of the repository: absolute, or a drive's
+                self._spend(named.count("/") + 1)
+                parts.extend(reversed(named.split("/")))
+            elif here in self.folders:
+                folder = here
+                ends.append(len(here))
+            else:
+                return here if here in self.files and not parts else None
+        return None  # a folder, or the top
+
+    def _spend(self, steps: int) -> None:
+        self.steps -= steps
+        if self.steps < 0:
+            raise UnfollowedError(f"past the {LINK_STEPS:,} parts of a path a review follows its links through")
 
 
 def matching(paths: Iterable[str], *globs: str) -> list[str]:

@@ -272,6 +272,8 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | The steps the blast radius takes in all, one for each cycle of imports a walk reaches: past them, a radius is not counted, and says so | 2,000,000 steps | `core/blast.py`, `RADIUS_STEPS` |
 | One file at the head the rules and the radius read, and one file `--try` reads | 1,000,000 bytes | `collect/git.py`, `MAX_FILE_BYTES` |
 | The head's Python files read for the tree rules and the radius, in all; and the changed files' texts, in all | 20,000,000 bytes | `collect/git.py`, `MAX_TREE_BYTES` |
+| The links one symbolic link is followed through, as Linux follows them: past them, it names no file | 40 links | `core/paths.py`, `LINK_HOPS` |
+| The parts of a path a review follows its links through, in all: past them, a link not yet followed is a hole for a rule that reads it whole | 200,000 parts | `core/paths.py`, `LINK_STEPS` |
 | One git call | 30 seconds | `collect/git.py`, `GIT_TIMEOUT_S` |
 | One ruff run | 60 seconds | `collect/ruff.py`, `RUFF_TIMEOUT_S` |
 | The findings one ruff run names that the rules read: past them, a hole | 500,000 findings | `collect/ruff.py`, `RUFF_FINDINGS_MAX` |
@@ -340,6 +342,10 @@ What the hook cannot see, or stops on:
   ("Configuration" above): then the report names it as skipped, and it stops nothing. A text file past the size limits
   above, a lock file say, is read as far as its diff shows it, which is all `reviewer-instructions` reads; a Python file
   past them is a hole for `lint`, `pitfalls` and `encoding-declaration`, which read a file whole, and stops the push.
+- A symbolic link is read as the file it runs, followed a part at a time as a system follows it, through links to
+  folders and links to links. One naming a Git LFS pointer, or one whose way could not be followed, is a hole for a
+  rule that reads it whole, and stops the push; one naming no file of the repository, a folder or a path outside it,
+  holds nothing to run, and stops nothing.
 - A repository with no `.git` folder of its own, a bare one or one used through `--git-dir`, and a tag of a tree or a
   blob, stop the push: the hook reviews a working tree's commits.
 

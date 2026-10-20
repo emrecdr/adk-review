@@ -1237,6 +1237,19 @@ class TestTheShippedRules:
         evidence = [f.evidence for f in found["rule.every"].findings]
         assert evidence and all(value[:20] not in quoted for quoted in evidence), [quoted[:60] for quoted in evidence]
 
+    def test_the_first_line_of_a_value_written_over_lines_is_no_secret(self) -> None:
+        """Read by review: a quoted value open at the end of a text read as a whole one, and a line rule reads each line
+        as a text of its own, so `PASSWORD_RULES="at least twelve characters,`, opening a value written over two
+        lines, was a blocker of named-secrets, which the pre-push hook runs, and its words were redacted. A quoted value
+        closes on its quote, and at the end of a text only where the text was cut there."""
+        from adk_review.core.secrets import scrub
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.named_secrets import NamedSecrets
+
+        opening = 'PASSWORD_RULES="at least twelve characters,'
+        assert lines_hit(NamedSecrets(), "deploy.sh", f'{opening}\n  one digit and one symbol"\n') == []
+        assert scrub(opening) == (opening, 0)
+
     def test_a_rules_evidence_costs_its_cut_not_its_line(self) -> None:
         """Measured by review: the evidence of one 2 MB line holding a key took 9 s, the whole line scrubbed and then
         searched again for where to cut it, for the 400 characters kept. The scrub reads as far as the cut and a
