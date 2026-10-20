@@ -13,8 +13,11 @@ a token is no part of it, and only an unquoted value can be code: of 8 more cred
 found where none was, and the twelve projects' 4 are the same 4.
 
 A YAML list's item is read as the line it holds, a compose file's `- DB_PASSWORD=...` as a `.env` line, a digit in its
-value, and `- password: ...` as YAML. Not read, as known limits: a compose item quoted whole, `- "DB_PASSWORD=..."`,
-a flow sequence, `environment: [...]`, and a Dockerfile's `ENV` line continued with a backslash.
+value, and `- password: ...` as YAML. A line is weighed as the diff shows it, its marker before it, so the rule and the
+redaction of its evidence read one text. Not read, as known limits: a compose item quoted whole, `- "DB_PASSWORD=..."`;
+a flow sequence, `environment: [...]`; an unquoted value holding `#`, a bracket or a brace, or a comment after it, on a
+`.env`, YAML or list line alike; a Markdown bullet, `+ password: ...`; and a Dockerfile's `ENV` line continued with a
+backslash.
 """
 
 from __future__ import annotations
@@ -134,9 +137,13 @@ class NamedSecrets(Rule):
         # hold no vendor's shape: a vendor's is `secrets`' finding, one credential, one finding. An example is blanked
         # as `[REDACTED]`, which no shape takes for a value, so what is left of one is no value either: measured by
         # review, blanked as a space, `" /application"` was flagged as a password. Then every named value on the line.
-        if named_at(line) is None:
+        # Each weighed as the diff shows the line, its marker before it, the text a finding's evidence prints scrubbed:
+        # read by review, `-- password: ...`, an SQL comment, was flagged bare, its first `-` taken for the marker, and
+        # printed unhidden, its marked form matching no shape.
+        marked = "+" + line
+        if named_at(marked) is None:
             return False
-        text = without_examples(line)
+        text = without_examples(marked)
         if vendor_shape(text) is not None:
             return False
         written = len(line) <= WRITTEN_MAX_CHARS
@@ -148,8 +155,10 @@ def _credential(name: str, value: str, quoted: bool, written: bool) -> bool:
     code, or a label that names a secret and holds none; a password a person wrote, whatever its words; else what a
     machine makes, one run of eight characters or more, a digit among them, no number and no mark of code."""
     # A flag spells its name with `-`, `--password-file`: read by review, a list of a container's arguments was read
-    # as its variables, and each file a flag named was a blocker.
-    about = name.lower().replace("-", "_").endswith(ABOUT)
+    # as its variables, and each file a flag named was a blocker. A flag's alone: folded for every name, Vault's
+    # `secret-id`, a credential, read as a name about one.
+    folded = name.lower().replace("-", "_") if name.startswith("--") else name.lower()
+    about = folded.endswith(ABOUT)
     if about or is_placeholder(value) or (not quoted and _CODE.fullmatch(value)):
         return False
     made = _SCHEME.sub("", value)

@@ -245,6 +245,32 @@ class TestTheSecretShapes:
         removed = "-        password=password,\n-        api_key=api_key,\n"
         assert scrub(removed) == (removed, 0), "a removed line of Python is no list's item"
 
+    def test_named_secrets_weighs_a_line_as_the_diff_shows_it(self) -> None:
+        """Read by review: the rule weighed a line bare and the scrub its evidence marked, `+` before it, so `--
+        password: ...`, an SQL comment, was flagged, its first `-` taken for a diff's marker, and printed unhidden,
+        its marked form matching no shape. Each line is weighed as the diff shows it: a finding's evidence is hidden,
+        and a line the scrub cannot read is no finding either. A Vault `secret-id` is a credential still."""
+        from adk_review.core.rules import run_rule
+        from adk_review.core.secrets import scrub
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.named_secrets import NamedSecrets
+
+        for path, line in (
+            ("docker-compose.yml", "      - DB_PASSWORD=Sup3rS3cret-db9"),
+            ("k8s/app.yaml", "  - password: Sup3rS3cret9"),
+            ("vault/approle.yaml", "secret-id: 7e1c5a3b-9f2d-4c8e-b6a1-0d3f5e7a9c2b"),
+        ):
+            assert lines_hit(NamedSecrets(), path, line + "\n") == [1], path
+            assert scrub("+" + line)[1] == 1, ("hidden as the diff shows it", path)
+            (found,) = run_rule(NamedSecrets(), [_entry(path, line + "\n")], None).findings
+            assert "Sup3rS3cret" not in found.evidence and "7e1c5a3b" not in found.evidence, found.evidence
+        for path, line in (
+            ("db/seed.sql", "-- password: Sup3rS3cret9"),
+            ("deploy/notes.yaml", "- - token: 4f8a1c2e9b7d6035"),
+        ):
+            flagged = lines_hit(NamedSecrets(), path, line + "\n") == [1]
+            assert flagged == (scrub("+" + line)[1] == 1), ("the rule and the scrub read one text", path)
+
     def test_named_secrets_reads_a_test_environments_config(self) -> None:
         """Read by review: any file in a folder named `test` read as a test's, so a password in `deploy/test/db.env`, an
         environment's config, passed `named-secrets`, in the review and in the pre-push hook's history alike. A test's

@@ -168,8 +168,8 @@ The order is the architecture: evidence and rules first, the guidelines' judgeme
    made, and one it refutes is dropped and named.
 6. **Fold and decide.** Findings on the same lines fold into one, the most severe reading kept whole. The verdict is
    code's: a kept finding at or above `--fail-on` is `REQUEST_CHANGES`, exit 1. A hole — a check that failed or could
-   not look, a changed file no check can read whole, or where a guideline runs one it was not shown whole, a dropped
-   finding at the bar — is `DEGRADED`, exit 3. A hole never approves.
+   not look, a changed file no check can read whole, or where a guideline runs one it was not shown whole, unless the
+   skip list names it, a dropped finding at the bar — is `DEGRADED`, exit 3. A hole never approves.
 7. **Deliver.** The report goes to stdout, and the JSON (`--json`) and a hand-off for a coding agent (`--handoff`) to
    their files, whenever a review is decided.
 

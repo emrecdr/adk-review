@@ -80,7 +80,7 @@ another, and each refuses a review's own flags — `--json`, `--handoff`, `--cac
 | 0 | Approved: no finding at or above `--fail-on`, and no hole. |
 | 1 | A finding at or above `--fail-on`, and no hole. |
 | 2 | A usage error, before any model call: a flag, a config, a profile or a check file that cannot run; no repository named in a pipeline, or no choice made at the question asked; a branch, base or path that does not resolve, a change against a base in a shallow clone, or a change that adds nothing; an arm that is not ready. |
-| 3 | A hole: a check failed or could not look, the token ceiling refused a guideline's call (a verifier's leaves its finding unverified), a changed file no check can read whole, or where a guideline runs one it was not shown whole, or a finding at the bar whose quote the diff does not bear out or that a verifier refuted under `--verify`. Also an error nothing else names, a report's reader that closed the pipe early, a `--json` or `--handoff` file that could not be written, and a reviewer that cannot load. |
+| 3 | A hole: a check failed or could not look, the token ceiling refused a guideline's call (a verifier's leaves its finding unverified), a changed file no check can read whole, or where a guideline runs one it was not shown whole, unless the skip list names it, or a finding at the bar whose quote the diff does not bear out or that a verifier refuted under `--verify`. Also an error nothing else names, a report's reader that closed the pipe early, a `--json` or `--handoff` file that could not be written, and a reviewer that cannot load. |
 | 130 | Stopped by Ctrl-C. |
 | 143 | Stopped by a job, with SIGTERM. |
 
@@ -271,7 +271,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | `findings` | Each kept finding: its fingerprint, check, file, line, the lines the diff places it on, whether one of them is a line the change added (null for a finding with no line), severity, title, evidence and suggestion. A guideline's finding's evidence is the lines of the diff its quote stands on, as the file reads them. A fingerprint is built from the check, the file and the evidence, never the line, so a finding keeps it when lines move. With `--previous`, `since_previous` says `new` or `seen`. |
 | `resolved` | With `--previous`, the earlier findings no longer found, as that report wrote them; null without it, or where this review has a hole. |
 | `could_not_look` | Each check that failed or could not look, and why. |
-| `not_read` | Each changed file no check can read whole, or where a guideline runs one it was not shown whole, and why. |
+| `not_read` | Each changed file no check can read whole, or where a guideline runs one it was not shown whole, unless the skip list names it, and why. |
 | `folded` | Each finding folded into another on the same lines, and the check it folded into. |
 | `dropped` | Each finding dropped for a quote the diff does not bear out. |
 | `dropped_at_fail_on` | How many of those sit at or above the bar. |

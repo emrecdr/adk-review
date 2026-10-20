@@ -40,13 +40,14 @@ terminal is asked for the path, a pipeline is refused with exit 2. Exit codes: 0
 adds nothing: "no change to review", a `config.toml`, profile or rule file that cannot run, nothing under `--path`, or
 no choice made at the question asked when neither `--base` nor `--all` is given), 3 a hole: a rule or a guideline
 failed, a rule could not look (the head's tree not listed, a file it holds not read whole, or a link whose file was not
-read or followed), a changed file no guideline read whole — binary, a submodule, a Git LFS pointer, a symbolic link to a
-file they were not shown whole, cut at the diff cap or past the guidelines' block cap — named under "not read", a
-finding at the `--fail-on` bar whose quote the diff does not bear out or that a verifier refuted, a guideline's call the
-token ceiling refused (a verifier's leaves its finding unverified), a `--json` or `--handoff` file that cannot be
-written, any error nothing else names (`main` wraps the command: a sentence, never Python's own exit 1, which would read
-as a blocker), a reader that closes the pipe early, and a reviewer that cannot load (a broken install). Ctrl-C is one
-sentence and 130, the shell's own code for it, and a job's SIGTERM 143.
+read or followed), a changed file no check can read whole — binary, a submodule, a Git LFS pointer — or, where a
+guideline runs, one it was not shown whole — a symbolic link to a file it was not shown whole, cut at the diff cap or
+past the guidelines' block cap — unless the skip list names it, named under "not read", a finding at the `--fail-on` bar
+whose quote the diff does not bear out or that a verifier refuted, a guideline's call the token ceiling refused (a
+verifier's leaves its finding unverified), a `--json` or `--handoff` file that cannot be written, any error nothing else
+names (`main` wraps the command: a sentence, never Python's own exit 1, which would read as a blocker), a reader that
+closes the pipe early, and a reviewer that cannot load (a broken install). Ctrl-C is one sentence and 130, the shell's
+own code for it, and a job's SIGTERM 143.
 
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so. A
