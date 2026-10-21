@@ -20,10 +20,11 @@ import threading
 from collections.abc import Generator, Iterable, Sequence
 from contextlib import closing
 from pathlib import Path, PurePath, PurePosixPath
+from typing import NamedTuple
 
 from ..core.evidence import Change
 from ..core.rules import Diagnostic, is_python_text
-from ..core.text import squash
+from ..core.text import lines_of, squash
 from .git import on_path
 
 RUFF_TIMEOUT_S = 60
@@ -34,6 +35,33 @@ RUFF_FINDINGS_MAX = 500_000
 
 class _FloodError(Exception):
     """Ruff named more findings than `RUFF_FINDINGS_MAX`."""
+
+
+#: What breaks a row where ruff and pyrefly count one: a lone `\r` too, which git reads as within a line.
+_ROW_BREAK = re.compile(r"\r\n?|\n")
+
+
+class Rows(NamedTuple):
+    """A file's lines as git numbers them, and the git line each row a tool counts falls on: a tool counts a lone
+    `\r` as a line's end, and git does not. Read by review: one put every finding below it a line past git's, and one
+    on an added line was dropped."""
+
+    lines: list[str]
+    at: list[int]
+
+    def place(self, row: int) -> tuple[int, str]:
+        """A tool's `row` as `(git's line number, that line)`: past the file's end, the row itself and no line."""
+        number = self.at[row - 1] if 0 < row <= len(self.at) else row
+        return number, self.lines[number - 1] if 0 < number <= len(self.lines) else ""
+
+
+def rows_of(text: str) -> Rows:
+    """`text`'s lines as git numbers them, and the git line of each row a tool counts."""
+    at, line = [1], 1
+    for found in _ROW_BREAK.finditer(text):
+        line += "\n" in found.group()
+        at.append(line)
+    return Rows(lines_of(text), at)
 
 
 def diagnose(
@@ -87,10 +115,10 @@ def _run(
             return _parsed(answer, sources)
 
 
-def laid_out(folder: str, texts: dict[str, str]) -> tuple[list[str], dict[str, list[str]]]:
+def laid_out(folder: str, texts: dict[str, str]) -> tuple[list[str], dict[str, Rows]]:
     """Each file written into `folder`, and the names a tool is given for them, with each file's lines as ruff and
     pyrefly count them, by path: ruff's, and `collect/pyrefly.py`'s."""
-    sources: dict[str, list[str]] = {}
+    sources: dict[str, Rows] = {}
     targets = []
     for index, (path, text) in enumerate(texts.items()):
         # Each in a folder of its own, under a name of the rule's own, never the branch's: `x.py` beside
@@ -103,9 +131,9 @@ def laid_out(folder: str, texts: dict[str, str]) -> tuple[list[str], dict[str, l
         written.parent.mkdir()
         written.write_text(text, encoding="utf-8", newline="")
         targets.append(target)
-        # Split where ruff counts a row: `str.splitlines` breaks at a form feed or U+2028 too, and measured, the
-        # quote after one was the line above ruff's.
-        sources[path] = re.split(r"\r\n?|\n", text)
+        # Rows where a tool counts them, never `str.splitlines`, which breaks at a form feed or U+2028 too: measured,
+        # the quote after one was the line above ruff's. Each is placed on git's line, which a lone `\r` breaks not.
+        sources[path] = rows_of(text)
     return targets, sources
 
 
@@ -139,9 +167,9 @@ def _ruff(argv: list[str], cwd: str) -> Generator[str]:
             raise subprocess.CalledProcessError(code, argv, stderr=said.read().decode("utf-8", "replace"))
 
 
-def _parsed(answer: Iterable[str], sources: dict[str, list[str]]) -> dict[str, list[Diagnostic]]:
+def _parsed(answer: Iterable[str], sources: dict[str, Rows]) -> dict[str, list[Diagnostic]]:
     """Ruff's answer read back, a line of JSON a finding: each under the path whose index names its folder, `sources`
-    in the order `_laid_out` numbered them, with the line it names as the file holds it; `ValueError`, `KeyError`,
+    in the order `laid_out` numbered them, with the line it names as the file holds it; `ValueError`, `KeyError`,
     `IndexError` or `TypeError` for an answer of another shape, `_FloodError` past `RUFF_FINDINGS_MAX`. A finding keeps
     no more than a `Diagnostic` holds, never its fix's edits, and each text said again is kept once."""
     paths = list(sources)
@@ -159,10 +187,8 @@ def _parsed(answer: Iterable[str], sources: dict[str, list[str]]) -> dict[str, l
             raise _FloodError
         hit = json.loads(text)
         path = paths[int(PurePath(hit["filename"]).parts[-2])]  # `<index>/<name>`, however ruff spells the root
-        row = hit["location"]["row"]
+        row, line = sources[path].place(hit["location"]["row"])
         code = hit["code"] or "invalid-syntax"  # ruff 0.12.0 to 0.12.7 name a file that does not parse with null
-        lines = sources[path]
-        line = lines[row - 1] if 0 < row <= len(lines) else ""
         offered = hit.get("fix") or {}
         fix, label = offered.get("message"), offered.get("applicability")
         said = Diagnostic(row, line, once(code), once(hit["message"]), fix and once(fix), label and once(label))
@@ -175,6 +201,8 @@ def identity() -> str:
     none. Measured by review: a review `--cache` kept with one ruff was served after another that found a major in
     the change, its key the same."""
     ruff = beside() or on_path("ruff")
+    if ruff == "ruff":  # found nowhere: the name alone is never run, which Windows seeks in the current folder first
+        return "ruff: not on PATH"
     try:
         return f"{ruff} {''.join(_ruff([ruff, '--version'], tempfile.gettempdir())).strip()}"
     except (OSError, subprocess.SubprocessError) as exc:

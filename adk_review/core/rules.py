@@ -1,13 +1,13 @@
 """What a rule is: a check decided by code, one class in one file of `judge/rules/`.
 
-A rule is self-contained: one class that decides its own scope and its own verdict, and names its severity, its
-title and its fix. Three kinds, one mental model — a line, a file, the tree. A `Rule` reads each line a change added
-and answers yes or no. A `FileRule` reads each file the change touched, whole at the head — its lines, which of them
-the change added, the other files the change touched and, for Python, its module, and ruff's diagnostics where it
-names the ruff codes it reads — for what one line cannot show. A `TreeRule` reads the head instead of the change:
-every path, and each Python module, parsed once with the blast radius, for what must exist, define a name, derive
-from a parent or take a parameter. Every rule is found in its folder and run the same way, by `run_rule`, the ones
-shipped with the reviewer among them; the repository under review configures nothing, and no code of its runs.
+A rule is self-contained: one class that decides its own scope and its own verdict, and names its severity, its title
+and its fix. Three kinds, one mental model — a line, a file, the tree. A `Rule` reads each line a change added and
+answers yes or no. A `FileRule` reads each file the change touched, whole at the head — its lines, which of them the
+change added, the other files the change touched and, for Python, its module, and an outside tool's diagnostics where it
+names the tool, ruff or pyrefly — for what one line cannot show. A `TreeRule` reads the head instead of the change:
+every path, and each Python module, parsed once with the blast radius, for what must exist, define a name, derive from a
+parent or take a parameter. Every rule is found in its folder and run the same way, by `run_rule`, the ones shipped with
+the reviewer among them; the repository under review configures nothing, and no code of its runs.
 
 This file is the contract: the kinds, what each is handed, and how one is run. What an author reaches for while
 writing `check` — reading a line's tokens or a module's syntax tree, matching a path, trying a rule on a text — is
@@ -171,7 +171,7 @@ class ChangedFile:
     """One file a change touched, as a file rule reads it: its path, its text at the head as lines numbered from 1 as
     git numbers them, the numbers of the lines the change added, the path of every file the change touched and, for a
     Python file, its module — the tree's parse where the head was listed, or why the tree refused it, the file's own
-    otherwise — and, for a rule that names the ruff codes it reads, ruff's diagnostics.
+    otherwise — and, for a rule that names an outside tool, that tool's diagnostics.
 
     A file the head holds that the collector did not read whole is handed over all the same, with no text: asking for
     its lines, its module or ruff's diagnostics raises `UnreadError`, so the rule that asks is the one that could not
@@ -290,9 +290,9 @@ class FileRule(AnyRule):
     decorator and its definition, a function a change grew past a length."""
 
     kind = "file"
-    #: The outside tool the rule reads, by the name of its adapter in `collect/tools.py` — `ruff` — and the settings
-    #: that adapter takes, the rule's own and never the repository's: a rule that names one is given each changed file
-    #: with the tool's diagnostics on `file.diagnostics`. None for every rule but those that read ruff.
+    #: The outside tool the rule reads, by the name of its adapter in `collect/tools.py` — `ruff` or `pyrefly` — and the
+    #: settings that adapter takes, the rule's own and never the repository's: a rule that names one is given each
+    #: changed file with the tool's diagnostics on `file.diagnostics`. None for every rule but those that read a tool.
     tool: ClassVar[str | None] = None
     tool_settings: ClassVar[Mapping[str, object]] = MappingProxyType({})
 

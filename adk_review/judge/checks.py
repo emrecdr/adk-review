@@ -2,17 +2,16 @@
 
 A `FunctionNode` is a Python function the graph runs as a node beside the agents: ADK 2.x's place for a deterministic
 step, where a 1.x pipeline had a tool a model had to choose to call. The command gathers the evidence before the graph
-runs and hands it in; in chat the node gathers it itself, for the commits the intake's first tool confirmed, so a
-review in `adk web` runs the rules the command runs. Every rule runs the same way, through `core/rules.py`'s
-`run_rule`, and its answer is left in state under its check's `state_key`, as each guideline's review is left under
-its own: the command reads them back, and for the chat's verdict agent the node renders them all, capped, under one
-key. The node writes the blast radius the guidelines read too, in both shapes, from the evidence it holds. A rule that
-names the ruff codes it reads is given ruff's diagnostics first, gathered by `collect/ruff.py` over the texts the
-collector read. The rules run off the event loop, since ruff and git are processes, and the node never raises:
-measured, a node that raises ends the whole run, every guideline with it. Once the rules have read it, the node lets
-go of what no one reads after them — the tree, each file's text, diff, added and shown lines — before the model calls:
-measured, the tree weighs about thirty times the source's bytes, and under `--all` the diffs and added lines four
-times the texts.
+runs and hands it in; in chat the node gathers it itself, for the commits the intake's first tool confirmed, so a review
+in `adk web` runs the rules the command runs. Every rule runs the same way, through `core/rules.py`'s `run_rule`, and
+its answer is left in state under its check's `state_key`, as each guideline's review is left under its own: the command
+reads them back, and for the chat's verdict agent the node renders them all, capped, under one key. The node writes the
+blast radius the guidelines read too, in both shapes, from the evidence it holds. A rule that names an outside tool is
+given its diagnostics first, gathered by its adapter, `collect/ruff.py` or `collect/pyrefly.py`, over the texts the
+collector read. The rules run off the event loop, since ruff and git are processes, and the node never raises: measured,
+a node that raises ends the whole run, every guideline with it. Once the rules have read it, the node lets go of what no
+one reads after them — the tree, each file's text, diff, added and shown lines — before the model calls: measured, the
+tree weighs about thirty times the source's bytes, and under `--all` the diffs and added lines four times the texts.
 """
 
 from __future__ import annotations
@@ -66,7 +65,7 @@ def _diagnosed(tool: str, settings: Mapping[str, object], evidence: Change) -> d
 
 def run_rules(evidence: Change, rules: Sequence[AnyRule], stop: threading.Event | None = None) -> dict[str, Checked]:
     """Every rule over what it reads, each the same way, by its check id: what it found, or why it could not look. A
-    rule that names ruff codes is given ruff's diagnostics on each changed Python file, beside the file. `stop`, once
+    rule that names an outside tool is given its diagnostics on each changed Python file, beside the file. `stop`, once
     set, ends the run before the next rule: the rules run in a thread, which no cancel reaches."""
     answers: dict[str, Checked] = {}
     for rule in rules:

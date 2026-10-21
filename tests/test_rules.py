@@ -777,7 +777,8 @@ class TestTheLintRule:
             {"filename": "/x/1/module.py", "location": {"row": 2}, "code": "F401", "message": "unused", "fix": None},
             {"filename": "0/__init__.py", "location": {"row": 9}, "code": None, "message": "parse", "fix": None},
         ]
-        found = ruff._parsed([json.dumps(hit) for hit in hits], {"pkg/__init__.py": [], "app.py": ["", "import os"]})
+        sources = {"pkg/__init__.py": ruff.rows_of(""), "app.py": ruff.rows_of("\nimport os\n")}
+        found = ruff._parsed([json.dumps(hit) for hit in hits], sources)
         ((one,), (two,)) = found["app.py"], found["pkg/__init__.py"]
         assert (one.line, one.source, one.code) == (2, "import os", "F401"), one
         assert (two.line, two.source, two.code) == (9, "", "invalid-syntax"), two
@@ -1005,6 +1006,70 @@ class TestTypesReadsWhatPyreflyFinds:
         monkeypatch.setattr(pyrefly, "on_path", lambda name: name)
         answer = run_rules({"files": [_entry("shop/orders.py", self.CHECKOUT)], "tree": None}, [Types()])
         assert "pyrefly is not on PATH" in (answer["rule.types"].could_not_look or ""), answer
+
+    def test_a_file_pyrefly_gives_up_on_is_a_hole(self) -> None:
+        """Read by review: a line Python compiles, `-` a thousand times before `1`, made pyrefly answer `Source is too
+        deeply nested` and check nothing else in the file, a planted missing argument with it: read as clean."""
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.types import Types
+
+        text = "y = " + "-" * 1000 + "1\n" + self.CHECKOUT
+        answer = run_rules({"files": [_entry("shop/orders.py", text)], "tree": None}, [Types()])["rule.types"]
+        assert "shop/orders.py" in (answer.could_not_look or "") and "nested" in answer.could_not_look, answer
+
+    def test_a_string_literal_pyrefly_names_never_reaches_a_finding(self) -> None:
+        """Read by review: pyrefly names a literal's value in its message, escaped, `Literal['\\nAKIA...\\n']`, so
+        a key no shape of the scrub's read there reached the report and the chat's verdict in clear."""
+        from adk_review.judge.rules.types import Types
+
+        key = "AKIA" + "IOSFODNN7EXAMPLE"  # built here, so this file holds no key a review would stop on
+        text = f'C = """\n{key}\n"""\n\n\ndef client(region: int) -> None:\n    pass\n\n\nclient(C)\n'
+        (found,) = ruff_rule_findings(Types(), [_entry("shop/cloud.py", text)])
+        assert key not in found.title and "bad-argument-type" in found.title, found.title
+
+    def test_pyrefly_s_answer_is_capped_and_past_it_is_a_hole(self, monkeypatch) -> None:
+        """Read by review: pyrefly's whole answer was held, so files of `1 + ""` lines wrote 62 MB of JSON each, and
+        12 of them took 3.1 GB. Past the cap its answer is not read, and the rule did not look."""
+        from adk_review.collect import pyrefly
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.types import Types
+
+        monkeypatch.setattr(pyrefly, "PYREFLY_ANSWER_MAX_BYTES", 2_000)
+        text = 'x = 1 + ""\n' * 40
+        answer = run_rules({"files": [_entry("shop/flood.py", text)], "tree": None}, [Types()])["rule.types"]
+        assert "more than 2,000 bytes" in (answer.could_not_look or ""), answer
+
+    def test_one_file_lists_at_most_per_file_findings_and_counts_the_rest(self) -> None:
+        """Read by review: one file of 125,000 `1 + ""` lines printed 125,000 findings, a 19 MB report, where `lint`
+        lists `PER_FILE` and counts the rest in one finding at the most severe of them."""
+        from adk_review.judge.rule_helpers import PER_FILE
+        from adk_review.judge.rules.types import Types
+
+        found = ruff_rule_findings(Types(), [_entry("shop/flood.py", 'x = 1 + ""\n' * (PER_FILE + 10))])
+        assert len(found) == PER_FILE + 1 and found[-1].line is None, len(found)
+        assert "10 more of pyrefly's findings" in found[-1].title, found[-1].title
+
+    def test_a_defect_inside_a_call_over_several_lines_is_kept_where_one_of_them_was_added(self) -> None:
+        """Read by review: pyrefly places a missing argument on the call's first line, and a change that renamed the
+        argument on the call's third line, as a formatter lays a call out, was dropped, no finding and no hole."""
+        from adk_review.judge.rules.types import Types
+
+        text = self.CHECKOUT + "\n\nz = total(\n    prices=[1],\n    taxes=2,\n)\n"
+        entry = _entry("shop/orders.py", text)
+        entry["added"] = [(11, "    taxes=2,")]
+        found = ruff_rule_findings(Types(), [entry])
+        assert [(f.line, f.severity) for f in found if "missing-argument" in f.title] == [(11, "major")], found
+
+    def test_a_lone_carriage_return_shifts_no_finding_off_its_line(self) -> None:
+        """Read by review: pyrefly, as ruff, counts a lone `\\r` as a line's end and git does not, so every row below
+        one was a line past git's, and a defect on an added line was dropped."""
+        from adk_review.judge.rules.types import Types
+
+        text = "# header\r# rest\n" + self.CHECKOUT
+        entry = _entry("shop/orders.py", text)
+        entry["added"] = [(1, "# header\r# rest"), (7, "    return total(prices)")]
+        found = ruff_rule_findings(Types(), [entry])
+        assert [(f.line, f.severity) for f in found] == [(7, "major")], [(f.line, f.title) for f in found]
 
     def test_it_runs_where_a_profile_asks_for_it_and_never_in_the_default(self) -> None:
         profiles = profiles_of()

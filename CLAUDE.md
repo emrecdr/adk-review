@@ -101,10 +101,10 @@ file unless it sets `reads_tests = True`, as each rule about what runs, leaks or
 as the two credential rules do: a key leaks from a README as from code. A rule or a guideline whose findings change how
 code reads and never what it does sets `cleanup = True`, as `simplify` and `complexity` do: the hand-off lists them
 under `## Tidy`, apart from the fixes, and holds one back on lines a defect at major or above names. A rule may carry
-`bad` and `good` examples (those that read ruff carry none), which the catalog holds it to at every start with its own
-source, a rule failing either being exit 2, and a `(path, text)` example names a file the shipped `scan` reads
-(`tests/test_catalog.py`); `try_rule`, `lines_hit` and `self_check` try a rule with no repository, `--list-checks` lists
-every check with its kind, its profiles and its file, `--check ID` runs one check alone. Each check has one id,
+`bad` and `good` examples (those that read an outside tool carry none), which the catalog holds it to at every start
+with its own source, a rule failing either being exit 2, and a `(path, text)` example names a file the shipped `scan`
+reads (`tests/test_catalog.py`); `try_rule`, `lines_hit` and `self_check` try a rule with no repository, `--list-checks`
+lists every check with its kind, its profiles and its file, `--check ID` runs one check alone. Each check has one id,
 `rule.<name>` or `guideline.<name>` (`core/profiles.py`), in the config, on the command line and as its own report
 section; inside ADK it is `state_key`'s identifier, `rule_<name>`.
 

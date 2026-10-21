@@ -151,15 +151,15 @@ prints them:
 | `guideline.tests` | guideline | the model's, by finding | default, full | untested changes, and tests that are not honest | `judge/guidelines/tests.py` |
 <!-- /checks -->
 
-A rule's severity is its findings', but `lint` and `pitfalls` give each ruff code its own, and `encoding-declaration` is
-a hole, exit 3, rather than a finding: no rule read the code Python would run. `--explain ID` prints one check whole.
-`lint` leaves a line's length, E501, to the project's formatter: it reads no project's settings, so no width fits every
-project, and an operator takes it back in the rule's `IGNORE` and sets its width in `LINE_LENGTH`, ruff's 88 when unset.
-`types` runs pyrefly on each changed Python file alone, a name it imports from beyond itself read as `Any`, and keeps
-what it finds on the lines the change added: a call missing an argument or given too many, a major, and a missing
-attribute, a value of the wrong type passed or returned, or one that cannot be iterated or added, a minor. No branch's
-ignore comment silences it. It is in no default profile: name it with `--check rule.types`, or run `rules-only` or
-`full`.
+A rule's severity is its findings', but `lint` and `pitfalls` give each ruff code its own, `types` each pyrefly kind its
+own, and `encoding-declaration` is a hole, exit 3, rather than a finding: no rule read the code Python would run.
+`--explain ID` prints one check whole. `lint` leaves a line's length, E501, to the project's formatter: it reads no
+project's settings, so no width fits every project, and an operator takes it back in the rule's `IGNORE` and sets its
+width in `LINE_LENGTH`, ruff's 88 when unset. `types` runs pyrefly on each changed Python file alone, a name it imports
+from beyond itself read as `Any`, and keeps what it finds on the lines the change added: a call missing an argument or
+given too many, a major, and a missing attribute, a value of the wrong type passed or returned, or one that cannot be
+iterated or added, a minor. No branch's ignore comment silences it. It is in no default profile: name it with
+`--check rule.types`, or run `rules-only` or `full`.
 
 ## Configuration
 
