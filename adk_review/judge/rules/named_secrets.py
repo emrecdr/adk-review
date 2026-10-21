@@ -12,12 +12,9 @@ name alone found, and one more is found: every named value on a line is weighed,
 a token is no part of it, and only an unquoted value can be code: of 8 more credentials in formats those lack, 5 are
 found where none was, and the twelve projects' 4 are the same 4.
 
-A YAML list's item is read as the line it holds, a compose file's `- DB_PASSWORD=...` as a `.env` line, a digit in its
-value, and `- password: ...` as YAML. A line is weighed as the diff shows it, its marker before it, so the rule and the
-redaction of its evidence read one text. Not read, as known limits: a compose item quoted whole, `- "DB_PASSWORD=..."`;
-a flow sequence, `environment: [...]`; an unquoted value holding `#`, a bracket or a brace, or a comment after it, on a
-`.env`, YAML or list line alike; a Markdown bullet, `+ password: ...`; and a Dockerfile's `ENV` line continued with a
-backslash.
+Not read, as known limits: a docker-compose file's list item, `- DB_PASSWORD=...`, and a Dockerfile's `ENV` line
+continued with a backslash. Read by review, three rounds running: each widening of the shape this rule shares with the
+redaction before every model call moved what it missed and what it flagged, for every format at once.
 """
 
 from __future__ import annotations
@@ -111,15 +108,12 @@ class NamedSecrets(Rule):
         ("settings.yaml", "api_key: 4f8a1c2e9b7d6035"),
         '{"token_type": "bearer", "access_token": "9f8e7d6c5b4a3f2e"}',
         ("Dockerfile", "ENV DB_PASSWORD=Sup3rS3cret-db9"),
-        ("docker-compose.yml", "      - DB_PASSWORD=Sup3rS3cret-db9"),
     )
     good = (
         'token_url = "https://auth.example.com/token"',
         'password_field = "password-input"',
         'password = os.environ["PASSWORD"]',
         ("Dockerfile", "ENV API_KEY=${API_KEY}"),
-        ("docker-compose.yml", "      - API_KEY=${API_KEY}"),
-        ("k8s/deploy.yaml", "        - --password-file=/run/secrets/db1"),
         'api_key = "your-api-key-here"',
         'PASSWORD = "changeme"',
         ("tests/test_login.py", 'user = User(password="testpassword")'),
@@ -137,13 +131,9 @@ class NamedSecrets(Rule):
         # hold no vendor's shape: a vendor's is `secrets`' finding, one credential, one finding. An example is blanked
         # as `[REDACTED]`, which no shape takes for a value, so what is left of one is no value either: measured by
         # review, blanked as a space, `" /application"` was flagged as a password. Then every named value on the line.
-        # Each weighed as the diff shows the line, its marker before it, the text a finding's evidence prints scrubbed:
-        # read by review, `-- password: ...`, an SQL comment, was flagged bare, its first `-` taken for the marker, and
-        # printed unhidden, its marked form matching no shape.
-        marked = "+" + line
-        if named_at(marked) is None:
+        if named_at(line) is None:
             return False
-        text = without_examples(marked)
+        text = without_examples(line)
         if vendor_shape(text) is not None:
             return False
         written = len(line) <= WRITTEN_MAX_CHARS
@@ -154,12 +144,7 @@ def _credential(name: str, value: str, quoted: bool, written: bool) -> bool:
     """Whether `value`, given to `name`, can be the credential the name says: never a name about one, a placeholder,
     code, or a label that names a secret and holds none; a password a person wrote, whatever its words; else what a
     machine makes, one run of eight characters or more, a digit among them, no number and no mark of code."""
-    # A flag spells its name with `-`, `--password-file`: read by review, a list of a container's arguments was read
-    # as its variables, and each file a flag named was a blocker. A flag's alone: folded for every name, Vault's
-    # `secret-id`, a credential, read as a name about one.
-    folded = name.lower().replace("-", "_") if name.startswith("--") else name.lower()
-    about = folded.endswith(ABOUT)
-    if about or is_placeholder(value) or (not quoted and _CODE.fullmatch(value)):
+    if name.lower().endswith(ABOUT) or is_placeholder(value) or (not quoted and _CODE.fullmatch(value)):
         return False
     made = _SCHEME.sub("", value)
     digit = any(char.isdigit() for char in made)

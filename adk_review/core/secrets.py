@@ -234,9 +234,9 @@ _GENERIC = (
         r"\1\2[REDACTED]\2",
     ),
     (
-        "generic_secret",  # a named value unquoted, a `.env`, YAML, compose list or Dockerfile line, holding a digit
+        "generic_secret",  # a named value unquoted, a `.env`, YAML or Dockerfile line, holding a digit
         re.compile(
-            r"(?im)^([+ -]?[^\S\n]*(?:-[^\S\n]+)?(?:(?:export|env|arg)[^\S\n]+)?[\w.-]{0,80}?"
+            r"(?im)^([+ -]?[^\S\n]*(?:(?:export|env|arg)[^\S\n]+)?[\w.-]{0,80}?"
             + _NAMED
             + r"\s*[:=]\s*)(?=[^\s#]*\d)"
             + _STAND_IN
@@ -367,9 +367,8 @@ def named_values(text: str) -> list[tuple[str, str, bool]]:
     return [_named(match) for match in found]
 
 
-#: A name as code, a `.env` line, YAML or a Dockerfile spells it, past a diff's marker and an `export`, `ENV` or `ARG`,
-#: and a YAML list's item, a compose file's `- NAME=value` or `- name: value`, past its dash.
-_NAME = re.compile(r"(?i)[+ -]?\s*(?:-\s+)?(?:(?:export|env|arg)\s+)?([\w.-]+)")
+#: A name as code, a `.env` line, YAML or a Dockerfile spells it, past a diff's marker and an `export`, `ENV` or `ARG`.
+_NAME = re.compile(r"(?i)[+ -]?\s*(?:(?:export|env|arg)\s+)?([\w.-]+)")
 
 
 def _named(found: re.Match[str]) -> tuple[str, str, bool]:
