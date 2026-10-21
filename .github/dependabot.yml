@@ -1,6 +1,8 @@
 # Each week, one pull request for the Python packages and one for the workflows' actions, which CI checks on the three
-# platforms before anyone merges. A release is proposed three days after it is published, never sooner: the span
-# `[tool.uv]` gives the lock, and no package is exempt (`tests/test_copilot.py`).
+# platforms before anyone merges. google-adk and litellm, pinned where every measurement in the docs was taken, each
+# get a pull request of their own, so the rest never waits on a new measurement. A release is proposed three days
+# after it is published, never sooner: the span `[tool.uv]` gives the lock, and no package is exempt
+# (`tests/test_copilot.py`). The README's sample workflow pins the same actions: move it in the actions' pull request.
 version: 2
 updates:
   - package-ecosystem: "uv"
@@ -12,6 +14,7 @@ updates:
     groups:
       python:
         patterns: ["*"]
+        exclude-patterns: ["google-adk", "litellm"]
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

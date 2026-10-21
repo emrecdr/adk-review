@@ -211,8 +211,8 @@ Conventions:
   (use `tempfile.gettempdir()`). Every file a script or a fixture commits is written with `newline="\n"`, a `.env` that
   is not UTF-8 is a sentence and exit 2 (1 from the login), and `.github/workflows/ci.yml` and `azure-pipelines.yml` run
   lint, the type check and the suite on Windows, Linux and macOS. Every action a workflow uses is pinned by its full
-  commit SHA, the same commit in every workflow, and uv by one exact version in every pipeline and the README's, since
-  `required-version` reads as a floor (`tests/test_copilot.py`).
+  commit SHA, the same commit in every workflow and the README's sample, and uv by one exact version in every pipeline
+  and the README's, since `required-version` reads as a floor (`tests/test_copilot.py`).
 
 ## Tests
 

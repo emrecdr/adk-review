@@ -92,5 +92,5 @@ the fixtures, the naming, async — is in `.github/instructions/tests.instructio
 Ruff, line length 120, Python 3.13. Comments and docstrings are plain prose that says why, and what the package prints
 follows ASD-STE100; commit subjects are plain-prose sentences stating what changed and what was learned. A pull request
 comes with lint, the type check and the suite green on the three platforms CI runs (`.github/workflows/ci.yml`,
-`azure-pipelines.yml`), and a workflow action is pinned by its commit SHA, and uv by one exact version in every
-pipeline.
+`azure-pipelines.yml`), and a workflow action is pinned by its commit SHA, the same in every workflow and the README's
+sample, and uv by one exact version in every pipeline.

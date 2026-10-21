@@ -1,7 +1,8 @@
 """The files under `.github` carry what their readers need: each path instruction applies to files the repository
 has, each custom agent and skill carries its front matter, the cloud agent's setup workflow is the one Copilot picks
-up, every workflow action is pinned by commit, one commit per action, and Dependabot waits the lock's cooldown. The
-paths these files name are held to the tree in `test_docs.py`, with the other guides."""
+up, every workflow action is pinned by commit, one commit per action in the workflows and the README's sample, and
+Dependabot waits the lock's cooldown. The paths these files name are held to the tree in `test_docs.py`, with the
+other guides."""
 
 from __future__ import annotations
 
@@ -82,9 +83,11 @@ def test_every_pipeline_runs_one_uv_and_one_the_lock_asks_for() -> None:
     assert floor and tuple(map(int, uv.split("."))) >= tuple(map(int, floor.group(1).split("."))), (uv, floor)
 
 
-def test_every_workflow_action_is_pinned_by_commit_and_to_one_commit_across_workflows() -> None:
+def test_every_workflow_action_is_pinned_by_commit_and_to_one_commit_across_workflows_and_the_readme() -> None:
+    """Dependabot moves the workflows' pins and never those of the README's sample workflow, which would then show
+    older commits with nothing to say so: its pull request fails here until the sample moves with them."""
     pinned: dict[str, set[str]] = {}
-    for workflow in WORKFLOWS:
+    for workflow in [*WORKFLOWS, ROOT / "README.md"]:
         for use in re.findall(r"uses: (\S+)", workflow.read_text(encoding="utf-8")):
             action, _, ref = use.partition("@")
             assert re.fullmatch(r"[0-9a-f]{40}", ref), f"{workflow.name}: {use} is not pinned by commit"
