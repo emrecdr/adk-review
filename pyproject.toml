@@ -4,9 +4,8 @@ version = "0.1.0"
 description = "A git-branch code reviewer for Python projects, on Google ADK: rules decided by code, guidelines judged by a model, on Copilot and on Gemini."
 requires-python = ">=3.13"
 dependencies = [
-    # Pinned: every measurement in the docs was taken on it. With no extra: the Copilot arm's litellm is a dependency of
-    # its own below, and of the extra's other packages, crewai, langgraph, llama-index, kubernetes, docker and nltk
-    # among them, the reviewer imports none: it serves Copilot and Gemini only.
+    # Pinned: every measurement in the docs was taken on it. No extra: of its packages the reviewer imports only
+    # litellm, a dependency of its own below, since it serves Copilot and Gemini only.
     "google-adk==2.9.2",
     # The Copilot arm, pinned at the lock's own version for an install that reads no lock: `uv tool install`, pip and
     # pre-commit resolve afresh, and ADK with no extra asks for no litellm. Measured: `uv tool install .` took a release

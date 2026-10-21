@@ -60,8 +60,8 @@ there, and a live script stops at it. Run each side of a before-and-after compar
 since a review imports the checkout. The suite, `--profile rules-only`, `demo` or `default-rules`,
 `--check rule.<name>`, `--dry-run`, `--list-checks`, `--explain` and `--try` make none. `[tool.uv]` in `pyproject.toml`
 takes a release only three days after it is published (`exclude-newer`), so a dependency released since does not resolve
-yet; the comment there says why the span stays. Dependabot (`.github/dependabot.yml`) proposes each week's updates
-after the same three days, and exempts no package.
+yet; the comment there says why the span stays. Dependabot (`.github/dependabot.yml`) proposes each week's updates after
+the same three days, and no package skips the wait.
 
 ## Configuration
 

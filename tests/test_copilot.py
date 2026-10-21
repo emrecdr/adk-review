@@ -7,17 +7,23 @@ other guides."""
 from __future__ import annotations
 
 import re
+import tomllib
 from pathlib import Path, PurePosixPath
 
 import pytest
 import yaml
 from conftest import ROOT, in_the_working_tree
 
+from adk_review.judge.rules.pinned_actions import SHA, USES
+
 GITHUB = ROOT / ".github"
 INSTRUCTIONS = sorted((GITHUB / "instructions").glob("*.instructions.md"))
 AGENTS = sorted((GITHUB / "agents").glob("*.agent.md"))
 SKILLS = sorted((GITHUB / "skills").glob("*/SKILL.md"))
 WORKFLOWS = sorted((GITHUB / "workflows").glob("*.yml"))
+#: Every pipeline a reader runs or copies: the workflows, and the README's sample for a pull request.
+PIPELINES = [*WORKFLOWS, ROOT / "README.md"]
+UV = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["uv"]
 
 
 def _front_matter(path: Path) -> dict[str, str]:
@@ -67,40 +73,43 @@ def test_every_pipeline_runs_one_uv_and_one_the_lock_asks_for() -> None:
     of any age, and Azure's pip took whatever was newest too. Each pipeline, and the README's for a pull request, names
     one exact uv, the same everywhere, and one the project's own `required-version` admits."""
     named = {
-        workflow.name: re.findall(
-            r"setup-uv@\S+[^\n]*\n\s+with:\n\s+version: \"([\d.]+)\"", workflow.read_text(encoding="utf-8")
+        path.name: re.findall(
+            r"setup-uv@\S+[^\n]*\n\s+with:\n\s+version: \"([\d.]+)\"", path.read_text(encoding="utf-8")
         )
-        for workflow in WORKFLOWS
-        if "setup-uv@" in workflow.read_text(encoding="utf-8")
+        for path in PIPELINES
+        if "setup-uv@" in path.read_text(encoding="utf-8")
     }
     named["azure-pipelines.yml"] = re.findall(
         r"pip install uv==([\d.]+)", (ROOT / "azure-pipelines.yml").read_text(encoding="utf-8")
     )
-    named["README.md"] = re.findall(r"version: \"([\d.]+)\" # pinned", (ROOT / "README.md").read_text(encoding="utf-8"))
-    assert all(len(found) == 1 for found in named.values()), named
+    assert all(len(found) == 1 for found in named.values()) and "README.md" in named, named
     (uv,) = {found[0] for found in named.values()}
-    floor = re.search(r'required-version = ">=([\d.]+)"', (ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert floor and tuple(map(int, uv.split("."))) >= tuple(map(int, floor.group(1).split("."))), (uv, floor)
+    floor = UV["required-version"].removeprefix(">=")
+    assert tuple(map(int, uv.split("."))) >= tuple(map(int, floor.split("."))), (uv, floor)
 
 
 def test_every_workflow_action_is_pinned_by_commit_and_to_one_commit_across_workflows_and_the_readme() -> None:
     """Dependabot moves the workflows' pins and never those of the README's sample workflow, which would then show
-    older commits with nothing to say so: its pull request fails here until the sample moves with them."""
+    older commits with nothing to say so: its pull request fails here until the sample moves with them. Each `uses:`
+    is read as the `pinned-actions` rule reads it."""
     pinned: dict[str, set[str]] = {}
-    for workflow in [*WORKFLOWS, ROOT / "README.md"]:
-        for use in re.findall(r"uses: (\S+)", workflow.read_text(encoding="utf-8")):
-            action, _, ref = use.partition("@")
-            assert re.fullmatch(r"[0-9a-f]{40}", ref), f"{workflow.name}: {use} is not pinned by commit"
-            pinned.setdefault(action, set()).add(ref)
+    for path in PIPELINES:
+        for line in path.read_text(encoding="utf-8").splitlines():
+            if use := USES.match(line):
+                action, ref = use.groups()
+                assert SHA.fullmatch(ref), f"{path.name}: {action}@{ref} is not pinned by commit"
+                pinned.setdefault(action, set()).add(ref)
     assert [action for action, refs in pinned.items() if len(refs) > 1] == [], "an action pinned to two commits"
 
 
-def test_dependabot_proposes_a_release_only_after_the_locks_cooldown_and_exempts_no_package() -> None:
+def test_dependabot_proposes_a_release_only_after_the_locks_cooldown_and_no_package_skips_it() -> None:
     """A package three days old or less is the window LiteLLM 1.82.7 and 1.82.8 shipped a credential stealer in.
     Dependabot waits the span `[tool.uv]` gives the lock, for each ecosystem, with no package excluded from it."""
     config = yaml.safe_load((GITHUB / "dependabot.yml").read_text(encoding="utf-8"))
-    span = re.search(r'exclude-newer = "P(\d+)D"', (ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    span = re.fullmatch(r"P(\d+)D", UV["exclude-newer"])
     assert span, "pyproject.toml names no cooldown in days"
-    assert {update["package-ecosystem"] for update in config["updates"]} == {"uv", "github-actions"}
-    for update in config["updates"]:
-        assert update["cooldown"] == {"default-days": int(span.group(1))}, update["package-ecosystem"]
+    days = {"default-days": int(span.group(1))}
+    assert {update["package-ecosystem"]: update["cooldown"] for update in config["updates"]} == {
+        "uv": days,
+        "github-actions": days,
+    }

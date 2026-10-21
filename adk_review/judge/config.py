@@ -286,9 +286,9 @@ def _not_gemini(named: list[tuple[str, str]]) -> str | None:
     for var, name in named:
         try:
             model = LLMRegistry.resolve(name)
-        except ValueError as exc:  # the arm that resolves names up front, so it can say so up front
-            # Its first line only: the rest may advise installing another provider's package, and the reviewer
-            # serves Copilot and Gemini only.
+        except ValueError as exc:
+            # Said up front, as only this arm resolves names up front: ADK's first line, since the rest may advise
+            # installing another provider's package, and the reviewer serves Copilot and Gemini only.
             first, _, _ = str(exc).partition("\n")
             return f"{var}: {first}"
         except ImportError:  # a `class:name` prefix whose class needs a package the reviewer does not install

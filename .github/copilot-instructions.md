@@ -52,7 +52,7 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   of a before-and-after comparison from its own copy of the tree, since a review imports the checkout.
 - `[tool.uv]` in `pyproject.toml` takes a release only three days after it is published (`exclude-newer`), so a
   dependency released since does not resolve yet; the comment there says why the span stays. Dependabot
-  (`.github/dependabot.yml`) proposes each week's updates after the same three days, and exempts no package.
+  (`.github/dependabot.yml`) proposes each week's updates after the same three days, and no package skips the wait.
 
 ## Rules the tests enforce
 

@@ -541,20 +541,16 @@ def test_the_gemini_arm_runs_no_model_adk_sends_to_another_provider(monkeypatch)
     assert why and why.startswith("REVIEW_VERIFIER_MODEL") and "install" not in why, why
     monkeypatch.setenv("REVIEW_VERIFIER_MODEL", "gemma-3-27b-it")  # Gemma, served by the Gemini API
     assert config.require_ready(roles=("verifier",)) is None
+
     # Measured by review: a `class:name` prefix makes ADK import that class's package, and an absent one raised
     # through readiness, exit 3, where the name is refused as any other provider's. ADK forgets the class after one
     # failed import, so which error a process meets depends on what it asked before: the import's is made here.
-    resolve = config.LLMRegistry.resolve
+    def absent(_name: str) -> type:
+        raise ModuleNotFoundError("No module named 'anthropic'")
 
-    def resolve_without_anthropic(name: str) -> type:
-        if name.startswith("claude:"):
-            raise ModuleNotFoundError("No module named 'anthropic'")
-        return resolve(name)
-
-    monkeypatch.setattr(config.LLMRegistry, "resolve", staticmethod(resolve_without_anthropic))
-    monkeypatch.setenv("REVIEW_VERIFIER_MODEL", "claude:claude-sonnet-4")
-    why = config.require_ready(roles=("verifier",))
-    assert why == "REVIEW_VERIFIER_MODEL=claude:claude-sonnet-4 is no Gemini model", why
+    monkeypatch.setattr(config.LLMRegistry, "resolve", absent)
+    monkeypatch.setenv("REVIEW_MODEL", "claude:claude-sonnet-4")
+    assert config.require_ready() == "REVIEW_MODEL=claude:claude-sonnet-4 is no Gemini model"
 
 
 def test_an_empty_copilot_token_is_no_token(monkeypatch, tmp_path) -> None:
