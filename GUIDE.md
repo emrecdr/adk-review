@@ -157,9 +157,10 @@ own, and `encoding-declaration` is a hole, exit 3, rather than a finding: no rul
 project's settings, so no width fits every project, and an operator takes it back in the rule's `IGNORE` and sets its
 width in `LINE_LENGTH`, ruff's 88 when unset. `types` runs pyrefly on each changed Python file alone, a name it imports
 from beyond itself read as `Any`, and keeps what it finds on the lines the change added: a call missing an argument or
-given too many, a major, and a missing attribute, a value of the wrong type passed or returned, or one that cannot be
-iterated or added, a minor. No branch's ignore comment silences it. It is in no default profile: name it with
-`--check rule.types`, or run `rules-only` or `full`.
+given too many by position, a major, and a missing attribute, a value of the wrong type passed or returned, or one an
+operation cannot take, added, compared, indexed or iterated, a minor. No branch's ignore comment silences it, though
+`@no_type_check` on a function does. It is in no default profile: name it with `--check rule.types`, or run `rules-only`
+or `full`.
 
 ## Configuration
 
@@ -309,6 +310,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | One git call | 30 seconds | `collect/git.py`, `GIT_TIMEOUT_S` |
 | One ruff run | 60 seconds | `collect/ruff.py`, `RUFF_TIMEOUT_S` |
 | One pyrefly run | 60 seconds | `collect/pyrefly.py`, `PYREFLY_TIMEOUT_S` |
+| Pyrefly's answer the rules read: past it, none of it is read, a hole | 64,000,000 bytes | `collect/pyrefly.py`, `PYREFLY_ANSWER_MAX_BYTES` |
 | The findings one ruff run names that the rules read: past them, a hole | 500,000 findings | `collect/ruff.py`, `RUFF_FINDINGS_MAX` |
 | One model call, every retry Copilot's client makes of it included | 180 seconds | `judge/config.py`, `REQUEST_TIMEOUT_S` |
 | One run of the guidelines, or of the verifiers | 600 seconds | `judge/config.py`, `RUN_DEADLINE_S` |
@@ -316,7 +318,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | The radius a guideline is shown | 20,000 characters | `judge/agents.py`, `BLAST_CAP_CHARS` |
 | Every check's findings chat's verdict reads, grounded and decided | 20,000 characters | `judge/agents.py`, `FINDINGS_CAP_CHARS` |
 | The changed-files list a model reads in chat | 20,000 characters | `judge/tools.py`, `LISTED_MAX_CHARS` |
-| Ruff's findings listed for one file by a rule that names ruff; the rest are counted in one finding | 50 | `judge/rule_helpers/diagnostics.py`, `PER_FILE` |
+| A tool's findings listed for one file by a rule that names ruff or pyrefly; the rest are counted in one finding | 50 | `judge/rule_helpers/diagnostics.py`, `PER_FILE` |
 | A finding's evidence in the report | 400 characters | `core/text.py`, `EVIDENCE_MAX_CHARS` |
 | A reason in the report: why a check failed, a verifier's word, a provider's error | 400 characters | `core/text.py`, `REASON_MAX_CHARS` |
 | A finding's title, as a model wrote it | 200 characters | `core/text.py`, `TITLE_MAX_CHARS` |

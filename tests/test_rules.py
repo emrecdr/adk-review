@@ -368,6 +368,14 @@ class TestTheSecretShapes:
 
 
 class TestTheLintRule:
+    def test_a_lone_carriage_return_shifts_no_finding_of_ruffs_off_its_line(self) -> None:
+        """Read by review: ruff counts a lone `\\r` as a line's end and git does not, so every finding below one sat a
+        line past git's, and one on an added line was counted among those on lines the change did not add."""
+        from adk_review.judge.rules.lint import Lint
+
+        found = ruff_rule_findings(Lint(), [_entry("app.py", "# header\r# rest\nimport os\n")])
+        assert [(f.line, "F401" in f.title) for f in found] == [(2, True)], [(f.line, f.title) for f in found]
+
     def test_ruff_findings_on_the_planted_files_with_their_lines(self, demo_repo: Path) -> None:
         from adk_review.collect.git import collect_evidence
 
@@ -956,7 +964,7 @@ def ruff_rule_findings(rule, files: list[dict]) -> list:
 class TestTypesReadsWhatPyreflyFinds:
     """`types` runs pyrefly on each changed Python file alone, a name it imports read as `Any`, and keeps what pyrefly
     finds on the lines the change added, of the kinds measured to be defects: 27 of 30 planted ones, where ruff found 3,
-    and 0.47 a thousand lines on four libraries' correct code."""
+    and 0.53 a thousand lines on four libraries' correct code."""
 
     CHECKOUT = (
         "def total(prices: list[int], tax: int) -> int:\n"
@@ -1070,6 +1078,29 @@ class TestTypesReadsWhatPyreflyFinds:
         entry["added"] = [(1, "# header\r# rest"), (7, "    return total(prices)")]
         found = ruff_rule_findings(Types(), [entry])
         assert [(f.line, f.severity) for f in found] == [(7, "major")], [(f.line, f.title) for f in found]
+
+    def test_a_configuration_pyrefly_does_not_take_whole_is_a_hole(self, monkeypatch) -> None:
+        """Read by review: pyrefly only warns of a key it does not know and runs on, so a release that renamed
+        `enabled-ignores` would honour a branch's ignore comments again, and the review approve, unseen."""
+        from adk_review.collect import pyrefly
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.types import Types
+
+        monkeypatch.setattr(pyrefly, "CONFIG", pyrefly.CONFIG + "not-a-key-pyrefly-takes = true\n")
+        answer = run_rules({"files": [_entry("shop/orders.py", self.CHECKOUT)], "tree": None}, [Types()])["rule.types"]
+        assert "configuration" in (answer.could_not_look or ""), answer
+
+    def test_a_temporary_folder_under_one_named_venv_is_checked_all_the_same(self, monkeypatch, tmp_path) -> None:
+        """Read by review: pyrefly leaves out every path under a folder named `venv`, `node_modules` or `__pycache__`,
+        so with the temporary folder under one, every file went unchecked and the rule was a hole on every run."""
+        import tempfile
+
+        from adk_review.judge.rules.types import Types
+
+        (tmp_path / "venv").mkdir()
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path / "venv"))
+        found = ruff_rule_findings(Types(), [_entry("shop/orders.py", self.CHECKOUT)])
+        assert [(f.line, f.severity) for f in found] == [(6, "major")], found
 
     def test_it_runs_where_a_profile_asks_for_it_and_never_in_the_default(self) -> None:
         profiles = profiles_of()

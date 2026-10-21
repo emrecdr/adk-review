@@ -17,7 +17,7 @@ dependencies = [
     # The lint rule runs ruff, and the types rule pyrefly; installed with the reviewer, each is found beside the
     # interpreter.
     "ruff>=0.12.8",
-    "pyrefly>=1.3.2",
+    "pyrefly>=1.4.0",
 ]
 
 # `adk-review`: the command, installed where it is needed — `uv tool install <this repository>` — and run from any

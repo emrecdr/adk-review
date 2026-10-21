@@ -17,9 +17,10 @@ the steps:
    `RETRY_ATTEMPTS` on Gemini, none on Copilot, whose SDK spaces two retries of its own.
 2. A token ceiling (`--max-tokens`) that ends the spending, never the report:
    the call that would pass it is refused, the guideline is named, exit 3.
-3. An outside tool for a rule that names one: ruff for `lint`, `pitfalls` and `simplify`
-   (`judge/rules/`), run by `collect/ruff.py` through `collect/tools.py`
-   over the changed Python files at the head.
+3. An outside tool for a rule that names one: ruff for `lint`, `pitfalls` and
+   `simplify`, pyrefly for `types` (`judge/rules/`), run by `collect/ruff.py`
+   and `collect/pyrefly.py` through `collect/tools.py` over the changed Python
+   files at the head.
 4. A second opinion (`--verify`): another model judges each guideline finding
    before the fold — one verifier per finding, a second graph run like the
    first; refuted findings are dropped and named, unjudged ones kept and

@@ -1,16 +1,18 @@
 """A call or a value its own types say is wrong, as pyrefly reads a changed file alone: a call missing an argument or
-given one too many, an attribute a class does not hold, a value of the wrong type passed or returned, one that cannot be
-iterated or added. Ruff, which `lint` runs, reads no types: of 30 such defects planted in four libraries and this
-repository, it found the 3 that were also undefined names, and pyrefly 27, each on its own line.
+given too many by position, an attribute a class does not hold, a value of the wrong type passed or returned, one an
+operation cannot take, added, compared, indexed or iterated. Ruff, which `lint` runs, reads no types: of 30 such defects
+planted in four libraries and this repository, it found the 3 that were also undefined names, and pyrefly 27, each on
+its own line.
 
 Only what pyrefly finds on the lines the change added is a finding, of the kinds weighed below; a name a file imports
 from beyond itself reads as `Any`, so a module pyrefly cannot find is the layout's, never the change's. Measured over
-1.12 million lines of four libraries' correct code, google-adk, pydantic, httpx and litellm, no ignore comment
-honoured: these kinds made 0.53 false alarms a thousand lines, and every other kind more, a missing module or a star
-import among them. A call's arguments are the surest, 11 errors in those lines, each read, so they are major; the rest
-minor. Not read, as known limits: a defect the change causes on a line it kept, a caller of a function whose signature
-it changed among them; and code under a platform or a version pyrefly does not take, as Linux and Python 3.13, or
-under `if not TYPE_CHECKING:`.
+1.12 million lines of four libraries' correct code, google-adk, pydantic, httpx and litellm, no ignore comment honoured:
+these kinds made 0.53 false alarms a thousand lines, and every other kind more, a missing module or a star import among
+them. A call's arguments are the surest, 11 errors in those lines, each read, so they are major; the rest minor. Not
+read, as known limits: a defect the change causes on a line it kept, a caller of a function whose signature it changed
+among them; code under a platform or a version pyrefly does not take, as Linux and Python 3.13, or under
+`if not TYPE_CHECKING:`; and a function a branch marks `@no_type_check`. And a call to an API newer than Python 3.13
+reads as a missing attribute.
 """
 
 from __future__ import annotations

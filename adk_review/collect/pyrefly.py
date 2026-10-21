@@ -42,7 +42,11 @@ skip-interpreter-query = true
 python-version = "3.13"
 preset = "default"
 enabled-ignores = []
+disable-project-excludes-heuristics = true
 """
+#: What pyrefly says of a key in the configuration above it does not take, and runs on: read by review, a release
+#: that renamed `enabled-ignores` would honour a branch's ignore comments again, unseen.
+_UNTAKEN = "Extra keys found in config:"
 #: What pyrefly says of a file it checked nothing else in: read by review, a line Python compiles, `-` a thousand times
 #: before `1`, and a planted missing argument with it went unread as clean.
 _GAVE_UP = "too deeply nested"
@@ -95,6 +99,9 @@ def _run(
         Path(tmp, "pyrefly.toml").write_text(CONFIG, encoding="utf-8")
         argv = [pyrefly, "check", "-c", "pyrefly.toml", "--output-format", "json", "--summary=none"]
         answer, said = _answer([*argv, "--progress-bar", "no", *targets], tmp)
+    if _UNTAKEN in said:  # the configuration is the rule's guarantee: one not taken whole is no look
+        untaken = said.split(_UNTAKEN, 1)[1].splitlines()[0].strip()
+        raise _UnreadError(f"pyrefly did not take the reviewer's configuration whole: no key {untaken}")
     try:
         errors = json.loads(answer)["errors"]
     except (ValueError, KeyError, TypeError) as exc:  # pyrefly's own reason is on stderr: no file matched, say
