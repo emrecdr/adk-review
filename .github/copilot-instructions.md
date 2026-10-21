@@ -1,7 +1,7 @@
 # Copilot instructions for this repository
 
 This repository is `adk-review`, a git-branch code reviewer for Python projects, on Google ADK
-(`google-adk[extensions]==2.9.2`, Python 3.13, `uv`). It is grouped by the steps of a review — `core`, `collect`,
+(`google-adk==2.9.2`, Python 3.13, `uv`). It is grouped by the steps of a review — `core`, `collect`,
 `judge`, `deliver` — and every check is one file: a rule, decided by code, in `adk_review/judge/rules/`, importing one
 door, `adk_review/judge/rule_helpers/`, and held to its own examples; a guideline, judged by a model, in
 `adk_review/judge/guidelines/`; each named after its file and chosen by profile in `adk_review/config.toml`. Around
@@ -51,7 +51,8 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   nothing, so there a review naming a guideline stops at readiness, exit 2: run the model-free profiles. Run each side
   of a before-and-after comparison from its own copy of the tree, since a review imports the checkout.
 - `[tool.uv]` in `pyproject.toml` takes a release only three days after it is published (`exclude-newer`), so a
-  dependency released since does not resolve yet; the comment there says why the span stays.
+  dependency released since does not resolve yet; the comment there says why the span stays. Dependabot
+  (`.github/dependabot.yml`) proposes each week's updates after the same three days, and exempts no package.
 
 ## Rules the tests enforce
 

@@ -1,0 +1,23 @@
+# Each week, one pull request for the Python packages and one for the workflows' actions, which CI checks on the three
+# platforms before anyone merges. A release is proposed three days after it is published, never sooner: the span
+# `[tool.uv]` gives the lock, and no package is exempt (`tests/test_copilot.py`).
+version: 2
+updates:
+  - package-ecosystem: "uv"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 3
+    groups:
+      python:
+        patterns: ["*"]
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    cooldown:
+      default-days: 3
+    groups:
+      actions:
+        patterns: ["*"]

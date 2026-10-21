@@ -287,7 +287,10 @@ def _not_gemini(named: list[tuple[str, str]]) -> str | None:
         try:
             model = LLMRegistry.resolve(name)
         except ValueError as exc:  # the arm that resolves names up front, so it can say so up front
-            return f"{var}: {exc}"
+            # Its first line only: the rest may advise installing another provider's package, and the reviewer
+            # serves Copilot and Gemini only.
+            first, _, _ = str(exc).partition("\n")
+            return f"{var}: {first}"
         if not issubclass(model, Gemini):
             # Measured by review: `gpt-4.1`, Copilot's default left in `.env`, was ready here, and ADK sends `gpt-*`
             # to OpenAI's API. ADK resolves a name to the class that will serve it: on this arm, a Gemini model's.

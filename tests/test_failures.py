@@ -536,7 +536,9 @@ def test_the_gemini_arm_runs_no_model_adk_sends_to_another_provider(monkeypatch)
     monkeypatch.setenv("REVIEW_MODEL", "gemini-2.5-flash")
     monkeypatch.setenv("REVIEW_VERIFIER_MODEL", "claude-sonnet-4")
     why = config.require_ready(roles=("verifier",))
-    assert why and why.startswith("REVIEW_VERIFIER_MODEL=claude-sonnet-4"), why
+    # The reviewer serves Copilot and Gemini only and installs no other provider's package, so ADK has no class for
+    # `claude-*` and its error advises an install. The refusal keeps the error's first line, with no such advice.
+    assert why == "REVIEW_VERIFIER_MODEL: Model claude-sonnet-4 not found.", why
     monkeypatch.setenv("REVIEW_VERIFIER_MODEL", "gemma-3-27b-it")  # Gemma, served by the Gemini API
     assert config.require_ready(roles=("verifier",)) is None
 

@@ -1,7 +1,7 @@
 """The files under `.github` carry what their readers need: each path instruction applies to files the repository
 has, each custom agent and skill carries its front matter, the cloud agent's setup workflow is the one Copilot picks
-up, and every workflow action is pinned by commit, one commit per action. The paths these files name are held to the
-tree in `test_docs.py`, with the other guides."""
+up, every workflow action is pinned by commit, one commit per action, and Dependabot waits the lock's cooldown. The
+paths these files name are held to the tree in `test_docs.py`, with the other guides."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import re
 from pathlib import Path, PurePosixPath
 
 import pytest
+import yaml
 from conftest import ROOT, in_the_working_tree
 
 GITHUB = ROOT / ".github"
@@ -89,3 +90,14 @@ def test_every_workflow_action_is_pinned_by_commit_and_to_one_commit_across_work
             assert re.fullmatch(r"[0-9a-f]{40}", ref), f"{workflow.name}: {use} is not pinned by commit"
             pinned.setdefault(action, set()).add(ref)
     assert [action for action, refs in pinned.items() if len(refs) > 1] == [], "an action pinned to two commits"
+
+
+def test_dependabot_proposes_a_release_only_after_the_locks_cooldown_and_exempts_no_package() -> None:
+    """A package three days old or less is the window LiteLLM 1.82.7 and 1.82.8 shipped a credential stealer in.
+    Dependabot waits the span `[tool.uv]` gives the lock, for each ecosystem, with no package excluded from it."""
+    config = yaml.safe_load((GITHUB / "dependabot.yml").read_text(encoding="utf-8"))
+    span = re.search(r'exclude-newer = "P(\d+)D"', (ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert span, "pyproject.toml names no cooldown in days"
+    assert {update["package-ecosystem"] for update in config["updates"]} == {"uv", "github-actions"}
+    for update in config["updates"]:
+        assert update["cooldown"] == {"default-days": int(span.group(1))}, update["package-ecosystem"]

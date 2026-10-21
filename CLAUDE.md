@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repository is
 
-`adk-review`: a git-branch code reviewer for Python projects, on Google ADK (pinned `google-adk[extensions]==2.9.2`,
+`adk-review`: a git-branch code reviewer for Python projects, on Google ADK (pinned `google-adk==2.9.2`,
 Python 3.13, `uv`). Every check is one file: a rule, decided by code, in `adk_review/judge/rules/`, or a guideline,
 judged by a model, in `adk_review/judge/guidelines/`. The command line is the main entry point; `adk web` serves the
 same graph as a chat. `README.md` is the developer's guide — the architecture, and how to write a rule or a guideline —
@@ -60,7 +60,8 @@ there, and a live script stops at it. Run each side of a before-and-after compar
 since a review imports the checkout. The suite, `--profile rules-only`, `demo` or `default-rules`,
 `--check rule.<name>`, `--dry-run`, `--list-checks`, `--explain` and `--try` make none. `[tool.uv]` in `pyproject.toml`
 takes a release only three days after it is published (`exclude-newer`), so a dependency released since does not resolve
-yet; the comment there says why the span stays.
+yet; the comment there says why the span stays. Dependabot (`.github/dependabot.yml`) proposes each week's updates
+after the same three days, and exempts no package.
 
 ## Configuration
 
