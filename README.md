@@ -211,10 +211,10 @@ The model comes from the shell, or from the `.env` at the root of the checkout, 
 model of their own. `REVIEW_<ID>_MODEL` gives one guideline its own, over the `models` its file may name. Copilot is the
 arm this reviewer targets and the default; Gemini is first-class too. Readiness is asked before any call: Copilot's
 cached token, from the one-time `uv run adk-review-login`, or Gemini's `GOOGLE_API_KEY` or Vertex AI project, which
-google-genai itself answers, never a copy of its rules; on the Gemini arm a model ADK would send to another provider,
-`gpt-*` or `claude-*`, is refused. Every certificate is verified through the operating system's own store, so a company
-proxy's root the machine trusts, the reviewer trusts too. "Configuration" in `GUIDE.md` lists each variable with its
-default, and `.env.example` shows each arm's block.
+google-genai itself answers, never a copy of its rules; on the Gemini arm a model that is not Gemini's, `gpt-*` or
+`claude-*`, is refused. Every certificate is verified through the operating system's own store, so a company proxy's
+root the machine trusts, the reviewer trusts too. "Configuration" in `GUIDE.md` lists each variable with its default,
+and `.env.example` shows each arm's block.
 
 ## Checks and profiles
 

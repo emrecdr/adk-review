@@ -70,18 +70,17 @@ One `.env` at the root (copy `.env.example`). `REVIEW_PROVIDER=copilot|gemini` p
 too, and `REVIEW_<ID>_MODEL` gives one guideline its own model, over the `models` its file may name per arm. Copilot
 needs a one-time `uv run adk-review-login`; Gemini needs `GOOGLE_API_KEY`, or through Vertex AI a project,
 `GOOGLE_CLOUD_PROJECT` or the one Application Default Credentials name — `require_ready` asks google-genai itself, never
-a copy of its rules, and on the Gemini arm refuses a model ADK sends to another provider (`gpt-*`, `claude-*`). Both
-arms are first-class, Copilot the one this reviewer targets and the default: a change works, is tested and is measured
-live on each, on Copilot first. `adk_review/judge/config.py` injects `truststore` before any client is built, so
-certificates are verified through the operating system's store (a company proxy's root the machine trusts, Python trusts
-too), with `SSL_CERT_FILE` still read where set; the login, `adk_review/login.py`, does the same and reads the
-`GITHUB_COPILOT_*` endpoints from `.env`. `adk_review/judge/settings.py` reads the environment and builds nothing, so a
-rules-only review's cache key and the login import no engine. The shell wins over `.env` at every entry point: ADK 2.9.2
-restores the variables set before it loads the file, and the command loads it without overriding. The report names the
-model, the arm that ran, and Vertex AI or a GitHub Enterprise tenant's host where the arm goes through one. Never read,
-print or quote `.env`, a key, or the Copilot token or its folder (`~/.config/litellm/github_copilot`, or
-`GITHUB_COPILOT_TOKEN_DIR`), and never run `adk-review-login`: it needs the person at a browser, and `--force` replaces
-their token.
+a copy of its rules, and on the Gemini arm refuses a model that is not Gemini's (`gpt-*`, `claude-*`). Both arms are
+first-class, Copilot the one this reviewer targets and the default: a change works, is tested and is measured live on
+each, on Copilot first. `adk_review/judge/config.py` injects `truststore` before any client is built, so certificates
+are verified through the operating system's store (a company proxy's root the machine trusts, Python trusts too), with
+`SSL_CERT_FILE` still read where set; the login, `adk_review/login.py`, does the same and reads the `GITHUB_COPILOT_*`
+endpoints from `.env`. `adk_review/judge/settings.py` reads the environment and builds nothing, so a rules-only review's
+cache key and the login import no engine. The shell wins over `.env` at every entry point: ADK 2.9.2 restores the
+variables set before it loads the file, and the command loads it without overriding. The report names the model, the arm
+that ran, and Vertex AI or a GitHub Enterprise tenant's host where the arm goes through one. Never read, print or quote
+`.env`, a key, or the Copilot token or its folder (`~/.config/litellm/github_copilot`, or `GITHUB_COPILOT_TOKEN_DIR`),
+and never run `adk-review-login`: it needs the person at a browser, and `--force` replaces their token.
 
 ## Architecture
 

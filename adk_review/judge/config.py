@@ -291,6 +291,8 @@ def _not_gemini(named: list[tuple[str, str]]) -> str | None:
             # serves Copilot and Gemini only.
             first, _, _ = str(exc).partition("\n")
             return f"{var}: {first}"
+        except ImportError:  # a `class:name` prefix whose class needs a package the reviewer does not install
+            return f"{var}={name} is no Gemini model"
         if not issubclass(model, Gemini):
             # Measured by review: `gpt-4.1`, Copilot's default left in `.env`, was ready here, and ADK sends `gpt-*`
             # to OpenAI's API. ADK resolves a name to the class that will serve it: on this arm, a Gemini model's.

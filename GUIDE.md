@@ -202,7 +202,7 @@ shell wins over the file:
 | Variable | What it sets |
 |---|---|
 | `REVIEW_PROVIDER` | The arm: `copilot` or `gemini`. Default: `copilot`. |
-| `REVIEW_MODEL` | The model. Blank: `gpt-4.1` on Copilot, `gemini-2.5-flash` on Gemini. GitHub has deprecated `gpt-4.1` in Copilot: it answers while Copilot serves it, under per-user rate limits GitHub does not publish, so name a model the seat's plan serves. On the Gemini arm, a model ADK sends to another provider, `gpt-*` or `claude-*`, is refused, exit 2; on Copilot, one that cannot judge at temperature 0, `gpt-5`, `gpt-5.5` or the o-series, as LiteLLM says before any call. |
+| `REVIEW_MODEL` | The model. Blank: `gpt-4.1` on Copilot, `gemini-2.5-flash` on Gemini. GitHub has deprecated `gpt-4.1` in Copilot: it answers while Copilot serves it, under per-user rate limits GitHub does not publish, so name a model the seat's plan serves. On the Gemini arm, a model that is not Gemini's, `gpt-*` or `claude-*`, is refused, exit 2; on Copilot, one that cannot judge at temperature 0, `gpt-5`, `gpt-5.5` or the o-series, as LiteLLM says before any call. |
 | `REVIEW_VERIFIER_MODEL` | The model `--verify` asks. Blank: `REVIEW_MODEL`. |
 | `REVIEW_<ID>_MODEL` | One guideline's model, by its id: `REVIEW_SECURITY_MODEL`. Blank: the guideline file's `models` for the arm, else `REVIEW_MODEL`. |
 | `REVIEW_FALLBACK_MODEL` | A second model behind every role's first, tried on a 429, a 5xx or a timeout. Blank: none. |
