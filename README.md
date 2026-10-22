@@ -873,11 +873,11 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
 - **One finding per span of lines.** Rules and guidelines can all find one line; the report carries it once: the most
   severe reading first, whole; on a tie a defect before a cleanup's finding, then the first check — the rules, then the
   guidelines, each in the order the profile names them, which is the report's order too — and any finding one kept
-  already holds folds into it. A folded finding is still named, under its own check: "folded into `rule.secrets`'s
-  finding on the same lines: lint: S105 …". Measured before: compared only with the first finding it overlapped, a
-  guideline's blocker quoting a whole function replaced ruff's line 27 and left S602 on line 28 beside it; and with
-  every ruff hit folded into a guideline's blocker, lint's section read "no findings" under the rule that had found
-  `shell=True`.
+  already holds folds into it. A folded finding is listed under the finding it repeats, "also on these lines:
+  `rule.lint`: lint: S105 …", and its own check's section counts it, so that section never reads as finding nothing.
+  Measured before: compared only with the first finding it overlapped, a guideline's blocker quoting a whole function
+  replaced ruff's line 27 and left S602 on line 28 beside it; and with every ruff hit folded into a guideline's blocker,
+  lint's section read "no findings" under the rule that had found `shell=True`.
 - **Retries live in the clients.** One constant, `RETRY_ATTEMPTS`, sets them on both arms. Gemini's are on the request,
   as the deadline is: genai retries a timeout and each 5xx with backoff, and a 429 only through Vertex AI, whose shared
   quota throws 429s a moment's wait passes; AI Studio's names a quota spent for most of a minute or the day, and

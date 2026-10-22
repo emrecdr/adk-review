@@ -259,9 +259,10 @@ def test_the_copilot_login_says_how_to_use_it_and_logs_in_to_nothing(monkeypatch
 MEASURED = """## Verdict: REQUEST_CHANGES
 ### rule.secrets
 - **blocker** hard-coded credential (aws_access_key_id) (src/payments/config.py:4)
+  - also on these lines: `guideline.security`: Sensitive credentials in source
 ### guideline.security
 - **blocker** Shell injection vulnerability via unsanitized printer name (src/payments/charge.py:27)
-- folded into `rule.secrets`'s finding on the same lines: Sensitive credentials in source (src/payments/config.py:4)
+- folded: 1 on lines another finding already holds, each listed under that finding
 ### guideline.tests
 - **major** No tests for daily_total function (src/payments/report.py:8)
 ### guideline.complexity — FAILED: RESOURCE_EXHAUSTED: 429

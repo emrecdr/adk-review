@@ -803,6 +803,9 @@ class TestTheLintRule:
         assert "ruff failed" in out and "NOPE999" in out, "its first line and its last, the cause"
         assert out.endswith(", so the rule did not look"), out
 
+    #: How a check's section counts a finding of its own listed under another's, on the same lines.
+    COUNT = "- folded: 1 on lines another finding already holds, each listed under that finding"
+
     def test_two_rules_on_one_line_are_one_finding_in_the_report(self, demo_repo: Path, cli, capsys) -> None:
         """Ruff's S105 and the secrets rule both point at the same line; the report carries it once, as the blocker,
         and ruff's section names what it found there. Measured live before: every ruff hit folded into a guideline's
@@ -810,17 +813,15 @@ class TestTheLintRule:
         assert run_review(cli, demo_repo) == 1
         out = capsys.readouterr().out
         assert "### rule.lint" in out and "S602" in out
-        assert (
-            "- **major** lint: S105" not in out
-            and "- folded into `rule.secrets`'s finding on the same lines: lint: S105" in out
-        ), out
+        assert "- **major** lint: S105" not in out and "  - also on these lines: `rule.lint`: lint: S105" in out, out
         assert "secrets: a hard-coded credential (src/payments/config.py:5)" in out
         # Every guideline's canned finding quotes the line S602 reported, at S602's severity: a tie, so the rule's
         # reading, the first, keeps it whole.
-        guideline = "shell=True with request-controlled input (src/payments/charge.py:28)"
+        guideline = "shell=True with request-controlled input"
         assert (
             "- **major** lint: S602" in out
-            and f"### guideline.security\n- folded into `rule.lint`'s finding on the same lines: {guideline}" in out
+            and f"  - also on these lines: `guideline.security`: {guideline}" in out
+            and f"### guideline.security\n{self.COUNT}" in out
         ), out
         assert f"duplicates across rules and guidelines folded into one finding: {1 + len(GUIDELINE_NAMES)}" in out, (
             "S105 into the secrets rule's finding, each guideline's into S602"

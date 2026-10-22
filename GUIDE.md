@@ -251,13 +251,14 @@ counted by severity; a table of every kept finding, the most severe first, with 
 found it; what was reviewed — the repository, the branch and its base with their commits, the merge base, the model
 where a guideline ran, the profile and every check it left off, the scope, the changed files, and each file not read,
 skipped or untracked; under `--all`, the project's health; the blast radius; a section for each check that found
-something, with its findings, their evidence and fix, what folded into another check's finding, or that failed, and why,
-then one line naming the checks that found nothing; then what a previous review found and this one no longer does (with
-`--previous`), the findings dropped for a quote the diff does not bear out, what the verifier refuted or could not judge
-(with `--verify`), how many duplicates were folded, how many secrets were redacted, and the spend. Every string the
-branch wrote is made safe to print: no credential, no control character or other character a reader cannot see, no CI
-runner's command, no HTML comment, and no HTML tag outside a code span. Progress goes to stderr, never into the report.
-Under `--quiet` a review that passes prints nothing, and one that does not prints the whole report.
+something, with its findings, their evidence and fix, each other check's reading of the same lines under the finding it
+repeats, a count of its own listed under another check's finding, or that it failed, and why, then one line naming the
+checks that found nothing; then what a previous review found and this one no longer does (with `--previous`), the
+findings dropped for a quote the diff does not bear out, what the verifier refuted or could not judge (with `--verify`),
+how many duplicates were folded, how many secrets were redacted, and the spend. Every string the branch wrote is made
+safe to print: no credential, no control character or other character a reader cannot see, no CI runner's command, no
+HTML comment, and no HTML tag outside a code span. Progress goes to stderr, never into the report. Under `--quiet` a
+review that passes prints nothing, and one that does not prints the whole report.
 
 ## The JSON report
 

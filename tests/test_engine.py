@@ -686,9 +686,9 @@ class TestTheSecondOpinion:
         # Measured before: the count was read before the verifiers ran, and their calls hid the keys unnamed.
         assert f"- secrets redacted before any model call: {2 * 2 * len(GUIDELINE_NAMES)}" in out, "2 keys, 6 calls"
         assert "### guideline.security\n- **blocker** shell=True" in out and "- **major** lint: S602" not in out
-        assert "- folded into `guideline.security`'s finding on the same lines: lint: S602" in out, (
-            "ruff's reading, named where it went"
-        )
+        assert "  - also on these lines: `rule.lint`: lint: S602" in out, "ruff's reading, under the finding it repeats"
+        counted = "### rule.lint\n- folded: 2 on lines another finding already holds, each listed under that finding"
+        assert counted in out, "S105 and S602, each counted in its own section"
         assert f"folded into one finding: {1 + len(GUIDELINE_NAMES)}" in out, (
             "S105 and S602, and two guidelines into the first"
         )

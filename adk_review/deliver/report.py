@@ -717,25 +717,32 @@ def _sections(
     rules-only review: fourteen of seventeen sections said "no findings", and the three that mattered sat among them."""
     lines: list[str] = []
     silent: list[str] = []
+    under: dict[int, list[Sourced]] = {}
+    for item, into in outcome.folded:
+        under.setdefault(id(into), []).append(item)
     for check in checks:
         findings = [
-            (identity, item.finding)
-            for identity, item in zip(identities, outcome.kept, strict=True)
-            if item.source == check
+            (identity, item) for identity, item in zip(identities, outcome.kept, strict=True) if item.source == check
         ]
         failed = outcome.errors.get(check)
-        # Named under its own source: measured live, ruff's every hit folded into a guideline's blocker on the same
-        # lines, and its section read "no findings" under a rule that had found `shell=True`.
-        folded = [(item.finding, into.source) for item, into in outcome.folded if item.source == check]
+        # Counted under its own source: measured live, ruff's every hit folded into a guideline's blocker on the same
+        # lines, and its section read "no findings" under a rule that had found `shell=True`. Each is listed under the
+        # finding it repeats, asked by the owner: scattered one to a line in each section, the same reading read twice.
+        folded = sum(item.source == check for item, _into in outcome.folded)
         if not findings and not folded and not failed:
             silent.append(check)
             continue
         lines.append(_heading(check, failed))
-        for identity, f in findings:
+        for identity, item in findings:
+            f = item.finding
             mark = " — new since the previous review" if _since(identity, previous) == "new" else ""
             lines += [*_listed(f, mark), f"  - fix: {prose(f.suggestion)}"]
-        for f, into in folded:
-            lines.append(f"- folded into `{into}`'s finding on the same lines: {prose(f.title)} ({_where(f)})")
+            lines += [
+                f"  - also on these lines: `{also.source}`: {prose(also.finding.title)}"
+                for also in under.get(id(item), [])
+            ]
+        if folded:
+            lines.append(f"- folded: {folded} on lines another finding already holds, each listed under that finding")
         lines.append("")
     if silent:
         lines += [f"### no findings from {len(silent)} check{'s' * (len(silent) != 1)}", _spans(silent), ""]
