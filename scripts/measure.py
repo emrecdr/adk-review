@@ -2,8 +2,8 @@
 [--all] [--profile NAME | --check ID]`.
 
 What code finds is found every run; what a guideline finds is the model's doing and varies. This builds the planted
-branch, reviews it N times, and reads each review from the JSON report it writes, or, where a review decided nothing
-and wrote none, as a person reads the text. Per planted defect, in how many runs
+branch, reviews it N times, and reads each review from the JSON report it writes; a review that decided nothing wrote
+none and found nothing to read. Per planted defect, in how many runs
 a model's check named it, kept or folded into another source's finding, and at what severity; the model's findings on
 no planted defect, an upper bound on its false ones; the model's own blockers, the rules' set aside, since the rules
 find the planted key every run; the verdicts across runs; the findings dropped for a quote the diff does not bear out;
@@ -49,13 +49,6 @@ PLANTED = {
 RANK = {"minor": 1, "major": 2, "blocker": 3}
 #: How long one review may run: past it, its run names no exit code and the next starts.
 TIMEOUT_S = 600
-#: A kept finding in a text report, `- **major** …`, ending in its `(path:line)`.
-FINDING = re.compile(r"^- \*\*(?P<severity>\w+)\*\* .*\((?P<path>[^():]+):(?P<line>\d+)\)$")
-#: A finding folded into the kept one above it, on the same lines: its check, and its own `(path:line)`.
-ALSO = re.compile(r"^  - also on these lines: `(?P<source>[\w.-]+)`: .*\((?P<path>[^():]+):(?P<line>\d+)\)$")
-SPEND = re.compile(r"^- spend: \d+ model call\(s\) completed of \d+ attempted, (?P<tokens>[\d,]+) tokens")
-DROPPED = "- findings dropped for evidence not in the diff: "
-VERDICT = "## Verdict: "
 
 
 @dataclass
@@ -156,11 +149,10 @@ def review_command(repo: Path, branch: str, report: Path, selection: Sequence[st
 
 class Review(NamedTuple):
     """One run of one review: its exit code, None where it ran past `TIMEOUT_S`; its JSON report, None where it
-    wrote none, and its text report, read where it did not; and how long it took."""
+    wrote none; and how long it took."""
 
     code: int | None
     data: dict | None
-    text: str
     seconds: float
 
 
@@ -194,19 +186,20 @@ def reviewed(
         for at, (name, branch, number) in enumerate(runs):
             if at and args.pause:
                 time.sleep(args.pause)
-            code, text, seconds, data = _run_once(review_command(repo, branch, report, selection, whole), report)
+            code, seconds, data = _run_once(review_command(repo, branch, report, selection, whole), report)
             # The model and its arm, as the report names them: a measurement holds for the arm it ran on.
             on = f", {data['model']}" if data and data.get("model") else ""
             print(f"{name} run {number + 1}: exit {code}{on}", flush=True)
             if limit := rate_limited(data):
                 print(f"stopped at {name} run {number + 1}: {limit}; no run after it is made", flush=True)
                 return
-            yield name, Review(code, data, text, seconds)
+            yield name, Review(code, data, seconds)
 
 
-def _run_once(command: list[str], report: Path) -> tuple[int | None, str, float, dict | None]:
-    """One review, held to `TIMEOUT_S`: its exit code, None past the timeout, its text, its seconds, and the JSON
-    report it wrote, if any, which is then removed for the next run."""
+def _run_once(command: list[str], report: Path) -> tuple[int | None, float, dict | None]:
+    """One review, held to `TIMEOUT_S`: its exit code, None past the timeout, its seconds, and the JSON report it
+    wrote, if any, which is then removed for the next run. Its text is captured and left unread: the JSON holds all
+    of it."""
     started = time.monotonic()
     try:
         # A review's exit code is its verdict, 1 and 3 among the answers: read, never raised.
@@ -219,39 +212,18 @@ def _run_once(command: list[str], report: Path) -> tuple[int | None, str, float,
             timeout=TIMEOUT_S,
             check=False,
         )
-        code, text = done.returncode, done.stdout
+        code = done.returncode
     except subprocess.TimeoutExpired:
-        code, text = None, ""
+        code = None
     seconds = time.monotonic() - started
     data = json.loads(report.read_text(encoding="utf-8")) if report.is_file() else None
     report.unlink(missing_ok=True)
-    return code, text, seconds, data
+    return code, seconds, data
 
 
 def tally(counts: Counter[str]) -> str:
     """`counts`, the most first, as every live script's summary names them: `blocker x2, major x1`."""
     return ", ".join(f"{key} x{count}" for key, count in counts.most_common())
-
-
-def read_text(report: str, run: Run) -> Run:
-    """A text report, as a person reads it: a model's findings at the line each names, for a review that decided
-    nothing and wrote no JSON."""
-    source, found = "", []
-    for line in report.splitlines():
-        if line.startswith(VERDICT):
-            run.verdict = line.removeprefix(VERDICT).split(",")[0]
-        elif line.startswith("### "):
-            source = line[4:].split(" ")[0]
-        elif (hit := FINDING.match(line)) and source.startswith(GUIDELINE):
-            found.append((source, hit["path"], [int(hit["line"])], hit["severity"]))
-        elif (also := ALSO.match(line)) and also["source"].startswith(GUIDELINE):
-            found.append((also["source"], also["path"], [int(also["line"])], "folded"))
-        elif line.startswith(DROPPED):
-            run.dropped = int(line.removeprefix(DROPPED))
-        elif spent := SPEND.match(line):
-            run.tokens = int(spent["tokens"].replace(",", ""))
-    credit(run, found)
-    return run
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -275,8 +247,8 @@ def main(argv: list[str] | None = None) -> int:
     selection = chosen(args)
     for _name, review in reviewed(DEMO_REPO, planted, args, whole=args.all):
         run = Run(review.code, review.seconds)
-        # A review that decided nothing wrote no JSON, and is read as a person reads its text.
-        runs.append(read_json(review.data, run) if review.data else read_text(review.text, run))
+        # A review that decided nothing wrote no JSON, and found nothing to read.
+        runs.append(read_json(review.data, run) if review.data else run)
         found = ", ".join(f"{name} ({severity})" for name, severity in sorted(run.named.items())) or "nothing"
         print(f"  {run.verdict}; {who} named {found}; {run.stray} elsewhere", flush=True)
     total = len(runs)

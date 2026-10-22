@@ -255,40 +255,47 @@ def test_the_copilot_login_says_how_to_use_it_and_logs_in_to_nothing(monkeypatch
     assert stopped.value.code == 0 and "--force" in capsys.readouterr().out
 
 
-#: A report as the command prints it, trimmed: a rule's finding, a guideline's kept and folded ones, a failed guideline.
-MEASURED = """## Verdict: REQUEST_CHANGES
-### rule.secrets
-- **blocker** hard-coded credential (aws_access_key_id) (src/payments/config.py:4)
-  - also on these lines: `guideline.security`: Sensitive credentials in source (src/payments/config.py:4)
-### guideline.security
-- **blocker** Shell injection vulnerability via unsanitized printer name (src/payments/charge.py:27)
-- folded: 1 on lines another finding already holds, each listed under that finding
-### guideline.tests
-- **major** No tests for daily_total function (src/payments/report.py:8)
-### guideline.complexity — FAILED: RESOURCE_EXHAUSTED: 429
-- findings dropped for evidence not in the diff: 2
-- spend: 3 model call(s) completed of 3 attempted, 4,678 tokens"""
-
-
-def test_the_measurement_reads_a_report_as_a_person_would() -> None:
-    """A guideline named the shell call and, folded into the secrets rule's, the key pair; the rule's own finding is
-    no guideline's; `report.py:8` is `daily_total`, not the copied block at lines 4 and 5."""
-    import measure
-
-    run = measure.read_text(MEASURED, measure.Run(1, 0.0))
-    assert run.named == {"shell call": "blocker", "key pair": "folded"} and run.stray == 1, run
-    assert (run.dropped, run.tokens, run.verdict, run.blockers) == (2, 4678, "REQUEST_CHANGES", 1)
+#: A review's JSON report as the command writes it, trimmed to what the measurement reads: a rule's finding, a
+#: guideline's kept and folded ones, and two findings dropped.
+MEASURED = {
+    "verdict": "REQUEST_CHANGES",
+    "findings": [
+        {"check": "rule.secrets", "file": "src/payments/config.py", "line": 4, "lines": [4, 4], "severity": "blocker"},
+        {
+            "check": "guideline.security",
+            "file": "src/payments/charge.py",
+            "line": 27,
+            "lines": [27, 27],
+            "severity": "blocker",
+        },
+        {"check": "guideline.tests", "file": "src/payments/report.py", "line": 8, "lines": [8, 8], "severity": "major"},
+    ],
+    "folded": [
+        {
+            "check": "guideline.security",
+            "file": "src/payments/config.py",
+            "line": 4,
+            "lines": [4, 4],
+            "severity": "major",
+            "into": "rule.secrets",
+        }
+    ],
+    "dropped": [{}, {}],
+    "usage": {"tokens": 4678},
+}
 
 
 def _measured_runs(monkeypatch, measure) -> list[list[str]]:
-    """Every command `measure` runs, answered without running it: each review exits 1 with `MEASURED`, the rest
-    name a commit."""
+    """Every command `measure` runs, answered without running it: each review exits 1 and writes `MEASURED` where
+    `--json` names, the rest name a commit."""
     commands = []
 
     def ran(argv, **_kwargs):
         commands.append(argv)
-        reviewed = "-m" in argv
-        return SimpleNamespace(returncode=1 if reviewed else 0, stdout=MEASURED if reviewed else "c0ffee1\n")
+        if "-m" not in argv:
+            return SimpleNamespace(returncode=0, stdout="c0ffee1\n")
+        Path(argv[argv.index("--json") + 1]).write_text(json.dumps(MEASURED), encoding="utf-8")
+        return SimpleNamespace(returncode=1, stdout="")
 
     monkeypatch.setattr(measure.subprocess, "run", ran)
     return commands
@@ -321,8 +328,9 @@ def test_the_live_runs_stop_at_a_rate_limit_and_read_the_runs_before_it(monkeypa
         if "-m" not in argv:
             return SimpleNamespace(returncode=0, stdout="c0ffee1\n")
         reviews.append(argv)
-        if len(reviews) == 1:  # a review as before: no JSON, its text read
-            return SimpleNamespace(returncode=1, stdout=MEASURED)
+        if len(reviews) == 1:  # a review as before
+            Path(argv[argv.index("--json") + 1]).write_text(json.dumps(MEASURED), encoding="utf-8")
+            return SimpleNamespace(returncode=1, stdout="")
         limited = {
             "guideline.security": "RateLimitError: 429: Sorry, you've exceeded your rate limit for utility models."
         }
@@ -376,18 +384,6 @@ def test_measure_credits_a_defect_only_to_a_models_finding_on_its_lines() -> Non
     run = measure.read_json(data, measure.Run(1, 2.0))
     assert run.named == {"shell call": "blocker", "key pair": "major"}
     assert (run.stray, run.blockers, run.dropped, run.tokens, run.verdict) == (1, 1, 1, 1234, "REQUEST_CHANGES")
-    text = "\n".join(
-        [
-            "## Verdict: REQUEST_CHANGES",
-            "### guideline.security",
-            "- **blocker** a shell call (src/payments/charge.py:27)",
-            "### rule.secrets",
-            "- **blocker** a key (src/payments/config.py:4)",
-            "- findings dropped for evidence not in the diff: 2",
-        ]
-    )
-    run = measure.read_text(text, measure.Run(1, 1.0))
-    assert run.named == {"shell call": "blocker"} and (run.stray, run.dropped, run.verdict) == (0, 2, "REQUEST_CHANGES")
 
 
 def test_the_injection_suite_builds_a_branch_a_payload_and_scores_what_was_lost(tmp_path) -> None:
