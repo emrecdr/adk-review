@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repository is
 
-`adk-review`: a git-branch code reviewer for Python projects, on Google ADK (pinned `google-adk==2.9.2`,
+`adk-review`: a git-branch code reviewer for Python projects, on Google ADK (pinned `google-adk==2.12.0`,
 Python 3.13, `uv`). Every check is one file: a rule, decided by code, in `adk_review/judge/rules/`, or a guideline,
 judged by a model, in `adk_review/judge/guidelines/`. The command line is the main entry point; `adk web` serves the
 same graph as a chat. `README.md` is the developer's guide — the architecture, and how to write a rule or a guideline —
@@ -76,7 +76,7 @@ each, on Copilot first. `adk_review/judge/config.py` injects `truststore` before
 are verified through the operating system's store (a company proxy's root the machine trusts, Python trusts too), with
 `SSL_CERT_FILE` still read where set; the login, `adk_review/login.py`, does the same and reads the `GITHUB_COPILOT_*`
 endpoints from `.env`. `adk_review/judge/settings.py` reads the environment and builds nothing, so a rules-only review's
-cache key and the login import no engine. The shell wins over `.env` at every entry point: ADK 2.9.2 restores the
+cache key and the login import no engine. The shell wins over `.env` at every entry point: ADK restores the
 variables set before it loads the file, and the command loads it without overriding. The report names the model, the arm
 that ran, and Vertex AI or a GitHub Enterprise tenant's host where the arm goes through one. Never read, print or quote
 `.env`, a key, or the Copilot token or its folder (`~/.config/litellm/github_copilot`, or `GITHUB_COPILOT_TOKEN_DIR`),

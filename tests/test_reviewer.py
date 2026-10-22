@@ -112,7 +112,7 @@ class TestPlugins:
 
     @pytest.mark.asyncio
     async def test_an_instruction_that_is_no_string_is_refused_never_sent(self) -> None:
-        """ADK 2.9.2 writes the system instruction as a string; a `Content` once passed the scrubber unread."""
+        """ADK writes the system instruction as a string; a `Content` once passed the scrubber unread."""
         from google.adk.models.llm_request import LlmRequest
         from google.genai import types
 

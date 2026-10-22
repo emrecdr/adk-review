@@ -4,9 +4,10 @@ version = "0.1.0"
 description = "A git-branch code reviewer for Python projects, on Google ADK: rules decided by code, guidelines judged by a model, on Copilot and on Gemini."
 requires-python = ">=3.13"
 dependencies = [
-    # Pinned: every measurement in the docs was taken on it. No extra: of its packages the reviewer imports only
-    # litellm, a dependency of its own below, since it serves Copilot and Gemini only.
-    "google-adk==2.9.2",
+    # Pinned: a bump lands only measured live on both arms, the demo's review recorded and compared with the last one.
+    # No extra: of its packages the reviewer imports only litellm, a dependency of its own below, since it serves
+    # Copilot and Gemini only.
+    "google-adk==2.12.0",
     # The Copilot arm, pinned at the lock's own version for an install that reads no lock: `uv tool install`, pip and
     # pre-commit resolve afresh, and ADK with no extra asks for no litellm. Measured: `uv tool install .` took a release
     # three days old or less, as LiteLLM 1.82.7 and 1.82.8 were when they shipped a credential stealer.

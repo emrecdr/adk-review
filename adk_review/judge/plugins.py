@@ -77,7 +77,7 @@ class RedactSecretsPlugin(BasePlugin):
             if isinstance(instruction, str):
                 llm_request.config.system_instruction, count = scrub(instruction)
                 self.redacted += count
-            elif instruction is not None:  # ADK 2.9.2 writes a string: any other shape is refused, never sent unread
+            elif instruction is not None:  # ADK writes a string: any other shape is refused, never sent unread
                 raise TypeError(
                     f"the system instruction is a {type(instruction).__name__}. The scrub reads only a string"
                 )
@@ -333,6 +333,9 @@ class Progress(BasePlugin):
 
     @override
     async def after_agent_callback(self, *, agent: Any, callback_context: Any) -> types.Content | None:
+        task = asyncio.current_task()
+        if task is not None and task.cancelling():  # cut short with the run, not done: ADK runs this hook then too
+            return None
         took = time.monotonic() - self.started.pop(agent.name, time.monotonic())
         self.seconds[agent.name] = round(took, 2)
         if self.say is not None and agent.name in self.named:

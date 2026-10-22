@@ -221,6 +221,25 @@ class TestRetriesOnBothArms:
         assert run_review(cli, demo_repo) == 3
         assert "the run did not finish within 1e-06 s" in capsys.readouterr().out
 
+    def test_a_guideline_cut_short_with_the_run_is_never_said_done(self, cli, demo_repo: Path, monkeypatch, capsys):
+        """A guideline cut short, with the run a job stopped, Ctrl-C ended or the deadline passed, is still out, and a
+        person at the terminal reads it so. Measured on ADK 2.12.0: ADK runs the after-agent hook on a cancelled agent
+        too, where 2.9.2 did not, and `Progress` said "done in N s" of a guideline no model answered."""
+        import asyncio
+
+        from conftest import FakeModel
+
+        async def stopped(_self, llm_request, **_kwargs):
+            if "security defects and unsafe patterns" in str(llm_request.config.system_instruction or ""):
+                raise cli.Terminated  # the stop, inside one guideline's call
+            await asyncio.Event().wait()  # its siblings mid-call, cut short with the run, never answered
+            yield
+
+        monkeypatch.setattr(FakeModel, "generate_content_async", stopped)
+        assert run_review(cli, demo_repo, "--progress") == 143
+        said = capsys.readouterr().err
+        assert "guideline.tests started" in said and "done in" not in said, said
+
     @pytest.mark.asyncio
     async def test_a_run_whose_session_is_gone_names_why_for_every_answer_still_out(self) -> None:
         """ADK's session service answers None for a session it does not hold: every check and guideline is then a
@@ -556,7 +575,8 @@ class TestTheSecondOpinion:
     ) -> None:
         """`asyncio.run` makes a loop and closes it, so the guidelines and the verifiers each had their own, and a
         client a library kept from the first met a closed loop in the second, as ADK's cached Gemini client did
-        (google/adk-python#5538). One loop serves the review from its first model call to its last."""
+        (google/adk-python#5538; since 2.10 ADK keeps one a loop) and as a cache keyed by the loop's id still can. One
+        loop serves the review from its first model call to its last."""
         import asyncio
 
         from conftest import FakeModel

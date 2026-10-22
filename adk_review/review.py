@@ -764,7 +764,7 @@ def _judged(
     drops the tree and the texts once the rules have read them; a ceiling of 0 is none. One event loop for the run
     and its second opinion: `asyncio.run` makes a loop and closes it, and a client a library kept from the
     guidelines' calls met a closed loop at the verifiers', as ADK's cached Gemini client did
-    (google/adk-python#5538)."""
+    (google/adk-python#5538; since 2.10 ADK keeps one a loop) and as a cache keyed by the loop's id still can."""
     import asyncio
 
     from google.adk.runners import InMemoryRunner

@@ -435,7 +435,7 @@ def test_the_report_names_the_model_that_ran(monkeypatch, tmp_path: Path) -> Non
     assert config.serving() == "fake on gemini"
     monkeypatch.setenv("GOOGLE_GENAI_USE_VERTEXAI", "true")
     assert config.serving() == "fake on gemini through Vertex AI"
-    monkeypatch.setenv("GOOGLE_GENAI_USE_ENTERPRISE", "false")  # the name ADK 2.9.2 reads first, deprecating the other
+    monkeypatch.setenv("GOOGLE_GENAI_USE_ENTERPRISE", "false")  # the name ADK reads first, deprecating the other
     assert config.serving() == "fake on gemini"
     monkeypatch.delenv("GOOGLE_GENAI_USE_VERTEXAI")
     monkeypatch.setenv("GOOGLE_GENAI_USE_ENTERPRISE", "TRUE")
