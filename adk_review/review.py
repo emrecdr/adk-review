@@ -64,6 +64,7 @@ import json
 import logging
 import os
 import platform
+import re
 import signal
 import sys
 import tempfile
@@ -156,6 +157,12 @@ def setting(key: str) -> Callable[[str], int]:
     return parsed
 
 
+#: A comment's file where `--comment` names none, in the folder the command runs in: the repository's folder, the base
+#: and the head, each made safe for a file's name and lower case, then the minute it was written. Asked by the owner.
+COMMENT_NAME = "comments-{repo}__{base}__{head}__{at}.md"
+#: How much of each name the comment's file keeps, as the owner chose: a ticket number such as `JIRA-98765` stays whole,
+#: where 15 cut it, and `-v1` and `-v2` stay apart.
+COMMENT_NAME_CHARS = 20
 #: Where a review's results go, which no result depends on: left out of what keys a kept review.
 OUTPUTS = {"json", "handoff", "comment", "cache", "record", "trace", "debug_log", "progress", "quiet"}
 #: How often a person at a terminal is told the review still works, in seconds. A model's call can take a minute, and
@@ -358,9 +365,12 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--comment",
+        nargs="?",
+        const=COMMENT_NAME,
         metavar="FILE",
-        help="also write the review to FILE as a comment for the branch's author, to paste by hand. It says what to "
-        "fix, what to improve and what went unchecked. The review posts nothing",
+        help="also write the review to FILE as a comment for the branch's author, to paste by hand. With no FILE, it "
+        "is comments-repo__base__head__time.md in the current folder, in lower case. It says what to fix, what to "
+        "improve and what went unchecked. The review posts nothing",
     )
     parser.add_argument(
         "--cache",
@@ -614,7 +624,7 @@ def _review(argv: list[str] | None = None) -> int:
         explanation = explained(found, config["profiles"], args.explain) if args.explain else None
         previous = read_previous(args.previous) if args.previous else (None, None)
         for flag, given in (("--json", args.json), ("--handoff", args.handoff), ("--comment", args.comment)):
-            if given:
+            if given and given != COMMENT_NAME:  # a name to come, made once the branches are known
                 _cleared(flag, given)
     except ValueError as exc:
         _say(str(exc))
@@ -735,6 +745,8 @@ def _decided(
 ) -> int:
     """The review decided and reported: served from the cache where one holds it; else the rules, and the guidelines
     where any runs. `--trace`, `--debug-log` and `--record` are the engine's own and bring its run too."""
+    if args.comment == COMMENT_NAME:
+        args.comment = _comment_named(evidence)
     cached = _cached_at(args, chosen, evidence, shown["model"], previous) if args.cache else None
     if cached is not None and (hit := _from_cache(cached)) is not None:
         if not args.quiet:
@@ -889,23 +901,52 @@ def _reported(
 
 
 def _delivered(args: argparse.Namespace, report: str, handoff: str, comment: str, data: dict, code: int) -> int:
-    """The review's outputs: the report on stdout, the hand-off, the comment and the JSON where asked for; exit 3
-    where a file asked for cannot be written. Under `--quiet` a review that passes prints nothing."""
+    """The review's outputs: the report on stdout, the hand-off, the JSON and the comment where asked for; exit 3
+    where a file asked for cannot be written. Each file written is then named by its full path, the comment's last, the
+    run's last line: asked by the owner, a person should see where each went, a default name above all. Under `--quiet`
+    a review that passes prints nothing."""
     if not (args.quiet and code == EXIT_CLEAN):
         print(report)
+    wrote = []
     for flag, written, text in (
         ("hand-off", args.handoff, lambda: handoff),
-        ("comment", args.comment, lambda: comment),
         ("JSON report", args.json, lambda: json.dumps(data, indent=2, ensure_ascii=False) + "\n"),
+        ("code review comments", args.comment, lambda: comment),
     ):
         if not written:  # measured by review: the JSON was dumped whole for a kept review that wrote none
             continue
+        path = Path(written).expanduser()
         try:
-            _written(Path(written).expanduser(), text())
+            _written(path, text())
         except OSError as exc:  # the folder was there when the review began; a full or read-only disk is not
             _say(f"could not write the {flag} to {written}: {exc.strerror or exc}")
             return EXIT_DEGRADED
+        wrote.append(f"wrote the {flag} to {path.resolve()}")
+    if not (args.quiet and code == EXIT_CLEAN):
+        for sentence in wrote:
+            _say(sentence)
     return code
+
+
+def _comment_named(evidence: Evidence) -> str:
+    """The comment's file where `--comment` names none: `COMMENT_NAME` for this review's repository and branches,
+    `all` for the base under `--all`, `HEAD` and `staged` under `--staged`, and the local minute."""
+    pre = evidence["preflight"]
+    base = "all" if evidence["whole"] else "HEAD" if pre.get("staged") else pre["base"]
+    head = "staged" if pre.get("staged") else pre["head"]
+    at = time.strftime("%Y-%m-%d-%H-%M")
+    return COMMENT_NAME.format(
+        repo=_safe_name(Path(pre["repo"]).name), base=_safe_name(base), head=_safe_name(head), at=at
+    )
+
+
+def _safe_name(name: str) -> str:
+    """A name as part of a file's, on every system: lower case, as the owner asked, since some systems tell `Main` from
+    `main` and others do not; each run of what is not a letter, a digit, `.`, `_` or `-` one `-`; at most
+    `COMMENT_NAME_CHARS` characters; no `.` or `-` at either end, so no name climbs a folder or ends cut on one;
+    `branch` where none is left. A branch's name is its author's, and `/`, `$` and a backtick are legal in one."""
+    safe = re.sub(r"[^a-z0-9._-]+", "-", name.lower()).strip(".-")
+    return safe[:COMMENT_NAME_CHARS].rstrip(".-") or "branch"
 
 
 @contextlib.contextmanager

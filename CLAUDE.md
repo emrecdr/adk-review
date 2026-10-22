@@ -21,7 +21,7 @@ uv run pyrefly check                                  # types: the package and s
 
 uv run python scripts/make_demo_repo.py          # build <tmp>/adk-demo-repo: main + feature/payments with 4 planted defects
 uv run python scripts/make_demo_repo.py --fix    # commit the two fixes on feature/payments
-uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--handoff FILE] [--comment FILE] [--cache DIR] [--previous FILE] [--progress | --quiet] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
+uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--handoff FILE] [--comment [FILE]] [--cache DIR] [--previous FILE] [--progress | --quiet] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
 uv run adk-review <demo repo> --head feature/payments --base main --profile demo   # every rule, the demo's own among them, no model call, no key
 uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # what a review would cover and run, nothing run
 uv run adk-review-login                          # one-time GitHub device-flow login for the Copilot arm
@@ -122,15 +122,16 @@ Evidence is gathered in Python first, the rules run as one `FunctionNode` before
 (`judge/checks.py`, every rule through `run_rule`), or straight from the driver through the same `run_rules` where no
 guideline follows, and code decides the verdict. Around them: retries, a token ceiling, a `--verify` second opinion, a
 JSON report a pipeline reads (`--json FILE`, schema 2, written for every decided review, under the text report's safety
-rules), a comment for the branch's author (`--comment FILE`), which the person pastes into the pull request by hand: the
-reviewer posts nothing and prints no command that would, under `--all` a Health section (`core/health.py`: what was
-read, source and tests apart, McCabe complexity counted as ruff's C901 counts it, in bands graded A to E by SIG's
-published risk-profile rating where most of the source parsed, each rule's findings by severity, counted and never
-graded; never read by the verdict), each changed file's blast radius (`core/blast.py`: an import graph parsed from the
-head commit, shown to the guidelines as `{blast?}` and heading the report, never read by the verdict), and fences around
-every untrusted section the guidelines, the verifiers and the chat's verdict read (`judge/agents.py`: two marker lines
-carrying a nonce drawn once a process, a second one, no guideline shown it, where a guideline's own words are read, a
-reminder after them, the content never escaped so a quote still grounds).
+rules), a comment for the branch's author (`--comment [FILE]`, by default `comments-<repo>__<base>__<head>__<minute>.md`
+where the command runs), which the person pastes into the pull request by hand: the reviewer posts nothing and prints no
+command that would, under `--all` a Health section (`core/health.py`: what was read, source and tests apart, McCabe
+complexity counted as ruff's C901 counts it, in bands graded A to E by SIG's published risk-profile rating where most of
+the source parsed, each rule's findings by severity, counted and never graded; never read by the verdict), each changed
+file's blast radius (`core/blast.py`: an import graph parsed from the head commit, shown to the guidelines as `{blast?}`
+and heading the report, never read by the verdict), and fences around every untrusted section the guidelines, the
+verifiers and the chat's verdict read (`judge/agents.py`: two marker lines carrying a nonce drawn once a process, a
+second one, no guideline shown it, where a guideline's own words are read, a reminder after them, the content never
+escaped so a quote still grounds).
 
 Load-bearing rules the tests enforce:
 

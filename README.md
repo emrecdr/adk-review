@@ -160,7 +160,7 @@ uv run adk-review <repo> --all --profile rules-only             # every file at 
 uv run adk-review <repo> --staged --profile default-rules       # what is staged, against HEAD
 uv run adk-review <repo> --base main --check rule.secrets       # one check alone, this once
 uv run adk-review <repo> --base main --json review.json         # the report, and the same review as JSON
-uv run adk-review <repo> --base main --comment comment.md       # a comment for the branch's author, pasted by hand
+uv run adk-review <repo> --base main --comment                  # a comment for the author: comments-<repo>__main__…md
 uv run adk-review <repo> --base main --dry-run                  # what a review would cover and run; nothing runs
 uv run adk-review --list-checks                                 # every check: its kind, severity, profiles and file
 uv run adk-review --explain rule.lint                           # one check whole, a rule with its own examples
@@ -610,10 +610,12 @@ report" in `GUIDE.md` lists it line by line. Beside it:
   check's defect at major or above names is held back until that defect is fixed, and is never given a fix's
   instruction, as a simplify pass keeps its two lanes: suspect code is never tidied. `efficiency` and `altitude` are no
   cleanup: a cheaper form can reorder I/O and a deeper fix changes a shared mechanism, each a change to weigh.
-- `--comment FILE` writes the review as a comment for the branch's author, to paste into the pull request by hand,
+- `--comment [FILE]` writes the review as a comment for the branch's author, to paste into the pull request by hand,
   whatever the verdict: what must change before it merges, what is worth a look, an approved change's included, the
   tidy-ups, and what no check read. Each place and quote sits in a code span. The reviewer posts nothing and prints no
-  command that would: asked by the owner, who reviews others' branches and pastes each comment by hand.
+  command that would: asked by the owner, who reviews others' branches and pastes each comment by hand. With no file
+  named, it is `comments-<repo>__<base>__<head>__<YYYY-MM-DD-HH-MM>.md` in the current folder, every name lower case,
+  made safe for a file name and cut at 20 characters, and the run's last line names it by its full path.
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint:
   its check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line,
   so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.

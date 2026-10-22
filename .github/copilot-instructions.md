@@ -75,8 +75,9 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   file-system monitor the repository names; nothing ever writes into the repository under review, not even a fetch: a
   branch it does not hold is named with the `git fetch` for the person to run. A failed git call raises `GitError`,
   never an empty answer.
-- The reviewer posts nothing to a pull request: `--comment FILE` writes a comment for the branch's author, which the
-  person pastes by hand, and no command that would post it is printed.
+- The reviewer posts nothing to a pull request: `--comment [FILE]` writes a comment for the branch's author, by default
+  `comments-<repo>__<base>__<head>__<minute>.md`, which the person pastes by hand, and no command that would post it is
+  printed.
 - Every string a model reads is capped in characters with the cut named in the text, and so is each title and change
   a model writes into a finding. Every `subprocess.run` that
   decodes passes `encoding=`; no source spells `/tmp/` (`tempfile.gettempdir()`); a file a script or a fixture commits

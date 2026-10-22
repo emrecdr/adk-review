@@ -27,7 +27,7 @@ catch the wrong branch; `--list-checks` shows every check with its kind, its pro
    `/simplify` does, the cleanup, with `lint` and `pitfalls` beside it; `--profile code-review` as its `/code-review`
    does, correctness and security before the same cleanup; `--profile full` runs every check but the payments demo's
    rules, `--verify` adds a second opinion on each guideline's
-   finding, `--handoff FILE` writes the findings for a coding agent to apply, and `--comment FILE` writes a comment
+   finding, `--handoff FILE` writes the findings for a coding agent to apply, and `--comment [FILE]` writes a comment
    for the branch's author, to paste into the pull request by hand.
 3. Read the exit code: 0 approved; 1 a finding at or above `--fail-on` (`blocker` by default); 2 a usage error before
    any model call, such as a branch that adds nothing or one the repository does not hold, whose message names the `git

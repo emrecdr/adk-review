@@ -578,6 +578,35 @@ class TestThePreviousReportAndTheHandoff:
         assert labelled == "Remove unused import: `os` (a fix ruff labels safe)"
         assert fix_of(FIX, "F401", None) == "Remove the unused import, or export it on purpose."
 
+    def test_a_comment_named_by_no_file_is_named_after_the_branches_and_the_time(
+        self, cli, demo_repo: Path, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        """Asked by the owner: `--comment` alone writes the comment where the command runs, named after the
+        repository's folder, the base, the head and the minute, each name made safe for a file and lower case, and
+        says where: `comments-repox__develop__dev-7448877-refactor__2026-10-22-15-42.md`. A mode that runs no review
+        still refuses it, as it refuses every review's own flag."""
+        import re
+
+        monkeypatch.chdir(tmp_path)
+        assert run_review(cli, demo_repo, "--profile", "default-rules", "--comment") == 1
+        (written,) = tmp_path.glob("comments-*.md")
+        named = rf"comments-{demo_repo.name.lower()}__main__feature-payments__\d{{4}}(-\d{{2}}){{4}}\.md"
+        assert re.fullmatch(named, written.name), written.name
+        assert written.read_text(encoding="utf-8").startswith("**Review of `feature/payments` at `")
+        said = capsys.readouterr().err.splitlines()
+        assert said[-1] == f"review: wrote the code review comments to {written.resolve()}", (
+            "the last line, the full path"
+        )
+        assert cli._safe_name("dev/7448877-refactor") == "dev-7448877-refactor"
+        assert cli._safe_name("RepoX") == "repox" and cli._safe_name("Feature/ABC_1") == "feature-abc_1"
+        # Asked by the owner, at 20: a ticket number stays whole, and a cut ends on no `-`.
+        assert cli._safe_name("feature/ABC-1234-add-login") == "feature-abc-1234-add"
+        assert cli._safe_name("bugfix/JIRA-98765-null-check") == "bugfix-jira-98765-nu"
+        assert cli._safe_name("abcdefghijklmnopqrs-tail") == "abcdefghijklmnopqrs"
+        assert cli._safe_name("feat x$y`z") == "feat-x-y-z" and cli._safe_name("../..") == "branch"
+        assert run_review(cli, demo_repo, "--dry-run", "--comment") == 2
+        assert "--comment is a review's, and --dry-run runs no review" in capsys.readouterr().err
+
     def test_a_comment_tells_the_author_what_to_fix_and_what_to_improve_and_posts_nothing(
         self, cli, demo_repo: Path, tmp_path: Path
     ) -> None:
