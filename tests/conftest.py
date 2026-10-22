@@ -800,6 +800,14 @@ def run_rule(rule, files: list[dict], tree):
     return importlib.import_module("adk_review.core.rules").run_rule(rule, files, tree)
 
 
+def sourced(severity: str, source: str = "rule.lint", file: str = "a.py", line: int = 1, title: str = "t"):
+    """A finding as the fold keeps one, made by `source` at `file:line`, from the package as it is loaded now, for
+    `run_rule`'s reason: a class imported once would be another class than the one `load_agent` loaded afresh."""
+    findings = importlib.import_module("adk_review.core.findings")
+    found = findings.Finding(file=file, line=line, severity=severity, title=title, evidence="e", suggestion="s")
+    return importlib.import_module("adk_review.core.verdict").Sourced(source, found, (line, line))
+
+
 def _entry(path: str, text: str | None, unread: str | None = None) -> dict:
     """A changed file as the collector lists one, for a rule run over a fixture: added whole, its text at the head
     numbered as git numbers lines, or why the head holds it unread."""

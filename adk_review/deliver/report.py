@@ -189,9 +189,7 @@ def _lanes(outcome: Outcome, tidies: frozenset[str]) -> tuple[list[list[Sourced]
     tie; a tidy in it stays, to be held back, where a defect there is at major or above, and is otherwise an item of its
     own in the Tidy lane, so a tidy never takes a fix's instruction. The fold keeps a tidy over a defect of its lines
     only where the tidy is the more severe, a major tidy over a minor defect: here the defect leads all the same."""
-    under: dict[int, list[Sourced]] = {}
-    for folded, into in outcome.folded:
-        under.setdefault(id(into), []).append(folded)
+    under = outcome.folded_into()
     fixes: list[list[Sourced]] = []
     tidy: list[list[Sourced]] = []
     for kept in outcome.kept:
@@ -314,7 +312,7 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
     lines = []
     for number, (lead, *also) in enumerate(groups, 1):
         f = lead.finding
-        place = code_span(one_line(f"{f.file}:{f.line}" if f.line else f.file))
+        place = code_span(one_line(_place(f)))
         lines += [
             f"{number}. {place}: {prose(f.title)} ({f.severity})",
             f"   - Quoted: {_quoted(f)}",
@@ -474,9 +472,15 @@ def _as_resolved(name: str, ref: str) -> str:
     return f"{prose(name)} (the tag {prose(ref)})" if ref.startswith("refs/tags/") else prose(name)
 
 
+def _place(f: Finding) -> str:
+    """A finding's file and line, `path:line`, or its file alone where it names no line: the path is the branch's
+    text, made safe where it is printed."""
+    return f"{f.file}:{f.line}" if f.line else f.file
+
+
 def _where(f: Finding) -> str:
-    """A finding's file and line as one line: the path is the branch's text."""
-    return prose(f"{f.file}:{f.line}" if f.line else f.file)
+    """A finding's file and line as one line of prose."""
+    return prose(_place(f))
 
 
 def what(evidence: Evidence) -> str:
@@ -579,12 +583,12 @@ def _beside(outcome: Outcome, fail_on: str) -> str:
     review whose four security findings were majors read as approved and clean."""
     held = at_bar(outcome.kept, fail_on)
     said = f", {held} finding{'s' * (held != 1)} at or above `--fail-on {fail_on}`" if held else ""
-    below = Counter(item.finding.severity for item in outcome.kept if not at_or_above(item.finding.severity, fail_on))
+    below: Counter[str] = Counter(
+        item.finding.severity for item in outcome.kept if not at_or_above(item.finding.severity, fail_on)
+    )
     if not below:
         return said
-    by_rank = sorted(below, key=lambda severity: RANK[severity], reverse=True)
-    counted = " and ".join(f"{below[severity]} {severity}" for severity in by_rank)
-    return f"{said or f', none at or above `--fail-on {fail_on}`'}, {counted} below it"
+    return f"{said or f', none at or above `--fail-on {fail_on}`'}, {_severities(below, ' and ')} below it"
 
 
 def _at_a_glance(outcome: Outcome) -> list[str]:
@@ -594,15 +598,13 @@ def _at_a_glance(outcome: Outcome) -> list[str]:
     end the cell; a path is the branch's text, a title a model's."""
     if not outcome.kept:
         return []
-    also: dict[int, list[str]] = {}
-    for folded, into in outcome.folded:
-        also.setdefault(id(into), []).append(folded.source)
+    under = outcome.folded_into()
     lines = ["| # | Severity | Where | Finding | Found by |", "|---|---|---|---|---|"]
     ranked = sorted(outcome.kept, key=lambda item: -RANK[item.finding.severity])  # stable: the report's order on a tie
     for number, item in enumerate(ranked, 1):
         f = item.finding
-        place = code_span(one_line(f"{f.file}:{f.line}" if f.line else f.file))
-        found_by = ", ".join(dict.fromkeys([item.source, *also.get(id(item), [])]))
+        place = code_span(one_line(_place(f)))
+        found_by = ", ".join(dict.fromkeys(also.source for also in [item, *under.get(id(item), [])]))
         lines.append(f"| {number} | {f.severity} | {_cell(place)} | {_cell(prose(f.title))} | {found_by} |")
     return [*lines, ""]
 
@@ -717,9 +719,8 @@ def _sections(
     rules-only review: fourteen of seventeen sections said "no findings", and the three that mattered sat among them."""
     lines: list[str] = []
     silent: list[str] = []
-    under: dict[int, list[Sourced]] = {}
-    for item, into in outcome.folded:
-        under.setdefault(id(into), []).append(item)
+    under = outcome.folded_into()
+    folds = Counter(item.source for item, _into in outcome.folded)
     for check in checks:
         findings = [
             (identity, item) for identity, item in zip(identities, outcome.kept, strict=True) if item.source == check
@@ -728,7 +729,7 @@ def _sections(
         # Counted under its own source: measured live, ruff's every hit folded into a guideline's blocker on the same
         # lines, and its section read "no findings" under a rule that had found `shell=True`. Each is listed under the
         # finding it repeats, asked by the owner: scattered one to a line in each section, the same reading read twice.
-        folded = sum(item.source == check for item, _into in outcome.folded)
+        folded = folds[check]
         if not findings and not folded and not failed:
             silent.append(check)
             continue
@@ -766,10 +767,11 @@ def _at(data: object, *keys: str) -> object:
     return data
 
 
-def _severities(counts: Mapping[str, int]) -> str:
-    """Counts by severity, the most severe first: `2 major · 14 minor`, or `none`."""
+def _severities(counts: Mapping[str, int], joiner: str = " · ") -> str:
+    """Counts by severity, the most severe first: `2 major · 14 minor`, or `none`; the verdict line joins them with
+    ` and `."""
     said = [f"{counts[severity]:,} {severity}" for severity in reversed(RANK) if counts.get(severity)]
-    return " · ".join(said) or "none"
+    return joiner.join(said) or "none"
 
 
 def _health(health: Health | None, outcome: Outcome, previous: Mapping | None, scope: Sequence[str] = ()) -> list[str]:

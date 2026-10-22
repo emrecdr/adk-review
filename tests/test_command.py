@@ -35,6 +35,7 @@ from conftest import (
     profiles_of,
     run_review,
     run_turn,
+    sourced,
 )
 
 from adk_review.core.profiles import rule_id, state_key
@@ -916,15 +917,11 @@ class TestTheJsonReport:
         """`DEGRADED` outranks a kept blocker by design, and a pipeline that lets exit 3 through let the blocker
         through with it, unseen: measured before, the verdict line never named it. It is named beside the verdict
         and counted in the JSON, with no schema change, and exit codes stay as they were."""
-        from adk_review.core.findings import Finding
-        from adk_review.core.verdict import Outcome, Sourced, decide
+        from adk_review.core.verdict import Outcome, decide
         from adk_review.deliver.report import _beside
 
-        def held(severity: str) -> Sourced:
-            found = Finding(file="a.py", line=1, severity=severity, title="t", evidence="e", suggestion="s")
-            return Sourced("rule.secrets", found, (1, 1))
-
-        outcome = Outcome(kept=[held("blocker"), held("major")], errors={"rule.lint": "ruff exited 2"})
+        held = [sourced("blocker", "rule.secrets"), sourced("major", "rule.secrets")]
+        outcome = Outcome(kept=held, errors={"rule.lint": "ruff exited 2"})
         assert decide(outcome, "blocker") == ("DEGRADED", 3)
         assert _beside(outcome, "blocker") == ", 1 finding at or above `--fail-on blocker`, 1 major below it"
         assert _beside(outcome, "major") == ", 2 findings at or above `--fail-on major`"
@@ -937,15 +934,10 @@ class TestTheJsonReport:
         """Asked by the owner: a review whose four security findings were majors read as approved and clean, its
         verdict line naming none of them. The line counts what sits below the bar too, by severity, the most severe
         first, so an approval that still holds findings says so where a reader looks first."""
-        from adk_review.core.findings import Finding
-        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.core.verdict import Outcome
         from adk_review.deliver.report import _beside
 
-        def kept(severity: str) -> Sourced:
-            found = Finding(file="a.py", line=1, severity=severity, title="t", evidence="e", suggestion="s")
-            return Sourced("guideline.security", found, (1, 1))
-
-        below = Outcome(kept=[kept("minor"), kept("major"), kept("major")])
+        below = Outcome(kept=[sourced("minor"), sourced("major"), sourced("major")])
         assert _beside(below, "blocker") == ", none at or above `--fail-on blocker`, 2 major and 1 minor below it"
         assert _beside(below, "major") == ", 2 findings at or above `--fail-on major`, 1 minor below it"
         assert _beside(below, "minor") == ", 3 findings at or above `--fail-on minor`"
@@ -959,8 +951,7 @@ class TestTheJsonReport:
         """Asked by the owner, for a report read at a glance: every kept finding in one table under the verdict, the
         most severe first, with its place, its title and each check that found it, the ones folded into it among them.
         The sections below keep the details. A `|` in a title or a path is escaped, so no cell spills into the next."""
-        from adk_review.core.findings import Finding
-        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.core.verdict import Outcome
         from adk_review.deliver.report import _at_a_glance
 
         assert run_review(cli, demo_repo, "--profile", "default-rules") == 1
@@ -978,10 +969,8 @@ class TestTheJsonReport:
         assert "| major | `src/payments/charge.py:28` |" in rows.splitlines()[2], rows
         assert out.index("| # | Severity") < out.index("- repository"), "under the verdict, above the details"
 
-        found = Finding(file="a|b.py", line=3, severity="minor", title="x | y", evidence="e", suggestion="s")
-        assert _at_a_glance(Outcome(kept=[Sourced("rule.lint", found, (3, 3))]))[2] == (
-            "| 1 | minor | `a\\|b.py:3` | x \\| y | rule.lint |"
-        )
+        piped = sourced("minor", file="a|b.py", line=3, title="x | y")
+        assert _at_a_glance(Outcome(kept=[piped]))[2] == ("| 1 | minor | `a\\|b.py:3` | x \\| y | rule.lint |")
         assert _at_a_glance(Outcome()) == []
 
     def test_a_person_sees_the_review_move_and_a_pipeline_reads_its_timing_and_version(

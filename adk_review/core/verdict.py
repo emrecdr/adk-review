@@ -53,6 +53,15 @@ class Outcome:
     refuted: list[tuple[Sourced, str]] = field(default_factory=list)  # dropped on the verifier's say-so, with why
     unverified: list[tuple[Sourced, str]] = field(default_factory=list)  # the verifier could not judge; kept, with why
 
+    def folded_into(self) -> dict[int, list[Sourced]]:
+        """Each kept finding's id, and the findings folded into it, in the fold's order: what the report's table, its
+        sections and the hand-off each list with a finding, read from one place. By id, since a finding holds no
+        hash."""
+        under: dict[int, list[Sourced]] = {}
+        for item, into in self.folded:
+            under.setdefault(id(into), []).append(item)
+        return under
+
 
 @lru_cache(maxsize=512)
 def as_seen(text: str) -> str:
