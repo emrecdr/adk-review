@@ -846,8 +846,10 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
 - **A ceiling reserves first.** The guidelines call at once, so a ceiling that counted only tokens already spent would
   let them all through and be passed by all of them. Each call reserves its cost before it is sent — its request's
   characters over four, room for an answer and the thinking its budget allows — and the call that would pass the ceiling
-  is refused, through the same plugin hook the redaction uses. The refused guideline is named, everything found is
-  reported, exit 3: the ceiling ends the spending, never the report.
+  is refused, through the same plugin hook the redaction uses. A reservation is released when the answer comes back,
+  an error's included, or when its agent ends without one, cut short with the run or by an exception that escaped it,
+  so no tokens no call has in flight are counted against a later call. The refused guideline is named, everything
+  found is reported, exit 3: the ceiling ends the spending, never the report.
 - **The second opinion never removes silently.** `--verify` is the one place a model can remove a finding, so the
   reason is in the report, and a verifier that fails leaves the finding in place, named with why. It runs before the
   fold, on the guidelines' findings alone: a rule's findings are facts and are never asked about, nor is a

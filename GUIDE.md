@@ -288,7 +288,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | `unverified` | Each finding a verifier could not judge, and why. |
 | `secrets_redacted` | How many secrets were redacted before any model read them. |
 | `usage` | Model calls completed and attempted, tokens, the ceiling, and each agent's row: a guideline under its check's id, a verifier under its own name. |
-| `seconds` | How long each agent took: a guideline under its check's id, a verifier under its own name. |
+| `seconds` | How long each agent took: a guideline under its check's id, a verifier under its own name; a guideline cut short with the run has no entry. |
 | `reviewer_version` | The reviewer's version. |
 
 ## Limits
