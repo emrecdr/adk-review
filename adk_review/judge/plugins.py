@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import sys
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from functools import partial
@@ -333,8 +334,7 @@ class Progress(BasePlugin):
 
     @override
     async def after_agent_callback(self, *, agent: Any, callback_context: Any) -> types.Content | None:
-        task = asyncio.current_task()
-        if task is not None and task.cancelling():  # cut short with the run, not done: ADK runs this hook then too
+        if isinstance(sys.exception(), asyncio.CancelledError):  # cut short with the run: ADK runs this hook then too
             return None
         took = time.monotonic() - self.started.pop(agent.name, time.monotonic())
         self.seconds[agent.name] = round(took, 2)
@@ -423,6 +423,12 @@ class UsageLedger(BasePlugin):
             )
             return _failed(callback_context, llm_request, "TOKEN_CEILING", why)
         self.reserved[callback_context.agent_name] = estimate
+        return None
+
+    @override
+    async def after_agent_callback(self, *, agent: Any, callback_context: Any) -> types.Content | None:
+        # A call cut short with its agent never reaches the after-model hook: the agent's end releases what it reserved.
+        self.reserved.pop(agent.name, None)
         return None
 
     @override

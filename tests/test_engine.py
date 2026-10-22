@@ -222,9 +222,9 @@ class TestRetriesOnBothArms:
         assert "the run did not finish within 1e-06 s" in capsys.readouterr().out
 
     def test_a_guideline_cut_short_with_the_run_is_never_said_done(self, cli, demo_repo: Path, monkeypatch, capsys):
-        """A guideline cut short, with the run a job stopped, Ctrl-C ended or the deadline passed, is still out, and a
-        person at the terminal reads it so. Measured on ADK 2.12.0: ADK runs the after-agent hook on a cancelled agent
-        too, where 2.9.2 did not, and `Progress` said "done in N s" of a guideline no model answered."""
+        """A guideline cut short with the run, here by a job's stop inside a sibling's call, is still out, and a person
+        at the terminal reads it so. Measured on ADK 2.12.0: ADK runs the after-agent hook on a cancelled agent too,
+        where 2.9.2 did not, and `Progress` said "done in N s" of a guideline no model answered."""
         import asyncio
 
         from conftest import FakeModel
@@ -239,6 +239,47 @@ class TestRetriesOnBothArms:
         assert run_review(cli, demo_repo, "--progress") == 143
         said = capsys.readouterr().err
         assert "guideline.tests started" in said and "done in" not in said, said
+
+    def test_a_guideline_still_out_past_the_deadline_is_never_said_done(
+        self, cli, demo_repo: Path, monkeypatch, capsys
+    ):
+        """The deadline's own cancellation, from outside every call: a few seconds here, where a hanging Copilot call
+        takes the run's whole deadline. Measured on ADK 2.12.0 without the guard: "done in 7.9 s" of each guideline."""
+        import asyncio
+
+        from conftest import FakeModel
+
+        async def hangs(*_args, **_kwargs):
+            await asyncio.Event().wait()  # a call no provider answers
+            yield
+
+        monkeypatch.setattr(importlib.import_module("adk_review.judge.run"), "RUN_DEADLINE_S", 5)
+        monkeypatch.setattr(FakeModel, "generate_content_async", hangs)
+        assert run_review(cli, demo_repo, "--progress") == 3
+        said = capsys.readouterr()
+        assert "the run did not finish within 5 s" in said.out
+        assert "guideline.tests started" in said.err and "done in" not in said.err, said.err
+
+    @pytest.mark.asyncio
+    async def test_a_call_cut_short_with_its_agent_releases_what_it_reserved(self) -> None:
+        """A call cancelled with its agent never reaches the after-model hook, so what it reserved held: found by
+        review, past the deadline a verifier's call was checked against tokens no call had in flight, and could be
+        refused for a ceiling not reached. Since ADK 2.10 the after-agent hook runs on a cancelled agent too, and the
+        agent's end releases its reservation."""
+        from types import SimpleNamespace
+
+        from google.adk.models.llm_request import LlmRequest
+        from google.genai import types
+
+        from adk_review.judge.plugins import UsageLedger
+
+        request = LlmRequest(config=types.GenerateContentConfig(system_instruction="x" * 400))
+        ledger = UsageLedger(ceiling=10_000)
+        a = SimpleNamespace(agent_name="guideline_a", state={})
+        assert await ledger.before_model_callback(callback_context=a, llm_request=request) is None
+        assert ledger.reserved, "reserved for the call in flight"
+        await ledger.after_agent_callback(agent=SimpleNamespace(name="guideline_a"), callback_context=a)
+        assert ledger.reserved == {}, "released with the agent, the call never answered"
 
     @pytest.mark.asyncio
     async def test_a_run_whose_session_is_gone_names_why_for_every_answer_still_out(self) -> None:
