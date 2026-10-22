@@ -22,7 +22,7 @@ import os
 import subprocess
 import sys
 import tempfile
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Iterator
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -221,6 +221,17 @@ def pytest_configure() -> None:
     every test, and every import tried the network first."""
     os.environ["LITELLM_MODE"] = "PRODUCTION"
     os.environ["LITELLM_LOCAL_MODEL_COST_MAP"] = "True"
+
+
+@pytest.fixture(autouse=True)
+def _umask_kept() -> Iterator[None]:
+    """No test leaves its umask to the next: the login sets 0o077 for its whole process, as it must before LiteLLM
+    writes the token. Read by review: six tests of it left every test after them making files only their owner reads.
+    Set up before `monkeypatch`, so it restores through the real `os.umask` where a test patched it."""
+    mask = os.umask(0o022)
+    os.umask(mask)
+    yield
+    os.umask(mask)
 
 
 @pytest.fixture(autouse=True)

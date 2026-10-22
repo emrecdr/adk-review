@@ -416,6 +416,7 @@ def test_a_reviewer_that_cannot_load_is_a_sentence_and_exit_3(tmp_path) -> None:
     )
     assert done.returncode == 3, done.stderr
     assert "the reviewer could not load (RuntimeError: a broken install)" in done.stderr, done.stderr
+    assert done.stderr.rstrip().endswith(". Install the reviewer again"), "read by review: `uv sync` fixed nothing"
     assert "Traceback" not in done.stderr
 
 
@@ -885,11 +886,10 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
     def reviewed(argv: list[str]) -> int:
         ran.append(argv)
         print("## Verdict: REQUEST_CHANGES")
-        named = Path(argv[-1]).resolve()  # as a temporary folder reached through no link names it, Linux's
         if (code := codes.pop(0)) == 3:  # the one line that says why: kept
-            cli._say(f"could not write the JSON report to {named}: No space left on device")
+            cli._say(f"could not write the JSON report to {argv[-1]}: No space left on device")
         else:
-            cli._say(f"wrote the JSON report to {named}")
+            cli._say(f"wrote the JSON report to {argv[-1]}")
         return code
 
     def pushing(*refs: str) -> None:  # git's lines, as bytes in UTF-8 whatever a console's code page
@@ -966,6 +966,7 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
     assert push.main(["origin"]) == 1
     said = capsys.readouterr().out
     assert "rule.secrets" in said and "ended in exit 1" in said
+    assert "wrote the JSON report" not in said, "the review's own words, which the hook's `ANNOUNCED` must match"
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"refs/heads/main {second} refs/heads/main {first}\n"))
     assert push.main(["origin"]) == 0
     assert capsys.readouterr() == ("", ""), "a clean push says nothing"

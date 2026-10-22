@@ -174,14 +174,15 @@ def render_handoff(
     if tidy:
         lines += [*([""] if fixes else []), "## Tidy", "", *TIDY_KEEPS, ""]
         lines += _items(tidy, len(fixes) + 1, identity, frozenset(), fail_on)
+    # Never "nothing to fix" where the review could not check everything, as its report's next steps: read by review,
+    # a finding at the bar left unproven ended there, and a hole of another kind said it first.
+    degraded = verdict == "DEGRADED"
+    unchecked = "This review could not check everything. What it did not check may hold more to fix."
     if not outcome.kept:
-        lines.append(NOTHING_TO_FIX)
-    if verdict == "DEGRADED":  # read by review: a finding at the bar left unproven ended at "nothing to fix" alone
-        lines += ["", "This review could not check everything. What it did not check may hold more to fix."]
-    if outcome.kept:
-        lines += _check_again(
-            evidence, {item.source for item in outcome.kept + [f for f, _ in outcome.folded]}, fail_on
-        )
+        lines.append(unchecked if degraded else NOTHING_TO_FIX)
+    else:
+        found = {item.source for item in outcome.kept + [f for f, _ in outcome.folded]}
+        lines += [*(["", unchecked] if degraded else []), *_check_again(evidence, found, fail_on, degraded=degraded)]
     return inert("\n".join(lines)) + "\n"
 
 
@@ -328,18 +329,23 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
     return lines
 
 
-def _check_again(evidence: Evidence, found: set[str], fail_on: str) -> list[str]:
+def _check_again(evidence: Evidence, found: set[str], fail_on: str, *, degraded: bool) -> list[str]:
     """How a coding agent checks its fixes: the review again on the same scope with only the rules that found
     something, which calls no model and reads what the review's rules read whatever its `--skip` and `--diff-cap`,
     since both bound the guidelines alone. The guidelines that found something are named apart, with no command: a
     model's reading spends its quota each time, and theirs took flags this scope does not hold. What was fixed is
     committed first, or staged under --staged: a review reads no file on disk. A commit moves a branch and `HEAD`
-    alone, so the head checked is the branch reviewed, or `HEAD` where the review named a sha, a tag or a remote's
-    branch: read by review, the command a pipeline's review printed reviewed the old commit again."""
+    alone, so the head checked is the branch reviewed where the review named one as itself, or else `HEAD`, the
+    commit reviewed checked out first: read by review, the command printed where the review named a sha, a tag, a
+    remote's branch or `feature~1` reviewed the old commit again. A degraded review's hole stays in the rerun where
+    it is a file no check reads, so exit 3 is said to mean it: read by review, an agent waited for exit 0."""
     pre = evidence["preflight"]
     staged = bool(pre.get("staged"))
-    branch = pre["head"] if pre.get("head_ref", "").startswith("refs/heads/") else ""
-    first = _stored(staged, branch)
+    branch = pre["head"] if pre.get("head_ref") == f"refs/heads/{pre['head']}" else ""
+    if staged or branch:
+        first = _stored(staged, branch)
+    else:
+        first = f"Check out {code_span(pre['head_sha'][:12])}. {_stored(staged)}"
     if staged:
         scope = ["--staged"]
     else:
@@ -353,7 +359,9 @@ def _check_again(evidence: Evidence, found: set[str], fail_on: str) -> list[str]
         lines += [
             "",
             "Then run the rules that found them again. This calls no model and writes nothing. The review ends",
-            "in exit 0 once nothing at the bar is left. Its report lists whatever is:",
+            "in exit 0 once nothing at the bar is left.",
+            *(["Exit 3 means what this review could not check is still there."] if degraded else []),
+            "Its report lists whatever is:",
             "",
         ]
         if command := _pasted(["adk-review", pre["repo"], *scope, "--fail-on", fail_on, *named]):

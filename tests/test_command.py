@@ -759,22 +759,28 @@ class TestThePreviousReportAndTheHandoff:
         assert "No command is printed" in said and "`--check rule.secrets`" in said, said
 
     def test_a_handoff_checks_the_fixes_at_head_where_a_commit_leaves_the_head_reviewed_where_it_was(self) -> None:
-        """Read by review: a commit moves a branch and `HEAD` alone, and where the review named a sha, a tag or a
-        remote's branch, as a pipeline's does, the command it printed reviewed the old commit again."""
-        from adk_review.core.findings import Finding
-        from adk_review.core.verdict import Outcome, Sourced
+        """Read by review: a commit moves a branch and `HEAD` alone, and where the review named a sha, a tag, a
+        remote's branch or `feature~1`, the command it printed reviewed the old commit again; and `HEAD` checks the
+        commit reviewed only once that commit is checked out."""
+        from adk_review.core.verdict import Outcome
         from adk_review.deliver.report import render_handoff
 
-        finding = Finding(file="a.py", line=1, severity="blocker", title="t", evidence="e", suggestion="s")
-        kept = Outcome(kept=[Sourced("rule.secrets", finding, (1, 1))])
-        for head, ref in (("feature/x", "refs/heads/feature/x"), ("4695b9bc" * 5, ""), ("v1", "refs/tags/v1")):
-            pre = {"repo": "/r", "head": head, "head_ref": ref, "base": "main", "head_sha": "0" * 40}
+        sha = "4695b9bc" * 5
+        branch, checked_out = "Commit the fixes on `feature/x`:", "Check out `4695b9bc4695`. Commit the fixes:"
+        for head, ref, checked, first in (
+            ("feature/x", "refs/heads/feature/x", "feature/x", branch),
+            ("feature/x~1", "refs/heads/feature/x", "HEAD", checked_out),  # `~` dropped where its ref is looked up
+            (sha, "", "HEAD", checked_out),
+            ("v1", "refs/tags/v1", "HEAD", checked_out),
+        ):
+            pre = {"repo": "/r", "head": head, "head_ref": ref, "base": "main", "head_sha": sha}
             said = render_handoff(
-                {"preflight": pre, "whole": False, "scope": []}, kept, verdict="REQUEST_CHANGES", fail_on="blocker"
+                {"preflight": pre, "whole": False, "scope": []},
+                Outcome(kept=[sourced("blocker", "rule.secrets")]),
+                verdict="REQUEST_CHANGES",
+                fail_on="blocker",
             )
-            checked = head if ref.startswith("refs/heads/") else "HEAD"
-            assert f"    adk-review /r --head {checked} --base main " in said, said
-            assert ("Commit the fixes on `feature/x`:" in said) == (checked != "HEAD"), said
+            assert f"    adk-review /r --head {checked} --base main " in said and first in said, said
 
     def test_a_handoff_lists_the_tidies_apart_and_holds_one_back_on_a_defects_lines(self) -> None:
         """A simplify pass keeps two lanes: a fix, and a tidy that changes how code reads and never what it does. A
@@ -1116,7 +1122,7 @@ class TestWhatTheCommandTells:
         a degraded review never ends in "nothing to fix", nor does its hand-off; and a finding dropped is still one a
         check found."""
         from adk_review.core.verdict import Outcome
-        from adk_review.deliver.report import _next_steps, render_handoff
+        from adk_review.deliver.report import NOTHING_TO_FIX, _next_steps, render_handoff
 
         assert run_review(cli, demo_repo, "--profile", "default-rules") == 1
         steps = capsys.readouterr().out.rstrip().split("## Next steps\n\n", 1)[1]
@@ -1136,12 +1142,16 @@ class TestWhatTheCommandTells:
         assert _next_steps(Outcome(errors={"rule.lint": "ruff exited 2"}), "DEGRADED", "blocker", staged=False)[3:] == [
             "- This review could not check everything: the lines above say what and why. Check each by hand."
         ]
-        pre = {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40}
+        evidence = {"preflight": {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40}, "whole": False}
         unproven = Outcome(dropped=[sourced("blocker")])  # its quote not borne out: a hole `decide` names
-        handoff = render_handoff(
-            {"preflight": pre, "whole": False, "scope": []}, unproven, verdict="DEGRADED", fail_on="blocker"
-        )
+        handoff = render_handoff({**evidence, "scope": []}, unproven, verdict="DEGRADED", fail_on="blocker")
         assert handoff.rstrip().endswith("What it did not check may hold more to fix."), "read by review: cut short"
+        assert NOTHING_TO_FIX not in handoff, "read by review: said first, as the report never does"
+        held = Outcome(kept=[sourced("blocker", "rule.secrets")], unread={"a.p12": "binary"})
+        check = render_handoff({**evidence, "scope": []}, held, verdict="DEGRADED", fail_on="blocker")
+        assert "Exit 3 means what this review could not check is still there." in check, (
+            "read by review: a rerun that keeps the file no check reads was promised exit 0"
+        )
 
     def test_quiet_prints_nothing_when_the_review_passes(self, cli, tmp_path: Path, capsys) -> None:
         assert self._review(cli, tmp_path, "x = 1\n", "--quiet") == 0

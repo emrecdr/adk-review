@@ -252,7 +252,7 @@ class _ScopeError(Exception):
 
 class _UnrelatedError(_ScopeError):
     """Two branches with no history in common. Its envelope is marked `rescope`, for the command to name the flags that
-    rescope the review: the flags are the command's, and chat, which shares this envelope, takes none."""
+    rescope the review: the flags are the command's, and chat's tool, which takes none, answers without the mark."""
 
 
 #: A name a command printed for a person to paste keeps as itself in a POSIX shell, cmd and PowerShell alike. A branch's
@@ -326,7 +326,7 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
             merge_base = _merge_base(repo, root, (base, base_sha), (head, head_sha))
             span = f"{merge_base}..{head_sha}"
         _, ahead = _git(root, "rev-list", "--count", span)
-    except _UnrelatedError as exc:  # marked for the command, which names the flags: chat's tool answers without it
+    except _UnrelatedError as exc:
         return {"status": "error", "error_message": str(exc), "rescope": True}
     except (GitError, _ScopeError) as exc:
         return {"status": "error", "error_message": str(exc)}

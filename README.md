@@ -599,19 +599,20 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   change, and the fingerprint that must be gone afterwards, with each finding folded into it named under it, since
   another reading of the same lines can be a second defect. It ends by asking for the project's own tests before a
   commit, a fix done when they pass, and in the command that checks the fixes: the review again on the same scope, at
-  the branch reviewed, or at `HEAD` where the review named a sha, a tag or a remote's branch, which a commit leaves
-  where it was, with only the rules that found something, so an agent checks its own work offline, no model called. The
-  scope is the preflight's, which the cache's key holds, and it is the whole of what the rules read: `--skip` and
-  `--diff-cap` bound the guidelines alone. The guidelines that found something are named apart, with their `--check` and
-  no command, since checking a model's reading spends its quota and their review took flags the scope does not hold. A
-  branch's name is its author's: where no quoting keeps the command one command — a line break, a name the report's
-  safety rules would rewrite, or on Windows a character cmd or PowerShell still reads inside double quotes, PowerShell's
-  typographic quotes among them — none is printed, only the checks to name. Nothing is applied. A check whose findings
-  change how code reads and never what it does sets `cleanup = True`, as `simplify` and `complexity` do, and its
-  findings are listed apart, after the fixes, under what a tidy keeps, one the project's tests fail on reverted; one on
-  lines another check's defect at major or above names is held back until that defect is fixed, and is never given a
-  fix's instruction, as a simplify pass keeps its two lanes: suspect code is never tidied. `efficiency` and `altitude`
-  are no cleanup: a cheaper form can reorder I/O and a deeper fix changes a shared mechanism, each a change to weigh.
+  the branch reviewed where the review named one as itself, or else at `HEAD` once the commit reviewed is checked out,
+  since a commit leaves a sha, a tag, a remote's branch or `feature~1` where it was, with only the rules that found
+  something, so an agent checks its own work offline, no model called. The scope is the preflight's, which the cache's
+  key holds, and it is the whole of what the rules read: `--skip` and `--diff-cap` bound the guidelines alone. The
+  guidelines that found something are named apart, with their `--check` and no command, since checking a model's reading
+  spends its quota and their review took flags the scope does not hold. A branch's name is its author's: where no
+  quoting keeps the command one command — a line break, a name the report's safety rules would rewrite, or on Windows a
+  character cmd or PowerShell still reads inside double quotes, PowerShell's typographic quotes among them — none is
+  printed, only the checks to name. Nothing is applied. A check whose findings change how code reads and never what it
+  does sets `cleanup = True`, as `simplify` and `complexity` do, and its findings are listed apart, after the fixes,
+  under what a tidy keeps, one the project's tests fail on reverted; one on lines another check's defect at major or
+  above names is held back until that defect is fixed, and is never given a fix's instruction, as a simplify pass keeps
+  its two lanes: suspect code is never tidied. `efficiency` and `altitude` are no cleanup: a cheaper form can reorder
+  I/O and a deeper fix changes a shared mechanism, each a change to weigh.
 - `--comment [FILE]` writes the review as a comment for the branch's author, to paste into the pull request by hand,
   whatever the verdict: what must change before it merges, what is worth a look, an approved change's included, the
   tidy-ups, and what no check read. Each place and quote sits in a code span. The reviewer posts nothing and prints no

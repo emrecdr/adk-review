@@ -368,18 +368,7 @@ class TestGitThatFails:
         scoped = (tool_context(),)
         out = asyncio.run(model_tools.inspect_repository(str(unrelated_repo), BASE, UNRELATED, *scoped))
         assert out["status"] == "error" and "share no history" in out["error_message"], out
-
-    def test_only_the_command_reads_the_mark_that_names_its_flags(self, unrelated_repo: Path) -> None:
-        """The flags that rescope a change are the command's, so the mark is set where they fit and read there
-        alone. Read by review: chat's tool answered it beside the shape its docstring names, and every other error
-        the command read carried it as false."""
-        model_tools = importlib.import_module("adk_review.judge.tools")
-        from adk_review.collect.git import collect_evidence
-
-        out = asyncio.run(model_tools.inspect_repository(str(unrelated_repo), BASE, UNRELATED, tool_context()))
-        assert set(out) == {"status", "error_message"}, out
-        assert collect_evidence(str(unrelated_repo), BASE, UNRELATED).get("rescope") is True
-        assert "rescope" not in collect_evidence(str(unrelated_repo), BASE, "gone"), "set only where it is true"
+        assert set(out) == {"status", "error_message"}, "read by review: the command's mark, beside what chat is told"
 
     @pytest.mark.parametrize("clone", ["shallow_clone", "misled_clone"])
     def test_every_tool_refuses_a_shallow_clone(self, clone: str, request) -> None:
@@ -395,6 +384,10 @@ class TestGitThatFails:
         assert cli.main([str(unrelated_repo), "--base", BASE, "--head", UNRELATED]) == 2
         err = capsys.readouterr().err
         assert "share no history" in err and "with --all, not --base" in err and "Traceback" not in err, err
+        from adk_review.collect.git import collect_evidence
+
+        gone = collect_evidence(str(unrelated_repo), BASE, "gone")
+        assert "rescope" not in gone, "read by review: every other error carried the mark, as false"
 
     def test_every_command_names_a_shallow_clone_and_how_to_deepen_it(self, shallow_clone: Path, cli, capsys) -> None:
         assert run_review(cli, shallow_clone) == 2

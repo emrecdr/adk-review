@@ -925,9 +925,9 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, comment: str
     """The review's outputs: the report on stdout, the hand-off, the JSON and the comment where asked for; exit 3
     where a file asked for cannot be written. Each file written is then named by its full path, the comment's last, the
     run's last line: asked by the owner, a person should see where each went, a default name above all. Under `--quiet`
-    a review that passes prints nothing, so all is printed once the code is known: read by review, a review that
-    passed, then could not write a file, ended in exit 3 with no report."""
-    said = []
+    a review that passes prints nothing, and one whose file cannot be written no longer passes: read by review, it
+    ended in exit 3 with no report."""
+    wrote: list[tuple[str, Path]] = []
     for flag, written, text in (
         ("hand-off", args.handoff, lambda: handoff),
         ("JSON report", args.json, lambda: json.dumps(data, indent=2, ensure_ascii=False) + "\n"),
@@ -939,15 +939,21 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, comment: str
         try:
             _written(path, text())
         except OSError as exc:  # the folder was there when the review began; a full or read-only disk is not
-            said.append(f"could not write the {flag} to {written}: {exc.strerror or exc}")
-            code = EXIT_DEGRADED
-            break
-        said.append(f"wrote the {flag} to {path.resolve()}")
+            _told(report, wrote)
+            _say(f"could not write the {flag} to {written}: {exc.strerror or exc}")
+            return EXIT_DEGRADED
+        wrote.append((flag, path))
     if not (args.quiet and code == EXIT_CLEAN):
-        print(report)
-        for sentence in said:
-            _say(sentence)
+        _told(report, wrote)
     return code
+
+
+def _told(report: str, wrote: Sequence[tuple[str, Path]]) -> None:
+    """The report on stdout, then each file written by its full path, each sentence where the test of what the
+    command prints reads it."""
+    print(report)
+    for flag, path in wrote:
+        _say(f"wrote the {flag} to {path.resolve()}")
 
 
 def _comment_named(evidence: Evidence) -> str:
@@ -1067,7 +1073,7 @@ def main(argv: list[str] | None = None) -> int:
     as one sentence and exit 3, the report undelivered. Measured before: a traceback and 130, and exit 3 or Python's
     own 120 for a closed pipe. A reviewer that could not load says so, exit 3."""
     if UNLOADED is not None:
-        print(f"review: the reviewer could not load ({UNLOADED}). Reinstall it with `uv sync`", file=sys.stderr)
+        print(f"review: the reviewer could not load ({UNLOADED}). Install the reviewer again", file=sys.stderr)
         return 3  # EXIT_DEGRADED, which the imports that failed would have named
     try:
         return _review(argv)
