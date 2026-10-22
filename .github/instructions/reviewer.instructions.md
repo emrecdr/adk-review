@@ -68,8 +68,8 @@ applyTo: "adk_review/**"
   would read as a blocker.
 - `--dry-run`, `--list-checks`, `--try` and `--explain` (`MODES` in `review.py`) each stop before a review would
   start: they exclude one another, and each refuses a review's own flags (`REVIEW_ONLY`: `--json`, `--handoff`,
-  `--cache`, `--previous`, `--record`, `--trace`, `--debug-log`) with exit 2. A new flag only a review reads joins
-  `REVIEW_ONLY`.
+  `--comment`, `--cache`, `--previous`, `--record`, `--trace`, `--debug-log`) with exit 2. A new flag only a review
+  reads joins `REVIEW_ONLY`.
 - `--staged` reads the index through plumbing alone (`diff-index --cached`, `ls-files -s`, `cat-file`), so nothing is
   written, no index refreshed and no lock taken. An untracked file is named, never reviewed and never a hole; a file
   changed but not staged is not listed, since `diff-files` ran a clean filter the repository's own config named.

@@ -577,6 +577,32 @@ class TestThePreviousReportAndTheHandoff:
         assert labelled == "Remove unused import: `os` (a fix ruff labels safe)"
         assert fix_of(FIX, "F401", None) == "Remove the unused import, or export it on purpose."
 
+    def test_a_comment_tells_the_author_what_to_fix_and_what_to_improve_and_posts_nothing(
+        self, cli, demo_repo: Path, tmp_path: Path
+    ) -> None:
+        """Asked by the owner, who reviews others' branches and pastes each comment into the pull request by hand: the
+        review as a constructive comment for the branch's author, whatever its verdict. What sits at the bar must be
+        fixed before it merges; what does not is worth a look, an approved change's included; what no check read is
+        named. Each place and quote is in a code span, secrets redacted, and no command posts it."""
+        comment = tmp_path / "comment.md"
+        assert run_review(cli, demo_repo, "--profile", "default-rules", "--comment", str(comment)) == 1
+        written = comment.read_text(encoding="utf-8")
+        assert written.startswith("**Review of `feature/payments` at `"), written
+        must = written.split("### Must fix before it merges\n", 1)[1].split("\n###", 1)[0]
+        assert "`src/payments/config.py:4`" in must and "(blocker)" in must and "Suggested change:" in must
+        assert "REDACTED" in must and "AKIA" not in written
+        assert "### Worth a look" in written and "S602" in written
+        assert not any(line.lstrip().startswith(("gh ", "az ", "git ")) for line in written.splitlines()), written
+
+        assert run_review(cli, demo_repo, "--check", "rule.lint", "--comment", str(comment)) == 0
+        written = comment.read_text(encoding="utf-8")
+        assert "nothing that blocks it" in written and "### Must fix" not in written, written
+        assert "### Worth a look" in written and "S602" in written, "an approved change gets its points to improve"
+
+        assert run_review(cli, demo_repo, "--diff-cap", "100", "--comment", str(comment)) == 3
+        written = comment.read_text(encoding="utf-8")
+        assert "### Not checked" in written and "`src/payments/charge.py`" in written.split("### Not checked", 1)[1]
+
     @pytest.mark.parametrize(("fail_on", "at_bar"), [("major", True), ("blocker", False)])
     def test_a_handoff_names_each_folded_finding_and_whether_it_is_at_the_bar(
         self, fail_on: str, at_bar: bool, cli, demo_repo: Path, tmp_path: Path

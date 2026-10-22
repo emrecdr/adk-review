@@ -269,6 +269,65 @@ def _to_fix(item: Sourced, identity: str, indent: str) -> list[str]:
     ]
 
 
+#: How a comment for the branch's author opens, by the verdict: a thank-you, then what the review decided.
+COMMENT_OPENS = {
+    "APPROVED": "Thanks for this change. The review found nothing that blocks it.",
+    "REQUEST_CHANGES": "Thanks for this change. Please fix each point under Must fix before it merges.",
+    "DEGRADED": "Thanks for this change. The review could not check all of it, so it approves nothing yet.",
+}
+
+
+def render_comment(
+    evidence: Evidence, outcome: Outcome, *, verdict: str, fail_on: str, tidies: frozenset[str] = frozenset()
+) -> str:
+    """`--comment FILE`: the review as a constructive comment for the branch's author, whatever its verdict — what
+    must change before it merges, what is worth a look, an approved change's included, the tidy-ups it leaves to them,
+    and what no check read — each place and quote in a code span, under the text report's safety rules. Asked by the
+    owner, who reviews others' branches and pastes each comment into the pull request by hand: the reviewer posts
+    nothing and prints no command that would. A finding is grouped with the others on its lines as the hand-off groups
+    it, and a tidy waiting under a defect is left out until the defect is fixed."""
+    pre = evidence["preflight"]
+    fixes, tidy = _lanes(outcome, tidies)
+    must = [group for group in fixes if at_or_above(group[0].finding.severity, fail_on)]
+    worth = [group for group in fixes if not at_or_above(group[0].finding.severity, fail_on)]
+    head = f"**Review of {code_span(one_line(pre['head']))} at `{pre['head_sha'][:12]}`**"
+    lines = [head, "", COMMENT_OPENS[verdict]]
+    if verdict == "APPROVED" and (worth or tidy):
+        lines.append("The points below would still improve it.")
+    for heading, groups, note in (
+        ("Must fix before it merges", must, ""),
+        ("Worth a look", worth, ""),
+        ("Optional tidy-ups", tidy, "These change how the code reads, never what it does."),
+    ):
+        if groups:
+            lines += ["", f"### {heading}", "", *([note, ""] if note else []), *_commented(groups, tidies)]
+    unchecked = [f"- {code_span(one_line(path))}: {_reason(why)}" for path, why in outcome.unread.items()]
+    unchecked += [f"- {code_span(check)} could not look: {_reason(why)}" for check, why in outcome.errors.items()]
+    if unchecked:
+        lines += ["", "### Not checked", "", "The review could not read these. Check them by hand.", "", *unchecked]
+    return inert("\n".join(lines)) + "\n"
+
+
+def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[str]:
+    """Each group of a comment, numbered: its lead's place, title and severity, the lines quoted, the change, and the
+    other defects on the same lines by title."""
+    lines = []
+    for number, (lead, *also) in enumerate(groups, 1):
+        f = lead.finding
+        place = code_span(one_line(f"{f.file}:{f.line}" if f.line else f.file))
+        lines += [
+            f"{number}. {place}: {prose(f.title)} ({f.severity})",
+            f"   - Quoted: {_quoted(f)}",
+            f"   - Suggested change: {prose(f.suggestion)}",
+        ]
+        lines += [
+            f"   - Also on these lines: {prose(item.finding.title)} ({item.finding.severity})"
+            for item in also
+            if item.source not in tidies
+        ]
+    return lines
+
+
 def _check_again(evidence: Evidence, found: set[str], fail_on: str) -> list[str]:
     """How a coding agent checks its fixes: the review again on the same scope with only the rules that found
     something, which calls no model and reads what the review's rules read whatever its `--skip` and `--diff-cap`,

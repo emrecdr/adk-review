@@ -160,6 +160,7 @@ uv run adk-review <repo> --all --profile rules-only             # every file at 
 uv run adk-review <repo> --staged --profile default-rules       # what is staged, against HEAD
 uv run adk-review <repo> --base main --check rule.secrets       # one check alone, this once
 uv run adk-review <repo> --base main --json review.json         # the report, and the same review as JSON
+uv run adk-review <repo> --base main --comment comment.md       # a comment for the branch's author, pasted by hand
 uv run adk-review <repo> --base main --dry-run                  # what a review would cover and run; nothing runs
 uv run adk-review --list-checks                                 # every check: its kind, severity, profiles and file
 uv run adk-review --explain rule.lint                           # one check whole, a rule with its own examples
@@ -220,8 +221,8 @@ The order is the architecture: evidence and rules first, the guidelines' judgeme
    code's: a kept finding at or above `--fail-on` is `REQUEST_CHANGES`, exit 1. A hole — a check that failed or could
    not look, a changed file no check can read whole, or where a guideline runs one it was not shown whole, unless the
    skip list names it, a dropped finding at the bar — is `DEGRADED`, exit 3. A hole never approves.
-7. **Deliver.** The report goes to stdout, and the JSON (`--json`) and a hand-off for a coding agent (`--handoff`) to
-   their files, whenever a review is decided.
+7. **Deliver.** The report goes to stdout, and the JSON (`--json`), a hand-off for a coding agent (`--handoff`) and a
+   comment for the branch's author (`--comment`) to their files, whenever a review is decided.
 
 Exit 0 approves; 1 is a finding at the bar; 2 a usage error before any model call; 3 a hole; 130 and 143 a run
 stopped by Ctrl-C or by a job. "Exit codes" in `GUIDE.md` says what each covers.
@@ -608,6 +609,10 @@ what was dropped, refuted, folded, redacted and spent. "The report" in `GUIDE.md
   check's defect at major or above names is held back until that defect is fixed, and is never given a fix's
   instruction, as a simplify pass keeps its two lanes: suspect code is never tidied. `efficiency` and `altitude` are no
   cleanup: a cheaper form can reorder I/O and a deeper fix changes a shared mechanism, each a change to weigh.
+- `--comment FILE` writes the review as a comment for the branch's author, to paste into the pull request by hand,
+  whatever the verdict: what must change before it merges, what is worth a look, an approved change's included, the
+  tidy-ups, and what no check read. Each place and quote sits in a code span. The reviewer posts nothing and prints no
+  command that would: asked by the owner, who reviews others' branches and pastes each comment by hand.
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint:
   its check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line,
   so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.

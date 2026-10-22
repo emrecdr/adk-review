@@ -111,6 +111,7 @@ try:
         read_previous,
         render,
         render_checks,
+        render_comment,
         render_dry_run,
         render_explained,
         render_handoff,
@@ -156,7 +157,7 @@ def setting(key: str) -> Callable[[str], int]:
 
 
 #: Where a review's results go, which no result depends on: left out of what keys a kept review.
-OUTPUTS = {"json", "handoff", "cache", "record", "trace", "debug_log", "progress", "quiet"}
+OUTPUTS = {"json", "handoff", "comment", "cache", "record", "trace", "debug_log", "progress", "quiet"}
 #: How often a person at a terminal is told the review still works, in seconds. A model's call can take a minute, and
 #: silence reads as a hang.
 HEARTBEAT_SECONDS = 10
@@ -168,6 +169,7 @@ MODES = {"dry_run": "--dry-run", "list_checks": "--list-checks", "try_paths": "-
 REVIEW_ONLY = {
     "json": "--json",
     "handoff": "--handoff",
+    "comment": "--comment",
     "cache": "--cache",
     "previous": "--previous",
     "record": "--record",
@@ -355,6 +357,12 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         "the quoted lines, the change, and what must still hold. The review applies nothing",
     )
     parser.add_argument(
+        "--comment",
+        metavar="FILE",
+        help="also write the review to FILE as a comment for the branch's author, to paste by hand. It says what to "
+        "fix, what to improve and what went unchecked. The review posts nothing",
+    )
+    parser.add_argument(
         "--cache",
         metavar="DIR",
         help="keep each decided review in DIR. Its key holds the reviewer's code and config, the commits, the checks, "
@@ -536,10 +544,10 @@ def _terminated(_signal: int, _frame: object) -> None:
 
 
 def _cleared(flag: str, given: str) -> None:
-    """`--json FILE` or `--handoff FILE` made ready before the review: a missing folder or a folder refused, and an
-    earlier file of that name removed, a link itself and never what it points to, so a run that ends in exit 2 leaves
-    no report a pipeline could take for its own. Measured before: an earlier file outlived exit 2, and a link was
-    written through."""
+    """`--json FILE`, `--handoff FILE` or `--comment FILE` made ready before the review: a missing folder or a
+    folder refused, and an earlier file of that name removed, a link itself and never what it points to, so a run that
+    ends in exit 2 leaves no report a pipeline could take for its own. Measured before: an earlier file outlived exit
+    2, and a link was written through."""
     path = Path(given).expanduser()
     if not path.resolve().parent.is_dir():
         raise ValueError(f"{flag} {given}: there is no such folder to write it in")
@@ -605,7 +613,7 @@ def _review(argv: list[str] | None = None) -> int:
         _mode_alone(args)
         explanation = explained(found, config["profiles"], args.explain) if args.explain else None
         previous = read_previous(args.previous) if args.previous else (None, None)
-        for flag, given in (("--json", args.json), ("--handoff", args.handoff)):
+        for flag, given in (("--json", args.json), ("--handoff", args.handoff), ("--comment", args.comment)):
             if given:
                 _cleared(flag, given)
     except ValueError as exc:
@@ -731,7 +739,7 @@ def _decided(
     if cached is not None and (hit := _from_cache(cached)) is not None:
         if not args.quiet:
             _say(f"served from the cache: {cached.name}, a review of these commits with these checks and models")
-        return _delivered(args, hit["report"], hit["handoff"], hit["data"], hit["code"])
+        return _delivered(args, hit["report"], hit["handoff"], hit["comment"], hit["data"], hit["code"])
     # Under --all the files are the project: its measures, read before the checks node lets the texts and tree go.
     health = measured(evidence["files"], evidence["tree"]) if evidence["whole"] else None
     engine = bool(chosen.guidelines) or any(getattr(args, flag) for flag in ENGINE)
@@ -850,6 +858,11 @@ def _reported(
         if args.handoff or keep
         else ""
     )
+    comment = (
+        render_comment(evidence, outcome, verdict=verdict, fail_on=args.fail_on, tidies=tidies)
+        if args.comment or keep
+        else ""
+    )
     data = (
         as_data(
             evidence,
@@ -868,20 +881,21 @@ def _reported(
         else {}
     )
     if keep:
-        stored = {"report": report, "handoff": handoff, "data": data, "code": code}
+        stored = {"report": report, "handoff": handoff, "comment": comment, "data": data, "code": code}
         with contextlib.suppress(OSError):  # a cache that cannot be written costs the next run, never this one
             cached.parent.mkdir(mode=0o700, parents=True, exist_ok=True)  # the operator's alone: it quotes the code
             _written(cached, json.dumps(stored, ensure_ascii=False))
-    return _delivered(args, report, handoff, data, code)
+    return _delivered(args, report, handoff, comment, data, code)
 
 
-def _delivered(args: argparse.Namespace, report: str, handoff: str, data: dict, code: int) -> int:
-    """The review's outputs: the report on stdout, the hand-off and the JSON where asked for; exit 3 where a file
-    asked for cannot be written. Under `--quiet` a review that passes prints nothing."""
+def _delivered(args: argparse.Namespace, report: str, handoff: str, comment: str, data: dict, code: int) -> int:
+    """The review's outputs: the report on stdout, the hand-off, the comment and the JSON where asked for; exit 3
+    where a file asked for cannot be written. Under `--quiet` a review that passes prints nothing."""
     if not (args.quiet and code == EXIT_CLEAN):
         print(report)
     for flag, written, text in (
         ("hand-off", args.handoff, lambda: handoff),
+        ("comment", args.comment, lambda: comment),
         ("JSON report", args.json, lambda: json.dumps(data, indent=2, ensure_ascii=False) + "\n"),
     ):
         if not written:  # measured by review: the JSON was dumped whole for a kept review that wrote none
@@ -977,7 +991,7 @@ def _from_cache(path: Path) -> dict | None:
         hit = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError, RecursionError):  # RecursionError: nested past what `json.loads` reads
         return None
-    shape = {"report": str, "handoff": str, "data": dict, "code": int}
+    shape = {"report": str, "handoff": str, "comment": str, "data": dict, "code": int}
     fits = isinstance(hit, dict) and all(isinstance(hit.get(key), kind) for key, kind in shape.items())
     return hit if fits and hit["code"] in (EXIT_CLEAN, EXIT_FINDINGS) else None
 
