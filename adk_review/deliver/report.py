@@ -137,6 +137,8 @@ TESTS_FIRST = (
     "Run the project's own tests before committing, as its Makefile, pyproject or CI runs them: a fix is done when",
     "they pass.",
 )
+#: How a review that kept no finding ends, its report and its hand-off alike.
+NOTHING_TO_FIX = "Nothing to fix: no finding was kept."
 
 
 def render_handoff(
@@ -173,9 +175,9 @@ def render_handoff(
         lines += [*([""] if fixes else []), "## Tidy", "", *TIDY_KEEPS, ""]
         lines += _items(tidy, len(fixes) + 1, identity, frozenset(), fail_on)
     if not outcome.kept:
-        lines.append("Nothing to fix: no finding was kept.")
-    if outcome.errors or outcome.unread:
-        lines += ["", "This review could not look at everything. What it did not read may hold more to fix."]
+        lines.append(NOTHING_TO_FIX)
+    if verdict == "DEGRADED":  # read by review: a finding at the bar left unproven ended at "nothing to fix" alone
+        lines += ["", "This review could not check everything. What it did not check may hold more to fix."]
     if outcome.kept:
         lines += _check_again(
             evidence, {item.source for item in outcome.kept + [f for f, _ in outcome.folded]}, fail_on
@@ -331,13 +333,17 @@ def _check_again(evidence: Evidence, found: set[str], fail_on: str) -> list[str]
     something, which calls no model and reads what the review's rules read whatever its `--skip` and `--diff-cap`,
     since both bound the guidelines alone. The guidelines that found something are named apart, with no command: a
     model's reading spends its quota each time, and theirs took flags this scope does not hold. What was fixed is
-    committed first, or staged under --staged: a review reads no file on disk."""
+    committed first, or staged under --staged: a review reads no file on disk. A commit moves a branch and `HEAD`
+    alone, so the head checked is the branch reviewed, or `HEAD` where the review named a sha, a tag or a remote's
+    branch: read by review, the command a pipeline's review printed reviewed the old commit again."""
     pre = evidence["preflight"]
-    first = _stored(bool(pre.get("staged")), pre["head"])
-    if pre.get("staged"):
+    staged = bool(pre.get("staged"))
+    branch = pre["head"] if pre.get("head_ref", "").startswith("refs/heads/") else ""
+    first = _stored(staged, branch)
+    if staged:
         scope = ["--staged"]
     else:
-        scope = ["--head", pre["head"], *(["--all"] if evidence["whole"] else ["--base", pre["base"]])]
+        scope = ["--head", branch or "HEAD", *(["--all"] if evidence["whole"] else ["--base", pre["base"]])]
     scope += [arg for path in evidence["scope"] for arg in ("--path", path)]
     rules = sorted(check for check in found if check.startswith(rule_id("")))
     guidelines = " ".join(f"--check {check}" for check in sorted(found - set(rules)))
@@ -750,7 +756,7 @@ def _next_steps(outcome: Outcome, verdict: str, fail_on: str, *, staged: bool) -
         steps.append(
             "`adk-review --comment` writes them as a comment to paste by hand, `--handoff FILE` for a coding agent."
         )
-    return ["", "## Next steps", "", *(f"- {step}" for step in steps or ["Nothing to fix: no finding was kept."])]
+    return ["", "## Next steps", "", *(f"- {step}" for step in steps or [NOTHING_TO_FIX])]
 
 
 def _sections(

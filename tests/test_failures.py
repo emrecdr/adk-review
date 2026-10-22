@@ -885,8 +885,12 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
     def reviewed(argv: list[str]) -> int:
         ran.append(argv)
         print("## Verdict: REQUEST_CHANGES")
-        print(f"review: wrote the JSON report to {Path(argv[-1]).resolve()}", file=sys.stderr)
-        return codes.pop(0)
+        named = Path(argv[-1]).resolve()  # as a temporary folder reached through no link names it, Linux's
+        if (code := codes.pop(0)) == 3:  # the one line that says why: kept
+            cli._say(f"could not write the JSON report to {named}: No space left on device")
+        else:
+            cli._say(f"wrote the JSON report to {named}")
+        return code
 
     def pushing(*refs: str) -> None:  # git's lines, as bytes in UTF-8 whatever a console's code page
         data = "".join(f"{ref} {ref_sha} {ref} {zero}\n" for ref, ref_sha in zip(refs[::2], refs[1::2], strict=True))
@@ -905,6 +909,7 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
     assert said.count("## Verdict: REQUEST_CHANGES") == 3, "the report is printed where the push stops, only there"
     assert "ended in exit 1. Push with --no-verify to skip it" in said
     assert "wrote the JSON report" not in said, "read by review: it named the hook's own JSON, in a folder gone"
+    assert said.count("could not write the JSON report to") == 1, "read by review: the why went with it"
 
     # Git's own lines decide whatever a shell holds; pre-commit's environment, where pre-commit runs the hook.
     monkeypatch.setenv("PRE_COMMIT_TO_REF", first)

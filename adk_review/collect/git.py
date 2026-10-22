@@ -326,7 +326,7 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
             merge_base = _merge_base(repo, root, (base, base_sha), (head, head_sha))
             span = f"{merge_base}..{head_sha}"
         _, ahead = _git(root, "rev-list", "--count", span)
-    except _UnrelatedError as exc:  # marked only here: chat's envelope stays the shape its tool's docstring names
+    except _UnrelatedError as exc:  # marked for the command, which names the flags: chat's tool answers without it
         return {"status": "error", "error_message": str(exc), "rescope": True}
     except (GitError, _ScopeError) as exc:
         return {"status": "error", "error_message": str(exc)}
@@ -878,7 +878,10 @@ def collect_evidence(
     """
     resolved = preflight_staged(repo) if staged else preflight(repo, base, head)
     if resolved["status"] != "success":
-        return {"status": "error", "error_message": resolved["error_message"], "rescope": bool(resolved.get("rescope"))}
+        failure: Failure = {"status": "error", "error_message": resolved["error_message"]}
+        if resolved.get("rescope"):  # set only where it is true, as `preflight` sets it
+            failure["rescope"] = True
+        return failure
     return gather(resolved, scope, **options)
 
 

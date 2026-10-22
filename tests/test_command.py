@@ -758,6 +758,24 @@ class TestThePreviousReportAndTheHandoff:
         )
         assert "No command is printed" in said and "`--check rule.secrets`" in said, said
 
+    def test_a_handoff_checks_the_fixes_at_head_where_a_commit_leaves_the_head_reviewed_where_it_was(self) -> None:
+        """Read by review: a commit moves a branch and `HEAD` alone, and where the review named a sha, a tag or a
+        remote's branch, as a pipeline's does, the command it printed reviewed the old commit again."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import render_handoff
+
+        finding = Finding(file="a.py", line=1, severity="blocker", title="t", evidence="e", suggestion="s")
+        kept = Outcome(kept=[Sourced("rule.secrets", finding, (1, 1))])
+        for head, ref in (("feature/x", "refs/heads/feature/x"), ("4695b9bc" * 5, ""), ("v1", "refs/tags/v1")):
+            pre = {"repo": "/r", "head": head, "head_ref": ref, "base": "main", "head_sha": "0" * 40}
+            said = render_handoff(
+                {"preflight": pre, "whole": False, "scope": []}, kept, verdict="REQUEST_CHANGES", fail_on="blocker"
+            )
+            checked = head if ref.startswith("refs/heads/") else "HEAD"
+            assert f"    adk-review /r --head {checked} --base main " in said, said
+            assert ("Commit the fixes on `feature/x`:" in said) == (checked != "HEAD"), said
+
     def test_a_handoff_lists_the_tidies_apart_and_holds_one_back_on_a_defects_lines(self) -> None:
         """A simplify pass keeps two lanes: a fix, and a tidy that changes how code reads and never what it does. A
         tidy is never given a fix's instruction: on lines a defect at major or above names, it waits for that defect,
@@ -1095,9 +1113,10 @@ class TestWhatTheCommandTells:
         """Asked by the owner, who wants every run to guide the person reading it: the report ends with what to do now,
         by its verdict and what it kept, each step true wherever the report is read, the pre-push hook's and a cached
         one's among them, and each sentence ASD-STE100. Read by review: a fix left on disk is not what a review reads;
-        a degraded review never ends in "nothing to fix"; and a finding dropped is still one a check found."""
+        a degraded review never ends in "nothing to fix", nor does its hand-off; and a finding dropped is still one a
+        check found."""
         from adk_review.core.verdict import Outcome
-        from adk_review.deliver.report import _next_steps
+        from adk_review.deliver.report import _next_steps, render_handoff
 
         assert run_review(cli, demo_repo, "--profile", "default-rules") == 1
         steps = capsys.readouterr().out.rstrip().split("## Next steps\n\n", 1)[1]
@@ -1117,6 +1136,12 @@ class TestWhatTheCommandTells:
         assert _next_steps(Outcome(errors={"rule.lint": "ruff exited 2"}), "DEGRADED", "blocker", staged=False)[3:] == [
             "- This review could not check everything: the lines above say what and why. Check each by hand."
         ]
+        pre = {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40}
+        unproven = Outcome(dropped=[sourced("blocker")])  # its quote not borne out: a hole `decide` names
+        handoff = render_handoff(
+            {"preflight": pre, "whole": False, "scope": []}, unproven, verdict="DEGRADED", fail_on="blocker"
+        )
+        assert handoff.rstrip().endswith("What it did not check may hold more to fix."), "read by review: cut short"
 
     def test_quiet_prints_nothing_when_the_review_passes(self, cli, tmp_path: Path, capsys) -> None:
         assert self._review(cli, tmp_path, "x = 1\n", "--quiet") == 0
@@ -1130,6 +1155,25 @@ class TestWhatTheCommandTells:
         assert self._review(cli, tmp_path, 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "--quiet", "--json", str(written)) == 1
         said = capsys.readouterr()
         assert "## Verdict: REQUEST_CHANGES" in said.out and f"wrote the JSON report to {written.resolve()}" in said.err
+
+    def test_quiet_prints_the_report_when_a_file_cannot_be_written(
+        self, cli, tmp_path: Path, capsys, monkeypatch
+    ) -> None:
+        """Read by review: a review that passed, then could not write its JSON, ended in exit 3 with no report, and
+        the hand-off written before it unnamed."""
+        written = cli._written
+
+        def full(path: Path, text: str) -> None:
+            if path.suffix == ".json":
+                raise OSError(28, "No space left on device")
+            written(path, text)
+
+        monkeypatch.setattr(cli, "_written", full)
+        files = ("--handoff", str(tmp_path / "h.md"), "--json", str(tmp_path / "r.json"))
+        assert self._review(cli, tmp_path, "x = 1\n", "--quiet", *files) == 3
+        said = capsys.readouterr()
+        assert "## Verdict: APPROVED" in said.out and "wrote the hand-off to" in said.err, said
+        assert said.err.rstrip().endswith("No space left on device"), said.err
 
     def test_quiet_and_progress_cannot_run_together(self, cli, tmp_path: Path, capsys) -> None:
         with pytest.raises(SystemExit) as stopped:
@@ -1584,8 +1628,13 @@ class TestAStoppedReview:
             [sys.executable, "-c", code], cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
         try:
-            began = iter(child.stderr.readline, "")
-            assert any(line.strip() == "waiting" for line in began), "no model call began"
+            said = []  # what the child said before its first model call, the why where it ended first
+            for line in iter(child.stderr.readline, ""):
+                if line.strip() == "waiting":
+                    break
+                said.append(line)
+            else:  # seen once in a full run under load, its words lost: kept now
+                pytest.fail(f"no model call began, exit {child.wait()}: {''.join(said)}{child.stdout.read()}")
             child.send_signal(signal.SIGTERM)
             out, err = child.communicate(timeout=30)
         finally:

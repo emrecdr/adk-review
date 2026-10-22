@@ -174,12 +174,15 @@ class TestTheConfig:
         assert "has no `default`" in (err := capsys.readouterr().err) and err.endswith("Add one\n"), err
 
     def test_a_config_that_cannot_be_read_says_what_to_do_by_why(self, cli, tmp_path: Path) -> None:
-        """Read by review: a config in another encoding, or none at all, was told to correct its TOML."""
+        """Read by review: a config in another encoding, or none at all, was told to correct its TOML; and one gone was
+        told to run `uv sync`, which restores no file and, where `uv tool install` put the reviewer, acts on the
+        project the person stands in."""
         (config := tmp_path / "config.toml").write_bytes(WHOLE_CONFIG.encode("utf-16"))
         with pytest.raises(ValueError, match=r"Save it as UTF-8$"):
             cli.load_config(config)
-        with pytest.raises(ValueError, match=re.escape("Reinstall the reviewer with `uv sync`")):
+        with pytest.raises(ValueError, match=re.escape(f"{tmp_path / 'gone.toml'}: ")) as gone:
             cli.load_config(tmp_path / "gone.toml")
+        assert str(gone.value).endswith(". Restore it, or install the reviewer again"), gone.value
 
     def test_a_config_saved_with_a_byte_order_mark_reads_as_written(self, cli, tmp_path: Path) -> None:
         """Windows Notepad has saved UTF-8 with a byte-order mark, which `tomllib` reads as a stray first character:

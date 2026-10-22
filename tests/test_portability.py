@@ -250,6 +250,7 @@ def test_the_copilot_login_says_how_to_use_it_and_logs_in_to_nothing(monkeypatch
     from adk_review import login as copilot_login
 
     monkeypatch.setattr(copilot_login, "token_path", lambda: tmp_path / "none")
+    monkeypatch.setattr(copilot_login.os, "umask", lambda _mask: 0o022)  # read by review: its 0o077 outlived the test
     with pytest.raises(SystemExit) as stopped:
         copilot_login.main(["--help"])
     assert stopped.value.code == 0 and "--force" in capsys.readouterr().out

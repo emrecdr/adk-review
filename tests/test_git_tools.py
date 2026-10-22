@@ -369,6 +369,18 @@ class TestGitThatFails:
         out = asyncio.run(model_tools.inspect_repository(str(unrelated_repo), BASE, UNRELATED, *scoped))
         assert out["status"] == "error" and "share no history" in out["error_message"], out
 
+    def test_only_the_command_reads_the_mark_that_names_its_flags(self, unrelated_repo: Path) -> None:
+        """The flags that rescope a change are the command's, so the mark is set where they fit and read there
+        alone. Read by review: chat's tool answered it beside the shape its docstring names, and every other error
+        the command read carried it as false."""
+        model_tools = importlib.import_module("adk_review.judge.tools")
+        from adk_review.collect.git import collect_evidence
+
+        out = asyncio.run(model_tools.inspect_repository(str(unrelated_repo), BASE, UNRELATED, tool_context()))
+        assert set(out) == {"status", "error_message"}, out
+        assert collect_evidence(str(unrelated_repo), BASE, UNRELATED).get("rescope") is True
+        assert "rescope" not in collect_evidence(str(unrelated_repo), BASE, "gone"), "set only where it is true"
+
     @pytest.mark.parametrize("clone", ["shallow_clone", "misled_clone"])
     def test_every_tool_refuses_a_shallow_clone(self, clone: str, request) -> None:
         """Before any merge base is asked for: at depth 1 `merge-base` answers 1, as for no shared history, and in

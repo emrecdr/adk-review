@@ -52,10 +52,13 @@ async def inspect_repository(repo: str, base: str, head: str, tool_context: Tool
     # Off the loop: ADK awaits an async tool but calls a sync one inline, and `adk web` serves every session on one
     # loop, which git held while it ran.
     resolved = await asyncio.to_thread(preflight, repo, base, head)
-    # A failed preflight clears the scope: nothing later may read a repository this call did not confirm.
-    tool_context.state[SCOPE] = resolved if resolved["status"] == "success" else None
-    if resolved["status"] == "success":  # the conversation's one repository, kept when a later call fails
-        tool_context.state[REPOSITORY] = resolved["repo"]
+    # A failed preflight clears the scope: nothing later may read a repository this call did not confirm. Its answer
+    # is the shape this docstring names: a mark for the command's flags is no word of chat's.
+    if resolved["status"] != "success":
+        tool_context.state[SCOPE] = None
+        return {"status": "error", "error_message": resolved["error_message"]}
+    tool_context.state[SCOPE] = resolved
+    tool_context.state[REPOSITORY] = resolved["repo"]  # the conversation's one repository, kept when a later call fails
     return resolved
 
 

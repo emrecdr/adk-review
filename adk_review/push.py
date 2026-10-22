@@ -63,6 +63,8 @@ HISTORY = "push-history"
 MESSAGE = "its message"
 #: Where the tags a merge carries in its own header are named.
 MERGED = "the tag it merges"
+#: How the review's line naming the JSON it wrote starts: the hook's own, in a folder gone once the review is weighed.
+ANNOUNCED = "review: wrote the JSON report to "
 #: A commit's id as git writes it, shortened where the hook names one.
 _SHA = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
@@ -142,10 +144,9 @@ def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, s
             code = review([*command(repository, pushed, base), "--json", str(written)])
             if code == 0:
                 return None
-            # Read by review: the review named its JSON, the hook's own, in a folder gone once the review is weighed.
-            told = "".join(
-                line for line in said.getvalue().splitlines(keepends=True) if str(written.resolve()) not in line
-            )
+            # Read by review: matched by its path, the line was missed where the review printed that path made safe,
+            # and the line saying why the JSON could not be written was dropped with it.
+            told = "".join(line for line in said.getvalue().splitlines(keepends=True) if not line.startswith(ANNOUNCED))
             # Read by review: Ctrl-C's 130 wrote no report, and a review of the next base let the push by; so did one
             # a moment after its report was written.
             if code in (EXIT_INTERRUPTED, EXIT_TERMINATED) or not written.exists():

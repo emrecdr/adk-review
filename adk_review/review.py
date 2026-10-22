@@ -925,9 +925,9 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, comment: str
     """The review's outputs: the report on stdout, the hand-off, the JSON and the comment where asked for; exit 3
     where a file asked for cannot be written. Each file written is then named by its full path, the comment's last, the
     run's last line: asked by the owner, a person should see where each went, a default name above all. Under `--quiet`
-    a review that passes prints nothing."""
-    if not (args.quiet and code == EXIT_CLEAN):
-        print(report)
+    a review that passes prints nothing, so all is printed once the code is known: read by review, a review that
+    passed, then could not write a file, ended in exit 3 with no report."""
+    said = []
     for flag, written, text in (
         ("hand-off", args.handoff, lambda: handoff),
         ("JSON report", args.json, lambda: json.dumps(data, indent=2, ensure_ascii=False) + "\n"),
@@ -939,10 +939,14 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, comment: str
         try:
             _written(path, text())
         except OSError as exc:  # the folder was there when the review began; a full or read-only disk is not
-            _say(f"could not write the {flag} to {written}: {exc.strerror or exc}")
-            return EXIT_DEGRADED
-        if not (args.quiet and code == EXIT_CLEAN):
-            _say(f"wrote the {flag} to {path.resolve()}")
+            said.append(f"could not write the {flag} to {written}: {exc.strerror or exc}")
+            code = EXIT_DEGRADED
+            break
+        said.append(f"wrote the {flag} to {path.resolve()}")
+    if not (args.quiet and code == EXIT_CLEAN):
+        print(report)
+        for sentence in said:
+            _say(sentence)
     return code
 
 
