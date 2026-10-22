@@ -45,6 +45,11 @@ THE_GUIDELINES = "only in your dimension"
 SAYS_MORE = {**CANNED_REVIEW, "findings": [{**CANNED_REVIEW["findings"][0], "severity": "blocker"}]}
 
 
+def _said_done(said: str) -> bool:
+    """Whether any guideline was said done, by its own line: `rules done in` is another path's."""
+    return any(f"guideline.{name} done in" in said for name in ("security", "tests", "complexity"))
+
+
 class TestRetriesOnBothArms:
     """Retries ride on the request on Gemini and in the OpenAI SDK on Copilot, one constant for both; the live proof
     is a 429."""
@@ -236,9 +241,11 @@ class TestRetriesOnBothArms:
             yield
 
         monkeypatch.setattr(FakeModel, "generate_content_async", stopped)
+        # The deadline as a backstop: a stop the fake never raises, its phrase reworded, is exit 3 here, not a hang.
+        monkeypatch.setattr(importlib.import_module("adk_review.judge.run"), "RUN_DEADLINE_S", 5)
         assert run_review(cli, demo_repo, "--progress") == 143
         said = capsys.readouterr().err
-        assert "guideline.tests started" in said and "done in" not in said, said
+        assert "guideline.tests started" in said and not _said_done(said), said
 
     def test_a_guideline_still_out_past_the_deadline_is_never_said_done(
         self, cli, demo_repo: Path, monkeypatch, capsys
@@ -249,23 +256,38 @@ class TestRetriesOnBothArms:
 
         from conftest import FakeModel
 
-        async def hangs(*_args, **_kwargs):
+        from adk_review.judge.plugins import Progress
+
+        entered: list[str] = []  # each call the fake was asked, so a deadline met before one reads as the timing
+        ended: list[str] = []  # each agent ADK ran the after-agent hook for: the cut-short ones among them
+
+        async def hangs(_self, llm_request, **_kwargs):
+            entered.append(str(llm_request.model))
             await asyncio.Event().wait()  # a call no provider answers
             yield
 
+        after = Progress.after_agent_callback
+
+        async def noted(self, *, agent, callback_context):
+            ended.append(agent.name)
+            return await after(self, agent=agent, callback_context=callback_context)
+
         monkeypatch.setattr(importlib.import_module("adk_review.judge.run"), "RUN_DEADLINE_S", 5)
         monkeypatch.setattr(FakeModel, "generate_content_async", hangs)
+        monkeypatch.setattr(Progress, "after_agent_callback", noted)
         assert run_review(cli, demo_repo, "--progress") == 3
         said = capsys.readouterr()
         assert "the run did not finish within 5 s" in said.out
-        assert "guideline.tests started" in said.err and "done in" not in said.err, said.err
+        assert len(entered) == 3 and "guideline.tests started" in said.err, (entered, said.err)
+        assert {"guideline_security", "guideline_tests", "guideline_complexity"} <= set(ended), ended
+        assert not _said_done(said.err), said.err
 
     @pytest.mark.asyncio
     async def test_a_call_cut_short_with_its_agent_releases_what_it_reserved(self) -> None:
-        """A call cancelled with its agent never reaches the after-model hook, so what it reserved held: found by
-        review, past the deadline a verifier's call was checked against tokens no call had in flight, and could be
-        refused for a ceiling not reached. Since ADK 2.10 the after-agent hook runs on a cancelled agent too, and the
-        agent's end releases its reservation."""
+        """A call cancelled with its agent, or one an exception escapes, never reaches the after-model hook, so what it
+        reserved held: found by review, past the deadline a verifier's call was checked against tokens no call had in
+        flight, and could be refused for a ceiling not reached. Since ADK 2.10 the after-agent hook runs on a cancelled
+        agent too, and an escaped exception runs the error hook alone: each releases the agent's reservation."""
         from types import SimpleNamespace
 
         from google.adk.models.llm_request import LlmRequest
@@ -277,9 +299,14 @@ class TestRetriesOnBothArms:
         ledger = UsageLedger(ceiling=10_000)
         a = SimpleNamespace(agent_name="guideline_a", state={})
         assert await ledger.before_model_callback(callback_context=a, llm_request=request) is None
-        assert ledger.reserved, "reserved for the call in flight"
+        assert list(ledger.reserved) == ["guideline_a"], "reserved for the call in flight"
         await ledger.after_agent_callback(agent=SimpleNamespace(name="guideline_a"), callback_context=a)
         assert ledger.reserved == {}, "released with the agent, the call never answered"
+        assert await ledger.before_model_callback(callback_context=a, llm_request=request) is None
+        await ledger.on_agent_error_callback(
+            agent=SimpleNamespace(name="guideline_a"), callback_context=a, error=RuntimeError("escaped")
+        )
+        assert ledger.reserved == {}, "released with the agent an exception escaped"
 
     @pytest.mark.asyncio
     async def test_a_run_whose_session_is_gone_names_why_for_every_answer_still_out(self) -> None:

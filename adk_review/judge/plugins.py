@@ -334,7 +334,10 @@ class Progress(BasePlugin):
 
     @override
     async def after_agent_callback(self, *, agent: Any, callback_context: Any) -> types.Content | None:
-        if isinstance(sys.exception(), asyncio.CancelledError):  # cut short with the run: ADK runs this hook then too
+        # Cut short with the run: ADK awaits this hook inside its `except asyncio.CancelledError` too, and the exception
+        # handled says so. A task's cancel count would not: a pending count, true too of an agent that finished as the
+        # cancel landed, which would lose its line and its seconds.
+        if isinstance(sys.exception(), asyncio.CancelledError):
             return None
         took = time.monotonic() - self.started.pop(agent.name, time.monotonic())
         self.seconds[agent.name] = round(took, 2)
@@ -430,6 +433,11 @@ class UsageLedger(BasePlugin):
         # A call cut short with its agent never reaches the after-model hook: the agent's end releases what it reserved.
         self.reserved.pop(agent.name, None)
         return None
+
+    @override
+    async def on_agent_error_callback(self, *, agent: Any, callback_context: Any, error: Exception) -> None:
+        # An agent an exception escapes ends through this hook alone, never the one above: released here too.
+        self.reserved.pop(agent.name, None)
 
     @override
     async def after_model_callback(self, *, callback_context: Any, llm_response: Any) -> LlmResponse | None:
