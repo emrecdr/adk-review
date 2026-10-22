@@ -729,12 +729,15 @@ def tool_context(**state):
 
 
 class Chat:
-    """One conversation with an agent module's app through the real Runner: each `say` a user turn, in one session."""
+    """One conversation with an agent module's app through the real Runner: each `say` a user turn, in one session,
+    under `run_config` where a test names one, as `adk web` names Token Streaming's."""
 
-    def __init__(self, module, state: dict | None = None) -> None:
+    def __init__(self, module, state: dict | None = None, run_config=None) -> None:
         self.app = module.app
         self.runner = InMemoryRunner(app=self.app)
         self.state = state or {}
+        self.run_config = run_config
+        self.events: list = []  # the last turn's, as the Runner yields them: what `adk web` shows
         self.ids = {"app_name": self.app.name, "user_id": "t", "session_id": "t"}
         self.started = False
 
@@ -745,7 +748,11 @@ class Chat:
             self.started = True
         final = ""
         turn = types.UserContent(message)
-        async for event in self.runner.run_async(user_id="t", session_id="t", new_message=turn):
+        self.events = []
+        async for event in self.runner.run_async(
+            user_id="t", session_id="t", new_message=turn, run_config=self.run_config
+        ):
+            self.events.append(event)
             if event.is_final_response() and event.content and event.content.parts:
                 final = event.content.parts[0].text or final
         session = await self.runner.session_service.get_session(**self.ids)

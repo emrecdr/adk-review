@@ -940,10 +940,12 @@ class TestWhatTheCommandTells:
     async def test_a_wait_names_the_guidelines_still_running(self, cli) -> None:
         from types import SimpleNamespace
 
+        from adk_review.judge.agents import DIFF
         from adk_review.judge.plugins import Progress
 
         progress = Progress(named={"security": "guideline.security"})
-        await progress.before_agent_callback(agent=SimpleNamespace(name="security"), callback_context=None)
+        change = SimpleNamespace(state={DIFF: "+x = 1"})  # a change to read: its guard lets the guideline run
+        await progress.before_agent_callback(agent=SimpleNamespace(name="security"), callback_context=change)
         await progress.before_agent_callback(agent=SimpleNamespace(name="verifier"), callback_context=None)
         assert cli._waiting(progress.running()) == "waiting on guideline.security"
         await progress.after_agent_callback(agent=SimpleNamespace(name="security"), callback_context=None)

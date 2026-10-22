@@ -31,7 +31,7 @@ from pydantic import BaseModel, ValidationError
 from ..core.guidelines import Models
 from ..core.secrets import scrub, scrub_value
 from ..core.text import REASON_MAX_CHARS, cut_at, squash
-from .agents import BOUNDARY, FAILURE, JUDGED_BOUNDARY, mismatch
+from .agents import BOUNDARY, FAILURE, JUDGED_BOUNDARY, mismatch, without_evidence
 from .config import REQUEST_TIMEOUT_S, require_ready, said
 
 #: Room reserved for an answer on top of a request's own size, in tokens; a guideline's typed review is well under it.
@@ -132,6 +132,8 @@ class ReportProviderErrors(BasePlugin):
         read and validated by ADK's own two functions, the ones its agent and its workflow node use: every part that
         is not a thought, a code fence around the whole of it stripped. `_schema_utils` is marked as ADK's own; the
         pinned ADK holds it, and an upgrade that moved it would fail this module's import, and the suite, at once."""
+        if llm_response.partial:  # a streamed piece, under `adk web`'s Token Streaming: the whole answer follows it
+            return None
         schema = self.schemas.get(callback_context.agent_name)
         text = extract_text_from_content(llm_response.content) if schema is not None else ""
         if not text.strip():
@@ -327,6 +329,10 @@ class Progress(BasePlugin):
 
     @override
     async def before_agent_callback(self, *, agent: Any, callback_context: Any) -> types.Content | None:
+        # A guideline its own guard skips never starts: ADK runs the guard after this hook, and no after-agent hook for
+        # an agent it skips, so a line here would never end and the heartbeat would name it until the run did.
+        if agent.name in self.named and without_evidence(callback_context) is not None:
+            return None
         self.started[agent.name] = time.monotonic()
         if self.say is not None and agent.name in self.named:
             self.say(f"{self.named[agent.name]} started")
@@ -434,6 +440,8 @@ class UsageLedger(BasePlugin):
 
     @override
     async def after_model_callback(self, *, callback_context: Any, llm_response: Any) -> LlmResponse | None:
+        if llm_response.partial:  # a streamed piece: its call is still in flight, and the whole answer bills it once
+            return None
         self.reserved.pop(callback_context.agent_name, None)
         usage = llm_response.usage_metadata
         if usage is None:  # substituted for an exception, or refused before the call: over, never billed

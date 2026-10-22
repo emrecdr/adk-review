@@ -68,7 +68,8 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   is tested and is measured live on each, on Copilot first; and judging agents run at temperature zero,
   a model that cannot being refused before any call.
 - A provider error is the agent's own answer, and so is a reply that does not fit its schema (`SCHEMA_MISMATCH`); "did
-  not look" must never read as "found nothing".
+  not look" must never read as "found nothing". An after-model hook passes a streamed `partial` piece by and reads
+  the whole answer that follows it.
 - Tools return a `{status: …}` dict and never raise at the model. Git runs by its full path from `PATH`'s absolute
   entries, read-only verbs only, as an argv list with a timeout, inside `_environment(repo)`, which also starts no
   file-system monitor the repository names; nothing ever writes into the repository under review, and a failed git

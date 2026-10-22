@@ -175,6 +175,8 @@ Load-bearing rules the tests enforce:
   state, and `ReportProviderErrors` also answers a reply that does not fit its schema, a cut one included, as that
   agent's own error (`SCHEMA_MISMATCH`), where ADK would raise and end the run; guidelines carry a
   `before_agent_callback` that skips them when there is no evidence. "Did not look" must never read as "found nothing".
+  ADK runs each after-model hook on every streamed piece too, under `adk web`'s Token Streaming, so a hook that reads
+  the answer passes a `partial` one by and reads the whole answer that follows it.
 
 Conventions:
 

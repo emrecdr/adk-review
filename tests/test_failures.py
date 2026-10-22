@@ -187,6 +187,42 @@ async def test_a_guideline_its_guard_skipped_reads_as_one_that_could_not_look(
     assert "## guideline.security — could not look:" in read and "verdict: DEGRADED" in read, read
 
 
+@pytest.mark.asyncio
+async def test_a_turn_streamed_chunk_by_chunk_judges_as_one_answered_whole(
+    monkeypatch, fake_provider, asked, demo_repo
+):
+    """`adk web`'s Token Streaming runs a turn under SSE, and ADK runs each after-model hook on every partial chunk as
+    on the whole answer. Read by review on ADK 2.12.0: the schema check read a guideline's first chunk, a piece of its
+    JSON, as a reply that broke its schema, so every guideline answered `SCHEMA_MISMATCH`, and the ledger released
+    its reservation and counted the tokens at each chunk. The hooks read the whole answer alone."""
+    from conftest import FakeModel
+    from google.adk.agents.run_config import RunConfig, StreamingMode
+
+    module = load_agent(monkeypatch)  # first: it imports the package afresh, the ledger's class with it
+    from adk_review.judge.plugins import UsageLedger
+
+    confirms(fake_provider, demo_repo)
+    answer = FakeModel.generate_content_async
+
+    async def streamed(self, llm_request, stream=False):
+        async for whole in answer(self, llm_request, stream):
+            text = whole.content.parts[0].text if whole.content and whole.content.parts else None
+            if stream and text:  # as Gemini and LiteLLM stream: pieces, each with the usage so far, then the whole
+                usage = whole.usage_metadata
+                for piece in (text[: len(text) // 2], text[len(text) // 2 :]):
+                    yield LlmResponse(content=types.ModelContent(piece), partial=True, usage_metadata=usage)
+            yield whole
+
+    monkeypatch.setattr(FakeModel, "generate_content_async", streamed)
+    chat = Chat(module, run_config=RunConfig(streaming_mode=StreamingMode.SSE))
+    await chat.say(REVIEW_REQUEST)
+    assert not [(event.author, event.error_code) for event in chat.events if event.error_code]
+    (read,) = [system for system, _turns in asked if THE_VERDICT in system]
+    assert "verdict: REQUEST_CHANGES" in read and "— could not look:" not in read, read
+    ledger = next(plugin for plugin in module.app.plugins if isinstance(plugin, UsageLedger))
+    assert all(ledger.rows[model_key(name)]["calls"] == 1 for name in GUIDELINE_NAMES), ledger.rows
+
+
 class _RateLimitError(Exception):
     """A provider's refusal for its rate, as LiteLLM's `RateLimitError` and genai's `ClientError` carry it: a 429."""
 

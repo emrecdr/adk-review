@@ -285,6 +285,21 @@ class TestRetriesOnBothArms:
         assert {model_key(name) for name in GUIDELINE_NAMES} <= set(ended), ended
         assert not _said_done(said.err), said.err
 
+    def test_a_guideline_its_guard_skips_is_never_said_started(self, tmp_path: Path, cli, capsys) -> None:
+        """A change of only ignored files leaves the guidelines nothing to read, and each one's guard skips it. Read
+        by review on ADK 2.12.0: ADK runs the plugins' before-agent hook ahead of the guard, and no after-agent hook
+        for an agent it skips, so `Progress` said each guideline started, never done, and its heartbeat kept naming
+        it. A guideline its guard skips never starts."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "app.py", "x = 1\n", "base")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "vendor/lib/run.py", "import os\nos.system(input())\n")
+        assert cli.main([str(repo), "--head", "change", "--base", BASE, "--progress"]) == 0
+        said = capsys.readouterr().err
+        assert not any(f"{model_check(name)} started" in said for name in GUIDELINE_NAMES), said
+
     @pytest.mark.asyncio
     async def test_a_reservation_a_call_cut_short_left_is_dropped_when_the_next_run_starts(self) -> None:
         """A call cancelled with its run, or one an exception escapes, never reaches the after-model hook, so what it
