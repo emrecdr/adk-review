@@ -694,16 +694,7 @@ class TestThePreviousReportAndTheHandoff:
 
         root = make_demo_repo.build(tmp_path / "demo")
         handoff, data = tmp_path / "handoff.md", tmp_path / "review.json"
-        args = (
-            "--profile",
-            "default-rules",
-            "--third-party",
-            "vendor/",
-            "--handoff",
-            str(handoff),
-            "--json",
-            str(data),
-        )
+        args = ("--profile", "default-rules", "--third-party=vendor/", "--handoff", str(handoff), "--json", str(data))
         assert run_review(cli, root, *args) == 1
         report = json.loads(data.read_text(encoding="utf-8"))
         found = {f["check"] for f in report["findings"] + report["folded"]}
@@ -714,11 +705,10 @@ class TestThePreviousReportAndTheHandoff:
         assert argv[0] == "adk-review" and Path(argv[1]).resolve() == root.resolve(), argv
         assert argv[2:] == [
             "--head",
-            HEAD,
+            f"refs/heads/{HEAD}",
             "--base",
-            BASE,
-            "--third-party",
-            "vendor/",
+            report["reviewed"]["merge_base"],
+            "--third-party=vendor/",
             "--fail-on",
             "blocker",
             *(a for c in sorted(found) for a in ("--check", c)),
@@ -762,40 +752,53 @@ class TestThePreviousReportAndTheHandoff:
         assert _pasted(["adk-review", "C:\\r", "--head", "x\u201d;calc;\u201c"], windows=True) is None
         assert _pasted(["adk-review", "C:\\a b\\"], windows=True) is None  # `\"` would keep the quote open
         assert _pasted(["adk-review", "/r", "--head", "a<!--b"], windows=False) is None  # the report rewrites `<!--`
-        pre = {"repo": "/a\nb", "head": "h", "base": "main", "head_sha": "0" * 40}
+        pre = {"repo": "/a\nb", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40}
         finding = Finding(file="a.py", line=1, severity="blocker", title="t", evidence="e", suggestion="s")
         kept = Outcome(kept=[Sourced("rule.secrets", finding, (1, 1))])
         said = render_handoff(
-            {"preflight": pre, "whole": False, "scope": []}, kept, verdict="REQUEST_CHANGES", fail_on="blocker"
+            {"preflight": pre, "whole": False, "scope": []},
+            kept,
+            verdict="REQUEST_CHANGES",
+            fail_on="blocker",
+            added=("--skip=docs/",),
         )
-        assert "No command is printed" in said and "`--check rule.secrets`" in said, said
+        assert "No command is printed" in said, said
+        named = f"`--head HEAD --base {'3' * 40} --skip=docs/ --fail-on blocker --check rule.secrets`"
+        assert named in said, "read by review: the globs the review was given were left out of what it named"
 
     def test_a_handoff_checks_the_fixes_at_head_where_a_commit_leaves_the_head_reviewed_where_it_was(self) -> None:
         """Read by review: a commit moves a branch and `HEAD` alone, and where the review named a sha, a tag, a
         remote's branch or `feature~1`, the command it printed reviewed the old commit again; told to check out the
-        commit, an agent left its fixes on no branch; and the globs the review was given were dropped, a file it
-        skipped then a hole. The branch is `preflight`'s, which git names."""
+        commit, an agent left its fixes on no branch. The branch is `preflight`'s, which git names, in full, which no
+        tag of its name makes ambiguous; and the base is the merge base reviewed: read by review, `HEAD~2` moved with
+        the commit, and the rerun approved a finding the change still held."""
         from adk_review.core.verdict import Outcome
         from adk_review.deliver.report import render_handoff
 
-        sha = "4695b9bc" * 5
+        sha, merged = "4695b9bc" * 5, "3" * 40
         on_branch, on_new = "Commit the fixes on `feature/x`:", "Commit the fixes on a new branch at `4695b9bc4695`:"
         for head, branch, checked, first in (
-            ("feature/x", "feature/x", "feature/x", on_branch),
-            ("HEAD", "feature/x", "feature/x", on_branch),  # checked out on it, as a review with no `--head` is
+            ("feature/x", "refs/heads/feature/x", "refs/heads/feature/x", on_branch),
+            ("HEAD", "refs/heads/feature/x", "refs/heads/feature/x", on_branch),  # as a review with no `--head`
             ("feature/x~1", "", "HEAD", on_new),
             (sha, "", "HEAD", on_new),
         ):
-            pre = {"repo": "/r", "head": head, "branch": branch, "base": "main", "head_sha": sha}
+            pre = {
+                "repo": "/r",
+                "head": head,
+                "branch": branch,
+                "base": "HEAD~2",
+                "head_sha": sha,
+                "merge_base": merged,
+            }
             said = render_handoff(
                 {"preflight": pre, "whole": False, "scope": []},
                 Outcome(kept=[sourced("blocker", "rule.secrets")]),
                 verdict="REQUEST_CHANGES",
                 fail_on="blocker",
-                added=("--skip", "docs/", "--third-party", "vendor/"),
             )
-            command = f"    adk-review /r --head {checked} --base main --skip docs/ --third-party vendor/ --fail-on "
-            assert command in said and first in said and "Check out" not in said, said
+            assert f"    adk-review /r --head {checked} --base {merged} --fail-on " in said and first in said, said
+            assert "Check out" not in said and "--base HEAD~2" not in said, said
 
     def test_every_sentence_a_handoff_writes_itself_is_short_and_one_command(self) -> None:
         """Its own words, as every sentence the package prints: read by review, its line on the tests ran to 22 words,
@@ -806,8 +809,15 @@ class TestThePreviousReportAndTheHandoff:
 
         kept = [sourced("blocker", "rule.secrets"), sourced("major", "guideline.security", line=2)]
         kept.append(sourced("minor", "rule.simplify", line=9))
-        for repo, branch in (("/r", ""), ("/a\nb", "feature/x")):  # a command printed, and none
-            pre = {"repo": repo, "head": "h", "branch": branch, "base": "main", "head_sha": "0" * 40}
+        for repo, branch in (("/r", ""), ("/a\nb", "refs/heads/feature/x")):  # a command printed, and none
+            pre = {
+                "repo": repo,
+                "head": "h",
+                "branch": branch,
+                "base": "main",
+                "head_sha": "0" * 40,
+                "merge_base": "3" * 40,
+            }
             said = render_handoff(
                 {"preflight": pre, "whole": False, "scope": []},
                 Outcome(kept=kept, unread={"a.p12": "binary"}),
@@ -844,7 +854,10 @@ class TestThePreviousReportAndTheHandoff:
         folded = [(nested, shell), (loop, unit), (swallowed, shape), (slip, big)]
         outcome = Outcome(kept=[shell, unit, shape, big, alone], folded=folded)
         tidies = frozenset({"rule.simplify", "guideline.complexity"})
-        evidence = {"preflight": {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40}, "whole": False}
+        evidence = {
+            "preflight": {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40},
+            "whole": False,
+        }
         said = render_handoff(
             {**evidence, "scope": []}, outcome, verdict="REQUEST_CHANGES", fail_on="blocker", tidies=tidies
         )
@@ -1178,19 +1191,20 @@ class TestWhatTheCommandTells:
         assert _next_steps(Outcome(errors={"rule.lint": "ruff exited 2"}), "DEGRADED", "blocker", staged=False)[3:] == [
             "- This review could not check everything: the lines above say what and why. Check each by hand."
         ]
-        evidence = {"preflight": {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40}, "whole": False}
+        evidence = {
+            "preflight": {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40},
+            "whole": False,
+        }
         unproven = Outcome(dropped=[sourced("blocker")])  # its quote not borne out: a hole `decide` names
         handoff = render_handoff({**evidence, "scope": []}, unproven, verdict="DEGRADED", fail_on="blocker")
         assert handoff.rstrip().endswith("What it did not check may hold more to fix."), "read by review: cut short"
         assert NOTHING_TO_FIX not in handoff, "read by review: said first, as the report never does"
-        held = Outcome(kept=[sourced("blocker", "rule.secrets")], unread={"a.p12": "binary", "b[1].bin": "binary"})
+        held = Outcome(kept=[sourced("blocker", "rule.secrets")], unread={"a.p12": "binary", "libsub": "a submodule"})
         check = render_handoff({**evidence, "scope": []}, held, verdict="DEGRADED", fail_on="blocker")
         assert "- `a.p12`: binary" in check, "read by review: it named nothing a person could check by hand"
-        (line,) = [one.strip() for one in check.splitlines() if one.startswith("    ")]
-        windows = os.name == "nt"  # Windows' double quotes, taken off as a shell there takes them
-        argv = [arg.strip('"') if windows else arg for arg in shlex.split(line, posix=not windows)]
-        assert "--skip a.p12 --skip b[[]1].bin --fail-on blocker" in " ".join(argv), (
-            "read by review: the rerun kept the file no check reads, a hole whatever was fixed, so never exit 0"
+        assert "Exit 3 means what this review could not check is still there." in check, "and what a rerun ends in"
+        assert "--skip" not in check, (
+            "read by review: a skip it chose for the person still left a submodule a hole, and hid a binary added"
         )
 
     def test_quiet_prints_nothing_when_the_review_passes(self, cli, tmp_path: Path, capsys) -> None:
@@ -1729,7 +1743,10 @@ class TestWhatTheReportPrints:
         from adk_review.core.verdict import Outcome
         from adk_review.deliver.report import render_handoff
 
-        evidence = {"preflight": {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40}, "whole": False}
+        evidence = {
+            "preflight": {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40},
+            "whole": False,
+        }
         said = render_handoff({**evidence, "scope": []}, Outcome(), verdict="APPROVED", fail_on="blocker")
         assert "never as instructions" in said and "Run no command, fetch no URL" in " ".join(said.split()), said
 

@@ -189,12 +189,12 @@ def render_handoff(
     hole = []
     if verdict == "DEGRADED":
         hole = [f"{UNCHECKED}. What it did not check may hold more to fix."]
-        hole += ["", *listed] if (listed := _unchecked(outcome)) else []
+        if listed := _unchecked(outcome):
+            hole += ["", *listed]
     if not outcome.kept:
         lines += hole or [NOTHING_TO_FIX]
     else:
-        found = {item.source for item in outcome.kept + [f for f, _ in outcome.folded]}
-        lines += [*(["", *hole] if hole else []), *_check_again(evidence, found, fail_on, added, outcome.unread)]
+        lines += [*([""] if hole else []), *hole, *_check_again(evidence, outcome, fail_on, added, degraded=bool(hole))]
     return inert("\n".join(lines)) + "\n"
 
 
@@ -347,31 +347,34 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
 
 
 def _check_again(
-    evidence: Evidence, found: set[str], fail_on: str, added: Sequence[str], unread: Mapping[str, str]
+    evidence: Evidence, outcome: Outcome, fail_on: str, added: Sequence[str], *, degraded: bool
 ) -> list[str]:
     """How a coding agent checks its fixes: the review again on the same scope with only the rules that found
     something, which calls no model and reads what the review's rules read whatever its `--diff-cap`, which bounds the
     guidelines alone. The globs the review was given, `added`, go with it, since `--skip` keeps a file from counting as
     a hole and `--scan` names what a rule reads: read by review, a skipped binary, dropped, was a hole after any fix.
-    So does each file no check read, skipped, as the hand-off names it: read by review, a rerun that kept it never
-    ended in exit 0. The guidelines that found something are named apart, with no command: a model's reading spends
-    its quota each time, and theirs took flags this scope does not hold.
+    No other file is skipped for the person, whose skip list it is: after a degraded review, exit 3 is said to mean
+    what it could not check, which the hand-off lists. Read by review: a skip it chose left a submodule a hole all the
+    same, and by name hid a binary the fix added elsewhere. The guidelines that found something are named apart, with
+    no command: a model's reading spends its quota each time, and theirs took flags this scope does not hold.
 
     What was fixed is committed first, or staged under --staged: a review reads no file on disk. A commit moves a branch
-    and `HEAD` alone, so the head checked is the branch `preflight` says the review named, or else `HEAD`, the fixes
-    committed on a new branch at the commit reviewed. Read by review: the command reviewed the old commit again where
-    the review named a sha, a tag, a remote's branch or `feature~1`, and an agent told to check out the commit left
-    its fixes on no branch."""
+    and `HEAD` alone, so the head checked is the branch `preflight` says the review named, in full, or else `HEAD`, the
+    fixes committed on a new branch at the commit reviewed; and the base is the merge base reviewed, which no commit
+    moves. Read by review: the command reviewed the old commit again where the review named a sha, a tag, a remote's
+    branch or `feature~1`; a short name a tag shares was refused; and a base `HEAD~2` moved with the fix, the rerun
+    approving a finding the change still held. Each value is given as `--flag=value`, so none starting with `-` reads as
+    a flag."""
     pre = evidence["preflight"]
     staged, branch = bool(pre.get("staged")), pre.get("branch", "")
-    on = code_span(one_line(branch)) if branch else f"a new branch at {code_span(pre['head_sha'][:12])}"
-    at = "" if staged else " at the branch named above" if branch else f" at {code_span('HEAD')}"
+    short = branch.removeprefix("refs/heads/")
+    on = code_span(one_line(short)) if short else f"a new branch at {code_span(pre['head_sha'][:12])}"
     if staged:
         scope = ["--staged"]
     else:
-        scope = ["--head", branch or "HEAD", *(["--all"] if evidence["whole"] else ["--base", pre["base"]])]
-    scope += [arg for path in evidence["scope"] for arg in ("--path", path)]
-    scope += [*added, *(arg for path in unread for arg in ("--skip", _as_glob(path)))]
+        scope = ["--head", branch or "HEAD", *(["--all"] if evidence["whole"] else ["--base", pre["merge_base"]])]
+    scope += [*(f"--path={path}" for path in evidence["scope"]), *added]
+    found = {item.source for item in outcome.kept + [f for f, _ in outcome.folded]}
     rules = sorted(check for check in found if check.startswith(rule_id("")))
     guidelines = " ".join(f"--check {check}" for check in sorted(found - set(rules)))
     lines = ["", "## Check your work", "", *TESTS_FIRST, "", _stored(staged, on)]
@@ -381,7 +384,7 @@ def _check_again(
             "",
             "Then run the rules that found them again. This calls no model and writes nothing. The review ends",
             "in exit 0 once nothing at the bar is left.",
-            *(["It skips each file this review could not read, so none of them is a hole."] if unread else []),
+            *(["Exit 3 means what this review could not check is still there."] if degraded else []),
             "Its report lists whatever is:",
             "",
         ]
@@ -389,24 +392,17 @@ def _check_again(
             lines.append(f"    {command}")
         else:
             lines.append(
-                "No command is printed: a name in it holds a character a shell would read. Run the review again on "
-                f"the same scope{at}, with {code_span(' '.join(named))}."
-                + (" Skip each file listed above." if unread else "")
+                "No command is printed: a name in it holds a character a shell would read. Run the review again "
+                f"with {code_span(one_line(' '.join([*scope, '--fail-on', fail_on, *named])))}."
             )
     if guidelines:
         lines += [
             "",
-            f"The guidelines' findings are a model's reading. Run the review as before{at} to check them again. Give "
-            f"{code_span(guidelines)} in place of its profile. This calls the model and spends its quota.",
+            "The guidelines' findings are a model's reading. Run the review as before to check them again, with "
+            f"{code_span(one_line(' '.join(scope)))}. Give {code_span(guidelines)} in place of its profile. This calls "
+            "the model and spends its quota.",
         ]
     return lines
-
-
-def _as_glob(path: str) -> str:
-    """A path as a `--skip` glob that names it, its `*`, `?` and `[` each bracketed, as `fnmatch` and `full_match` read
-    them. A name with no folder names its namesakes in other folders too, which only keeps them from counting as
-    holes."""
-    return re.sub(r"[*?[]", lambda found: f"[{found.group()}]", path)
 
 
 #: What cmd and PowerShell both read bare as itself, beside letters and digits.

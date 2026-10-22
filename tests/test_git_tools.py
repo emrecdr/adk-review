@@ -131,11 +131,12 @@ def test_a_tools_docstring_speaks_to_the_model_in_words() -> None:
         assert not re.findall(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b", tool.__doc__), (tool.__name__, tool.__doc__[:120])
 
 
-def test_preflight_names_the_branch_a_head_names_as_itself(tmp_path: Path) -> None:
+def test_preflight_names_the_branch_a_head_names_as_itself(tmp_path: Path, cli, capsys) -> None:
     """A commit moves a branch, so a hand-off names one to commit on only where the head names it as itself, in any
     spelling. Read by review: guessed from the ref a name resolved through, `feature~1` passed for `feature`, and
-    `HEAD`, `heads/feature` and `refs/heads/feature` did not."""
-    from adk_review.collect.git import preflight
+    `HEAD`, `heads/feature` and `refs/heads/feature` did not. Named in full, which no tag of its name makes ambiguous:
+    read by review, `x` was refused as ambiguous where the hand-off's check pasted it, a tag named `x` too."""
+    from adk_review.collect.git import _branch, preflight
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -144,9 +145,16 @@ def test_preflight_names_the_branch_a_head_names_as_itself(tmp_path: Path) -> No
     _git_in(repo, "checkout", "-q", "-b", "feature")
     tip = _committed(repo, "b.py")
     _git_in(repo, "tag", "v1")
+    _git_in(repo, "branch", "x")
+    _git_in(repo, "tag", "x")
     spellings = {"feature", "heads/feature", "refs/heads/feature", "HEAD"}
-    named = {head: preflight(str(repo), BASE, head)["branch"] for head in [*spellings, "feature~0", tip, "v1"]}
-    assert named == {head: "feature" if head in spellings else "" for head in named}, named
+    others = ["feature~0", tip, "v1", f"{BASE}..feature"]  # a range: git answers it, and exit 1
+    named = {head: _branch(str(repo), head) for head in [*spellings, *others, "heads/x", "refs/heads/x"]}
+    expected = dict.fromkeys(spellings, "refs/heads/feature") | dict.fromkeys(others, "")
+    assert named == expected | dict.fromkeys(["heads/x", "refs/heads/x"], "refs/heads/x"), named
+    assert preflight(str(repo), BASE, "HEAD")["branch"] == "refs/heads/feature", "as `preflight` answers it"
+    pasted = [str(repo), "--head", "refs/heads/x", "--base", BASE, "--profile", "default-rules", "--dry-run"]
+    assert cli.main(pasted) == 0, capsys.readouterr().err  # the name it gives is one the command takes
     _git_in(repo, "checkout", "-q", "--detach")
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "", "a detached head, as CI checks out, is no branch"
 

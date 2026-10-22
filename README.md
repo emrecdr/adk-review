@@ -600,21 +600,22 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   another reading of the same lines can be a second defect. It ends by asking for the project's own tests before a
   commit, a fix done when they pass, and in the command that checks the fixes: the review again on the same scope with
   only the rules that found something, so an agent checks its own work offline, no model called. It checks the branch
-  reviewed, in any spelling git gives it, or else `HEAD`, the fixes committed on a new branch at the commit reviewed,
-  since a commit leaves a sha, a tag, a remote's branch or `feature~1` where it was. It repeats the `--skip`, `--scan`
-  and `--third-party` globs the review was given, and skips each file the review could not read, so none is a hole. The
-  scope is the preflight's, which the cache's key holds, and with those globs it is the whole of what the rules read:
-  `--diff-cap` bounds the guidelines alone. The guidelines that found something are named apart, with their `--check`
-  and no command, since checking a model's reading spends its quota and their review took flags the scope does not hold.
-  A branch's name is its author's: where no quoting keeps the command one command — a line break, a name the report's
-  safety rules would rewrite, or on Windows a character cmd or PowerShell still reads inside double quotes, PowerShell's
-  typographic quotes among them — none is printed, only the head and the checks to name. Nothing is applied. A check
-  whose findings change how code reads and never what it does sets `cleanup = True`, as `simplify` and `complexity` do,
-  and its findings are listed apart, after the fixes, under what a tidy keeps, one the project's tests fail on reverted;
-  one on lines another check's defect at major or above names is held back until that defect is fixed, and is never
-  given a fix's instruction, as a simplify pass keeps its two lanes: suspect code is never tidied. `efficiency` and
-  `altitude` are no cleanup: a cheaper form can reorder I/O and a deeper fix changes a shared mechanism, each a change
-  to weigh.
+  reviewed, by its full name in any spelling git gives it, or else `HEAD`, the fixes committed on a new branch at the
+  commit reviewed, since a commit leaves a sha, a tag, a remote's branch or `feature~1` where it was. Its base is the
+  merge base reviewed, by its sha, which no commit moves, as `HEAD~2` would. It repeats the `--skip`, `--scan` and
+  `--third-party` globs the review was given, but skips no other file for the person. After a degraded review it says
+  exit 3 means what the review could not check is still there. The scope is the preflight's, which the cache's key
+  holds, and with those globs it is the whole of what the rules read: `--diff-cap` bounds the guidelines alone. The
+  guidelines that found something are named apart, with their `--check` and no command, since checking a model's reading
+  spends its quota and their review took flags the scope does not hold. A branch's name is its author's: where no
+  quoting keeps the command one command — a line break, a name the report's safety rules would rewrite, or on Windows a
+  character cmd or PowerShell still reads inside double quotes, PowerShell's typographic quotes among them — none is
+  printed, only the head and the checks to name. Nothing is applied. A check whose findings change how code reads and
+  never what it does sets `cleanup = True`, as `simplify` and `complexity` do, and its findings are listed apart, after
+  the fixes, under what a tidy keeps, one the project's tests fail on reverted; one on lines another check's defect at
+  major or above names is held back until that defect is fixed, and is never given a fix's instruction, as a simplify
+  pass keeps its two lanes: suspect code is never tidied. `efficiency` and `altitude` are no cleanup: a cheaper form can
+  reorder I/O and a deeper fix changes a shared mechanism, each a change to weigh.
 - `--comment [FILE]` writes the review as a comment for the branch's author, to paste into the pull request by hand,
   whatever the verdict: what must change before it merges, what is worth a look, an approved change's included, the
   tidy-ups, and what no check read. Each place and quote sits in a code span. The reviewer posts nothing and prints no

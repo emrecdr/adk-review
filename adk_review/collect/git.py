@@ -206,9 +206,10 @@ def _verb(args: tuple[str, ...]) -> str:
 
 
 def _sha(repo: str, ref: str, kind: str = "commit") -> str | None:
-    """The commit a ref names, or the object of another `kind`, or None. `--end-of-options` is the one place a user
-    string reaches git as an argument: a ref spelled `-x` must be a ref, never a flag. `^{commit}` names the commit
-    an annotated tag tags, never the tag itself; `^{tag}` names a tag object, and nothing for a branch or a commit."""
+    """The commit a ref names, or the object of another `kind`, or None. A user string reaches git as an argument here
+    and in `_branch` alone, each after `--end-of-options`: a ref spelled `-x` must be a ref, never a flag. `^{commit}`
+    names the commit an annotated tag tags, never the tag itself; `^{tag}` names a tag object, and nothing for a branch
+    or a commit."""
     code, out = _git(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{{kind}}}", ok=(0, 1))
     return out if code == 0 else None
 
@@ -318,7 +319,7 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
         base_ref, head_ref = _full_ref(root, "base branch", base), _full_ref(root, "head branch", head)
         base_sha = "" if base is None else _sha(root, base) or _missing(root, repo, "base branch", "--base", base)
         head_sha = _sha(root, head) or _missing(root, repo, "head branch", "--head", head)
-        branch = _branch(root, head)
+        branch = "" if head == head_sha else _branch(root, head)  # a sha, as the hook and CI name one, is no branch
         # From here on git only sees commit hashes, which cannot be mistaken for options.
         if base is None:
             base_sha = merge_base = _empty_tree(root)
@@ -347,13 +348,15 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
 
 
 def _branch(root: str, head: str) -> str:
-    """The local branch `head` names as itself, by its short name, or "": `HEAD` on a branch, and `heads/x` and
-    `refs/heads/x`, name one; `x~1`, a sha, a tag, a remote's branch and a detached `HEAD` name none. Git's own answer,
-    where `head_ref` is the ref a name resolved through: read by review, `feature~1` resolved through `feature`."""
-    _, full = _git(
+    """The local branch `head` names as itself, by its full name, or "": `HEAD` on a branch, and `heads/x` and
+    `refs/heads/x`, name one; `x~1`, a range, a sha, a tag, a remote's branch and a detached `HEAD` name none. Git's own
+    answer, where `head_ref` is the ref a name resolved through: read by review, `feature~1` resolved through
+    `feature`. In full, since no tag or object of its name makes that ambiguous: read by review, `x` was refused where
+    a tag was named `x` too."""
+    code, full = _git(
         root, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", "--end-of-options", head, ok=(0, 1)
     )
-    return full.removeprefix("refs/heads/") if full.startswith("refs/heads/") else ""
+    return full if code == 0 and full.startswith("refs/heads/") and "\n" not in full else ""
 
 
 def _full_ref(root: str, label: str, ref: str | None) -> str:
