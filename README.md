@@ -139,8 +139,8 @@ brought one, as `origin/develop`, else the `git fetch` to run in the repository.
 writes nothing into the repository and opens no connection, so you run that command.
 
 A head that adds nothing on top of its base, such as `--head main --base main`, is no change: the command says so, exit
-2. Two other flags choose the change in place of `--base`: `--all` reads every file at the head, and `--staged` reads
-what is staged, against `HEAD`.
+2, and names `--head` and `--all`. So does a head that shares no history with its base. Two other flags choose the
+change in place of `--base`: `--all` reads every file at the head, and `--staged` reads what is staged, against `HEAD`.
 
 ### Every mode
 
@@ -615,7 +615,8 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   tidy-ups, and what no check read. Each place and quote sits in a code span. The reviewer posts nothing and prints no
   command that would: asked by the owner, who reviews others' branches and pastes each comment by hand. With no file
   named, it is `comments-<repo>__<base>__<head>__<YYYY-MM-DD-HH-MM>.md` in the current folder, every name lower case,
-  made safe for a file name and cut at 20 characters, and the run's last line names it by its full path.
+  made safe for a file name and cut at 20 characters, and, unless `--quiet`, the run's last line names it by its full
+  path.
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint:
   its check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line,
   so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.

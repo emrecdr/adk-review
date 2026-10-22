@@ -30,17 +30,17 @@ catch the wrong branch; `--list-checks` shows every check with its kind, its pro
    finding, `--handoff FILE` writes the findings for a coding agent to apply, and `--comment [FILE]` writes a comment
    for the branch's author, to paste into the pull request by hand.
 3. Read the exit code: 0 approved; 1 a finding at or above `--fail-on` (`blocker` by default); 2 a usage error before
-   any model call, such as a branch that adds nothing or one the repository does not hold, whose message names the `git
-   fetch` to run: show it to the person and fetch nothing yourself, an arm that is not ready, or a `config.toml` or
-   profile that cannot run; 3 a hole — a rule or a guideline failed, a rule could not look (the head's tree not listed,
-   a file it holds not read whole, or a link whose file was not read or followed), a changed file no check can read
-   whole, or where a guideline runs one it was not shown whole, unless the skip list names it, a finding at the bar
-   whose quote the diff does not bear out or that a verifier refuted, or a guideline's call the token ceiling refused;
-   and a `--json`, `--handoff` or `--comment` file that cannot be written, an error nothing else names, a reader that
-   closes the pipe early, or a reviewer that cannot load — which must never be read as "nothing found". Ctrl-C is 130,
-   and a job's SIGTERM 143.
+   any model call, such as a branch that adds nothing or shares no history with its base, or one the repository does not
+   hold, whose message names the `git fetch` to run: show it to the person and fetch nothing yourself, an arm that is
+   not ready, or a `config.toml` or profile that cannot run; 3 a hole — a rule or a guideline failed, a rule could not
+   look (the head's tree not listed, a file it holds not read whole, or a link whose file was not read or followed), a
+   changed file no check can read whole, or where a guideline runs one it was not shown whole, unless the skip list
+   names it, a finding at the bar whose quote the diff does not bear out or that a verifier refuted, or a guideline's
+   call the token ceiling refused; and a `--json`, `--handoff` or `--comment` file that cannot be written, an error
+   nothing else names, a reader that closes the pipe early, or a reviewer that cannot load — which must never be read as
+   "nothing found". Ctrl-C is 130, and a job's SIGTERM 143.
 4. The report lists findings under each check that ran, a section each (`rule.secrets`, `rule.lint`, …, then
    `guideline.security` and the other guidelines), the blast radius of each changed file, what was not read, the files
    it ignored by `[review] scan` and `third_party` (the credential rules still read the project's own), and what the run
-   cost. In a pipeline, `--quiet` prints nothing when the review passes. Quote its lines when you report, rather than
-   paraphrasing them.
+   cost, and ends with the next steps, by its verdict. In a pipeline, `--quiet` prints nothing when the review passes.
+   Quote its lines when you report, rather than paraphrasing them.
