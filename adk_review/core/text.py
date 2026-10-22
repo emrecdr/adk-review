@@ -64,3 +64,10 @@ def cut_at(text: str, limit: int, *, sep: str = " ") -> str:
     while straddled := [start for start, end in found if start < limit < end]:
         limit = min(straddled)
     return f"{text[:limit]}{sep}{CUT_MARK}{limit:,} characters]"
+
+
+def short_ref(ref: str) -> str:
+    """A ref's name without the folder git keeps it in, as a person names it: a hand-off's check names a ref in full,
+    and read by review, its folder took a file name's 20 characters and stood in a sentence where the name alone
+    reads."""
+    return re.sub(r"^refs/(heads|remotes|tags)/", "", ref)

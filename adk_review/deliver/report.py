@@ -15,12 +15,12 @@ from pathlib import Path
 from typing import Any
 
 from ..core.blast import Blast, describe
-from ..core.evidence import Evidence, short_ref
+from ..core.evidence import Evidence
 from ..core.findings import RANK, Checked, Finding, at_or_above
 from ..core.health import Health, found_by_rule, grade
 from ..core.profiles import rule_id
 from ..core.secrets import scrub
-from ..core.text import EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, squash
+from ..core.text import EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, short_ref, squash
 from ..core.verdict import Outcome, Sourced, at_bar
 
 #: What a terminal runs or reorders, and what a reader cannot see: escape sequences, C0 and C1 controls (U+009B is
@@ -140,11 +140,13 @@ TESTS_FIRST = (
 NOTHING_TO_FIX = "Nothing to fix: no finding was kept."
 #: How a degraded review's report and hand-off each begin to say so, never "nothing to fix".
 UNCHECKED = "This review could not check everything"
-#: How a run after a degraded review tells a fix that held, its hole outranking a finding, exit 3 over exit 1. Read by
-#: review: an agent waited for an exit 0 that hole never gives, and a rule that failed named no finding either.
+#: How the runs after a degraded review tell a fix that held, its hole outranking a finding, exit 3 over exit 1: said
+#: once, after them all. Read by review: an agent waited for an exit 0 that hole never gives, a rule that failed named
+#: no finding either, and said of the rules' run alone, it held where the guideline it never ran was the hole.
 HELD = (
-    "Exit 3 means what this review could not check is still there. The fixes hold once its report names no",
-    "finding at the bar and no check that could not look.",
+    "",
+    "Exit 3 means what this review could not check is still there. The fixes hold once each run above reports",
+    "no finding at the bar and no check that could not look.",
 )
 
 
@@ -195,7 +197,7 @@ def render_handoff(
     hole, degraded = [], verdict == "DEGRADED"
     if degraded:
         hole = [f"{UNCHECKED}. What it did not check may hold more to fix."]
-        if listed := _unchecked(outcome):
+        if listed := [*_unchecked(outcome), *_unproven_listed(outcome, fail_on)]:
             hole += ["", *listed]
     if not outcome.kept:
         lines += hole or [NOTHING_TO_FIX]
@@ -355,14 +357,14 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
 def _check_again(
     evidence: Evidence, outcome: Outcome, fail_on: str, added: Sequence[str], *, degraded: bool
 ) -> list[str]:
-    """How a coding agent checks its fixes: the review again on the same scope with only the rules that found
-    something, which calls no model and reads what the review's rules read whatever its `--diff-cap`, which bounds the
-    guidelines alone. The globs the review was given, `added`, go with it, since `--skip` keeps a file from counting as
-    a hole and `--scan` names what a rule reads: read by review, a skipped binary, dropped, was a hole after any fix.
-    No other file is skipped for the person, whose skip list it is: after a degraded review, exit 3 is said to mean
-    what it could not check, which the hand-off lists. Read by review: a skip it chose left a submodule a hole all the
-    same, and by name hid a binary the fix added elsewhere. The guidelines that found something are named apart, with
-    no command: a model's reading spends its quota each time, and theirs took flags this scope does not hold.
+    """How a coding agent checks its fixes: the review again on the same scope with only the rules that found something
+    or could not look, which calls no model and reads what the review's rules read whatever its `--diff-cap`, which
+    bounds the guidelines alone. The globs the review was given, `added`, go with it, since `--skip` keeps a file from
+    counting as a hole and `--scan` names what a rule reads: read by review, a skipped binary, dropped, was a hole after
+    any fix. No other file is skipped for the person, whose skip list it is: after a degraded review, exit 3 is said to
+    mean what it could not check, which the hand-off lists. Read by review: a skip it chose left a submodule a hole all
+    the same, and by name hid a binary the fix added elsewhere. The guidelines among them are named apart, with no
+    command: a model's reading spends its quota each time, and theirs took flags this scope does not hold.
 
     What was fixed is committed first, or staged under --staged: a review reads no file on disk. A commit moves a branch
     and `HEAD` alone, so the head checked is the branch `preflight` says the review named, in full, or else `HEAD`, the
@@ -381,17 +383,19 @@ def _check_again(
     base = full if full and _pasted([full]) else pre.get("merge_base", "")
     pinned = [("--staged",)] if staged else [("--all",)] if evidence["whole"] else [("--base", base)]
     given = [*((f"--path={path}",) for path in evidence["scope"]), *((glob,) for glob in added)]
-    # With each check that could not look, so a rerun names it again where it still cannot: read by review, one run
-    # of only the checks that found something said the fixes held, the hole never looked at again.
-    found = {item.source for item in outcome.kept + [f for f, _ in outcome.folded]} | set(outcome.errors)
+    # With each check that could not look or could not prove a finding at the bar, so a rerun names it again where it
+    # still cannot: read by review, a run of only the checks that found something said the fixes held, the hole never
+    # looked at again.
+    found = {item.source for item in [*outcome.kept, *(f for f, _ in outcome.folded), *_unproven(outcome, fail_on)]}
+    found |= set(outcome.errors)
     rules = sorted(check for check in found if check.startswith(rule_id("")))
     guidelines = [("--check", check) for check in sorted(found - set(rules))]
     lines = ["", "## Check your work", "", *TESTS_FIRST, "", _stored(staged, on)]
     if rules:
         lines += [
             "",
-            "Then run the rules that found them again. This calls no model and writes nothing.",
-            *(HELD if degraded else ["The review ends in exit 0 once nothing at the bar is left."]),
+            "Then run these rules again. This calls no model and writes nothing.",
+            *([] if degraded else ["The review ends in exit 0 once nothing at the bar is left."]),
             "Its report lists whatever is left.",
             "",
         ]
@@ -410,16 +414,31 @@ def _check_again(
         shown, left = _shown([*head, *pinned, *guidelines])
         lines += [
             "",
-            "The guidelines' findings are a model's reading. To check them again, run the review as before. Give these",
+            "The guidelines are a model's reading. To check them again, run the review as before. Give these",
             "arguments in place of its profile, head and base.",
             *left,
             "",
             f"    {shown}",
             "",
             "This calls the model and spends its quota.",
-            *(HELD if degraded and not rules else []),
         ]
-    return lines
+    return [*lines, *(HELD if degraded else [])]
+
+
+def _unproven(outcome: Outcome, fail_on: str) -> list[Sourced]:
+    """The findings at the bar this review set aside unproven, their quote not borne out or a verifier refuting them:
+    a hole `decide` names, which a hand-off lists and runs again."""
+    unproven = [*outcome.dropped, *(item for item, _why in outcome.refuted)]
+    return [item for item in unproven if at_or_above(item.finding.severity, fail_on)]
+
+
+def _unproven_listed(outcome: Outcome, fail_on: str) -> list[str]:
+    """Each finding at the bar set aside unproven, by its check and place, as a person checks it by hand."""
+    return [
+        f"- {code_span(item.source)} at {code_span(_place(item.finding))}: a finding at the bar this review could not "
+        "prove"
+        for item in _unproven(outcome, fail_on)
+    ]
 
 
 def _shown(units: Sequence[tuple[str, ...]]) -> tuple[str, list[str]]:

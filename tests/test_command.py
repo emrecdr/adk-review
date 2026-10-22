@@ -482,8 +482,11 @@ class TestWhatAReviewCovers:
         _git_in(clone, "branch", "-q", "-D", "main")
         assert cli.main([str(clone), "--head", "origin/later", "--base", "main"]) == 2
         assert "Then pass --base origin/main" in capsys.readouterr().err
-        assert cli.main([str(clone), "--head", "origin/later", "--base", "refs/heads/main"]) == 2  # a hand-off's
+        assert cli.main([str(clone), "--head", "origin/later", "--base", "refs/heads/main"]) == 2
         assert "Then pass --base origin/main" in capsys.readouterr().err, "read by review: origin/refs/heads/main"
+        assert cli.main([str(clone), "--head", "origin/later", "--base", "refs/remotes/origin/gone"]) == 2
+        err = capsys.readouterr().err
+        assert "git fetch --all" in err and "origin/refs/" not in err, "read by review: origin/refs/remotes/origin/gone"
         _git_in(origin, "branch", "odd$name", "main")
         _git_in(clone, "fetch", "-q", "origin")
         assert cli.main([str(clone), "--head", "odd$name", "--base", "origin/main"]) == 2
@@ -1245,7 +1248,8 @@ class TestWhatTheCommandTells:
         }
         unproven = Outcome(dropped=[sourced("blocker")])  # its quote not borne out: a hole `decide` names
         handoff = render_handoff({**evidence, "scope": []}, unproven, verdict="DEGRADED", fail_on="blocker")
-        assert handoff.rstrip().endswith("What it did not check may hold more to fix."), "read by review: cut short"
+        assert "What it did not check may hold more to fix." in handoff, "read by review: cut short"
+        assert handoff.rstrip().endswith("- `rule.lint` at `a.py:1`: a finding at the bar this review could not prove")
         assert NOTHING_TO_FIX not in handoff, "read by review: said first, as the report never does"
         held = Outcome(kept=[sourced("blocker", "rule.secrets")], unread={"a.p12": "binary", "libsub": "a submodule"})
         check = render_handoff({**evidence, "scope": []}, held, verdict="DEGRADED", fail_on="blocker")
@@ -1255,9 +1259,21 @@ class TestWhatTheCommandTells:
         assert "--check rule.secrets --check rule.types" in rerun, (
             "read by review: a check that could not look was never run again, so none could be named as failing"
         )
+        unproven = Outcome(
+            kept=[sourced("blocker", "rule.secrets")], dropped=[sourced("blocker", "guideline.security")]
+        )
+        told = render_handoff({**evidence, "scope": []}, unproven, verdict="DEGRADED", fail_on="blocker")
+        assert "- `guideline.security` at `a.py:1`: a finding at the bar this review could not prove" in told, (
+            "read by review: degraded by an unproven blocker, it named nothing to check by hand"
+        )
+        assert "--base " + "3" * 40 + " --check guideline.security" in told, "nor ran its guideline again"
+        held_at = told.index("Exit 3 means")
+        assert held_at > told.index("--check guideline.security"), (
+            "read by review: said of the rules' run alone, which never runs the guideline"
+        )
         held_text = (
-            "Exit 3 means what this review could not check is still there. The fixes hold once its report names no "
-            "finding at the bar and no check that could not look."
+            "Exit 3 means what this review could not check is still there. The fixes hold once each run above "
+            "reports no finding at the bar and no check that could not look."
         )
         assert held_text in " ".join(check.split()), "read by review: a rule that failed named no finding either"
         assert "exit 0" not in check, "read by review: promised, where the hole it could not check stays a hole"

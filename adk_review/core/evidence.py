@@ -84,16 +84,6 @@ def entry(
     return made
 
 
-def short_ref(ref: str) -> str:
-    """A ref's name without the folder git keeps it in, `refs/heads/`, `refs/remotes/` or `refs/tags/`, as a person
-    names it: a hand-off's check names a ref in full, and read by review, its folder took a file name's 20 characters
-    and stood in a sentence where the name alone reads."""
-    for folder in ("refs/heads/", "refs/remotes/", "refs/tags/"):
-        if ref.startswith(folder):
-            return ref.removeprefix(folder)
-    return ref
-
-
 def unreleased[T](value: T | None) -> T:
     """A file's diff or added lines, read while the evidence still holds them: the checks node lets go of both once
     the rules have read them, and a read after is a mistake named, never an empty answer read as nothing found."""

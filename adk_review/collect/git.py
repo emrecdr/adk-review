@@ -262,6 +262,9 @@ class _UnrelatedError(_ScopeError):
 #: A name a command printed for a person to paste keeps as itself in a POSIX shell, cmd and PowerShell alike. A branch's
 #: name is its author's, and `;`, `$` and a backtick are legal in one.
 _PASTABLE = re.compile(r"[A-Za-z0-9._/-]+")
+#: What no branch's name holds, as `git check-ref-format` reads one: a leading `-`, a space or control character,
+#: `~ ^ : ? * [ \`, `..` or `@{`.
+_MALFORMED = re.compile(r"^-|[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{")
 
 
 def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn:
@@ -269,6 +272,8 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     one, else the fetch that brings one. Asked by the owner: a branch on the remote read as no branch at all. The review
     fetches nothing, since it writes nothing into the repository and opens no connection: each command is the person's
     to run there, printed only where every name in it is plain."""
+    if _MALFORMED.search(name):  # read by review: `^main` and `-x` were told to fetch a branch no name can be
+        raise _ScopeError(f"{label} {name!r} is no branch name. Name one that git branch lists")
     _, listed = _git(root, "remote")
     remotes = lines_of(listed)
     said = f"{label} {name!r} does not exist in {repo}"
@@ -277,6 +282,7 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     name = name.removeprefix("refs/heads/")
     copies = [f"{remote}/{name}" for remote in remotes if _sha(root, f"refs/remotes/{remote}/{name}") is not None]
     plain = all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in (name, *remotes))
+    plain = plain and not name.startswith("refs/")  # a remote's or a tag's full name: no remote holds it under that
     if len(copies) == 1 and plain:
         remote = copies[0].removesuffix(f"/{name}")
         raise _ScopeError(
@@ -328,9 +334,13 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
         branch = "" if head == head_sha else _branch(root, head)  # a sha, as the hook and CI name one, is no branch
         # The base by the ref it names, which a merge of it follows; none where it moves with the head, as `HEAD~2`.
         base_full = "" if base is None or base == base_sha else _symbolic(root, base)
-        if base_full.startswith("refs/remotes/") and branch:  # the head's own upstream, which the fix's push moves
-            _, tracked = _git(root, "for-each-ref", "--format=%(upstream)%0a%(push)", branch)
-            base_full = "" if base_full in lines_of(tracked) else base_full
+        if base_full.startswith("refs/remotes/") and branch:
+            # A remote's copy of the head's own branch, which the fix's push moves, upstream or not. Read by review:
+            # one pushed with no upstream kept its copy, and `origin/main`, upstream of a branch made from it, was
+            # pinned, though no push of the fix moves it.
+            _, listed = _git(root, "remote")
+            moved = {f"refs/remotes/{remote}/{branch.removeprefix('refs/heads/')}" for remote in lines_of(listed)}
+            base_full = "" if base_full in moved else base_full
         # From here on git only sees commit hashes, which cannot be mistaken for options.
         if base is None:
             base_sha = merge_base = _empty_tree(root)

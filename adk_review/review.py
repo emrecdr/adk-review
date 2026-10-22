@@ -87,12 +87,13 @@ try:
     from dotenv import load_dotenv
 
     from .collect.git import MAX_FILE_BYTES, GitError, checked_out, collect_evidence, default_base, is_repository
-    from .core.evidence import Evidence, short_ref, unreleased
+    from .core.evidence import Evidence, unreleased
     from .core.findings import RANK
     from .core.guidelines import Guideline
     from .core.health import Health, measured
     from .core.profiles import DEFAULT
     from .core.rules import FileRule
+    from .core.text import short_ref
     from .core.verdict import (
         EXIT_CLEAN,
         EXIT_DEGRADED,

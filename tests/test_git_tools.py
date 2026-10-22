@@ -132,7 +132,7 @@ def test_a_tools_docstring_speaks_to_the_model_in_words() -> None:
         assert not re.findall(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b", tool.__doc__), (tool.__name__, tool.__doc__[:120])
 
 
-def test_preflight_names_each_ref_as_git_reads_it_and_never_as_a_flag(tmp_path: Path) -> None:
+def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tmp_path: Path) -> None:
     """A commit moves a branch, so a hand-off names one to commit on only where the head names it as itself, in any
     spelling. Read by review: guessed from the ref a name resolved through, `feature~1` passed for `feature`, and
     `HEAD`, `heads/feature` and `refs/heads/feature` did not. Named in full, which no tag of its name makes ambiguous:
@@ -161,7 +161,9 @@ def test_preflight_names_each_ref_as_git_reads_it_and_never_as_a_flag(tmp_path: 
     assert "ambiguous" in preflight(str(repo), BASE, "refs/heads/x")["error_message"]
     for flag in ("-x", "--ignore-case", "^main"):  # read by review: a flag reached git, and `^main` named a sha
         said = preflight(str(repo), flag, "feature")["error_message"]
-        assert said.startswith(f"base branch {flag!r} does not exist") and "switch" not in said, said
+        assert said.startswith(f"base branch {flag!r} is no branch name") and "fetch" not in said, (
+            "read by review: told to fetch a name no branch can have"
+        )
     _git_in(repo, "checkout", "-q", "--detach")
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "", "a detached head, as CI checks out, is no branch"
 
@@ -182,6 +184,16 @@ def test_a_base_a_push_moves_is_pinned_to_the_merge_base(tmp_path: Path) -> None
     for base in ("origin/feature", "@{u}"):
         assert preflight(str(work), base, "feature")["base_full"] == "", base
     assert preflight(str(work), "origin/main", "feature")["base_full"] == "refs/remotes/origin/main"
+    _git_in(work, "checkout", "-q", "-b", "plain")  # read by review: pushed with no upstream, its copy still moves
+    _committed(work, "d.py")
+    _git_in(work, "push", "-q", "origin", "plain")
+    _committed(work, "e.py")
+    assert preflight(str(work), "origin/plain", "plain")["base_full"] == "", "a push of the fix moves it all the same"
+    _git_in(work, "checkout", "-q", "-b", "tracking", "origin/main")  # its upstream is `origin/main`, its push is not
+    _committed(work, "f.py")
+    assert preflight(str(work), "origin/main", "tracking")["base_full"] == "refs/remotes/origin/main", (
+        "read by review: pinned for being the upstream, which a push of the fix never moves"
+    )
 
 
 class TestInspectRepository:
