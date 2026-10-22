@@ -530,6 +530,9 @@ def header(evidence: Evidence, *, model: str, profile: str, off: Sequence[str], 
 
 #: How many names a list in the report spells out before it counts the rest.
 SHOWN = 10
+#: How many findings the table under the verdict shows, the most severe first, before it counts the rest, each still in
+#: its check's section. Read by review: a review of this repository whole put 770 rows above what was reviewed.
+TABLE_ROWS = 30
 
 
 def _spans(names: Sequence[str], shown: int | None = None) -> str:
@@ -603,12 +606,14 @@ def _at_a_glance(outcome: Outcome) -> list[str]:
     under = outcome.folded_into()
     lines = ["| # | Severity | Where | Finding | Found by |", "|---|---|---|---|---|"]
     ranked = sorted(outcome.kept, key=lambda item: -RANK[item.finding.severity])  # stable: the report's order on a tie
-    for number, item in enumerate(ranked, 1):
+    for number, item in enumerate(ranked[:TABLE_ROWS], 1):
         f = item.finding
         place = code_span(one_line(_place(f)))
         readings = Counter(also.source for also in [item, *under.get(id(item), [])])
         found_by = ", ".join(f"{source} ({n})" if n > 1 else source for source, n in readings.items())
         lines.append(f"| {number} | {f.severity} | {_cell(place)} | {_cell(prose(f.title))} | {found_by} |")
+    if (more := len(ranked) - TABLE_ROWS) > 0:  # after a blank line, which ends the table
+        lines += ["", f"{more} more finding{'s' * (more != 1)}, each in its check's section below."]
     return [*lines, ""]
 
 

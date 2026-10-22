@@ -954,7 +954,7 @@ class TestTheJsonReport:
         most severe first, with its place, its title and each check that found it, the ones folded into it among them.
         The sections below keep the details. A `|` in a title or a path is escaped, so no cell spills into the next."""
         from adk_review.core.verdict import Outcome
-        from adk_review.deliver.report import _at_a_glance
+        from adk_review.deliver.report import TABLE_ROWS, _at_a_glance
 
         assert run_review(cli, demo_repo, "--profile", "default-rules") == 1
         out = capsys.readouterr().out
@@ -977,6 +977,10 @@ class TestTheJsonReport:
         twice = sourced("major", line=5)
         same = Outcome(kept=[twice], folded=[(sourced("minor", line=5), twice)])
         assert _at_a_glance(same)[2].endswith("| rule.lint (2) |"), "two readings by one check, merged into one row"
+        # Asked by the owner after a review found 770 rows above the header under --all: the most severe, then a count.
+        many = _at_a_glance(Outcome(kept=[sourced("minor", line=n) for n in range(1, TABLE_ROWS + 3)]))
+        assert sum(line.startswith("| ") for line in many) == 1 + TABLE_ROWS, "the header and the rows shown"
+        assert many[-2:] == ["2 more findings, each in its check's section below.", ""], many[-3:]
 
     def test_a_finding_listed_under_another_keeps_its_own_place(self) -> None:
         """Read by review: a guideline's blocker quoting a whole function, lines 10 to 40, holds ruff's line 35, and

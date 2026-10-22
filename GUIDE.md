@@ -247,19 +247,19 @@ What a Copilot review can say, and what to do:
 ## The report
 
 The report prints, in order: the title; the verdict, with the findings at the bar beside it and what sits below the bar
-counted by severity; a table of every kept finding, the most severe first, with its place, its title and each check that
-found it, counted where one found the lines more than once; what was reviewed — the repository, the branch and its base
-with their commits, the merge base, the model where a guideline ran, the profile and every check it left off, the scope,
-the changed files, and each file not read, skipped or untracked; under `--all`, the project's health; the blast radius;
-a section for each check that found something, with its findings, their evidence and fix, each other reading of the same
-lines, by another check or the same one, under the finding it repeats with its own place, a count of its own listed
-under another finding, or that it failed, and why, then one line naming the checks that found nothing; then what a
-previous review found and this one no longer does (with `--previous`), the findings dropped for a quote the diff does
-not bear out, what the verifier refuted or could not judge (with `--verify`), how many duplicates were folded, how many
-secrets were redacted, and the spend. Every string the branch wrote is made safe to print: no credential, no control
-character or other character a reader cannot see, no CI runner's command, no HTML comment, and no HTML tag outside a
-code span. Progress goes to stderr, never into the report. Under `--quiet` a review that passes prints nothing, and one
-that does not prints the whole report.
+counted by severity; a table of the kept findings, the most severe first, up to 30 and the rest counted, with its place,
+its title and each check that found it, counted where one found the lines more than once; what was reviewed — the
+repository, the branch and its base with their commits, the merge base, the model where a guideline ran, the profile and
+every check it left off, the scope, the changed files, and each file not read, skipped or untracked; under `--all`, the
+project's health; the blast radius; a section for each check that found something, with its findings, their evidence and
+fix, each other reading of the same lines, by another check or the same one, under the finding it repeats with its own
+place, a count of its own listed under another finding, or that it failed, and why, then one line naming the checks that
+found nothing; then what a previous review found and this one no longer does (with `--previous`), the findings dropped
+for a quote the diff does not bear out, what the verifier refuted or could not judge (with `--verify`), how many
+duplicates were folded, how many secrets were redacted, and the spend. Every string the branch wrote is made safe to
+print: no credential, no control character or other character a reader cannot see, no CI runner's command, no HTML
+comment, and no HTML tag outside a code span. Progress goes to stderr, never into the report. Under `--quiet` a review
+that passes prints nothing, and one that does not prints the whole report.
 
 ## The JSON report
 
@@ -304,6 +304,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | One file's diff a guideline reads, unless `diff_cap` or `--diff-cap` names another | 16,000 characters | `collect/diff.py`, `DIFF_CAP_CHARS` |
 | All the diffs the guidelines read | 250,000 characters | `collect/change.py`, `BLOCK_CAP_CHARS` |
 | The most complex functions the health section names | 5 | `core/health.py`, `WORST_SHOWN` |
+| The findings the table under the verdict shows, the most severe first | 30 | `deliver/report.py`, `TABLE_ROWS` |
 | Python source files parsed before maintainability is graded | 10 | `core/health.py`, `FILES_AT_LEAST` |
 | How often a person at a terminal is told what the review still waits on | 10 seconds | `review.py`, `HEARTBEAT_SECONDS` |
 | Ignored files the chat verdict names; it counts the rest | 20 | `judge/agents.py`, `IGNORED_NAMED` |
