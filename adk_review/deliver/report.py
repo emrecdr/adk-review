@@ -49,10 +49,10 @@ def one_line(text: str) -> str:
     only: grounding (`core.verdict.drop_ungrounded`) reads a quote its own way, so
     what counts as grounded cannot move when the report's safety rule does.
     """
-    return squash(_visible(text))
+    return squash(_unhidden(text))
 
 
-def _visible(text: str) -> str:
+def _unhidden(text: str) -> str:
     """`text` with each credential hidden and each character a reader cannot see, or a terminal acts on, a space."""
     return _CONTROL.sub(" ", scrub(text)[0])
 
@@ -146,13 +146,13 @@ TESTS_FIRST = (
 NOTHING_TO_FIX = "Nothing to fix: no finding was kept."
 #: How a degraded review's report and hand-off each begin to say so, never "nothing to fix".
 UNCHECKED = "This review could not check everything"
+#: The two sentences every degraded check ends with, the one that says what exit 3 means and who checks what is left.
+_EXIT_3 = "Exit 3 means what this review could not check is still there."
+_BY_HAND = "A check that still cannot look is a person's to check by hand."
 #: How the runs after a degraded review tell a fix that held, its hole outranking a finding, exit 3 over exit 1: said
 #: once, after them all. Read by review: an agent waited for an exit 0 that hole never gives; a rule that failed named
 #: no finding either; a blocker dropped again as unproven was kept by none; and a check the environment stops, a 429
 #: or a tool not installed, could never be said to look, so an agent told to wait for it looped.
-#: The two sentences every degraded check ends with, the one that says what exit 3 means and who checks what is left.
-_EXIT_3 = "Exit 3 means what this review could not check is still there."
-_BY_HAND = "A check that still cannot look is a person's to check by hand."
 HELD = (
     "",
     *textwrap.wrap(
@@ -163,7 +163,14 @@ HELD = (
 )
 #: The same, where nothing was kept and so nothing fixed: read by review, it spoke of fixes there, and an agent ran it
 #: again at once, into the same rate limit.
-HELD_AGAIN = ("", *textwrap.wrap(f"Run each again once what stopped it is mended. {_EXIT_3} {_BY_HAND}", 112))
+HELD_AGAIN = (
+    "",
+    *textwrap.wrap(
+        f"Run each again once what stopped it is mended. A hole the change itself holds needs a new commit and a new "
+        f"review. {_EXIT_3} {_BY_HAND}",
+        112,
+    ),
+)
 
 
 def render_handoff(
@@ -483,7 +490,7 @@ def _pasted(argv: Sequence[str], windows: bool = os.name == "nt") -> str | None:
     words = [_windows_word(arg) if windows else shlex.quote(arg) for arg in argv]
     line = " ".join(word for word in words if word is not None)
     # Read by review: a token, and a variation selector no one sees, were printed where the prose beside hid them.
-    safe = line.isprintable() and inert(_visible(line)) == line
+    safe = line.isprintable() and inert(_unhidden(line)) == line
     return line if None not in words and safe else None
 
 

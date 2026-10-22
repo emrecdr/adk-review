@@ -139,7 +139,7 @@ brought one, as `origin/develop`, else the `git fetch` to run in the repository.
 writes nothing into the repository and opens no connection, so you run that command. A name no branch can have, such as
 `^main` or `feat/`, is said to be none, with no fetch. A revision of a missing branch, such as `gone~1`, asks for a
 commit the repository holds. A missing name given as a tag's, under tags with or without refs, gets `git fetch --all
---tags`.
+--tags` where a remote is set.
 
 A head that adds nothing on top of its base, such as `--head main --base main`, is no change: the command says so, exit
 2, and names `--head`, `--base` and `--all`. So does a head that shares no history with its base. Two other flags choose

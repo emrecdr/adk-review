@@ -99,9 +99,12 @@ def _environment(repo: str, settings: Mapping[str, str] | None = None) -> dict[s
     diff, and `*.py -diff` in their attributes file made every Python file binary; a replace ref swapped the key's
     file for a harmless one; macOS's precomposed names found no file committed in NFD; and `suppressBlankEmpty` put
     the key a line early. With a person's own config unread, so is their list of safe directories: the repository
-    the operator named is the one this review trusts, as git's command-line scope allows since 2.38.
+    the operator named is the one this review trusts, as git's command-line scope allows since 2.38. Git speaks in
+    the C locale, so its messages read as written: read by review, a German `Fehler:` was no error to `_sha`, and a
+    corrupt commit was called missing.
     """
     env = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
+    env |= {"LC_ALL": "C", "LANGUAGE": ""}
     env |= {"GIT_NO_LAZY_FETCH": "1", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_GRAFT_FILE": os.devnull}
     env |= {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_ATTR_NOSYSTEM": "1"}
     # A call's own `settings` first, so that none of them can move what is fixed for every call.
@@ -216,7 +219,7 @@ OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 def _sha(repo: str, ref: str, kind: str = "commit") -> str | None:
     """The commit a ref names, or the object of another `kind`, or None. A user's ref reaches git as a revision here and
-    in `_symbolic`, each after `--end-of-options`, and elsewhere only inside a pattern a `refs/` or `--disambiguate=`
+    in `_branch`, each after `--end-of-options`, and elsewhere only inside a pattern a `refs/` or `--disambiguate=`
     leads: a ref spelled `-x` must be a ref, never a flag. `^{commit}` names the commit an annotated tag tags, never
     the tag itself; `^{tag}` names a tag object, and nothing for a branch or a commit."""
     # A miss, quiet, says nothing, at exit 1, or 128 for a revision git cannot follow as `main@{9}` past its reflog; a
@@ -295,18 +298,20 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     # fetch them, and `main@{9}`, past its reflog, ended in git's exit 128 with no step to take.
     if _NO_NAME.search(name):
         raise _ScopeError(f"{label} {name!r} is no branch name. Name one that git branch lists")
-    if any(mark in name for mark in REVISION_MARKS):
-        raise _ScopeError(
-            f"{label} {name!r} does not exist in {repo}. Name a commit it holds, or a branch git branch lists"
-        )
     _, listed = _git(root, "remote")
     remotes = lines_of(listed)
     said = f"{label} {name!r} does not exist in {repo}"
+    if marks := [name.index(mark) for mark in REVISION_MARKS if mark in name]:
+        # A revision of a ref this repository lacks but a remote holds, as a pipeline's clone holds `origin/main`
+        # alone, is that remote's; of a ref it holds, a commit past its history, no fetch brings. Read by review:
+        # `main~1` lost its remote copy's hint, and `main~5` past a short local `main` was once offered the remote's.
+        ref, suffix = name[: min(marks)], name[min(marks) :]
+        if not _sha(root, ref) and len(copies := _copies(root, ref, remotes)) == 1:
+            raise _ScopeError(f"{said}. Its remote copy {copies[0] + suffix!r} does. Pass {flag} with it")
+        raise _ScopeError(f"{said}. Name a commit it holds, or a branch git branch lists")
     # Its remote copy as typed, first, as git reads a name; only where no remote holds one, the spellings git takes for
     # a full name. Read by review: a branch named `tags/v2`, its copy fetched, was told to fetch tags.
-    copies = (
-        [] if name.startswith("refs/") else [f"{r}/{name}" for r in remotes if _sha(root, f"refs/remotes/{r}/{name}")]
-    )
+    copies = [] if name.startswith("refs/") else _copies(root, name, remotes)
     if not copies:
         name, remotes, copies = _spelt(root, name, remotes, said)
     plain = all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in (name, *remotes))
@@ -328,6 +333,11 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     raise _ScopeError(f"{said}. Name one that git branch lists")
 
 
+def _copies(root: str, name: str, remotes: Sequence[str]) -> list[str]:
+    """Each remote's copy of the branch `name`, as `<remote>/<name>`, where a fetch brought one."""
+    return [f"{remote}/{name}" for remote in remotes if _sha(root, f"refs/remotes/{remote}/{name}")]
+
+
 def _spelt(root: str, name: str, remotes: list[str], said: str) -> tuple[str, list[str], list[str]]:
     """A missing name read in the spellings git takes for a full one, where no remote holds it as typed: the branch's
     own name, the remotes to fetch it from, and its copies there; `_ScopeError` where no fetch brings it. Read by
@@ -342,7 +352,7 @@ def _spelt(root: str, name: str, remotes: list[str], said: str) -> tuple[str, li
     if name.startswith("refs/"):  # another kind, as a pull request's: read by review, told `--all`, which brings none
         raise _ScopeError(f"{said}. Name a ref it holds")
     if local:
-        return name, remotes, [f"{r}/{name}" for r in remotes if _sha(root, f"refs/remotes/{r}/{name}")]
+        return name, remotes, _copies(root, name, remotes)
     # A name a remote's begins, read as that remote's branch, the longest remote first. Read by review: `alice/fix`,
     # with a remote `alice`, was told to fetch `fix` from it, where `origin/alice/fix` held it, now found as typed.
     if remote := next((r for r in sorted(remotes, key=len, reverse=True) if name.startswith(f"{r}/")), None):
@@ -410,22 +420,15 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
     }
 
 
-def _symbolic(root: str, name: str, kinds: tuple[str, ...]) -> str:
-    """The ref `name` names as itself, in full, where it is of one of `kinds`, else "": `main` and `HEAD` on it name
-    `refs/heads/main`, `origin/main` a remote's branch and `v1` a tag; `x~1`, a range, a sha and a detached `HEAD` name
-    none. Git's own answer, where `head_ref` is the ref a name resolved through: read by review, `feature~1` resolved
-    through `feature`."""
-    code, full = _git(
-        root, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", "--end-of-options", name, ok=(0, 1)
-    )
-    return full if code == 0 and full.startswith(kinds) else ""
-
-
 def _branch(root: str, head: str) -> str:
-    """The local branch `head` names as itself, in full, or "", which a commit moves: a tag named `x` makes `x`
-    ambiguous and leaves `refs/heads/x` whole, so a hand-off names a branch in full. Read by review: `x` was refused
-    where a tag was named `x` too."""
-    return _symbolic(root, head, ("refs/heads/",))
+    """The local branch `head` names as itself, in full, or "", which a commit moves: `HEAD` on it, `heads/x` and
+    `refs/heads/x` name one; `x~1`, a range, a sha, a tag, a remote's branch and a detached `HEAD` name none. Git's own
+    answer, where `head_ref` is the ref a name resolved through: read by review, `feature~1` resolved through
+    `feature`. In full, since a tag named `x` makes `x` ambiguous and leaves `refs/heads/x` whole."""
+    code, full = _git(
+        root, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", "--end-of-options", head, ok=(0, 1)
+    )
+    return full if code == 0 and full.startswith("refs/heads/") else ""
 
 
 def _full_ref(root: str, label: str, ref: str | None) -> str:

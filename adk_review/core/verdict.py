@@ -439,8 +439,7 @@ def fold(outcome: Outcome, rules: list[Sourced], order: Sequence[str], tidies: f
 
 def at_bar(items: Iterable[Sourced], fail_on: str) -> int:
     """How many of `items` sit at or above `fail_on`. Of the kept: said beside a degraded verdict, which outranks them,
-    since a pipeline that lets exit 3 through would otherwise let them through unseen. Of the dropped: any is a hole,
-    a finding at the bar whose quote the diff does not bear out."""
+    since a pipeline that lets exit 3 through would otherwise let them through unseen."""
     return sum(at_or_above(item.finding.severity, fail_on) for item in items)
 
 

@@ -131,7 +131,7 @@ def test_a_tools_docstring_speaks_to_the_model_in_words() -> None:
         assert not re.findall(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b", tool.__doc__), (tool.__name__, tool.__doc__[:120])
 
 
-def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tmp_path: Path) -> None:
+def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tmp_path: Path, monkeypatch) -> None:
     """A commit moves a branch, so a hand-off names one to commit on only where the head names it as itself, in any
     spelling. Read by review: guessed from the ref a name resolved through, `feature~1` passed for `feature`, and
     `HEAD`, `heads/feature` and `refs/heads/feature` did not. Named in full, which no tag of its name makes ambiguous:
@@ -186,6 +186,9 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
     for head in ("origin/feature", "origin/feature~1"):  # read by review: a walk through it exits 1, and said so too
         said = preflight(str(corrupt), f"origin/{BASE}", head)["error_message"]
         assert "does not exist" not in said and "rev-parse failed" in said, (head, said)
+    monkeypatch.setenv("LC_ALL", "de_DE.UTF-8")  # read by review: git's `Fehler:` read as no error, the commit missing
+    said = preflight(str(corrupt), f"origin/{BASE}", "origin/feature")["error_message"]
+    assert "does not exist" not in said and "rev-parse failed: error:" in said, said
     said = preflight(str(repo), f"{BASE}@{{9}}", "feature")["error_message"]  # past its reflog: git's exit 128
     assert "Name a commit it holds" in said and "exit 128" not in said, "read by review: it named no step to take"
     _git_in(repo, "checkout", "-q", "--detach")

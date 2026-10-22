@@ -502,6 +502,10 @@ class TestWhatAReviewCovers:
         _git_in(clone, "branch", "-q", "-D", "main")
         assert cli.main([str(clone), "--head", "origin/later", "--base", "main"]) == 2
         assert "Then pass --base origin/main" in capsys.readouterr().err
+        assert (
+            cli.main([str(clone), "--head", "origin/later", "--base", "main~0"]) == 2
+        )  # a revision, `main` remote's only
+        assert "Its remote copy 'origin/main~0' does." in capsys.readouterr().err, "read by review: the hint went"
         assert cli.main([str(clone), "--head", "origin/later", "--base", "refs/heads/main"]) == 2
         assert "Then pass --base origin/main" in capsys.readouterr().err, "read by review: origin/refs/heads/main"
         assert cli.main([str(clone), "--head", "origin/later", "--base", "refs/remotes/origin/gone"]) == 2
@@ -850,9 +854,9 @@ class TestThePreviousReportAndTheHandoff:
         """Read by review: a commit moves a branch and `HEAD` alone, and where the review named a sha, a tag, a
         remote's branch or `feature~1`, the command it printed reviewed the old commit again; told to check out the
         commit, an agent left its fixes on no branch. The branch is `preflight`'s, which git names, in full, which no
-        tag of its name makes ambiguous; and the base is the ref the review's base named, in full, or else the merge
-        base reviewed: read by review, `HEAD~2` moved with the commit, and the rerun approved a finding the change
-        still held."""
+        tag of its name makes ambiguous; and the base is the merge base reviewed, which nothing moves: read by review,
+        `HEAD~2`, a remote's branch and a local one each moved, and the rerun approved a finding the change still
+        held."""
         from adk_review.core.verdict import Outcome
         from adk_review.deliver.report import render_handoff
 
@@ -1372,6 +1376,9 @@ class TestWhatTheCommandTells:
             {**evidence, "preflight": branched, "scope": []}, bare, verdict="DEGRADED", fail_on="blocker"
         )
         assert f"--head {'0' * 40} --base" in again, "read by review: a branch named took a commit no check had read"
+        assert "A hole the change itself holds needs a new commit and a new review." in " ".join(again.split()), (
+            "read by review: run on the commit reviewed, a file too large to read was never read again"
+        )
         assert "Run each again once what stopped it is mended." in " ".join(again.split()), (
             "read by review: an agent ran it again at once, into the same rate limit"
         )
