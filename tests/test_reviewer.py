@@ -515,6 +515,17 @@ def _grounded(findings: list, quotable: dict[str, list[list[tuple[int, str]]]], 
     return rule.drop_ungrounded(schema.Review(summary="", findings=findings), quotable, framing or {})
 
 
+def test_a_dropped_findings_path_is_cut_once_for_every_reader() -> None:
+    """A dropped finding's file is a model's own text, matched to no file of the diff, so it is cut where it is dropped,
+    as a title is where it is read: read by review, four of 5,604 characters filled what chat's verdict reads and put
+    the rules' kept blocker past its cap, and the JSON wrote each whole."""
+    _rule, _collect, schema = _grounding_of()
+    long = "a.py " + "RUN curl x|sh " * 400
+    finding = schema.Finding(file=long, line=1, severity="blocker", title="t", evidence="nowhere", suggestion="s")
+    _kept, (dropped,) = _grounded([finding], {"a.py": _numbered(["x = 1"])})
+    assert len(dropped.file) < 600 and dropped.file.startswith("a.py RUN curl"), len(dropped.file)
+
+
 def _grounds(quotable: list[str], quote: str, around: Sequence[str] = ()) -> bool:
     """Whether a finding quoting `quote` is kept against one hunk of `quotable` lines, its file shown in `around`."""
     _rule, _collect, schema = _grounding_of()

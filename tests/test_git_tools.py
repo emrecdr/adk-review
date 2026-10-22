@@ -161,6 +161,9 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
     assert preflight(str(repo), "feature~1", "feature")["base_full"] == "", "a base that moves with its head"
     _git_in(repo, "tag", "refs/heads/x")  # git's first reading of a full name: read by review, it went unrefused
     assert "ambiguous" in preflight(str(repo), BASE, "refs/heads/x")["error_message"]
+    from adk_review.collect.git import _sha
+
+    assert _sha(str(repo), "feature") == tip and _sha(str(repo), "^feature") is None, "only an object's id is a sha"
     for flag in ("-x", "--ignore-case", "^main"):  # read by review: a flag reached git, and `^main` named a sha
         said = preflight(str(repo), flag, "feature")["error_message"]
         assert said.startswith(f"base branch {flag!r} is no branch name") and "fetch" not in said, (
@@ -174,12 +177,11 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "", "a detached head, as CI checks out, is no branch"
 
 
-def test_a_remote_base_is_pinned_and_a_local_one_kept(tmp_path: Path) -> None:
-    """A hand-off's check keeps a local branch or a tag as its base by its ref, which a merge of it follows, and pins a
-    remote's branch to the merge base, since a push moves it under config this review cannot read: read by review,
-    `--base @{u}` named the head's upstream, the agent pushed, and the rerun saw only the commits after the push and
-    approved; and each guess at where a push goes, from its name or from `%(push)` without the person's own config,
-    missed one."""
+def test_a_remote_base_is_pinned(tmp_path: Path) -> None:
+    """A hand-off's check pins a remote's branch it is based on to the merge base, since a push moves it under config
+    this review cannot read: read by review, `--base @{u}` named the head's upstream, the agent pushed, and the rerun
+    saw only the commits after the push and approved; and each guess at where a push goes, from its name or from
+    `%(push)` without the person's own config, missed one. A local branch or a tag is kept, as the test above shows."""
     from adk_review.collect.git import preflight
 
     _remote, work = _pushed_from(tmp_path)

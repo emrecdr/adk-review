@@ -48,7 +48,12 @@ def one_line(text: str) -> str:
     only: grounding (`core.verdict.drop_ungrounded`) reads a quote its own way, so
     what counts as grounded cannot move when the report's safety rule does.
     """
-    return squash(_CONTROL.sub(" ", scrub(text)[0]))
+    return squash(_visible(text))
+
+
+def _visible(text: str) -> str:
+    """`text` with each credential hidden and each character a reader cannot see, or a terminal acts on, a space."""
+    return _CONTROL.sub(" ", scrub(text)[0])
 
 
 #: A CI runner's command in its log: Azure runs `##vso[` and GitHub `##[` anywhere in a line, GitHub across invisible
@@ -413,7 +418,7 @@ def _check_again(
             lines.append(f"    {command} {shown}")
         else:
             lines += [
-                "No command is printed: a name in it holds a character a shell would read.",
+                "No command is printed: a name in it cannot be shown as it is.",  # a shell's character, or a token's
                 "Run the review again on the same repository with these arguments.",
                 *left,
                 "",
@@ -461,7 +466,8 @@ def _pasted(argv: Sequence[str], windows: bool = os.name == "nt") -> str | None:
     are legal in one."""
     words = [_windows_word(arg) if windows else shlex.quote(arg) for arg in argv]
     line = " ".join(word for word in words if word is not None)
-    safe = line.isprintable() and inert(line) == line and scrub(line)[0] == line  # read by review: a token, printed
+    # Read by review: a token, and a variation selector no one sees, were printed where the prose beside hid them.
+    safe = line.isprintable() and inert(_visible(line)) == line
     return line if None not in words and safe else None
 
 
@@ -553,9 +559,9 @@ def _as_resolved(name: str, ref: str) -> str:
 
 def _spot(f: Finding) -> str:
     """A finding's place as a code span on one line, where markdown shows it: a dropped finding's file is a model's own
-    text, matched to no file of the diff, so it is cut as a reason is. Read by review: printed bare, one forged a
-    heading and showed a token, and uncut one filled a line of 6,885 characters."""
-    return code_span(one_line(cut_at(_place(f), REASON_MAX_CHARS)))
+    text, matched to no file of the diff, and cut where it was dropped. Read by review: printed bare, one forged a
+    heading and showed a token."""
+    return code_span(one_line(_place(f)))
 
 
 def _place(f: Finding) -> str:

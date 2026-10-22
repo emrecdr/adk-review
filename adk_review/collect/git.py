@@ -205,13 +205,17 @@ def _verb(args: tuple[str, ...]) -> str:
     return next((arg for arg in args if not arg.startswith("-")), "")
 
 
+#: An object's id as git prints one, SHA-1's or SHA-256's.
+_OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+
+
 def _sha(repo: str, ref: str, kind: str = "commit") -> str | None:
     """The commit a ref names, or the object of another `kind`, or None. A user's ref reaches git as a revision here and
     in `_symbolic`, each after `--end-of-options`, and elsewhere only inside a pattern a `refs/` or `--disambiguate=`
     leads: a ref spelled `-x` must be a ref, never a flag. `^{commit}` names the commit an annotated tag tags, never
     the tag itself; `^{tag}` names a tag object, and nothing for a branch or a commit."""
     code, out = _git(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{{kind}}}", ok=(0, 1))
-    return out if code == 0 and not out.startswith("^") else None  # read by review: `^main` passed as `^<sha>`
+    return out if code == 0 and _OBJECT_ID.fullmatch(out) else None  # read by review: `^main` passed as `^<sha>`
 
 
 def _namesakes(repo: str, ref: str) -> list[str]:
@@ -280,6 +284,9 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     # `heads/main` and `origin/dev` were told to fetch and pass `origin/refs/heads/main`, `origin/heads/main` and
     # `origin/origin/dev`, which no remote holds. A tag's full name is under no remote by that name.
     full = f"refs/{name}" if name.startswith(("heads/", "tags/", "remotes/")) else name
+    if remotes and full.startswith("refs/tags/"):  # read by review: `--all` fetches no tag outside a branch's history
+        raise _ScopeError(f"{said}. Fetch every remote's tags there: git fetch --all --tags")
+    local = full.startswith("refs/heads/")  # never a remote's: read by review, `refs/heads/origin/gone` was read so
     name = full.removeprefix("refs/heads/").removeprefix("refs/remotes/")
     other = name.startswith("refs/")
     copies = [f"{r}/{name}" for r in remotes if not other and _sha(root, f"refs/remotes/{r}/{name}") is not None]
@@ -288,7 +295,7 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     # from it, where `origin/alice/fix` held it.
     remote = (
         None
-        if other or copies
+        if other or local or copies
         else next((r for r in sorted(remotes, key=len, reverse=True) if name.startswith(f"{r}/")), None)
     )
     if remote:

@@ -16,7 +16,7 @@ from functools import lru_cache
 from .evidence import Entry
 from .findings import RANK, Checked, Finding, Review, at_or_above
 from .secrets import scrub
-from .text import squash
+from .text import REASON_MAX_CHARS, cut_at, squash
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_DEGRADED = 0, 1, 2, 3
 #: The shell's own code for a run Ctrl-C stopped: 128 and SIGINT's 2.
@@ -229,7 +229,9 @@ def drop_ungrounded(
     for finding in review.findings:
         path = _meant(finding.file, quotable)
         if (placed := _placed(finding, quotable.get(path, []), framing.get(path, ()))) is None:
-            dropped.append(finding)
+            # Its file a model's own text, matched to none of the diff's, so cut here, as a title is where it is read:
+            # read by review, four of 5,604 characters filled what chat's verdict reads, past its kept blocker.
+            dropped.append(finding.model_copy(update={"file": cut_at(finding.file, REASON_MAX_CHARS)}))
             continue
         lines, stood = placed
         update = {"file": path, "line": lines[0] if lines else None}
