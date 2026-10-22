@@ -134,6 +134,10 @@ uv run adk-review /path/to/repoX --head main --base v1.4.0
 uv run adk-review /path/to/repoX --head branchFeatureNew --base develop --dry-run
 ```
 
+A branch the repository does not hold is refused, exit 2, with the way to it: its remote copy where an earlier fetch
+brought one, as `origin/develop`, else the `git fetch` to run in the repository. The review never fetches by itself: it
+writes nothing into the repository and opens no connection, so you run that command.
+
 A head that adds nothing on top of its base, such as `--head main --base main`, is no change: the command says so, exit
 2. Two other flags choose the change in place of `--base`: `--all` reads every file at the head, and `--staged` reads
 what is staged, against `HEAD`.

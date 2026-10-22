@@ -423,6 +423,39 @@ class TestWhatAReviewCovers:
             cli.main([str(repo), "--staged", "--base", "main"])
         assert refused.value.code == 2
 
+    def test_a_branch_only_on_a_remote_is_named_with_the_fetch_that_brings_it(self, cli, tmp_path: Path, capsys):
+        """Asked by the owner: a branch that exists on the remote read as one that does not exist. The review fetches
+        nothing, since it writes nothing into the repository and opens no connection: it names the remote copy it
+        finds, and the command for the person to run there, which then reviews."""
+        origin = _branch_off_empty(tmp_path / "origin", "feature", base="main")
+        _committed(origin, "app.py", "x = 1\n")
+        clone = tmp_path / "clone"
+        _git_in(tmp_path, "clone", "-q", str(origin), str(clone))
+        _git_in(clone, "switch", "-q", "main")
+        _git_in(clone, "branch", "-q", "-D", "feature")  # fetched as `origin/feature` alone
+        _git_in(origin, "switch", "-q", "-c", "later", "main")
+        _committed(origin, "later.py", "y = 1\n")  # on the remote, never fetched
+
+        assert cli.main([str(clone), "--head", "feature", "--base", "main"]) == 2
+        err = capsys.readouterr().err
+        assert "Its remote copy 'origin/feature' does." in err, err
+        assert "git fetch origin feature." in err and "Then pass --head origin/feature" in err, err
+        assert cli.main([str(clone), "--head", "later", "--base", "main"]) == 2
+        err = capsys.readouterr().err
+        assert "nor as a remote branch fetched there" in err and "git fetch origin later." in err, err
+        _git_in(clone, "fetch", "-q", "origin", "later")  # the person runs what it printed
+        assert cli.main([str(clone), "--head", "origin/later", "--base", "main", "--profile", "default-rules"]) == 0
+
+        _git_in(clone, "switch", "-q", "--detach")
+        _git_in(clone, "branch", "-q", "-D", "main")
+        assert cli.main([str(clone), "--head", "origin/later", "--base", "main"]) == 2
+        assert "Then pass --base origin/main" in capsys.readouterr().err
+        _git_in(origin, "branch", "odd$name", "main")
+        _git_in(clone, "fetch", "-q", "origin")
+        assert cli.main([str(clone), "--head", "odd$name", "--base", "origin/main"]) == 2
+        err = capsys.readouterr().err
+        assert "Its remote copy 'origin/odd$name' does" in err and "git fetch" not in err, "no command a shell rereads"
+
 
 class TestTheDryRun:
     """`--dry-run` resolves what a review would cover and run, as the review resolves it, and runs nothing."""

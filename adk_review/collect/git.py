@@ -23,7 +23,7 @@ import subprocess
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, NoReturn
 
 from ..core.blast import Radius
 from ..core.evidence import LINK_UNREAD, Entry, Evidence, Failure, unreleased
@@ -250,6 +250,39 @@ class _ScopeError(Exception):
     """A scope `preflight` refuses, and why: answered as the error envelope a `GitError` is, from one place."""
 
 
+#: A name a command printed for a person to paste keeps as itself in a POSIX shell, cmd and PowerShell alike. A branch's
+#: name is its author's, and `;`, `$` and a backtick are legal in one.
+_PASTABLE = re.compile(r"[A-Za-z0-9._/-]+")
+
+
+def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn:
+    """Refuse `name`, which names nothing in the repository, with the way to it: its remote copy where a fetch brought
+    one, else the fetch that brings one. Asked by the owner: a branch on the remote read as no branch at all. The review
+    fetches nothing, since it writes nothing into the repository and opens no connection: each command is the person's
+    to run there, printed only where every name in it is plain."""
+    _, listed = _git(root, "remote")
+    remotes = lines_of(listed)
+    copies = [f"{remote}/{name}" for remote in remotes if _sha(root, f"refs/remotes/{remote}/{name}") is not None]
+    plain = all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in (name, *remotes))
+    said = f"{label} {name!r} does not exist in {repo}"
+    if len(copies) == 1 and plain:
+        remote = copies[0].removesuffix(f"/{name}")
+        raise _ScopeError(
+            f"{said}. Its remote copy {copies[0]!r} does. Fetch it fresh there: git fetch {remote} {name}. "
+            f"Then pass {flag} {copies[0]}"
+        )
+    if copies:
+        raise _ScopeError(f"{said}. Its remote copy {' or '.join(map(repr, copies))} does. Pass {flag} with one")
+    if len(remotes) == 1 and plain:
+        raise _ScopeError(
+            f"{said}, nor as a remote branch fetched there. Fetch it there: git fetch {remotes[0]} {name}. "
+            f"Then pass {flag} {remotes[0]}/{name}"
+        )
+    if remotes:
+        raise _ScopeError(f"{said}, nor as a remote branch fetched there. Fetch every remote there: git fetch --all")
+    raise _ScopeError(said)
+
+
 def _refused(repo: str, root: str) -> None:
     """`_ScopeError` where `repo` is no repository to review: no `.git` in it, or a `.git` that is no repository's top.
     Measured: a `.git` that is no repository, an empty folder say, sent git to the repository around it, and a review
@@ -278,11 +311,8 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
     try:
         _refused(repo, root)
         base_ref, head_ref = _full_ref(root, "base branch", base), _full_ref(root, "head branch", head)
-        base_sha, head_sha = _sha(root, base) if base is not None else "", _sha(root, head)
-        if base_sha is None:
-            raise _ScopeError(f"base branch {base!r} does not exist in {repo}")
-        if head_sha is None:
-            raise _ScopeError(f"head branch {head!r} does not exist in {repo}")
+        base_sha = "" if base is None else _sha(root, base) or _missing(root, repo, "base branch", "--base", base)
+        head_sha = _sha(root, head) or _missing(root, repo, "head branch", "--head", head)
         # From here on git only sees commit hashes, which cannot be mistaken for options.
         if base is None:
             base_sha = merge_base = _empty_tree(root)
