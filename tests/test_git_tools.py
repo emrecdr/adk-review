@@ -131,6 +131,26 @@ def test_a_tools_docstring_speaks_to_the_model_in_words() -> None:
         assert not re.findall(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b", tool.__doc__), (tool.__name__, tool.__doc__[:120])
 
 
+def test_preflight_names_the_branch_a_head_names_as_itself(tmp_path: Path) -> None:
+    """A commit moves a branch, so a hand-off names one to commit on only where the head names it as itself, in any
+    spelling. Read by review: guessed from the ref a name resolved through, `feature~1` passed for `feature`, and
+    `HEAD`, `heads/feature` and `refs/heads/feature` did not."""
+    from adk_review.collect.git import preflight
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_in(repo, "init", "-q", "-b", BASE)
+    _committed(repo, "a.py")
+    _git_in(repo, "checkout", "-q", "-b", "feature")
+    tip = _committed(repo, "b.py")
+    _git_in(repo, "tag", "v1")
+    spellings = {"feature", "heads/feature", "refs/heads/feature", "HEAD"}
+    named = {head: preflight(str(repo), BASE, head)["branch"] for head in [*spellings, "feature~0", tip, "v1"]}
+    assert named == {head: "feature" if head in spellings else "" for head in named}, named
+    _git_in(repo, "checkout", "-q", "--detach")
+    assert preflight(str(repo), BASE, "HEAD")["branch"] == "", "a detached head, as CI checks out, is no branch"
+
+
 class TestInspectRepository:
     def test_a_missing_branch_is_an_error_envelope_not_an_exception(self, demo_repo: Path) -> None:
         """The commonest typo. Measured by coverage: the reviewer answered it in no test."""
@@ -384,10 +404,14 @@ class TestGitThatFails:
         assert cli.main([str(unrelated_repo), "--base", BASE, "--head", UNRELATED]) == 2
         err = capsys.readouterr().err
         assert "share no history" in err and "with --all, not --base" in err and "Traceback" not in err, err
+
+    def test_the_mark_that_rescopes_a_change_is_set_only_where_it_is_true(self, unrelated_repo: Path) -> None:
+        """The command names the flags that rescope a change from the envelope's mark alone. Read by review: every
+        other error carried it, as false."""
         from adk_review.collect.git import collect_evidence
 
-        gone = collect_evidence(str(unrelated_repo), BASE, "gone")
-        assert "rescope" not in gone, "read by review: every other error carried the mark, as false"
+        assert collect_evidence(str(unrelated_repo), BASE, UNRELATED).get("rescope") is True
+        assert "rescope" not in collect_evidence(str(unrelated_repo), BASE, "gone")
 
     def test_every_command_names_a_shallow_clone_and_how_to_deepen_it(self, shallow_clone: Path, cli, capsys) -> None:
         assert run_review(cli, shallow_clone) == 2

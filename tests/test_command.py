@@ -688,12 +688,22 @@ class TestThePreviousReportAndTheHandoff:
         """Copilot's review hands a finding to its cloud agent, and Bugbot checks its own fixes in a machine of its
         own; a coding agent working from the handoff had to work out how to check its fixes. The handoff ends in the
         command: the rules that found something, run again on the same scope, no model called. Pasted after the
-        demo's two fixes are committed, it ends in exit 0."""
+        demo's two fixes are committed, it ends in exit 0. A glob the review was given goes with it, and none the
+        config holds, which it reads again."""
         import make_demo_repo
 
         root = make_demo_repo.build(tmp_path / "demo")
         handoff, data = tmp_path / "handoff.md", tmp_path / "review.json"
-        args = ("--profile", "default-rules", "--handoff", str(handoff), "--json", str(data))
+        args = (
+            "--profile",
+            "default-rules",
+            "--third-party",
+            "vendor/",
+            "--handoff",
+            str(handoff),
+            "--json",
+            str(data),
+        )
         assert run_review(cli, root, *args) == 1
         report = json.loads(data.read_text(encoding="utf-8"))
         found = {f["check"] for f in report["findings"] + report["folded"]}
@@ -707,6 +717,8 @@ class TestThePreviousReportAndTheHandoff:
             HEAD,
             "--base",
             BASE,
+            "--third-party",
+            "vendor/",
             "--fail-on",
             "blocker",
             *(a for c in sorted(found) for a in ("--check", c)),
@@ -760,27 +772,51 @@ class TestThePreviousReportAndTheHandoff:
 
     def test_a_handoff_checks_the_fixes_at_head_where_a_commit_leaves_the_head_reviewed_where_it_was(self) -> None:
         """Read by review: a commit moves a branch and `HEAD` alone, and where the review named a sha, a tag, a
-        remote's branch or `feature~1`, the command it printed reviewed the old commit again; and `HEAD` checks the
-        commit reviewed only once that commit is checked out."""
+        remote's branch or `feature~1`, the command it printed reviewed the old commit again; told to check out the
+        commit, an agent left its fixes on no branch; and the globs the review was given were dropped, a file it
+        skipped then a hole. The branch is `preflight`'s, which git names."""
         from adk_review.core.verdict import Outcome
         from adk_review.deliver.report import render_handoff
 
         sha = "4695b9bc" * 5
-        branch, checked_out = "Commit the fixes on `feature/x`:", "Check out `4695b9bc4695`. Commit the fixes:"
-        for head, ref, checked, first in (
-            ("feature/x", "refs/heads/feature/x", "feature/x", branch),
-            ("feature/x~1", "refs/heads/feature/x", "HEAD", checked_out),  # `~` dropped where its ref is looked up
-            (sha, "", "HEAD", checked_out),
-            ("v1", "refs/tags/v1", "HEAD", checked_out),
+        on_branch, on_new = "Commit the fixes on `feature/x`:", "Commit the fixes on a new branch at `4695b9bc4695`:"
+        for head, branch, checked, first in (
+            ("feature/x", "feature/x", "feature/x", on_branch),
+            ("HEAD", "feature/x", "feature/x", on_branch),  # checked out on it, as a review with no `--head` is
+            ("feature/x~1", "", "HEAD", on_new),
+            (sha, "", "HEAD", on_new),
         ):
-            pre = {"repo": "/r", "head": head, "head_ref": ref, "base": "main", "head_sha": sha}
+            pre = {"repo": "/r", "head": head, "branch": branch, "base": "main", "head_sha": sha}
             said = render_handoff(
                 {"preflight": pre, "whole": False, "scope": []},
                 Outcome(kept=[sourced("blocker", "rule.secrets")]),
                 verdict="REQUEST_CHANGES",
                 fail_on="blocker",
+                added=("--skip", "docs/", "--third-party", "vendor/"),
             )
-            assert f"    adk-review /r --head {checked} --base main " in said and first in said, said
+            command = f"    adk-review /r --head {checked} --base main --skip docs/ --third-party vendor/ --fail-on "
+            assert command in said and first in said and "Check out" not in said, said
+
+    def test_every_sentence_a_handoff_writes_itself_is_short_and_one_command(self) -> None:
+        """Its own words, as every sentence the package prints: read by review, its line on the tests ran to 22 words,
+        the guidelines' to 31 and what a tidy keeps to 41. A quote and a title are the branch's, and a list item,
+        a heading and the command are no sentence."""
+        from adk_review.core.verdict import Outcome
+        from adk_review.deliver.report import render_handoff
+
+        kept = [sourced("blocker", "rule.secrets"), sourced("major", "guideline.security", line=2)]
+        kept.append(sourced("minor", "rule.simplify", line=9))
+        for repo, branch in (("/r", ""), ("/a\nb", "feature/x")):  # a command printed, and none
+            pre = {"repo": repo, "head": "h", "branch": branch, "base": "main", "head_sha": "0" * 40}
+            said = render_handoff(
+                {"preflight": pre, "whole": False, "scope": []},
+                Outcome(kept=kept, unread={"a.p12": "binary"}),
+                verdict="DEGRADED",
+                fail_on="blocker",
+                tidies=frozenset({"rule.simplify"}),
+            )
+            prose = "\n".join(line for line in said.splitlines() if not re.match(r"#|    |   - |- |\d+\. ", line))
+            assert _long([("the hand-off", prose)]) == []
 
     def test_a_handoff_lists_the_tidies_apart_and_holds_one_back_on_a_defects_lines(self) -> None:
         """A simplify pass keeps two lanes: a fix, and a tidy that changes how code reads and never what it does. A
@@ -1147,10 +1183,14 @@ class TestWhatTheCommandTells:
         handoff = render_handoff({**evidence, "scope": []}, unproven, verdict="DEGRADED", fail_on="blocker")
         assert handoff.rstrip().endswith("What it did not check may hold more to fix."), "read by review: cut short"
         assert NOTHING_TO_FIX not in handoff, "read by review: said first, as the report never does"
-        held = Outcome(kept=[sourced("blocker", "rule.secrets")], unread={"a.p12": "binary"})
+        held = Outcome(kept=[sourced("blocker", "rule.secrets")], unread={"a.p12": "binary", "b[1].bin": "binary"})
         check = render_handoff({**evidence, "scope": []}, held, verdict="DEGRADED", fail_on="blocker")
-        assert "Exit 3 means what this review could not check is still there." in check, (
-            "read by review: a rerun that keeps the file no check reads was promised exit 0"
+        assert "- `a.p12`: binary" in check, "read by review: it named nothing a person could check by hand"
+        (line,) = [one.strip() for one in check.splitlines() if one.startswith("    ")]
+        windows = os.name == "nt"  # Windows' double quotes, taken off as a shell there takes them
+        argv = [arg.strip('"') if windows else arg for arg in shlex.split(line, posix=not windows)]
+        assert "--skip a.p12 --skip b[[]1].bin --fail-on blocker" in " ".join(argv), (
+            "read by review: the rerun kept the file no check reads, a hole whatever was fixed, so never exit 0"
         )
 
     def test_quiet_prints_nothing_when_the_review_passes(self, cli, tmp_path: Path, capsys) -> None:
@@ -1170,7 +1210,7 @@ class TestWhatTheCommandTells:
         self, cli, tmp_path: Path, capsys, monkeypatch
     ) -> None:
         """Read by review: a review that passed, then could not write its JSON, ended in exit 3 with no report, and
-        the hand-off written before it unnamed."""
+        the hand-off written before it unnamed; and the comment after it was never written, nor said to be missing."""
         written = cli._written
 
         def full(path: Path, text: str) -> None:
@@ -1179,11 +1219,13 @@ class TestWhatTheCommandTells:
             written(path, text)
 
         monkeypatch.setattr(cli, "_written", full)
-        files = ("--handoff", str(tmp_path / "h.md"), "--json", str(tmp_path / "r.json"))
+        files = ("--handoff", str(tmp_path / "h.md"), "--json", str(tmp_path / "r.json"), "--comment", "c.md")
+        monkeypatch.chdir(tmp_path)
         assert self._review(cli, tmp_path, "x = 1\n", "--quiet", *files) == 3
         said = capsys.readouterr()
         assert "## Verdict: APPROVED" in said.out and "wrote the hand-off to" in said.err, said
-        assert said.err.rstrip().endswith("No space left on device"), said.err
+        assert "wrote the code review comments to" in said.err and (tmp_path / "c.md").is_file(), said.err
+        assert said.err.rstrip().endswith("No space left on device"), "the why last, the run's last line"
 
     def test_quiet_and_progress_cannot_run_together(self, cli, tmp_path: Path, capsys) -> None:
         with pytest.raises(SystemExit) as stopped:

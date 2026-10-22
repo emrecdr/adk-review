@@ -47,7 +47,8 @@ async def inspect_repository(repo: str, base: str, head: str, tool_context: Tool
 
     Returns:
         On success: {"status": "success", "repo", "base", "base_sha", "head", "head_sha",
-        "merge_base", "commits_ahead", "base_ref", "head_ref"}. On failure: {"status": "error", "error_message": "..."}.
+        "merge_base", "commits_ahead", "base_ref", "head_ref", "branch"}. On failure: {"status": "error",
+        "error_message": "..."}.
     """
     # Off the loop: ADK awaits an async tool but calls a sync one inline, and `adk web` serves every session on one
     # loop, which git held while it ran.

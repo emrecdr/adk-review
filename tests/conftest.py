@@ -227,11 +227,12 @@ def pytest_configure() -> None:
 def _umask_kept() -> Iterator[None]:
     """No test leaves its umask to the next: the login sets 0o077 for its whole process, as it must before LiteLLM
     writes the token. Read by review: six tests of it left every test after them making files only their owner reads.
-    Set up before `monkeypatch`, so it restores through the real `os.umask` where a test patched it."""
-    mask = os.umask(0o022)
-    os.umask(mask)
+    The real `os.umask` is kept at setup: torn down before `monkeypatch`, it would call a test's patch of it."""
+    umask = os.umask
+    mask = umask(0o022)
+    umask(mask)
     yield
-    os.umask(mask)
+    umask(mask)
 
 
 @pytest.fixture(autouse=True)

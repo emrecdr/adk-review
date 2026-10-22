@@ -318,6 +318,7 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
         base_ref, head_ref = _full_ref(root, "base branch", base), _full_ref(root, "head branch", head)
         base_sha = "" if base is None else _sha(root, base) or _missing(root, repo, "base branch", "--base", base)
         head_sha = _sha(root, head) or _missing(root, repo, "head branch", "--head", head)
+        branch = _branch(root, head)
         # From here on git only sees commit hashes, which cannot be mistaken for options.
         if base is None:
             base_sha = merge_base = _empty_tree(root)
@@ -341,7 +342,18 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
         "commits_ahead": int(ahead),
         "base_ref": base_ref,
         "head_ref": head_ref,
+        "branch": branch,
     }
+
+
+def _branch(root: str, head: str) -> str:
+    """The local branch `head` names as itself, by its short name, or "": `HEAD` on a branch, and `heads/x` and
+    `refs/heads/x`, name one; `x~1`, a sha, a tag, a remote's branch and a detached `HEAD` name none. Git's own answer,
+    where `head_ref` is the ref a name resolved through: read by review, `feature~1` resolved through `feature`."""
+    _, full = _git(
+        root, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", "--end-of-options", head, ok=(0, 1)
+    )
+    return full.removeprefix("refs/heads/") if full.startswith("refs/heads/") else ""
 
 
 def _full_ref(root: str, label: str, ref: str | None) -> str:

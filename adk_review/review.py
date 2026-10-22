@@ -629,7 +629,8 @@ def _review(argv: list[str] | None = None) -> int:
     try:  # before anything runs: the config, the rules and the profiles read whole, or a sentence and exit 2
         # The config first, since every flag's default is one of its settings.
         config = load_config(CONFIG)
-        args = build_parser(config["review"]).parse_args(argv)
+        parser = build_parser(config["review"])
+        args = parser.parse_args(argv)
         found = catalog()
         # One run's `--check` list is held to what a profile is, and named in the report as the flag.
         chosen = select(found, config["profiles"], args.profile, args.check)
@@ -651,7 +652,18 @@ def _review(argv: list[str] | None = None) -> int:
         return EXIT_CLEAN
     if args.try_paths:
         return _try(args.try_paths, chosen, args.fail_on)
-    return _reviewed(args, chosen, scope, previous)
+    return _reviewed(args, chosen, scope, previous, _added(parser, args))
+
+
+def _added(parser: argparse.ArgumentParser, args: argparse.Namespace) -> tuple[str, ...]:
+    """The globs given beyond the config's, each after its flag, which argparse appends to the config's own: the
+    hand-off's check of the fixes repeats them, and reads the config's again."""
+    return tuple(
+        arg
+        for dest, flag in (("skip", "--skip"), ("scan", "--scan"), ("third_party", "--third-party"))
+        for glob in getattr(args, dest)[len(parser.get_default(dest)) :]
+        for arg in (flag, glob)
+    )
 
 
 def _mode_alone(args: argparse.Namespace) -> None:
@@ -681,7 +693,9 @@ def _compared(args: argparse.Namespace) -> tuple[str, str | None, str]:
     return repo, base, head
 
 
-def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...], previous: Previous) -> int:
+def _reviewed(
+    args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...], previous: Previous, added: tuple[str, ...]
+) -> int:
     """A review. The engine — ADK, and the judge's agents, graph, plugins, run and verifier — is imported where a
     guideline runs, or a flag of the engine's own asks for its run, and nowhere else: measured, best of seven,
     `--list-checks` started in 0.75 s with it imported first and 0.13 s without, `--try` in 0.73 s and 0.15 s; and best
@@ -740,7 +754,7 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
             )
         )
         return EXIT_CLEAN
-    return _decided(args, chosen, evidence, shown, previous, say)
+    return _decided(args, chosen, evidence, shown, previous, say, added=added)
 
 
 def _arm(verify: bool, guidelines: Sequence[Guideline] = ()) -> tuple[str | None, str]:
@@ -763,6 +777,8 @@ def _decided(
     shown: dict,
     previous: Previous,
     say: Callable[[str], None] | None,
+    *,
+    added: tuple[str, ...],
 ) -> int:
     """The review decided and reported: served from the cache where one holds it; else the rules, and the guidelines
     where any runs. `--trace`, `--debug-log` and `--record` are the engine's own and bring its run too."""
@@ -777,7 +793,7 @@ def _decided(
     health = measured(evidence["files"], evidence["tree"]) if evidence["whole"] else None
     engine = bool(chosen.guidelines) or any(getattr(args, flag) for flag in ENGINE)
     judged = _judged(args, chosen, evidence, say) if engine else _ruled(args, chosen, evidence, say)
-    return _reported(args, evidence, *judged, shown, previous, health, cached, tidies=chosen.tidies())
+    return _reported(args, evidence, *judged, shown, previous, health, cached, tidies=chosen.tidies(), added=added)
 
 
 def _ruled(
@@ -863,10 +879,12 @@ def _reported(
     cached: Path | None,
     *,
     tidies: frozenset[str],
+    added: tuple[str, ...],
 ) -> int:
     """The verdict, decided by code, and the review's reports: the text one always, the hand-off and the JSON where
     asked for or kept, and the whole kept where a cache is named and the review has no hole and no finding a verifier
-    could not judge. `tidies` are the checks whose findings the hand-off lists apart, as cleanup."""
+    could not judge. `tidies` are the checks whose findings the hand-off lists apart, as cleanup, and `added` the
+    globs given beyond the config's, which its check of the fixes repeats."""
     seen, seen_health = previous
     verdict, code = decide(outcome, args.fail_on)
     report = render(
@@ -887,7 +905,7 @@ def _reported(
     # The hand-off and the JSON only where asked for, or kept: measured by review in-process, each costs about the
     # report's own time, 0.9 and 0.2 times it on the demo and 1.6 and 1.1 times over this repository whole.
     handoff = (
-        render_handoff(evidence, outcome, verdict=verdict, fail_on=args.fail_on, tidies=tidies)
+        render_handoff(evidence, outcome, verdict=verdict, fail_on=args.fail_on, tidies=tidies, added=added)
         if args.handoff or keep
         else ""
     )
@@ -926,8 +944,10 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, comment: str
     where a file asked for cannot be written. Each file written is then named by its full path, the comment's last, the
     run's last line: asked by the owner, a person should see where each went, a default name above all. Under `--quiet`
     a review that passes prints nothing, and one whose file cannot be written no longer passes: read by review, it
-    ended in exit 3 with no report."""
+    ended in exit 3 with no report. Each file asked for is tried, and each that cannot be written named last: read by
+    review, the comment after a JSON that could not be written was neither written nor said to be missing."""
     wrote: list[tuple[str, Path]] = []
+    failed: list[tuple[str, str, str]] = []
     for flag, written, text in (
         ("hand-off", args.handoff, lambda: handoff),
         ("JSON report", args.json, lambda: json.dumps(data, indent=2, ensure_ascii=False) + "\n"),
@@ -939,13 +959,14 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, comment: str
         try:
             _written(path, text())
         except OSError as exc:  # the folder was there when the review began; a full or read-only disk is not
-            _told(report, wrote)
-            _say(f"could not write the {flag} to {written}: {exc.strerror or exc}")
-            return EXIT_DEGRADED
+            failed.append((flag, written, exc.strerror or str(exc)))
+            continue
         wrote.append((flag, path))
-    if not (args.quiet and code == EXIT_CLEAN):
+    if failed or not (args.quiet and code == EXIT_CLEAN):
         _told(report, wrote)
-    return code
+    for flag, written, why in failed:
+        _say(f"could not write the {flag} to {written}: {why}")
+    return EXIT_DEGRADED if failed else code
 
 
 def _told(report: str, wrote: Sequence[tuple[str, Path]]) -> None:
@@ -1073,7 +1094,11 @@ def main(argv: list[str] | None = None) -> int:
     as one sentence and exit 3, the report undelivered. Measured before: a traceback and 130, and exit 3 or Python's
     own 120 for a closed pipe. A reviewer that could not load says so, exit 3."""
     if UNLOADED is not None:
-        print(f"review: the reviewer could not load ({UNLOADED}). Install the reviewer again", file=sys.stderr)
+        print(
+            f"review: the reviewer could not load ({UNLOADED}). Run `uv sync --locked` in its checkout, or "
+            "`make install` there",
+            file=sys.stderr,
+        )
         return 3  # EXIT_DEGRADED, which the imports that failed would have named
     try:
         return _review(argv)
