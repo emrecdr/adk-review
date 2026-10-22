@@ -36,18 +36,18 @@ uv run python scripts/measure.py --runs 5 [--all] [--profile NAME | --check ID] 
 lock's version, since `uv tool install` reads no lock; with no checkout, `uv tool install --exclude-newer P3D
 git+<address>` keeps the cooldown. With no `repo`, the command assumes none: a terminal is asked for the path, a
 pipeline is refused with exit 2. Exit codes: 0 approved, 1 a finding at the `--fail-on` bar (`blocker` unless set), 2 a
-usage error before any model call (an arm that is not ready, a branch that adds nothing: "no change to review", a
-`config.toml`, profile or rule file that cannot run, nothing under `--path`, or no choice made at the question asked
-when neither `--base` nor `--all` is given), 3 a hole: a rule or a guideline failed, a rule could not look (the head's
-tree not listed, a file it holds not read whole, or a link whose file was not read or followed), a changed file no check
-can read whole — binary, a submodule, a Git LFS pointer — or, where a guideline runs, one it was not shown whole — a
-symbolic link to a file it was not shown whole, cut at the diff cap or past the guidelines' block cap — unless the skip
-list names it, named under "not read", a finding at the `--fail-on` bar whose quote the diff does not bear out or that a
-verifier refuted, a guideline's call the token ceiling refused (a verifier's leaves its finding unverified), a `--json`,
-`--handoff` or `--comment` file that cannot be written, any error nothing else names (`main` wraps the command: a
-sentence, never Python's own exit 1, which would read as a blocker), a reader that closes the pipe early, and a reviewer
-that cannot load (a broken install). Ctrl-C is one sentence and 130, the shell's own code for it, and a job's SIGTERM
-143.
+usage error before any model call (an arm that is not ready, a branch that adds nothing: "no change to review", a branch
+it does not hold, named with its remote copy and the `git fetch` for the person to run, a `config.toml`, profile or rule
+file that cannot run, nothing under `--path`, or no choice made at the question asked when neither `--base` nor `--all`
+is given), 3 a hole: a rule or a guideline failed, a rule could not look (the head's tree not listed, a file it holds
+not read whole, or a link whose file was not read or followed), a changed file no check can read whole — binary, a
+submodule, a Git LFS pointer — or, where a guideline runs, one it was not shown whole — a symbolic link to a file it was
+not shown whole, cut at the diff cap or past the guidelines' block cap — unless the skip list names it, named under "not
+read", a finding at the `--fail-on` bar whose quote the diff does not bear out or that a verifier refuted, a guideline's
+call the token ceiling refused (a verifier's leaves its finding unverified), a `--json`, `--handoff` or `--comment` file
+that cannot be written, any error nothing else names (`main` wraps the command: a sentence, never Python's own exit 1,
+which would read as a blocker), a reader that closes the pipe early, and a reviewer that cannot load (a broken install).
+Ctrl-C is one sentence and 130, the shell's own code for it, and a job's SIGTERM 143.
 
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so. A
@@ -122,14 +122,15 @@ Evidence is gathered in Python first, the rules run as one `FunctionNode` before
 (`judge/checks.py`, every rule through `run_rule`), or straight from the driver through the same `run_rules` where no
 guideline follows, and code decides the verdict. Around them: retries, a token ceiling, a `--verify` second opinion, a
 JSON report a pipeline reads (`--json FILE`, schema 2, written for every decided review, under the text report's safety
-rules), under `--all` a Health section (`core/health.py`: what was read, source and tests apart, McCabe complexity
-counted as ruff's C901 counts it, in bands graded A to E by SIG's published risk-profile rating where most of the source
-parsed, each rule's findings by severity, counted and never graded; never read by the verdict), each changed file's
-blast radius (`core/blast.py`: an import graph parsed from the head commit, shown to the guidelines as `{blast?}` and
-heading the report, never read by the verdict), and fences around every untrusted section the guidelines, the verifiers
-and the chat's verdict read (`judge/agents.py`: two marker lines carrying a nonce drawn once a process, a second one, no
-guideline shown it, where a guideline's own words are read, a reminder after them, the content never escaped so a quote
-still grounds).
+rules), a comment for the branch's author (`--comment FILE`), which the person pastes into the pull request by hand: the
+reviewer posts nothing and prints no command that would, under `--all` a Health section (`core/health.py`: what was
+read, source and tests apart, McCabe complexity counted as ruff's C901 counts it, in bands graded A to E by SIG's
+published risk-profile rating where most of the source parsed, each rule's findings by severity, counted and never
+graded; never read by the verdict), each changed file's blast radius (`core/blast.py`: an import graph parsed from the
+head commit, shown to the guidelines as `{blast?}` and heading the report, never read by the verdict), and fences around
+every untrusted section the guidelines, the verifiers and the chat's verdict read (`judge/agents.py`: two marker lines
+carrying a nonce drawn once a process, a second one, no guideline shown it, where a guideline's own words are read, a
+reminder after them, the content never escaped so a quote still grounds).
 
 Load-bearing rules the tests enforce:
 
@@ -184,8 +185,9 @@ Conventions:
 - Git runs by its full path from `PATH`'s absolute entries, never from the current directory (Windows searches it first,
   an empty or relative entry names it, and it can be the checkout under review), as an argv list with a timeout that
   stops the whole command (Git for Windows' `git.exe` starts the real git as its child), read-only verbs only, and
-  nothing ever writes into the repository under review, not even the lazy fetch a partial clone would make. Every call
-  runs in `_environment(repo)`: no inherited `GIT_*` variable, no global or system config and no attributes file but the
+  nothing ever writes into the repository under review, not even the lazy fetch a partial clone would make, nor a fetch
+  of a branch it does not hold: the message names the `git fetch` for the person to run. Every call runs in
+  `_environment(repo)`: no inherited `GIT_*` variable, no global or system config and no attributes file but the
   repository's, `safe.directory` for the one repository named, no lazy fetch, no replace refs or grafts,
   `core.precomposeUnicode`, `diff.suppressBlankEmpty` and `core.fsmonitor` fixed through `GIT_CONFIG_COUNT`, and a
   call's own settings beside them there, never as `-c`. A file's diff is read as git prints it for no one's settings,
@@ -221,19 +223,20 @@ Conventions:
 The suite is fully offline. `tests/conftest.py` registers a `FakeModel` in ADK's `LLMRegistry` for `fake.*`.
 `load_agent(monkeypatch)` sets `REVIEW_MODEL=fake` and imports `adk_review.agent` fresh, so the real `build_model()`,
 Runner, `Workflow`, callbacks and plugins all run; the `cli` fixture is the command's module loaded that way. Both run
-on the Gemini arm, where the fake registers, unless a test names another:
-`load_agent(monkeypatch, "copilot", "gpt-4.1")`, or `load_command` for the command, with LiteLLM's network client
-replaced, runs the Copilot arm's own path offline (`test_the_planted_review_runs_end_to_end_on_the_copilot_arm`); a
-change to that path needs a test there. The fake answers whatever canned payload the request's response schema accepts,
-or a sentence when there is no schema. The `fake_provider` fixture's `raises_when(text, exc)` /
-`answers_when(text, payload)` / `calls_when(text, call)` key on text in the system instruction, to simulate a provider
-failing, a verifier refuting or an agent calling a tool; `confirms(fake_provider, repo)` makes chat's intake confirm a
-scope with its tool, as a model would, `Chat(module)` holds one conversation over several turns, and the `asked` fixture
-records each request as it was sent. `demo_repo` is a session-scoped real repository from `scripts/make_demo_repo.py`,
-and `hostile_repo` a branch per way a change once hid from the review. `asyncio_mode = "strict"`, so async tests need
-`@pytest.mark.asyncio`. A test still running after `faulthandler_timeout` prints every thread's stack and ends the run.
-Tests live only in `tests/`. A test is named as the sentence it proves (`test_the_gate_runs_before_any_model`), and a
-helper several tests need goes into `tests/conftest.py`, never into the package.
+on the Gemini arm, where the fake registers, unless a test names another: `load_agent(monkeypatch, "copilot",
+"gpt-4.1")`, or `load_command` for the command, with LiteLLM's network client replaced, runs the Copilot arm's own path
+offline (`test_the_planted_review_runs_end_to_end_on_the_copilot_arm`); a change to that path needs a test there. The
+fake answers whatever canned payload the request's response schema accepts, or a sentence when there is no schema. The
+`fake_provider` fixture's `raises_when(text, exc)` / `answers_when(text, payload)` / `calls_when(text, call)` key on
+text in the system instruction, to simulate a provider failing, a verifier refuting or an agent calling a tool;
+`confirms(fake_provider, repo)` makes chat's intake confirm a scope with its tool, as a model would, `Chat(module)`
+holds one conversation over several turns, under the `run_config` a test names, as `adk web`'s Token Streaming does, its
+last turn's events in `chat.events`, and the `asked` fixture records each request as it was sent. `demo_repo` is a
+session-scoped real repository from `scripts/make_demo_repo.py`, and `hostile_repo` a branch per way a change once hid
+from the review. `asyncio_mode = "strict"`, so async tests need `@pytest.mark.asyncio`. A test still running after
+`faulthandler_timeout` prints every thread's stack and ends the run. Tests live only in `tests/`. A test is named as the
+sentence it proves (`test_the_gate_runs_before_any_model`), and a helper several tests need goes into
+`tests/conftest.py`, never into the package.
 
 ## The docs are tested, so update them with the code
 

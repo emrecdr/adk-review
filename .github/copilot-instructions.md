@@ -72,8 +72,11 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   the whole answer that follows it.
 - Tools return a `{status: …}` dict and never raise at the model. Git runs by its full path from `PATH`'s absolute
   entries, read-only verbs only, as an argv list with a timeout, inside `_environment(repo)`, which also starts no
-  file-system monitor the repository names; nothing ever writes into the repository under review, and a failed git
-  call raises `GitError`, never an empty answer.
+  file-system monitor the repository names; nothing ever writes into the repository under review, not even a fetch: a
+  branch it does not hold is named with the `git fetch` for the person to run. A failed git call raises `GitError`,
+  never an empty answer.
+- The reviewer posts nothing to a pull request: `--comment FILE` writes a comment for the branch's author, which the
+  person pastes by hand, and no command that would post it is printed.
 - Every string a model reads is capped in characters with the cut named in the text, and so is each title and change
   a model writes into a finding. Every `subprocess.run` that
   decodes passes `encoding=`; no source spells `/tmp/` (`tempfile.gettempdir()`); a file a script or a fixture commits

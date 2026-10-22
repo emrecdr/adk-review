@@ -80,7 +80,7 @@ another, and each refuses a review's own flags — `--json`, `--handoff`, `--com
 |---|---|
 | 0 | Approved: no finding at or above `--fail-on`, and no hole. |
 | 1 | A finding at or above `--fail-on`, and no hole. |
-| 2 | A usage error, before any model call: a flag, a config, a profile or a check file that cannot run; no repository named in a pipeline, or no choice made at the question asked; a branch, base or path that does not resolve, a change against a base in a shallow clone, or a change that adds nothing; an arm that is not ready. |
+| 2 | A usage error, before any model call: a flag, a config, a profile or a check file that cannot run; no repository named in a pipeline, or no choice made at the question asked; a branch, base or path that does not resolve, a change against a base in a shallow clone, or a change that adds nothing; an arm that is not ready. A branch the repository does not hold is named with its remote copy, where an earlier fetch brought one, and the `git fetch` to run: the review fetches nothing. |
 | 3 | A hole: a check failed or could not look, the token ceiling refused a guideline's call (a verifier's leaves its finding unverified), a changed file no check can read whole, or where a guideline runs one it was not shown whole, unless the skip list names it, or a finding at the bar whose quote the diff does not bear out or that a verifier refuted under `--verify`. Also an error nothing else names, a report's reader that closed the pipe early, a `--json`, `--handoff` or `--comment` file that could not be written, and a reviewer that cannot load. |
 | 130 | Stopped by Ctrl-C. |
 | 143 | Stopped by a job, with SIGTERM. |
