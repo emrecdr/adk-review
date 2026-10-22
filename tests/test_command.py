@@ -955,6 +955,35 @@ class TestTheJsonReport:
             " below it"
         ), verdict
 
+    def test_a_table_under_the_verdict_lists_every_finding_most_severe_first(self, cli, demo_repo: Path, capsys):
+        """Asked by the owner, for a report read at a glance: every kept finding in one table under the verdict, the
+        most severe first, with its place, its title and each check that found it, the ones folded into it among them.
+        The sections below keep the details. A `|` in a title or a path is escaped, so no cell spills into the next."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import _at_a_glance
+
+        assert run_review(cli, demo_repo, "--profile", "default-rules") == 1
+        out = capsys.readouterr().out
+        rows = out.split("| # | Severity | Where | Finding | Found by |\n|---|---|---|---|---|\n", 1)[1].split("\n\n")[
+            0
+        ]
+        assert rows.splitlines()[0] == (
+            "| 1 | blocker | `src/payments/config.py:4` | secrets: a hard-coded credential | rule.secrets |"
+        ), rows
+        assert (
+            "| 2 | blocker | `src/payments/config.py:5` | secrets: a hard-coded credential | rule.secrets, rule.lint |"
+            in rows
+        )
+        assert "| major | `src/payments/charge.py:28` |" in rows.splitlines()[2], rows
+        assert out.index("| # | Severity") < out.index("- repository"), "under the verdict, above the details"
+
+        found = Finding(file="a|b.py", line=3, severity="minor", title="x | y", evidence="e", suggestion="s")
+        assert _at_a_glance(Outcome(kept=[Sourced("rule.lint", found, (3, 3))]))[2] == (
+            "| 1 | minor | `a\\|b.py:3` | x \\| y | rule.lint |"
+        )
+        assert _at_a_glance(Outcome()) == []
+
     def test_a_person_sees_the_review_move_and_a_pipeline_reads_its_timing_and_version(
         self, cli, demo_repo: Path, tmp_path: Path, capsys
     ) -> None:

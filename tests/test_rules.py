@@ -1618,7 +1618,7 @@ class TestTreeRules:
         missing = "- **major** demo-required-paths: a file or folder the project needs is missing (CHANGELOG.md)"
         assert missing in out, out
         assert "  - evidence: `not at the head`" in out
-        assert out.count("demo-required-paths:") == 1, out
+        assert out.split("## Checks", 1)[1].count("demo-required-paths:") == 1, "one finding, once in its section"
         quiet = out.split("### no findings from ", 1)[1]
         quiet_ones = ("demo-module-defines", "demo-derives-from", "demo-parameters")
         assert all(f"`rule.{rule}`" in quiet for rule in quiet_ones), out

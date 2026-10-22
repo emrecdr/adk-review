@@ -587,6 +587,31 @@ def _beside(outcome: Outcome, fail_on: str) -> str:
     return f"{said or f', none at or above `--fail-on {fail_on}`'}, {counted} below it"
 
 
+def _at_a_glance(outcome: Outcome) -> list[str]:
+    """Every kept finding in one table under the verdict, the most severe first, the report's order on a tie, with its
+    place, its title and each check that found it, the ones folded into it among them. Asked by the owner, for a report
+    read at a glance: the sections below keep the evidence and the fixes. A `|` in a cell is escaped, since it would
+    end the cell; a path is the branch's text, a title a model's."""
+    if not outcome.kept:
+        return []
+    also: dict[int, list[str]] = {}
+    for folded, into in outcome.folded:
+        also.setdefault(id(into), []).append(folded.source)
+    lines = ["| # | Severity | Where | Finding | Found by |", "|---|---|---|---|---|"]
+    ranked = sorted(outcome.kept, key=lambda item: -RANK[item.finding.severity])  # stable: the report's order on a tie
+    for number, item in enumerate(ranked, 1):
+        f = item.finding
+        place = code_span(one_line(f"{f.file}:{f.line}" if f.line else f.file))
+        found_by = ", ".join(dict.fromkeys([item.source, *also.get(id(item), [])]))
+        lines.append(f"| {number} | {f.severity} | {_cell(place)} | {_cell(prose(f.title))} | {found_by} |")
+    return [*lines, ""]
+
+
+def _cell(text: str) -> str:
+    """`text` as one cell of a markdown table: a `|` escaped, which would otherwise end the cell."""
+    return text.replace("|", "\\|")
+
+
 def _refuted_at_bar(outcome: Outcome, fail_on: str) -> list[str]:
     """The line under the refuted findings that says how many sit at the bar, which holds the verdict back, as a
     dropped finding's does."""
@@ -643,6 +668,7 @@ def render(
         # First, under the title: measured before, the verdict sat below the whole blast radius, a screen down.
         f"## Verdict: {verdict}{_beside(outcome, fail_on)}",
         "",
+        *_at_a_glance(outcome),
         *header(evidence, model=model, profile=profile, off=off, unread=outcome.unread),
         "",
         # The project's measures before its blast radius: under --all the radius names every file, a long way down.
