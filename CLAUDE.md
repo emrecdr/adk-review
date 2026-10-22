@@ -38,17 +38,17 @@ git+<address>` keeps the cooldown. With no `repo`, the command assumes none: a t
 pipeline is refused with exit 2. Exit codes: 0 approved, 1 a finding at the `--fail-on` bar (`blocker` unless set), 2 a
 usage error before any model call (an arm that is not ready, a branch that adds nothing or shares no history with its
 base: "no change to review", with `--head`, `--base` and `--all` named, a branch it does not hold, named with its remote
-copy and the `git fetch` for the person to run, a `config.toml`, profile or rule file that cannot run, nothing under
-`--path`, or no choice made at the question asked when neither `--base` nor `--all` is given), 3 a hole: a rule or a
-guideline failed, a rule could not look (the head's tree not listed, a file it holds not read whole, or a link whose
-file was not read or followed), a changed file no check can read whole — binary, a submodule, a Git LFS pointer — or,
-where a guideline runs, one it was not shown whole — a symbolic link to a file it was not shown whole, cut at the diff
-cap or past the guidelines' block cap — unless the skip list names it, named under "not read", a finding at the
-`--fail-on` bar whose quote the diff does not bear out or that a verifier refuted, a guideline's call the token ceiling
-refused (a verifier's leaves its finding unverified), a `--json`, `--handoff` or `--comment` file that cannot be
-written, any error nothing else names (`main` wraps the command: a sentence, never Python's own exit 1, which would read
-as a blocker), a reader that closes the pipe early, and a reviewer that cannot load (a broken install). Ctrl-C is one
-sentence and 130, the shell's own code for it, and a job's SIGTERM 143.
+copy and the `git fetch` for the person to run, a name no branch can have, said to be none, a `config.toml`, profile or
+rule file that cannot run, nothing under `--path`, or no choice made at the question asked when neither `--base` nor
+`--all` is given), 3 a hole: a rule or a guideline failed, a rule could not look (the head's tree not listed, a file it
+holds not read whole, or a link whose file was not read or followed), a changed file no check can read whole — binary, a
+submodule, a Git LFS pointer — or, where a guideline runs, one it was not shown whole — a symbolic link to a file it was
+not shown whole, cut at the diff cap or past the guidelines' block cap — unless the skip list names it, named under "not
+read", a finding at the `--fail-on` bar whose quote the diff does not bear out or that a verifier refuted, a guideline's
+call the token ceiling refused (a verifier's leaves its finding unverified), a `--json`, `--handoff` or `--comment` file
+that cannot be written, any error nothing else names (`main` wraps the command: a sentence, never Python's own exit 1,
+which would read as a blocker), a reader that closes the pipe early, and a reviewer that cannot load (a broken install).
+Ctrl-C is one sentence and 130, the shell's own code for it, and a job's SIGTERM 143.
 
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so. A
@@ -201,13 +201,16 @@ Conventions:
   counts, leaves a file out. Each hunk header is left bare (`unguessed`): git follows one with its guess at the function
   around the hunk, a line from above it cut at 80 bytes, and a credential there, its closing quote past the cut, reached
   the model. A call that fails, cannot start or runs past its timeout raises `GitError`, turned into an error envelope
-  only where envelopes are built; never answer it as an empty result. `_git(..., ok=(0, 1))` is only for calls whose
-  exit code 1 is an answer.
+  only where envelopes are built; never answer it as an empty result. A user's ref reaches git after `--end-of-options`,
+  in `_sha` and `_symbolic`, or inside a pattern under refs or after `--disambiguate=`, so a ref spelled `-x` is never a
+  flag. `_git(..., ok=(0, 1))` is only for calls whose exit code 1 is an answer. `_sha` alone also reads exit 128 as no
+  commit, git's answer for a revision it cannot follow, such as `main@{9}`.
 - Every string a model reads is capped in characters, with the cut named in the text, and the cut never falls inside a
-  credential, and so is each title and change a model writes into a finding, cut where `core/findings.py` makes it.
-  The report cuts each finding's evidence the same way, after the scrub, and breaks CI runners' command openers (`##[`,
-  `##vso[`) and HTML comments' (`<!--`) in all it prints, and in prose a markdown image's or link's (`![`, `](`), every
-  character a reader cannot see printed as a space.
+  credential, and so is each title and change a model writes into a finding, cut where `core/findings.py` makes it. A
+  dropped finding's file is a model's text too, cut in `drop_ungrounded` at `REASON_MAX_CHARS`. The report cuts each
+  finding's evidence the same way, after the scrub, and breaks CI runners' command openers (`##[`, `##vso[`) and HTML
+  comments' (`<!--`) in all it prints, and in prose a markdown image's or link's (`![`, `](`), every character a reader
+  cannot see printed as a space.
 - Every sentence the package prints itself — a stderr line, a flag's `--help`, an error it raises or answers, a rule's
   title and fix — is ASD-STE100: one command, at most 20 words, no `;` joining two (`tests/test_command.py`). The
   guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged. An

@@ -205,8 +205,11 @@ def _verb(args: tuple[str, ...]) -> str:
     return next((arg for arg in args if not arg.startswith("-")), "")
 
 
-#: An object's id as git prints one, SHA-1's or SHA-256's.
-_OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+#: What no branch's name can be, as `git check-ref-format` reads one: starting with `-`, `^`, `.` or `/`, ending with
+#: `/`, `.` or `.lock`, holding `..`, `//`, `/.`, a space, a control character, `*`, `?`, `[` or `\\`.
+_NO_NAME = re.compile(r"^[-^./]|\.\.|//|/\.|\.lock(?:/|$)|[/.]$|[\x00-\x20\x7f*?\[\\]")
+#: An object's id as git prints one, SHA-1's or SHA-256's: what `_sha` keeps, and the hook shortens.
+OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 
 def _sha(repo: str, ref: str, kind: str = "commit") -> str | None:
@@ -214,8 +217,9 @@ def _sha(repo: str, ref: str, kind: str = "commit") -> str | None:
     in `_symbolic`, each after `--end-of-options`, and elsewhere only inside a pattern a `refs/` or `--disambiguate=`
     leads: a ref spelled `-x` must be a ref, never a flag. `^{commit}` names the commit an annotated tag tags, never
     the tag itself; `^{tag}` names a tag object, and nothing for a branch or a commit."""
-    code, out = _git(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{{kind}}}", ok=(0, 1))
-    return out if code == 0 and _OBJECT_ID.fullmatch(out) else None  # read by review: `^main` passed as `^<sha>`
+    # Exit 128 too: git's answer for a revision it cannot follow, as `main@{9}` past its reflog.
+    code, out = _git(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{{kind}}}", ok=(0, 1, 128))
+    return out if code == 0 and OBJECT_ID.fullmatch(out) else None  # read by review: `^main` passed as `^<sha>`
 
 
 def _namesakes(repo: str, ref: str) -> list[str]:
@@ -226,16 +230,20 @@ def _namesakes(repo: str, ref: str) -> list[str]:
     name = ref
     for suffix in ("~", "^", ":", "@{"):
         name = name.partition(suffix)[0]
-    means = [
-        # Git's first reading, a name as itself: `refs/heads/x` is that branch, and a tag named so too makes it
-        # ambiguous. Only a name under `refs/`, which is all `for-each-ref` lists: read by review, `-x` was a flag.
-        *([name] if name.startswith("refs/") else []),
-        f"refs/{name}",
-        f"refs/tags/{name}",
-        f"refs/heads/{name}",
-        f"refs/remotes/{name}",
-        f"refs/remotes/{name}/HEAD",
-    ]
+    # A full name is read as itself alone, git's first reading, which no tag can take: read by review, a tag named
+    # `refs/heads/x` was read in its place, and refused, the hand-off's own check, which names a branch in full, failed.
+    # Only a name under `refs/` is so read, all `for-each-ref` lists: read by review, `-x` reached git as a flag.
+    means = (
+        [name]
+        if name.startswith("refs/")
+        else [
+            f"refs/{name}",
+            f"refs/tags/{name}",
+            f"refs/heads/{name}",
+            f"refs/remotes/{name}",
+            f"refs/remotes/{name}/HEAD",
+        ]
+    )
     # Broken at "\n" alone: a ref's name may hold U+2028, which `splitlines` breaks at.
     _, out = _git(repo, "for-each-ref", "--format=%(refname)", *means)
     found = [full for full in lines_of(out) if full in means]
@@ -273,10 +281,15 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     one, else the fetch that brings one. Asked by the owner: a branch on the remote read as no branch at all. The review
     fetches nothing, since it writes nothing into the repository and opens no connection: each command is the person's
     to run there, printed only where every name in it is plain."""
-    # How no ref and no revision of one starts: an option's `-`, or a negation's `^`. Read by review: `^main` and `-x`
-    # were told to fetch them, and a wider guard told `main~5`, a revision, it was no branch's name.
-    if name.startswith(("-", "^")) or ".." in name:  # nor a range: read by review, `main..later` was told to fetch
+    # A name no ref can have, as `git check-ref-format` reads one, nor a revision of one; and a revision of a ref, which
+    # no fetch brings by that name. Read by review: `^main`, `-x`, `main..later`, `feat/` and `x.lock` were told to
+    # fetch them, and `main@{9}`, past its reflog, ended in git's exit 128 with no step to take.
+    if _NO_NAME.search(name):
         raise _ScopeError(f"{label} {name!r} is no branch name. Name one that git branch lists")
+    if any(mark in name for mark in ("~", "^", ":", "@{")):
+        raise _ScopeError(
+            f"{label} {name!r} does not exist in {repo}. Name a commit it holds, or a branch git branch lists"
+        )
     _, listed = _git(root, "remote")
     remotes = lines_of(listed)
     said = f"{label} {name!r} does not exist in {repo}"
@@ -287,9 +300,10 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     if remotes and full.startswith("refs/tags/"):  # read by review: `--all` fetches no tag outside a branch's history
         raise _ScopeError(f"{said}. Fetch every remote's tags there: git fetch --all --tags")
     local = full.startswith("refs/heads/")  # never a remote's: read by review, `refs/heads/origin/gone` was read so
+    tracked = full.startswith("refs/remotes/")  # a remote's own branch: never a branch's copy under every remote
     name = full.removeprefix("refs/heads/").removeprefix("refs/remotes/")
     other = name.startswith("refs/")
-    copies = [f"{r}/{name}" for r in remotes if not other and _sha(root, f"refs/remotes/{r}/{name}") is not None]
+    copies = [] if other or tracked else [f"{r}/{name}" for r in remotes if _sha(root, f"refs/remotes/{r}/{name}")]
     # A name a remote's begins, read as that remote's branch only where no remote holds it as a branch's, as git reads
     # its names, the longest remote first. Read by review: `alice/fix`, with a remote `alice`, was told to fetch `fix`
     # from it, where `origin/alice/fix` held it.

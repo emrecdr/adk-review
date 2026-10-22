@@ -30,7 +30,6 @@ import io
 import itertools
 import json
 import os
-import re
 import sys
 import tempfile
 from collections.abc import Mapping, Sequence
@@ -38,7 +37,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TextIO
 
-from .collect.git import GitError
+from .collect.git import OBJECT_ID, GitError
 from .collect.history import merged_tags, push_scope, sent, tag_messages, unseen
 from .core.evidence import entry
 from .core.findings import Finding, at_or_above
@@ -65,8 +64,6 @@ MESSAGE = "its message"
 MERGED = "the tag it merges"
 #: How the review's line naming the JSON it wrote starts: the hook's own, in a folder gone once the review is weighed.
 ANNOUNCED = "review: wrote the JSON report to "
-#: A commit's id as git writes it, shortened where the hook names one.
-_SHA = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 Pushed = list[tuple[str, str | None, str | None]]
 
@@ -251,7 +248,7 @@ def _where(finding: Finding) -> str:
 
 def _named(ref: str) -> str:
     """A commit as the hook names it: an id shortened, any other name whole."""
-    return ref[:9] if _SHA.fullmatch(ref) else ref
+    return ref[:9] if OBJECT_ID.fullmatch(ref) else ref
 
 
 def _say(sentence: str, lead: str = "pre-push: ") -> None:

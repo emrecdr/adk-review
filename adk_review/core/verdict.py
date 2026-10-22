@@ -229,8 +229,9 @@ def drop_ungrounded(
     for finding in review.findings:
         path = _meant(finding.file, quotable)
         if (placed := _placed(finding, quotable.get(path, []), framing.get(path, ()))) is None:
-            # Its file a model's own text, matched to none of the diff's, so cut here, as a title is where it is read:
-            # read by review, four of 5,604 characters filled what chat's verdict reads, past its kept blocker.
+            # Its file the model's own text, never replaced by the diff's path as a kept finding's is, so cut here, as
+            # a title is where it is read: read by review, four of 5,604 characters filled what chat's verdict reads,
+            # past its kept blocker.
             dropped.append(finding.model_copy(update={"file": cut_at(finding.file, REASON_MAX_CHARS)}))
             continue
         lines, stood = placed

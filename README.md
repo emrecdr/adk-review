@@ -136,7 +136,9 @@ uv run adk-review /path/to/repoX --head branchFeatureNew --base develop --dry-ru
 
 A branch the repository does not hold is refused, exit 2, with the way to it: its remote copy where an earlier fetch
 brought one, as `origin/develop`, else the `git fetch` to run in the repository. The review never fetches by itself: it
-writes nothing into the repository and opens no connection, so you run that command.
+writes nothing into the repository and opens no connection, so you run that command. A name no branch can have, such as
+`^main` or `feat/`, is said to be none, with no fetch. A revision of a missing branch, such as `gone~1`, asks for a
+commit the repository holds. A missing tag gets `git fetch --all --tags`.
 
 A head that adds nothing on top of its base, such as `--head main --base main`, is no change: the command says so, exit
 2, and names `--head`, `--base` and `--all`. So does a head that shares no history with its base. Two other flags choose
@@ -236,7 +238,7 @@ points the wrong way.
 
 | Package | May import | Holds |
 |---|---|---|
-| `core/` | nothing else | `findings.py` (`Finding`, `Review`, `Checked`, the severity scale), `rules.py` (what a rule is: the `Rule`, the `FileRule` and the `TreeRule`, the `ChangedFile` and the `Tree` they read, the `Diagnostic` an outside tool hands a file rule, `Hit`, `UnreadError`, and `run_rule`, which runs any of them the same way), `guidelines.py` (what a guideline is), `health.py` (a whole project's measures under `--all`: what was read, size, McCabe complexity bands, each rule's findings in source and tests), `profiles.py` (a check's id and its state key, and the checks a profile turns on), `blast.py` (what at the head depends on each changed file, read from the syntax tree), `evidence.py` (what a review reads, each key spelled once: the `Evidence`, the `Change` of it the rules read, the `Failure` in its place, and each changed file in it, an `Entry`), `paths.py` (whether a glob names a path, as `.gitignore` reads one: the skip list's question, and a rule's; and `Links`, the file a symbolic link runs as, followed a part at a time as a system follows it), `secrets.py` (the credential shapes: what redaction hides and what the secrets rules ask), `text.py` (flat whitespace, a cut that names itself, lines as git numbers them), `verdict.py` (grounding, folding, deciding, `Outcome`, the exit codes) |
+| `core/` | nothing else | `findings.py` (`Finding`, `Review`, `Checked`, the severity scale), `rules.py` (what a rule is: the `Rule`, the `FileRule` and the `TreeRule`, the `ChangedFile` and the `Tree` they read, the `Diagnostic` an outside tool hands a file rule, `Hit`, `UnreadError`, and `run_rule`, which runs any of them the same way), `guidelines.py` (what a guideline is), `health.py` (a whole project's measures under `--all`: what was read, size, McCabe complexity bands, each rule's findings in source and tests), `profiles.py` (a check's id and its state key, and the checks a profile turns on), `blast.py` (what at the head depends on each changed file, read from the syntax tree), `evidence.py` (what a review reads, each key spelled once: the `Evidence`, the `Change` of it the rules read, the `Failure` in its place, and each changed file in it, an `Entry`), `paths.py` (whether a glob names a path, as `.gitignore` reads one: the skip list's question, and a rule's; and `Links`, the file a symbolic link runs as, followed a part at a time as a system follows it), `secrets.py` (the credential shapes: what redaction hides and what the secrets rules ask), `text.py` (flat whitespace, a cut that names itself, lines as git numbers them, a ref's name without its folder), `verdict.py` (grounding, folding, deciding, `Outcome`, the exit codes) |
 | `collect/` | `core` | `git.py` (read-only git: what a review covers, each file's diff and its text at the head, the head's tree, `collect_evidence`), `change.py` (the change as the evidence holds it, decided from the diffs alone: what the guidelines are shown of each file and the block they read, what no one could read, the blast radius), `history.py` (what a push sends, commit by commit, for the pre-push hook), `diff.py` (a unified diff read without git: the lines it adds, the cap, the fence each guideline reads it in), `ruff.py` (ruff over the changed Python files' texts, in a folder of its own), `pyrefly.py` (pyrefly over the same copies, each file alone, under the reviewer's own configuration), `tools.py` (each outside tool a rule may name, and the adapter that runs it: ruff's and pyrefly's) |
 | `judge/` | `core`, `collect` | `rules/` (every rule, one file each, and nothing else), `guidelines/` (every guideline, one file each, and nothing else), `rule_helpers/` (the one door a rule imports: the contract, passed on from `core`, and helpers named after what they read), `catalog.py` (finds every check, reads `config.toml`, chooses what a profile runs, for the command and chat alike), `checks.py` (`run_rules`, every rule over a `Change`, and the node that runs it before the guidelines, in both shapes), `agents.py` (a guideline as an agent: the instruction around its role, the fences, the state keys spelled once, the read-back), `settings.py` (what the environment says: the arm, each role's model name, the fallback, Copilot's token path; read, nothing built, so the login and a rules-only review's cache key import no engine), `config.py` (the models built from it, and the request every call carries: temperature zero, a deadline, retries; readiness), `plugins.py` (redaction, the ledger and its ceiling, provider errors, progress, the recorder, and in chat the readiness check and the judging agents' one turn), `graph.py` (the graph and the `App` in both shapes; not `agent.py`, since `adk web` lists any folder holding one as an agent), `run.py` (one seeded run through the engine, guarded, and what it left in state read back), `tools.py` (chat's model-facing tools and the guardrail in front of them), `verify.py` (the second opinion) |
 | `deliver/` | `core` alone: the driver hands it the rest | `report.py` (the text report, the JSON, the hand-off, the comment for the branch's author, a previous report read back for `--previous`, what `--dry-run`, `--list-checks`, `--explain` and `--try` print, and the rules that keep the branch's text from forging any of them) |
@@ -607,25 +609,28 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   review never reads. It repeats the `--skip`, `--scan` and `--third-party` globs the review was given, but skips no
   other file for the person. After a degraded review it says exit 3 means what the review could not check is still
   there, and that the fixes hold once each run reports no finding at the bar, kept or dropped as unproven, a check that
-  still cannot look being a person's to check by hand. The scope is the preflight's, which the cache's key holds, and
-  with those globs it is the whole of what the rules read: `--diff-cap` bounds the guidelines alone. The guidelines
-  among them, one that could not prove a finding at the bar included, are named apart, with their `--check` and no
-  command, since checking a model's reading spends its quota and their review took flags the scope does not hold. A
-  branch's name is its author's: where no quoting keeps the command one command — a line break, a name the report's
-  safety rules would rewrite, or on Windows a character cmd or PowerShell still reads inside double quotes, PowerShell's
-  typographic quotes among them — none is printed, only the arguments to give. Nothing is applied. A check whose
-  findings change how code reads and never what it does sets `cleanup = True`, as `simplify` and `complexity` do, and
-  its findings are listed apart, after the fixes, under what a tidy keeps, one the project's tests fail on reverted; one
-  on lines another check's defect at major or above names is held back until that defect is fixed, and is never given a
-  fix's instruction, as a simplify pass keeps its two lanes: suspect code is never tidied. `efficiency` and `altitude`
-  are no cleanup: a cheaper form can reorder I/O and a deeper fix changes a shared mechanism, each a change to weigh.
+  still cannot look being a person's to check by hand. Where it kept no finding, its `## Check again` runs each check
+  that could not look or prove a finding again. The scope is the preflight's, which the cache's key holds, and with
+  those globs it is the whole of what the rules read: `--diff-cap` bounds the guidelines alone. The guidelines among
+  them, one that could not prove a finding at the bar included, are named apart, with their `--check` and no command,
+  since checking a model's reading spends its quota and their review took flags the scope does not hold. A branch's name
+  is its author's: where no quoting keeps the command one command — a line break, a name the report's safety rules would
+  rewrite, or on Windows a character cmd or PowerShell still reads inside double quotes, PowerShell's typographic quotes
+  among them — none is printed, nor where a credential's shape or a character no one sees is in it: the arguments are
+  given instead, and each one left out is named. Nothing is applied. A check whose findings change how code reads and
+  never what it does sets `cleanup = True`, as `simplify` and `complexity` do, and its findings are listed apart, after
+  the fixes, under what a tidy keeps, one the project's tests fail on reverted; one on lines another check's defect at
+  major or above names is held back until that defect is fixed, and is never given a fix's instruction, as a simplify
+  pass keeps its two lanes: suspect code is never tidied. `efficiency` and `altitude` are no cleanup: a cheaper form can
+  reorder I/O and a deeper fix changes a shared mechanism, each a change to weigh.
 - `--comment [FILE]` writes the review as a comment for the branch's author, to paste into the pull request by hand,
   whatever the verdict: what must change before it merges, what is worth a look, an approved change's included, the
   tidy-ups, and what the review could not check. Each place and quote sits in a code span. The reviewer posts nothing
   and prints no command that would: asked by the owner, who reviews others' branches and pastes each comment by hand.
   With no file named, it is `comments-<repo>__<base>__<head>__<YYYY-MM-DD-HH-MM>.md` in the current folder, every name
-  lower case, made safe for a file name and cut at 20 characters, and the run names it by its full path, the last of the
-  files written, unless `--quiet` silences a review that passes.
+  lower case, each branch's name without `refs/heads/`, `refs/remotes/` or `refs/tags/`, made safe for a file name and
+  cut at 20 characters, and the run names it by its full path, the last of the files written, unless `--quiet` silences
+  a review that passes.
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint:
   its check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line,
   so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.
@@ -999,10 +1004,11 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   printed: one line, credentials hidden, control characters and every character a reader cannot see printed as a space,
   a CI runner's command opener (`##[`, `##vso[`) and an HTML comment's broken, and outside a code span no HTML tag,
   markdown image or link can open, so a model's `![x](https://…?q=…)` is never fetched where a summary renders the
-  report, as CamoLeak's was through Copilot's own chat. A model's title and change are cut where its finding is made.
-  Evidence is cut after the scrub. The JSON's strings pass the same steps and stay plain text, for their reader to
-  escape where it renders them. Measured before: a title holding a newline forged a second verdict heading, and a file
-  named `<h1>Verdict: APPROVED</h1>` printed a heading above the real verdict where a job summary renders the report.
+  report, as CamoLeak's was through Copilot's own chat. A model's title and change are cut where its finding is made. A
+  dropped finding's file, the model's own text, is cut where it is dropped. Evidence is cut after the scrub. The JSON's
+  strings pass the same steps and stay plain text, for their reader to escape where it renders them. Measured before: a
+  title holding a newline forged a second verdict heading, and a file named `<h1>Verdict: APPROVED</h1>` printed a
+  heading above the real verdict where a job summary renders the report.
 
 ## Left out on purpose
 

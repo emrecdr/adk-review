@@ -74,14 +74,14 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   entries, read-only verbs only, as an argv list with a timeout, inside `_environment(repo)`, which also starts no
   file-system monitor the repository names; nothing ever writes into the repository under review, not even a fetch: a
   branch it does not hold is named with the `git fetch` for the person to run. A failed git call raises `GitError`,
-  never an empty answer.
+  never an empty answer. `_sha` alone reads git's exit 128 as no commit: a revision git cannot follow.
 - The reviewer posts nothing to a pull request: `--comment [FILE]` writes a comment for the branch's author, by default
   `comments-<repo>__<base>__<head>__<minute>.md`, which the person pastes by hand, and no command that would post it is
   printed.
-- Every string a model reads is capped in characters with the cut named in the text, and so is each title and change
-  a model writes into a finding. Every `subprocess.run` that
-  decodes passes `encoding=`; no source spells `/tmp/` (`tempfile.gettempdir()`); a file a script or a fixture commits
-  is written with `newline="\n"`.
+- Every string a model reads is capped in characters with the cut named in the text, and so is each title and change a
+  model writes into a finding. A dropped finding's file is a model's text too, cut in `drop_ungrounded` at
+  `REASON_MAX_CHARS`. Every `subprocess.run` that decodes passes `encoding=`; no source spells `/tmp/`
+  (`tempfile.gettempdir()`); a file a script or a fixture commits is written with `newline="\n"`.
 - Every sentence the package prints itself — a stderr line, a flag's `--help`, an error it raises or answers, a rule's
   title and fix — is ASD-STE100: one command, at most 20 words, no `;` joining two (`tests/test_command.py`). The
   guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged. An

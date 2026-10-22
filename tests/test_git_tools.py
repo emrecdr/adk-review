@@ -159,11 +159,11 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
     _git_in(repo, "tag", "v0", BASE)
     assert preflight(str(repo), "v0", "HEAD")["base_full"] == "refs/tags/v0", "a tag, which no fix moves, kept"
     assert preflight(str(repo), "feature~1", "feature")["base_full"] == "", "a base that moves with its head"
-    _git_in(repo, "tag", "refs/heads/x")  # git's first reading of a full name: read by review, it went unrefused
-    assert "ambiguous" in preflight(str(repo), BASE, "refs/heads/x")["error_message"]
-    from adk_review.collect.git import _sha
-
-    assert _sha(str(repo), "feature") == tip and _sha(str(repo), "^feature") is None, "only an object's id is a sha"
+    _git_in(repo, "tag", "refs/heads/x", BASE)  # a fork's tag so named: git reads a full name as itself first
+    named = preflight(str(repo), BASE, "refs/heads/x")
+    assert named["status"] == "success" and named["head_ref"] == "refs/heads/x", (
+        "read by review: refused as ambiguous where a hand-off names a branch in full, and read through the tag"
+    )
     for flag in ("-x", "--ignore-case", "^main"):  # read by review: a flag reached git, and `^main` named a sha
         said = preflight(str(repo), flag, "feature")["error_message"]
         assert said.startswith(f"base branch {flag!r} is no branch name") and "fetch" not in said, (
@@ -173,6 +173,12 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
     assert "does not exist" in said and "no branch name" not in said, "read by review: a revision said to be no name"
     said = preflight(str(repo), f"{BASE}..feature", "feature")["error_message"]  # a range, which no ref's name holds
     assert said.startswith(f"base branch '{BASE}..feature' is no branch name"), "read by review: told to fetch a range"
+    for bad in ("feat/", "x.lock", "a//b"):  # names `git check-ref-format` refuses: read by review, told to fetch them
+        assert preflight(str(repo), bad, "feature")["error_message"].startswith(
+            f"base branch {bad!r} is no branch name"
+        )
+    said = preflight(str(repo), f"{BASE}@{{9}}", "feature")["error_message"]  # past its reflog: git's exit 128
+    assert "Name a commit it holds" in said and "exit 128" not in said, "read by review: it named no step to take"
     _git_in(repo, "checkout", "-q", "--detach")
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "", "a detached head, as CI checks out, is no branch"
 

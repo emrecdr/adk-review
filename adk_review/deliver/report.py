@@ -208,6 +208,8 @@ def render_handoff(
             hole += ["", *listed]
     if not outcome.kept:
         lines += hole or [NOTHING_TO_FIX]
+        if outcome.errors or outcome.unproven(fail_on):
+            lines += _check_again(evidence, outcome, fail_on, added, degraded=True, fixes=False)
     else:
         lines += [*([""] if hole else []), *hole, *_check_again(evidence, outcome, fail_on, added, degraded=degraded)]
     return inert("\n".join(lines)) + "\n"
@@ -368,7 +370,7 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
 
 
 def _check_again(
-    evidence: Evidence, outcome: Outcome, fail_on: str, added: Sequence[str], *, degraded: bool
+    evidence: Evidence, outcome: Outcome, fail_on: str, added: Sequence[str], *, degraded: bool, fixes: bool = True
 ) -> list[str]:
     """How a coding agent checks its fixes: the review again on the same scope with only the rules that found something
     or could not look, which calls no model and reads what the review's rules read whatever its `--diff-cap`, which
@@ -404,11 +406,13 @@ def _check_again(
     found |= set(outcome.errors)
     rules = sorted(check for check in found if check.startswith(rule_id("")))
     guidelines = [("--check", check) for check in sorted(found - set(rules))]
-    lines = ["", "## Check your work", "", *TESTS_FIRST, "", _stored(staged, on)]
+    # With nothing kept, only the hole to run again, and no fix to commit: read by review, such a hand-off ended at its
+    # list, with no way to run the checks that left the hole once whatever stopped them is mended.
+    lines = ["", "## Check your work", "", *TESTS_FIRST, "", _stored(staged, on)] if fixes else ["", "## Check again"]
     if rules:
         lines += [
             "",
-            "Then run these rules again. This calls no model and writes nothing.",
+            f"{'Then run' if fixes else 'Run'} these rules again. This calls no model and writes nothing.",
             *([] if degraded else ["The review ends in exit 0 once nothing at the bar is left."]),
             "Its report lists whatever is left.",
             "",
@@ -558,9 +562,9 @@ def _as_resolved(name: str, ref: str) -> str:
 
 
 def _spot(f: Finding) -> str:
-    """A finding's place as a code span on one line, where markdown shows it: a dropped finding's file is a model's own
-    text, matched to no file of the diff, and cut where it was dropped. Read by review: printed bare, one forged a
-    heading and showed a token."""
+    """A finding's place as a code span on one line, where markdown shows it: a dropped finding's file is the model's
+    own text, never replaced by the diff's path, and cut where it was dropped. Read by review: printed bare, one forged
+    a heading and showed a token."""
     return code_span(one_line(_place(f)))
 
 
@@ -571,8 +575,10 @@ def _place(f: Finding) -> str:
 
 
 def _where(f: Finding) -> str:
-    """A finding's file and line as one line of prose."""
-    return prose(_place(f))
+    """A finding's file and line as one line of prose, or in a code span where prose would rewrite it: read by review,
+    `docs/a](b).md` was shown as `docs/a] (b).md`, a file that does not exist for an agent to open."""
+    place = _place(f)
+    return said if (said := prose(place)) == one_line(place) else _spot(f)
 
 
 def what(evidence: Evidence) -> str:
