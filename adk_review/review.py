@@ -87,7 +87,7 @@ try:
     from dotenv import load_dotenv
 
     from .collect.git import MAX_FILE_BYTES, GitError, checked_out, collect_evidence, default_base, is_repository
-    from .core.evidence import Evidence, unreleased
+    from .core.evidence import Evidence, short_ref, unreleased
     from .core.findings import RANK
     from .core.guidelines import Guideline
     from .core.health import Health, measured
@@ -976,18 +976,12 @@ def _comment_named(evidence: Evidence) -> str:
     """The comment's file where `--comment` names none: `COMMENT_NAME` for this review's repository and branches,
     `all` for the base under `--all`, `HEAD` and `staged` under `--staged`, and the local minute."""
     pre = evidence["preflight"]
-    base = "all" if evidence["whole"] else "HEAD" if pre.get("staged") else _short(pre["base"])
-    head = "staged" if pre.get("staged") else _short(pre["head"])
+    base = "all" if evidence["whole"] else "HEAD" if pre.get("staged") else short_ref(pre["base"])
+    head = "staged" if pre.get("staged") else short_ref(pre["head"])
     at = time.strftime("%Y-%m-%d-%H-%M")
     return COMMENT_NAME.format(
         repo=_safe_name(Path(pre["repo"]).name), base=_safe_name(base), head=_safe_name(head), at=at
     )
-
-
-def _short(ref: str) -> str:
-    """A ref's name without the folder git keeps it in, as a hand-off's check names one in full: read by review,
-    `refs-heads-` and `refs-remotes-origin` took the 20 characters a branch's name has in a comment's file name."""
-    return re.sub(r"^refs/(heads|remotes|tags)/", "", ref)
 
 
 def _safe_name(name: str) -> str:

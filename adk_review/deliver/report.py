@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.blast import Blast, describe
-from ..core.evidence import Evidence
+from ..core.evidence import Evidence, short_ref
 from ..core.findings import RANK, Checked, Finding, at_or_above
 from ..core.health import Health, found_by_rule, grade
 from ..core.profiles import rule_id
@@ -192,19 +192,15 @@ def render_handoff(
     # Never "nothing to fix" where the review could not check everything, as its report's next steps, and what it did
     # not check named: read by review, a finding at the bar left unproven ended there, and a hole of another kind said
     # it first, with nothing for an agent to check by hand.
-    hole = []
-    if verdict == "DEGRADED":
+    hole, degraded = [], verdict == "DEGRADED"
+    if degraded:
         hole = [f"{UNCHECKED}. What it did not check may hold more to fix."]
         if listed := _unchecked(outcome):
             hole += ["", *listed]
     if not outcome.kept:
         lines += hole or [NOTHING_TO_FIX]
     else:
-        lines += [
-            *([""] if hole else []),
-            *hole,
-            *_check_again(evidence, outcome, fail_on, added, degraded=verdict == "DEGRADED"),
-        ]
+        lines += [*([""] if hole else []), *hole, *_check_again(evidence, outcome, fail_on, added, degraded=degraded)]
     return inert("\n".join(lines)) + "\n"
 
 
@@ -372,21 +368,22 @@ def _check_again(
     and `HEAD` alone, so the head checked is the branch `preflight` says the review named, in full, or else `HEAD`, the
     fixes committed on a new branch at the commit reviewed; and the base is the ref the review's base named, in full,
     which a merge of it follows, or else the merge base reviewed, which no commit moves. Read by review: the command
-    reviewed the old commit again where the review named a sha, a tag, a remote's
-    branch or `feature~1`; a short name a tag shares was refused; and a base `HEAD~2` moved with the fix, the rerun
-    approving a finding the change still held. Each path and glob is given as `--flag=value`, so none starting with
-    `-` reads as a flag."""
+    reviewed the old commit again where the review named a sha, a tag, a remote's branch or `feature~1`; a short name
+    a tag shares was refused; and a base `HEAD~2` moved with the fix, the rerun approving a finding the change still
+    held. Each path and glob is given as `--flag=value`, so none starting with `-` reads as a flag."""
     pre = evidence["preflight"]
     staged, branch = bool(pre.get("staged")), pre.get("branch", "")
-    short = branch.removeprefix("refs/heads/")
+    short = short_ref(branch)
     on = code_span(one_line(short)) if short else f"a new branch at {code_span(pre['head_sha'][:12])}"
     head = [] if staged else [("--head", branch or "HEAD")]
-    base = pre.get("base_full") or pre.get("merge_base", "")
-    if _pasted(["--base", base]) is None:  # read by review: told to give its own base again, one that moved
-        base = pre.get("merge_base", "")
+    # A ref no quoting keeps is the merge base: read by review, told to give its own base again, one that moved.
+    full = pre.get("base_full", "")
+    base = full if full and _pasted([full]) else pre.get("merge_base", "")
     pinned = [("--staged",)] if staged else [("--all",)] if evidence["whole"] else [("--base", base)]
     given = [*((f"--path={path}",) for path in evidence["scope"]), *((glob,) for glob in added)]
-    found = {item.source for item in outcome.kept + [f for f, _ in outcome.folded]}
+    # With each check that could not look, so a rerun names it again where it still cannot: read by review, one run
+    # of only the checks that found something said the fixes held, the hole never looked at again.
+    found = {item.source for item in outcome.kept + [f for f, _ in outcome.folded]} | set(outcome.errors)
     rules = sorted(check for check in found if check.startswith(rule_id("")))
     guidelines = [("--check", check) for check in sorted(found - set(rules))]
     lines = ["", "## Check your work", "", *TESTS_FIRST, "", _stored(staged, on)]
@@ -434,7 +431,7 @@ def _shown(units: Sequence[tuple[str, ...]]) -> tuple[str, list[str]]:
     shown = " ".join(word for _flag, word in quoted if word)
     if not (left := list(dict.fromkeys(code_span(flag) for flag, word in quoted if word is None))):
         return shown, []
-    return shown, [f"Give again each {', '.join(left)} this line leaves out."]
+    return shown, [f"It leaves out {', '.join(left)}: give each as this review had it."]
 
 
 #: What cmd and PowerShell both read bare as itself, beside letters and digits.

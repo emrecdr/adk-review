@@ -27,6 +27,7 @@ from conftest import (
     _git_in,
     _link_on_branch,
     _link_staged,
+    _pushed_from,
     gathered,
     missing_objects,
     run_review,
@@ -131,7 +132,7 @@ def test_a_tools_docstring_speaks_to_the_model_in_words() -> None:
         assert not re.findall(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b", tool.__doc__), (tool.__name__, tool.__doc__[:120])
 
 
-def test_preflight_names_the_branch_a_head_names_as_itself(tmp_path: Path) -> None:
+def test_preflight_names_each_ref_as_git_reads_it_and_never_as_a_flag(tmp_path: Path) -> None:
     """A commit moves a branch, so a hand-off names one to commit on only where the head names it as itself, in any
     spelling. Read by review: guessed from the ref a name resolved through, `feature~1` passed for `feature`, and
     `HEAD`, `heads/feature` and `refs/heads/feature` did not. Named in full, which no tag of its name makes ambiguous:
@@ -158,11 +159,29 @@ def test_preflight_names_the_branch_a_head_names_as_itself(tmp_path: Path) -> No
     assert preflight(str(repo), "feature~1", "feature")["base_full"] == "", "a base that moves with its head"
     _git_in(repo, "tag", "refs/heads/x")  # git's first reading of a full name: read by review, it went unrefused
     assert "ambiguous" in preflight(str(repo), BASE, "refs/heads/x")["error_message"]
-    for flag in ("-x", "--ignore-case"):  # read by review: a name read as itself reached git as a flag
+    for flag in ("-x", "--ignore-case", "^main"):  # read by review: a flag reached git, and `^main` named a sha
         said = preflight(str(repo), flag, "feature")["error_message"]
         assert said.startswith(f"base branch {flag!r} does not exist") and "switch" not in said, said
     _git_in(repo, "checkout", "-q", "--detach")
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "", "a detached head, as CI checks out, is no branch"
+
+
+def test_a_base_a_push_moves_is_pinned_to_the_merge_base(tmp_path: Path) -> None:
+    """A hand-off's check keeps a base by its ref, which a merge of it follows, unless the fix's own push moves it:
+    read by review, `--base @{u}` named the head's upstream, the agent pushed, and the rerun saw only the commits after
+    the push, the blocker's line no longer added, and approved."""
+    from adk_review.collect.git import preflight
+
+    _remote, work = _pushed_from(tmp_path)
+    _committed(work, "a.py")
+    _git_in(work, "push", "-q", "origin", "main")
+    _git_in(work, "checkout", "-q", "-b", "feature")
+    _committed(work, "b.py")
+    _git_in(work, "push", "-q", "-u", "origin", "feature")
+    _committed(work, "c.py")  # not pushed yet
+    for base in ("origin/feature", "@{u}"):
+        assert preflight(str(work), base, "feature")["base_full"] == "", base
+    assert preflight(str(work), "origin/main", "feature")["base_full"] == "refs/remotes/origin/main"
 
 
 class TestInspectRepository:

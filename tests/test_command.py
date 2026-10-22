@@ -482,6 +482,8 @@ class TestWhatAReviewCovers:
         _git_in(clone, "branch", "-q", "-D", "main")
         assert cli.main([str(clone), "--head", "origin/later", "--base", "main"]) == 2
         assert "Then pass --base origin/main" in capsys.readouterr().err
+        assert cli.main([str(clone), "--head", "origin/later", "--base", "refs/heads/main"]) == 2  # a hand-off's
+        assert "Then pass --base origin/main" in capsys.readouterr().err, "read by review: origin/refs/heads/main"
         _git_in(origin, "branch", "odd$name", "main")
         _git_in(clone, "fetch", "-q", "origin")
         assert cli.main([str(clone), "--head", "odd$name", "--base", "origin/main"]) == 2
@@ -774,7 +776,7 @@ class TestThePreviousReportAndTheHandoff:
         assert f"\n    {quoted} rule.secrets\n" in said, (
             "read by review: the globs given were left out of what it named"
         )
-        assert "Give again each `--skip` this line leaves out." in said, (
+        assert "It leaves out `--skip`: give each as this review had it." in said, (
             "read by review: what no quoting keeps was dropped unsaid, the branch with it, where it quoted"
         )
 
@@ -782,8 +784,9 @@ class TestThePreviousReportAndTheHandoff:
         """Read by review: a commit moves a branch and `HEAD` alone, and where the review named a sha, a tag, a
         remote's branch or `feature~1`, the command it printed reviewed the old commit again; told to check out the
         commit, an agent left its fixes on no branch. The branch is `preflight`'s, which git names, in full, which no
-        tag of its name makes ambiguous; and the base is the merge base reviewed: read by review, `HEAD~2` moved with
-        the commit, and the rerun approved a finding the change still held."""
+        tag of its name makes ambiguous; and the base is the ref the review's base named, in full, or else the merge
+        base reviewed: read by review, `HEAD~2` moved with the commit, and the rerun approved a finding the change
+        still held."""
         from adk_review.core.verdict import Outcome
         from adk_review.deliver.report import render_handoff
 
@@ -1247,6 +1250,11 @@ class TestWhatTheCommandTells:
         held = Outcome(kept=[sourced("blocker", "rule.secrets")], unread={"a.p12": "binary", "libsub": "a submodule"})
         check = render_handoff({**evidence, "scope": []}, held, verdict="DEGRADED", fail_on="blocker")
         assert "- `a.p12`: binary" in check, "read by review: it named nothing a person could check by hand"
+        failed = Outcome(kept=[sourced("blocker", "rule.secrets")], errors={"rule.types": "pyrefly crashed"})
+        rerun = render_handoff({**evidence, "scope": []}, failed, verdict="DEGRADED", fail_on="blocker")
+        assert "--check rule.secrets --check rule.types" in rerun, (
+            "read by review: a check that could not look was never run again, so none could be named as failing"
+        )
         held_text = (
             "Exit 3 means what this review could not check is still there. The fixes hold once its report names no "
             "finding at the bar and no check that could not look."

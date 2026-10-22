@@ -211,7 +211,7 @@ def _sha(repo: str, ref: str, kind: str = "commit") -> str | None:
     leads: a ref spelled `-x` must be a ref, never a flag. `^{commit}` names the commit an annotated tag tags, never
     the tag itself; `^{tag}` names a tag object, and nothing for a branch or a commit."""
     code, out = _git(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{{kind}}}", ok=(0, 1))
-    return out if code == 0 else None
+    return out if code == 0 and not out.startswith("^") else None  # read by review: `^main` passed as `^<sha>`
 
 
 def _namesakes(repo: str, ref: str) -> list[str]:
@@ -271,9 +271,12 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     to run there, printed only where every name in it is plain."""
     _, listed = _git(root, "remote")
     remotes = lines_of(listed)
+    said = f"{label} {name!r} does not exist in {repo}"
+    # Its remote copy by the branch's own name: read by review, a hand-off's `refs/heads/main` was told to fetch and
+    # pass `origin/refs/heads/main`, which no remote holds.
+    name = name.removeprefix("refs/heads/")
     copies = [f"{remote}/{name}" for remote in remotes if _sha(root, f"refs/remotes/{remote}/{name}") is not None]
     plain = all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in (name, *remotes))
-    said = f"{label} {name!r} does not exist in {repo}"
     if len(copies) == 1 and plain:
         remote = copies[0].removesuffix(f"/{name}")
         raise _ScopeError(
@@ -325,6 +328,9 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
         branch = "" if head == head_sha else _branch(root, head)  # a sha, as the hook and CI name one, is no branch
         # The base by the ref it names, which a merge of it follows; none where it moves with the head, as `HEAD~2`.
         base_full = "" if base is None or base == base_sha else _symbolic(root, base)
+        if base_full.startswith("refs/remotes/") and branch:  # the head's own upstream, which the fix's push moves
+            _, tracked = _git(root, "for-each-ref", "--format=%(upstream)%0a%(push)", branch)
+            base_full = "" if base_full in lines_of(tracked) else base_full
         # From here on git only sees commit hashes, which cannot be mistaken for options.
         if base is None:
             base_sha = merge_base = _empty_tree(root)
