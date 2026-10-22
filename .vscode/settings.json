@@ -32,5 +32,20 @@
       "approve": false,
       "matchCommandLine": true
     }
-  }
+  },
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/*.pyc": true,
+    ".pytest_cache": true,
+    ".ruff_cache": true
+  },
+  "files.watcherExclude": {
+    "**/.venv/**": true,
+    "**/__pycache__/**": true,
+    ".pytest_cache/**": true,
+    ".ruff_cache/**": true,
+    ".adk/**": true,
+    ".scannerwork/**": true
+  },
+  "workbench.tree.indent": 12
 }
