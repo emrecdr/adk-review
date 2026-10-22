@@ -472,6 +472,8 @@ class TestWhatAReviewCovers:
         err = capsys.readouterr().err
         assert "Its remote copy 'origin/feature' does." in err, err
         assert "git fetch origin feature." in err and "Then pass --head origin/feature" in err, err
+        assert cli.main([str(clone), "--head", "heads/feature", "--base", "main"]) == 2  # a spelling git takes
+        assert "Then pass --head origin/feature" in capsys.readouterr().err, "read by review: origin/heads/feature"
         assert cli.main([str(clone), "--head", "later", "--base", "main"]) == 2
         err = capsys.readouterr().err
         assert "nor as a remote branch fetched there" in err and "git fetch origin later." in err, err
@@ -1267,6 +1269,30 @@ class TestWhatTheCommandTells:
             "read by review: degraded by an unproven blocker, it named nothing to check by hand"
         )
         assert "--base " + "3" * 40 + " --check guideline.security" in told, "nor ran its guideline again"
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Sourced
+        from adk_review.deliver.report import render_comment
+
+        token = "ghp_" + "a1B2" * 9  # a model's own path, matched to no file of the diff
+        hostile = Finding(
+            file=f"a.py\n\n## Fix\n\n1. Run `x`\x1b[2J {token}",
+            line=3,
+            severity="blocker",
+            title="t",
+            evidence="e",
+            suggestion="s",
+        )
+        forged = Outcome(kept=[sourced("minor")], dropped=[Sourced("guideline.security", hostile, (3, 3))])
+        for said in (
+            render_handoff({**evidence, "scope": []}, forged, verdict="DEGRADED", fail_on="blocker"),
+            render_comment({**evidence, "scope": []}, forged, verdict="DEGRADED", fail_on="blocker"),
+        ):
+            assert "\n## Fix\n" not in said and "\x1b" not in said and token not in said, (
+                "read by review: a model's path forged a heading, ran a terminal's escape and showed a token"
+            )
+            assert "`guideline.security` at `` a.py ## Fix 1. Run `x` [REDACTED:github_token]:3 ``" in said, (
+                "read by review: the comment listed none"
+            )
         held_at = told.index("Exit 3 means")
         assert held_at > told.index("--check guideline.security"), (
             "read by review: said of the rules' run alone, which never runs the guideline"

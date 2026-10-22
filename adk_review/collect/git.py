@@ -262,9 +262,9 @@ class _UnrelatedError(_ScopeError):
 #: A name a command printed for a person to paste keeps as itself in a POSIX shell, cmd and PowerShell alike. A branch's
 #: name is its author's, and `;`, `$` and a backtick are legal in one.
 _PASTABLE = re.compile(r"[A-Za-z0-9._/-]+")
-#: What no branch's name holds, as `git check-ref-format` reads one: a leading `-`, a space or control character,
-#: `~ ^ : ? * [ \`, `..` or `@{`.
-_MALFORMED = re.compile(r"^-|[\x00-\x20\x7f~^:?*\[\\]|\.\.|@\{")
+#: How a name no ref and no revision of one can be starts: an option's `-`, or a negation's `^`. Read by review: `^main`
+#: and `-x` were told to fetch them, and a wider guard told `main~5`, a revision, it was no branch's name.
+_MALFORMED = re.compile(r"^[-^]")
 
 
 def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn:
@@ -277,12 +277,13 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     _, listed = _git(root, "remote")
     remotes = lines_of(listed)
     said = f"{label} {name!r} does not exist in {repo}"
-    # Its remote copy by the branch's own name: read by review, a hand-off's `refs/heads/main` was told to fetch and
-    # pass `origin/refs/heads/main`, which no remote holds.
-    name = name.removeprefix("refs/heads/")
+    # Its remote copy by the branch's own name, however it was spelt: read by review, a hand-off's `refs/heads/main`
+    # and `heads/main` were told to fetch and pass `origin/refs/heads/main` and `origin/heads/main`, which no remote
+    # holds. Another full name, a remote's or a tag's, is under no remote by that name.
+    other = name.startswith("refs/") and not name.startswith("refs/heads/")
+    name = name.removeprefix("refs/heads/").removeprefix("heads/")
     copies = [f"{remote}/{name}" for remote in remotes if _sha(root, f"refs/remotes/{remote}/{name}") is not None]
-    plain = all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in (name, *remotes))
-    plain = plain and not name.startswith("refs/")  # a remote's or a tag's full name: no remote holds it under that
+    plain = all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in (name, *remotes)) and not other
     if len(copies) == 1 and plain:
         remote = copies[0].removesuffix(f"/{name}")
         raise _ScopeError(
@@ -340,7 +341,8 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
             # pinned, though no push of the fix moves it.
             _, listed = _git(root, "remote")
             moved = {f"refs/remotes/{remote}/{branch.removeprefix('refs/heads/')}" for remote in lines_of(listed)}
-            base_full = "" if base_full in moved else base_full
+            _, pushed = _git(root, "for-each-ref", "--format=%(push)", branch)  # git's own, where its config says
+            base_full = "" if base_full in moved | {pushed} else base_full
         # From here on git only sees commit hashes, which cannot be mistaken for options.
         if base is None:
             base_sha = merge_base = _empty_tree(root)
@@ -380,9 +382,9 @@ def _symbolic(root: str, name: str) -> str:
 
 
 def _branch(root: str, head: str) -> str:
-    """The local branch `head` names as itself, in full, or "", which a commit moves: no tag or object of its name
-    makes a full name ambiguous, as `_namesakes` reads one. Read by review: `x` was refused where a tag was named `x`
-    too."""
+    """The local branch `head` names as itself, in full, or "", which a commit moves: a tag named `x` makes `x`
+    ambiguous and leaves `refs/heads/x` whole, so a hand-off names a branch in full. Read by review: `x` was refused
+    where a tag was named `x` too."""
     full = _symbolic(root, head)
     return full if full.startswith("refs/heads/") else ""
 

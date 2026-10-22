@@ -53,6 +53,11 @@ class Outcome:
     refuted: list[tuple[Sourced, str]] = field(default_factory=list)  # dropped on the verifier's say-so, with why
     unverified: list[tuple[Sourced, str]] = field(default_factory=list)  # the verifier could not judge; kept, with why
 
+    def unproven(self) -> list[Sourced]:
+        """The findings set aside unproven, their quote not borne out or a verifier refuting them: one at the bar is a
+        hole `decide` names, and a hand-off and a comment list it, read from one place."""
+        return [*self.dropped, *(item for item, _why in self.refuted)]
+
     def folded_into(self) -> dict[int, list[Sourced]]:
         """Each kept finding's id, and the findings folded into it, in the fold's order: what the report's table, its
         sections and the hand-off each list with a finding, read from one place. By id, since a finding holds no
@@ -444,7 +449,6 @@ def decide(outcome: Outcome, fail_on: str) -> tuple[str, int]:
     approves. So is one at the bar a verifier refuted: the verifier reads the branch's own text, and read by review, a
     payload there could have it refute a real blocker and the review approve.
     """
-    unproven = [*outcome.dropped, *(item for item, _why in outcome.refuted)]
-    if outcome.errors or outcome.unread or at_bar(unproven, fail_on):
+    if outcome.errors or outcome.unread or at_bar(outcome.unproven(), fail_on):
         return "DEGRADED", EXIT_DEGRADED
     return ("REQUEST_CHANGES", EXIT_FINDINGS) if at_bar(outcome.kept, fail_on) else ("APPROVED", EXIT_CLEAN)

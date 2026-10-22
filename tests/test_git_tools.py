@@ -164,6 +164,8 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
         assert said.startswith(f"base branch {flag!r} is no branch name") and "fetch" not in said, (
             "read by review: told to fetch a name no branch can have"
         )
+    said = preflight(str(repo), f"{BASE}~5", "feature")["error_message"]  # a revision past the history it holds
+    assert "does not exist" in said and "no branch name" not in said, "read by review: a revision said to be no name"
     _git_in(repo, "checkout", "-q", "--detach")
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "", "a detached head, as CI checks out, is no branch"
 
@@ -194,6 +196,8 @@ def test_a_base_a_push_moves_is_pinned_to_the_merge_base(tmp_path: Path) -> None
     assert preflight(str(work), "origin/main", "tracking")["base_full"] == "refs/remotes/origin/main", (
         "read by review: pinned for being the upstream, which a push of the fix never moves"
     )
+    _git_in(work, "config", "push.default", "upstream")  # now its push goes to `origin/main`, which git names
+    assert preflight(str(work), "@{u}", "tracking")["base_full"] == "", "read by review: git's own push was not asked"
 
 
 class TestInspectRepository:

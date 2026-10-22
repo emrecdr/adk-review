@@ -197,7 +197,7 @@ def render_handoff(
     hole, degraded = [], verdict == "DEGRADED"
     if degraded:
         hole = [f"{UNCHECKED}. What it did not check may hold more to fix."]
-        if listed := [*_unchecked(outcome), *_unproven_listed(outcome, fail_on)]:
+        if listed := _unchecked(outcome, fail_on):
             hole += ["", *listed]
     if not outcome.kept:
         lines += hole or [NOTHING_TO_FIX]
@@ -206,11 +206,17 @@ def render_handoff(
     return inert("\n".join(lines)) + "\n"
 
 
-def _unchecked(outcome: Outcome) -> list[str]:
-    """Each file no check read whole and each check that could not look, with why, as a person checks them by hand:
-    the comment's list and the hand-off's alike."""
+def _unchecked(outcome: Outcome, fail_on: str) -> list[str]:
+    """Each file no check read whole, each check that could not look, and each finding at the bar it could not prove,
+    with why, as a person checks them by hand: the comment's list and the hand-off's alike. Read by review: a review
+    degraded by an unproven blocker listed nothing in either."""
     unchecked = [f"- {code_span(one_line(path))}: {_reason(why)}" for path, why in outcome.unread.items()]
-    return unchecked + [f"- {code_span(check)} could not look: {_reason(why)}" for check, why in outcome.errors.items()]
+    unchecked += [f"- {code_span(check)} could not look: {_reason(why)}" for check, why in outcome.errors.items()]
+    return unchecked + [
+        f"- {code_span(item.source)} at {_spot(item.finding)}: a finding at the bar this review could not prove"
+        for item in outcome.unproven()
+        if at_or_above(item.finding.severity, fail_on)
+    ]
 
 
 def _lanes(outcome: Outcome, tidies: frozenset[str]) -> tuple[list[list[Sourced]], list[list[Sourced]]]:
@@ -329,8 +335,8 @@ def render_comment(
     ):
         if groups:
             lines += ["", f"### {heading}", "", *([note, ""] if note else []), *_commented(groups, tidies)]
-    if unchecked := _unchecked(outcome):
-        lines += ["", "### Not checked", "", "The review could not read these. Check them by hand.", "", *unchecked]
+    if unchecked := _unchecked(outcome, fail_on):
+        lines += ["", "### Not checked", "", "The review could not check these. Check them by hand.", "", *unchecked]
     return inert("\n".join(lines)) + "\n"
 
 
@@ -340,7 +346,7 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
     lines = []
     for number, (lead, *also) in enumerate(groups, 1):
         f = lead.finding
-        place = code_span(one_line(_place(f)))
+        place = _spot(f)
         lines += [
             f"{number}. {place}: {prose(f.title)} ({f.severity})",
             f"   - Quoted: {_quoted(f)}",
@@ -386,7 +392,8 @@ def _check_again(
     # With each check that could not look or could not prove a finding at the bar, so a rerun names it again where it
     # still cannot: read by review, a run of only the checks that found something said the fixes held, the hole never
     # looked at again.
-    found = {item.source for item in [*outcome.kept, *(f for f, _ in outcome.folded), *_unproven(outcome, fail_on)]}
+    unproven = [item for item in outcome.unproven() if at_or_above(item.finding.severity, fail_on)]
+    found = {item.source for item in [*outcome.kept, *(f for f, _ in outcome.folded), *unproven]}
     found |= set(outcome.errors)
     rules = sorted(check for check in found if check.startswith(rule_id("")))
     guidelines = [("--check", check) for check in sorted(found - set(rules))]
@@ -423,22 +430,6 @@ def _check_again(
             "This calls the model and spends its quota.",
         ]
     return [*lines, *(HELD if degraded else [])]
-
-
-def _unproven(outcome: Outcome, fail_on: str) -> list[Sourced]:
-    """The findings at the bar this review set aside unproven, their quote not borne out or a verifier refuting them:
-    a hole `decide` names, which a hand-off lists and runs again."""
-    unproven = [*outcome.dropped, *(item for item, _why in outcome.refuted)]
-    return [item for item in unproven if at_or_above(item.finding.severity, fail_on)]
-
-
-def _unproven_listed(outcome: Outcome, fail_on: str) -> list[str]:
-    """Each finding at the bar set aside unproven, by its check and place, as a person checks it by hand."""
-    return [
-        f"- {code_span(item.source)} at {code_span(_place(item.finding))}: a finding at the bar this review could not "
-        "prove"
-        for item in _unproven(outcome, fail_on)
-    ]
 
 
 def _shown(units: Sequence[tuple[str, ...]]) -> tuple[str, list[str]]:
@@ -555,6 +546,12 @@ def _as_resolved(name: str, ref: str) -> str:
     """A name as given, and the tag it resolved through when it is one: a fork's tag `origin/main`, with no such
     branch fetched, once stood in for the branch unseen."""
     return f"{prose(name)} (the tag {prose(ref)})" if ref.startswith("refs/tags/") and ref != name else prose(name)
+
+
+def _spot(f: Finding) -> str:
+    """A finding's place as a code span on one line, where markdown shows it: a dropped finding's file is a model's own
+    text, matched to no file of the diff. Read by review: printed bare, one forged a heading and showed a token."""
+    return code_span(one_line(_place(f)))
 
 
 def _place(f: Finding) -> str:
@@ -693,7 +690,7 @@ def _at_a_glance(outcome: Outcome) -> list[str]:
     ranked = sorted(outcome.kept, key=lambda item: -RANK[item.finding.severity])  # stable: the report's order on a tie
     for number, item in enumerate(ranked[:TABLE_ROWS], 1):
         f = item.finding
-        place = code_span(one_line(_place(f)))
+        place = _spot(f)
         readings = Counter(also.source for also in [item, *under.get(id(item), [])])
         found_by = ", ".join(f"{source} ({n})" if n > 1 else source for source, n in readings.items())
         lines.append(f"| {number} | {f.severity} | {_cell(place)} | {_cell(prose(f.title))} | {found_by} |")
