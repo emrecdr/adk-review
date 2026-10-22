@@ -140,6 +140,12 @@ TESTS_FIRST = (
 NOTHING_TO_FIX = "Nothing to fix: no finding was kept."
 #: How a degraded review's report and hand-off each begin to say so, never "nothing to fix".
 UNCHECKED = "This review could not check everything"
+#: How a run after a degraded review tells a fix that held, its hole outranking a finding, exit 3 over exit 1. Read by
+#: review: an agent waited for an exit 0 that hole never gives, and a rule that failed named no finding either.
+HELD = (
+    "Exit 3 means what this review could not check is still there. The fixes hold once its report names no",
+    "finding at the bar and no check that could not look.",
+)
 
 
 def render_handoff(
@@ -369,57 +375,59 @@ def _check_again(
     staged, branch = bool(pre.get("staged")), pre.get("branch", "")
     short = branch.removeprefix("refs/heads/")
     on = code_span(one_line(short)) if short else f"a new branch at {code_span(pre['head_sha'][:12])}"
-    head = [] if staged else ["--head", branch or "HEAD"]
-    pinned = ["--staged"] if staged else ["--all"] if evidence["whole"] else ["--base", pre["merge_base"]]
-    given = [*(f"--path={path}" for path in evidence["scope"]), *added]
+    head = [] if staged else [("--head", branch or "HEAD")]
+    base = pre.get("base_full") or pre.get("merge_base", "")
+    pinned = [("--staged",)] if staged else [("--all",)] if evidence["whole"] else [("--base", base)]
+    given = [*((f"--path={path}",) for path in evidence["scope"]), *((glob,) for glob in added)]
     found = {item.source for item in outcome.kept + [f for f, _ in outcome.folded]}
     rules = sorted(check for check in found if check.startswith(rule_id("")))
-    guidelines = [arg for check in sorted(found - set(rules)) for arg in ("--check", check)]
+    guidelines = [("--check", check) for check in sorted(found - set(rules))]
     lines = ["", "## Check your work", "", *TESTS_FIRST, "", _stored(staged, on)]
     if rules:
-        named = [arg for check in rules for arg in ("--check", check)]
         lines += [
             "",
-            "Then run the rules that found them again. This calls no model and writes nothing. The review ends",
-            "in exit 0 once nothing at the bar is left.",
-            *(_held(fail_on) if degraded else []),
+            "Then run the rules that found them again. This calls no model and writes nothing.",
+            *(HELD if degraded else ["The review ends in exit 0 once nothing at the bar is left."]),
             "Its report lists whatever is:",
             "",
         ]
-        rerun = [*head, *pinned, *given, "--fail-on", fail_on, *named]
-        if command := _pasted(["adk-review", pre["repo"], *rerun]):
+        rerun = [*head, *pinned, *given, ("--fail-on", fail_on), *(("--check", check) for check in rules)]
+        if command := _pasted(["adk-review", pre["repo"], *(arg for unit in rerun for arg in unit)]):
             lines.append(f"    {command}")
-        else:  # each argument still quoted, on a line of its own: read by review, one shown bare ran `$(id)` pasted
-            shown = _pasted(rerun)
-            kept = "the same repository" + ("" if shown else f", {'branch, ' * bool(branch)}paths and globs")
-            safe = [*([] if branch else head), *pinned, "--fail-on", fail_on, *named]
+        else:
+            shown, left = _shown(rerun)
             lines += [
                 "No command is printed: a name in it holds a character a shell would read.",
-                f"Run the review again with these arguments and {kept}.",
+                "Run the review again on the same repository with these arguments.",
+                *left,
                 "",
-                f"    {shown or ' '.join(safe)}",
+                f"    {shown}",
             ]
     if guidelines:
-        shown = _pasted([*head, *pinned, *guidelines]) or " ".join([*pinned, *guidelines])
+        shown, left = _shown([*head, *pinned, *guidelines])
         lines += [
             "",
             "The guidelines' findings are a model's reading. To check them again, run the review as before. Give these",
             "arguments in place of its profile, head and base.",
+            *left,
             "",
             f"    {shown}",
             "",
             "This calls the model and spends its quota.",
+            *(HELD if degraded and not rules else []),
         ]
     return lines
 
 
-def _held(fail_on: str) -> list[str]:
-    """How a rerun after a degraded review tells a fix that held: its hole outranks a finding, exit 3 over exit 1, so
-    the verdict line says it. Read by review: an agent took exit 3 as the end, a blocker still there."""
-    return [
-        "Exit 3 means what this review could not check is still there.",
-        f"The fixes hold once its verdict names no finding at or above `--fail-on {fail_on}`.",
-    ]
+def _shown(units: Sequence[tuple[str, ...]]) -> tuple[str, list[str]]:
+    """Each unit of arguments, a flag and what it takes, as a shell reads it, and a sentence naming the flags of those
+    no quoting keeps one word, for the person to give as before. Each unit is quoted on its own, so one a shell would
+    read leaves out itself alone: read by review, one such glob dropped the branch and every other glob with it, and
+    a head left out went unsaid."""
+    quoted = [(unit[0].partition("=")[0], _pasted(list(unit))) for unit in units]
+    left = list(dict.fromkeys(code_span(flag) for flag, word in quoted if word is None))
+    said = [f"Give its own {', '.join(left)} as this review was given {'it' if len(left) == 1 else 'them'}."]
+    return " ".join(word for _flag, word in quoted if word), said if left else []
 
 
 #: What cmd and PowerShell both read bare as itself, beside letters and digits.

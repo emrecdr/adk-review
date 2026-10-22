@@ -635,6 +635,9 @@ class TestThePreviousReportAndTheHandoff:
         assert cli._safe_name("bugfix/JIRA-98765-null-check") == "bugfix-jira-98765-nu"
         assert cli._safe_name("abcdefghijklmnopqrs-tail") == "abcdefghijklmnopqrs"
         assert cli._safe_name("feat x$y`z") == "feat-x-y-z" and cli._safe_name("../..") == "branch"
+        # Read by review: a hand-off's check names the head in full, and `refs-heads-` took the cut's characters.
+        pre = {"repo": "/r/demo", "base": "refs/heads/main", "head": "refs/heads/feature/x"}
+        assert "__main__feature-x__" in cli._comment_named({"preflight": pre, "whole": False})
         assert run_review(cli, demo_repo, "--dry-run", "--comment") == 2
         assert "--comment is a review's, and --dry-run runs no review" in capsys.readouterr().err
 
@@ -707,7 +710,7 @@ class TestThePreviousReportAndTheHandoff:
             "--head",
             f"refs/heads/{HEAD}",
             "--base",
-            report["reviewed"]["merge_base"],
+            f"refs/heads/{BASE}",
             "--third-party=vendor/",
             "--fail-on",
             "blocker",
@@ -762,11 +765,16 @@ class TestThePreviousReportAndTheHandoff:
             kept,
             verdict="REQUEST_CHANGES",
             fail_on="blocker",
-            added=("--skip=docs/",),
+            added=("--skip=docs/", "--skip=a<!--b"),
         )
         assert "No command is printed" in said, said
-        named = f"\n    --head HEAD --base {'3' * 40} --skip=docs/ --fail-on blocker --check rule.secrets\n"
-        assert named in said, "read by review: the globs the review was given were left out of what it named"
+        quoted = _pasted(["--head", "HEAD", "--base", "3" * 40, "--skip=docs/", "--fail-on", "blocker", "--check"])
+        assert f"\n    {quoted} rule.secrets\n" in said, (
+            "read by review: the globs given were left out of what it named"
+        )
+        assert "Give its own `--skip` as this review was given it." in said, (
+            "read by review: what no quoting keeps was dropped unsaid, the branch with it, where it quoted"
+        )
 
     def test_a_handoff_checks_the_fixes_at_head_where_a_commit_leaves_the_head_reviewed_where_it_was(self) -> None:
         """Read by review: a commit moves a branch and `HEAD` alone, and where the review named a sha, a tag, a
@@ -790,6 +798,7 @@ class TestThePreviousReportAndTheHandoff:
                 "head": head,
                 "branch": branch,
                 "base": "HEAD~2",
+                "base_full": "",  # `HEAD~2` names no ref: it moves with the fix
                 "head_sha": sha,
                 "merge_base": merged,
             }
@@ -801,6 +810,16 @@ class TestThePreviousReportAndTheHandoff:
             )
             assert f"    adk-review /r --head {checked} --base {merged} --fail-on " in said and first in said, said
             assert "Check out" not in said and "--base HEAD~2" not in said, said
+        pre |= {"base": "main", "base_full": "refs/heads/main"}
+        said = render_handoff(
+            {"preflight": pre, "whole": False, "scope": []},
+            Outcome(kept=[sourced("blocker", "rule.secrets")]),
+            verdict="REQUEST_CHANGES",
+            fail_on="blocker",
+        )
+        assert "--head HEAD --base refs/heads/main --fail-on" in said, (
+            "read by review: a pinned sha took in every commit `main` gained, once the fix merged it"
+        )
 
     def test_every_sentence_a_handoff_writes_itself_is_short_and_one_command(self) -> None:
         """Its own words, as every sentence the package prints: read by review, its line on the tests ran to 22 words,
@@ -1216,10 +1235,15 @@ class TestWhatTheCommandTells:
         held = Outcome(kept=[sourced("blocker", "rule.secrets")], unread={"a.p12": "binary", "libsub": "a submodule"})
         check = render_handoff({**evidence, "scope": []}, held, verdict="DEGRADED", fail_on="blocker")
         assert "- `a.p12`: binary" in check, "read by review: it named nothing a person could check by hand"
-        assert "Exit 3 means what this review could not check is still there." in check, "and what a rerun ends in"
-        assert "The fixes hold once its verdict names no finding at or above `--fail-on blocker`." in check, (
-            "read by review: exit 3 outranks exit 1, so an agent could not tell a fix that held"
+        held_text = (
+            "Exit 3 means what this review could not check is still there. The fixes hold once its report names no "
+            "finding at the bar and no check that could not look."
         )
+        assert held_text in " ".join(check.split()), "read by review: a rule that failed named no finding either"
+        assert "exit 0" not in check, "read by review: promised, where the hole it could not check stays a hole"
+        alone = Outcome(kept=[sourced("major", "guideline.security")], unread={"a.p12": "binary"})
+        guided = render_handoff({**evidence, "scope": []}, alone, verdict="DEGRADED", fail_on="major")
+        assert held_text in " ".join(guided.split()), "read by review: unsaid where only a guideline found something"
         assert "--skip" not in check, (
             "read by review: a skip it chose for the person still left a submodule a hole, and hid a binary added"
         )

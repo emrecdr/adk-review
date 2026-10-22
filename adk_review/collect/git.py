@@ -223,6 +223,7 @@ def _namesakes(repo: str, ref: str) -> list[str]:
     for suffix in ("~", "^", ":", "@{"):
         name = name.partition(suffix)[0]
     means = [
+        name,  # git's first reading: `refs/heads/x` is itself, and a tag named so too makes it ambiguous
         f"refs/{name}",
         f"refs/tags/{name}",
         f"refs/heads/{name}",
@@ -320,6 +321,8 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
         base_sha = "" if base is None else _sha(root, base) or _missing(root, repo, "base branch", "--base", base)
         head_sha = _sha(root, head) or _missing(root, repo, "head branch", "--head", head)
         branch = "" if head == head_sha else _branch(root, head)  # a sha, as the hook and CI name one, is no branch
+        # The base by the ref it names, which a merge of it follows; none where it moves with the head, as `HEAD~2`.
+        base_full = "" if base is None or base == base_sha else _symbolic(root, base)
         # From here on git only sees commit hashes, which cannot be mistaken for options.
         if base is None:
             base_sha = merge_base = _empty_tree(root)
@@ -344,19 +347,26 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
         "base_ref": base_ref,
         "head_ref": head_ref,
         "branch": branch,
+        "base_full": base_full,
     }
 
 
-def _branch(root: str, head: str) -> str:
-    """The local branch `head` names as itself, by its full name, or "": `HEAD` on a branch, and `heads/x` and
-    `refs/heads/x`, name one; `x~1`, a range, a sha, a tag, a remote's branch and a detached `HEAD` name none. Git's own
-    answer, where `head_ref` is the ref a name resolved through: read by review, `feature~1` resolved through
-    `feature`. In full, since no tag or object of its name makes that ambiguous: read by review, `x` was refused where
-    a tag was named `x` too."""
+def _symbolic(root: str, name: str) -> str:
+    """The ref `name` names as itself, in full, or "": `main` and `HEAD` on it name `refs/heads/main`, `origin/main` a
+    remote's branch and `v1` a tag; `x~1`, a range, a sha and a detached `HEAD` name none. Git's own answer, where
+    `head_ref` is the ref a name resolved through: read by review, `feature~1` resolved through `feature`."""
     code, full = _git(
-        root, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", "--end-of-options", head, ok=(0, 1)
+        root, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", "--end-of-options", name, ok=(0, 1)
     )
-    return full if code == 0 and full.startswith("refs/heads/") else ""
+    return full if code == 0 and full.startswith("refs/") else ""
+
+
+def _branch(root: str, head: str) -> str:
+    """The local branch `head` names as itself, in full, or "", which a commit moves: no tag or object of its name
+    makes a full name ambiguous, as `_namesakes` reads one. Read by review: `x` was refused where a tag was named `x`
+    too."""
+    full = _symbolic(root, head)
+    return full if full.startswith("refs/heads/") else ""
 
 
 def _full_ref(root: str, label: str, ref: str | None) -> str:

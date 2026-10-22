@@ -659,7 +659,7 @@ def _review(argv: list[str] | None = None) -> int:
 def _added(parser: argparse.ArgumentParser, args: argparse.Namespace) -> tuple[str, ...]:
     """The globs given beyond the config's, which argparse appends to the config's own: the hand-off's check of the
     fixes repeats them, and reads the config's again. Each as `--flag=glob`, so one that starts with `-` reads as no
-    flag. Kept on `args`, as the comment's name is, so the cache's key holds them."""
+    flag. Kept on `args`, as the comment's name is, where the hand-off is rendered."""
     return tuple(
         f"{flag}={glob}"
         for dest, flag in (("skip", "--skip"), ("scan", "--scan"), ("third_party", "--third-party"))
@@ -976,8 +976,8 @@ def _comment_named(evidence: Evidence) -> str:
     """The comment's file where `--comment` names none: `COMMENT_NAME` for this review's repository and branches,
     `all` for the base under `--all`, `HEAD` and `staged` under `--staged`, and the local minute."""
     pre = evidence["preflight"]
-    base = "all" if evidence["whole"] else "HEAD" if pre.get("staged") else pre["base"]
-    head = "staged" if pre.get("staged") else pre["head"]
+    base = "all" if evidence["whole"] else "HEAD" if pre.get("staged") else pre["base"].removeprefix("refs/heads/")
+    head = "staged" if pre.get("staged") else pre["head"].removeprefix("refs/heads/")  # as a hand-off's check names it
     at = time.strftime("%Y-%m-%d-%H-%M")
     return COMMENT_NAME.format(
         repo=_safe_name(Path(pre["repo"]).name), base=_safe_name(base), head=_safe_name(head), at=at

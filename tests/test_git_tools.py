@@ -154,6 +154,10 @@ def test_preflight_names_the_branch_a_head_names_as_itself(tmp_path: Path) -> No
     assert named == expected | dict.fromkeys(["heads/x", "refs/heads/x"], "refs/heads/x"), named
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "refs/heads/feature", "as `preflight` answers it"
     assert preflight(str(repo), BASE, "refs/heads/x")["status"] == "success", "the name it gives is one it takes"
+    assert preflight(str(repo), BASE, "HEAD")["base_full"] == f"refs/heads/{BASE}", "a base named as a ref"
+    assert preflight(str(repo), "feature~1", "feature")["base_full"] == "", "a base that moves with its head"
+    _git_in(repo, "tag", "refs/heads/x")  # git's first reading of a full name: read by review, never refused
+    assert "ambiguous" in preflight(str(repo), BASE, "refs/heads/x")["error_message"]
     _git_in(repo, "checkout", "-q", "--detach")
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "", "a detached head, as CI checks out, is no branch"
 
