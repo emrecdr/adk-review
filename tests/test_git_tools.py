@@ -382,7 +382,7 @@ class TestGitThatFails:
     def test_every_command_names_a_branch_sharing_no_history(self, unrelated_repo: Path, cli, capsys) -> None:
         assert cli.main([str(unrelated_repo), "--base", BASE, "--head", UNRELATED]) == 2
         err = capsys.readouterr().err
-        assert "share no history" in err and "Review the head alone with --all." in err and "Traceback" not in err, err
+        assert "share no history" in err and "with --all, not --base" in err and "Traceback" not in err, err
 
     def test_every_command_names_a_shallow_clone_and_how_to_deepen_it(self, shallow_clone: Path, cli, capsys) -> None:
         assert run_review(cli, shallow_clone) == 2
@@ -670,7 +670,7 @@ class TestWhatAPathCannotForge:
         lines = [re.sub(r"[^ -~]", "", line) for line in re.split(r"\r\n?|\n", err) if line]
         assert lines == [
             "review: the review did not finish: RuntimeError: x ::add-mask::APPROVED ## [error]forged "
-            "# #vso[task.prependpath]y. Run it again with --debug-log FILE to see where"
+            "# #vso[task.prependpath]y"
         ], err
 
 

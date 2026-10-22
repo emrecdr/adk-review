@@ -20,7 +20,7 @@ import sys
 import time
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 import truststore
 from dotenv import dotenv_values
@@ -58,6 +58,14 @@ def unreachable(exc: Exception) -> int:
     return 1
 
 
+class _Parser(argparse.ArgumentParser):
+    """argparse's, its every error ending with where to look next, as the review's own does. Its own copy: the login
+    imports nothing of the reviewer's, so a reviewer that cannot load still lets a person log in."""
+
+    def error(self, message: str) -> NoReturn:
+        super().error(f"{message}\n{self.prog}: --help lists every flag")
+
+
 def main(argv: list[str]) -> int:
     # Every file this process makes is its owner's alone from its first byte: LiteLLM writes the token with the default
     # umask, and measured, it stayed readable by every account for the network exchange before `keep_private` ran.
@@ -65,7 +73,7 @@ def main(argv: list[str]) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # a Windows console is not UTF-8 by default
     # A flag it does not know, `--help` among them, stops here, never a login: measured, `--help` began one.
-    parser = argparse.ArgumentParser(prog="adk-review-login", description=(__doc__ or "").splitlines()[0])
+    parser = _Parser(prog="adk-review-login", description=(__doc__ or "").splitlines()[0])
     parser.add_argument("--force", action="store_true", help="log in again although a token is cached")
     args = parser.parse_args(argv)
     if not _endpoints_from_env():

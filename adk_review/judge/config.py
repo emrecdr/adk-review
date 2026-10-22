@@ -276,7 +276,10 @@ def _copilot_refused(named: list[tuple[str, str]]) -> str | None:
     # error then waited out, and a test holds the default to LiteLLM's answer.
     for var, name in named:
         if name != DEFAULTS["copilot"] and (why := _refuses_temperature_zero(name)) is not None:
-            return f"{var}={name} cannot judge at temperature 0, at which every review runs: {why}"
+            return (
+                f"{var}={name} cannot judge at temperature 0, at which every review runs: {why.rstrip('.')}. "
+                "Name another model"
+            )
     return None
 
 
@@ -291,11 +294,14 @@ def _not_gemini(named: list[tuple[str, str]]) -> str | None:
             first, _, _ = str(exc).partition("\n")
             return f"{var}: {first}"
         except ImportError:  # a `class:name` prefix whose class needs a package the reviewer does not install
-            return f"{var}={name} is no Gemini model"
+            return f"{var}={name} is no Gemini model. Name a Gemini model in {var}"
         if not issubclass(model, Gemini):
             # Measured by review: `gpt-4.1`, Copilot's default left in `.env`, was ready here, and ADK sends `gpt-*`
             # to OpenAI's API. ADK resolves a name to the class that will serve it: on this arm, a Gemini model's.
-            return f"{var}={name} is no Gemini model: ADK sends it to {model.__name__}, another provider's class"
+            return (
+                f"{var}={name} is no Gemini model: ADK sends it to {model.__name__}, another provider's class. "
+                "Name a Gemini one"
+            )
     return None
 
 

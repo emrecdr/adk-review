@@ -119,7 +119,7 @@ def _read(stdin: TextIO) -> str:
 
 def command(repository: str, head: str, base: str | None) -> list[str]:
     """The review of what one push sends: against a base, or, with none, the whole project at the head."""
-    return [repository, "--head", head, *(["--base", base] if base else ["--all"]), "--profile", PROFILE]
+    return [repository, "--head", head, *(["--base", base] if base else ["--all"]), "--profile", PROFILE, "--quiet"]
 
 
 def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, str] | None:

@@ -105,7 +105,7 @@ class Failure(TypedDict):
 
     status: Literal["error"]
     error_message: str  # one sentence, the command's exit 2
-    adds_nothing: NotRequired[bool]  # the head adds nothing to its base: the command names the flags that widen it
+    widen: NotRequired[bool]  # nothing to compare with the base: the command names the flags that widen the review
 
 
 class Evidence(Change):

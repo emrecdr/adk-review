@@ -432,22 +432,46 @@ class TestWhatAReviewCovers:
             assert cli.main(argv) == 2, argv
             return capsys.readouterr().err
 
-        assert "Give the path of a git repository." in told([str(tmp_path / "nowhere"), "--base", "main"])
+        assert "Give the path of a git repository" in told([str(tmp_path / "nowhere"), "--base", "main"])
         (tmp_path / "plain").mkdir()
-        assert "Give the folder that holds .git." in told([str(tmp_path / "plain"), "--base", "main"])
+        assert "Give the folder that holds .git" in told([str(tmp_path / "plain"), "--base", "main"])
         repo = _branch_off_empty(tmp_path / "repo", "feature")
         _committed(repo, "app.py")
-        assert "Drop one of them." in told([str(repo), "--dry-run", "--json", str(tmp_path / "r.json")])
-        assert "Drop the repository." in told([str(repo), "--try", str(tmp_path / "plain")])
-        assert "Name a folder outside it." in told([str(repo), "--base", "main", "--cache", str(repo / "kept")])
-        assert "Drop --head." in told([str(repo), "--staged", "--head", "main"])
+        assert "Drop one of them" in told([str(repo), "--dry-run", "--json", str(tmp_path / "r.json")])
+        assert "Drop the repository" in told([str(repo), "--try", str(tmp_path / "plain")])
+        assert "Name a folder outside it" in told([str(repo), "--base", "main", "--cache", str(repo / "kept")])
+        assert "Drop --head" in told([str(repo), "--staged", "--head", "main"])
         nowhere = str(tmp_path / "missing" / "r.json")
-        assert "Name a file in a folder that exists." in told([str(repo), "--base", "main", "--json", nowhere])
+        assert "Name a file in a folder that exists" in told([str(repo), "--base", "main", "--json", nowhere])
         with pytest.raises(SystemExit) as refused:
             cli.main([str(repo), "--nope"])
         assert refused.value.code == 2 and "--help lists every flag" in capsys.readouterr().err
+        assert "Name one that git branch lists" in told([str(repo), "--head", "featur", "--base", "main"])
+        (repo / "inner" / ".git").mkdir(parents=True)  # read by review: an empty .git sent git to the outer repository
+        assert "Repair " in told([str(repo / "inner"), "--base", "main"])
+        assert "Name a Python file, or a folder that holds one" in told(["--try", str(tmp_path / "plain")])
+        previous = [str(repo), "--head", "feature", "--base", "main", "--previous", str(tmp_path / "none.json")]
+        assert "Name the JSON a review wrote with --json" in told(previous)
         monkeypatch.setenv("REVIEW_PROVIDER", "anthropic")
-        assert "Set it in .env or the shell." in told([str(repo), "--head", "feature", "--base", "main"])
+        assert "Set it in .env or the shell" in told([str(repo), "--head", "feature", "--base", "main"])
+
+    def test_a_config_that_cannot_run_names_what_to_write(self, tmp_path: Path) -> None:
+        """Asked by the owner: an error names what to do instead, the config's too. A setting misspelt is answered
+        with every setting there is, a missing one with where it goes, and no `default` profile with what to add."""
+        from adk_review.core.profiles import expanded
+        from adk_review.judge.catalog import load_config
+
+        shipped = (ROOT / "adk_review" / "config.toml").read_text(encoding="utf-8")
+        for text, step in (
+            (shipped.replace("fail_on =", "fial_on =", 1), "There are fail_on, "),
+            (shipped.replace("fail_on =", "# fail_on =", 1), "fail_on is missing. Add it under [review]"),
+            ("[review\n", "Correct the TOML there"),
+        ):
+            (written := tmp_path / "config.toml").write_text(text, encoding="utf-8")
+            with pytest.raises(ValueError, match=re.escape(step)):
+                load_config(written)
+        with pytest.raises(ValueError, match=r"Add one$"):
+            expanded({"mine": ["rule.secrets"]}, ["rule.secrets"], {})
 
     def test_a_branch_only_on_a_remote_is_named_with_the_fetch_that_brings_it(self, cli, tmp_path: Path, capsys):
         """Asked by the owner: a branch that exists on the remote read as one that does not exist. The review fetches
@@ -1003,45 +1027,6 @@ class TestTheJsonReport:
         assert verdict.startswith("## Verdict: APPROVED, ") and verdict.endswith(" below `--fail-on blocker`"), verdict
         assert "none at or above" not in verdict, verdict
 
-    def test_the_help_ends_with_the_everyday_tasks_each_a_command(self, cli, capsys) -> None:
-        """Asked by the owner, for a tool a person learns from itself: `--help` ends with the everyday tasks, each the
-        command that does it, a branch against `develop` and a comment for its author among them."""
-        with pytest.raises(SystemExit) as stopped:
-            cli.main(["--help"])
-        assert stopped.value.code == 0
-        said = capsys.readouterr().out
-        for command in (
-            "adk-review <repo> --head <branch> --base develop ",
-            "adk-review <repo> --head <branch> --base develop --comment ",
-            "adk-review <repo> --base main --profile default-rules ",
-            "adk-review <repo> --base main --dry-run ",
-            "adk-review <repo> --all --profile rules-only ",
-        ):
-            assert command in said, (command, said[-800:])
-        assert said.index("everyday:") < said.index("exit codes:"), "the tasks first"
-
-    def test_the_report_ends_with_the_next_steps_by_what_it_found(
-        self, cli, demo_repo: Path, tmp_path: Path, capsys
-    ) -> None:
-        """Asked by the owner, who wants every run to guide the person reading it: the report ends with what to do
-        now, by what the review found, each step naming the flag that does it, none taken for them."""
-        assert run_review(cli, demo_repo, "--profile", "default-rules") == 1
-        steps = capsys.readouterr().out.split("## Next steps\n\n", 1)[1]
-        assert "- Fix the 2 findings at or above `--fail-on blocker`, then run the same command again." in steps
-        assert "- 1 finding below the bar is worth a look." in steps
-        assert "`--comment` writes them" in steps and "`--handoff FILE` writes them" in steps
-
-        repo = _branch_off_empty(tmp_path / "repo", "feature")
-        _committed(repo, "app.py")
-        reviewed = [str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules"]
-        assert cli.main(reviewed) == 0
-        assert capsys.readouterr().out.rstrip().endswith("## Next steps\n\n- Nothing to fix: no check found anything.")
-
-        _committed(repo, "release.p12", b"0\x82\x00\x00binary")
-        assert cli.main(reviewed) == 3
-        steps = capsys.readouterr().out.split("## Next steps\n\n", 1)[1]
-        assert "1 file not read whole" in steps and "`--diff-cap` reads more" in steps, steps
-
     def test_a_table_under_the_verdict_lists_every_finding_most_severe_first(self, cli, demo_repo: Path, capsys):
         """Asked by the owner, for a report read at a glance: every kept finding in one table under the verdict, the
         most severe first, with its place, its title and each check that found it, the ones folded into it among them.
@@ -1124,14 +1109,48 @@ class TestWhatTheCommandTells:
         _committed(repo, "app.py", text)
         return cli.main([str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules", *flags])
 
+    def test_the_report_ends_with_the_next_steps_by_its_verdict(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ) -> None:
+        """Asked by the owner, who wants every run to guide the person reading it: the report ends with what to do now,
+        by its verdict and what it kept, each step true wherever the report is read, the pre-push hook's and a cached
+        one's among them, and each sentence ASD-STE100. Read by review: a fix left on disk is not what a review reads;
+        a degraded review never ends in "nothing to fix"; and a finding dropped is still one a check found."""
+        from adk_review.core.verdict import Outcome
+        from adk_review.deliver.report import _next_steps
+
+        assert run_review(cli, demo_repo, "--profile", "default-rules") == 1
+        steps = capsys.readouterr().out.split("## Next steps\n\n", 1)[1]
+        assert "- Fix the 2 findings at or above `--fail-on blocker`. Commit the fixes: a review reads commits" in steps
+        assert "- 1 finding below the bar is worth a look." in steps
+        assert "`adk-review --comment` writes them" in steps and "`--handoff FILE` for a coding agent" in steps
+        assert _long([("the next steps", steps)]) == []
+
+        assert self._review(cli, tmp_path, "x = 1\n") == 0
+        assert capsys.readouterr().out.rstrip().endswith("## Next steps\n\n- Nothing to fix: no finding was kept.")
+
+        staged = _next_steps(
+            {"preflight": {"staged": True}}, Outcome(kept=[sourced("blocker")]), "REQUEST_CHANGES", "blocker"
+        )
+        assert any("Stage the fixes" in step for step in staged), staged
+        hole = _next_steps({"preflight": {}}, Outcome(errors={"rule.lint": "ruff exited 2"}), "DEGRADED", "blocker")
+        assert (
+            hole[-1]
+            == "- This review could not check everything: the lines above say what and why. Check each by hand."
+        )
+
     def test_quiet_prints_nothing_when_the_review_passes(self, cli, tmp_path: Path, capsys) -> None:
         assert self._review(cli, tmp_path, "x = 1\n", "--quiet") == 0
         said = capsys.readouterr()
         assert (said.out, said.err) == ("", ""), said
 
     def test_quiet_prints_the_report_when_the_review_stops(self, cli, tmp_path: Path, capsys) -> None:
-        assert self._review(cli, tmp_path, 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "--quiet") == 1
-        assert "## Verdict: REQUEST_CHANGES" in capsys.readouterr().out
+        """The report alone, as the guide says: read by review, the pre-push hook, which reviews quietly into a JSON in
+        a folder it then removes, named that file under the report."""
+        written = str(tmp_path / "review.json")
+        assert self._review(cli, tmp_path, 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "--quiet", "--json", written) == 1
+        said = capsys.readouterr()
+        assert "## Verdict: REQUEST_CHANGES" in said.out and "wrote the" not in said.err, said.err
 
     def test_quiet_and_progress_cannot_run_together(self, cli, tmp_path: Path, capsys) -> None:
         with pytest.raises(SystemExit) as stopped:
@@ -1185,6 +1204,17 @@ class TestWhatTheCommandTells:
         assert cli._waiting(progress.running()) == "working"
 
 
+def _long(said: list) -> list[tuple[str, str]]:
+    """Each sentence of `said`, `(where, text)` pairs, past ASD-STE100's 20 words or with a `;` joining two."""
+    return [
+        (where, sentence)
+        for where, text in said
+        if text is not None
+        for sentence in re.split(r"(?<=[.!?])\s+", text)
+        if len(sentence.split()) > 20 or ";" in sentence
+    ]
+
+
 def _printed(node) -> str | None:
     """A sentence `_say` prints, from its own literals, each value it formats read as one word; None where another
     module made the sentence, an exception's or a check's."""
@@ -1205,7 +1235,6 @@ def test_every_sentence_the_command_and_its_hook_print_is_short_and_one_command(
     prints, each flag's help, and each rule's title and fix, holds at most 20 words and one command; no `;` joins
     two."""
     import ast
-    import re
     import sys
 
     said = []
@@ -1220,13 +1249,7 @@ def test_every_sentence_the_command_and_its_hook_print_is_short_and_one_command(
     said += [(rule.check_id, text) for rule in catalog().rules for text in (rule.title, rule.fix)]
     fixes = {rule.check_id: getattr(sys.modules[type(rule).__module__], "FIX", {}) for rule in catalog().rules}
     said += [(check, text) for check, table in fixes.items() for text in table.values()]  # a tool's code's own fix
-    long = [
-        (where, sentence)
-        for where, text in said
-        for sentence in re.split(r"(?<=[.!?])\s+", text)
-        if len(sentence.split()) > 20 or ";" in sentence
-    ]
-    assert long == [], long
+    assert _long(said) == []
 
 
 def test_every_error_the_package_raises_or_answers_is_short_and_one_command() -> None:
@@ -1234,7 +1257,6 @@ def test_every_error_the_package_raises_or_answers_is_short_and_one_command() ->
     git raises reaches a person through `_say`, and a tool's error envelope reaches chat. Each sentence holds at most
     20 words and one command; no `;` joins two."""
     import ast
-    import re
 
     said = []
     for path in sorted((ROOT / "adk_review").rglob("*.py")):
@@ -1245,14 +1267,7 @@ def test_every_error_the_package_raises_or_answers_is_short_and_one_command() ->
                 for key, value in zip(node.keys, node.values, strict=True):
                     if isinstance(key, ast.Constant) and key.value == "error_message":
                         said.append((f"{path.name}:{node.lineno}", _printed(value)))
-    long = [
-        (where, sentence)
-        for where, text in said
-        if text is not None
-        for sentence in re.split(r"(?<=[.!?])\s+", text)
-        if len(sentence.split()) > 20 or ";" in sentence
-    ]
-    assert long == [], long
+    assert _long(said) == []
 
 
 class TestWhatAReviewKeeps:
@@ -1707,10 +1722,20 @@ class TestWhatANewcomerReads:
         said = capsys.readouterr().err
         assert "does not exist" in said and "not a git repository" not in said, said
 
-    def test_help_names_the_installed_command_the_typical_run_and_the_exit_codes(self, cli, capsys) -> None:
+    def test_help_names_the_installed_command_the_everyday_tasks_and_the_exit_codes(self, cli, capsys) -> None:
+        """Asked by the owner, for a tool a person learns from itself: `--help` ends with the everyday tasks, each the
+        command that does it, a branch against `develop` and a comment for its author among them."""
         with pytest.raises(SystemExit) as stopped:
             cli.main(["--help"])
         out = capsys.readouterr().out
         assert stopped.value.code == 0 and out.startswith("usage: adk-review ")
-        assert "adk-review <repo> --base main --profile default-rules" in out and "exit codes:  0 approved" in out
+        for command in (
+            "adk-review <repo> --head <branch> --base develop ",
+            "adk-review <repo> --head <branch> --base develop --comment ",
+            "adk-review <repo> --base main --profile default-rules ",
+            "adk-review <repo> --base main --dry-run ",
+            "adk-review <repo> --all --profile rules-only ",
+        ):
+            assert command in out, (command, out[-800:])
+        assert out.index("everyday:") < out.index("exit codes:  0 approved"), "the tasks first"
         assert "GUIDE.md" in out

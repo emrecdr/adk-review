@@ -21,7 +21,7 @@ from ..core.health import Health, found_by_rule, grade
 from ..core.profiles import rule_id
 from ..core.secrets import scrub
 from ..core.text import EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, squash
-from ..core.verdict import Outcome, Sourced, at_bar, unproven
+from ..core.verdict import Outcome, Sourced, at_bar
 
 #: What a terminal runs or reorders, and what a reader cannot see: escape sequences, C0 and C1 controls (U+009B is
 #: `ESC [` in one character), every format character — the marks that turn the text after them around (U+202E and its
@@ -714,46 +714,41 @@ def render(
         f"- duplicates across rules and guidelines folded into one finding: {len(outcome.folded)}",
         f"- secrets redacted before any model call: {outcome.redacted}",
         _spent(usage),
-        *_next_steps(outcome, fail_on),
+        *_next_steps(evidence, outcome, verdict, fail_on),
         "",
     ]
     return inert("\n".join(lines))  # once over the whole: no two fields side by side spell one
 
 
-def _next_steps(outcome: Outcome, fail_on: str) -> list[str]:
-    """What to do now, by what the review found, as the report's last section: asked by the owner, who wants every run
-    to guide the person reading it. Each step names the flag that does it, and none is taken for them: the reviewer
-    writes into no repository and posts nothing. What could not be checked comes first, since it bounds the rest."""
+def _next_steps(evidence: Evidence, outcome: Outcome, verdict: str, fail_on: str) -> list[str]:
+    """What to do now, by the verdict and what was kept, as the report's last section: asked by the owner, who wants
+    every run to guide the person reading it. Each step holds wherever the report is read, a cached review, `--staged`
+    and the pre-push hook among them, and none is taken for the reader: the reviewer writes into no repository and
+    posts nothing. A degraded review says so first, by the verdict itself, so no hole `decide` names can end in
+    "nothing to fix"; what each hole is, and why, the lines above it say."""
     held = at_bar(outcome.kept, fail_on)
     below = len(outcome.kept) - held
     steps = []
-    if failed := len(outcome.errors):
-        steps.append(
-            f"{failed} check{'s' * (failed != 1)} could not look, each with why under its heading. Run the review "
-            "again once it can."
-        )
-    if unread := len(outcome.unread):
-        steps.append(
-            f'{unread} file{"s" * (unread != 1)} not read whole, each under "not read" above. `--diff-cap` reads '
-            "more of a file, and `--skip` leaves one out."
-        )
-    if unproven(outcome, fail_on):
-        steps.append(
-            f"A finding at or above `--fail-on {fail_on}` was dropped or refuted. Read why above before it merges."
-        )
+    if verdict == "DEGRADED":
+        steps.append("This review could not check everything: the lines above say what and why. Check each by hand.")
     if held:
+        # Read by review: a fix left on disk and the same command run again found the same findings.
+        stored = (
+            "Stage the fixes: a review of the index reads what is staged."
+            if evidence["preflight"].get("staged")
+            else "Commit the fixes: a review reads commits, not the files on disk."
+        )
         steps.append(
-            f"Fix the {held} finding{'s' * (held != 1)} at or above `--fail-on {fail_on}`, then run the same command "
-            "again."
+            f"Fix the {held} finding{'s' * (held != 1)} at or above `--fail-on {fail_on}`. {stored} Then run the same "
+            "command again."
         )
     if below:
         steps.append(f"{below} finding{'s' * (below != 1)} below the bar {'is' if below == 1 else 'are'} worth a look.")
     if outcome.kept:
-        steps += [
-            "`--comment` writes them as a comment for the branch's author, to paste by hand.",
-            "`--handoff FILE` writes them as instructions for a coding agent.",
-        ]
-    return ["", "## Next steps", "", *(f"- {step}" for step in steps or ["Nothing to fix: no check found anything."])]
+        steps.append(
+            "`adk-review --comment` writes them as a comment to paste by hand, `--handoff FILE` for a coding agent."
+        )
+    return ["", "## Next steps", "", *(f"- {step}" for step in steps or ["Nothing to fix: no finding was kept."])]
 
 
 def _sections(
@@ -934,7 +929,9 @@ def read_previous(path: str) -> tuple[dict[str, dict], dict | None]:
     except RecursionError:  # measured by review: nested 1,100 deep, which no report `--json` writes, it ended as a hole
         raise ValueError(f"--previous {path}: nested deeper than a report --json writes") from None
     except (OSError, ValueError) as exc:
-        raise ValueError(f"--previous {path}: {getattr(exc, 'strerror', None) or exc}") from None
+        raise ValueError(
+            f"--previous {path}: {getattr(exc, 'strerror', None) or exc}. Name the JSON a review wrote with --json"
+        ) from None
     return kept, health
 
 

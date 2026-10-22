@@ -44,7 +44,7 @@ def expanded(profiles: dict, known: Sequence[str], groups: Mapping[str, Sequence
     found = {profile: expand(ids, known, groups, f"profile {profile!r}") for profile, ids in profiles.items()}
     if DEFAULT not in found:
         raise ValueError(
-            f"config.toml [profiles] has no `{DEFAULT}`: the checks a review runs when no --profile names one"
+            f"config.toml [profiles] has no `{DEFAULT}`: the checks a review runs when no --profile names one. Add one"
         )
     return found
 
@@ -82,6 +82,6 @@ def expand(ids: object, known: Sequence[str], groups: Mapping[str, Sequence[str]
     expanded = list(dict.fromkeys(check for named in ids for check in groups.get(named, [named])))
     if not expanded:
         raise ValueError(
-            f"{what} turns no check on, and a review that looks at nothing approves anything. Name a check in it."
+            f"{what} turns no check on, and a review that looks at nothing approves anything. Name a check in it"
         )
     return expanded

@@ -193,7 +193,7 @@ def _try(paths: Sequence[str], chosen: Selection, fail_on: str) -> int:
     for path, why in skipped:
         _say(f"--try leaves out {path}: {why}")
     if not files:
-        _say("--try found no text file to read")
+        _say("--try found no text file to read. Name a Python file, or a folder that holds one")
         return EXIT_USAGE
     entries, tree = as_change(files)
     answers = run_rules({"files": entries, "tree": tree}, chosen.rules)
@@ -572,16 +572,14 @@ def _cleared(flag: str, given: str) -> None:
     2, and a link was written through."""
     path = Path(given).expanduser()
     if not path.resolve().parent.is_dir():
-        raise ValueError(
-            f"{flag} {given}: there is no such folder to write it in. Name a file in a folder that exists."
-        )
+        raise ValueError(f"{flag} {given}: there is no such folder to write it in. Name a file in a folder that exists")
     if path.is_dir():
         raise ValueError(f"{flag} {path}: that is a folder. Name a file in it")
     try:
         path.unlink(missing_ok=True)
     except OSError as exc:
         raise ValueError(
-            f"{flag} {path}: the earlier file could not be removed: {exc.strerror or exc}. Name another file."
+            f"{flag} {path}: the earlier file could not be removed: {exc.strerror or exc}. Name another file"
         ) from None
 
 
@@ -663,9 +661,9 @@ def _mode_alone(args: argparse.Namespace) -> None:
     if stops is None:
         return
     if given := [flag for dest, flag in REVIEW_ONLY.items() if getattr(args, dest)]:
-        raise ValueError(f"{given[0]} is a review's, and {stops} runs no review. Drop one of them.")
+        raise ValueError(f"{given[0]} is a review's, and {stops} runs no review. Drop one of them")
     if stops == "--try" and args.repo is not None:
-        raise ValueError("--try reads files on disk: it takes no repository. Drop the repository.")
+        raise ValueError("--try reads files on disk. Drop the repository")
 
 
 def _compared(args: argparse.Namespace) -> tuple[str, str | None, str]:
@@ -675,10 +673,10 @@ def _compared(args: argparse.Namespace) -> tuple[str, str | None, str]:
     if args.cache and Path(args.cache).expanduser().resolve().is_relative_to(Path(repo).resolve()):
         raise ValueError(
             f"--cache {args.cache} lies in the repository under review: nothing is written into it. Name a folder "
-            "outside it."
+            "outside it"
         )
     if args.staged and args.head:
-        raise ValueError("--staged reviews the index. It takes no --head. Drop --head.")
+        raise ValueError("--staged reviews the index. Drop --head")
     base, head = ("HEAD", "the index") if args.staged else target(repo, args.base, args.head, args.all)
     return repo, base, head
 
@@ -720,10 +718,11 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
             third_party=args.third_party,
         )
     if evidence["status"] != "success":
-        # Measured: a first review of a repository checked out on main ended at "adds nothing" with no way on. The
-        # flags are the command's, so the command names them; the index takes neither.
+        # Measured: a first review of a repository checked out on main ended at "adds nothing" with no way on, and so
+        # does a head that shares no history with its base. The flags are the command's, so the command names them;
+        # the index takes neither.
         widen = f". Name the branch to review with --head. Or review every file at {head!r} with --all, not --base"
-        _say(evidence["error_message"] + (widen if evidence.get("adds_nothing") and not args.staged else ""))
+        _say(evidence["error_message"] + (widen if evidence.get("widen") and not args.staged else ""))
         return EXIT_USAGE
     if say is not None:
         say(f"read {len(evidence['files'])} file(s), {len(evidence.get('ignored', ()))} ignored")
@@ -923,7 +922,7 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, comment: str
     """The review's outputs: the report on stdout, the hand-off, the JSON and the comment where asked for; exit 3
     where a file asked for cannot be written. Each file written is then named by its full path, the comment's last, the
     run's last line: asked by the owner, a person should see where each went, a default name above all. Under `--quiet`
-    a review that passes prints nothing."""
+    a review that passes prints nothing, and one that does not prints its report alone, as the guide says."""
     if not (args.quiet and code == EXIT_CLEAN):
         print(report)
     wrote = []
@@ -941,7 +940,7 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, comment: str
             _say(f"could not write the {flag} to {written}: {exc.strerror or exc}")
             return EXIT_DEGRADED
         wrote.append(f"wrote the {flag} to {path.resolve()}")
-    if not (args.quiet and code == EXIT_CLEAN):
+    if not args.quiet:  # read by review: the pre-push hook, quiet, named the JSON it had written to a folder now gone
         for sentence in wrote:
             _say(sentence)
     return code
@@ -1080,7 +1079,7 @@ def main(argv: list[str] | None = None) -> int:
         _say("the report's reader closed it before its end. It never got the verdict")
         return EXIT_DEGRADED
     except Exception as exc:  # noqa: BLE001 -- a crash must never read as a verdict
-        _say(f"the review did not finish: {type(exc).__name__}: {exc}. Run it again with --debug-log FILE to see where")
+        _say(f"the review did not finish: {type(exc).__name__}: {exc}")
         return EXIT_DEGRADED
 
 

@@ -63,7 +63,7 @@ def load_config(path: Path) -> dict:
     try:
         config = tomllib.loads(path.read_text(encoding="utf-8-sig"))  # as Windows Notepad has saved it: a BOM
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
-        raise ValueError(f"{path.name}: {exc}") from None
+        raise ValueError(f"{path.name}: {exc}. Correct the TOML there") from None
     if strangers := sorted(set(config) - set(TABLES)):
         there = " and ".join(f"[{section}]" for section in TABLES)
         raise ValueError(f"{path.name}: no section [{strangers[0]}]. There are {there}")
@@ -72,10 +72,10 @@ def load_config(path: Path) -> dict:
             raise ValueError(f"{path.name}: [{section}] must be a table of {of}")
     review = config["review"]
     if strangers := sorted(set(review) - set(REVIEW)):
-        raise ValueError(f"{path.name}: [review] {strangers[0]} is not a setting")
+        raise ValueError(f"{path.name}: [review] {strangers[0]} is not a setting. There are {', '.join(REVIEW)}")
     for key, (fits, what) in REVIEW.items():
         if key not in review:
-            raise ValueError(f"{path.name}: [review] {key} is missing. Add it, as the shipped config.toml has it.")
+            raise ValueError(f"{path.name}: [review] {key} is missing. Add it under [review]")
         if not fits(review[key]):
             raise ValueError(f"{path.name}: [review] {key} must be {what}")
     return config

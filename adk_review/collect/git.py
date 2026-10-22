@@ -184,7 +184,7 @@ def _git_raw(
 ) -> subprocess.CompletedProcess[bytes]:
     """`_git`'s call with its answer left as bytes, what a batch read counts its sizes in."""
     if (git := on_path("git")) == "git":  # not on PATH: Git for Windows can be installed for Git Bash alone
-        raise GitError(f"git {_verb(args)} could not start: git is not on PATH. Install git, or put it on PATH.")
+        raise GitError(f"git {_verb(args)} could not start: git is not on PATH. Install git with its folder on PATH")
     try:
         done = _run([git, "-C", repo, *args], _environment(repo, settings), stdin)
     except subprocess.TimeoutExpired:
@@ -250,6 +250,11 @@ class _ScopeError(Exception):
     """A scope `preflight` refuses, and why: answered as the error envelope a `GitError` is, from one place."""
 
 
+class _UnrelatedError(_ScopeError):
+    """Two branches with no history in common. Its envelope is marked `widen`, for the command to name the flag that
+    reviews the head alone: the flags are the command's, and chat, which shares this envelope, takes none."""
+
+
 #: A name a command printed for a person to paste keeps as itself in a POSIX shell, cmd and PowerShell alike. A branch's
 #: name is its author's, and `;`, `$` and a backtick are legal in one.
 _PASTABLE = re.compile(r"[A-Za-z0-9._/-]+")
@@ -280,7 +285,7 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
         )
     if remotes:
         raise _ScopeError(f"{said}, nor as a remote branch fetched there. Fetch every remote there: git fetch --all")
-    raise _ScopeError(said)
+    raise _ScopeError(f"{said}. Name one that git branch lists")
 
 
 def _refused(repo: str, root: str) -> None:
@@ -288,12 +293,15 @@ def _refused(repo: str, root: str) -> None:
     Measured: a `.git` that is no repository, an empty folder say, sent git to the repository around it, and a review
     read the outer repository's commits under the inner folder's name. Raises `GitError` as `_git` does."""
     if not os.path.exists(root):
-        raise _ScopeError(f"{repo} does not exist. Give the path of a git repository.")
+        raise _ScopeError(f"{repo} does not exist. Give the path of a git repository")
     if not is_repository(root):
-        raise _ScopeError(f"{repo} is not a git repository (no .git directory). Give the folder that holds .git.")
+        raise _ScopeError(f"{repo} is not a git repository (no .git directory). Give the folder that holds .git")
     top = _git(root, "rev-parse", "--show-toplevel", strip=False)[1].removesuffix("\n")
     if not same_folder(top, root):
-        raise _ScopeError(f"{repo} is no repository's top: git answers for {top}. Give {top} instead.")
+        raise _ScopeError(
+            f"{repo} is no repository's top: its .git holds no repository, and git answers for {top}. "
+            f"Repair {repo}/.git"
+        )
 
 
 def _empty_tree(root: str) -> str:
@@ -322,7 +330,7 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
             span = f"{merge_base}..{head_sha}"
         _, ahead = _git(root, "rev-list", "--count", span)
     except (GitError, _ScopeError) as exc:
-        return {"status": "error", "error_message": str(exc)}
+        return {"status": "error", "error_message": str(exc), "widen": isinstance(exc, _UnrelatedError)}
     return {
         "status": "success",
         "repo": root,
@@ -360,9 +368,7 @@ def _merge_base(repo: str, root: str, base: tuple[str, str], head: tuple[str, st
         raise _ScopeError(f"{repo} is a shallow clone, and {why}")
     code, merge_base = _git(root, "merge-base", base_sha, head_sha, ok=(0, 1))
     if code == 1:  # git's answer for two commits with no ancestor in common
-        raise _ScopeError(
-            f"{base_name!r} and {head_name!r} share no history: no change to review. Review the head alone with --all."
-        )
+        raise _UnrelatedError(f"{base_name!r} and {head_name!r} share no history: no change to review")
     return merge_base
 
 
@@ -873,7 +879,7 @@ def collect_evidence(
     """
     resolved = preflight_staged(repo) if staged else preflight(repo, base, head)
     if resolved["status"] != "success":
-        return {"status": "error", "error_message": resolved["error_message"]}
+        return {"status": "error", "error_message": resolved["error_message"], "widen": resolved.get("widen", False)}
     return gather(resolved, scope, **options)
 
 

@@ -590,7 +590,10 @@ def test_the_gemini_arm_runs_no_model_adk_sends_to_another_provider(monkeypatch)
 
     monkeypatch.setattr(config.LLMRegistry, "resolve", absent)
     monkeypatch.setenv("REVIEW_MODEL", "claude:claude-sonnet-4")
-    assert config.require_ready() == "REVIEW_MODEL=claude:claude-sonnet-4 is no Gemini model"
+    assert (
+        config.require_ready()
+        == "REVIEW_MODEL=claude:claude-sonnet-4 is no Gemini model. Name a Gemini model in REVIEW_MODEL"
+    )
 
 
 def test_an_empty_copilot_token_is_no_token(monkeypatch, tmp_path) -> None:
@@ -744,6 +747,17 @@ def test_the_copilot_login_makes_its_files_private_from_the_first_byte(monkeypat
     assert masks == [0o077]
 
 
+def test_the_copilot_login_names_help_after_a_flag_it_does_not_know(monkeypatch, capsys) -> None:
+    """Asked by the owner: argparse's own errors end by naming `--help`, the login's as the review's. A flag it does
+    not know stops it before any login."""
+    from adk_review import login as copilot_login
+
+    monkeypatch.setattr(copilot_login.os, "umask", lambda _mask: 0o022)
+    with pytest.raises(SystemExit) as stopped:
+        copilot_login.main(["--forse"])
+    assert stopped.value.code == 2 and "adk-review-login: --help lists every flag" in capsys.readouterr().err
+
+
 @pytest.mark.skipif(sys.platform == "win32", reason="a Windows file has no owner/group/other modes to narrow")
 def test_the_copilot_login_keeps_its_files_to_their_owner(tmp_path) -> None:
     """Measured before: both token files 0644 in a 0755 directory, readable by every account on the machine."""
@@ -861,7 +875,7 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
         assert push.refs([f"{named} {sha} {named} {zero}"]) == [(sha, None, named)], repr(space)
     with pytest.raises(ValueError, match="names no ref"):
         push.refs(["noise"])
-    assert push.command("r", sha, None) == ["r", "--head", sha, "--all", "--profile", "default-rules"]
+    assert push.command("r", sha, None) == ["r", "--head", sha, "--all", "--profile", "default-rules", "--quiet"]
 
     remote, work = _pushed_from(tmp_path)
 
@@ -892,7 +906,9 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
         codes[:] = [returned]
         pushing("refs/heads/feature", tip)
         assert push.main(["origin", str(remote)]) == expected
-    assert ran[0][1:-2] == ["--head", tip, "--base", first, "--profile", "default-rules"]
+    against_first = ["--head", tip, "--base", first, "--profile", "default-rules", "--quiet"]
+    whole = ["--head", tip, "--all", "--profile", "default-rules", "--quiet"]
+    assert ran[0][1:-2] == against_first
     assert ran[0][-2] == "--json", "each review says what stopped it, for a merge's reviews to be weighed together"
     said = capsys.readouterr().out
     assert said.count("## Verdict: REQUEST_CHANGES") == 3, "the report is printed where the push stops, only there"
@@ -910,11 +926,11 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
     monkeypatch.setenv("PRE_COMMIT_LOCAL_BRANCH", "refs/heads/feature")
     monkeypatch.setenv("PRE_COMMIT_FROM_REF", tip)
     codes[:] = [0]
-    assert push.main([]) == 0 and ran[-1][1:-2] == ["--head", tip, "--base", first, "--profile", "default-rules"]
+    assert push.main([]) == 0 and ran[-1][1:-2] == against_first
     # A push to a remote this clone knows no branch of: the whole project is new.
     monkeypatch.setenv("PRE_COMMIT_REMOTE_NAME", "elsewhere")
     codes[:] = [0]
-    assert push.main([]) == 0 and ran[-1][1:-2] == ["--head", tip, "--all", "--profile", "default-rules"]
+    assert push.main([]) == 0 and ran[-1][1:-2] == whole
     # Arguments a config gives the hook, where pre-commit passes none of git's lines on: refused, never approved.
     monkeypatch.setattr(sys, "stdin", io.StringIO(""))
     assert push.main(["--profile", "rules-only"]) == 1 and "takes none of" in capsys.readouterr().out
@@ -924,11 +940,11 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
     monkeypatch.setenv("PRE_COMMIT_FROM_REF", first)
     monkeypatch.setenv("PRE_COMMIT_TO_REF", tip)
     codes[:] = [0]
-    assert push.main([]) == 0 and ran[-1][1:-2] == ["--head", tip, "--base", first, "--profile", "default-rules"]
+    assert push.main([]) == 0 and ran[-1][1:-2] == against_first
     for name in ("PRE_COMMIT_FROM_REF", "PRE_COMMIT_TO_REF"):
         monkeypatch.delenv(name)
     codes[:] = [0]
-    assert push.main([]) == 0 and ran[-1][1:-2] == ["--head", tip, "--all", "--profile", "default-rules"]
+    assert push.main([]) == 0 and ran[-1][1:-2] == whole
     monkeypatch.delenv("PRE_COMMIT")
 
     git("checkout", "-q", "-b", "undo", first)
