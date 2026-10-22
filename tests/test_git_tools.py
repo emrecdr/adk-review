@@ -136,7 +136,7 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
     spelling. Read by review: guessed from the ref a name resolved through, `feature~1` passed for `feature`, and
     `HEAD`, `heads/feature` and `refs/heads/feature` did not. Named in full, which no tag of its name makes ambiguous:
     read by review, `x` was refused as ambiguous where the hand-off's check pasted it, a tag named `x` too."""
-    from adk_review.collect.git import _branch, preflight
+    from adk_review.collect.git import _branch, _full_ref, preflight
 
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -149,7 +149,8 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
     _git_in(repo, "tag", "x")
     spellings = {"feature", "heads/feature", "refs/heads/feature", "HEAD"}
     others = ["feature~0", tip, "v1", f"{BASE}..feature"]  # a range: git answers it, and exit 1
-    named = {head: _branch(str(repo), head) for head in [*spellings, *others, "heads/x", "refs/heads/x"]}
+    heads = [*spellings, *others, "heads/x", "refs/heads/x"]
+    named = {head: _branch(str(repo), head, _full_ref(str(repo), "head branch", head)) for head in heads}
     expected = dict.fromkeys(spellings, "refs/heads/feature") | dict.fromkeys(others, "")
     assert named == expected | dict.fromkeys(["heads/x", "refs/heads/x"], "refs/heads/x"), named
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "refs/heads/feature", "as `preflight` answers it"
@@ -163,6 +164,7 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
     assert named["status"] == "success" and named["head_ref"] == "refs/heads/x", (
         "read by review: refused as ambiguous where a hand-off names a branch in full, and read through the tag"
     )
+    assert named["branch"] == "refs/heads/x", "read by review: git, asked, named none, and a fix went to a new branch"
     for flag in ("-x", "--ignore-case", "^main"):  # read by review: a flag reached git, and `^main` named a sha
         said = preflight(str(repo), flag, "feature")["error_message"]
         assert said.startswith(f"base branch {flag!r} is no branch name") and "fetch" not in said, (
@@ -186,6 +188,9 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
     for head in ("origin/feature", "origin/feature~1"):  # read by review: a walk through it exits 1, and said so too
         said = preflight(str(corrupt), f"origin/{BASE}", head)["error_message"]
         assert "does not exist" not in said and "rev-parse failed" in said, (head, said)
+    from adk_review.collect.git import _environment
+
+    assert _environment(str(repo))["LC_ALL"] == "C", "read by review: proven only where German was installed"
     monkeypatch.setenv("LC_ALL", "de_DE.UTF-8")  # read by review: git's `Fehler:` read as no error, the commit missing
     said = preflight(str(corrupt), f"origin/{BASE}", "origin/feature")["error_message"]
     assert "does not exist" not in said and "rev-parse failed: error:" in said, said

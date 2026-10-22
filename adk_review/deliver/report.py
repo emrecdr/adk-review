@@ -82,7 +82,12 @@ def prose(text: str) -> str:
     read by review, a model's `![x](https://…?q=…)` would be fetched unasked where the report renders, carrying out
     what the model read, as CamoLeak did through Copilot's own chat. A code span renders no tag and no link, so
     evidence and paths in one keep their text; the JSON keeps plain text, for its reader to escape where it renders."""
-    return _LINK_OPENER.sub(r"\g<0> ", _TAG_OPENER.sub("< ", one_line(text)))
+    return _unopened(one_line(text))
+
+
+def _unopened(line: str) -> str:
+    """A line `one_line` made, with no HTML tag, markdown image or link able to open in it."""
+    return _LINK_OPENER.sub(r"\g<0> ", _TAG_OPENER.sub("< ", line))
 
 
 def code_span(text: str) -> str:
@@ -166,7 +171,7 @@ HELD = (
 HELD_AGAIN = (
     "",
     *textwrap.wrap(
-        f"Run each again once what stopped it is mended. A hole the change itself holds needs a new commit and a new "
+        f"Run each again once what stopped it is mended. A hole the change itself holds needs an edit and a new "
         f"review. {_EXIT_3} {_BY_HAND}",
         112,
     ),
@@ -385,7 +390,7 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
 
 
 def _check_again(
-    evidence: Evidence, outcome: Outcome, fail_on: str, added: Sequence[str], *, degraded: bool, fixes: bool = True
+    evidence: Evidence, outcome: Outcome, fail_on: str, added: Sequence[str], *, degraded: bool, fixes: bool
 ) -> list[str]:
     """How a coding agent checks its fixes: the review again on the same scope with only the rules that found something
     or could not look, which calls no model and reads what the review's rules read whatever its `--diff-cap`, which
@@ -418,8 +423,9 @@ def _check_again(
     # looked at again.
     found = {item.source for item in [*outcome.kept, *(f for f, _ in outcome.folded), *outcome.unproven(fail_on)]}
     found |= set(outcome.errors)
-    if not found:  # nothing kept and no hole a check left: nothing to run again
-        return []
+    if not found:  # nothing kept and no hole a check left: nothing to run again, but a file no check read
+        # Read by review: a hole of unread files alone ended at its list, with no step and no meaning for exit 3.
+        return ["", *textwrap.wrap(f"{_EXIT_3} {_BY_HAND}", 112)] if degraded else []
     rules = sorted(check for check in found if check.startswith(rule_id("")))
     guidelines = [("--check", check) for check in sorted(found - set(rules))]
     # With nothing kept, only the hole to run again, and no fix to commit: read by review, such a hand-off ended at its
@@ -596,8 +602,8 @@ def _place(f: Finding) -> str:
 def _where(f: Finding) -> str:
     """A finding's file and line as one line of prose, or in a code span where prose would rewrite it: read by review,
     `docs/a](b).md` was shown as `docs/a] (b).md`, a file that does not exist for an agent to open."""
-    place = _place(f)
-    return said if (said := prose(place)) == one_line(place) else _spot(f)
+    flat = one_line(_place(f))
+    return said if (said := _unopened(flat)) == flat else code_span(flat)
 
 
 def what(evidence: Evidence) -> str:

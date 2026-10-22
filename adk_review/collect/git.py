@@ -306,7 +306,8 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
         # alone, is that remote's; of a ref it holds, a commit past its history, no fetch brings. Read by review:
         # `main~1` lost its remote copy's hint, and `main~5` past a short local `main` was once offered the remote's.
         ref, suffix = name[: min(marks)], name[min(marks) :]
-        if not _sha(root, ref) and len(copies := _copies(root, ref, remotes)) == 1:
+        copies = [] if _sha(root, ref) else _copies(root, ref, remotes)
+        if len(copies) == 1 and _resolves(root, copies[0] + suffix):
             raise _ScopeError(f"{said}. Its remote copy {copies[0] + suffix!r} does. Pass {flag} with it")
         raise _ScopeError(f"{said}. Name a commit it holds, or a branch git branch lists")
     # Its remote copy as typed, first, as git reads a name; only where no remote holds one, the spellings git takes for
@@ -333,6 +334,15 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     raise _ScopeError(f"{said}. Name one that git branch lists")
 
 
+def _resolves(root: str, revision: str) -> bool:
+    """Whether `revision` names a commit, for advice alone: a copy git cannot read is never offered. Read by review:
+    `origin/main~5` was offered past the remote's history, and `main@{9}` past its reflog."""
+    try:
+        return bool(_sha(root, revision))
+    except GitError:
+        return False
+
+
 def _copies(root: str, name: str, remotes: Sequence[str]) -> list[str]:
     """Each remote's copy of the branch `name`, as `<remote>/<name>`, where a fetch brought one."""
     return [f"{remote}/{name}" for remote in remotes if _sha(root, f"refs/remotes/{remote}/{name}")]
@@ -353,6 +363,8 @@ def _spelt(root: str, name: str, remotes: list[str], said: str) -> tuple[str, li
         raise _ScopeError(f"{said}. Name a ref it holds")
     if local:
         return name, remotes, _copies(root, name, remotes)
+    if name in remotes:  # read by review: `origin` was told to fetch `origin/origin`, `refs/remotes/origin` no remote
+        raise _ScopeError(f"{said}. {name!r} is a remote. Name a branch that git branch -r lists")
     # A name a remote's begins, read as that remote's branch, the longest remote first. Read by review: `alice/fix`,
     # with a remote `alice`, was told to fetch `fix` from it, where `origin/alice/fix` held it, now found as typed.
     if remote := next((r for r in sorted(remotes, key=len, reverse=True) if name.startswith(f"{r}/")), None):
@@ -392,7 +404,9 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
         base_ref, head_ref = _full_ref(root, "base branch", base), _full_ref(root, "head branch", head)
         base_sha = "" if base is None else _sha(root, base) or _missing(root, repo, "base branch", "--base", base)
         head_sha = _sha(root, head) or _missing(root, repo, "head branch", "--head", head)
-        branch = "" if head == head_sha else _branch(root, head)  # a sha, as the hook and CI name one, is no branch
+        branch = (
+            "" if head == head_sha else _branch(root, head, head_ref)
+        )  # a sha, as the hook and CI name one, is no branch
         # From here on git only sees commit hashes, which cannot be mistaken for options.
         if base is None:
             base_sha = merge_base = _empty_tree(root)
@@ -420,11 +434,15 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
     }
 
 
-def _branch(root: str, head: str) -> str:
+def _branch(root: str, head: str, head_ref: str) -> str:
     """The local branch `head` names as itself, in full, or "", which a commit moves: `HEAD` on it, `heads/x` and
     `refs/heads/x` name one; `x~1`, a range, a sha, a tag, a remote's branch and a detached `HEAD` name none. Git's own
     answer, where `head_ref` is the ref a name resolved through: read by review, `feature~1` resolved through
-    `feature`. In full, since a tag named `x` makes `x` ambiguous and leaves `refs/heads/x` whole."""
+    `feature`. In full, since a tag named `x` makes `x` ambiguous and leaves `refs/heads/x` whole. A name given in
+    full is the ref it resolved through, `head_ref`, as `_namesakes` reads it: read by review, git, asked, called
+    `refs/heads/x` ambiguous where a fork's tag took its name, and named none."""
+    if head == head_ref:
+        return head if head.startswith("refs/heads/") else ""
     code, full = _git(
         root, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", "--end-of-options", head, ok=(0, 1)
     )

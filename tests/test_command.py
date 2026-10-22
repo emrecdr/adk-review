@@ -502,10 +502,19 @@ class TestWhatAReviewCovers:
         _git_in(clone, "branch", "-q", "-D", "main")
         assert cli.main([str(clone), "--head", "origin/later", "--base", "main"]) == 2
         assert "Then pass --base origin/main" in capsys.readouterr().err
-        assert (
-            cli.main([str(clone), "--head", "origin/later", "--base", "main~0"]) == 2
-        )  # a revision, `main` remote's only
+        # A revision of `main`, which only the remote holds now.
+        assert cli.main([str(clone), "--head", "origin/later", "--base", "main~0"]) == 2
         assert "Its remote copy 'origin/main~0' does." in capsys.readouterr().err, "read by review: the hint went"
+        assert cli.main([str(clone), "--head", "origin/later", "--base", "main~50"]) == 2  # past its history too
+        assert "origin/main~50" not in capsys.readouterr().err, (
+            "read by review: offered a copy that resolves to nothing"
+        )
+        _git_in(clone, "remote", "set-head", "origin", "-d")  # as a remote added and fetched has none
+        assert cli.main([str(clone), "--head", "origin/later", "--base", "origin"]) == 2  # a remote's own name
+        err = capsys.readouterr().err
+        assert "'origin' is a remote" in err and "origin/origin" not in err, (
+            "read by review: told to pass origin/origin"
+        )
         assert cli.main([str(clone), "--head", "origin/later", "--base", "refs/heads/main"]) == 2
         assert "Then pass --base origin/main" in capsys.readouterr().err, "read by review: origin/refs/heads/main"
         assert cli.main([str(clone), "--head", "origin/later", "--base", "refs/remotes/origin/gone"]) == 2
@@ -1376,9 +1385,16 @@ class TestWhatTheCommandTells:
             {**evidence, "preflight": branched, "scope": []}, bare, verdict="DEGRADED", fail_on="blocker"
         )
         assert f"--head {'0' * 40} --base" in again, "read by review: a branch named took a commit no check had read"
-        assert "A hole the change itself holds needs a new commit and a new review." in " ".join(again.split()), (
+        assert "A hole the change itself holds needs an edit and a new review." in " ".join(again.split()), (
             "read by review: run on the commit reviewed, a file too large to read was never read again"
         )
+        unread = render_handoff(
+            {**evidence, "scope": []}, Outcome(unread={"x.bin": "binary"}), verdict="DEGRADED", fail_on="blocker"
+        )
+        assert " ".join(unread.split()).endswith("A check that still cannot look is a person's to check by hand."), (
+            "read by review: a hole of unread files alone ended at its list, with no step"
+        )
+        assert "a new commit" not in " ".join(again.split()), "read by review: said where `--staged` commits nothing"
         assert "Run each again once what stopped it is mended." in " ".join(again.split()), (
             "read by review: an agent ran it again at once, into the same rate limit"
         )
