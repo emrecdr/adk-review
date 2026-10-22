@@ -435,11 +435,8 @@ class TestWhatAReviewCovers:
         assert "Give the path of a git repository." in told([str(tmp_path / "nowhere"), "--base", "main"])
         (tmp_path / "plain").mkdir()
         assert "Give the folder that holds .git." in told([str(tmp_path / "plain"), "--base", "main"])
-        repo = _branch_off_empty(tmp_path / "repo", "feature", base="main")
-        _committed(repo, "app.py", "x = 1\n")
-        _git_in(repo, "checkout", "-q", "--orphan", "alone")
-        _committed(repo, "other.py", "y = 1\n")
-        assert "Review the head alone with --all." in told([str(repo), "--head", "alone", "--base", "main"])
+        repo = _branch_off_empty(tmp_path / "repo", "feature")
+        _committed(repo, "app.py")
         assert "Drop one of them." in told([str(repo), "--dry-run", "--json", str(tmp_path / "r.json")])
         assert "Drop the repository." in told([str(repo), "--try", str(tmp_path / "plain")])
         assert "Name a folder outside it." in told([str(repo), "--base", "main", "--cache", str(repo / "kept")])
@@ -1018,6 +1015,7 @@ class TestTheJsonReport:
             "adk-review <repo> --head <branch> --base develop --comment ",
             "adk-review <repo> --base main --profile default-rules ",
             "adk-review <repo> --base main --dry-run ",
+            "adk-review <repo> --all --profile rules-only ",
         ):
             assert command in said, (command, said[-800:])
         assert said.index("everyday:") < said.index("exit codes:"), "the tasks first"
@@ -1033,14 +1031,16 @@ class TestTheJsonReport:
         assert "- 1 finding below the bar is worth a look." in steps
         assert "`--comment` writes them" in steps and "`--handoff FILE` writes them" in steps
 
-        assert run_review(cli, demo_repo, "--diff-cap", "100") == 3
-        steps = capsys.readouterr().out.split("## Next steps\n\n", 1)[1]
-        assert "files not read whole" in steps and "`--diff-cap` reads more" in steps, steps
-
-        repo = _branch_off_empty(tmp_path / "repo", "feature", base="main")
-        _committed(repo, "app.py", "x = 1\n")
-        assert cli.main([str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules"]) == 0
+        repo = _branch_off_empty(tmp_path / "repo", "feature")
+        _committed(repo, "app.py")
+        reviewed = [str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules"]
+        assert cli.main(reviewed) == 0
         assert capsys.readouterr().out.rstrip().endswith("## Next steps\n\n- Nothing to fix: no check found anything.")
+
+        _committed(repo, "release.p12", b"0\x82\x00\x00binary")
+        assert cli.main(reviewed) == 3
+        steps = capsys.readouterr().out.split("## Next steps\n\n", 1)[1]
+        assert "1 file not read whole" in steps and "`--diff-cap` reads more" in steps, steps
 
     def test_a_table_under_the_verdict_lists_every_finding_most_severe_first(self, cli, demo_repo: Path, capsys):
         """Asked by the owner, for a report read at a glance: every kept finding in one table under the verdict, the

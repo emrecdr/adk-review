@@ -247,8 +247,7 @@ class _Parser(argparse.ArgumentParser):
     step, and argparse's own name none, a flag misspelt among them."""
 
     def error(self, message: str) -> NoReturn:
-        self.print_usage(sys.stderr)
-        self.exit(2, f"{self.prog}: error: {message}\n{self.prog}: --help lists every flag, with the everyday tasks\n")
+        super().error(f"{message}\n{self.prog}: --help lists every flag, with the everyday tasks")
 
 
 def build_parser(review: dict) -> argparse.ArgumentParser:

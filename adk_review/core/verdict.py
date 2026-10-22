@@ -435,6 +435,13 @@ def at_bar(items: Iterable[Sourced], fail_on: str) -> int:
     return sum(at_or_above(item.finding.severity, fail_on) for item in items)
 
 
+def unproven(outcome: Outcome, fail_on: str) -> int:
+    """How many findings at or above `fail_on` were set aside unproven: dropped, their quote not in the diff, or refuted
+    by a verifier. Any is a hole, since a real blocker set aside would approve: `decide` and the report's next steps
+    read this one count, so the two cannot drift."""
+    return at_bar([*outcome.dropped, *(item for item, _why in outcome.refuted)], fail_on)
+
+
 def decide(outcome: Outcome, fail_on: str) -> tuple[str, int]:
     """The verdict and the exit code, from the findings that survived and the guidelines that did not.
 
@@ -444,7 +451,6 @@ def decide(outcome: Outcome, fail_on: str) -> tuple[str, int]:
     approves. So is one at the bar a verifier refuted: the verifier reads the branch's own text, and read by review, a
     payload there could have it refute a real blocker and the review approve.
     """
-    refuted = [item for item, _why in outcome.refuted]
-    if outcome.errors or outcome.unread or at_bar(outcome.dropped, fail_on) or at_bar(refuted, fail_on):
+    if outcome.errors or outcome.unread or unproven(outcome, fail_on):
         return "DEGRADED", EXIT_DEGRADED
     return ("REQUEST_CHANGES", EXIT_FINDINGS) if at_bar(outcome.kept, fail_on) else ("APPROVED", EXIT_CLEAN)

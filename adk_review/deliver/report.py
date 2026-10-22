@@ -21,7 +21,7 @@ from ..core.health import Health, found_by_rule, grade
 from ..core.profiles import rule_id
 from ..core.secrets import scrub
 from ..core.text import EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, squash
-from ..core.verdict import Outcome, Sourced, at_bar
+from ..core.verdict import Outcome, Sourced, at_bar, unproven
 
 #: What a terminal runs or reorders, and what a reader cannot see: escape sequences, C0 and C1 controls (U+009B is
 #: `ESC [` in one character), every format character — the marks that turn the text after them around (U+202E and its
@@ -737,7 +737,7 @@ def _next_steps(outcome: Outcome, fail_on: str) -> list[str]:
             f'{unread} file{"s" * (unread != 1)} not read whole, each under "not read" above. `--diff-cap` reads '
             "more of a file, and `--skip` leaves one out."
         )
-    if at_bar(outcome.dropped, fail_on) or at_bar([item for item, _why in outcome.refuted], fail_on):
+    if unproven(outcome, fail_on):
         steps.append(
             f"A finding at or above `--fail-on {fail_on}` was dropped or refuted. Read why above before it merges."
         )
@@ -749,9 +749,10 @@ def _next_steps(outcome: Outcome, fail_on: str) -> list[str]:
     if below:
         steps.append(f"{below} finding{'s' * (below != 1)} below the bar {'is' if below == 1 else 'are'} worth a look.")
     if outcome.kept:
-        steps.append("`--comment` writes them as a comment for the branch's author, to paste by hand.")
-    if held:
-        steps.append("`--handoff FILE` writes them as instructions for a coding agent.")
+        steps += [
+            "`--comment` writes them as a comment for the branch's author, to paste by hand.",
+            "`--handoff FILE` writes them as instructions for a coding agent.",
+        ]
     return ["", "## Next steps", "", *(f"- {step}" for step in steps or ["Nothing to fix: no check found anything."])]
 
 
