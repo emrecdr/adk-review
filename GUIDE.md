@@ -173,7 +173,8 @@ run. An installed command reads the copy it was installed with: installed from y
 --editable <checkout>`, a change there applies at once, as to `uv run`; otherwise reinstall after one. A pre-commit hook
 reads the config of the commit it pins, so a policy of your own is a commit of your own fork, pinned instead. The
 shipped `skip` names images and fonts, in either case, which no rule or model reads, so a branch adding a logo is not a
-hole, and lockfiles, which the rules read whole and no guideline judges. `rule.lockfile-sources` reads where npm's,
+hole, lockfiles, which the rules read whole and no guideline judges, and protoc's generated modules (`*_pb2.py`,
+`*_pb2.pyi`, `*_pb2_grpc.py`, `*_pb2_grpc.pyi`), which say not to edit them. `rule.lockfile-sources` reads where npm's,
 Yarn's, pnpm's, bun's, uv's, Poetry's, PDM's, Pipenv's, Cargo's, Bundler's, Dart's, Mix's and CocoaPods' lockfiles fetch
 from; the other lockfiles the list names are read by the credential rules alone: `go.sum`, `gradle.lockfile` and NuGet's
 `packages.lock.json` name no source, Swift's `Package.resolved`, Nix's `flake.lock` and Composer's `composer.lock` name

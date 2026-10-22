@@ -15,6 +15,9 @@ diff_cap = 16000     # characters of a file's diff a guideline reads; a file cut
 # And lockfiles, each written whole by its package manager: no guideline judges a resolved version or a hash, and
 # measured, a dependency bump cut `uv.lock` at the cap and ended in exit 3. The rules still read every line, a
 # credential in a registry's URL among what they find. Not bun's binary `bun.lockb`, which no rule can read.
+# And protoc's generated modules, stubs and gRPC services, each written whole and saying not to edit it: a guideline's
+# finding there names nothing to fix in it, and measured over 1,090 of them, 10 to 15 % of the services and the stubs
+# are past the cap. The rules still read every line.
 skip = [
     "*.png", "*.PNG", "*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.gif", "*.GIF", "*.webp", "*.WEBP", "*.ico", "*.ICO",
     "*.bmp", "*.BMP", "*.tif", "*.TIF", "*.tiff", "*.TIFF", "*.avif", "*.AVIF", "*.heic", "*.HEIC", "*.heif", "*.HEIF",
@@ -22,6 +25,7 @@ skip = [
     "uv.lock", "poetry.lock", "Pipfile.lock", "pdm.lock", "package-lock.json", "npm-shrinkwrap.json", "yarn.lock",
     "pnpm-lock.yaml", "bun.lock", "deno.lock", "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock", "mix.lock",
     "pubspec.lock", "Podfile.lock", "Package.resolved", "packages.lock.json", "gradle.lockfile", "flake.lock",
+    "*_pb2.py", "*_pb2.pyi", "*_pb2_grpc.py", "*_pb2_grpc.pyi",
 ]
 # Globs of the changed files a review reads, at any depth: Python's and notebooks, the configs beside them, a
 # credential's own files, keys and key stores, and what a coding agent or another tool obeys; --scan adds more for one
