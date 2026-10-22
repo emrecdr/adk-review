@@ -926,13 +926,34 @@ class TestTheJsonReport:
 
         outcome = Outcome(kept=[held("blocker"), held("major")], errors={"rule.lint": "ruff exited 2"})
         assert decide(outcome, "blocker") == ("DEGRADED", 3)
-        assert _beside(outcome, "blocker") == ", 1 finding at or above `--fail-on blocker`"
+        assert _beside(outcome, "blocker") == ", 1 finding at or above `--fail-on blocker`, 1 major below it"
         assert _beside(outcome, "major") == ", 2 findings at or above `--fail-on major`"
-        assert _beside(outcome, "blocker") == ", 1 finding at or above `--fail-on blocker`"
         assert _beside(Outcome(), "blocker") == ""
         assert _beside(Outcome(errors={"rule.lint": "x"}), "blocker") == ""
         data = as_json(outcome, [{"path": "a.py"}], verdict="DEGRADED", code=3, checks=("rule.secrets",))
         assert data["findings_at_fail_on"] == 1 and data["schema"] == 2
+
+    def test_the_verdict_line_counts_what_sits_below_the_bar(self, cli, demo_repo: Path, capsys) -> None:
+        """Asked by the owner: a review whose four security findings were majors read as approved and clean, its
+        verdict line naming none of them. The line counts what sits below the bar too, by severity, the most severe
+        first, so an approval that still holds findings says so where a reader looks first."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import _beside
+
+        def kept(severity: str) -> Sourced:
+            found = Finding(file="a.py", line=1, severity=severity, title="t", evidence="e", suggestion="s")
+            return Sourced("guideline.security", found, (1, 1))
+
+        below = Outcome(kept=[kept("minor"), kept("major"), kept("major")])
+        assert _beside(below, "blocker") == ", none at or above `--fail-on blocker`, 2 major and 1 minor below it"
+        assert _beside(below, "major") == ", 2 findings at or above `--fail-on major`, 1 minor below it"
+        assert _beside(below, "minor") == ", 3 findings at or above `--fail-on minor`"
+        assert run_review(cli, demo_repo, "--check", "rule.lint") == 0
+        verdict = next(line for line in capsys.readouterr().out.splitlines() if line.startswith("## Verdict: "))
+        assert verdict.startswith("## Verdict: APPROVED, none at or above `--fail-on blocker`, ") and verdict.endswith(
+            " below it"
+        ), verdict
 
     def test_a_person_sees_the_review_move_and_a_pipeline_reads_its_timing_and_version(
         self, cli, demo_repo: Path, tmp_path: Path, capsys
@@ -1536,7 +1557,10 @@ class TestWhatANewcomerReads:
     ) -> None:
         assert run_review(cli, demo_repo, "--profile", "demo") == 1
         out = capsys.readouterr().out
-        assert "## Verdict: REQUEST_CHANGES, 2 findings at or above `--fail-on blocker`\n" in out, out
+        assert (
+            "## Verdict: REQUEST_CHANGES, 2 findings at or above `--fail-on blocker`, 2 major and 1 minor below it\n"
+            in out
+        ), out
         assert out.count("- no findings") == 0 and "### rule.secrets\n" in out and "### rule.no-print" not in out
         silent = out.split("### no findings from ", 1)[1].split("\n", 1)[0]
         assert silent.startswith("16 checks"), silent

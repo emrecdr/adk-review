@@ -86,7 +86,8 @@ another, and each refuses a review's own flags — `--json`, `--handoff`, `--com
 | 143 | Stopped by a job, with SIGTERM. |
 
 A hole never approves. Exit 3 outranks a kept finding at the bar, so its verdict line names the findings at the bar
-beside it.
+beside it. Every verdict line also counts what sits below the bar, by severity, so an approval that still holds findings
+says so: `## Verdict: APPROVED, none at or above --fail-on blocker, 2 major and 1 minor below it`.
 
 ## Checks and profiles
 

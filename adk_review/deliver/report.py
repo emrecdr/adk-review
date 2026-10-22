@@ -573,11 +573,18 @@ def render_dry_run(
 
 def _beside(outcome: Outcome, fail_on: str) -> str:
     """What the verdict line also says: the findings at the bar, counted beside a request for changes, and beside a
-    degraded verdict, which outranks them. Measured before: a pipeline that let exit 3 through let a kept blocker
-    through with it, and the verdict line never named it; and a request for changes gave no count at all, the
-    reader scrolling the sections for it."""
+    degraded verdict, which outranks them; then what sits below the bar, by severity, the most severe first. Measured
+    before: a pipeline that let exit 3 through let a kept blocker through with it, and the verdict line never named it;
+    a request for changes gave no count at all, the reader scrolling the sections for it; and, asked by the owner, a
+    review whose four security findings were majors read as approved and clean."""
     held = at_bar(outcome.kept, fail_on)
-    return f", {held} finding{'s' * (held != 1)} at or above `--fail-on {fail_on}`" if held else ""
+    said = f", {held} finding{'s' * (held != 1)} at or above `--fail-on {fail_on}`" if held else ""
+    below = Counter(item.finding.severity for item in outcome.kept if not at_or_above(item.finding.severity, fail_on))
+    if not below:
+        return said
+    by_rank = sorted(below, key=lambda severity: RANK[severity], reverse=True)
+    counted = " and ".join(f"{below[severity]} {severity}" for severity in by_rank)
+    return f"{said or f', none at or above `--fail-on {fail_on}`'}, {counted} below it"
 
 
 def _refuted_at_bar(outcome: Outcome, fail_on: str) -> list[str]:
