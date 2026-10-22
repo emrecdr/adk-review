@@ -2099,46 +2099,66 @@ class TestTheShippedRules:
         assert lines_hit(rule, "src/a.py", apart) == [1, 5], "two shapes apart are two findings"
 
     def test_the_patch_rule_finds_a_private_name_patched_in_a_test_only(self) -> None:
+        from adk_review.judge.rule_helpers import lines_hit
         from adk_review.judge.rules.private_patch import PrivatePatch
 
         rule = PrivatePatch()
-        for line in (
-            'with patch("payments.charge._send"):',
-            'mocker.patch("app.service._client", fake)',
-            'monkeypatch.setattr(mod, "_cache", {})',
-            'patch.object(Service, "_connect")',
+        for code in (
+            'with patch("payments.charge._send"):\n    pass\n',
+            'mocker.patch("app.service._client", fake)\n',
+            'monkeypatch.setattr(mod, "_cache", {})\n',
+            'patch.object(Service, "_connect")\n',
         ):
-            assert rule.check("tests/test_a.py", line), line
-        for line in (
-            'with patch("payments.charge.send"):',
-            'monkeypatch.setattr(mod, "__version__", "1")',
-            'patch("os.environ", {})',
-            'monkeypatch.setenv("HOME", "/x")',
+            assert lines_hit(rule, "tests/test_a.py", code) == [1], code
+        for code in (
+            'with patch("payments.charge.send"):\n    pass\n',
+            'monkeypatch.setattr(mod, "__version__", "1")\n',
+            'patch("os.environ", {})\n',
+            'monkeypatch.setenv("HOME", "/x")\n',
         ):
-            assert not rule.check("tests/test_a.py", line), line
-        assert not rule.check("src/a.py", 'patch("pkg._x")'), "library code is the tests guideline's business"
+            assert lines_hit(rule, "tests/test_a.py", code) == [], code
+        assert lines_hit(rule, "src/a.py", 'patch("pkg._x")\n') == [], "library code is the tests guideline's business"
 
     def test_the_offline_rule_finds_a_network_call_in_a_test_only(self) -> None:
+        from adk_review.judge.rule_helpers import lines_hit
         from adk_review.judge.rules.tests_offline import OfflineTests
 
         rule = OfflineTests()
-        for line in (
-            "r = requests.get(url)",
-            "urllib.request.urlopen(u)",
-            "s = socket.create_connection((h, p))",
-            "await aiohttp.request('GET', u)",
+        for code in (
+            "r = requests.get(url)\n",
+            "urllib.request.urlopen(u)\n",
+            "s = socket.create_connection((h, p))\n",
+            "await aiohttp.request('GET', u)\n",
         ):
-            assert rule.check("tests/test_a.py", line), line
-        for line in (
-            "r = fake_requests.get(url)",
-            "import requests",
-            "get(url)",
-            "socket.gethostname()",
-            "client = httpx.Client(transport=httpx.MockTransport(handler))",
-            "async with httpx.AsyncClient(transport=ASGITransport(app=app)) as c:",
+            assert lines_hit(rule, "tests/test_a.py", code) == [1], code
+        for code in (
+            "r = fake_requests.get(url)\n",
+            "import requests\n",
+            "get(url)\n",
+            "socket.gethostname()\n",
+            "client = httpx.Client(transport=httpx.MockTransport(handler))\n",
+            "async with httpx.AsyncClient(transport=ASGITransport(app=app)) as c:\n    pass\n",
         ):
-            assert not rule.check("tests/test_a.py", line), line
-        assert not rule.check("src/client.py", "requests.get(url)"), "library code may call the network"
+            assert lines_hit(rule, "tests/test_a.py", code) == [], code
+        assert lines_hit(rule, "src/client.py", "requests.get(url)\n") == [], "library code may call the network"
+
+    def test_the_test_rules_read_code_alone_and_a_call_wrapped_over_lines(self) -> None:
+        """Read by an outside audit: read a line at a time, both rules fired on a comment, a string and a docstring's
+        line, and the patch rule missed a call a formatter wrapped, its private name on a line of its own, and a name
+        after a call among the arguments. Read from the module, each finds a call, on the line where it starts."""
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.private_patch import PrivatePatch
+        from adk_review.judge.rules.tests_offline import OfflineTests
+
+        said = ("# {} is faked above\n", 'why = "{} is faked above"\n', '"""Faked:\n{}, above.\n"""\n')
+        for rule, call in ((OfflineTests(), "requests.get(url)"), (PrivatePatch(), 'patch("pkg._x")')):
+            for text in said:
+                assert lines_hit(rule, "tests/test_a.py", text.format(call)) == [], (rule.id, text)
+        wrapped = "r = requests.get(\n    url,\n)\n"
+        assert lines_hit(OfflineTests(), "tests/test_a.py", wrapped) == [1]
+        wrapped = 'with patch.object(\n    payment_service,\n    "_send_payment",\n):\n    pass\n'
+        assert lines_hit(PrivatePatch(), "tests/test_a.py", wrapped) == [1]
+        assert lines_hit(PrivatePatch(), "tests/test_a.py", 'patch.object(Service(), "_connect")\n') == [1]
 
     def test_turning_the_secrets_rule_off_leaves_redaction_on(self, demo_repo: Path, cli, monkeypatch, capsys):
         _with_profiles(cli, monkeypatch, PROFILES)
