@@ -659,6 +659,47 @@ def test_the_copilot_login_caches_no_token_for_an_account_without_copilot(tmp_pa
     assert "no Copilot seat" in capsys.readouterr().err
 
 
+def test_the_copilot_login_waits_as_long_and_as_often_as_github_says(tmp_path, monkeypatch, capsys) -> None:
+    """GitHub's device-code reply names how long its code lives and how often to ask, as integers. LiteLLM 1.106.0
+    types them `object`, so the login reads each as GitHub sends it; a conversion made for the type checker alone
+    could fall back to the defaults unseen."""
+    from litellm.llms.github_copilot import authenticator
+
+    from adk_review import login as copilot_login
+
+    _cached_copilot_token(monkeypatch, tmp_path, None)
+    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
+    slept: list[float] = []
+    monkeypatch.setattr(copilot_login.time, "sleep", slept.append)
+    code = {
+        "device_code": "d",
+        "user_code": "ABCD-1234",
+        "verification_uri": "https://github.com/login/device",
+        "expires_in": 600,
+        "interval": 7,
+    }
+    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
+
+    class Expired:  # GitHub's answer once the code expired unapproved
+        def __init__(self, **_kwargs) -> None: ...
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc) -> bool:
+            return False
+
+        def post(self, *_args, **_kwargs):
+            return type("Reply", (), {"json": lambda _self: {"error": "expired_token"}})()
+
+    import httpx
+
+    monkeypatch.setattr(httpx, "Client", Expired)
+    assert copilot_login.main([]) == 1
+    assert slept == [7]
+    assert "about 10 minutes" in capsys.readouterr().out
+
+
 def test_the_copilot_login_reads_copilots_settings_from_the_central_env(tmp_path, monkeypatch, capsys) -> None:
     """The reviewer reads `.env`; an enterprise tenant names Copilot's endpoints there, so the login reads the same
     `GITHUB_COPILOT_*` settings, a variable already set in the shell winning, and nothing else of the file."""

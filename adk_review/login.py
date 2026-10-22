@@ -18,6 +18,7 @@ import argparse
 import os
 import sys
 import time
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
@@ -87,8 +88,8 @@ def main(argv: list[str]) -> int:
         info = auth._get_device_code()  # LiteLLM's request: its client id, its headers
     except GetDeviceCodeError as exc:
         return unreachable(exc)
-    expires_in = int(info.get("expires_in", 900))
-    interval = int(info.get("interval", 5))
+    expires_in = _seconds(info, "expires_in", 900)
+    interval = _seconds(info, "interval", 5)
     # Flushed: with stdout redirected to a file, a buffered code would sit unseen until the flow ended.
     print(f"[copilot] open {info['verification_uri']} and enter the code {info['user_code']}", flush=True)
     print(
@@ -135,6 +136,13 @@ def _endpoints_from_env() -> bool:
         )
         return False
     return True
+
+
+def _seconds(info: Mapping[str, object], key: str, default: int) -> int:
+    """A count of seconds GitHub's device-code reply names, or `default` where it names none. Read as the integer GitHub
+    sends, never converted: LiteLLM 1.106.0 types the reply's extra keys as `object`, where 1.105.1 typed them `str`."""
+    value = info.get(key, default)
+    return value if isinstance(value, int) else default
 
 
 def _stored(auth: Any, token: Path, access_token: str) -> int:
