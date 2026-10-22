@@ -978,6 +978,22 @@ class TestTheJsonReport:
         assert verdict.startswith("## Verdict: APPROVED, ") and verdict.endswith(" below `--fail-on blocker`"), verdict
         assert "none at or above" not in verdict, verdict
 
+    def test_the_help_ends_with_the_everyday_tasks_each_a_command(self, cli, capsys) -> None:
+        """Asked by the owner, for a tool a person learns from itself: `--help` ends with the everyday tasks, each the
+        command that does it, a branch against `develop` and a comment for its author among them."""
+        with pytest.raises(SystemExit) as stopped:
+            cli.main(["--help"])
+        assert stopped.value.code == 0
+        said = capsys.readouterr().out
+        for command in (
+            "adk-review <repo> --head <branch> --base develop ",
+            "adk-review <repo> --head <branch> --base develop --comment ",
+            "adk-review <repo> --base main --profile default-rules ",
+            "adk-review <repo> --base main --dry-run ",
+        ):
+            assert command in said, (command, said[-800:])
+        assert said.index("everyday:") < said.index("exit codes:"), "the tasks first"
+
     def test_the_report_ends_with_the_next_steps_by_what_it_found(
         self, cli, demo_repo: Path, tmp_path: Path, capsys
     ) -> None:

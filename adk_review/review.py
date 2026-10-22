@@ -247,11 +247,15 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="adk-review",
         description="Review a branch: rules in Python, guidelines judge, code decides.",
-        # Kept as written: argparse would reflow the typical command across two lines.
+        # Kept as written: argparse would reflow the commands across lines. Asked by the owner: the everyday tasks,
+        # each the command that does it, so a person learns the tool from the tool.
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
-            "typical:     adk-review <repo> --base main --profile default-rules   (the default's rules, no model)\n"
-            "             drop --profile for its guidelines too\n"
+            "everyday:    adk-review <repo> --head <branch> --base develop             a branch, against develop\n"
+            "             adk-review <repo> --head <branch> --base develop --comment   and a comment for its author\n"
+            "             adk-review <repo> --base main --profile default-rules        rules only: no model, no key\n"
+            "             adk-review <repo> --base main --dry-run                      what it would read and run\n"
+            "             adk-review <repo> --all --profile rules-only                 the whole project, rules only\n"
             "exit codes:  0 approved, 1 a finding at --fail-on, 2 a usage error before any model call,\n"
             "             3 a hole: a check that failed or could not look\n"
             "every flag, check and limit: GUIDE.md beside the package"
