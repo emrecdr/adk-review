@@ -262,9 +262,6 @@ class _UnrelatedError(_ScopeError):
 #: A name a command printed for a person to paste keeps as itself in a POSIX shell, cmd and PowerShell alike. A branch's
 #: name is its author's, and `;`, `$` and a backtick are legal in one.
 _PASTABLE = re.compile(r"[A-Za-z0-9._/-]+")
-#: How a name no ref and no revision of one can be starts: an option's `-`, or a negation's `^`. Read by review: `^main`
-#: and `-x` were told to fetch them, and a wider guard told `main~5`, a revision, it was no branch's name.
-_MALFORMED = re.compile(r"^[-^]")
 
 
 def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn:
@@ -272,16 +269,21 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     one, else the fetch that brings one. Asked by the owner: a branch on the remote read as no branch at all. The review
     fetches nothing, since it writes nothing into the repository and opens no connection: each command is the person's
     to run there, printed only where every name in it is plain."""
-    if _MALFORMED.search(name):  # read by review: `^main` and `-x` were told to fetch a branch no name can be
+    # How no ref and no revision of one starts: an option's `-`, or a negation's `^`. Read by review: `^main` and `-x`
+    # were told to fetch them, and a wider guard told `main~5`, a revision, it was no branch's name.
+    if name.startswith(("-", "^")) or ".." in name:  # nor a range: read by review, `main..later` was told to fetch
         raise _ScopeError(f"{label} {name!r} is no branch name. Name one that git branch lists")
     _, listed = _git(root, "remote")
     remotes = lines_of(listed)
     said = f"{label} {name!r} does not exist in {repo}"
     # Its remote copy by the branch's own name, however it was spelt: read by review, a hand-off's `refs/heads/main`
     # and `heads/main` were told to fetch and pass `origin/refs/heads/main` and `origin/heads/main`, which no remote
-    # holds. Another full name, a remote's or a tag's, is under no remote by that name.
-    other = name.startswith("refs/") and not name.startswith("refs/heads/")
-    name = name.removeprefix("refs/heads/").removeprefix("heads/")
+    # holds. Another full name, a remote's or a tag's, however spelt, is under no remote by that name.
+    full = f"refs/{name}" if name.startswith(("heads/", "tags/", "remotes/")) else name
+    other = full.startswith("refs/") and not full.startswith("refs/heads/")
+    name = full.removeprefix("refs/heads/")
+    if not other and (remote := next((r for r in remotes if name.startswith(f"{r}/")), None)):
+        name, remotes = name.removeprefix(f"{remote}/"), [remote]  # read by review: `origin/dev` as `origin/origin/dev`
     copies = [f"{remote}/{name}" for remote in remotes if _sha(root, f"refs/remotes/{remote}/{name}") is not None]
     plain = all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in (name, *remotes)) and not other
     if len(copies) == 1 and plain:
@@ -334,15 +336,11 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
         head_sha = _sha(root, head) or _missing(root, repo, "head branch", "--head", head)
         branch = "" if head == head_sha else _branch(root, head)  # a sha, as the hook and CI name one, is no branch
         # The base by the ref it names, which a merge of it follows; none where it moves with the head, as `HEAD~2`.
+        # The base by its ref where a merge of it follows and no fix moves it, a local branch or a tag; a remote's
+        # branch, which a push may move under config this review never reads, is pinned. Read by review: each guess
+        # at where a push goes missed one, and a rerun after the push saw only the commits after it and approved.
         base_full = "" if base is None or base == base_sha else _symbolic(root, base)
-        if base_full.startswith("refs/remotes/") and branch:
-            # A remote's copy of the head's own branch, which the fix's push moves, upstream or not. Read by review:
-            # one pushed with no upstream kept its copy, and `origin/main`, upstream of a branch made from it, was
-            # pinned, though no push of the fix moves it.
-            _, listed = _git(root, "remote")
-            moved = {f"refs/remotes/{remote}/{branch.removeprefix('refs/heads/')}" for remote in lines_of(listed)}
-            _, pushed = _git(root, "for-each-ref", "--format=%(push)", branch)  # git's own, where its config says
-            base_full = "" if base_full in moved | {pushed} else base_full
+        base_full = base_full if base_full.startswith(("refs/heads/", "refs/tags/")) else ""
         # From here on git only sees commit hashes, which cannot be mistaken for options.
         if base is None:
             base_sha = merge_base = _empty_tree(root)

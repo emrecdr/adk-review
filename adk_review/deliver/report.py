@@ -141,12 +141,14 @@ NOTHING_TO_FIX = "Nothing to fix: no finding was kept."
 #: How a degraded review's report and hand-off each begin to say so, never "nothing to fix".
 UNCHECKED = "This review could not check everything"
 #: How the runs after a degraded review tell a fix that held, its hole outranking a finding, exit 3 over exit 1: said
-#: once, after them all. Read by review: an agent waited for an exit 0 that hole never gives, a rule that failed named
-#: no finding either, and said of the rules' run alone, it held where the guideline it never ran was the hole.
+#: once, after them all. Read by review: an agent waited for an exit 0 that hole never gives; a rule that failed named
+#: no finding either; a blocker dropped again as unproven was kept by none; and a check the environment stops, a 429
+#: or a tool not installed, could never be said to look, so an agent told to wait for it looped.
 HELD = (
     "",
     "Exit 3 means what this review could not check is still there. The fixes hold once each run above reports",
-    "no finding at the bar and no check that could not look.",
+    "no finding at the bar, kept or dropped as unproven. A check that still cannot look is a person's to check by",
+    "hand.",
 )
 
 
@@ -214,8 +216,7 @@ def _unchecked(outcome: Outcome, fail_on: str) -> list[str]:
     unchecked += [f"- {code_span(check)} could not look: {_reason(why)}" for check, why in outcome.errors.items()]
     return unchecked + [
         f"- {code_span(item.source)} at {_spot(item.finding)}: a finding at the bar this review could not prove"
-        for item in outcome.unproven()
-        if at_or_above(item.finding.severity, fail_on)
+        for item in outcome.unproven(fail_on)
     ]
 
 
@@ -314,10 +315,10 @@ COMMENT_OPENS = {
 def render_comment(
     evidence: Evidence, outcome: Outcome, *, verdict: str, fail_on: str, tidies: frozenset[str] = frozenset()
 ) -> str:
-    """`--comment FILE`: the review as a constructive comment for the branch's author, whatever its verdict — what
-    must change before it merges, what is worth a look, an approved change's included, the tidy-ups it leaves to them,
-    and what no check read — each place and quote in a code span, under the text report's safety rules. Asked by the
-    owner, who reviews others' branches and pastes each comment into the pull request by hand: the reviewer posts
+    """`--comment FILE`: the review as a constructive comment for the branch's author, whatever its verdict — what must
+    change before it merges, what is worth a look, an approved change's included, the tidy-ups it leaves to them, and
+    what the review could not check — each place and quote in a code span, under the text report's safety rules. Asked
+    by the owner, who reviews others' branches and pastes each comment into the pull request by hand: the reviewer posts
     nothing and prints no command that would. A finding is grouped with the others on its lines as the hand-off groups
     it, and a tidy waiting under a defect is left out until the defect is fixed."""
     pre = evidence["preflight"]
@@ -392,8 +393,7 @@ def _check_again(
     # With each check that could not look or could not prove a finding at the bar, so a rerun names it again where it
     # still cannot: read by review, a run of only the checks that found something said the fixes held, the hole never
     # looked at again.
-    unproven = [item for item in outcome.unproven() if at_or_above(item.finding.severity, fail_on)]
-    found = {item.source for item in [*outcome.kept, *(f for f, _ in outcome.folded), *unproven]}
+    found = {item.source for item in [*outcome.kept, *(f for f, _ in outcome.folded), *outcome.unproven(fail_on)]}
     found |= set(outcome.errors)
     rules = sorted(check for check in found if check.startswith(rule_id("")))
     guidelines = [("--check", check) for check in sorted(found - set(rules))]
@@ -555,8 +555,8 @@ def _spot(f: Finding) -> str:
 
 
 def _place(f: Finding) -> str:
-    """A finding's file and line, `path:line`, or its file alone where it names no line: the path is the branch's
-    text, made safe where it is printed."""
+    """A finding's file and line, `path:line`, or its file alone where it names no line: the branch's text, or a
+    model's for a finding it dropped, made safe where it is printed."""
     return f"{f.file}:{f.line}" if f.line else f.file
 
 

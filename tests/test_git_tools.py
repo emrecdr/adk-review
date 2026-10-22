@@ -166,14 +166,18 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
         )
     said = preflight(str(repo), f"{BASE}~5", "feature")["error_message"]  # a revision past the history it holds
     assert "does not exist" in said and "no branch name" not in said, "read by review: a revision said to be no name"
+    said = preflight(str(repo), f"{BASE}..feature", "feature")["error_message"]  # a range, which no ref's name holds
+    assert said.startswith(f"base branch '{BASE}..feature' is no branch name"), "read by review: told to fetch a range"
     _git_in(repo, "checkout", "-q", "--detach")
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "", "a detached head, as CI checks out, is no branch"
 
 
-def test_a_base_a_push_moves_is_pinned_to_the_merge_base(tmp_path: Path) -> None:
-    """A hand-off's check keeps a base by its ref, which a merge of it follows, unless the fix's own push moves it:
-    read by review, `--base @{u}` named the head's upstream, the agent pushed, and the rerun saw only the commits after
-    the push, the blocker's line no longer added, and approved."""
+def test_a_remote_base_is_pinned_and_a_local_one_kept(tmp_path: Path) -> None:
+    """A hand-off's check keeps a local branch or a tag as its base by its ref, which a merge of it follows, and pins a
+    remote's branch to the merge base, since a push moves it under config this review cannot read: read by review,
+    `--base @{u}` named the head's upstream, the agent pushed, and the rerun saw only the commits after the push and
+    approved; and each guess at where a push goes, from its name or from `%(push)` without the person's own config,
+    missed one."""
     from adk_review.collect.git import preflight
 
     _remote, work = _pushed_from(tmp_path)
@@ -183,21 +187,11 @@ def test_a_base_a_push_moves_is_pinned_to_the_merge_base(tmp_path: Path) -> None
     _committed(work, "b.py")
     _git_in(work, "push", "-q", "-u", "origin", "feature")
     _committed(work, "c.py")  # not pushed yet
-    for base in ("origin/feature", "@{u}"):
+    _git_in(work, "tag", "v1", "main")
+    for base in ("origin/feature", "@{u}", "origin/main"):
         assert preflight(str(work), base, "feature")["base_full"] == "", base
-    assert preflight(str(work), "origin/main", "feature")["base_full"] == "refs/remotes/origin/main"
-    _git_in(work, "checkout", "-q", "-b", "plain")  # read by review: pushed with no upstream, its copy still moves
-    _committed(work, "d.py")
-    _git_in(work, "push", "-q", "origin", "plain")
-    _committed(work, "e.py")
-    assert preflight(str(work), "origin/plain", "plain")["base_full"] == "", "a push of the fix moves it all the same"
-    _git_in(work, "checkout", "-q", "-b", "tracking", "origin/main")  # its upstream is `origin/main`, its push is not
-    _committed(work, "f.py")
-    assert preflight(str(work), "origin/main", "tracking")["base_full"] == "refs/remotes/origin/main", (
-        "read by review: pinned for being the upstream, which a push of the fix never moves"
-    )
-    _git_in(work, "config", "push.default", "upstream")  # now its push goes to `origin/main`, which git names
-    assert preflight(str(work), "@{u}", "tracking")["base_full"] == "", "read by review: git's own push was not asked"
+    assert preflight(str(work), "main", "feature")["base_full"] == "refs/heads/main"
+    assert preflight(str(work), "v1", "feature")["base_full"] == "refs/tags/v1"
 
 
 class TestInspectRepository:

@@ -602,9 +602,9 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   only the rules that found something or could not look, so an agent checks its own work offline, no model called. It
   checks the branch reviewed, by its full name in any spelling git gives it, or else `HEAD`, the fixes committed on a
   new branch at the commit reviewed, since a commit leaves a sha, a tag, a remote's branch or `feature~1` where it was.
-  Its base is the ref the review named as its base, in full, which a merge of it follows, or else the merge base
-  reviewed, by its sha, since `HEAD~2` and a remote's copy of the head's own branch move with the fix, and where no
-  quoting keeps the ref. It repeats the `--skip`, `--scan` and `--third-party` globs the review was given, but skips no
+  Its base is the local branch or tag the review named as its base, in full, which a merge of it follows, or else the
+  merge base reviewed, by its sha: `HEAD~2` moves with the fix, and a push may move a remote's branch under config the
+  review never reads. It repeats the `--skip`, `--scan` and `--third-party` globs the review was given, but skips no
   other file for the person. After a degraded review it says exit 3 means what the review could not check is still
   there, and that the fixes hold once its report names no finding at the bar and no check that could not look. The scope
   is the preflight's, which the cache's key holds, and with those globs it is the whole of what the rules read:
@@ -624,8 +624,8 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   tidy-ups, and what the review could not check. Each place and quote sits in a code span. The reviewer posts nothing
   and prints no command that would: asked by the owner, who reviews others' branches and pastes each comment by hand.
   With no file named, it is `comments-<repo>__<base>__<head>__<YYYY-MM-DD-HH-MM>.md` in the current folder, every name
-  lower case, made safe for a file name and cut at 20 characters, and the run's last line names it by its full path,
-  unless `--quiet` silences a review that passes.
+  lower case, made safe for a file name and cut at 20 characters, and the run names it by its full path, the last of the
+  files written, unless `--quiet` silences a review that passes.
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint:
   its check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line,
   so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.

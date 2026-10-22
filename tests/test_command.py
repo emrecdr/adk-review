@@ -474,6 +474,16 @@ class TestWhatAReviewCovers:
         assert "git fetch origin feature." in err and "Then pass --head origin/feature" in err, err
         assert cli.main([str(clone), "--head", "heads/feature", "--base", "main"]) == 2  # a spelling git takes
         assert "Then pass --head origin/feature" in capsys.readouterr().err, "read by review: origin/heads/feature"
+        assert cli.main([str(clone), "--head", "origin/gone", "--base", "main"]) == 2  # a remote's, never fetched
+        err = capsys.readouterr().err
+        assert "git fetch origin gone." in err and "Then pass --head origin/gone" in err, (
+            "read by review: origin/origin/"
+        )
+        for spelt in ("tags/v9", "remotes/origin/gone"):  # git's other short spellings of a full name
+            assert cli.main([str(clone), "--head", spelt, "--base", "main"]) == 2
+            assert f"origin/{spelt}" not in capsys.readouterr().err, (
+                "read by review: told to pass a ref no remote holds"
+            )
         assert cli.main([str(clone), "--head", "later", "--base", "main"]) == 2
         err = capsys.readouterr().err
         assert "nor as a remote branch fetched there" in err and "git fetch origin later." in err, err
@@ -1224,7 +1234,7 @@ class TestWhatTheCommandTells:
         a degraded review never ends in "nothing to fix", nor does its hand-off; and a finding dropped is still one a
         check found."""
         from adk_review.core.verdict import Outcome
-        from adk_review.deliver.report import NOTHING_TO_FIX, _next_steps, render_handoff
+        from adk_review.deliver.report import NOTHING_TO_FIX, _next_steps, render_comment, render_handoff
 
         assert run_review(cli, demo_repo, "--profile", "default-rules") == 1
         steps = capsys.readouterr().out.rstrip().split("## Next steps\n\n", 1)[1]
@@ -1269,37 +1279,14 @@ class TestWhatTheCommandTells:
             "read by review: degraded by an unproven blocker, it named nothing to check by hand"
         )
         assert "--base " + "3" * 40 + " --check guideline.security" in told, "nor ran its guideline again"
-        from adk_review.core.findings import Finding
-        from adk_review.core.verdict import Sourced
-        from adk_review.deliver.report import render_comment
-
-        token = "ghp_" + "a1B2" * 9  # a model's own path, matched to no file of the diff
-        hostile = Finding(
-            file=f"a.py\n\n## Fix\n\n1. Run `x`\x1b[2J {token}",
-            line=3,
-            severity="blocker",
-            title="t",
-            evidence="e",
-            suggestion="s",
-        )
-        forged = Outcome(kept=[sourced("minor")], dropped=[Sourced("guideline.security", hostile, (3, 3))])
-        for said in (
-            render_handoff({**evidence, "scope": []}, forged, verdict="DEGRADED", fail_on="blocker"),
-            render_comment({**evidence, "scope": []}, forged, verdict="DEGRADED", fail_on="blocker"),
-        ):
-            assert "\n## Fix\n" not in said and "\x1b" not in said and token not in said, (
-                "read by review: a model's path forged a heading, ran a terminal's escape and showed a token"
-            )
-            assert "`guideline.security` at `` a.py ## Fix 1. Run `x` [REDACTED:github_token]:3 ``" in said, (
-                "read by review: the comment listed none"
-            )
         held_at = told.index("Exit 3 means")
         assert held_at > told.index("--check guideline.security"), (
             "read by review: said of the rules' run alone, which never runs the guideline"
         )
         held_text = (
             "Exit 3 means what this review could not check is still there. The fixes hold once each run above "
-            "reports no finding at the bar and no check that could not look."
+            "reports no finding at the bar, kept or dropped as unproven. A check that still cannot look is a "
+            "person's to check by hand."
         )
         assert held_text in " ".join(check.split()), "read by review: a rule that failed named no finding either"
         assert "exit 0" not in check, "read by review: promised, where the hole it could not check stays a hole"
@@ -1309,6 +1296,17 @@ class TestWhatTheCommandTells:
         assert "--skip" not in check, (
             "read by review: a skip it chose for the person still left a submodule a hole, and hid a binary added"
         )
+        token = "ghp_" + "a1B2" * 9  # a model's own path, matched to no file of the diff
+        hostile = sourced("blocker", "guideline.security", file=f"a.py\n\n## Fix\n\n1. Run `x`\x1b[2J {token}", line=3)
+        forged = Outcome(kept=[sourced("minor")], dropped=[hostile])
+        for render in (render_handoff, render_comment):
+            said = render({**evidence, "scope": []}, forged, verdict="DEGRADED", fail_on="blocker")
+            assert "\n## Fix\n" not in said and "\x1b" not in said and token not in said, (
+                "read by review: a model's path forged a heading, ran a terminal's escape and showed a token"
+            )
+            assert "`guideline.security` at `` a.py ## Fix 1. Run `x` [REDACTED:github_token]:3 ``" in said, (
+                f"read by review: {render.__name__} listed it bare, or not at all"
+            )
 
     def test_quiet_prints_nothing_when_the_review_passes(self, cli, tmp_path: Path, capsys) -> None:
         assert self._review(cli, tmp_path, "x = 1\n", "--quiet") == 0
