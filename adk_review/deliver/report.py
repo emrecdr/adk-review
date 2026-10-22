@@ -155,6 +155,12 @@ HELD = (
     "no finding at the bar, kept or dropped as unproven. A check that still cannot look is a person's to check by",
     "hand.",
 )
+#: The same, where nothing was kept and so nothing fixed: read by review, it spoke of fixes there.
+HELD_AGAIN = (
+    "",
+    "Run it once what stopped each check is mended. Exit 3 means what this review could not check is still there.",
+    "A check that still cannot look is a person's to check by hand.",
+)
 
 
 def render_handoff(
@@ -208,10 +214,9 @@ def render_handoff(
             hole += ["", *listed]
     if not outcome.kept:
         lines += hole or [NOTHING_TO_FIX]
-        if outcome.errors or outcome.unproven(fail_on):
-            lines += _check_again(evidence, outcome, fail_on, added, degraded=True, fixes=False)
     else:
-        lines += [*([""] if hole else []), *hole, *_check_again(evidence, outcome, fail_on, added, degraded=degraded)]
+        lines += [*([""] if hole else []), *hole]
+    lines += _check_again(evidence, outcome, fail_on, added, degraded=degraded, fixes=bool(outcome.kept))
     return inert("\n".join(lines)) + "\n"
 
 
@@ -393,7 +398,9 @@ def _check_again(
     staged, branch = bool(pre.get("staged")), pre.get("branch", "")
     short = short_ref(branch)
     on = code_span(one_line(short)) if short else f"a new branch at {code_span(pre['head_sha'][:12])}"
-    head = [] if staged else [("--head", branch or "HEAD")]
+    # With no fix to commit, the commit reviewed by its sha, which nothing has moved: read by review, `HEAD`, never put
+    # there, named the branch checked out, and the check found no change to review.
+    head = [] if staged else [("--head", branch or ("HEAD" if fixes else pre["head_sha"]))]
     # A ref no quoting keeps is the merge base: read by review, told to give its own base again, one that moved.
     full = pre.get("base_full", "")
     base = full if full and _pasted([full]) else pre.get("merge_base", "")
@@ -404,6 +411,8 @@ def _check_again(
     # looked at again.
     found = {item.source for item in [*outcome.kept, *(f for f, _ in outcome.folded), *outcome.unproven(fail_on)]}
     found |= set(outcome.errors)
+    if not found:  # nothing kept and no hole a check left: nothing to run again
+        return []
     rules = sorted(check for check in found if check.startswith(rule_id("")))
     guidelines = [("--check", check) for check in sorted(found - set(rules))]
     # With nothing kept, only the hole to run again, and no fix to commit: read by review, such a hand-off ended at its
@@ -440,7 +449,7 @@ def _check_again(
             "",
             "This calls the model and spends its quota.",
         ]
-    return [*lines, *(HELD if degraded else [])]
+    return [*lines, *((HELD if fixes else HELD_AGAIN) if degraded else [])]
 
 
 def _shown(units: Sequence[tuple[str, ...]]) -> tuple[str, list[str]]:
@@ -450,9 +459,12 @@ def _shown(units: Sequence[tuple[str, ...]]) -> tuple[str, list[str]]:
     a head left out went unsaid."""
     quoted = [(unit[0].partition("=")[0], _pasted(list(unit))) for unit in units]
     shown = " ".join(word for _flag, word in quoted if word)
-    if not (left := list(dict.fromkeys(code_span(flag) for flag, word in quoted if word is None))):
+    # Each flag with how many of its values are left out, so a value shown beside them is never taken for one: read
+    # by review, one glob of two left out read as every `--skip`.
+    if not (left := Counter(flag for flag, word in quoted if word is None)):
         return shown, []
-    return shown, [f"It leaves out {', '.join(left)}: give each as this review had it."]
+    counted = ", ".join(f"{n} {code_span(flag)}" for flag, n in left.items())
+    return shown, [f"It leaves out {counted}: give each as this review had it."]
 
 
 #: What cmd and PowerShell both read bare as itself, beside letters and digits.

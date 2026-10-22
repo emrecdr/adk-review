@@ -208,6 +208,8 @@ def _verb(args: tuple[str, ...]) -> str:
 #: What no branch's name can be, as `git check-ref-format` reads one: starting with `-`, `^`, `.` or `/`, ending with
 #: `/`, `.` or `.lock`, holding `..`, `//`, `/.`, a space, a control character, `*`, `?`, `[` or `\\`.
 _NO_NAME = re.compile(r"^[-^./]|\.\.|//|/\.|\.lock(?:/|$)|[/.]$|[\x00-\x20\x7f*?\[\\]")
+#: What follows a ref's name in a revision of it: `main~1`, `main^`, `main:path`, `main@{1}`.
+REVISION_MARKS = ("~", "^", ":", "@{")
 #: An object's id as git prints one, SHA-1's or SHA-256's: what `_sha` keeps, and the hook shortens.
 OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
@@ -217,9 +219,14 @@ def _sha(repo: str, ref: str, kind: str = "commit") -> str | None:
     in `_symbolic`, each after `--end-of-options`, and elsewhere only inside a pattern a `refs/` or `--disambiguate=`
     leads: a ref spelled `-x` must be a ref, never a flag. `^{commit}` names the commit an annotated tag tags, never
     the tag itself; `^{tag}` names a tag object, and nothing for a branch or a commit."""
-    # Exit 128 too: git's answer for a revision it cannot follow, as `main@{9}` past its reflog.
-    code, out = _git(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{{kind}}}", ok=(0, 1, 128))
-    return out if code == 0 and OBJECT_ID.fullmatch(out) else None  # read by review: `^main` passed as `^<sha>`
+    # Exit 128 is no commit only where git, quiet, says nothing, a revision it cannot follow as `main@{9}` past its
+    # reflog; a corrupt object says so, and is an error: read by review, one was called a branch that does not exist.
+    args = ("rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{{kind}}}")
+    done = _git_raw(repo, *args, ok=(0, 1, 128))
+    if done.returncode == 128 and (said := done.stderr.decode("utf-8", "replace").strip()):
+        raise GitError(f"git rev-parse failed: {said.splitlines()[0]}")
+    out = _text(done.stdout)
+    return out if done.returncode == 0 and OBJECT_ID.fullmatch(out) else None  # read by review: `^main` as `^<sha>`
 
 
 def _namesakes(repo: str, ref: str) -> list[str]:
@@ -228,25 +235,23 @@ def _namesakes(repo: str, ref: str) -> list[str]:
     object, and `--quiet` hides its warning: a fork's tag once made the base the head. More than one is refused,
     never resolved."""
     name = ref
-    for suffix in ("~", "^", ":", "@{"):
+    for suffix in REVISION_MARKS:
         name = name.partition(suffix)[0]
-    # A full name is read as itself alone, git's first reading, which no tag can take: read by review, a tag named
-    # `refs/heads/x` was read in its place, and refused, the hand-off's own check, which names a branch in full, failed.
-    # Only a name under `refs/` is so read, all `for-each-ref` lists: read by review, `-x` reached git as a flag.
-    means = (
-        [name]
-        if name.startswith("refs/")
-        else [
-            f"refs/{name}",
-            f"refs/tags/{name}",
-            f"refs/heads/{name}",
-            f"refs/remotes/{name}",
-            f"refs/remotes/{name}/HEAD",
-        ]
-    )
+    # A full name is git's first reading, itself, where it names a ref; only a name under `refs/`, all `for-each-ref`
+    # lists: read by review, `-x` reached git as a flag.
+    means = [
+        *([name] if name.startswith("refs/") else []),
+        f"refs/{name}",
+        f"refs/tags/{name}",
+        f"refs/heads/{name}",
+        f"refs/remotes/{name}",
+        f"refs/remotes/{name}/HEAD",
+    ]
     # Broken at "\n" alone: a ref's name may hold U+2028, which `splitlines` breaks at.
     _, out = _git(repo, "for-each-ref", "--format=%(refname)", *means)
     found = [full for full in lines_of(out) if full in means]
+    if name in found:  # read by review: a fork's tag named `refs/heads/x` refused the hand-off's own `refs/heads/x`
+        return [name]
     if found and 4 <= len(name) <= 40 and all(c in "0123456789abcdef" for c in name):
         _, objects = _git(repo, "rev-parse", f"--disambiguate={name}")  # a tag named as a short sha shadowed it
         found += [f"the object {sha[:12]}" for sha in objects.split()]
@@ -286,7 +291,7 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     # fetch them, and `main@{9}`, past its reflog, ended in git's exit 128 with no step to take.
     if _NO_NAME.search(name):
         raise _ScopeError(f"{label} {name!r} is no branch name. Name one that git branch lists")
-    if any(mark in name for mark in ("~", "^", ":", "@{")):
+    if any(mark in name for mark in REVISION_MARKS):
         raise _ScopeError(
             f"{label} {name!r} does not exist in {repo}. Name a commit it holds, or a branch git branch lists"
         )
@@ -314,6 +319,7 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     )
     if remote:
         name, remotes = name.removeprefix(f"{remote}/"), [remote]
+    other = other or (tracked and not remote)  # read by review: `refs/remotes/nope/gone` was fetched from `origin`
     plain = all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in (name, *remotes)) and not other
     if len(copies) == 1 and plain:
         remote = copies[0].removesuffix(f"/{name}")

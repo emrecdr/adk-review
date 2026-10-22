@@ -525,6 +525,12 @@ class TestWhatAReviewCovers:
         assert "origin/origin/gone" not in capsys.readouterr().err, (
             "read by review: a remote's own branch read as another"
         )
+        assert (
+            cli.main([str(clone), "--head", "refs/remotes/nope/gone", "--base", "origin/main"]) == 2
+        )  # no such remote
+        assert "git fetch origin nope/gone" not in capsys.readouterr().err, (
+            "read by review: fetched from another remote"
+        )
 
 
 class TestTheDryRun:
@@ -819,7 +825,7 @@ class TestThePreviousReportAndTheHandoff:
         assert f"\n    {quoted} rule.secrets\n" in said, (
             "read by review: the globs given were left out of what it named"
         )
-        assert "It leaves out `--skip`: give each as this review had it." in said, (
+        assert "It leaves out 1 `--skip`: give each as this review had it." in said, (
             "read by review: what no quoting keeps was dropped unsaid, the branch with it, where it quoted"
         )
 
@@ -1356,13 +1362,17 @@ class TestWhatTheCommandTells:
             )
         bare = Outcome(errors={"rule.types": "pyrefly crashed"}, dropped=[sourced("blocker", "guideline.security")])
         again = render_handoff({**evidence, "scope": []}, bare, verdict="DEGRADED", fail_on="blocker")
+        assert f"--head {'0' * 40} --base" in again and "The fixes hold" not in again, (
+            "read by review: it named `HEAD`, never put at the commit reviewed, and fixes where there were none"
+        )
         assert "\n## Check again\n" in again and "Commit the fixes" not in again, (
             "read by review: nothing kept, so no way to run the checks that left the hole again"
         )
-        assert (
-            "--check rule.types" in again
-            and "--check guideline.security" in again
-            and held_text in " ".join(again.split())
+        held_again = "Exit 3 means what this review could not check is still there. A check that still cannot look is a"
+        assert "--check rule.types" in again and "--check guideline.security" in again, again
+        assert held_again in " ".join(again.split()), "said of a rerun with no fix to hold"
+        assert "Run it once what stopped each check is mended." in " ".join(again.split()), (
+            "read by review: an agent ran it again at once, into the same rate limit"
         )
         odd = Outcome(kept=[sourced("blocker", "rule.secrets", file="docs/a](b).md", line=3)])
         item = render_handoff({**evidence, "scope": []}, odd, verdict="REQUEST_CHANGES", fail_on="blocker")

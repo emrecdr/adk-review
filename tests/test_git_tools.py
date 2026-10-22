@@ -160,6 +160,10 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
     assert preflight(str(repo), "v0", "HEAD")["base_full"] == "refs/tags/v0", "a tag, which no fix moves, kept"
     assert preflight(str(repo), "feature~1", "feature")["base_full"] == "", "a base that moves with its head"
     _git_in(repo, "tag", "refs/heads/x", BASE)  # a fork's tag so named: git reads a full name as itself first
+    _git_in(repo, "tag", "refs/heads/gone", BASE)  # where no branch has the full name, git reads the tag
+    assert preflight(str(repo), BASE, "refs/heads/gone")["head_ref"] == "refs/tags/refs/heads/gone", (
+        "read by review: read as itself alone, the tag git read went unnamed in the report"
+    )
     named = preflight(str(repo), BASE, "refs/heads/x")
     assert named["status"] == "success" and named["head_ref"] == "refs/heads/x", (
         "read by review: refused as ambiguous where a hand-off names a branch in full, and read through the tag"
@@ -177,6 +181,15 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
         assert preflight(str(repo), bad, "feature")["error_message"].startswith(
             f"base branch {bad!r} is no branch name"
         )
+    # A commit git cannot read also exits 128, and says so: read by review, it was called missing. A clone of its own
+    # objects, so the original stays whole.
+    corrupt = tmp_path / "corrupt"
+    _git_in(tmp_path, "clone", "-q", "--no-hardlinks", str(repo), str(corrupt))
+    sha = _git_in(corrupt, "rev-parse", "origin/feature")
+    (stored := corrupt / ".git" / "objects" / sha[:2] / sha[2:]).chmod(0o644)
+    stored.write_bytes(b"garbage")
+    said = preflight(str(corrupt), f"origin/{BASE}", "origin/feature")["error_message"]
+    assert "does not exist" not in said and "rev-parse failed" in said, said
     said = preflight(str(repo), f"{BASE}@{{9}}", "feature")["error_message"]  # past its reflog: git's exit 128
     assert "Name a commit it holds" in said and "exit 128" not in said, "read by review: it named no step to take"
     _git_in(repo, "checkout", "-q", "--detach")

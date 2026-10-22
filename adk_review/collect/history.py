@@ -13,7 +13,7 @@ from .change import lfs_pointer
 from .diff import file_added, readable
 
 # git.py's own verbs: this module was its push half, split off for its weight, and reads git as it does.
-from .git import _PLAIN, GitError, _empty_tree, _git, _git_raw, _sha, _text
+from .git import _PLAIN, OBJECT_ID, GitError, _empty_tree, _git, _git_raw, _sha, _text
 
 
 def push_scope(repo: str, remote: str | None, head: str, held: str | None) -> tuple[str, list[str]] | None:
@@ -68,7 +68,7 @@ def _commit(repo: str, ref: str) -> str:
 #: How many commits one `diff-tree` reads of a push's history: measured over a long real history, 2,000 commits took
 #: 1.6 s and 26.7 MB of patch, so a batch stays well inside a call's timeout and its memory, whatever the push.
 HISTORY_BATCH = 500
-_A_COMMIT = re.compile(rb"^([0-9a-f]{40}|[0-9a-f]{64})\n", re.MULTILINE)
+_A_COMMIT = re.compile(rb"^(" + OBJECT_ID.pattern.encode() + rb")\n", re.MULTILINE)
 
 
 def sent(
