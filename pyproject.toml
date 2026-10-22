@@ -56,7 +56,7 @@ filterwarnings = [
     "ignore:.*EXPERIMENTAL.*:UserWarning",
     # pydantic on a TypedDict litellm declares with ReadOnly: litellm's own types, woken by the first litellm error built
     "ignore:Item 'summary' on TypedDict class 'ChatCompletionReasoningItem':UserWarning",
-    # The same for the two the device-code login reads, declared in LiteLLM 1.106.0's authenticator
+    # The same for two LiteLLM 1.106.0's Copilot authenticator declares, woken when it is imported
     "ignore:Items 'device_code', 'user_code', 'verification_uri' on TypedDict class '_DeviceCode':UserWarning",
     "ignore:Items 'access_token', 'error' on TypedDict class '_AccessTokenPoll':UserWarning",
 ]

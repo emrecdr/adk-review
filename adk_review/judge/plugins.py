@@ -360,10 +360,12 @@ class UsageLedger(BasePlugin):
     Three guidelines call at once, so a ceiling checked against tokens already
     spent would let all three through and be passed by all three. Every call
     therefore reserves its own cost first — its request in characters over
-    four, plus room for an answer — and releases it when its response comes
-    back, an error's included: ADK hands the after-hook what the error hook
-    substituted for an exception, so one hook sees every call end. A response
-    carrying no usage was never billed — substituted, or refused before the
+    four, room for an answer and the thinking its budget allows — and releases
+    it when its response comes back, an error's included: ADK hands the
+    after-hook what the error hook substituted for an exception. A call cut
+    short, cancelled or ended by an exception that escaped its agent, never
+    comes back, but it ends its run, so each run starts with nothing reserved.
+    A response carrying no usage was never billed — substituted, or refused before the
     call — and is attempted, not completed; a blocked answer carries the usage
     the provider charged, and counts. The refusal is the redaction plugin's shape: an error
     response the guideline ends with, under its own name, so the run degrades and
@@ -391,12 +393,14 @@ class UsageLedger(BasePlugin):
 
     @override
     async def before_run_callback(self, *, invocation_context: Any) -> None:
-        """In chat, each turn counted afresh. Measured by review: built once for the server's life, the ledger refused
+        """A run starts with nothing in flight: a call cut short never reaches the after-model hook, but it ends its
+        run, so what it reserved goes here, before the verifiers' run or chat's next turn is checked against it. In
+        chat, each turn counted afresh too. Measured by review: built once for the server's life, the ledger refused
         every turn past the ceiling's worth, in any session, until a restart. The command's ledger holds its run and
         its verifiers' together, under the one `--max-tokens`."""
+        self.reserved.clear()
         if self.per_turn:
             self.rows.clear()
-            self.reserved.clear()
 
     @property
     def spent(self) -> int:
@@ -427,17 +431,6 @@ class UsageLedger(BasePlugin):
             return _failed(callback_context, llm_request, "TOKEN_CEILING", why)
         self.reserved[callback_context.agent_name] = estimate
         return None
-
-    @override
-    async def after_agent_callback(self, *, agent: Any, callback_context: Any) -> types.Content | None:
-        # A call cut short with its agent never reaches the after-model hook: the agent's end releases what it reserved.
-        self.reserved.pop(agent.name, None)
-        return None
-
-    @override
-    async def on_agent_error_callback(self, *, agent: Any, callback_context: Any, error: Exception) -> None:
-        # An agent an exception escapes ends through this hook alone, never the one above: released here too.
-        self.reserved.pop(agent.name, None)
 
     @override
     async def after_model_callback(self, *, callback_context: Any, llm_response: Any) -> LlmResponse | None:

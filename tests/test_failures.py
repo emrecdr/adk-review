@@ -21,6 +21,7 @@ from conftest import (
     QUOTA_TEXT,
     REVIEW_REQUEST,
     ROOT,
+    SECURITY,
     SPACES,
     Chat,
     _cached_copilot_token,
@@ -28,6 +29,7 @@ from conftest import (
     _cut_reason,
     _file_url,
     _git_in,
+    _github_answers,
     _pushed_from,
     _with_profiles,
     confirms,
@@ -110,8 +112,8 @@ async def test_when_one_lane_fails_the_others_finish_and_the_verdict_still_answe
     assert model_key("tests") not in state, "a hole, for the code that decides"
 
 
-#: Words of chat's verdict agent's instruction alone, and of the security guideline's.
-THE_VERDICT, SECURITY = "Rules and guidelines have judged one change", "security defects and unsafe patterns"
+#: Words of chat's verdict agent's instruction alone.
+THE_VERDICT = "Rules and guidelines have judged one change"
 
 
 @pytest.mark.asyncio
@@ -638,22 +640,7 @@ def test_the_copilot_login_caches_no_token_for_an_account_without_copilot(tmp_pa
         raise GetAPIKeyError(status_code=403, message="Failed to get API key: 403")
 
     monkeypatch.setattr(authenticator.Authenticator, "get_api_key", no_seat)
-
-    class Approved:  # GitHub's answer once the person has approved the code
-        def __init__(self, **_kwargs) -> None: ...
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_exc) -> bool:
-            return False
-
-        def post(self, *_args, **_kwargs):
-            return type("Reply", (), {"json": lambda _self: {"access_token": "gho_test"}})()
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "Client", Approved)  # main imports httpx and resolves Client at the call
+    _github_answers(monkeypatch, {"access_token": "gho_test"})  # once the person has approved the code
     assert copilot_login.main([]) == 1
     assert not (tmp_path / "access-token").exists(), "nothing is cached for an account Copilot does not serve"
     assert "no Copilot seat" in capsys.readouterr().err
@@ -679,22 +666,7 @@ def test_the_copilot_login_waits_as_long_and_as_often_as_github_says(tmp_path, m
         "interval": 7,
     }
     monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
-
-    class Expired:  # GitHub's answer once the code expired unapproved
-        def __init__(self, **_kwargs) -> None: ...
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *_exc) -> bool:
-            return False
-
-        def post(self, *_args, **_kwargs):
-            return type("Reply", (), {"json": lambda _self: {"error": "expired_token"}})()
-
-    import httpx
-
-    monkeypatch.setattr(httpx, "Client", Expired)
+    _github_answers(monkeypatch, {"error": "expired_token"})  # once the code expired unapproved
     assert copilot_login.main([]) == 1
     assert slept == [7]
     assert "about 10 minutes" in capsys.readouterr().out

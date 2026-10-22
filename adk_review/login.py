@@ -141,8 +141,8 @@ def _endpoints_from_env() -> bool:
 def _seconds(info: Mapping[str, object], key: str, default: int) -> int:
     """A count of seconds GitHub's device-code reply names, or `default` where it names none. Read as the integer GitHub
     sends, never converted: LiteLLM 1.106.0 types the reply's extra keys as `object`, where 1.105.1 typed them `str`."""
-    value = info.get(key, default)
-    return value if isinstance(value, int) else default
+    value = info.get(key)
+    return value if type(value) is int else default
 
 
 def _stored(auth: Any, token: Path, access_token: str) -> int:

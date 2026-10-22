@@ -678,6 +678,25 @@ def _cached_copilot_token(monkeypatch: pytest.MonkeyPatch, folder: Path, text: s
     monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", str(folder))
 
 
+def _github_answers(monkeypatch: pytest.MonkeyPatch, reply: dict) -> None:
+    """GitHub's token endpoint, answering `reply` to each poll of the Copilot login: no network in the suite."""
+    import httpx
+
+    class Client:
+        def __init__(self, **_kwargs) -> None: ...
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_exc) -> bool:
+            return False
+
+        def post(self, *_args, **_kwargs):
+            return SimpleNamespace(json=lambda: reply)
+
+    monkeypatch.setattr(httpx, "Client", Client)  # the login imports httpx and resolves Client at the call
+
+
 def load_command(monkeypatch: pytest.MonkeyPatch, provider: str = "gemini", model: str = "fake"):
     """The command's module, loaded as `load_agent` loads the package, on `provider`'s arm, never reading the
     developer's `.env`."""
@@ -740,6 +759,9 @@ async def run_turn(module, message: str, state: dict | None = None) -> tuple[str
 
 #: Words of chat's intake's instruction alone: how a rule of the fake's finds the intake's requests.
 INTAKE = "you never judge it"
+
+#: Words of the security guideline's instruction alone.
+SECURITY = "security defects and unsafe patterns"
 
 
 def confirms(fake_provider: FakeProvider, repo: Path, head: str = HEAD, base: str = BASE) -> None:

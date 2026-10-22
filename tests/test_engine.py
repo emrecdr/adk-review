@@ -19,6 +19,7 @@ from conftest import (
     GUIDELINE_NAMES,
     HEAD,
     REFUTED,
+    SECURITY,
     _branch_off_empty,
     _cached_copilot_token,
     _committed,
@@ -27,6 +28,8 @@ from conftest import (
     catalog,
     load_agent,
     load_command,
+    model_check,
+    model_key,
     quota,
     run_review,
 )
@@ -47,7 +50,7 @@ SAYS_MORE = {**CANNED_REVIEW, "findings": [{**CANNED_REVIEW["findings"][0], "sev
 
 def _said_done(said: str) -> bool:
     """Whether any guideline was said done, by its own line: `rules done in` is another path's."""
-    return any(f"guideline.{name} done in" in said for name in ("security", "tests", "complexity"))
+    return any(f"{model_check(name)} done in" in said for name in GUIDELINE_NAMES)
 
 
 class TestRetriesOnBothArms:
@@ -235,7 +238,7 @@ class TestRetriesOnBothArms:
         from conftest import FakeModel
 
         async def stopped(_self, llm_request, **_kwargs):
-            if "security defects and unsafe patterns" in str(llm_request.config.system_instruction or ""):
+            if SECURITY in str(llm_request.config.system_instruction or ""):
                 raise cli.Terminated  # the stop, inside one guideline's call
             await asyncio.Event().wait()  # its siblings mid-call, cut short with the run, never answered
             yield
@@ -278,18 +281,16 @@ class TestRetriesOnBothArms:
         assert run_review(cli, demo_repo, "--progress") == 3
         said = capsys.readouterr()
         assert "the run did not finish within 5 s" in said.out
-        assert len(entered) == 3 and "guideline.tests started" in said.err, (entered, said.err)
-        assert {"guideline_security", "guideline_tests", "guideline_complexity"} <= set(ended), ended
+        assert len(entered) == len(GUIDELINE_NAMES) and "guideline.tests started" in said.err, (entered, said.err)
+        assert {model_key(name) for name in GUIDELINE_NAMES} <= set(ended), ended
         assert not _said_done(said.err), said.err
 
     @pytest.mark.asyncio
-    async def test_a_call_cut_short_with_its_agent_releases_what_it_reserved(self) -> None:
-        """A call cancelled with its agent, or one an exception escapes, never reaches the after-model hook, so what it
+    async def test_a_reservation_a_call_cut_short_left_is_dropped_when_the_next_run_starts(self) -> None:
+        """A call cancelled with its run, or one an exception escapes, never reaches the after-model hook, so what it
         reserved held: found by review, past the deadline a verifier's call was checked against tokens no call had in
-        flight, and could be refused for a ceiling not reached. Since ADK 2.10 the after-agent hook runs on a cancelled
-        agent too, and an escaped exception runs the error hook alone: each releases the agent's reservation."""
-        from types import SimpleNamespace
-
+        flight, and could be refused for a ceiling not reached. Such a call ends its run, and the verifiers' is a run of
+        its own, so each run starts with nothing reserved; the command's count of what was attempted carries on."""
         from google.adk.models.llm_request import LlmRequest
         from google.genai import types
 
@@ -300,13 +301,9 @@ class TestRetriesOnBothArms:
         a = SimpleNamespace(agent_name="guideline_a", state={})
         assert await ledger.before_model_callback(callback_context=a, llm_request=request) is None
         assert list(ledger.reserved) == ["guideline_a"], "reserved for the call in flight"
-        await ledger.after_agent_callback(agent=SimpleNamespace(name="guideline_a"), callback_context=a)
-        assert ledger.reserved == {}, "released with the agent, the call never answered"
-        assert await ledger.before_model_callback(callback_context=a, llm_request=request) is None
-        await ledger.on_agent_error_callback(
-            agent=SimpleNamespace(name="guideline_a"), callback_context=a, error=RuntimeError("escaped")
-        )
-        assert ledger.reserved == {}, "released with the agent an exception escaped"
+        await ledger.before_run_callback(invocation_context=None)  # the verifiers' run, the call never answered
+        assert ledger.reserved == {}, "the run that cut the call short left nothing in flight"
+        assert ledger.rows["guideline_a"]["attempted"] == 1, "the command's ceiling still holds its run's count"
 
     @pytest.mark.asyncio
     async def test_a_run_whose_session_is_gone_names_why_for_every_answer_still_out(self) -> None:
