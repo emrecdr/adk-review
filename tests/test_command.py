@@ -924,6 +924,9 @@ class TestTheJsonReport:
         outcome = Outcome(kept=held, errors={"rule.lint": "ruff exited 2"})
         assert decide(outcome, "blocker") == ("DEGRADED", 3)
         assert _beside(outcome, "blocker") == ", 1 finding at or above `--fail-on blocker`, 1 major below it"
+        hole = Outcome(kept=[sourced("major")], errors={"guideline.security": "429"})
+        assert decide(hole, "blocker") == ("DEGRADED", 3)
+        assert _beside(hole, "blocker") == ", 1 major below `--fail-on blocker`", "a hole is never a clean bar"
         assert _beside(outcome, "major") == ", 2 findings at or above `--fail-on major`"
         assert _beside(Outcome(), "blocker") == ""
         assert _beside(Outcome(errors={"rule.lint": "x"}), "blocker") == ""
@@ -938,14 +941,13 @@ class TestTheJsonReport:
         from adk_review.deliver.report import _beside
 
         below = Outcome(kept=[sourced("minor"), sourced("major"), sourced("major")])
-        assert _beside(below, "blocker") == ", none at or above `--fail-on blocker`, 2 major and 1 minor below it"
+        assert _beside(below, "blocker") == ", 2 major and 1 minor below `--fail-on blocker`"
         assert _beside(below, "major") == ", 2 findings at or above `--fail-on major`, 1 minor below it"
         assert _beside(below, "minor") == ", 3 findings at or above `--fail-on minor`"
         assert run_review(cli, demo_repo, "--check", "rule.lint") == 0
         verdict = next(line for line in capsys.readouterr().out.splitlines() if line.startswith("## Verdict: "))
-        assert verdict.startswith("## Verdict: APPROVED, none at or above `--fail-on blocker`, ") and verdict.endswith(
-            " below it"
-        ), verdict
+        assert verdict.startswith("## Verdict: APPROVED, ") and verdict.endswith(" below `--fail-on blocker`"), verdict
+        assert "none at or above" not in verdict, verdict
 
     def test_a_table_under_the_verdict_lists_every_finding_most_severe_first(self, cli, demo_repo: Path, capsys):
         """Asked by the owner, for a report read at a glance: every kept finding in one table under the verdict, the
@@ -972,6 +974,20 @@ class TestTheJsonReport:
         piped = sourced("minor", file="a|b.py", line=3, title="x | y")
         assert _at_a_glance(Outcome(kept=[piped]))[2] == ("| 1 | minor | `a\\|b.py:3` | x \\| y | rule.lint |")
         assert _at_a_glance(Outcome()) == []
+        twice = sourced("major", line=5)
+        same = Outcome(kept=[twice], folded=[(sourced("minor", line=5), twice)])
+        assert _at_a_glance(same)[2].endswith("| rule.lint (2) |"), "two readings by one check, merged into one row"
+
+    def test_a_finding_listed_under_another_keeps_its_own_place(self) -> None:
+        """Read by review: a guideline's blocker quoting a whole function, lines 10 to 40, holds ruff's line 35, and
+        listed under it with no place of its own, ruff's finding could not be found again from the text report."""
+        from adk_review.core.verdict import Outcome
+        from adk_review.deliver.report import _sections
+
+        wide = sourced("blocker", "guideline.security", line=10, title="the whole function")
+        outcome = Outcome(kept=[wide], folded=[(sourced("minor", "rule.lint", line=35, title="lint: S105"), wide)])
+        said = _sections(["guideline.security", "rule.lint"], outcome, [""], None)
+        assert "  - also on these lines: `rule.lint`: lint: S105 (a.py:35)" in said, said
 
     def test_a_person_sees_the_review_move_and_a_pipeline_reads_its_timing_and_version(
         self, cli, demo_repo: Path, tmp_path: Path, capsys

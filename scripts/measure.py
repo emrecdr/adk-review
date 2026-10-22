@@ -51,8 +51,8 @@ RANK = {"minor": 1, "major": 2, "blocker": 3}
 TIMEOUT_S = 600
 #: A kept finding in a text report, `- **major** …`, ending in its `(path:line)`.
 FINDING = re.compile(r"^- \*\*(?P<severity>\w+)\*\* .*\((?P<path>[^():]+):(?P<line>\d+)\)$")
-#: A finding folded into the kept one above it, on the same lines: its check, under that finding.
-ALSO = re.compile(r"^  - also on these lines: `(?P<source>[\w.-]+)`: ")
+#: A finding folded into the kept one above it, on the same lines: its check, and its own `(path:line)`.
+ALSO = re.compile(r"^  - also on these lines: `(?P<source>[\w.-]+)`: .*\((?P<path>[^():]+):(?P<line>\d+)\)$")
 SPEND = re.compile(r"^- spend: \d+ model call\(s\) completed of \d+ attempted, (?P<tokens>[\d,]+) tokens")
 DROPPED = "- findings dropped for evidence not in the diff: "
 VERDICT = "## Verdict: "
@@ -236,18 +236,16 @@ def tally(counts: Counter[str]) -> str:
 def read_text(report: str, run: Run) -> Run:
     """A text report, as a person reads it: a model's findings at the line each names, for a review that decided
     nothing and wrote no JSON."""
-    source, found, place = "", [], None
+    source, found = "", []
     for line in report.splitlines():
         if line.startswith(VERDICT):
             run.verdict = line.removeprefix(VERDICT).split(",")[0]
         elif line.startswith("### "):
             source = line[4:].split(" ")[0]
-        elif hit := FINDING.match(line):
-            place = (hit["path"], int(hit["line"]))  # where a finding folded into this one stands too
-            if source.startswith(GUIDELINE):
-                found.append((source, place[0], [place[1]], hit["severity"]))
-        elif (also := ALSO.match(line)) and place and also["source"].startswith(GUIDELINE):
-            found.append((also["source"], place[0], [place[1]], "folded"))
+        elif (hit := FINDING.match(line)) and source.startswith(GUIDELINE):
+            found.append((source, hit["path"], [int(hit["line"])], hit["severity"]))
+        elif (also := ALSO.match(line)) and also["source"].startswith(GUIDELINE):
+            found.append((also["source"], also["path"], [int(also["line"])], "folded"))
         elif line.startswith(DROPPED):
             run.dropped = int(line.removeprefix(DROPPED))
         elif spent := SPEND.match(line):

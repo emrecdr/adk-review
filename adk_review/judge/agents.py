@@ -157,6 +157,8 @@ def for_the_verdict(outcome: Outcome, checks: Sequence[str], verdict: str, ignor
         lines.append(f"## {check}" + (f" — could not look: {squash(hole)}" if hole else ""))
         kept = [item.finding for item in outcome.kept if item.source == check]
         dropped = [item.finding for item in outcome.dropped if item.source == check]
+        # Read by review: a check whose findings each folded into another's read "- no findings" here.
+        folded = [(item.finding, into.source) for item, into in outcome.folded if item.source == check]
         for f in kept:
             quote = cut_at(squash(f.evidence), EVIDENCE_MAX_CHARS)
             lines.append(f"- {f.severity} {_where(f)}: {squash(f.title)} — {quote}")
@@ -164,7 +166,11 @@ def for_the_verdict(outcome: Outcome, checks: Sequence[str], verdict: str, ignor
             f"- dropped, the diff does not bear its quote out: {f.severity} {_where(f)}: {squash(f.title)}"
             for f in dropped
         ]
-        if not (kept or dropped or hole):
+        lines += [
+            f"- folded into `{into}`'s finding on the same lines: {f.severity} {_where(f)}: {squash(f.title)}"
+            for f, into in folded
+        ]
+        if not (kept or dropped or folded or hole):
             lines.append("- no findings")
     lines += [f"## not read: {squash(path)} — {squash(why)}" for path, why in outcome.unread.items()]
     if ignored:  # as the command's report lists them; read by review, chat named none

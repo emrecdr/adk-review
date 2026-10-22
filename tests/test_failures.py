@@ -131,6 +131,8 @@ async def test_chats_verdict_reads_what_the_diff_bears_out_and_the_verdict_code_
     # The canned finding stands on lint's S602 line and folds into it, as the command's report folds it.
     assert "verdict: REQUEST_CHANGES" in read and "## guideline.security" in read, read
     assert "- dropped," not in read, "every canned quote is a line of the planted diff"
+    # Read by review: a check whose findings each folded into another's read "- no findings" to the verdict agent.
+    assert "## guideline.security\n- folded into `rule.lint`'s finding on the same lines: " in read, read
 
     asked.clear()
     planted = CANNED_REVIEW["findings"][0]

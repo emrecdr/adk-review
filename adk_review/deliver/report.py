@@ -580,7 +580,8 @@ def _beside(outcome: Outcome, fail_on: str) -> str:
     degraded verdict, which outranks them; then what sits below the bar, by severity, the most severe first. Measured
     before: a pipeline that let exit 3 through let a kept blocker through with it, and the verdict line never named it;
     a request for changes gave no count at all, the reader scrolling the sections for it; and, asked by the owner, a
-    review whose four security findings were majors read as approved and clean."""
+    review whose four security findings were majors read as approved and clean. Below the bar is named against the bar
+    itself, never as "none at or above" it: read by review, a degraded review said so of a check that could not look."""
     held = at_bar(outcome.kept, fail_on)
     said = f", {held} finding{'s' * (held != 1)} at or above `--fail-on {fail_on}`" if held else ""
     below: Counter[str] = Counter(
@@ -588,7 +589,8 @@ def _beside(outcome: Outcome, fail_on: str) -> str:
     )
     if not below:
         return said
-    return f"{said or f', none at or above `--fail-on {fail_on}`'}, {_severities(below, ' and ')} below it"
+    counted = _severities(below, " and ")
+    return f"{said}, {counted} below it" if said else f", {counted} below `--fail-on {fail_on}`"
 
 
 def _at_a_glance(outcome: Outcome) -> list[str]:
@@ -604,7 +606,8 @@ def _at_a_glance(outcome: Outcome) -> list[str]:
     for number, item in enumerate(ranked, 1):
         f = item.finding
         place = code_span(one_line(_place(f)))
-        found_by = ", ".join(dict.fromkeys(also.source for also in [item, *under.get(id(item), [])]))
+        readings = Counter(also.source for also in [item, *under.get(id(item), [])])
+        found_by = ", ".join(f"{source} ({n})" if n > 1 else source for source, n in readings.items())
         lines.append(f"| {number} | {f.severity} | {_cell(place)} | {_cell(prose(f.title))} | {found_by} |")
     return [*lines, ""]
 
@@ -739,7 +742,7 @@ def _sections(
             mark = " — new since the previous review" if _since(identity, previous) == "new" else ""
             lines += [*_listed(f, mark), f"  - fix: {prose(f.suggestion)}"]
             lines += [
-                f"  - also on these lines: `{also.source}`: {prose(also.finding.title)}"
+                f"  - also on these lines: `{also.source}`: {prose(also.finding.title)} ({_where(also.finding)})"
                 for also in under.get(id(item), [])
             ]
         if folded:
