@@ -978,6 +978,26 @@ class TestTheJsonReport:
         assert verdict.startswith("## Verdict: APPROVED, ") and verdict.endswith(" below `--fail-on blocker`"), verdict
         assert "none at or above" not in verdict, verdict
 
+    def test_the_report_ends_with_the_next_steps_by_what_it_found(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ) -> None:
+        """Asked by the owner, who wants every run to guide the person reading it: the report ends with what to do
+        now, by what the review found, each step naming the flag that does it, none taken for them."""
+        assert run_review(cli, demo_repo, "--profile", "default-rules") == 1
+        steps = capsys.readouterr().out.split("## Next steps\n\n", 1)[1]
+        assert "- Fix the 2 findings at or above `--fail-on blocker`, then run the same command again." in steps
+        assert "- 1 finding below the bar is worth a look." in steps
+        assert "`--comment` writes them" in steps and "`--handoff FILE` writes them" in steps
+
+        assert run_review(cli, demo_repo, "--diff-cap", "100") == 3
+        steps = capsys.readouterr().out.split("## Next steps\n\n", 1)[1]
+        assert "files not read whole" in steps and "`--diff-cap` reads more" in steps, steps
+
+        repo = _branch_off_empty(tmp_path / "repo", "feature", base="main")
+        _committed(repo, "app.py", "x = 1\n")
+        assert cli.main([str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules"]) == 0
+        assert capsys.readouterr().out.rstrip().endswith("## Next steps\n\n- Nothing to fix: no check found anything.")
+
     def test_a_table_under_the_verdict_lists_every_finding_most_severe_first(self, cli, demo_repo: Path, capsys):
         """Asked by the owner, for a report read at a glance: every kept finding in one table under the verdict, the
         most severe first, with its place, its title and each check that found it, the ones folded into it among them.

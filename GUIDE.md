@@ -256,10 +256,12 @@ fix, each other reading of the same lines, by another check or the same one, und
 place, a count of its own listed under another finding, or that it failed, and why, then one line naming the checks that
 found nothing; then what a previous review found and this one no longer does (with `--previous`), the findings dropped
 for a quote the diff does not bear out, what the verifier refuted or could not judge (with `--verify`), how many
-duplicates were folded, how many secrets were redacted, and the spend. Every string the branch wrote is made safe to
-print: no credential, no control character or other character a reader cannot see, no CI runner's command, no HTML
-comment, and no HTML tag outside a code span. Progress goes to stderr, never into the report. Under `--quiet` a review
-that passes prints nothing, and one that does not prints the whole report.
+duplicates were folded, how many secrets were redacted, and the spend; then the next steps, by what the review found:
+what to fix and to run again, what is worth a look, what could not be checked and how to retry, and the flag that writes
+the findings for the branch's author or a coding agent. Every string the branch wrote is made safe to print: no
+credential, no control character or other character a reader cannot see, no CI runner's command, no HTML comment, and no
+HTML tag outside a code span. Progress goes to stderr, never into the report. Under `--quiet` a review that passes
+prints nothing, and one that does not prints the whole report.
 
 ## The JSON report
 

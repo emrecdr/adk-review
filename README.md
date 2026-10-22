@@ -574,8 +574,8 @@ one no rule already made.
 
 The text report goes to stdout: the verdict under the title, a table of the findings under it, the most severe first,
 what was reviewed, under `--all` the project's health, the blast radius, a section for each check that found something
-or failed, one line for those that found nothing, and then what was dropped, refuted, folded, redacted and spent. "The
-report" in `GUIDE.md` lists it line by line. Beside it:
+or failed, one line for those that found nothing, then what was dropped, refuted, folded, redacted and spent, and last
+the next steps, by what the review found. "The report" in `GUIDE.md` lists it line by line. Beside it:
 
 - Under `--all`, where the files are the project, a Health section measures it by code alone: the files read whole,
   the source and the tests in files and lines, the share of the source's function lines in each McCabe complexity

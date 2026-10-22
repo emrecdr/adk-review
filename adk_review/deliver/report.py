@@ -714,9 +714,45 @@ def render(
         f"- duplicates across rules and guidelines folded into one finding: {len(outcome.folded)}",
         f"- secrets redacted before any model call: {outcome.redacted}",
         _spent(usage),
+        *_next_steps(outcome, fail_on),
         "",
     ]
     return inert("\n".join(lines))  # once over the whole: no two fields side by side spell one
+
+
+def _next_steps(outcome: Outcome, fail_on: str) -> list[str]:
+    """What to do now, by what the review found, as the report's last section: asked by the owner, who wants every run
+    to guide the person reading it. Each step names the flag that does it, and none is taken for them: the reviewer
+    writes into no repository and posts nothing. What could not be checked comes first, since it bounds the rest."""
+    held = at_bar(outcome.kept, fail_on)
+    below = len(outcome.kept) - held
+    steps = []
+    if failed := len(outcome.errors):
+        steps.append(
+            f"{failed} check{'s' * (failed != 1)} could not look, each with why under its heading. Run the review "
+            "again once it can."
+        )
+    if unread := len(outcome.unread):
+        steps.append(
+            f'{unread} file{"s" * (unread != 1)} not read whole, each under "not read" above. `--diff-cap` reads '
+            "more of a file, and `--skip` leaves one out."
+        )
+    if at_bar(outcome.dropped, fail_on) or at_bar([item for item, _why in outcome.refuted], fail_on):
+        steps.append(
+            f"A finding at or above `--fail-on {fail_on}` was dropped or refuted. Read why above before it merges."
+        )
+    if held:
+        steps.append(
+            f"Fix the {held} finding{'s' * (held != 1)} at or above `--fail-on {fail_on}`, then run the same command "
+            "again."
+        )
+    if below:
+        steps.append(f"{below} finding{'s' * (below != 1)} below the bar {'is' if below == 1 else 'are'} worth a look.")
+    if outcome.kept:
+        steps.append("`--comment` writes them as a comment for the branch's author, to paste by hand.")
+    if held:
+        steps.append("`--handoff FILE` writes them as instructions for a coding agent.")
+    return ["", "## Next steps", "", *(f"- {step}" for step in steps or ["Nothing to fix: no check found anything."])]
 
 
 def _sections(
