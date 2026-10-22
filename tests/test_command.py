@@ -528,8 +528,18 @@ class TestWhatAReviewCovers:
         assert (
             cli.main([str(clone), "--head", "refs/remotes/nope/gone", "--base", "origin/main"]) == 2
         )  # no such remote
-        assert "git fetch origin nope/gone" not in capsys.readouterr().err, (
-            "read by review: fetched from another remote"
+        err = capsys.readouterr().err
+        assert "No remote is named 'nope'." in err and "fetch" not in err, (
+            "read by review: told a fetch that brings none"
+        )
+        _git_in(origin, "branch", "tags/v2", "main")  # a branch so named: its copy, looked for as typed first
+        _git_in(clone, "fetch", "-q", "origin")
+        assert cli.main([str(clone), "--head", "tags/v2", "--base", "origin/main"]) == 2
+        assert "Its remote copy 'origin/tags/v2' does." in capsys.readouterr().err, "read by review: told to fetch tags"
+        assert cli.main([str(clone), "--head", "refs/pull/1/head", "--base", "origin/main"]) == 2
+        err = capsys.readouterr().err
+        assert "Name a ref it holds" in err and "fetch" not in err, (
+            "read by review: `--all` brings no pull request's ref"
         )
 
 
@@ -756,12 +766,19 @@ class TestThePreviousReportAndTheHandoff:
             "--head",
             f"refs/heads/{HEAD}",
             "--base",
-            f"refs/heads/{BASE}",
+            report["reviewed"]["merge_base"],
             "--third-party=vendor/",
             "--fail-on",
             "blocker",
             *(a for c in sorted(found) for a in ("--check", c)),
         ], argv
+        _git_in(root, "checkout", "-q", BASE)  # the base takes in the head, the fix still to come
+        _git_in(root, "merge", "-q", "--no-edit", HEAD)
+        _git_in(root, "checkout", "-q", HEAD)
+        _committed(root, "noop.py", "x = 1\n")
+        assert cli.main(argv[1:]) == 1, (
+            "read by review: a base kept by its name took in the head, and the check approved"
+        )
         assert make_demo_repo.fix(root)
         assert cli.main(argv[1:]) == 0
 
@@ -852,7 +869,6 @@ class TestThePreviousReportAndTheHandoff:
                 "head": head,
                 "branch": branch,
                 "base": "HEAD~2",
-                "base_full": "",  # `HEAD~2` names no ref: it moves with the fix
                 "head_sha": sha,
                 "merge_base": merged,
             }
@@ -864,25 +880,15 @@ class TestThePreviousReportAndTheHandoff:
             )
             assert f"    adk-review /r --head {checked} --base {merged} --fail-on " in said and first in said, said
             assert "Check out" not in said and "--base HEAD~2" not in said, said
-        pre |= {"base": "main", "base_full": "refs/heads/main"}
+        pre |= {"base": "main"}  # a local branch, pinned too: read by review, kept, it took in the head and approved
         said = render_handoff(
             {"preflight": pre, "whole": False, "scope": []},
             Outcome(kept=[sourced("blocker", "rule.secrets")]),
             verdict="REQUEST_CHANGES",
             fail_on="blocker",
         )
-        assert "--head HEAD --base refs/heads/main --fail-on" in said, (
-            "read by review: a pinned sha took in every commit `main` gained, once the fix merged it"
-        )
+        assert f"--head HEAD --base {merged} --fail-on" in said, said
         token = "ghp_" + "a1B2" * 9  # a branch named in a credential's shape, which the report never prints
-        pre |= {"base_full": f"refs/heads/{token}"}
-        said = render_handoff(
-            {"preflight": pre, "whole": False, "scope": []},
-            Outcome(kept=[sourced("blocker", "rule.secrets")]),
-            verdict="REQUEST_CHANGES",
-            fail_on="blocker",
-        )
-        assert token not in said and f"--base {merged}" in said, "read by review: a pasted command printed it whole"
         headed = {**pre, "branch": f"refs/heads/{token}"}
         said = render_handoff(
             {"preflight": headed, "whole": False, "scope": []},
@@ -892,16 +898,6 @@ class TestThePreviousReportAndTheHandoff:
         )
         assert "No command is printed: a name in it cannot be shown as it is." in said, (
             "read by review: said to hold a character a shell reads, where it held a credential's shape"
-        )
-        pre |= {"base_full": "refs/heads/a\nb"}  # no quoting keeps it: the merge base, which no commit moves
-        said = render_handoff(
-            {"preflight": pre, "whole": False, "scope": []},
-            Outcome(kept=[sourced("blocker", "rule.secrets")]),
-            verdict="REQUEST_CHANGES",
-            fail_on="blocker",
-        )
-        assert f"--head HEAD --base {merged} --fail-on" in said and "--base`" not in said, (
-            "read by review: told to give its own base again, one that moves with the fix"
         )
 
     def test_every_sentence_a_handoff_writes_itself_is_short_and_one_command(self) -> None:
@@ -1371,7 +1367,12 @@ class TestWhatTheCommandTells:
         held_again = "Exit 3 means what this review could not check is still there. A check that still cannot look is a"
         assert "--check rule.types" in again and "--check guideline.security" in again, again
         assert held_again in " ".join(again.split()), "said of a rerun with no fix to hold"
-        assert "Run it once what stopped each check is mended." in " ".join(again.split()), (
+        branched = {**evidence["preflight"], "branch": "refs/heads/feature"}
+        again = render_handoff(
+            {**evidence, "preflight": branched, "scope": []}, bare, verdict="DEGRADED", fail_on="blocker"
+        )
+        assert f"--head {'0' * 40} --base" in again, "read by review: a branch named took a commit no check had read"
+        assert "Run each again once what stopped it is mended." in " ".join(again.split()), (
             "read by review: an agent ran it again at once, into the same rate limit"
         )
         odd = Outcome(kept=[sourced("blocker", "rule.secrets", file="docs/a](b).md", line=3)])

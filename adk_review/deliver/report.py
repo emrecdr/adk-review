@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shlex
+import textwrap
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
@@ -149,18 +150,20 @@ UNCHECKED = "This review could not check everything"
 #: once, after them all. Read by review: an agent waited for an exit 0 that hole never gives; a rule that failed named
 #: no finding either; a blocker dropped again as unproven was kept by none; and a check the environment stops, a 429
 #: or a tool not installed, could never be said to look, so an agent told to wait for it looped.
+#: The two sentences every degraded check ends with, the one that says what exit 3 means and who checks what is left.
+_EXIT_3 = "Exit 3 means what this review could not check is still there."
+_BY_HAND = "A check that still cannot look is a person's to check by hand."
 HELD = (
     "",
-    "Exit 3 means what this review could not check is still there. The fixes hold once each run above reports",
-    "no finding at the bar, kept or dropped as unproven. A check that still cannot look is a person's to check by",
-    "hand.",
+    *textwrap.wrap(
+        f"{_EXIT_3} The fixes hold once each run above reports no finding at the bar, kept or dropped as unproven. "
+        f"{_BY_HAND}",
+        112,
+    ),
 )
-#: The same, where nothing was kept and so nothing fixed: read by review, it spoke of fixes there.
-HELD_AGAIN = (
-    "",
-    "Run it once what stopped each check is mended. Exit 3 means what this review could not check is still there.",
-    "A check that still cannot look is a person's to check by hand.",
-)
+#: The same, where nothing was kept and so nothing fixed: read by review, it spoke of fixes there, and an agent ran it
+#: again at once, into the same rate limit.
+HELD_AGAIN = ("", *textwrap.wrap(f"Run each again once what stopped it is mended. {_EXIT_3} {_BY_HAND}", 112))
 
 
 def render_handoff(
@@ -388,23 +391,20 @@ def _check_again(
 
     What was fixed is committed first, or staged under --staged: a review reads no file on disk. A commit moves a branch
     and `HEAD` alone, so the head checked is the branch `preflight` says the review named, in full, or else `HEAD`, the
-    fixes committed on a new branch at the commit reviewed; and the base is the local branch or tag the review's base
-    named, in full, which a merge of it follows, or else the merge base reviewed, which no commit moves: a push may move
-    a remote's branch under config this review never reads. Read by review: the command
-    reviewed the old commit again where the review named a sha, a tag, a remote's branch or `feature~1`; a short name
-    a tag shares was refused; and a base `HEAD~2` moved with the fix, the rerun approving a finding the change still
-    held. Each path and glob is given as `--flag=value`, so none starting with `-` reads as a flag."""
+    fixes committed on a new branch at the commit reviewed; and the base is the merge base reviewed, by its sha, which
+    no commit, push or merge moves. Read by review: the command reviewed the old commit again where the review named a
+    sha, a tag, a remote's branch or `feature~1`; a short name a tag shares was refused; and a base `HEAD~2`, a remote's
+    branch a push moved, and a local branch that took in the head each moved, the rerun approving a finding the change
+    still held. A base merged midway over-reports instead, which never approves. Each path and glob is given as
+    `--flag=value`, so none starting with `-` reads as a flag."""
     pre = evidence["preflight"]
     staged, branch = bool(pre.get("staged")), pre.get("branch", "")
     short = short_ref(branch)
     on = code_span(one_line(short)) if short else f"a new branch at {code_span(pre['head_sha'][:12])}"
     # With no fix to commit, the commit reviewed by its sha, which nothing has moved: read by review, `HEAD`, never put
-    # there, named the branch checked out, and the check found no change to review.
-    head = [] if staged else [("--head", branch or ("HEAD" if fixes else pre["head_sha"]))]
-    # A ref no quoting keeps is the merge base: read by review, told to give its own base again, one that moved.
-    full = pre.get("base_full", "")
-    base = full if full and _pasted([full]) else pre.get("merge_base", "")
-    pinned = [("--staged",)] if staged else [("--all",)] if evidence["whole"] else [("--base", base)]
+    # there, named the branch checked out, and a branch named took a commit no check of the review's had read.
+    head = [] if staged else [("--head", (branch or "HEAD") if fixes else pre["head_sha"])]
+    pinned = [("--staged",)] if staged else [("--all",)] if evidence["whole"] else [("--base", pre["merge_base"])]
     given = [*((f"--path={path}",) for path in evidence["scope"]), *((glob,) for glob in added)]
     # With each check that could not look or could not prove a finding at the bar, so a rerun names it again where it
     # still cannot: read by review, a run of only the checks that found something said the fixes held, the hole never

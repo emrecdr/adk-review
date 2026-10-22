@@ -138,7 +138,8 @@ A branch the repository does not hold is refused, exit 2, with the way to it: it
 brought one, as `origin/develop`, else the `git fetch` to run in the repository. The review never fetches by itself: it
 writes nothing into the repository and opens no connection, so you run that command. A name no branch can have, such as
 `^main` or `feat/`, is said to be none, with no fetch. A revision of a missing branch, such as `gone~1`, asks for a
-commit the repository holds. A missing name given as a tag's, in full, gets `git fetch --all --tags`.
+commit the repository holds. A missing name given as a tag's, under tags with or without refs, gets `git fetch --all
+--tags`.
 
 A head that adds nothing on top of its base, such as `--head main --base main`, is no change: the command says so, exit
 2, and names `--head`, `--base` and `--all`. So does a head that shares no history with its base. Two other flags choose
@@ -604,13 +605,13 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   only the rules that found something or could not look, so an agent checks its own work offline, no model called. It
   checks the branch reviewed, by its full name in any spelling git gives it, or else `HEAD`, the fixes committed on a
   new branch at the commit reviewed, since a commit leaves a sha, a tag, a remote's branch or `feature~1` where it was.
-  Its base is the local branch or tag the review named as its base, in full, which a merge of it follows, or else the
-  merge base reviewed, by its sha: `HEAD~2` moves with the fix, and a push may move a remote's branch under config the
-  review never reads. It repeats the `--skip`, `--scan` and `--third-party` globs the review was given, but skips no
-  other file for the person. After a degraded review it says exit 3 means what the review could not check is still
-  there, and that the fixes hold once each run reports no finding at the bar, kept or dropped as unproven, a check that
-  still cannot look being a person's to check by hand. Where it kept no finding, its `## Check again` runs each check
-  that could not look or prove a finding again. The scope is the preflight's, which the cache's key holds, and with
+  Its base is the merge base reviewed, by its sha, which no commit, push or merge moves: a base that took in the head
+  would hide the findings left. A base merged midway over-reports, and never approves. It repeats the `--skip`, `--scan`
+  and `--third-party` globs the review was given, but skips no other file for the person. After a degraded review it
+  says exit 3 means what the review could not check is still there, and that the fixes hold once each run reports no
+  finding at the bar, kept or dropped as unproven, a check that still cannot look being a person's to check by hand.
+  Where it kept no finding, its `## Check again` runs each check that could not look or prove a finding again, its head
+  named by the commit's sha, with no fix to hold. The scope is the preflight's, which the cache's key holds, and with
   those globs it is the whole of what the rules read: `--diff-cap` bounds the guidelines alone. The guidelines among
   them, one that could not prove a finding at the bar included, are named apart, with their `--check` and no command,
   since checking a model's reading spends its quota and their review took flags the scope does not hold. A branch's name

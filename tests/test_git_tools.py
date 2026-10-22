@@ -27,7 +27,6 @@ from conftest import (
     _git_in,
     _link_on_branch,
     _link_staged,
-    _pushed_from,
     gathered,
     missing_objects,
     run_review,
@@ -155,10 +154,6 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
     assert named == expected | dict.fromkeys(["heads/x", "refs/heads/x"], "refs/heads/x"), named
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "refs/heads/feature", "as `preflight` answers it"
     assert preflight(str(repo), BASE, "refs/heads/x")["status"] == "success", "the name it gives is one it takes"
-    assert preflight(str(repo), BASE, "HEAD")["base_full"] == f"refs/heads/{BASE}", "a base named as a ref"
-    _git_in(repo, "tag", "v0", BASE)
-    assert preflight(str(repo), "v0", "HEAD")["base_full"] == "refs/tags/v0", "a tag, which no fix moves, kept"
-    assert preflight(str(repo), "feature~1", "feature")["base_full"] == "", "a base that moves with its head"
     _git_in(repo, "tag", "refs/heads/x", BASE)  # a fork's tag so named: git reads a full name as itself first
     _git_in(repo, "tag", "refs/heads/gone", BASE)  # where no branch has the full name, git reads the tag
     assert preflight(str(repo), BASE, "refs/heads/gone")["head_ref"] == "refs/tags/refs/heads/gone", (
@@ -188,30 +183,13 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
     sha = _git_in(corrupt, "rev-parse", "origin/feature")
     (stored := corrupt / ".git" / "objects" / sha[:2] / sha[2:]).chmod(0o644)
     stored.write_bytes(b"garbage")
-    said = preflight(str(corrupt), f"origin/{BASE}", "origin/feature")["error_message"]
-    assert "does not exist" not in said and "rev-parse failed" in said, said
+    for head in ("origin/feature", "origin/feature~1"):  # read by review: a walk through it exits 1, and said so too
+        said = preflight(str(corrupt), f"origin/{BASE}", head)["error_message"]
+        assert "does not exist" not in said and "rev-parse failed" in said, (head, said)
     said = preflight(str(repo), f"{BASE}@{{9}}", "feature")["error_message"]  # past its reflog: git's exit 128
     assert "Name a commit it holds" in said and "exit 128" not in said, "read by review: it named no step to take"
     _git_in(repo, "checkout", "-q", "--detach")
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "", "a detached head, as CI checks out, is no branch"
-
-
-def test_a_remote_base_is_pinned(tmp_path: Path) -> None:
-    """A hand-off's check pins a remote's branch it is based on to the merge base, since a push moves it under config
-    this review cannot read: read by review, `--base @{u}` named the head's upstream, the agent pushed, and the rerun
-    saw only the commits after the push and approved; and each guess at where a push goes, from its name or from
-    `%(push)` without the person's own config, missed one. A local branch or a tag is kept, as the test above shows."""
-    from adk_review.collect.git import preflight
-
-    _remote, work = _pushed_from(tmp_path)
-    _committed(work, "a.py")
-    _git_in(work, "push", "-q", "origin", "main")
-    _git_in(work, "checkout", "-q", "-b", "feature")
-    _committed(work, "b.py")
-    _git_in(work, "push", "-q", "-u", "origin", "feature")
-    _committed(work, "c.py")  # the fix's own commit, a push from now
-    for base in ("origin/feature", "@{u}", "origin/main"):
-        assert preflight(str(work), base, "feature")["base_full"] == "", base
 
 
 class TestInspectRepository:

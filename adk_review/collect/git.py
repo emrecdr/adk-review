@@ -219,12 +219,16 @@ def _sha(repo: str, ref: str, kind: str = "commit") -> str | None:
     in `_symbolic`, each after `--end-of-options`, and elsewhere only inside a pattern a `refs/` or `--disambiguate=`
     leads: a ref spelled `-x` must be a ref, never a flag. `^{commit}` names the commit an annotated tag tags, never
     the tag itself; `^{tag}` names a tag object, and nothing for a branch or a commit."""
-    # Exit 128 is no commit only where git, quiet, says nothing, a revision it cannot follow as `main@{9}` past its
-    # reflog; a corrupt object says so, and is an error: read by review, one was called a branch that does not exist.
+    # A miss, quiet, says nothing, at exit 1, or 128 for a revision git cannot follow as `main@{9}` past its reflog; a
+    # corrupt object says so at either, and is an error, a peel's "expected tag type" an answer. Read by review: a
+    # corrupt commit, read directly or walked through as `main~1`, was called a branch that does not exist.
     args = ("rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{{kind}}}")
     done = _git_raw(repo, *args, ok=(0, 1, 128))
-    if done.returncode == 128 and (said := done.stderr.decode("utf-8", "replace").strip()):
-        raise GitError(f"git rev-parse failed: {said.splitlines()[0]}")
+    said = done.stderr.decode("utf-8", "replace").splitlines()
+    if done.returncode and (
+        failed := [line for line in said if line.startswith(("error:", "fatal:")) and "expected" not in line]
+    ):
+        raise GitError(f"git rev-parse failed: {failed[0]}")
     out = _text(done.stdout)
     return out if done.returncode == 0 and OBJECT_ID.fullmatch(out) else None  # read by review: `^main` as `^<sha>`
 
@@ -233,7 +237,7 @@ def _namesakes(repo: str, ref: str) -> list[str]:
     """Every full ref a name could mean, however it is spelled after (`main~0` still names `main`), and, when one has
     the name and it is hex, every object it abbreviates. Git prefers a tag to a branch, and a ref to an abbreviated
     object, and `--quiet` hides its warning: a fork's tag once made the base the head. More than one is refused,
-    never resolved."""
+    never resolved; but a full name that is a ref is that ref alone, git's first reading, which no tag can take."""
     name = ref
     for suffix in REVISION_MARKS:
         name = name.partition(suffix)[0]
@@ -298,29 +302,14 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     _, listed = _git(root, "remote")
     remotes = lines_of(listed)
     said = f"{label} {name!r} does not exist in {repo}"
-    # A branch by its own name, however it was spelt, and a remote's by its remote: read by review, `refs/heads/main`,
-    # `heads/main` and `origin/dev` were told to fetch and pass `origin/refs/heads/main`, `origin/heads/main` and
-    # `origin/origin/dev`, which no remote holds. A tag's full name is under no remote by that name.
-    full = f"refs/{name}" if name.startswith(("heads/", "tags/", "remotes/")) else name
-    if remotes and full.startswith("refs/tags/"):  # read by review: `--all` fetches no tag outside a branch's history
-        raise _ScopeError(f"{said}. Fetch every remote's tags there: git fetch --all --tags")
-    local = full.startswith("refs/heads/")  # never a remote's: read by review, `refs/heads/origin/gone` was read so
-    tracked = full.startswith("refs/remotes/")  # a remote's own branch: never a branch's copy under every remote
-    name = full.removeprefix("refs/heads/").removeprefix("refs/remotes/")
-    other = name.startswith("refs/")
-    copies = [] if other or tracked else [f"{r}/{name}" for r in remotes if _sha(root, f"refs/remotes/{r}/{name}")]
-    # A name a remote's begins, read as that remote's branch only where no remote holds it as a branch's, as git reads
-    # its names, the longest remote first. Read by review: `alice/fix`, with a remote `alice`, was told to fetch `fix`
-    # from it, where `origin/alice/fix` held it.
-    remote = (
-        None
-        if other or local or copies
-        else next((r for r in sorted(remotes, key=len, reverse=True) if name.startswith(f"{r}/")), None)
+    # Its remote copy as typed, first, as git reads a name; only where no remote holds one, the spellings git takes for
+    # a full name. Read by review: a branch named `tags/v2`, its copy fetched, was told to fetch tags.
+    copies = (
+        [] if name.startswith("refs/") else [f"{r}/{name}" for r in remotes if _sha(root, f"refs/remotes/{r}/{name}")]
     )
-    if remote:
-        name, remotes = name.removeprefix(f"{remote}/"), [remote]
-    other = other or (tracked and not remote)  # read by review: `refs/remotes/nope/gone` was fetched from `origin`
-    plain = all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in (name, *remotes)) and not other
+    if not copies:
+        name, remotes, copies = _spelt(root, name, remotes, said)
+    plain = all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in (name, *remotes))
     if len(copies) == 1 and plain:
         remote = copies[0].removesuffix(f"/{name}")
         raise _ScopeError(
@@ -337,6 +326,30 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     if remotes:
         raise _ScopeError(f"{said}, nor as a remote branch fetched there. Fetch every remote there: git fetch --all")
     raise _ScopeError(f"{said}. Name one that git branch lists")
+
+
+def _spelt(root: str, name: str, remotes: list[str], said: str) -> tuple[str, list[str], list[str]]:
+    """A missing name read in the spellings git takes for a full one, where no remote holds it as typed: the branch's
+    own name, the remotes to fetch it from, and its copies there; `_ScopeError` where no fetch brings it. Read by
+    review: `refs/heads/main`, `heads/main` and `origin/dev` were told to fetch and pass `origin/refs/heads/main`,
+    `origin/heads/main` and `origin/origin/dev`, which no remote holds."""
+    full = f"refs/{name}" if name.startswith(("heads/", "tags/", "remotes/")) else name
+    if remotes and full.startswith("refs/tags/"):  # read by review: `--all` fetches no tag off a branch's history
+        raise _ScopeError(f"{said}. Fetch every remote's tags there: git fetch --all --tags")
+    local = full.startswith("refs/heads/")  # never a remote's: read by review, `refs/heads/origin/gone` was so read
+    tracked = full.startswith("refs/remotes/")  # a remote's own branch: never a branch's copy under every remote
+    name = full.removeprefix("refs/heads/").removeprefix("refs/remotes/")
+    if name.startswith("refs/"):  # another kind, as a pull request's: read by review, told `--all`, which brings none
+        raise _ScopeError(f"{said}. Name a ref it holds")
+    if local:
+        return name, remotes, [f"{r}/{name}" for r in remotes if _sha(root, f"refs/remotes/{r}/{name}")]
+    # A name a remote's begins, read as that remote's branch, the longest remote first. Read by review: `alice/fix`,
+    # with a remote `alice`, was told to fetch `fix` from it, where `origin/alice/fix` held it, now found as typed.
+    if remote := next((r for r in sorted(remotes, key=len, reverse=True) if name.startswith(f"{r}/")), None):
+        return name.removeprefix(f"{remote}/"), [remote], []
+    if tracked:  # read by review: `refs/remotes/nope/gone` was told a fetch that brings no `nope`
+        raise _ScopeError(f"{said}. No remote is named {name.partition('/')[0]!r}. Name one that git remote lists")
+    return name, remotes, []
 
 
 def _refused(repo: str, root: str) -> None:
@@ -370,10 +383,6 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
         base_sha = "" if base is None else _sha(root, base) or _missing(root, repo, "base branch", "--base", base)
         head_sha = _sha(root, head) or _missing(root, repo, "head branch", "--head", head)
         branch = "" if head == head_sha else _branch(root, head)  # a sha, as the hook and CI name one, is no branch
-        # The base by its ref where a merge of it follows and no fix moves it, a local branch or a tag; a remote's
-        # branch, which a push may move under config this review never reads, is pinned. Read by review: each guess
-        # at where a push goes missed one, and a rerun after the push saw only the commits after it and approved.
-        base_full = "" if base is None or base == base_sha else _symbolic(root, base, ("refs/heads/", "refs/tags/"))
         # From here on git only sees commit hashes, which cannot be mistaken for options.
         if base is None:
             base_sha = merge_base = _empty_tree(root)
@@ -398,7 +407,6 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
         "base_ref": base_ref,
         "head_ref": head_ref,
         "branch": branch,
-        "base_full": base_full,
     }
 
 
