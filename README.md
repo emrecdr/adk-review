@@ -61,8 +61,9 @@ uv run adk-review <repo> --all --profile default-rules         # every file at t
 
 `default-rules` is the default profile's rules alone, still with no model, and `--head <branch>` names a branch other
 than the one checked out. On `main` itself the first command has nothing to compare: it says so, exit 2, and names
-`--head` and `--all`. This checkout is a poor first target: its tests and its rules' own examples hold planted
-credentials, which the credential rules find as they would anyone's.
+`--head` and `--all`. "Which change: `--base` and `--head`" below says what each flag names, with examples. This
+checkout is a poor first target: its tests and its rules' own examples hold planted credentials, which the credential
+rules find as they would anyone's.
 
 ### 5. Turn on a model
 
@@ -91,6 +92,51 @@ Then drop `--profile`: `uv run adk-review <repo> --base main` runs the rules, th
 The pre-push hook, `adk-review-push`, comes with the installed command, from step 2's address or from this checkout with
 `make install`. It reviews what a push sends with the default profile's rules, no model, and "Before a push" in
 `GUIDE.md` installs it in a repository. On a pull request, "In a pipeline" below runs the same command in CI.
+
+### Which change: `--base` and `--head`
+
+A review reads one change: the commits one branch adds on top of another.
+
+| Flag | What it names | When left out |
+|---|---|---|
+| `--head` | The branch under review, the one with the new work: `feature/payments`, `branchFeatureNew`. | The branch checked out in the repository. |
+| `--base` | The branch the head will merge into: `main`, `develop`, a release branch. | A terminal asks. A pipeline uses `main`, else `master`, else the branch `origin/HEAD` names. |
+
+The review starts at the merge base, the last commit the two branches share, and ends at the head's last commit. It
+reads only the commits the head adds. Commits the base gained after the head branched off are not part of the change:
+
+```text
+          A---B---C     branchFeatureNew   --head
+         /
+    D---E---F---G       develop            --base
+
+    E is the merge base. The review reads A, B and C. It never reads F or G.
+```
+
+Each flag takes a branch, a remote branch such as `origin/develop`, a tag or a commit. Neither branch needs to be
+checked out, and nothing is written into the repository.
+
+```bash
+# branchFeatureNew in repoX: what it adds on top of develop
+uv run adk-review /path/to/repoX --head branchFeatureNew --base develop
+
+# the branch checked out in repoX, against main: --head left out
+uv run adk-review /path/to/repoX --base main
+
+# develop exists only on the remote: fetch it, then name the remote branch
+git -C /path/to/repoX fetch
+uv run adk-review /path/to/repoX --head branchFeatureNew --base origin/develop
+
+# every commit on main since the tag v1.4.0
+uv run adk-review /path/to/repoX --head main --base v1.4.0
+
+# first, without running anything: the files it would read and the checks it would run
+uv run adk-review /path/to/repoX --head branchFeatureNew --base develop --dry-run
+```
+
+A head that adds nothing on top of its base, such as `--head main --base main`, is no change: the command says so, exit
+2. Two other flags choose the change in place of `--base`: `--all` reads every file at the head, and `--staged` reads
+what is staged, against `HEAD`.
 
 ### Every mode
 
