@@ -73,8 +73,8 @@ class TestWhatAReviewCovers:
         assert cli.main([str(demo_repo), "--head", "main", "--base", "main", "--profile", "rules-only"]) == 2
         err = capsys.readouterr().err
         assert (
-            "'main' adds nothing to 'main': no change to review. Name the branch to review with --head. Or review"
-            " every file at 'main' with --all, not --base"
+            "'main' adds nothing to 'main': no change to review. Name the branch to review with --head, or its base "
+            "with --base. Or review every file at 'main' with --all, not --base"
         ) in err, err
         assert cli.main([str(demo_repo), "--head", "main", "--all", "--profile", "rules-only"]) != 2, "as it says"
 
@@ -448,30 +448,12 @@ class TestWhatAReviewCovers:
         assert refused.value.code == 2 and "--help lists every flag" in capsys.readouterr().err
         assert "Name one that git branch lists" in told([str(repo), "--head", "featur", "--base", "main"])
         (repo / "inner" / ".git").mkdir(parents=True)  # read by review: an empty .git sent git to the outer repository
-        assert "Repair " in told([str(repo / "inner"), "--base", "main"])
+        assert f"Check {repo / 'inner' / '.git'}" in told([str(repo / "inner"), "--base", "main"])
         assert "Name a Python file, or a folder that holds one" in told(["--try", str(tmp_path / "plain")])
         previous = [str(repo), "--head", "feature", "--base", "main", "--previous", str(tmp_path / "none.json")]
         assert "Name the JSON a review wrote with --json" in told(previous)
         monkeypatch.setenv("REVIEW_PROVIDER", "anthropic")
         assert "Set it in .env or the shell" in told([str(repo), "--head", "feature", "--base", "main"])
-
-    def test_a_config_that_cannot_run_names_what_to_write(self, tmp_path: Path) -> None:
-        """Asked by the owner: an error names what to do instead, the config's too. A setting misspelt is answered
-        with every setting there is, a missing one with where it goes, and no `default` profile with what to add."""
-        from adk_review.core.profiles import expanded
-        from adk_review.judge.catalog import load_config
-
-        shipped = (ROOT / "adk_review" / "config.toml").read_text(encoding="utf-8")
-        for text, step in (
-            (shipped.replace("fail_on =", "fial_on =", 1), "There are fail_on, "),
-            (shipped.replace("fail_on =", "# fail_on =", 1), "fail_on is missing. Add it under [review]"),
-            ("[review\n", "Correct the TOML there"),
-        ):
-            (written := tmp_path / "config.toml").write_text(text, encoding="utf-8")
-            with pytest.raises(ValueError, match=re.escape(step)):
-                load_config(written)
-        with pytest.raises(ValueError, match=r"Add one$"):
-            expanded({"mine": ["rule.secrets"]}, ["rule.secrets"], {})
 
     def test_a_branch_only_on_a_remote_is_named_with_the_fetch_that_brings_it(self, cli, tmp_path: Path, capsys):
         """Asked by the owner: a branch that exists on the remote read as one that does not exist. The review fetches
@@ -1109,9 +1091,7 @@ class TestWhatTheCommandTells:
         _committed(repo, "app.py", text)
         return cli.main([str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules", *flags])
 
-    def test_the_report_ends_with_the_next_steps_by_its_verdict(
-        self, cli, demo_repo: Path, tmp_path: Path, capsys
-    ) -> None:
+    def test_the_report_ends_with_the_next_steps_by_its_verdict(self, cli, demo_repo: Path, capsys) -> None:
         """Asked by the owner, who wants every run to guide the person reading it: the report ends with what to do now,
         by its verdict and what it kept, each step true wherever the report is read, the pre-push hook's and a cached
         one's among them, and each sentence ASD-STE100. Read by review: a fix left on disk is not what a review reads;
@@ -1120,24 +1100,23 @@ class TestWhatTheCommandTells:
         from adk_review.deliver.report import _next_steps
 
         assert run_review(cli, demo_repo, "--profile", "default-rules") == 1
-        steps = capsys.readouterr().out.split("## Next steps\n\n", 1)[1]
-        assert "- Fix the 2 findings at or above `--fail-on blocker`. Commit the fixes: a review reads commits" in steps
-        assert "- 1 finding below the bar is worth a look." in steps
-        assert "`adk-review --comment` writes them" in steps and "`--handoff FILE` for a coding agent" in steps
+        steps = capsys.readouterr().out.rstrip().split("## Next steps\n\n", 1)[1]
+        assert steps.splitlines() == [
+            "- Fix the 2 findings at or above `--fail-on blocker`. Commit the fixes: a review reads commits, not the "
+            "files on disk. Then review that commit.",
+            "- 1 finding below the bar is worth a look.",
+            "- `adk-review --comment` writes them as a comment to paste by hand, `--handoff FILE` for a coding agent.",
+        ], "the report's last section"
         assert _long([("the next steps", steps)]) == []
 
-        assert self._review(cli, tmp_path, "x = 1\n") == 0
-        assert capsys.readouterr().out.rstrip().endswith("## Next steps\n\n- Nothing to fix: no finding was kept.")
-
-        staged = _next_steps(
-            {"preflight": {"staged": True}}, Outcome(kept=[sourced("blocker")]), "REQUEST_CHANGES", "blocker"
-        )
-        assert any("Stage the fixes" in step for step in staged), staged
-        hole = _next_steps({"preflight": {}}, Outcome(errors={"rule.lint": "ruff exited 2"}), "DEGRADED", "blocker")
-        assert (
-            hole[-1]
-            == "- This review could not check everything: the lines above say what and why. Check each by hand."
-        )
+        held = Outcome(kept=[sourced("blocker")])
+        assert "Stage the fixes" in _next_steps(held, "REQUEST_CHANGES", "blocker", staged=True)[3]
+        assert _next_steps(Outcome(dropped=[sourced("minor")]), "APPROVED", "blocker", staged=False)[3:] == [
+            "- Nothing to fix: no finding was kept."
+        ]
+        assert _next_steps(Outcome(errors={"rule.lint": "ruff exited 2"}), "DEGRADED", "blocker", staged=False)[3:] == [
+            "- This review could not check everything: the lines above say what and why. Check each by hand."
+        ]
 
     def test_quiet_prints_nothing_when_the_review_passes(self, cli, tmp_path: Path, capsys) -> None:
         assert self._review(cli, tmp_path, "x = 1\n", "--quiet") == 0
@@ -1145,12 +1124,12 @@ class TestWhatTheCommandTells:
         assert (said.out, said.err) == ("", ""), said
 
     def test_quiet_prints_the_report_when_the_review_stops(self, cli, tmp_path: Path, capsys) -> None:
-        """The report alone, as the guide says: read by review, the pre-push hook, which reviews quietly into a JSON in
-        a folder it then removes, named that file under the report."""
-        written = str(tmp_path / "review.json")
-        assert self._review(cli, tmp_path, 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "--quiet", "--json", written) == 1
+        """The report, and each file it wrote by its full path: asked by the owner, a person should see where each
+        went, a comment's default name above all."""
+        written = tmp_path / "review.json"
+        assert self._review(cli, tmp_path, 'TOKEN = "ghp_' + "a1B2" * 9 + '"\n', "--quiet", "--json", str(written)) == 1
         said = capsys.readouterr()
-        assert "## Verdict: REQUEST_CHANGES" in said.out and "wrote the" not in said.err, said.err
+        assert "## Verdict: REQUEST_CHANGES" in said.out and f"wrote the JSON report to {written.resolve()}" in said.err
 
     def test_quiet_and_progress_cannot_run_together(self, cli, tmp_path: Path, capsys) -> None:
         with pytest.raises(SystemExit) as stopped:
@@ -1268,6 +1247,9 @@ def test_every_error_the_package_raises_or_answers_is_short_and_one_command() ->
                     if isinstance(key, ast.Constant) and key.value == "error_message":
                         said.append((f"{path.name}:{node.lineno}", _printed(value)))
     assert _long(said) == []
+    # Each ends bare: read by review, a wrapper that adds its own next step after one, ". Push with --no-verify",
+    # printed "..".
+    assert [(where, text) for where, text in said if text and text.endswith(".")] == []
 
 
 class TestWhatAReviewKeeps:

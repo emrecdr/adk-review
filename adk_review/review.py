@@ -721,8 +721,11 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
         # Measured: a first review of a repository checked out on main ended at "adds nothing" with no way on, and so
         # does a head that shares no history with its base. The flags are the command's, so the command names them;
         # the index takes neither.
-        widen = f". Name the branch to review with --head. Or review every file at {head!r} with --all, not --base"
-        _say(evidence["error_message"] + (widen if evidence.get("widen") and not args.staged else ""))
+        rescope = (
+            f". Name the branch to review with --head, or its base with --base. Or review every file at {head!r} with "
+            "--all, not --base"
+        )
+        _say(evidence["error_message"] + (rescope if evidence.get("rescope") and not args.staged else ""))
         return EXIT_USAGE
     if say is not None:
         say(f"read {len(evidence['files'])} file(s), {len(evidence.get('ignored', ()))} ignored")
@@ -922,10 +925,9 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, comment: str
     """The review's outputs: the report on stdout, the hand-off, the JSON and the comment where asked for; exit 3
     where a file asked for cannot be written. Each file written is then named by its full path, the comment's last, the
     run's last line: asked by the owner, a person should see where each went, a default name above all. Under `--quiet`
-    a review that passes prints nothing, and one that does not prints its report alone, as the guide says."""
+    a review that passes prints nothing."""
     if not (args.quiet and code == EXIT_CLEAN):
         print(report)
-    wrote = []
     for flag, written, text in (
         ("hand-off", args.handoff, lambda: handoff),
         ("JSON report", args.json, lambda: json.dumps(data, indent=2, ensure_ascii=False) + "\n"),
@@ -939,10 +941,8 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, comment: str
         except OSError as exc:  # the folder was there when the review began; a full or read-only disk is not
             _say(f"could not write the {flag} to {written}: {exc.strerror or exc}")
             return EXIT_DEGRADED
-        wrote.append(f"wrote the {flag} to {path.resolve()}")
-    if not args.quiet:  # read by review: the pre-push hook, quiet, named the JSON it had written to a folder now gone
-        for sentence in wrote:
-            _say(sentence)
+        if not (args.quiet and code == EXIT_CLEAN):
+            _say(f"wrote the {flag} to {path.resolve()}")
     return code
 
 

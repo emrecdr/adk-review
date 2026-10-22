@@ -119,7 +119,7 @@ def _read(stdin: TextIO) -> str:
 
 def command(repository: str, head: str, base: str | None) -> list[str]:
     """The review of what one push sends: against a base, or, with none, the whole project at the head."""
-    return [repository, "--head", head, *(["--base", base] if base else ["--all"]), "--profile", PROFILE, "--quiet"]
+    return [repository, "--head", head, *(["--base", base] if base else ["--all"]), "--profile", PROFILE]
 
 
 def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, str] | None:
@@ -142,12 +142,16 @@ def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, s
             code = review([*command(repository, pushed, base), "--json", str(written)])
             if code == 0:
                 return None
+            # Read by review: the review named its JSON, the hook's own, in a folder gone once the review is weighed.
+            told = "".join(
+                line for line in said.getvalue().splitlines(keepends=True) if str(written.resolve()) not in line
+            )
             # Read by review: Ctrl-C's 130 wrote no report, and a review of the next base let the push by; so did one
             # a moment after its report was written.
             if code in (EXIT_INTERRUPTED, EXIT_TERMINATED) or not written.exists():
-                return code, said.getvalue()
+                return code, told
             found = _stops(json.loads(written.read_text(encoding="utf-8")))
-        stopped = stopped or (code, said.getvalue())
+        stopped = stopped or (code, told)
         if len(bases) < 2:  # there is no other base to weigh it by
             return stopped
         stops.append(found)

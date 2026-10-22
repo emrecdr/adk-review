@@ -55,6 +55,17 @@ REVIEW = {
 TABLES = {"review": "settings", "profiles": "named lists"}
 
 
+def _unreadable(path: Path, exc: Exception) -> ValueError:
+    """Why `config.toml` could not be read, with what to do: its TOML corrected, or saved as UTF-8; or, where the
+    shipped file is gone, the reviewer reinstalled. Read by review: a file in another encoding was told to fix its
+    TOML."""
+    if isinstance(exc, tomllib.TOMLDecodeError):
+        return ValueError(f"{path.name}: {exc}. Correct the TOML there")
+    if isinstance(exc, UnicodeDecodeError):
+        return ValueError(f"{path.name}: {exc}. Save it as UTF-8")
+    return ValueError(f"{path.name}: {getattr(exc, 'strerror', None) or exc}. Reinstall the reviewer with `uv sync`")
+
+
 def load_config(path: Path) -> dict:
     """`config.toml`, read whole: each section a table, each setting it must hold, as it must be, and nothing it
     does not know, since a key misspelt must never be a setting silently left at another value. What its profiles
@@ -63,7 +74,7 @@ def load_config(path: Path) -> dict:
     try:
         config = tomllib.loads(path.read_text(encoding="utf-8-sig"))  # as Windows Notepad has saved it: a BOM
     except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as exc:
-        raise ValueError(f"{path.name}: {exc}. Correct the TOML there") from None
+        raise _unreadable(path, exc) from None
     if strangers := sorted(set(config) - set(TABLES)):
         there = " and ".join(f"[{section}]" for section in TABLES)
         raise ValueError(f"{path.name}: no section [{strangers[0]}]. There are {there}")

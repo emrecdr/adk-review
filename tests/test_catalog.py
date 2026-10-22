@@ -171,7 +171,15 @@ class TestTheConfig:
         assert cli.load_config(tmp_path / "config.toml")["profiles"] == {}
         monkeypatch.setattr(cli, "CONFIG", tmp_path / "config.toml")
         assert run_review(cli, demo_repo) == 2
-        assert "has no `default`" in capsys.readouterr().err
+        assert "has no `default`" in (err := capsys.readouterr().err) and err.endswith("Add one\n"), err
+
+    def test_a_config_that_cannot_be_read_says_what_to_do_by_why(self, cli, tmp_path: Path) -> None:
+        """Read by review: a config in another encoding, or none at all, was told to correct its TOML."""
+        (config := tmp_path / "config.toml").write_bytes(WHOLE_CONFIG.encode("utf-16"))
+        with pytest.raises(ValueError, match=r"Save it as UTF-8$"):
+            cli.load_config(config)
+        with pytest.raises(ValueError, match=re.escape("Reinstall the reviewer with `uv sync`")):
+            cli.load_config(tmp_path / "gone.toml")
 
     def test_a_config_saved_with_a_byte_order_mark_reads_as_written(self, cli, tmp_path: Path) -> None:
         """Windows Notepad has saved UTF-8 with a byte-order mark, which `tomllib` reads as a stray first character:
@@ -187,11 +195,11 @@ class TestTheConfig:
         [
             (
                 WHOLE_CONFIG.replace("verify = false", "verify = false\nretries = 3"),
-                "[review] retries is not a setting",
+                "[review] retries is not a setting. There are fail_on, ",
             ),
             (
                 WHOLE_CONFIG.replace("verify = false\n", ""),
-                "[review] verify is missing",
+                "[review] verify is missing. Add it under [review]",
             ),
             (
                 WHOLE_CONFIG.replace("max_tokens = 0", "max_tokens = true"),
@@ -213,7 +221,7 @@ class TestTheConfig:
             (WHOLE_CONFIG + '[lint]\nrules = ["E"]\n', "no section [lint]. There are [review] and [profiles]"),
             ('profiles = ["rule.secrets"]\n' + WHOLE_CONFIG, "[profiles] must be a table of named lists"),
             ("review = 5\n", "[review] must be a table of settings"),
-            ("[review\n", "config.toml: "),
+            ("[review\n", ". Correct the TOML there"),
         ],
     )
     def test_a_config_that_does_not_mean_one_thing_is_refused(self, cli, tmp_path: Path, text: str, said: str) -> None:

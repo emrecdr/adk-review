@@ -202,7 +202,7 @@ def radius(tree: Tree | None, files: list[Entry], *, read: bool, asked: bool) ->
 
 def no_change(head: str, base: str | None, scope: Sequence[str]) -> Failure:
     """Why there is nothing to review: the head holds no file, adds nothing to the base, or nothing under the scope.
-    Only a head that adds nothing is marked `widen`: most often it is the base itself, a branch checked out on
+    Only a head that adds nothing is marked `rescope`: most often it is the base itself, a branch checked out on
     `main`."""
     if scope:
         what = f"no file at {head!r}" if base is None else f"nothing {head!r} changes"
@@ -210,4 +210,4 @@ def no_change(head: str, base: str | None, scope: Sequence[str]) -> Failure:
     if base is None:
         return {"status": "error", "error_message": f"{head!r} holds no file: nothing to review"}
     why = f"{head!r} adds nothing to {base!r}: no change to review"
-    return {"status": "error", "error_message": why, "widen": True}
+    return {"status": "error", "error_message": why, "rescope": True}

@@ -246,13 +246,16 @@ def test_the_demo_repository_names_the_review_to_run_on_it_ready_to_paste(tmp_pa
 
 def test_the_copilot_login_says_how_to_use_it_and_logs_in_to_nothing(monkeypatch, tmp_path: Path, capsys) -> None:
     """Measured by review: with no token cached, `copilot_login.py --help` began a real device login, the trap the
-    demo script's parser was built to close."""
+    demo script's parser was built to close. A flag it does not know ends by naming `--help`, as the review's does."""
     from adk_review import login as copilot_login
 
     monkeypatch.setattr(copilot_login, "token_path", lambda: tmp_path / "none")
     with pytest.raises(SystemExit) as stopped:
         copilot_login.main(["--help"])
     assert stopped.value.code == 0 and "--force" in capsys.readouterr().out
+    with pytest.raises(SystemExit) as stopped:
+        copilot_login.main(["--forse"])
+    assert stopped.value.code == 2 and "adk-review-login: --help lists every flag" in capsys.readouterr().err
 
 
 #: A review's JSON report as the command writes it, trimmed to what the measurement reads: a rule's finding, a

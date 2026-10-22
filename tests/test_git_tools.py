@@ -340,7 +340,7 @@ class TestGitPastItsTimeout:
         monkeypatch.setenv("PATH", str(tmp_path))
         scope = (str(demo_repo), BASE, HEAD, tool_context())
         answer = asyncio.run(model_tools.inspect_repository(*scope))
-        assert answer["status"] == "error" and "git is not on PATH" in answer["error_message"], answer
+        assert answer["status"] == "error" and "install git with its folder on PATH" in answer["error_message"], answer
 
     def test_a_diff_past_its_timeout_after_a_good_preflight_is_named_never_an_empty_change(
         self, demo_repo: Path, monkeypatch

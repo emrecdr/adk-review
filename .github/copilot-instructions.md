@@ -86,8 +86,10 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   title and fix — is ASD-STE100: one command, at most 20 words, no `;` joining two (`tests/test_command.py`). The
   guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged. An
   error a person can act on names what to do instead, a flag to drop or give, a path or a command, as the owner asked of
-  a tool that guides its user; argparse's own end by naming `--help`. A rule's `(path, text)` example names a file the
-  shipped `scan` reads (`tests/test_catalog.py`).
+  a tool that guides its user; argparse's own end by naming `--help`. An error's text ends bare, with no full stop,
+  since a caller may add a sentence after it; and the flags that rescope a change with nothing to compare are added by
+  the command, from a mark on the error envelope (`rescope`). A rule's `(path, text)` example names a file the shipped
+  `scan` reads (`tests/test_catalog.py`).
 
 ## Tests
 

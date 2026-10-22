@@ -333,14 +333,11 @@ def _check_again(evidence: Evidence, found: set[str], fail_on: str) -> list[str]
     model's reading spends its quota each time, and theirs took flags this scope does not hold. What was fixed is
     committed first, or staged under --staged: a review reads no file on disk."""
     pre = evidence["preflight"]
+    first = _stored(bool(pre.get("staged")), pre["head"])
     if pre.get("staged"):
         scope = ["--staged"]
-        first = "Stage the fixes: a review of the index reads what is staged, not the files on disk."
     else:
         scope = ["--head", pre["head"], *(["--all"] if evidence["whole"] else ["--base", pre["base"]])]
-        first = (
-            f"Commit the fixes on {code_span(one_line(pre['head']))}: a review reads commits, not the files on disk."
-        )
     scope += [arg for path in evidence["scope"] for arg in ("--path", path)]
     rules = sorted(check for check in found if check.startswith(rule_id("")))
     guidelines = " ".join(f"--check {check}" for check in sorted(found - set(rules)))
@@ -714,13 +711,22 @@ def render(
         f"- duplicates across rules and guidelines folded into one finding: {len(outcome.folded)}",
         f"- secrets redacted before any model call: {outcome.redacted}",
         _spent(usage),
-        *_next_steps(evidence, outcome, verdict, fail_on),
+        *_next_steps(outcome, verdict, fail_on, staged=bool(evidence["preflight"].get("staged"))),
         "",
     ]
     return inert("\n".join(lines))  # once over the whole: no two fields side by side spell one
 
 
-def _next_steps(evidence: Evidence, outcome: Outcome, verdict: str, fail_on: str) -> list[str]:
+def _stored(staged: bool, head: str = "") -> str:
+    """Where a fix must be before a review sees it: committed, on `head` where it is named, or staged under
+    `--staged`. Read by review: a fix left on disk and the same command run again found the same findings."""
+    if staged:
+        return "Stage the fixes: a review of the index reads what is staged, not the files on disk."
+    on = f" on {code_span(one_line(head))}" if head else ""
+    return f"Commit the fixes{on}: a review reads commits, not the files on disk."
+
+
+def _next_steps(outcome: Outcome, verdict: str, fail_on: str, *, staged: bool) -> list[str]:
     """What to do now, by the verdict and what was kept, as the report's last section: asked by the owner, who wants
     every run to guide the person reading it. Each step holds wherever the report is read, a cached review, `--staged`
     and the pre-push hook among them, and none is taken for the reader: the reviewer writes into no repository and
@@ -732,15 +738,11 @@ def _next_steps(evidence: Evidence, outcome: Outcome, verdict: str, fail_on: str
     if verdict == "DEGRADED":
         steps.append("This review could not check everything: the lines above say what and why. Check each by hand.")
     if held:
-        # Read by review: a fix left on disk and the same command run again found the same findings.
-        stored = (
-            "Stage the fixes: a review of the index reads what is staged."
-            if evidence["preflight"].get("staged")
-            else "Commit the fixes: a review reads commits, not the files on disk."
-        )
+        # Read by review: "the same command" reviewed the old commit again where `--head` named a sha, a tag or a
+        # remote's branch, as a pipeline's does.
+        again = "Then run the same command again." if staged else "Then review that commit."
         steps.append(
-            f"Fix the {held} finding{'s' * (held != 1)} at or above `--fail-on {fail_on}`. {stored} Then run the same "
-            "command again."
+            f"Fix the {held} finding{'s' * (held != 1)} at or above `--fail-on {fail_on}`. {_stored(staged)} {again}"
         )
     if below:
         steps.append(f"{below} finding{'s' * (below != 1)} below the bar {'is' if below == 1 else 'are'} worth a look.")
@@ -927,7 +929,9 @@ def read_previous(path: str) -> tuple[dict[str, dict], dict | None]:
         # was loaded overflowed the cache key's encoding, exit 3, where the same review gave 0 without the cache.
         health = safe_value(data["health"]) if isinstance(data.get("health"), dict) else None
     except RecursionError:  # measured by review: nested 1,100 deep, which no report `--json` writes, it ended as a hole
-        raise ValueError(f"--previous {path}: nested deeper than a report --json writes") from None
+        raise ValueError(
+            f"--previous {path}: nested deeper than a report --json writes. Name the JSON a review wrote with --json"
+        ) from None
     except (OSError, ValueError) as exc:
         raise ValueError(
             f"--previous {path}: {getattr(exc, 'strerror', None) or exc}. Name the JSON a review wrote with --json"

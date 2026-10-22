@@ -37,18 +37,18 @@ lock's version, since `uv tool install` reads no lock; with no checkout, `uv too
 git+<address>` keeps the cooldown. With no `repo`, the command assumes none: a terminal is asked for the path, a
 pipeline is refused with exit 2. Exit codes: 0 approved, 1 a finding at the `--fail-on` bar (`blocker` unless set), 2 a
 usage error before any model call (an arm that is not ready, a branch that adds nothing or shares no history with its
-base: "no change to review", with `--head` and `--all` named, a branch it does not hold, named with its remote copy and
-the `git fetch` for the person to run, a `config.toml`, profile or rule file that cannot run, nothing under `--path`, or
-no choice made at the question asked when neither `--base` nor `--all` is given), 3 a hole: a rule or a guideline
-failed, a rule could not look (the head's tree not listed, a file it holds not read whole, or a link whose file was not
-read or followed), a changed file no check can read whole — binary, a submodule, a Git LFS pointer — or, where a
-guideline runs, one it was not shown whole — a symbolic link to a file it was not shown whole, cut at the diff cap or
-past the guidelines' block cap — unless the skip list names it, named under "not read", a finding at the `--fail-on` bar
-whose quote the diff does not bear out or that a verifier refuted, a guideline's call the token ceiling refused (a
-verifier's leaves its finding unverified), a `--json`, `--handoff` or `--comment` file that cannot be written, any error
-nothing else names (`main` wraps the command: a sentence, never Python's own exit 1, which would read as a blocker), a
-reader that closes the pipe early, and a reviewer that cannot load (a broken install). Ctrl-C is one sentence and 130,
-the shell's own code for it, and a job's SIGTERM 143.
+base: "no change to review", with `--head`, `--base` and `--all` named, a branch it does not hold, named with its remote
+copy and the `git fetch` for the person to run, a `config.toml`, profile or rule file that cannot run, nothing under
+`--path`, or no choice made at the question asked when neither `--base` nor `--all` is given), 3 a hole: a rule or a
+guideline failed, a rule could not look (the head's tree not listed, a file it holds not read whole, or a link whose
+file was not read or followed), a changed file no check can read whole — binary, a submodule, a Git LFS pointer — or,
+where a guideline runs, one it was not shown whole — a symbolic link to a file it was not shown whole, cut at the diff
+cap or past the guidelines' block cap — unless the skip list names it, named under "not read", a finding at the
+`--fail-on` bar whose quote the diff does not bear out or that a verifier refuted, a guideline's call the token ceiling
+refused (a verifier's leaves its finding unverified), a `--json`, `--handoff` or `--comment` file that cannot be
+written, any error nothing else names (`main` wraps the command: a sentence, never Python's own exit 1, which would read
+as a blocker), a reader that closes the pipe early, and a reviewer that cannot load (a broken install). Ctrl-C is one
+sentence and 130, the shell's own code for it, and a job's SIGTERM 143.
 
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so. A
@@ -212,7 +212,10 @@ Conventions:
   title and fix — is ASD-STE100: one command, at most 20 words, no `;` joining two (`tests/test_command.py`). The
   guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged. An
   error a person can act on names what to do instead, a flag to drop or give, a path or a command, as the owner asked of
-  a tool that guides its user; argparse's own end by naming `--help`.
+  a tool that guides its user; argparse's own end by naming `--help`. An error's text ends bare, with no full stop,
+  since a caller may add a sentence after it, as the pre-push hook adds its own; and the flags that rescope a change
+  with nothing to compare are added by the command, from a mark on the error envelope (`rescope`), since chat shares the
+  collector's words and takes no flag.
 - State moves between agents via `output_key` and `{placeholder}` (`{key?}` where the key may be missing). Each key
   more than one module uses is spelled once, in `judge/agents.py`; a check's key is its id through `state_key`.
 - Every `subprocess.run` that decodes passes `encoding=`; no source under `adk_review/` or `scripts/` spells `/tmp/`

@@ -184,7 +184,7 @@ def _git_raw(
 ) -> subprocess.CompletedProcess[bytes]:
     """`_git`'s call with its answer left as bytes, what a batch read counts its sizes in."""
     if (git := on_path("git")) == "git":  # not on PATH: Git for Windows can be installed for Git Bash alone
-        raise GitError(f"git {_verb(args)} could not start: git is not on PATH. Install git with its folder on PATH")
+        raise GitError(f"git {_verb(args)} could not start: install git with its folder on PATH")
     try:
         done = _run([git, "-C", repo, *args], _environment(repo, settings), stdin)
     except subprocess.TimeoutExpired:
@@ -251,8 +251,8 @@ class _ScopeError(Exception):
 
 
 class _UnrelatedError(_ScopeError):
-    """Two branches with no history in common. Its envelope is marked `widen`, for the command to name the flag that
-    reviews the head alone: the flags are the command's, and chat, which shares this envelope, takes none."""
+    """Two branches with no history in common. Its envelope is marked `rescope`, for the command to name the flags that
+    rescope the review: the flags are the command's, and chat, which shares this envelope, takes none."""
 
 
 #: A name a command printed for a person to paste keeps as itself in a POSIX shell, cmd and PowerShell alike. A branch's
@@ -298,10 +298,7 @@ def _refused(repo: str, root: str) -> None:
         raise _ScopeError(f"{repo} is not a git repository (no .git directory). Give the folder that holds .git")
     top = _git(root, "rev-parse", "--show-toplevel", strip=False)[1].removesuffix("\n")
     if not same_folder(top, root):
-        raise _ScopeError(
-            f"{repo} is no repository's top: its .git holds no repository, and git answers for {top}. "
-            f"Repair {repo}/.git"
-        )
+        raise _ScopeError(f"{repo} is no repository's top: git answers for {top}. Check {os.path.join(repo, '.git')}")
 
 
 def _empty_tree(root: str) -> str:
@@ -329,8 +326,10 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
             merge_base = _merge_base(repo, root, (base, base_sha), (head, head_sha))
             span = f"{merge_base}..{head_sha}"
         _, ahead = _git(root, "rev-list", "--count", span)
+    except _UnrelatedError as exc:  # marked only here: chat's envelope stays the shape its tool's docstring names
+        return {"status": "error", "error_message": str(exc), "rescope": True}
     except (GitError, _ScopeError) as exc:
-        return {"status": "error", "error_message": str(exc), "widen": isinstance(exc, _UnrelatedError)}
+        return {"status": "error", "error_message": str(exc)}
     return {
         "status": "success",
         "repo": root,
@@ -879,7 +878,7 @@ def collect_evidence(
     """
     resolved = preflight_staged(repo) if staged else preflight(repo, base, head)
     if resolved["status"] != "success":
-        return {"status": "error", "error_message": resolved["error_message"], "widen": resolved.get("widen", False)}
+        return {"status": "error", "error_message": resolved["error_message"], "rescope": bool(resolved.get("rescope"))}
     return gather(resolved, scope, **options)
 
 

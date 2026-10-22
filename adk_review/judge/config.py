@@ -292,7 +292,7 @@ def _not_gemini(named: list[tuple[str, str]]) -> str | None:
             # Said up front, as only this arm resolves names up front: ADK's first line, since the rest may advise
             # installing another provider's package, and the reviewer serves Copilot and Gemini only.
             first, _, _ = str(exc).partition("\n")
-            return f"{var}: {first}"
+            return f"{var}: {first.rstrip('.')}. Name a Gemini model in {var}"
         except ImportError:  # a `class:name` prefix whose class needs a package the reviewer does not install
             return f"{var}={name} is no Gemini model. Name a Gemini model in {var}"
         if not issubclass(model, Gemini):
@@ -300,7 +300,7 @@ def _not_gemini(named: list[tuple[str, str]]) -> str | None:
             # to OpenAI's API. ADK resolves a name to the class that will serve it: on this arm, a Gemini model's.
             return (
                 f"{var}={name} is no Gemini model: ADK sends it to {model.__name__}, another provider's class. "
-                "Name a Gemini one"
+                f"Name a Gemini model in {var}"
             )
     return None
 

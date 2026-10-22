@@ -573,12 +573,14 @@ def test_the_gemini_arm_runs_no_model_adk_sends_to_another_provider(monkeypatch)
     monkeypatch.setenv("REVIEW_MODEL", "gpt-4.1")
     why = config.require_ready()
     assert why and why.startswith("REVIEW_MODEL=gpt-4.1") and "OpenAILlm" in why, why
+    assert why.endswith(". Name a Gemini model in REVIEW_MODEL"), why
     monkeypatch.setenv("REVIEW_MODEL", "gemini-2.5-flash")
     monkeypatch.setenv("REVIEW_VERIFIER_MODEL", "claude-sonnet-4")
     why = config.require_ready(roles=("verifier",))
     # The reviewer serves Copilot and Gemini only and installs no other provider's package, so ADK has no class for
     # `claude-*` and its error advises an install. The refusal keeps the error's first line, with no such advice.
     assert why and why.startswith("REVIEW_VERIFIER_MODEL") and "install" not in why, why
+    assert why.endswith(". Name a Gemini model in REVIEW_VERIFIER_MODEL") and ".." not in why, why
     monkeypatch.setenv("REVIEW_VERIFIER_MODEL", "gemma-3-27b-it")  # Gemma, served by the Gemini API
     assert config.require_ready(roles=("verifier",)) is None
 
@@ -747,17 +749,6 @@ def test_the_copilot_login_makes_its_files_private_from_the_first_byte(monkeypat
     assert masks == [0o077]
 
 
-def test_the_copilot_login_names_help_after_a_flag_it_does_not_know(monkeypatch, capsys) -> None:
-    """Asked by the owner: argparse's own errors end by naming `--help`, the login's as the review's. A flag it does
-    not know stops it before any login."""
-    from adk_review import login as copilot_login
-
-    monkeypatch.setattr(copilot_login.os, "umask", lambda _mask: 0o022)
-    with pytest.raises(SystemExit) as stopped:
-        copilot_login.main(["--forse"])
-    assert stopped.value.code == 2 and "adk-review-login: --help lists every flag" in capsys.readouterr().err
-
-
 @pytest.mark.skipif(sys.platform == "win32", reason="a Windows file has no owner/group/other modes to narrow")
 def test_the_copilot_login_keeps_its_files_to_their_owner(tmp_path) -> None:
     """Measured before: both token files 0644 in a 0755 directory, readable by every account on the machine."""
@@ -875,7 +866,7 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
         assert push.refs([f"{named} {sha} {named} {zero}"]) == [(sha, None, named)], repr(space)
     with pytest.raises(ValueError, match="names no ref"):
         push.refs(["noise"])
-    assert push.command("r", sha, None) == ["r", "--head", sha, "--all", "--profile", "default-rules", "--quiet"]
+    assert push.command("r", sha, None) == ["r", "--head", sha, "--all", "--profile", "default-rules"]
 
     remote, work = _pushed_from(tmp_path)
 
@@ -894,6 +885,7 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
     def reviewed(argv: list[str]) -> int:
         ran.append(argv)
         print("## Verdict: REQUEST_CHANGES")
+        print(f"review: wrote the JSON report to {Path(argv[-1]).resolve()}", file=sys.stderr)
         return codes.pop(0)
 
     def pushing(*refs: str) -> None:  # git's lines, as bytes in UTF-8 whatever a console's code page
@@ -906,13 +898,13 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
         codes[:] = [returned]
         pushing("refs/heads/feature", tip)
         assert push.main(["origin", str(remote)]) == expected
-    against_first = ["--head", tip, "--base", first, "--profile", "default-rules", "--quiet"]
-    whole = ["--head", tip, "--all", "--profile", "default-rules", "--quiet"]
+    against_first, whole = push.command("", tip, first)[1:], push.command("", tip, None)[1:]
     assert ran[0][1:-2] == against_first
     assert ran[0][-2] == "--json", "each review says what stopped it, for a merge's reviews to be weighed together"
     said = capsys.readouterr().out
     assert said.count("## Verdict: REQUEST_CHANGES") == 3, "the report is printed where the push stops, only there"
     assert "ended in exit 1. Push with --no-verify to skip it" in said
+    assert "wrote the JSON report" not in said, "read by review: it named the hook's own JSON, in a folder gone"
 
     # Git's own lines decide whatever a shell holds; pre-commit's environment, where pre-commit runs the hook.
     monkeypatch.setenv("PRE_COMMIT_TO_REF", first)
