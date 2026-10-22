@@ -638,6 +638,8 @@ class TestThePreviousReportAndTheHandoff:
         # Read by review: a hand-off's check names the head in full, and `refs-heads-` took the cut's characters.
         pre = {"repo": "/r/demo", "base": "refs/heads/main", "head": "refs/heads/feature/x"}
         assert "__main__feature-x__" in cli._comment_named({"preflight": pre, "whole": False})
+        pre |= {"base": "refs/remotes/origin/main", "head": "refs/tags/v1.2"}
+        assert "__origin-main__v1.2__" in cli._comment_named({"preflight": pre, "whole": False})
         assert run_review(cli, demo_repo, "--dry-run", "--comment") == 2
         assert "--comment is a review's, and --dry-run runs no review" in capsys.readouterr().err
 
@@ -772,7 +774,7 @@ class TestThePreviousReportAndTheHandoff:
         assert f"\n    {quoted} rule.secrets\n" in said, (
             "read by review: the globs given were left out of what it named"
         )
-        assert "Give its own `--skip` as this review was given it." in said, (
+        assert "Give again each `--skip` this line leaves out." in said, (
             "read by review: what no quoting keeps was dropped unsaid, the branch with it, where it quoted"
         )
 
@@ -819,6 +821,16 @@ class TestThePreviousReportAndTheHandoff:
         )
         assert "--head HEAD --base refs/heads/main --fail-on" in said, (
             "read by review: a pinned sha took in every commit `main` gained, once the fix merged it"
+        )
+        pre |= {"base_full": "refs/heads/a\nb"}  # no quoting keeps it: the merge base, which no commit moves
+        said = render_handoff(
+            {"preflight": pre, "whole": False, "scope": []},
+            Outcome(kept=[sourced("blocker", "rule.secrets")]),
+            verdict="REQUEST_CHANGES",
+            fail_on="blocker",
+        )
+        assert f"--head HEAD --base {merged} --fail-on" in said and "--base`" not in said, (
+            "read by review: told to give its own base again, one that moves with the fix"
         )
 
     def test_every_sentence_a_handoff_writes_itself_is_short_and_one_command(self) -> None:

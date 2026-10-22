@@ -200,7 +200,11 @@ def render_handoff(
     if not outcome.kept:
         lines += hole or [NOTHING_TO_FIX]
     else:
-        lines += [*([""] if hole else []), *hole, *_check_again(evidence, outcome, fail_on, added, degraded=bool(hole))]
+        lines += [
+            *([""] if hole else []),
+            *hole,
+            *_check_again(evidence, outcome, fail_on, added, degraded=verdict == "DEGRADED"),
+        ]
     return inert("\n".join(lines)) + "\n"
 
 
@@ -366,8 +370,9 @@ def _check_again(
 
     What was fixed is committed first, or staged under --staged: a review reads no file on disk. A commit moves a branch
     and `HEAD` alone, so the head checked is the branch `preflight` says the review named, in full, or else `HEAD`, the
-    fixes committed on a new branch at the commit reviewed; and the base is the merge base reviewed, which no commit
-    moves. Read by review: the command reviewed the old commit again where the review named a sha, a tag, a remote's
+    fixes committed on a new branch at the commit reviewed; and the base is the ref the review's base named, in full,
+    which a merge of it follows, or else the merge base reviewed, which no commit moves. Read by review: the command
+    reviewed the old commit again where the review named a sha, a tag, a remote's
     branch or `feature~1`; a short name a tag shares was refused; and a base `HEAD~2` moved with the fix, the rerun
     approving a finding the change still held. Each path and glob is given as `--flag=value`, so none starting with
     `-` reads as a flag."""
@@ -377,6 +382,8 @@ def _check_again(
     on = code_span(one_line(short)) if short else f"a new branch at {code_span(pre['head_sha'][:12])}"
     head = [] if staged else [("--head", branch or "HEAD")]
     base = pre.get("base_full") or pre.get("merge_base", "")
+    if _pasted(["--base", base]) is None:  # read by review: told to give its own base again, one that moved
+        base = pre.get("merge_base", "")
     pinned = [("--staged",)] if staged else [("--all",)] if evidence["whole"] else [("--base", base)]
     given = [*((f"--path={path}",) for path in evidence["scope"]), *((glob,) for glob in added)]
     found = {item.source for item in outcome.kept + [f for f, _ in outcome.folded]}
@@ -388,14 +395,13 @@ def _check_again(
             "",
             "Then run the rules that found them again. This calls no model and writes nothing.",
             *(HELD if degraded else ["The review ends in exit 0 once nothing at the bar is left."]),
-            "Its report lists whatever is:",
+            "Its report lists whatever is left.",
             "",
         ]
-        rerun = [*head, *pinned, *given, ("--fail-on", fail_on), *(("--check", check) for check in rules)]
-        if command := _pasted(["adk-review", pre["repo"], *(arg for unit in rerun for arg in unit)]):
-            lines.append(f"    {command}")
+        shown, left = _shown([*head, *pinned, *given, ("--fail-on", fail_on), *(("--check", check) for check in rules)])
+        if (command := _pasted(["adk-review", pre["repo"]])) and not left:
+            lines.append(f"    {command} {shown}")
         else:
-            shown, left = _shown(rerun)
             lines += [
                 "No command is printed: a name in it holds a character a shell would read.",
                 "Run the review again on the same repository with these arguments.",
@@ -425,9 +431,10 @@ def _shown(units: Sequence[tuple[str, ...]]) -> tuple[str, list[str]]:
     read leaves out itself alone: read by review, one such glob dropped the branch and every other glob with it, and
     a head left out went unsaid."""
     quoted = [(unit[0].partition("=")[0], _pasted(list(unit))) for unit in units]
-    left = list(dict.fromkeys(code_span(flag) for flag, word in quoted if word is None))
-    said = [f"Give its own {', '.join(left)} as this review was given {'it' if len(left) == 1 else 'them'}."]
-    return " ".join(word for _flag, word in quoted if word), said if left else []
+    shown = " ".join(word for _flag, word in quoted if word)
+    if not (left := list(dict.fromkeys(code_span(flag) for flag, word in quoted if word is None))):
+        return shown, []
+    return shown, [f"Give again each {', '.join(left)} this line leaves out."]
 
 
 #: What cmd and PowerShell both read bare as itself, beside letters and digits.
@@ -531,7 +538,7 @@ def render_checks(rows: list[tuple[str, str, str, str, str, str]]) -> str:
 def _as_resolved(name: str, ref: str) -> str:
     """A name as given, and the tag it resolved through when it is one: a fork's tag `origin/main`, with no such
     branch fetched, once stood in for the branch unseen."""
-    return f"{prose(name)} (the tag {prose(ref)})" if ref.startswith("refs/tags/") else prose(name)
+    return f"{prose(name)} (the tag {prose(ref)})" if ref.startswith("refs/tags/") and ref != name else prose(name)
 
 
 def _place(f: Finding) -> str:

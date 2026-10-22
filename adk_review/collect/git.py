@@ -207,7 +207,7 @@ def _verb(args: tuple[str, ...]) -> str:
 
 def _sha(repo: str, ref: str, kind: str = "commit") -> str | None:
     """The commit a ref names, or the object of another `kind`, or None. A user's ref reaches git as a revision here and
-    in `_branch`, each after `--end-of-options`, and elsewhere only inside a pattern a `refs/` or `--disambiguate=`
+    in `_symbolic`, each after `--end-of-options`, and elsewhere only inside a pattern a `refs/` or `--disambiguate=`
     leads: a ref spelled `-x` must be a ref, never a flag. `^{commit}` names the commit an annotated tag tags, never
     the tag itself; `^{tag}` names a tag object, and nothing for a branch or a commit."""
     code, out = _git(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{{kind}}}", ok=(0, 1))
@@ -223,7 +223,9 @@ def _namesakes(repo: str, ref: str) -> list[str]:
     for suffix in ("~", "^", ":", "@{"):
         name = name.partition(suffix)[0]
     means = [
-        name,  # git's first reading: `refs/heads/x` is itself, and a tag named so too makes it ambiguous
+        # Git's first reading, a name as itself: `refs/heads/x` is that branch, and a tag named so too makes it
+        # ambiguous. Only a name under `refs/`, which is all `for-each-ref` lists: read by review, `-x` was a flag.
+        *([name] if name.startswith("refs/") else []),
         f"refs/{name}",
         f"refs/tags/{name}",
         f"refs/heads/{name}",

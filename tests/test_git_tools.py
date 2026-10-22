@@ -156,8 +156,11 @@ def test_preflight_names_the_branch_a_head_names_as_itself(tmp_path: Path) -> No
     assert preflight(str(repo), BASE, "refs/heads/x")["status"] == "success", "the name it gives is one it takes"
     assert preflight(str(repo), BASE, "HEAD")["base_full"] == f"refs/heads/{BASE}", "a base named as a ref"
     assert preflight(str(repo), "feature~1", "feature")["base_full"] == "", "a base that moves with its head"
-    _git_in(repo, "tag", "refs/heads/x")  # git's first reading of a full name: read by review, never refused
+    _git_in(repo, "tag", "refs/heads/x")  # git's first reading of a full name: read by review, it went unrefused
     assert "ambiguous" in preflight(str(repo), BASE, "refs/heads/x")["error_message"]
+    for flag in ("-x", "--ignore-case"):  # read by review: a name read as itself reached git as a flag
+        said = preflight(str(repo), flag, "feature")["error_message"]
+        assert said.startswith(f"base branch {flag!r} does not exist") and "switch" not in said, said
     _git_in(repo, "checkout", "-q", "--detach")
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "", "a detached head, as CI checks out, is no branch"
 
@@ -474,6 +477,11 @@ class TestWhatARefNames:
         cli.main([str(hostile_repo), "--base", "release/base", "--head", "carriage"])
         header = [line for line in capsys.readouterr().out.splitlines() if line.startswith("- against")]
         assert header and "release/base (the tag refs/tags/release/base) @ " in header[0], header
+        cli.main(
+            [str(hostile_repo), "--base", "refs/tags/release/base", "--head", "carriage"]
+        )  # as a hand-off names it
+        header = [line for line in capsys.readouterr().out.splitlines() if line.startswith("- against")]
+        assert header and "against      refs/tags/release/base @ " in header[0], "read by review: named twice"
 
 
 @pytest.fixture
