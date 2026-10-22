@@ -156,6 +156,8 @@ def test_preflight_names_each_ref_as_git_reads_it_and_refuses_what_names_none(tm
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "refs/heads/feature", "as `preflight` answers it"
     assert preflight(str(repo), BASE, "refs/heads/x")["status"] == "success", "the name it gives is one it takes"
     assert preflight(str(repo), BASE, "HEAD")["base_full"] == f"refs/heads/{BASE}", "a base named as a ref"
+    _git_in(repo, "tag", "v0", BASE)
+    assert preflight(str(repo), "v0", "HEAD")["base_full"] == "refs/tags/v0", "a tag, which no fix moves, kept"
     assert preflight(str(repo), "feature~1", "feature")["base_full"] == "", "a base that moves with its head"
     _git_in(repo, "tag", "refs/heads/x")  # git's first reading of a full name: read by review, it went unrefused
     assert "ambiguous" in preflight(str(repo), BASE, "refs/heads/x")["error_message"]
@@ -186,12 +188,9 @@ def test_a_remote_base_is_pinned_and_a_local_one_kept(tmp_path: Path) -> None:
     _git_in(work, "checkout", "-q", "-b", "feature")
     _committed(work, "b.py")
     _git_in(work, "push", "-q", "-u", "origin", "feature")
-    _committed(work, "c.py")  # not pushed yet
-    _git_in(work, "tag", "v1", "main")
+    _committed(work, "c.py")  # the fix's own commit, a push from now
     for base in ("origin/feature", "@{u}", "origin/main"):
         assert preflight(str(work), base, "feature")["base_full"] == "", base
-    assert preflight(str(work), "main", "feature")["base_full"] == "refs/heads/main"
-    assert preflight(str(work), "v1", "feature")["base_full"] == "refs/tags/v1"
 
 
 class TestInspectRepository:

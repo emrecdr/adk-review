@@ -215,7 +215,8 @@ def _unchecked(outcome: Outcome, fail_on: str) -> list[str]:
     unchecked = [f"- {code_span(one_line(path))}: {_reason(why)}" for path, why in outcome.unread.items()]
     unchecked += [f"- {code_span(check)} could not look: {_reason(why)}" for check, why in outcome.errors.items()]
     return unchecked + [
-        f"- {code_span(item.source)} at {_spot(item.finding)}: a finding at the bar this review could not prove"
+        f"- {code_span(item.source)} at {_spot(item.finding)}: {prose(item.finding.title)}, a finding at the bar this "
+        "review could not prove"
         for item in outcome.unproven(fail_on)
     ]
 
@@ -375,8 +376,9 @@ def _check_again(
 
     What was fixed is committed first, or staged under --staged: a review reads no file on disk. A commit moves a branch
     and `HEAD` alone, so the head checked is the branch `preflight` says the review named, in full, or else `HEAD`, the
-    fixes committed on a new branch at the commit reviewed; and the base is the ref the review's base named, in full,
-    which a merge of it follows, or else the merge base reviewed, which no commit moves. Read by review: the command
+    fixes committed on a new branch at the commit reviewed; and the base is the local branch or tag the review's base
+    named, in full, which a merge of it follows, or else the merge base reviewed, which no commit moves: a push may move
+    a remote's branch under config this review never reads. Read by review: the command
     reviewed the old commit again where the review named a sha, a tag, a remote's branch or `feature~1`; a short name
     a tag shares was refused; and a base `HEAD~2` moved with the fix, the rerun approving a finding the change still
     held. Each path and glob is given as `--flag=value`, so none starting with `-` reads as a flag."""
@@ -459,7 +461,8 @@ def _pasted(argv: Sequence[str], windows: bool = os.name == "nt") -> str | None:
     are legal in one."""
     words = [_windows_word(arg) if windows else shlex.quote(arg) for arg in argv]
     line = " ".join(word for word in words if word is not None)
-    return line if None not in words and line.isprintable() and inert(line) == line else None
+    safe = line.isprintable() and inert(line) == line and scrub(line)[0] == line  # read by review: a token, printed
+    return line if None not in words and safe else None
 
 
 def _windows_word(arg: str) -> str | None:
@@ -550,8 +553,9 @@ def _as_resolved(name: str, ref: str) -> str:
 
 def _spot(f: Finding) -> str:
     """A finding's place as a code span on one line, where markdown shows it: a dropped finding's file is a model's own
-    text, matched to no file of the diff. Read by review: printed bare, one forged a heading and showed a token."""
-    return code_span(one_line(_place(f)))
+    text, matched to no file of the diff, so it is cut as a reason is. Read by review: printed bare, one forged a
+    heading and showed a token, and uncut one filled a line of 6,885 characters."""
+    return code_span(one_line(cut_at(_place(f), REASON_MAX_CHARS)))
 
 
 def _place(f: Finding) -> str:
