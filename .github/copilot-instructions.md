@@ -84,8 +84,10 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   is written with `newline="\n"`.
 - Every sentence the package prints itself — a stderr line, a flag's `--help`, an error it raises or answers, a rule's
   title and fix — is ASD-STE100: one command, at most 20 words, no `;` joining two (`tests/test_command.py`). The
-  guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged. A
-  rule's `(path, text)` example names a file the shipped `scan` reads (`tests/test_catalog.py`).
+  guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged. An
+  error a person can act on names what to do instead, a flag to drop or give, a path or a command, as the owner asked of
+  a tool that guides its user; argparse's own end by naming `--help`. A rule's `(path, text)` example names a file the
+  shipped `scan` reads (`tests/test_catalog.py`).
 
 ## Tests
 

@@ -81,5 +81,7 @@ def expand(ids: object, known: Sequence[str], groups: Mapping[str, Sequence[str]
         )
     expanded = list(dict.fromkeys(check for named in ids for check in groups.get(named, [named])))
     if not expanded:
-        raise ValueError(f"{what} turns no check on, and a review that looks at nothing approves anything")
+        raise ValueError(
+            f"{what} turns no check on, and a review that looks at nothing approves anything. Name a check in it."
+        )
     return expanded

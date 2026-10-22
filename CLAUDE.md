@@ -209,7 +209,9 @@ Conventions:
   character a reader cannot see printed as a space.
 - Every sentence the package prints itself — a stderr line, a flag's `--help`, an error it raises or answers, a rule's
   title and fix — is ASD-STE100: one command, at most 20 words, no `;` joining two (`tests/test_command.py`). The
-  guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged.
+  guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged. An
+  error a person can act on names what to do instead, a flag to drop or give, a path or a command, as the owner asked of
+  a tool that guides its user; argparse's own end by naming `--help`.
 - State moves between agents via `output_key` and `{placeholder}` (`{key?}` where the key may be missing). Each key
   more than one module uses is spelled once, in `judge/agents.py`; a check's key is its id through `state_key`.
 - Every `subprocess.run` that decodes passes `encoding=`; no source under `adk_review/` or `scripts/` spells `/tmp/`

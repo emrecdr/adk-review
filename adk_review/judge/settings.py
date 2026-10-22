@@ -24,7 +24,9 @@ def provider() -> str:
     """
     arm = os.environ.get("REVIEW_PROVIDER", "").strip().lower() or "copilot"
     if arm not in DEFAULTS:
-        raise ValueError(f"REVIEW_PROVIDER must be one of {sorted(DEFAULTS)}, not {arm!r}")
+        raise ValueError(
+            f"REVIEW_PROVIDER must be one of {sorted(DEFAULTS)}, not {arm!r}. Set it in .env or the shell."
+        )
     return arm
 
 

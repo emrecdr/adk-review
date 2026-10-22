@@ -75,7 +75,7 @@ import warnings
 from collections.abc import Callable, Generator, Sequence
 from importlib import metadata
 from pathlib import Path, PurePosixPath, PureWindowsPath
-from typing import TextIO
+from typing import NoReturn, TextIO
 
 #: Why the reviewer could not load, if it could not: a broken install is one sentence and exit 3 like every other
 #: failure, never Python's own exit 1, which reads as a blocker. Measured before: a package that would not import
@@ -242,9 +242,18 @@ def _traced(path: str) -> None:
     trace.set_tracer_provider(provider)
 
 
+class _Parser(argparse.ArgumentParser):
+    """argparse's, its every error ending with where to look next: asked by the owner, a usage error names the next
+    step, and argparse's own name none, a flag misspelt among them."""
+
+    def error(self, message: str) -> NoReturn:
+        self.print_usage(sys.stderr)
+        self.exit(2, f"{self.prog}: error: {message}\n{self.prog}: --help lists every flag, with the everyday tasks\n")
+
+
 def build_parser(review: dict) -> argparse.ArgumentParser:
     """The command's flags, each setting's default taken from `config.toml`'s `[review]`: a flag wins for one run."""
-    parser = argparse.ArgumentParser(
+    parser = _Parser(
         prog="adk-review",
         description="Review a branch: rules in Python, guidelines judge, code decides.",
         # Kept as written: argparse would reflow the commands across lines. Asked by the owner: the everyday tasks,
@@ -564,13 +573,17 @@ def _cleared(flag: str, given: str) -> None:
     2, and a link was written through."""
     path = Path(given).expanduser()
     if not path.resolve().parent.is_dir():
-        raise ValueError(f"{flag} {given}: there is no such folder to write it in")
+        raise ValueError(
+            f"{flag} {given}: there is no such folder to write it in. Name a file in a folder that exists."
+        )
     if path.is_dir():
         raise ValueError(f"{flag} {path}: that is a folder. Name a file in it")
     try:
         path.unlink(missing_ok=True)
     except OSError as exc:
-        raise ValueError(f"{flag} {path}: the earlier file could not be removed: {exc.strerror or exc}") from None
+        raise ValueError(
+            f"{flag} {path}: the earlier file could not be removed: {exc.strerror or exc}. Name another file."
+        ) from None
 
 
 def _written(path: Path, text: str) -> None:
@@ -651,9 +664,9 @@ def _mode_alone(args: argparse.Namespace) -> None:
     if stops is None:
         return
     if given := [flag for dest, flag in REVIEW_ONLY.items() if getattr(args, dest)]:
-        raise ValueError(f"{given[0]} is a review's, and {stops} runs no review")
+        raise ValueError(f"{given[0]} is a review's, and {stops} runs no review. Drop one of them.")
     if stops == "--try" and args.repo is not None:
-        raise ValueError("--try reads files on disk: it takes no repository")
+        raise ValueError("--try reads files on disk: it takes no repository. Drop the repository.")
 
 
 def _compared(args: argparse.Namespace) -> tuple[str, str | None, str]:
@@ -661,9 +674,12 @@ def _compared(args: argparse.Namespace) -> tuple[str, str | None, str]:
     answers; `ValueError` or `GitError` for what cannot be reviewed."""
     repo = repository(args.repo)
     if args.cache and Path(args.cache).expanduser().resolve().is_relative_to(Path(repo).resolve()):
-        raise ValueError(f"--cache {args.cache} lies in the repository under review: nothing is written into it")
+        raise ValueError(
+            f"--cache {args.cache} lies in the repository under review: nothing is written into it. Name a folder "
+            "outside it."
+        )
     if args.staged and args.head:
-        raise ValueError("--staged reviews the index. It takes no --head")
+        raise ValueError("--staged reviews the index. It takes no --head. Drop --head.")
     base, head = ("HEAD", "the index") if args.staged else target(repo, args.base, args.head, args.all)
     return repo, base, head
 
@@ -1065,7 +1081,7 @@ def main(argv: list[str] | None = None) -> int:
         _say("the report's reader closed it before its end. It never got the verdict")
         return EXIT_DEGRADED
     except Exception as exc:  # noqa: BLE001 -- a crash must never read as a verdict
-        _say(f"the review did not finish: {type(exc).__name__}: {exc}")
+        _say(f"the review did not finish: {type(exc).__name__}: {exc}. Run it again with --debug-log FILE to see where")
         return EXIT_DEGRADED
 
 

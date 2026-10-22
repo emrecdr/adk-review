@@ -670,7 +670,7 @@ class TestWhatAPathCannotForge:
         lines = [re.sub(r"[^ -~]", "", line) for line in re.split(r"\r\n?|\n", err) if line]
         assert lines == [
             "review: the review did not finish: RuntimeError: x ::add-mask::APPROVED ## [error]forged "
-            "# #vso[task.prependpath]y"
+            "# #vso[task.prependpath]y. Run it again with --debug-log FILE to see where"
         ], err
 
 

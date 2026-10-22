@@ -87,7 +87,9 @@ another, and each refuses a review's own flags — `--json`, `--handoff`, `--com
 
 A hole never approves. Exit 3 outranks a kept finding at the bar, so its verdict line names the findings at the bar
 beside it. A verdict line also counts what sits below the bar, by severity, where any does, so an approval that still
-holds findings says so: ``## Verdict: APPROVED, 2 major and 1 minor below `--fail-on blocker` ``.
+holds findings says so: ``## Verdict: APPROVED, 2 major and 1 minor below `--fail-on blocker` ``. A usage error, exit 2,
+says what to do instead: a flag to drop or give, a path to name, or a command to run; one argparse raises for a flag it
+does not know ends by naming `--help`, whose end lists the everyday tasks.
 
 ## Checks and profiles
 

@@ -75,7 +75,7 @@ def load_config(path: Path) -> dict:
         raise ValueError(f"{path.name}: [review] {strangers[0]} is not a setting")
     for key, (fits, what) in REVIEW.items():
         if key not in review:
-            raise ValueError(f"{path.name}: [review] {key} is missing")
+            raise ValueError(f"{path.name}: [review] {key} is missing. Add it, as the shipped config.toml has it.")
         if not fits(review[key]):
             raise ValueError(f"{path.name}: [review] {key} must be {what}")
     return config

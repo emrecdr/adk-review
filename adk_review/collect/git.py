@@ -184,7 +184,7 @@ def _git_raw(
 ) -> subprocess.CompletedProcess[bytes]:
     """`_git`'s call with its answer left as bytes, what a batch read counts its sizes in."""
     if (git := on_path("git")) == "git":  # not on PATH: Git for Windows can be installed for Git Bash alone
-        raise GitError(f"git {_verb(args)} could not start: git is not on PATH")
+        raise GitError(f"git {_verb(args)} could not start: git is not on PATH. Install git, or put it on PATH.")
     try:
         done = _run([git, "-C", repo, *args], _environment(repo, settings), stdin)
     except subprocess.TimeoutExpired:
@@ -288,12 +288,12 @@ def _refused(repo: str, root: str) -> None:
     Measured: a `.git` that is no repository, an empty folder say, sent git to the repository around it, and a review
     read the outer repository's commits under the inner folder's name. Raises `GitError` as `_git` does."""
     if not os.path.exists(root):
-        raise _ScopeError(f"{repo} does not exist")
+        raise _ScopeError(f"{repo} does not exist. Give the path of a git repository.")
     if not is_repository(root):
-        raise _ScopeError(f"{repo} is not a git repository (no .git directory)")
+        raise _ScopeError(f"{repo} is not a git repository (no .git directory). Give the folder that holds .git.")
     top = _git(root, "rev-parse", "--show-toplevel", strip=False)[1].removesuffix("\n")
     if not same_folder(top, root):
-        raise _ScopeError(f"{repo} is no repository's top: git answers for {top}")
+        raise _ScopeError(f"{repo} is no repository's top: git answers for {top}. Give {top} instead.")
 
 
 def _empty_tree(root: str) -> str:
@@ -360,7 +360,9 @@ def _merge_base(repo: str, root: str, base: tuple[str, str], head: tuple[str, st
         raise _ScopeError(f"{repo} is a shallow clone, and {why}")
     code, merge_base = _git(root, "merge-base", base_sha, head_sha, ok=(0, 1))
     if code == 1:  # git's answer for two commits with no ancestor in common
-        raise _ScopeError(f"{base_name!r} and {head_name!r} share no history: no change to review")
+        raise _ScopeError(
+            f"{base_name!r} and {head_name!r} share no history: no change to review. Review the head alone with --all."
+        )
     return merge_base
 
 

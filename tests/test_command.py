@@ -424,6 +424,34 @@ class TestWhatAReviewCovers:
             cli.main([str(repo), "--staged", "--base", "main"])
         assert refused.value.code == 2
 
+    def test_every_usage_error_names_the_next_step(self, cli, tmp_path: Path, monkeypatch, capsys) -> None:
+        """Asked by the owner, who wants the tool to guide a person as far as it can: an error before any review starts
+        says what was wrong and what to do instead, a flag's or a path's, so the next run is the right one."""
+
+        def told(argv: list[str]) -> str:
+            assert cli.main(argv) == 2, argv
+            return capsys.readouterr().err
+
+        assert "Give the path of a git repository." in told([str(tmp_path / "nowhere"), "--base", "main"])
+        (tmp_path / "plain").mkdir()
+        assert "Give the folder that holds .git." in told([str(tmp_path / "plain"), "--base", "main"])
+        repo = _branch_off_empty(tmp_path / "repo", "feature", base="main")
+        _committed(repo, "app.py", "x = 1\n")
+        _git_in(repo, "checkout", "-q", "--orphan", "alone")
+        _committed(repo, "other.py", "y = 1\n")
+        assert "Review the head alone with --all." in told([str(repo), "--head", "alone", "--base", "main"])
+        assert "Drop one of them." in told([str(repo), "--dry-run", "--json", str(tmp_path / "r.json")])
+        assert "Drop the repository." in told([str(repo), "--try", str(tmp_path / "plain")])
+        assert "Name a folder outside it." in told([str(repo), "--base", "main", "--cache", str(repo / "kept")])
+        assert "Drop --head." in told([str(repo), "--staged", "--head", "main"])
+        nowhere = str(tmp_path / "missing" / "r.json")
+        assert "Name a file in a folder that exists." in told([str(repo), "--base", "main", "--json", nowhere])
+        with pytest.raises(SystemExit) as refused:
+            cli.main([str(repo), "--nope"])
+        assert refused.value.code == 2 and "--help lists every flag" in capsys.readouterr().err
+        monkeypatch.setenv("REVIEW_PROVIDER", "anthropic")
+        assert "Set it in .env or the shell." in told([str(repo), "--head", "feature", "--base", "main"])
+
     def test_a_branch_only_on_a_remote_is_named_with_the_fetch_that_brings_it(self, cli, tmp_path: Path, capsys):
         """Asked by the owner: a branch that exists on the remote read as one that does not exist. The review fetches
         nothing, since it writes nothing into the repository and opens no connection: it names the remote copy it
