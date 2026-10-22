@@ -206,10 +206,10 @@ def _verb(args: tuple[str, ...]) -> str:
 
 
 def _sha(repo: str, ref: str, kind: str = "commit") -> str | None:
-    """The commit a ref names, or the object of another `kind`, or None. A user string reaches git as an argument here
-    and in `_branch` alone, each after `--end-of-options`: a ref spelled `-x` must be a ref, never a flag. `^{commit}`
-    names the commit an annotated tag tags, never the tag itself; `^{tag}` names a tag object, and nothing for a branch
-    or a commit."""
+    """The commit a ref names, or the object of another `kind`, or None. A user's ref reaches git as a revision here and
+    in `_branch`, each after `--end-of-options`, and elsewhere only inside a pattern a `refs/` or `--disambiguate=`
+    leads: a ref spelled `-x` must be a ref, never a flag. `^{commit}` names the commit an annotated tag tags, never
+    the tag itself; `^{tag}` names a tag object, and nothing for a branch or a commit."""
     code, out = _git(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{{kind}}}", ok=(0, 1))
     return out if code == 0 else None
 
@@ -356,7 +356,7 @@ def _branch(root: str, head: str) -> str:
     code, full = _git(
         root, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", "--end-of-options", head, ok=(0, 1)
     )
-    return full if code == 0 and full.startswith("refs/heads/") and "\n" not in full else ""
+    return full if code == 0 and full.startswith("refs/heads/") else ""
 
 
 def _full_ref(root: str, label: str, ref: str | None) -> str:

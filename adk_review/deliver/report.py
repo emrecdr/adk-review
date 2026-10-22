@@ -161,7 +161,7 @@ def render_handoff(
     after the fixes and under what a tidy keeps, and one folded under a defect at major or above is held back until the
     defect is fixed: suspect code is never tidied. With none of theirs, the hand-off reads as it did before them.
 
-    `added` holds the globs the review was given beyond the config's, each after its flag, which the check repeats."""
+    `added` holds the globs the review was given beyond the config's, each as `--flag=glob`, which the check repeats."""
     pre = evidence["preflight"]
     identity = dict(zip(map(id, outcome.kept), _identified(outcome.kept), strict=True))
     identity |= {id(folded): fingerprint(folded) for folded, _into in outcome.folded}
@@ -363,20 +363,18 @@ def _check_again(
     fixes committed on a new branch at the commit reviewed; and the base is the merge base reviewed, which no commit
     moves. Read by review: the command reviewed the old commit again where the review named a sha, a tag, a remote's
     branch or `feature~1`; a short name a tag shares was refused; and a base `HEAD~2` moved with the fix, the rerun
-    approving a finding the change still held. Each value is given as `--flag=value`, so none starting with `-` reads as
-    a flag."""
+    approving a finding the change still held. Each path and glob is given as `--flag=value`, so none starting with
+    `-` reads as a flag."""
     pre = evidence["preflight"]
     staged, branch = bool(pre.get("staged")), pre.get("branch", "")
     short = branch.removeprefix("refs/heads/")
     on = code_span(one_line(short)) if short else f"a new branch at {code_span(pre['head_sha'][:12])}"
-    if staged:
-        scope = ["--staged"]
-    else:
-        scope = ["--head", branch or "HEAD", *(["--all"] if evidence["whole"] else ["--base", pre["merge_base"]])]
-    scope += [*(f"--path={path}" for path in evidence["scope"]), *added]
+    head = [] if staged else ["--head", branch or "HEAD"]
+    pinned = ["--staged"] if staged else ["--all"] if evidence["whole"] else ["--base", pre["merge_base"]]
+    given = [*(f"--path={path}" for path in evidence["scope"]), *added]
     found = {item.source for item in outcome.kept + [f for f, _ in outcome.folded]}
     rules = sorted(check for check in found if check.startswith(rule_id("")))
-    guidelines = " ".join(f"--check {check}" for check in sorted(found - set(rules)))
+    guidelines = [arg for check in sorted(found - set(rules)) for arg in ("--check", check)]
     lines = ["", "## Check your work", "", *TESTS_FIRST, "", _stored(staged, on)]
     if rules:
         named = [arg for check in rules for arg in ("--check", check)]
@@ -384,32 +382,52 @@ def _check_again(
             "",
             "Then run the rules that found them again. This calls no model and writes nothing. The review ends",
             "in exit 0 once nothing at the bar is left.",
-            *(["Exit 3 means what this review could not check is still there."] if degraded else []),
+            *(_held(fail_on) if degraded else []),
             "Its report lists whatever is:",
             "",
         ]
-        if command := _pasted(["adk-review", pre["repo"], *scope, "--fail-on", fail_on, *named]):
+        rerun = [*head, *pinned, *given, "--fail-on", fail_on, *named]
+        if command := _pasted(["adk-review", pre["repo"], *rerun]):
             lines.append(f"    {command}")
-        else:
-            lines.append(
-                "No command is printed: a name in it holds a character a shell would read. Run the review again "
-                f"with {code_span(one_line(' '.join([*scope, '--fail-on', fail_on, *named])))}."
-            )
+        else:  # each argument still quoted, on a line of its own: read by review, one shown bare ran `$(id)` pasted
+            shown = _pasted(rerun)
+            kept = "the same repository" + ("" if shown else f", {'branch, ' * bool(branch)}paths and globs")
+            safe = [*([] if branch else head), *pinned, "--fail-on", fail_on, *named]
+            lines += [
+                "No command is printed: a name in it holds a character a shell would read.",
+                f"Run the review again with these arguments and {kept}.",
+                "",
+                f"    {shown or ' '.join(safe)}",
+            ]
     if guidelines:
+        shown = _pasted([*head, *pinned, *guidelines]) or " ".join([*pinned, *guidelines])
         lines += [
             "",
-            "The guidelines' findings are a model's reading. Run the review as before to check them again, with "
-            f"{code_span(one_line(' '.join(scope)))}. Give {code_span(guidelines)} in place of its profile. This calls "
-            "the model and spends its quota.",
+            "The guidelines' findings are a model's reading. To check them again, run the review as before. Give these",
+            "arguments in place of its profile, head and base.",
+            "",
+            f"    {shown}",
+            "",
+            "This calls the model and spends its quota.",
         ]
     return lines
 
 
+def _held(fail_on: str) -> list[str]:
+    """How a rerun after a degraded review tells a fix that held: its hole outranks a finding, exit 3 over exit 1, so
+    the verdict line says it. Read by review: an agent took exit 3 as the end, a blocker still there."""
+    return [
+        "Exit 3 means what this review could not check is still there.",
+        f"The fixes hold once its verdict names no finding at or above `--fail-on {fail_on}`.",
+    ]
+
+
 #: What cmd and PowerShell both read bare as itself, beside letters and digits.
 WINDOWS_BARE = "\\:._-/"
-#: What both keep as itself inside double quotes, beside letters and digits: no `"`, nor `“`, `”` or `„`, which
-#: PowerShell reads as one; no `$` or backtick, which PowerShell expands; no `%` or `!`, which cmd does.
-WINDOWS_QUOTED = WINDOWS_BARE + " ~+,;=@#&'()[]{}^"
+#: What both keep as itself inside double quotes, beside letters and digits, a glob's `*` and `?` among them: no `"`,
+#: nor `“`, `”` or `„`, which PowerShell reads as one; no `$` or backtick, which PowerShell expands; no `%` or `!`,
+#: which cmd does. Read by review: a glob printed no command on Windows.
+WINDOWS_QUOTED = WINDOWS_BARE + " ~+,;=@#&'()[]{}^*?"
 
 
 def _pasted(argv: Sequence[str], windows: bool = os.name == "nt") -> str | None:

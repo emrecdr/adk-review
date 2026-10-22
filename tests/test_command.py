@@ -727,10 +727,10 @@ class TestThePreviousReportAndTheHandoff:
         handoff = tmp_path / "handoff.md"
         assert run_review(cli, demo_repo, "--handoff", str(handoff)) == 1
         section = handoff.read_text(encoding="utf-8").split("\n## Check your work\n", 1)[1]
-        (rules,) = [one for one in section.splitlines() if one.startswith("    ")]
+        rules, again = [one for one in section.splitlines() if one.startswith("    ")]
         assert "--check rule." in rules and "--check guideline." not in rules, rules
-        said = " ".join(section.split())
-        assert "--check guideline.security" in said and "calls the model and spends its quota" in said, section
+        assert again.split()[:2] == ["--head", f"refs/heads/{HEAD}"] and "--check guideline.security" in again, again
+        assert "adk-review" not in again and "calls the model and spends its quota" in section, section
 
     def test_a_handoff_prints_no_command_a_shell_would_read_otherwise(self) -> None:
         """A branch's name is its author's, and `;`, `$` and a backtick are legal in one: pasted, the command runs
@@ -751,6 +751,8 @@ class TestThePreviousReportAndTheHandoff:
         assert _pasted(["adk-review", "/a\nb"], windows=False) is None
         assert _pasted(["adk-review", "C:\\r", "--head", "x\u201d;calc;\u201c"], windows=True) is None
         assert _pasted(["adk-review", "C:\\a b\\"], windows=True) is None  # `\"` would keep the quote open
+        glob = ["adk-review", "C:\\r", "--skip=*.min.js"]  # read by review: a glob printed no command on Windows
+        assert _pasted(glob, windows=True) == 'adk-review C:\\r "--skip=*.min.js"'
         assert _pasted(["adk-review", "/r", "--head", "a<!--b"], windows=False) is None  # the report rewrites `<!--`
         pre = {"repo": "/a\nb", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40}
         finding = Finding(file="a.py", line=1, severity="blocker", title="t", evidence="e", suggestion="s")
@@ -763,7 +765,7 @@ class TestThePreviousReportAndTheHandoff:
             added=("--skip=docs/",),
         )
         assert "No command is printed" in said, said
-        named = f"`--head HEAD --base {'3' * 40} --skip=docs/ --fail-on blocker --check rule.secrets`"
+        named = f"\n    --head HEAD --base {'3' * 40} --skip=docs/ --fail-on blocker --check rule.secrets\n"
         assert named in said, "read by review: the globs the review was given were left out of what it named"
 
     def test_a_handoff_checks_the_fixes_at_head_where_a_commit_leaves_the_head_reviewed_where_it_was(self) -> None:
@@ -803,13 +805,23 @@ class TestThePreviousReportAndTheHandoff:
     def test_every_sentence_a_handoff_writes_itself_is_short_and_one_command(self) -> None:
         """Its own words, as every sentence the package prints: read by review, its line on the tests ran to 22 words,
         the guidelines' to 31 and what a tidy keeps to 41. A quote and a title are the branch's, and a list item,
-        a heading and the command are no sentence."""
+        a heading and the command are no sentence. Each argument it shows is on a line of its own, quoted as a shell
+        reads it: read by review, a sentence holding them ran past 20 words, and a branch named `feat$(id)` was shown
+        bare where a pasted line would run `$(id)`."""
         from adk_review.core.verdict import Outcome
         from adk_review.deliver.report import render_handoff
 
-        kept = [sourced("blocker", "rule.secrets"), sourced("major", "guideline.security", line=2)]
-        kept.append(sourced("minor", "rule.simplify", line=9))
-        for repo, branch in (("/r", ""), ("/a\nb", "refs/heads/feature/x")):  # a command printed, and none
+        checks = [
+            "rule.secrets",
+            "rule.lint",
+            "rule.pitfalls",
+            "rule.types",
+            "rule.named-secrets",
+            "guideline.security",
+        ]
+        kept = [sourced("blocker", check, line=n) for n, check in enumerate(checks, 1)]
+        kept += [sourced("major", "guideline.correctness", line=8), sourced("minor", "rule.simplify", line=9)]
+        for repo, branch in (("/r", ""), ("/a\nb", "refs/heads/feat$(id)")):  # a command printed, and none
             pre = {
                 "repo": repo,
                 "head": "h",
@@ -824,9 +836,11 @@ class TestThePreviousReportAndTheHandoff:
                 verdict="DEGRADED",
                 fail_on="blocker",
                 tidies=frozenset({"rule.simplify"}),
+                added=("--skip=*.min.js", "--third-party=vendor/"),
             )
             prose = "\n".join(line for line in said.splitlines() if not re.match(r"#|    |   - |- |\d+\. ", line))
             assert _long([("the hand-off", prose)]) == []
+            assert "--head refs/heads/feat$(id)" not in said and " --skip=*" not in said, said
 
     def test_a_handoff_lists_the_tidies_apart_and_holds_one_back_on_a_defects_lines(self) -> None:
         """A simplify pass keeps two lanes: a fix, and a tidy that changes how code reads and never what it does. A
@@ -1203,6 +1217,9 @@ class TestWhatTheCommandTells:
         check = render_handoff({**evidence, "scope": []}, held, verdict="DEGRADED", fail_on="blocker")
         assert "- `a.p12`: binary" in check, "read by review: it named nothing a person could check by hand"
         assert "Exit 3 means what this review could not check is still there." in check, "and what a rerun ends in"
+        assert "The fixes hold once its verdict names no finding at or above `--fail-on blocker`." in check, (
+            "read by review: exit 3 outranks exit 1, so an agent could not tell a fix that held"
+        )
         assert "--skip" not in check, (
             "read by review: a skip it chose for the person still left a submodule a hole, and hid a binary added"
         )

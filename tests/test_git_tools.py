@@ -131,7 +131,7 @@ def test_a_tools_docstring_speaks_to_the_model_in_words() -> None:
         assert not re.findall(r"\b[A-Z][A-Z0-9]*_[A-Z0-9_]+\b", tool.__doc__), (tool.__name__, tool.__doc__[:120])
 
 
-def test_preflight_names_the_branch_a_head_names_as_itself(tmp_path: Path, cli, capsys) -> None:
+def test_preflight_names_the_branch_a_head_names_as_itself(tmp_path: Path) -> None:
     """A commit moves a branch, so a hand-off names one to commit on only where the head names it as itself, in any
     spelling. Read by review: guessed from the ref a name resolved through, `feature~1` passed for `feature`, and
     `HEAD`, `heads/feature` and `refs/heads/feature` did not. Named in full, which no tag of its name makes ambiguous:
@@ -153,8 +153,7 @@ def test_preflight_names_the_branch_a_head_names_as_itself(tmp_path: Path, cli, 
     expected = dict.fromkeys(spellings, "refs/heads/feature") | dict.fromkeys(others, "")
     assert named == expected | dict.fromkeys(["heads/x", "refs/heads/x"], "refs/heads/x"), named
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "refs/heads/feature", "as `preflight` answers it"
-    pasted = [str(repo), "--head", "refs/heads/x", "--base", BASE, "--profile", "default-rules", "--dry-run"]
-    assert cli.main(pasted) == 0, capsys.readouterr().err  # the name it gives is one the command takes
+    assert preflight(str(repo), BASE, "refs/heads/x")["status"] == "success", "the name it gives is one it takes"
     _git_in(repo, "checkout", "-q", "--detach")
     assert preflight(str(repo), BASE, "HEAD")["branch"] == "", "a detached head, as CI checks out, is no branch"
 

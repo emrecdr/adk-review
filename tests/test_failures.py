@@ -416,7 +416,7 @@ def test_a_reviewer_that_cannot_load_is_a_sentence_and_exit_3(tmp_path) -> None:
     )
     assert done.returncode == 3, done.stderr
     assert "the reviewer could not load (RuntimeError: a broken install)" in done.stderr, done.stderr
-    assert done.stderr.rstrip().endswith("as GUIDE.md's First run says"), "read by review: `uv sync` mended none"
+    assert done.stderr.rstrip().endswith("or `uv sync --locked` there for `uv run`"), "read by review: half the advice"
     assert "Traceback" not in done.stderr
 
 

@@ -1090,7 +1090,8 @@ def main(argv: list[str] | None = None) -> int:
     own 120 for a closed pipe. A reviewer that could not load says so, exit 3."""
     if UNLOADED is not None:
         print(
-            f"review: the reviewer could not load ({UNLOADED}). Install it again as GUIDE.md's First run says",
+            f"review: the reviewer could not load ({UNLOADED}). Install it again: `make install` in its checkout, "
+            "or `uv sync --locked` there for `uv run`",
             file=sys.stderr,
         )
         return 3  # EXIT_DEGRADED, which the imports that failed would have named
