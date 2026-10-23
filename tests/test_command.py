@@ -472,26 +472,17 @@ class TestWhatAReviewCovers:
         err = capsys.readouterr().err
         assert "Its remote copy 'origin/feature' does." in err, err
         assert "git fetch origin feature." in err and "Then pass --head origin/feature" in err, err
-        assert cli.main([str(clone), "--head", "heads/feature", "--base", "main"]) == 2  # a spelling git takes
-        assert "Then pass --head origin/feature" in capsys.readouterr().err, "read by review: origin/heads/feature"
         assert cli.main([str(clone), "--head", "origin/gone", "--base", "main"]) == 2  # a remote's, never fetched
         err = capsys.readouterr().err
         assert "git fetch origin gone." in err and "Then pass --head origin/gone" in err, (
             "read by review: origin/origin/"
         )
-        assert cli.main([str(clone), "--head", "refs/heads/origin/gone", "--base", "main"]) == 2  # a local branch's
-        assert "git fetch origin gone." not in capsys.readouterr().err, (
-            "read by review: a local name read as a remote's"
-        )
-        assert cli.main([str(clone), "--head", "tags/v9", "--base", "main"]) == 2
-        assert "git fetch --all --tags" in capsys.readouterr().err, (
-            "read by review: `--all` fetches no tag off a branch"
-        )
-        for spelt in ("tags/v9", "remotes/origin/gone"):  # git's other short spellings of a full name
+        # Any other spelling, a full name's or a tag's, gets no guess. Read by review: each guess brought nothing, as
+        # `origin/heads/feature`, a local name read as a remote's, and `git fetch --all` for a tag.
+        for spelt in ("heads/feature", "refs/heads/origin/gone", "tags/v9", "remotes/origin/gone"):
             assert cli.main([str(clone), "--head", spelt, "--base", "main"]) == 2
-            assert f"origin/{spelt}" not in capsys.readouterr().err, (
-                "read by review: told to pass a ref no remote holds"
-            )
+            err = capsys.readouterr().err
+            assert "Name one that git branch -a lists" in err and "fetch" not in err, (spelt, err)
         assert cli.main([str(clone), "--head", "later", "--base", "main"]) == 2
         err = capsys.readouterr().err
         assert "nor as a remote branch fetched there" in err and "git fetch origin later." in err, err
@@ -510,16 +501,11 @@ class TestWhatAReviewCovers:
             "read by review: offered a copy that resolves to nothing"
         )
         _git_in(clone, "remote", "set-head", "origin", "-d")  # as a remote added and fetched has none
-        assert cli.main([str(clone), "--head", "origin/later", "--base", "origin"]) == 2  # a remote's own name
-        err = capsys.readouterr().err
-        assert "'origin' is a remote" in err and "origin/origin" not in err, (
-            "read by review: told to pass origin/origin"
-        )
-        assert cli.main([str(clone), "--head", "origin/later", "--base", "refs/heads/main"]) == 2
-        assert "Then pass --base origin/main" in capsys.readouterr().err, "read by review: origin/refs/heads/main"
-        assert cli.main([str(clone), "--head", "origin/later", "--base", "refs/remotes/origin/gone"]) == 2
-        err = capsys.readouterr().err
-        assert "git fetch origin gone." in err and "origin/refs/" not in err, "read by review: origin/refs/remotes/"
+        # A remote's own name too: read by review, `origin` was told to pass `origin/origin`.
+        for spelt in ("origin", "refs/heads/main", "refs/remotes/origin/gone"):
+            assert cli.main([str(clone), "--head", "origin/later", "--base", spelt]) == 2
+            err = capsys.readouterr().err
+            assert "Name one that git branch -a lists" in err and "fetch" not in err, (spelt, err)
         _git_in(origin, "branch", "odd$name", "main")
         _git_in(clone, "fetch", "-q", "origin")
         assert cli.main([str(clone), "--head", "odd$name", "--base", "origin/main"]) == 2
@@ -532,28 +518,18 @@ class TestWhatAReviewCovers:
         assert "Its remote copy 'origin/team/fix' does." in capsys.readouterr().err, (
             "read by review: told to fetch `fix` from the remote `team`, which no remote holds"
         )
+        _git_in(origin, "branch", "tags/v2", "main")  # a branch so named: its copy, looked for as typed
         _git_in(origin, "branch", "origin/gone", "main")  # a branch literally so named, on a remote
-        _git_in(clone, "fetch", "-q", "origin")
-        assert cli.main([str(clone), "--head", "refs/remotes/origin/gone", "--base", "origin/main"]) == 2
-        assert "origin/origin/gone" not in capsys.readouterr().err, (
-            "read by review: a remote's own branch read as another"
-        )
-        assert (
-            cli.main([str(clone), "--head", "refs/remotes/nope/gone", "--base", "origin/main"]) == 2
-        )  # no such remote
-        err = capsys.readouterr().err
-        assert "No remote is named 'nope'." in err and "fetch" not in err, (
-            "read by review: told a fetch that brings none"
-        )
-        _git_in(origin, "branch", "tags/v2", "main")  # a branch so named: its copy, looked for as typed first
         _git_in(clone, "fetch", "-q", "origin")
         assert cli.main([str(clone), "--head", "tags/v2", "--base", "origin/main"]) == 2
         assert "Its remote copy 'origin/tags/v2' does." in capsys.readouterr().err, "read by review: told to fetch tags"
-        assert cli.main([str(clone), "--head", "refs/pull/1/head", "--base", "origin/main"]) == 2
-        err = capsys.readouterr().err
-        assert "Name a ref it holds" in err and "fetch" not in err, (
-            "read by review: `--all` brings no pull request's ref"
-        )
+        # Read by review: a remote's own branch read as another's, a remote no one set told a fetch, and a pull
+        # request's ref told `--all`, which brings none.
+        for spelt in ("refs/remotes/origin/gone", "refs/remotes/nope/gone", "refs/pull/1/head"):
+            assert cli.main([str(clone), "--head", spelt, "--base", "origin/main"]) == 2
+            err = capsys.readouterr().err
+            assert "Name one that git branch -a lists" in err and "fetch" not in err, (spelt, err)
+            assert "origin/origin/gone" not in err, spelt
 
 
 class TestTheDryRun:

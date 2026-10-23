@@ -298,39 +298,44 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     """Refuse `name`, which names nothing in the repository, with the way to it: its remote copy where a fetch brought
     one, else the fetch that brings one. Asked by the owner: a branch on the remote read as no branch at all. The review
     fetches nothing, since it writes nothing into the repository and opens no connection: each command is the person's
-    to run there, printed only where every name in it is plain."""
-    # A name no ref can have, as `git check-ref-format` reads one, nor a revision of one; and a revision of a ref, which
-    # no fetch brings by that name. Read by review: `^main`, `-x`, `main..later`, `feat/` and `x.lock` were told to
-    # fetch them, and `main@{9}`, past its reflog, ended in git's exit 128 with no step to take.
+    to run there, printed only where every name in it is plain. Only a copy git reads is offered, and a fetch only for
+    a branch's name, `dev`, or a remote's branch, `origin/dev`: any other spelling is told to name one git lists. Read
+    by review, round after round: each guess at another spelling, a full name, a tag's or a remote's own name, gave
+    advice that brought nothing."""
+    # A name no ref can have, as `git check-ref-format` reads one: read by review, `^main`, `-x`, `main..later`, `feat/`
+    # and `x.lock` were told to fetch them.
     if _NO_NAME.search(name):
         raise _ScopeError(f"{label} {name!r} is no branch name. Name one that git branch lists")
     _, listed = _git(root, "remote")
     remotes = lines_of(listed)
     said = f"{label} {name!r} does not exist in {repo}"
+    # A revision of a ref the repository holds walks past its history, and no remote's copy is it; of one only a remote
+    # holds, as a pipeline's clone holds `origin/main`, the copy is offered where git reads it. Read by review: `main~1`
+    # lost its copy's hint, and `origin/main~5` was offered past the remote's history.
     ref, suffix = _revision(name)
-    if suffix:
-        # A revision of a ref this repository lacks but a remote holds, as a pipeline's clone holds `origin/main`
-        # alone, is that remote's; of a ref it holds, a commit past its history, no fetch brings. Read by review:
-        # `main~1` lost its remote copy's hint, and `main~5` past a short local `main` was once offered the remote's.
-        copies = [] if _sha(root, ref) else _copies(root, ref, remotes)
-        if len(copies) == 1 and _resolves(root, copies[0] + suffix):
-            raise _ScopeError(f"{said}. Its remote copy {copies[0] + suffix!r} does. Pass {flag} with it")
-        raise _ScopeError(f"{said}. Name a commit it holds, or a branch git branch lists")
-    # Its remote copy as typed, first, as git reads a name; only where no remote holds one, the spellings git takes for
-    # a full name. Read by review: a branch named `tags/v2`, its copy fetched, was told to fetch tags.
-    copies = [] if name.startswith("refs/") else _copies(root, name, remotes)
-    if not copies:
-        name, remotes, copies = _spelt(root, name, remotes, said)
-    plain = all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in (name, *remotes))
-    if len(copies) == 1 and plain:
-        remote = copies[0].removesuffix(f"/{name}")
-        raise _ScopeError(
-            f"{said}. Its remote copy {copies[0]!r} does. Fetch it fresh there: git fetch {remote} {name}. "
-            f"Then pass {flag} {copies[0]}"
-        )
+    held = bool(suffix) and bool(_sha(root, ref))
+    copies = [] if held else [f"{r}/{name}" for r in remotes if _resolves(root, f"refs/remotes/{r}/{name}")]
     if copies:
-        raise _ScopeError(f"{said}. Its remote copy {' or '.join(map(repr, copies))} does. Pass {flag} with one")
-    if len(remotes) == 1 and plain:
+        remote = copies[0].removesuffix(f"/{name}")
+        if len(copies) == 1 and not suffix and _pastable(name, remote):
+            raise _ScopeError(
+                f"{said}. Its remote copy {copies[0]!r} does. Fetch it fresh there: git fetch {remote} {name}. "
+                f"Then pass {flag} {copies[0]}"
+            )
+        raise _ScopeError(
+            f"{said}. Its remote copy {' or '.join(map(repr, copies))} does. "
+            f"Pass {flag} with {'it' if len(copies) == 1 else 'one'}"
+        )
+    if suffix:
+        raise _ScopeError(f"{said}. Name a commit it holds, or a branch git branch lists")
+    if name.startswith(("refs/", "heads/", "tags/", "remotes/")) or name in remotes:
+        raise _ScopeError(f"{said}. Name one that git branch -a lists")
+    # A remote's branch is fetched from that remote, the longest remote first. Read by review: `origin/dev` was told
+    # to pass `origin/origin/dev`, and `alice/fix`, with a remote `alice`, to fetch `fix`, where `origin/alice/fix`
+    # held it.
+    if owner := next((r for r in sorted(remotes, key=len, reverse=True) if name.startswith(f"{r}/")), None):
+        name, remotes = name.removeprefix(f"{owner}/"), [owner]
+    if len(remotes) == 1 and _pastable(name, remotes[0]):
         raise _ScopeError(
             f"{said}, nor as a remote branch fetched there. Fetch it there: git fetch {remotes[0]} {name}. "
             f"Then pass {flag} {remotes[0]}/{name}"
@@ -340,6 +345,11 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     raise _ScopeError(f"{said}. Name one that git branch lists")
 
 
+def _pastable(*words: str) -> bool:
+    """Whether a printed command can hold each of `words` as it is: no character a shell reads, and none a flag."""
+    return all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in words)
+
+
 def _resolves(root: str, revision: str) -> bool:
     """Whether `revision` names a commit, for advice alone: a copy git cannot read is never offered. Read by review:
     `origin/main~5` was offered past the remote's history, and `main@{9}` past its reflog."""
@@ -347,37 +357,6 @@ def _resolves(root: str, revision: str) -> bool:
         return bool(_sha(root, revision))
     except GitError:
         return False
-
-
-def _copies(root: str, name: str, remotes: Sequence[str]) -> list[str]:
-    """Each remote's copy of the branch `name`, as `<remote>/<name>`, where a fetch brought one."""
-    return [f"{remote}/{name}" for remote in remotes if _sha(root, f"refs/remotes/{remote}/{name}")]
-
-
-def _spelt(root: str, name: str, remotes: list[str], said: str) -> tuple[str, list[str], list[str]]:
-    """A missing name read in the spellings git takes for a full one, where no remote holds it as typed: the branch's
-    own name, the remotes to fetch it from, and its copies there; `_ScopeError` where no fetch brings it. Read by
-    review: `refs/heads/main`, `heads/main` and `origin/dev` were told to fetch and pass `origin/refs/heads/main`,
-    `origin/heads/main` and `origin/origin/dev`, which no remote holds."""
-    full = f"refs/{name}" if name.startswith(("heads/", "tags/", "remotes/")) else name
-    if remotes and full.startswith("refs/tags/"):  # read by review: `--all` fetches no tag off a branch's history
-        raise _ScopeError(f"{said}. Fetch every remote's tags there: git fetch --all --tags")
-    local = full.startswith("refs/heads/")  # never a remote's: read by review, `refs/heads/origin/gone` was so read
-    tracked = full.startswith("refs/remotes/")  # a remote's own branch: never a branch's copy under every remote
-    name = full.removeprefix("refs/heads/").removeprefix("refs/remotes/")
-    if name.startswith("refs/"):  # another kind, as a pull request's: read by review, told `--all`, which brings none
-        raise _ScopeError(f"{said}. Name a ref it holds")
-    if local:
-        return name, remotes, _copies(root, name, remotes)
-    if name in remotes:  # read by review: `origin` was told to fetch `origin/origin`, `refs/remotes/origin` no remote
-        raise _ScopeError(f"{said}. {name!r} is a remote. Name a branch that git branch -r lists")
-    # A name a remote's begins, read as that remote's branch, the longest remote first. Read by review: `alice/fix`,
-    # with a remote `alice`, was told to fetch `fix` from it, where `origin/alice/fix` held it, now found as typed.
-    if remote := next((r for r in sorted(remotes, key=len, reverse=True) if name.startswith(f"{r}/")), None):
-        return name.removeprefix(f"{remote}/"), [remote], []
-    if tracked:  # read by review: `refs/remotes/nope/gone` was told a fetch that brings no `nope`
-        raise _ScopeError(f"{said}. No remote is named {name.partition('/')[0]!r}. Name one that git remote lists")
-    return name, remotes, []
 
 
 def _refused(repo: str, root: str) -> None:

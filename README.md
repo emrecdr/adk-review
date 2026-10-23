@@ -139,10 +139,9 @@ brought one, as `origin/develop`, else the `git fetch` to run in the repository.
 writes nothing into the repository and opens no connection, so you run that command. A name no branch can have, such as
 `^main` or `feat/`, is said to be none, with no fetch. A revision of a branch only a remote holds, such as `main~1` in a
 pipeline's clone, is offered that remote's copy where it resolves; any other revision of a missing name asks for a
-commit the repository holds. A remote's own name is told to name one of its branches. A full name of another kind, as a
-pull request's, is told to name a ref the repository holds, and a remote's branch named in full under a remote no one
-set is told that no remote has that name. A missing name given as a tag's, under tags with or without refs, gets `git
-fetch --all --tags` where a remote is set.
+commit the repository holds. Any other spelling, a full name such as `refs/heads/main`, a tag's, a pull request's or a
+remote's own name, gets no guess at a fetch: it is told to name one that `git branch -a` lists, since each guess gave
+advice that brought nothing.
 
 A head that adds nothing on top of its base, such as `--head main --base main`, is no change: the command says so, exit
 2, and names `--head`, `--base` and `--all`. So does a head that shares no history with its base. Two other flags choose
