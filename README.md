@@ -139,8 +139,10 @@ brought one, as `origin/develop`, else the `git fetch` to run in the repository.
 writes nothing into the repository and opens no connection, so you run that command. A name no branch can have, such as
 `^main` or `feat/`, is said to be none, with no fetch. A revision of a branch only a remote holds, such as `main~1` in a
 pipeline's clone, is offered that remote's copy where it resolves; any other revision of a missing name asks for a
-commit the repository holds. A remote's own name is told to name one of its branches. A missing name given as a tag's,
-under tags with or without refs, gets `git fetch --all --tags` where a remote is set.
+commit the repository holds. A remote's own name is told to name one of its branches. A full name of another kind, as a
+pull request's, is told to name a ref the repository holds, and a remote's branch named in full under a remote no one
+set is told that no remote has that name. A missing name given as a tag's, under tags with or without refs, gets `git
+fetch --all --tags` where a remote is set.
 
 A head that adds nothing on top of its base, such as `--head main --base main`, is no change: the command says so, exit
 2, and names `--head`, `--base` and `--all`. So does a head that shares no history with its base. Two other flags choose
@@ -612,19 +614,21 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   says exit 3 means what the review could not check is still there, and that the fixes hold once each run reports no
   finding at the bar, kept or dropped as unproven, a check that still cannot look being a person's to check by hand.
   Where it kept no finding, its `## Check again` runs each check that could not look or prove a finding again, its head
-  named by the commit's sha, with no fix to hold. The scope is the preflight's, which the cache's key holds, and with
-  those globs it is the whole of what the rules read: `--diff-cap` bounds the guidelines alone. The guidelines among
-  them, one that could not prove a finding at the bar included, are named apart, with their `--check` and no command,
-  since checking a model's reading spends its quota and their review took flags the scope does not hold. A branch's name
-  is its author's: where no quoting keeps the command one command — a line break, a name the report's safety rules would
-  rewrite, or on Windows a character cmd or PowerShell still reads inside double quotes, PowerShell's typographic quotes
-  among them — none is printed, nor where a credential's shape or a character no one sees is in it: the arguments are
-  given instead, and each one left out is named. Nothing is applied. A check whose findings change how code reads and
-  never what it does sets `cleanup = True`, as `simplify` and `complexity` do, and its findings are listed apart, after
-  the fixes, under what a tidy keeps, one the project's tests fail on reverted; one on lines another check's defect at
-  major or above names is held back until that defect is fixed, and is never given a fix's instruction, as a simplify
-  pass keeps its two lanes: suspect code is never tidied. `efficiency` and `altitude` are no cleanup: a cheaper form can
-  reorder I/O and a deeper fix changes a shared mechanism, each a change to weigh.
+  named by the commit's sha, with no fix to hold, so a hole the change itself holds needs an edit and a new review. A
+  degraded hand-off whose only hole is files no check read ends by saying what exit 3 means. The scope is the
+  preflight's, which the cache's key holds, and with those globs it is the whole of what the rules read: `--diff-cap`
+  bounds the guidelines alone. The guidelines among them, one that could not prove a finding at the bar included, are
+  named apart, with their `--check` and no command, since checking a model's reading spends its quota and their review
+  took flags the scope does not hold. A branch's name is its author's: where no quoting keeps the command one command —
+  a line break, a name the report's safety rules would rewrite, or on Windows a character cmd or PowerShell still reads
+  inside double quotes, PowerShell's typographic quotes among them — none is printed, nor where a credential's shape or
+  a character no one sees is in it: the arguments are given instead, and each one left out is named. Nothing is applied.
+  A check whose findings change how code reads and never what it does sets `cleanup = True`, as `simplify` and
+  `complexity` do, and its findings are listed apart, after the fixes, under what a tidy keeps, one the project's tests
+  fail on reverted; one on lines another check's defect at major or above names is held back until that defect is fixed,
+  and is never given a fix's instruction, as a simplify pass keeps its two lanes: suspect code is never tidied.
+  `efficiency` and `altitude` are no cleanup: a cheaper form can reorder I/O and a deeper fix changes a shared
+  mechanism, each a change to weigh.
 - `--comment [FILE]` writes the review as a comment for the branch's author, to paste into the pull request by hand,
   whatever the verdict: what must change before it merges, what is worth a look, an approved change's included, the
   tidy-ups, and what the review could not check. Each place and quote sits in a code span. The reviewer posts nothing
@@ -826,11 +830,11 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   untracked files the report names.
 - **Git is read, never trusted.** Every call is a read-only verb, an argv list with a timeout, run by git's full path
   from `PATH`'s absolute entries, never from the checkout under review. Its environment drops every inherited `GIT_*`
-  variable and reads no global or system config; attributes come from the merge base, never from the branch; no
-  replace ref or graft is followed and nothing is fetched; and `core.fsmonitor` is off, so no program the
-  repository's own config names ever starts. Measured, each before it was fixed: `GIT_DIR` reviewed another
-  repository, a replace ref swapped the key's file for a harmless one, and the branch's own `-diff` attribute hid a
-  planted key.
+  variable, runs git in the C locale so its messages read as written, and reads no global or system config; attributes
+  come from the merge base, never from the branch; no replace ref or graft is followed and nothing is fetched; and
+  `core.fsmonitor` is off, so no program the repository's own config names ever starts. Measured, each before it was
+  fixed: `GIT_DIR` reviewed another repository, a replace ref swapped the key's file for a harmless one, and the
+  branch's own `-diff` attribute hid a planted key.
 - **Secrets are found by code.** Every model call is redacted, so no guideline ever sees a key: measured on Copilot
   with the redaction on, no guideline reported the planted one. A key must be found by code, from the diff itself,
   before any model runs: `secrets` reads the added lines of each file's whole diff, past any cap, and

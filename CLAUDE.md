@@ -205,7 +205,8 @@ Conventions:
   user's ref reaches git after `--end-of-options`, in `_sha` and `_branch`, or inside a pattern under refs or after
   `--disambiguate=`, so a ref spelled `-x` is never a flag. `_git(..., ok=(0, 1))` is only for calls whose exit code 1
   is an answer. `_sha` alone also reads exit 128 as no commit, git's answer for a revision it cannot follow, such as
-  `main@{9}`.
+  `main@{9}`, and only where git says nothing: an `error:` or `fatal:` line at exit 1 or 128 is a `GitError`, so a
+  corrupt object is never called missing, a peel's "expected … type" line alone being an answer.
 - Every string a model reads is capped in characters, with the cut named in the text, and the cut never falls inside a
   credential, and so is each title and change a model writes into a finding, cut where `core/findings.py` makes it. A
   dropped finding's file is a model's text too, cut in `drop_ungrounded` at `REASON_MAX_CHARS`. The report cuts each

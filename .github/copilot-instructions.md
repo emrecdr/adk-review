@@ -71,10 +71,12 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   not look" must never read as "found nothing". An after-model hook passes a streamed `partial` piece by and reads
   the whole answer that follows it.
 - Tools return a `{status: …}` dict and never raise at the model. Git runs by its full path from `PATH`'s absolute
-  entries, read-only verbs only, as an argv list with a timeout, inside `_environment(repo)`, which also starts no
-  file-system monitor the repository names; nothing ever writes into the repository under review, not even a fetch: a
-  branch it does not hold is named with the `git fetch` for the person to run. A failed git call raises `GitError`,
-  never an empty answer. `_sha` alone reads git's exit 128 as no commit: a revision git cannot follow.
+  entries, read-only verbs only, as an argv list with a timeout, inside `_environment(repo)`, in the C locale so git's
+  messages read as written, which also starts no file-system monitor the repository names; nothing ever writes into the
+  repository under review, not even a fetch: a branch it does not hold is named with the `git fetch` for the person to
+  run. A failed git call raises `GitError`, never an empty answer. `_sha` alone reads git's exit 128 as no commit, a
+  revision git cannot follow, and only where git says nothing: an `error:` or `fatal:` line at exit 1 or 128 is a
+  `GitError`, a corrupt object never a missing name.
 - The reviewer posts nothing to a pull request: `--comment [FILE]` writes a comment for the branch's author, by default
   `comments-<repo>__<base>__<head>__<minute>.md`, which the person pastes by hand, and no command that would post it is
   printed.
