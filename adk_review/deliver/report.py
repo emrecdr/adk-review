@@ -151,6 +151,13 @@ TESTS_FIRST = (
 NOTHING_TO_FIX = "Nothing to fix: no finding was kept."
 #: How a degraded review's report and hand-off each begin to say so, never "nothing to fix".
 UNCHECKED = "This review could not check everything"
+
+
+def _paragraph(*sentences: str) -> tuple[str, ...]:
+    """Sentences as one paragraph of the hand-off, after a blank line, wrapped as its prose is."""
+    return ("", *textwrap.wrap(" ".join(sentences), 112))
+
+
 #: The two sentences every degraded check ends with, the one that says what exit 3 means and who checks what is left.
 _EXIT_3 = "Exit 3 means what this review could not check is still there."
 _BY_HAND = "A check that still cannot look is a person's to check by hand."
@@ -158,23 +165,16 @@ _BY_HAND = "A check that still cannot look is a person's to check by hand."
 #: once, after them all. Read by review: an agent waited for an exit 0 that hole never gives; a rule that failed named
 #: no finding either; a blocker dropped again as unproven was kept by none; and a check the environment stops, a 429
 #: or a tool not installed, could never be said to look, so an agent told to wait for it looped.
-HELD = (
-    "",
-    *textwrap.wrap(
-        f"{_EXIT_3} The fixes hold once each run above reports no finding at the bar, kept or dropped as unproven. "
-        f"{_BY_HAND}",
-        112,
-    ),
+HELD = _paragraph(
+    _EXIT_3, "The fixes hold once each run above reports no finding at the bar, kept or dropped as unproven.", _BY_HAND
 )
 #: The same, where nothing was kept and so nothing fixed: read by review, it spoke of fixes there, and an agent ran it
 #: again at once, into the same rate limit.
-HELD_AGAIN = (
-    "",
-    *textwrap.wrap(
-        f"Run each again once what stopped it is mended. A hole the change itself holds needs an edit and a new "
-        f"review. {_EXIT_3} {_BY_HAND}",
-        112,
-    ),
+HELD_AGAIN = _paragraph(
+    "Run each again once what stopped it is mended.",
+    "A hole the change itself holds needs an edit and a new review.",
+    _EXIT_3,
+    _BY_HAND,
 )
 
 
@@ -425,7 +425,7 @@ def _check_again(
     found |= set(outcome.errors)
     if not found:  # nothing kept and no hole a check left: nothing to run again, but a file no check read
         # Read by review: a hole of unread files alone ended at its list, with no step and no meaning for exit 3.
-        return ["", *textwrap.wrap(f"{_EXIT_3} {_BY_HAND}", 112)] if degraded else []
+        return [*_paragraph(_EXIT_3, _BY_HAND)] if degraded else []
     rules = sorted(check for check in found if check.startswith(rule_id("")))
     guidelines = [("--check", check) for check in sorted(found - set(rules))]
     # With nothing kept, only the hole to run again, and no fix to commit: read by review, such a hand-off ended at its
@@ -470,7 +470,7 @@ def _shown(units: Sequence[tuple[str, ...]]) -> tuple[str, list[str]]:
     no quoting keeps one word, for the person to give as before. Each unit is quoted on its own, so one a shell would
     read leaves out itself alone: read by review, one such glob dropped the branch and every other glob with it, and
     a head left out went unsaid."""
-    quoted = [(unit[0].partition("=")[0], _pasted(list(unit))) for unit in units]
+    quoted = [(unit[0].partition("=")[0], _pasted(unit)) for unit in units]
     shown = " ".join(word for _flag, word in quoted if word)
     # Each flag with how many of its values are left out, so a value shown beside them is never taken for one: read
     # by review, one glob of two left out read as every `--skip`.
@@ -603,7 +603,7 @@ def _where(f: Finding) -> str:
     """A finding's file and line as one line of prose, or in a code span where prose would rewrite it: read by review,
     `docs/a](b).md` was shown as `docs/a] (b).md`, a file that does not exist for an agent to open."""
     flat = one_line(_place(f))
-    return said if (said := _unopened(flat)) == flat else code_span(flat)
+    return flat if _unopened(flat) == flat else code_span(flat)
 
 
 def what(evidence: Evidence) -> str:

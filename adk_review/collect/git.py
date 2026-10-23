@@ -213,6 +213,14 @@ def _verb(args: tuple[str, ...]) -> str:
 _NO_NAME = re.compile(r"^[-^./]|\.\.|//|/\.|\.lock(?:/|$)|[/.]$|[\x00-\x20\x7f*?\[\\]")
 #: What follows a ref's name in a revision of it: `main~1`, `main^`, `main:path`, `main@{1}`.
 REVISION_MARKS = ("~", "^", ":", "@{")
+
+
+def _revision(name: str) -> tuple[str, str]:
+    """A name cut at its first revision mark, `main~1` into the ref `main` and the walk `~1`, the walk "" for none."""
+    cut = min((name.index(mark) for mark in REVISION_MARKS if mark in name), default=len(name))
+    return name[:cut], name[cut:]
+
+
 #: An object's id as git prints one, SHA-1's or SHA-256's: what `_sha` keeps, and the hook shortens.
 OBJECT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
@@ -241,9 +249,7 @@ def _namesakes(repo: str, ref: str) -> list[str]:
     the name and it is hex, every object it abbreviates. Git prefers a tag to a branch, and a ref to an abbreviated
     object, and `--quiet` hides its warning: a fork's tag once made the base the head. More than one is refused,
     never resolved; but a full name that is a ref is that ref alone, git's first reading, which no tag can take."""
-    name = ref
-    for suffix in REVISION_MARKS:
-        name = name.partition(suffix)[0]
+    name = _revision(ref)[0]
     # A full name is git's first reading, itself, where it names a ref; only a name under `refs/`, all `for-each-ref`
     # lists: read by review, `-x` reached git as a flag.
     means = [
@@ -301,11 +307,11 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     _, listed = _git(root, "remote")
     remotes = lines_of(listed)
     said = f"{label} {name!r} does not exist in {repo}"
-    if marks := [name.index(mark) for mark in REVISION_MARKS if mark in name]:
+    ref, suffix = _revision(name)
+    if suffix:
         # A revision of a ref this repository lacks but a remote holds, as a pipeline's clone holds `origin/main`
         # alone, is that remote's; of a ref it holds, a commit past its history, no fetch brings. Read by review:
         # `main~1` lost its remote copy's hint, and `main~5` past a short local `main` was once offered the remote's.
-        ref, suffix = name[: min(marks)], name[min(marks) :]
         copies = [] if _sha(root, ref) else _copies(root, ref, remotes)
         if len(copies) == 1 and _resolves(root, copies[0] + suffix):
             raise _ScopeError(f"{said}. Its remote copy {copies[0] + suffix!r} does. Pass {flag} with it")
@@ -446,7 +452,7 @@ def _branch(root: str, head: str, head_ref: str) -> str:
     code, full = _git(
         root, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", "--end-of-options", head, ok=(0, 1)
     )
-    return full if code == 0 and full.startswith("refs/heads/") else ""
+    return full if code == 0 and full.startswith("refs/heads/") else ""  # a range prints its ends, at exit 1
 
 
 def _full_ref(root: str, label: str, ref: str | None) -> str:
