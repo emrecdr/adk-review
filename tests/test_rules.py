@@ -1995,8 +1995,42 @@ class TestTheShippedRules:
         more += "      - run: echo ${{ github.event.pull_request.TITLE }}\n"
         more += "      - run: echo '${{ toJSON(github.event.repository) }}'\n"  # an owner's own fields
         assert lines_hit(rule, ".github/workflows/more.yml", more) == [7, 8, 9, 10]
+        # Read by a code review: a script on the line after its key, a key in quotes, `script:` alone on its line, a
+        # name with spaces around its dots, a commit under another object, a wiki page's title and `toJSON` of a part
+        # of the event were not read; `defaults:`'s `run:` in flow style, and `toJSON` that `actions/github-script`
+        # reads as a JavaScript value outside any quote, are no script's text.
+        edges = "jobs:\n  a:\n    steps:\n      - run:\n          echo ${{ github.event.pull_request.title }}\n"
+        edges += '      - "run": echo ${{ github.head_ref }}\n'
+        edges += "      - with:\n          script:\n            core.info('${{ github.event.issue.title }}')\n"
+        edges += "      - run: echo ${{ github . head_ref }} '${{ toJSON (github.event) }}'\n"
+        edges += "      - run: echo '${{ github.event.merge_group.head_commit.message }}'\n"
+        edges += "      - run: echo ${{ github.event.pages[0].title }} '${{ toJSON(github.event.commits[0]) }}'\n"
+        edges += "      - with:\n          script: |\n            const event = ${{ toJSON(github.event) }};\n"
+        edges += "            JSON.parse('${{ toJSON(github.event.pull_request.head) }}')\n"
+        edges += "defaults:\n  run: {working-directory: '${{ github.head_ref }}'}\n"
+        assert lines_hit(rule, ".github/workflows/edges.yml", edges) == [5, 6, 9, 10, 11, 12, 16]
         assert try_rule(rule, {"docs/ci.md": workflow}) == [], "a workflow or an action alone is read"
         assert self_check(rule) == []
+
+    def test_a_hostile_workflow_is_read_in_linear_time(self) -> None:
+        """Measured by a review: one line of 80,000 characters of `${{ ` took 14.8 s, four times as long for each
+        doubling, and 20,000 lines of one block, each holding a branch's name, 40 s, each walking past every line above
+        it; no deadline stops a rule, and this one runs before every push. Each is read in milliseconds now."""
+        import time
+
+        from adk_review.judge.rule_helpers import try_rule
+        from adk_review.judge.rules.script_injection import ScriptInjection
+
+        lines = 20_000
+        hostile = [
+            "      - run: echo " + "${{ " * 50_000 + "\n",
+            "      - run: |\n" + "          echo ${{ github.head_ref }}\n" * lines,
+            "      - env:\n" + "".join(f"          T{n}: ${{{{ github.head_ref }}}}\n" for n in range(lines)),
+        ]
+        for text in hostile:
+            started = time.perf_counter()
+            try_rule(ScriptInjection(), {".github/workflows/x.yml": text})
+            assert time.perf_counter() - started < 2, repr(text[:24])
 
     def test_the_money_rule_finds_cents_divided_into_a_float(self) -> None:
         from adk_review.judge.rule_helpers import try_rule
