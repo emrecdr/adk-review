@@ -25,8 +25,9 @@ UNTRUSTED = re.compile(
     r")\b"
 )
 #: A key whose value is code a step runs, `run:` for a shell and `script:` for `actions/github-script`, as a step
-#: (`- run:`) or a key writes it: GitHub puts the expression's value into that code before it runs.
-SCRIPT = re.compile(r"^\s*(?:-\s+)?(?:run|script)\s*:")
+#: (`- run:`) or a key writes it: GitHub puts the expression's value into that code before it runs. What comes before
+#: the key's name, the indent and a list item's dash, is captured: its length is the key's column.
+SCRIPT = re.compile(r"^(\s*(?:-\s+)?)(?:run|script)\s*:")
 
 
 class ScriptInjection(FileRule):
@@ -67,18 +68,23 @@ class ScriptInjection(FileRule):
 
 
 def _in_script(file: ChangedFile, number: int, line: str) -> bool:
-    """Whether line `number` is part of a script: a `run:` or `script:` key's own line, or a line inside one, which YAML
-    indents past the key that holds it. A line another key holds, `env:`, `with:` or `if:` among them, is not; nor is
-    one whose key the diff does not show."""
+    """Whether line `number` is part of a script: a `run:` or `script:` key's own line, or any line YAML indents past
+    one, which holds a script and nothing else. Each line less indented than the last holds it, up to the top, and holds
+    it through its key only where the key's name starts left of it. Measured on real workflows: a script's own line
+    wrapped deeper, a `curl` argument, was held first by a line of the script; and `env:` beside a step's `- run:` is
+    that step's own key, less indented only by the dash. A line no such key holds, under `env:`, `with:` or `if:`, is
+    not part of a script; nor is one whose key the diff does not show."""
     if SCRIPT.match(line):
         return True
     depth = len(line) - len(line.lstrip())
     for above in range(number - 1, 0, -1):
+        if not depth:  # a line at the top: nothing holds it
+            return False
         text = file.near(above)
         if text is None:  # past what the diff shows: no key is known
             return False
-        if not text.strip():  # a blank line, inside a script or between keys, says nothing
-            continue
-        if len(text) - len(text.lstrip()) < depth:  # the first line less indented holds this one
-            return bool(SCRIPT.match(text))
+        if text.strip() and (indent := len(text) - len(text.lstrip())) < depth:  # a blank line says nothing
+            if (script := SCRIPT.match(text)) and len(script[1]) < depth:
+                return True
+            depth = indent
     return False

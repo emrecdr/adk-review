@@ -1953,8 +1953,8 @@ class TestTheShippedRules:
         """GitHub writes an expression's value into a step's script before it runs, so a pull request's title can run
         as code. A `run:` line, a line inside a `run:` block, folded or literal, and `actions/github-script`'s `script:`
         are named; a value passed through `env:` or to an action under `with:`, a condition and an owner's own field
-        are not, nor is a line the change kept. Measured on 362 workflows of twelve large projects: no finding, each
-        such value passed through `env:` or `with:`."""
+        are not, nor is a line the change kept. Measured on 408 real workflows, 46 of them found by searching for such
+        values: one finding, a pull request's title in a `run:`, the one a YAML parser finds there too."""
         from adk_review.core.evidence import entry
         from adk_review.core.rules import run_rule
         from adk_review.judge.rule_helpers import self_check, try_rule
@@ -1985,6 +1985,13 @@ class TestTheShippedRules:
         added = [(number, lines[number - 1]) for number in (6, 7)]  # the block's line 10 kept
         kept = run_rule(rule, [entry(".github/workflows/triage.yml", "M", None, added, text=workflow)], None)
         assert [f.line for f in kept.findings] == [6]
+        # Measured on real workflows: a script's own line wrapped deeper, under a line of the script, was not read; and
+        # `env:` beside a step's `- run:`, the same step's key, less indented only by the dash, is not in the script.
+        wrapped = '      - run: |\n          curl -X POST \\\n            -d "${{ github.event.issue.title }}"\n'
+        wrapped += "      - env:\n          BODY: |\n            ${{ github.event.issue.body }}\n"
+        wrapped += "      - run: node notify.js\n        env:\n          BODY: ${{ github.event.issue.body }}\n"
+        wrapped += "      - run: make\n        name: Build ${{ github.event.pull_request.title }}\n"
+        assert [hit.line for hit in try_rule(rule, {".github/workflows/notify.yml": wrapped})] == [3]
         assert try_rule(rule, {"docs/ci.md": workflow}) == [], "a workflow or an action alone is read"
         assert self_check(rule) == []
 
