@@ -85,7 +85,8 @@ miss: a new flag, check, JSON field or limit the guide does not say.
 - Every string a model reads is capped in characters with the cut named in the text, and so is each title and change a
   model writes into a finding. A dropped finding's file is a model's text too, cut in `drop_ungrounded` at
   `REASON_MAX_CHARS`. Every `subprocess.run` that decodes passes `encoding=`; no source spells `/tmp/`
-  (`tempfile.gettempdir()`); a file a script or a fixture commits is written with `newline="\n"`.
+  (`tempfile.gettempdir()`); a temporary folder the package makes passes `ignore_cleanup_errors=True`, since Windows can
+  hold a file in it open; a file a script or a fixture commits is written with `newline="\n"`.
 - Every sentence the package prints itself — a stderr line, a flag's `--help`, an error it raises or answers, a rule's
   title and fix — is ASD-STE100: one command, at most 20 words, no `;` joining two (`tests/test_command.py`). The
   guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged. An

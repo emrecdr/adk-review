@@ -150,11 +150,12 @@ Load-bearing rules the tests enforce:
   review with `google` unimportable.
 - **Providers.** `judge/config.py` is the only file that builds a provider's model: Gemini is a plain model string,
   Copilot is `LiteLlm("github_copilot/…")`; `judge/settings.py` only reads which arm and which names the environment
-  sets. Every change must work on both arms. Judging agents run at temperature zero; a model that cannot, Copilot's
-  `gpt-5`, `gpt-5.5` or o-series as LiteLLM says offline, is refused by `require_ready`, exit 2. Copilot is sent the
-  instruction as its system turn (`litellm.disable_copilot_system_to_assistant`), as Gemini reads it, and LiteLLM's
-  MCP gateway is skipped (`_skip_mcp_handler`): from LiteLLM 1.106.0 a call carrying a tool, as chat's intake makes,
-  imported it, and it needs `mcp`, a package of LiteLLM's proxy the reviewer does not install.
+  sets. Every change must work on both arms. Judging agents run at temperature zero; a model that cannot, as LiteLLM
+  says offline, is refused by `require_ready`, exit 2: Copilot's GPT models after `gpt-4.1`, `gpt-6-luna` among them,
+  which reason by default and are sent no reasoning setting, and the o-series. Copilot is sent the instruction as its
+  system turn (`litellm.disable_copilot_system_to_assistant`), as Gemini reads it, and LiteLLM's MCP gateway is skipped
+  (`_skip_mcp_handler`): from LiteLLM 1.106.0 a call carrying a tool, as chat's intake makes, imported it, and it needs
+  `mcp`, a package of LiteLLM's proxy the reviewer does not install.
 - **Shape.** `agent.py` exports both `app` and `root_agent` (the loader prefers `app`, and a bare `root_agent` would
   lose the plugins). `build_app(chat=True)` adds an intake agent before the same middle and, after it, a grounding node,
   which holds the guidelines' findings to the diff and decides the verdict through the command's own functions, and a
@@ -227,31 +228,35 @@ Conventions:
 - State moves between agents via `output_key` and `{placeholder}` (`{key?}` where the key may be missing). Each key
   more than one module uses is spelled once, in `judge/agents.py`; a check's key is its id through `state_key`.
 - Every `subprocess.run` that decodes passes `encoding=`; no source under `adk_review/` or `scripts/` spells `/tmp/`
-  (use `tempfile.gettempdir()`). Every file a script or a fixture commits is written with `newline="\n"`, a `.env` that
-  is not UTF-8 is a sentence and exit 2 (1 from the login), and `.github/workflows/ci.yml` and `azure-pipelines.yml` run
-  lint, the type check and the suite on Windows, Linux and macOS. Every action a workflow uses is pinned by its full
-  commit SHA, the same commit in every workflow and the README's sample, and uv by one exact version in every pipeline
-  and the README's, since `required-version` reads as a floor (`tests/test_copilot.py`).
+  (use `tempfile.gettempdir()`), and each temporary folder the package makes is removed with
+  `ignore_cleanup_errors=True`: on Windows another process, a virus scan, can hold a file in it after it was read, and
+  the removal raised after the work was done. Every file a script or a fixture commits is written with `newline="\n"`, a
+  `.env` that is not UTF-8 is a sentence and exit 2 (1 from the login), and `.github/workflows/ci.yml` and
+  `azure-pipelines.yml` run lint, the type check and the suite on Windows, Linux and macOS. Every action a workflow uses
+  is pinned by its full commit SHA, the same commit in every workflow and the README's sample, and uv by one exact
+  version in every pipeline and the README's, since `required-version` reads as a floor (`tests/test_copilot.py`).
 
 ## Tests
 
 The suite is fully offline. `tests/conftest.py` registers a `FakeModel` in ADK's `LLMRegistry` for `fake.*`.
 `load_agent(monkeypatch)` sets `REVIEW_MODEL=fake` and imports `adk_review.agent` fresh, so the real `build_model()`,
 Runner, `Workflow`, callbacks and plugins all run; the `cli` fixture is the command's module loaded that way. Both run
-on the Gemini arm, where the fake registers, unless a test names another: `load_agent(monkeypatch, "copilot",
-"gpt-4.1")`, or `load_command` for the command, with LiteLLM's network client replaced, runs the Copilot arm's own path
-offline (`test_the_planted_review_runs_end_to_end_on_the_copilot_arm`); a change to that path needs a test there. The
-fake answers whatever canned payload the request's response schema accepts, or a sentence when there is no schema. The
-`fake_provider` fixture's `raises_when(text, exc)` / `answers_when(text, payload)` / `calls_when(text, call)` key on
-text in the system instruction, to simulate a provider failing, a verifier refuting or an agent calling a tool;
-`confirms(fake_provider, repo)` makes chat's intake confirm a scope with its tool, as a model would, `Chat(module)`
-holds one conversation over several turns, under the `run_config` a test names, as `adk web`'s Token Streaming does, its
-last turn's events in `chat.events`, and the `asked` fixture records each request as it was sent. `demo_repo` is a
-session-scoped real repository from `scripts/make_demo_repo.py`, and `hostile_repo` a branch per way a change once hid
-from the review. `asyncio_mode = "strict"`, so async tests need `@pytest.mark.asyncio`. A test still running after
-`faulthandler_timeout` prints every thread's stack and ends the run. Tests live only in `tests/`. A test is named as the
-sentence it proves (`test_the_gate_runs_before_any_model`), and a helper several tests need goes into
-`tests/conftest.py`, never into the package.
+on the Gemini arm, where the fake registers, unless a test names another:
+`load_agent(monkeypatch, "copilot", "gpt-4.1")`, or `load_command` for the command, with ADK's LiteLLM client replaced,
+runs the Copilot arm's own path offline (`test_the_planted_review_runs_end_to_end_on_the_copilot_arm`); a change to that
+path needs a test there. LiteLLM's own routing runs only where the network alone is replaced, below LiteLLM, as
+`test_a_copilot_call_carrying_a_tool_reaches_copilot` does: a call carrying a tool, which LiteLLM 1.106.0 failed, passed
+every test above it. The fake answers whatever canned payload the request's response schema accepts, or a sentence when
+there is no schema. The `fake_provider` fixture's `raises_when(text, exc)` / `answers_when(text, payload)` /
+`calls_when(text, call)` key on text in the system instruction, to simulate a provider failing, a verifier refuting or
+an agent calling a tool; `confirms(fake_provider, repo)` makes chat's intake confirm a scope with its tool, as a model
+would, `Chat(module)` holds one conversation over several turns, under the `run_config` a test names, as `adk web`'s
+Token Streaming does, its last turn's events in `chat.events`, and the `asked` fixture records each request as it was
+sent. `demo_repo` is a session-scoped real repository from `scripts/make_demo_repo.py`, and `hostile_repo` a branch per
+way a change once hid from the review. `asyncio_mode = "strict"`, so async tests need `@pytest.mark.asyncio`. A test
+still running after `faulthandler_timeout` prints every thread's stack and ends the run. Tests live only in `tests/`. A
+test is named as the sentence it proves (`test_the_gate_runs_before_any_model`), and a helper several tests need goes
+into `tests/conftest.py`, never into the package.
 
 ## The docs are tested, so update them with the code
 
