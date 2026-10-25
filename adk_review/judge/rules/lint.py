@@ -2,10 +2,11 @@
 
 Ruff runs with `--isolated` and the codes below, never the reviewed repository's own configuration: a change must not
 be able to configure the rule that judges it, nor, with `--ignore-noqa`, silence it line by line. Running ruff is
-`collect/ruff.py`'s; what its diagnostics mean is this file's. Without ruff on `PATH`, or with one that fails, the rule
-did not look, and says so: the run is degraded and the report names it, for the reason a failed guideline is named
-rather than empty. `uv run` puts the project's own ruff on `PATH`. Every hit on a changed file is reported, on an added
-line or not: ruff reads whole files, and a reader told the file and the line can tell the two apart.
+`collect/ruff.py`'s; what its diagnostics mean is this file's. The ruff installed beside the reviewer runs, else the
+one on `PATH`; without either, or with one that fails, the rule did not look, and says so: the run is degraded and the
+report names it, for the reason a failed guideline is named rather than empty. Each hit on a line the change added is
+listed, at most `PER_FILE` a file and the rest counted; those on the lines it did not add are counted too, one finding
+a file at the most severe of them, since ruff reads whole files and listed one by one they buried the change's own.
 """
 
 from __future__ import annotations

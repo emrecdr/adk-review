@@ -530,6 +530,13 @@ class TestWhatAReviewCovers:
             err = capsys.readouterr().err
             assert "Name one that git branch -a lists" in err and "fetch" not in err, (spelt, err)
             assert "origin/origin/gone" not in err, spelt
+        # Two remotes now: a branch none holds is told to fetch them all, and one a remote's name leads, that remote.
+        assert cli.main([str(clone), "--head", "nowhere", "--base", "origin/main"]) == 2
+        err = capsys.readouterr().err
+        assert "nor as a remote branch fetched there. Fetch every remote there: git fetch --all" in err, err
+        assert cli.main([str(clone), "--head", "team/nowhere", "--base", "origin/main"]) == 2
+        err = capsys.readouterr().err
+        assert "git fetch team nowhere. Then pass --head team/nowhere" in err and "--all" not in err, err
 
 
 class TestTheDryRun:

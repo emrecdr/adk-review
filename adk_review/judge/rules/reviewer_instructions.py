@@ -110,9 +110,10 @@ class ReviewerInstructions(FileRule):
             ]
             for k in shown:
                 covered[k] = last
-            if shown:
-                found.append(number)  # quoted by the contract, as the diff shows it
-        return found
+            if shown:  # where the shape starts, never the line whose phrase first reached it: read by review
+                at = min(match.start() for k in shown if (match := _DIRECTIVES[k].search(phrase)))
+                found.append(_named(line_at, file.added, number, last, at))
+        return list(dict.fromkeys(found))  # a second shape on a line, read by a later line's phrase: one finding
 
 
 def _joined(line_at: Callable[[int], str | None], number: int, room: float = JOINED_MAX_CHARS) -> tuple[str, int]:
@@ -128,3 +129,19 @@ def _joined(line_at: Callable[[int], str | None], number: int, room: float = JOI
         room -= len(part)
         last += 1
     return " ".join(parts), last
+
+
+def _named(line_at: Callable[[int], str | None], added: frozenset[int], number: int, last: int, at: int) -> int:
+    """The line a finding names for a shape starting at character `at` of the phrase read from `number` to `last`: the
+    line it starts on, or, where that is a line the change kept, the first line the change added after it."""
+    begun = _line_of(line_at, number, last, at)
+    return next((n for n in range(begun, last + 1) if n in added), number)
+
+
+def _line_of(line_at: Callable[[int], str | None], number: int, last: int, at: int) -> int:
+    """The line that character `at` of the phrase `_joined` read from `number` to `last` stands on: each line's part
+    as it joined, leaders dropped, and the space after it."""
+    while number < last and at > len(part := (line_at(number) or "").strip(_LEADERS)):
+        at -= len(part) + 1
+        number += 1
+    return number

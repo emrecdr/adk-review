@@ -40,7 +40,8 @@ uv tool install --exclude-newer P3D git+https://github.com/emrecdr/adk-review   
 
 `uv tool install` reads no lock, so `--exclude-newer P3D` takes no release newer than three days, the cooldown the
 lock keeps: measured, without it the install took a LiteLLM three days old or less. From a checkout, `make install`
-installs every dependency at the version the lock holds.
+installs every dependency at the version the lock holds. Behind a company proxy, set `UV_SYSTEM_CERTS=true` for uv's own
+commands: uv trusts the roots it bundles, not the machine's, where the reviewer, once installed, trusts the machine's.
 
 ### 3. Review the demo
 
@@ -696,7 +697,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          version: "0.13.1" # pinned, as the reviewer's own lock file is
+          version: "0.13.4" # pinned, as the reviewer's own lock file is
       - name: Review
         shell: bash # -o pipefail, so the review's exit code survives the tee
         working-directory: reviewer

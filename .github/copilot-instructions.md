@@ -53,6 +53,8 @@ miss: a new flag, check, JSON field or limit the guide does not say.
 - `[tool.uv]` in `pyproject.toml` takes a release only three days after it is published (`exclude-newer`), so a
   dependency released since does not resolve yet; the comment there says why the span stays. Dependabot
   (`.github/dependabot.yml`) proposes each week's updates after the same three days, and no package skips the wait.
+  Its `ignore` holds LiteLLM below the releases made after a compromised one, and the comment there says when to lift
+  it: bump LiteLLM by hand no further either.
 
 ## Rules the tests enforce
 

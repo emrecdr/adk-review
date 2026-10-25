@@ -33,6 +33,8 @@ LiteLLM three days old or less, the window LiteLLM 1.82.7 and 1.82.8 shipped a c
 `adk-review`, its pre-push hook, `adk-review-push`, and the Copilot login, `adk-review-login`, on `PATH`: the reviewer
 alone, with ruff beside it. An installed reviewer reads the model's settings from the shell alone, no `.env` being read
 outside the checkout, and its config from beside itself; inside the checkout, `uv run adk-review` is the same command.
+Behind a company proxy, set `UV_SYSTEM_CERTS=true` for uv's own commands, `uv sync` and `uv tool install`: uv trusts the
+roots it bundles, not the machine's, where the reviewer trusts the machine's own store.
 
 ## Flags
 

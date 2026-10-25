@@ -483,6 +483,32 @@ def test_the_report_names_the_model_that_ran(monkeypatch, tmp_path: Path) -> Non
     assert config.serving() == "fake on gemini through Vertex AI"
 
 
+def test_the_copilot_endpoint_is_read_in_litellms_own_order(monkeypatch, tmp_path: Path) -> None:
+    """`_copilot_api` copies LiteLLM's order, and no test held it there: a LiteLLM that read its endpoints in another
+    order would send the calls to one host while the report and the cache's key named another. Each state is asked of
+    LiteLLM itself, offline: built over a folder of the test's own, its authenticator reads the issued key's file
+    there and nothing else."""
+    from litellm.llms.github_copilot.chat.transformation import GithubCopilotConfig
+    from litellm.llms.github_copilot.common_utils import DEFAULT_GITHUB_COPILOT_API_BASE
+
+    load_agent(monkeypatch)
+    config = importlib.import_module(judge_module("config"))
+    _cached_copilot_token(monkeypatch, tmp_path)
+    issued, other = tmp_path / "api-key.json", "https://copilot-api.other.ghe.com"
+    keys = (None, {"token": "a key"}, {"token": "a key", "endpoints": {"api": ""}}, {"endpoints": {"api": other}})
+    for key in keys:
+        for variable in (None, "https://copilot-api.my-company.ghe.com"):
+            issued.unlink(missing_ok=True)
+            if key is not None:
+                issued.write_text(json.dumps(key), encoding="utf-8")
+            if variable is None:
+                monkeypatch.delenv("GITHUB_COPILOT_API_BASE", raising=False)
+            else:
+                monkeypatch.setenv("GITHUB_COPILOT_API_BASE", variable)
+            litellms = GithubCopilotConfig().api_base_without_login()
+            assert (config._copilot_api() or DEFAULT_GITHUB_COPILOT_API_BASE) == litellms, (key, variable)
+
+
 def test_vertex_ai_is_ready_wherever_the_sdk_finds_its_project(monkeypatch) -> None:
     """Measured by review: the Gemini arm sent through Vertex AI was refused for want of an API key, and once fixed,
     for want of `GOOGLE_CLOUD_PROJECT`, while google-genai also takes the project Application Default Credentials name —

@@ -858,7 +858,7 @@ class TestWhatTheLanesRead:
         """U+009B is ESC [ in one character; U+202E turns the text after it around."""
         from adk_review.deliver.report import one_line
 
-        assert one_line("a\u009b2Jb‮c⁦d") == "a 2Jb c d"
+        assert one_line("a\u009b2Jb\u202ec\u2066d") == "a 2Jb c d"
 
     def test_the_report_drops_every_character_a_reader_cannot_see(self) -> None:
         """Every format character Python's Unicode tables know, the variation selectors, and the Hangul fillers, which
