@@ -656,11 +656,20 @@ class TestTheLintRule:
 
     def test_a_rule_past_its_timeout_did_not_look_and_says_so(self, demo_repo: Path, monkeypatch) -> None:
         """Measured before: `TimeoutExpired` from ruff rose out of the command as a traceback. Now it is the rule's
-        reason, the hole the test above sends to the report."""
+        reason, the hole the test above sends to the report. The watch fires as it starts: measured on CI's Windows
+        runner, a watch of a microsecond had not yet run when ruff answered, and the rule looked."""
+        import threading
+        from types import SimpleNamespace
+
         from adk_review.collect import git, ruff
+
+        class Fired(threading.Timer):
+            def start(self) -> None:
+                self.function()
 
         evidence = git.collect_evidence(str(demo_repo), BASE, HEAD)
         monkeypatch.setattr(ruff, "RUFF_TIMEOUT_S", 1e-6)
+        monkeypatch.setattr(ruff, "threading", SimpleNamespace(Event=threading.Event, Timer=Fired))
         assert lint_findings(evidence) == "ruff did not answer within 1e-06 s, so the rule did not look"
 
     def test_the_lint_rule_lints_what_the_collector_read_and_a_file_not_read_whole_is_its_hole(
@@ -1047,6 +1056,31 @@ class TestTypesReadsWhatPyreflyFinds:
         text = 'x = 1 + ""\n' * 40
         answer = run_rules({"files": [_entry("shop/flood.py", text)], "tree": None}, [Types()])["rule.types"]
         assert "more than 2,000 bytes" in (answer.could_not_look or ""), answer
+
+    def test_a_copy_windows_holds_after_ruff_and_pyrefly_answered_is_no_hole(self, monkeypatch, tmp_path: Path) -> None:
+        """Measured on CI's Windows runner: a copy another process held open, as a virus scan holds one, failed the
+        temporary folder's removal after the tool had answered, and `lint` or `pitfalls` did not look, exit 3. Here
+        every copy refuses to go, as Windows refused it; each rule still reads what its tool found."""
+        import errno
+        import os
+        import tempfile
+
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.lint import Lint
+        from adk_review.judge.rules.types import Types
+
+        unlink = os.unlink
+
+        def held(path, *args, **kwargs):  # Windows' sharing violation, WinError 32, is a PermissionError
+            if str(path).endswith(".py"):
+                raise PermissionError(errno.EACCES, "The process cannot access the file: another process uses it")
+            return unlink(path, *args, **kwargs)
+
+        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))  # what cannot go stays in the test's own folder
+        monkeypatch.setattr(os, "unlink", held)
+        answers = run_rules({"files": [_entry("shop/orders.py", self.CHECKOUT)], "tree": None}, [Lint(), Types()])
+        assert [answer.could_not_look for answer in answers.values()] == [None, None], answers
+        assert [f.line for f in answers["rule.types"].findings] == [6], answers["rule.types"]
 
     def test_one_file_lists_at_most_per_file_findings_and_counts_the_rest(self) -> None:
         """Read by review: one file of 125,000 `1 + ""` lines printed 125,000 findings, a 19 MB report, where `lint`

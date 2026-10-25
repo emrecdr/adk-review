@@ -100,7 +100,9 @@ def _run(
     """Ruff over each file's text as it stands at the head, written into a temporary directory: its diagnostics by
     path, or it raises — ruff failing, or past its timeout — for `diagnose` to name. Under `--exit-zero` a diagnostic
     never fails ruff, so any other exit is a ruff that could not run."""
-    with tempfile.TemporaryDirectory() as tmp:
+    # A folder that will not go is left to the system's own cleaning: measured on CI's Windows runner, another process
+    # held a copy open after ruff had answered, and its removal failing was named as a file that could not be written.
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         targets, sources = laid_out(tmp, texts)
         # Every file by name, never a folder: ruff's default excludes skipped a `.venv/` or `node_modules/` a branch
         # had changed, never a file it is named. `--ignore-noqa`: an inline noqa comment in the branch silenced it.

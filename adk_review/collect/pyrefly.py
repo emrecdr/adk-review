@@ -93,8 +93,8 @@ def _run(
     pyrefly: str, texts: dict[str, str], added: dict[str, Collection[int]], kinds: frozenset[str]
 ) -> dict[str, list[Diagnostic]]:
     """Pyrefly over each file's text, written into a temporary directory: its diagnostics of `kinds` by path, or it
-    raises for `diagnose` to name."""
-    with tempfile.TemporaryDirectory() as tmp:
+    raises for `diagnose` to name. A folder that will not go is left to the system's own cleaning, as ruff's is."""
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         targets, sources = laid_out(tmp, texts)
         Path(tmp, "pyrefly.toml").write_text(CONFIG, encoding="utf-8")
         argv = [pyrefly, "check", "-c", "pyrefly.toml", "--output-format", "json", "--summary=none"]
