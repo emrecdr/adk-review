@@ -697,7 +697,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
-          version: "0.13.4" # pinned, as the reviewer's own lock file is
+          version: "0.13.5" # pinned, as the reviewer's own lock file is
       - name: Review
         shell: bash # -o pipefail, so the review's exit code survives the tee
         working-directory: reviewer
