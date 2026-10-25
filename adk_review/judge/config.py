@@ -88,7 +88,7 @@ def serving() -> str:
 
 
 def _copilot_api() -> str:
-    """Where the Copilot arm's calls go, in LiteLLM's own order (`github_copilot/chat/transformation.py`, 1.106.0): the
+    """Where the Copilot arm's calls go, in LiteLLM's own order (`github_copilot/chat/transformation.py`, 1.106.2): the
     endpoint its cached API key was issued for, else `GITHUB_COPILOT_API_BASE`. Traced in its source by review: read
     from the variable alone, the report could name a host the calls never reached, and named none for a tenant whose
     key named its own. Of that file, which holds the key, only `endpoints.api` is read, and nothing else of it kept."""
