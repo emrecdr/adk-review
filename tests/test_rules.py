@@ -887,6 +887,16 @@ class TestTheLintRule:
         }
         assert ("S101", "major") in tiers["src/pay.py"] and ("S101", "minor") in tiers["tests/test_pay.py"], tiers
 
+    def test_a_call_without_a_shell_or_by_a_short_name_is_minor_and_a_shell_call_major(self) -> None:
+        """S603 names every `subprocess` call whose arguments are not a literal list, and S607 every program named
+        without its full path: neither reads what feeds the call, so each is hardening, minor, where a call through a
+        shell stays major. Measured before: the two were most of this repository's lint majors."""
+        text = 'import subprocess\n\n\ndef run(cmd):\n    subprocess.run(["git", "status"])\n'
+        text += "    subprocess.run(cmd)\n    subprocess.run(cmd, shell=True)\n"
+        found = lint_findings({"files": [_entry("src/run.py", text)], "tree": None})
+        tiers = [(f.line, f.title.removeprefix("lint: ").split()[0], f.severity) for f in found]
+        assert tiers == [(5, "S607", "minor"), (6, "S603", "minor"), (7, "S602", "major")], tiers
+
     def test_ruffs_own_variables_in_the_callers_environment_change_nothing(
         self, cli, demo_repo: Path, tmp_path: Path, monkeypatch, capsys
     ) -> None:

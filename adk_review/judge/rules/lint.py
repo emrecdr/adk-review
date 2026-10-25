@@ -41,13 +41,18 @@ LINE_LENGTH: int | None = None
 #: shell calls a possible injection, and 18 `exec`, 35 `eval`, 23 `pickle` and 97 SQL strings; of 28 read in context,
 #: every one was what its code meant, a command to run, code to generate, a table's name, so a blocker would stop such
 #: a change by its shape alone. A guideline, which reads what feeds the call, can name one a blocker, and `fail_on =
-#: "major"` makes rules alone stop at it.
+#: "major"` makes rules alone stop at it. S603 and S607 are minor: one names every `subprocess` call whose arguments are
+#: not a literal list, the other every program named without its full path, so neither reads what feeds the call, and
+#: each is hardening, as the guidelines' scale calls it. Measured over this repository whole, they were 31 of its 42
+#: lint majors, and any change to a file that runs a process carried one.
 SEVERITY: dict[str, Severity] = {
     "F": "major",
     "F401": "minor",
     "F841": "minor",
     "B": "major",
     "S": "major",
+    "S603": "minor",
+    "S607": "minor",
     "ASYNC": "major",
     "C90": "major",
     "RUF006": "major",
