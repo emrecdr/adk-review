@@ -20,6 +20,7 @@ from conftest import (
     _committed,
     _entry,
     _git_in,
+    _held_on_windows,
     _link_on_branch,
     _link_staged,
     _with_profiles,
@@ -657,7 +658,8 @@ class TestTheLintRule:
     def test_a_rule_past_its_timeout_did_not_look_and_says_so(self, demo_repo: Path, monkeypatch) -> None:
         """Measured before: `TimeoutExpired` from ruff rose out of the command as a traceback. Now it is the rule's
         reason, the hole the test above sends to the report. The watch fires as it starts: measured on CI's Windows
-        runner, a watch of a microsecond had not yet run when ruff answered, and the rule looked."""
+        runner, a watch of a microsecond had not yet run when ruff answered, and the rule looked; the time it waits
+        for is then only the sentence's."""
         import threading
         from types import SimpleNamespace
 
@@ -668,9 +670,9 @@ class TestTheLintRule:
                 self.function()
 
         evidence = git.collect_evidence(str(demo_repo), BASE, HEAD)
-        monkeypatch.setattr(ruff, "RUFF_TIMEOUT_S", 1e-6)
         monkeypatch.setattr(ruff, "threading", SimpleNamespace(Event=threading.Event, Timer=Fired))
-        assert lint_findings(evidence) == "ruff did not answer within 1e-06 s, so the rule did not look"
+        said = f"ruff did not answer within {ruff.RUFF_TIMEOUT_S} s, so the rule did not look"
+        assert lint_findings(evidence) == said
 
     def test_the_lint_rule_lints_what_the_collector_read_and_a_file_not_read_whole_is_its_hole(
         self, demo_repo: Path, monkeypatch
@@ -1071,23 +1073,11 @@ class TestTypesReadsWhatPyreflyFinds:
         """Measured on CI's Windows runner: a copy another process held open, as a virus scan holds one, failed the
         temporary folder's removal after the tool had answered, and `lint` or `pitfalls` did not look, exit 3. Here
         every copy refuses to go, as Windows refused it; each rule still reads what its tool found."""
-        import errno
-        import os
-        import tempfile
-
         from adk_review.judge.checks import run_rules
         from adk_review.judge.rules.lint import Lint
         from adk_review.judge.rules.types import Types
 
-        unlink = os.unlink
-
-        def held(path, *args, **kwargs):  # Windows' sharing violation, WinError 32, is a PermissionError
-            if str(path).endswith(".py"):
-                raise PermissionError(errno.EACCES, "The process cannot access the file: another process uses it")
-            return unlink(path, *args, **kwargs)
-
-        monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))  # what cannot go stays in the test's own folder
-        monkeypatch.setattr(os, "unlink", held)
+        _held_on_windows(monkeypatch, tmp_path, ".py")
         answers = run_rules({"files": [_entry("shop/orders.py", self.CHECKOUT)], "tree": None}, [Lint(), Types()])
         assert [answer.could_not_look for answer in answers.values()] == [None, None], answers
         assert [f.line for f in answers["rule.types"].findings] == [6], answers["rule.types"]
@@ -1681,11 +1671,13 @@ class TestTheShippedRules:
         from adk_review.judge.checks import run_rules
         from adk_review.judge.rules.lockfile_sources import LockfileSources
         from adk_review.judge.rules.pinned_actions import PinnedActions
+        from adk_review.judge.rules.script_injection import ScriptInjection
 
         repo = tmp_path / "repo"
         repo.mkdir()
         _git_in(repo, "init", "-q", "-b", "main")
         workflow = "on: push\njobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n"
+        workflow += "      - run: git checkout ${{ github.head_ref }}\n"
         _committed(repo, "docs/ci-example.yml", workflow)
         _committed(repo, "docs/old.lock", 'source = { registry = "https://pypi.evil.example/simple" }\n')
         _git_in(repo, "checkout", "-q", "-b", "change")
@@ -1694,8 +1686,10 @@ class TestTheShippedRules:
         _git_in(repo, "mv", "docs/old.lock", "uv.lock")
         _git_in(repo, "commit", "-qm", "move them into place")
         evidence = collect_evidence(str(repo), "main", "change")
-        answers = run_rules(evidence, [PinnedActions(), LockfileSources()])
+        answers = run_rules(evidence, [PinnedActions(), LockfileSources(), ScriptInjection()])
         assert [f.file for f in answers["rule.pinned-actions"].findings] == [".github/workflows/ci.yml"]
+        moved = [(f.file, f.line) for f in answers["rule.script-injection"].findings]
+        assert moved == [(".github/workflows/ci.yml", 6)], "every line of it runs there now"
         assert [f.file for f in answers["rule.lockfile-sources"].findings] == ["uv.lock"]
 
     def test_a_rules_evidence_is_cut_once_where_the_finding_is_made(self) -> None:
@@ -1957,8 +1951,7 @@ class TestTheShippedRules:
         values: two findings, the two a YAML parser finds there too, a pull request's title in a `run:` and the whole
         event dumped into a quoted heredoc, which JSON's escaping keeps from ending it, named all the same."""
         from adk_review.core.evidence import entry
-        from adk_review.core.rules import run_rule
-        from adk_review.judge.rule_helpers import self_check, try_rule
+        from adk_review.judge.rule_helpers import lines_hit, self_check, try_rule
         from adk_review.judge.rules.script_injection import ScriptInjection
 
         rule, sha = ScriptInjection(), "60a0d83039c74a4aee543508d2ffcb1c3799cdea"
@@ -1992,7 +1985,7 @@ class TestTheShippedRules:
         wrapped += "      - env:\n          BODY: |\n            ${{ github.event.issue.body }}\n"
         wrapped += "      - run: node notify.js\n        env:\n          BODY: ${{ github.event.issue.body }}\n"
         wrapped += "      - run: make\n        name: Build ${{ github.event.pull_request.title }}\n"
-        assert [hit.line for hit in try_rule(rule, {".github/workflows/notify.yml": wrapped})] == [3]
+        assert lines_hit(rule, ".github/workflows/notify.yml", wrapped) == [3]
         # Read by review: a whole event dumped, a `}` inside the expression, `workflow_run`'s committer and a name in
         # capitals, which GitHub reads whatever its case, were not named; `defaults:` `run:` holds no script.
         more = "defaults:\n  run:\n    working-directory: ${{ github.head_ref }}\njobs:\n  a:\n    steps:\n"
@@ -2001,7 +1994,7 @@ class TestTheShippedRules:
         more += "      - run: echo ${{ github.event.workflow_run.head_commit.committer.name }}\n"
         more += "      - run: echo ${{ github.event.pull_request.TITLE }}\n"
         more += "      - run: echo '${{ toJSON(github.event.repository) }}'\n"  # an owner's own fields
-        assert [hit.line for hit in try_rule(rule, {".github/workflows/more.yml": more})] == [7, 8, 9, 10]
+        assert lines_hit(rule, ".github/workflows/more.yml", more) == [7, 8, 9, 10]
         assert try_rule(rule, {"docs/ci.md": workflow}) == [], "a workflow or an action alone is read"
         assert self_check(rule) == []
 

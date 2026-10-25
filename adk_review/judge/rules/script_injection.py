@@ -67,7 +67,7 @@ class ScriptInjection(FileRule):
             return []
         found: list[tuple[int | None, str]] = []
         # A workflow moved into place adds no line, and every line of it runs there now.
-        for number in range(1, len(file.lines) + 1) if file.arrived(*READ) else sorted(file.added):
+        for number in file.new_lines(*READ):
             line = file.near(number) or ""
             if (named := UNTRUSTED.search(line)) and _in_script(file, number, line):
                 found.append((number, f"`{named[1]}` is written into the script before it runs"))

@@ -218,6 +218,12 @@ class ChangedFile:
         link needs no asking: every line of its text is one the change added."""
         return self.old is not None and not matches(self.old, *globs)
 
+    def new_lines(self, *globs: str) -> list[int]:
+        """The numbers of the lines new to the paths `globs` name, in order: every line of a file that arrived in them,
+        else the lines the change added. What a rule over those paths reads, each asking it once, so none forgets the
+        file that arrived."""
+        return list(range(1, len(self.lines) + 1)) if self.arrived(*globs) else sorted(self.added)
+
     def _text_at_head(self) -> str:
         """The file's text, or `UnreadError` for one the collector did not read whole: a hole, never an empty file."""
         if self._text is None:

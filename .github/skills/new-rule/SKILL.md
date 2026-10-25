@@ -14,10 +14,10 @@ The shape of a rule — the three kinds, the constants it names, what it may imp
    read it as Python does, so a word in a comment or a string is not code); a `FileRule` when the answer needs the file
    — a call wrapped over lines, a decorator and its definition, a function's length — through `file.lines`,
    `file.added`, `file.changed`, `file.module` and `file.arrived(*globs)`, which a file renamed or copied into the paths
-   a rule reads answers True, every line of it new there, read with `calls_in` and `argument`, or `file.near(n)` where
-   only the lines around what a change added matter, so a file past the size limits is read; a `TreeRule` when it needs
-   the head's paths or every module. Every name comes from one import line, `from ..rule_helpers import …`, the door in
-   `adk_review/judge/rule_helpers/`.
+   a rule reads answers True, every line of it new there, and `file.new_lines(*globs)` the lines to read for them, read
+   with `calls_in` and `argument`, or `file.near(n)` where only the lines around what a change added matter, so a file
+   past the size limits is read; a `TreeRule` when it needs the head's paths or every module. Every name comes from one
+   import line, `from ..rule_helpers import …`, the door in `adk_review/judge/rule_helpers/`.
 2. Keep the rule's expectations as constants at the top of its file, as `REQUIRED` is in `demo_required_paths.py`, and
    give it `bad` and `good` examples: the catalog holds the rule to them, and to firing on nothing in its own source, at
    every start. A `(path, text)` example names a file the shipped `[review] scan` reads, or the rule never fires where

@@ -98,7 +98,7 @@ class LockfileSources(FileRule):
         # Each added line as the diff shows it: a lockfile past the size limits is not read whole, and needs not be.
         # A comment fetches nothing, and pub writes `https://dart.dev` in the header of every pubspec.lock.
         # A lockfile renamed into place adds no line, and every line of it is fetched from now.
-        for number in range(1, len(file.lines) + 1) if file.arrived(name) else sorted(file.added):
+        for number in file.new_lines(name):
             line = file.near(number) or ""
             if line.lstrip().startswith("#"):
                 continue

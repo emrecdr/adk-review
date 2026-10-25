@@ -42,7 +42,7 @@ class PinnedActions(FileRule):
             return []
         found: list[tuple[int | None, str]] = []
         # A workflow moved into place adds no line, and every line of it runs there now.
-        for number in range(1, len(file.lines) + 1) if file.arrived(*READ) else sorted(file.added):
+        for number in file.new_lines(*READ):
             used = USES.match(file.near(number) or "")
             if used and not used[1].startswith(("./", "docker://")) and not SHA.fullmatch(used[2]):
                 found.append((number, f"{used[1]} runs at `{used[2]}`, not a full commit SHA"))

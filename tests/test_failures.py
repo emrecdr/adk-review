@@ -30,6 +30,7 @@ from conftest import (
     _file_url,
     _git_in,
     _github_answers,
+    _held_on_windows,
     _pushed_from,
     _with_profiles,
     confirms,
@@ -1296,16 +1297,7 @@ def test_a_report_windows_holds_after_its_review_still_lets_the_review_decide(mo
     temporary folder's removal raised. The hook's own report is such a file: read by review, a review that passed
     raised there, and the push stopped on a traceback. Here the report refuses to go, as Windows refused ruff's copies;
     the review decides, whether it passed or stopped."""
-    import errno
-    import tempfile
-
     push = importlib.import_module("adk_review.push")
-    unlink = os.unlink
-
-    def held(path, *args, **kwargs):  # Windows' sharing violation, WinError 32, is a PermissionError
-        if str(path).endswith("review.json"):
-            raise PermissionError(errno.EACCES, "The process cannot access the file: another process uses it")
-        return unlink(path, *args, **kwargs)
 
     def ending(code: int):
         def review(argv: list[str]) -> int:
@@ -1314,8 +1306,7 @@ def test_a_report_windows_holds_after_its_review_still_lets_the_review_decide(mo
 
         return review
 
-    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))  # what cannot go stays in the test's own folder
-    monkeypatch.setattr(os, "unlink", held)
+    _held_on_windows(monkeypatch, tmp_path, "review.json")
     monkeypatch.setattr(push, "review", ending(0))
     assert push.reviewed("repo", "HEAD", ["main"]) is None, "the review passed"
     monkeypatch.setattr(push, "review", ending(1))

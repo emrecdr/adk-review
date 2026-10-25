@@ -205,7 +205,6 @@ class TestRetriesOnBothArms:
 
         monkeypatch.setenv("REVIEW_PROVIDER", "copilot")
         monkeypatch.setenv("REVIEW_MODEL", "gpt-4.1")
-        monkeypatch.delenv("REVIEW_FALLBACK_MODEL", raising=False)
         called: dict = {}
 
         class Capture(LiteLLMClient):
@@ -239,7 +238,6 @@ class TestRetriesOnBothArms:
         _cached_copilot_token(monkeypatch, tmp_path)
         monkeypatch.setenv("REVIEW_PROVIDER", "copilot")
         monkeypatch.setenv("REVIEW_MODEL", "gpt-4.1")
-        monkeypatch.delenv("REVIEW_FALLBACK_MODEL", raising=False)
         sent: list[dict] = []
 
         async def send(_client, request, *_args, **_kwargs):

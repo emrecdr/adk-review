@@ -15,6 +15,7 @@ plugins all run.
 
 from __future__ import annotations
 
+import errno
 import functools
 import importlib
 import json
@@ -688,6 +689,20 @@ def _cached_copilot_token(monkeypatch: pytest.MonkeyPatch, folder: Path, text: s
     if text is not None:
         (folder / "access-token").write_text(text, encoding="utf-8")
     monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", str(folder))
+
+
+def _held_on_windows(monkeypatch: pytest.MonkeyPatch, folder: Path, suffix: str) -> None:
+    """Every file whose name ends in `suffix` refuses to go, as Windows refuses one another process holds open, a virus
+    scan say; and each temporary folder is made under `folder`, where what cannot go stays."""
+    unlink = os.unlink
+
+    def held(path, *args, **kwargs):  # Windows' sharing violation, WinError 32, is a PermissionError
+        if str(path).endswith(suffix):
+            raise PermissionError(errno.EACCES, "The process cannot access the file: another process uses it")
+        return unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(tempfile, "tempdir", str(folder))
+    monkeypatch.setattr(os, "unlink", held)
 
 
 def _github_answers(monkeypatch: pytest.MonkeyPatch, reply: dict) -> None:

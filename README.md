@@ -454,19 +454,20 @@ class RequiredPaths(TreeRule):
    | Kind | `check` reads | and returns |
    |---|---|---|
    | `Rule` | `path`, `line` | `True` where the line breaks the rule |
-   | `FileRule` | `file.path`, `file.lines`, `file.line(n)`, `file.near(n)`, `file.added`, `file.changed`, `file.arrived(*globs)`, `file.module`, and `file.diagnostics` for a rule that names a `tool` | line numbers, the report quoting each line; `(line, what is wrong)` pairs, `None` for the file as a whole; or `Hit`s |
+   | `FileRule` | `file.path`, `file.lines`, `file.line(n)`, `file.near(n)`, `file.added`, `file.changed`, `file.arrived(*globs)`, `file.new_lines(*globs)`, `file.module`, and `file.diagnostics` for a rule that names a `tool` | line numbers, the report quoting each line; `(line, what is wrong)` pairs, `None` for the file as a whole; or `Hit`s |
    | `TreeRule` | `tree.paths`, `tree.has(path)`, a folder as `"tests/"`, `tree.module(path)`, `tree.modules()` | `(path, what is wrong)` pairs, `(path, line, what)` triples, or `Hit`s |
 
    `file.added` holds the numbers of the lines the change added, and `file.changed` every path the change touched, for a
    rule about the change as a whole: a manifest changed and its lock file not. `file.arrived(*globs)` is whether its
    text came into the paths the globs name from outside them, renamed or copied: every line of it is new there though
-   the diff adds none, and `pinned-actions`, `script-injection` and `lockfile-sources` read it whole. A file past the
-   size limits is not read whole, and a rule that asks for its `lines` could not look, a hole; `file.near(n)` gives line
-   `n` of any file, as far as its diff shows it, or None, for a rule that reads only what a change added and the lines
-   around it, as `reviewer-instructions` does. `file.module` and `tree.module(path)` are the file as Python reads it, or
-   a sentence saying why there is none. A `Hit` names its own title, severity or fix, where one rule covers several
-   problems, as `lint` does for ruff's codes. Anything else returned is a sentence naming what the kind takes, and a
-   rule that raises is named with the line of its own file that raised.
+   the diff adds none, and `pinned-actions`, `script-injection` and `lockfile-sources` read it whole through
+   `file.new_lines(*globs)`, the lines new to those paths: every line of a file that arrived, else the lines the change
+   added. A file past the size limits is not read whole, and a rule that asks for its `lines` could not look, a hole;
+   `file.near(n)` gives line `n` of any file, as far as its diff shows it, or None, for a rule that reads only what a
+   change added and the lines around it, as `reviewer-instructions` does. `file.module` and `tree.module(path)` are the
+   file as Python reads it, or a sentence saying why there is none. A `Hit` names its own title, severity or fix, where
+   one rule covers several problems, as `lint` does for ruff's codes. Anything else returned is a sentence naming what
+   the kind takes, and a rule that raises is named with the line of its own file that raised.
 3. Give it examples: `bad`, each of which it must flag, and `good`, each of which it must leave alone — a text, read at
    `example.py`; a `(path, text)` pair, for a rule that chooses its files; or `{path: text}`, several files at once. At
    every start the catalog holds every rule to its own examples, and a line or a file rule to firing on nothing in its
