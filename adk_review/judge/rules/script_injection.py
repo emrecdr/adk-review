@@ -11,23 +11,29 @@ from ..rule_helpers import ChangedFile, FileRule, matches
 READ = (".github/workflows/*.yml", ".github/workflows/*.yaml", "action.yml", "action.yaml")
 #: An expression naming a value whoever opens an issue, a pull request, a comment, a commit or a branch writes, as
 #: GitHub's guide to script injection names them: a title, a body, a message, a branch's name, an author's name or
-#: email. An event's own fields an owner sets, such as `github.event.repository.name`, are not among them.
+#: email; or `toJSON` of the whole context, the whole event or such an object, which writes all it holds. An event's own
+#: fields an owner sets, such as `github.event.repository.name`, are not among them. Read whatever its case, as GitHub
+#: reads a name and a function's, and up to the expression's own `}}`, past a `{0}` that `format` reads.
 _ARRAY = r"(?:\[[^\]]*\]|\.\*)?"
+_AUTHORED = r"(?:issue|pull_request|discussion|comment|review|review_comment|head_commit|commits|pages|workflow_run)"
 UNTRUSTED = re.compile(
-    r"\$\{\{[^}]*?\b("
-    r"github\.head_ref"
-    r"|github\.event\.(?:issue|pull_request|discussion)\.(?:title|body)"
-    r"|github\.event\.(?:comment|review|review_comment)\.body"
-    r"|github\.event\.pull_request\.head\.(?:ref|label|repo\.default_branch)"
-    rf"|github\.event\.(?:head_commit|commits{_ARRAY})\.(?:message|(?:author|committer)\.(?:email|name))"
-    rf"|github\.event\.pages{_ARRAY}\.page_name"
-    r"|github\.event\.workflow_run\.(?:head_branch|display_title|head_commit\.(?:message|author\.(?:email|name)))"
+    r"\$\{\{(?:(?!\}\}).)*?(\bgithub\.(?:"
+    r"head_ref"
+    r"|event\.(?:issue|pull_request|discussion)\.(?:title|body)"
+    r"|event\.(?:comment|review|review_comment)\.body"
+    r"|event\.pull_request\.head\.(?:ref|label|repo\.default_branch)"
+    rf"|event\.(?:head_commit|commits{_ARRAY})\.(?:message|(?:author|committer)\.(?:email|name))"
+    rf"|event\.pages{_ARRAY}\.page_name"
+    r"|event\.workflow_run\.(?:head_branch|display_title|head_commit\.(?:message|(?:author|committer)\.(?:email|name)))"
     r")\b"
+    rf"|\btojson\(\s*github(?:\.event(?:\.{_AUTHORED})?)?\s*\))",
+    re.IGNORECASE,
 )
 #: A key whose value is code a step runs, `run:` for a shell and `script:` for `actions/github-script`, as a step
-#: (`- run:`) or a key writes it: GitHub puts the expression's value into that code before it runs. What comes before
-#: the key's name, the indent and a list item's dash, is captured: its length is the key's column.
-SCRIPT = re.compile(r"^(\s*(?:-\s+)?)(?:run|script)\s*:")
+#: (`- run:`) or a key writes it, with its value on its line: GitHub puts the expression's value into that code before
+#: it runs, and `defaults:`'s `run:`, which holds keys, holds no script. What comes before the key's name, the indent
+#: and a list item's dash, is captured: its length is the key's column.
+SCRIPT = re.compile(r"^(\s*(?:-\s+)?)(?:run|script)\s*:[ \t]*[^\s#]")
 
 
 class ScriptInjection(FileRule):
@@ -35,8 +41,9 @@ class ScriptInjection(FileRule):
     `"; curl … | sh #` runs as code, with the job's token and secrets: the attack GitHub's guide to script injection
     names. A value passed through `env:` is data the script reads as a variable, and is not a finding, nor is one passed
     to an action under `with:`, which takes it as an argument. Each added line is read as the diff shows it, with the
-    lines above it that say which key holds it, so a workflow past the size limits is read as far as its diff shows it;
-    an expression written with brackets, `github['head_ref']`, is not read."""
+    lines above it that say which key holds it, so a workflow past the size limits is read as far as its diff shows it.
+    Not read: an expression written with brackets, `github['head_ref']`, a step written in YAML's flow style, `- {run:
+    …}`, and a script reached through a YAML alias, `run: *script`."""
 
     id = "script-injection"
     severity = "major"

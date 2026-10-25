@@ -1954,7 +1954,8 @@ class TestTheShippedRules:
         as code. A `run:` line, a line inside a `run:` block, folded or literal, and `actions/github-script`'s `script:`
         are named; a value passed through `env:` or to an action under `with:`, a condition and an owner's own field
         are not, nor is a line the change kept. Measured on 408 real workflows, 46 of them found by searching for such
-        values: one finding, a pull request's title in a `run:`, the one a YAML parser finds there too."""
+        values: two findings, the two a YAML parser finds there too, a pull request's title in a `run:` and the whole
+        event dumped into a quoted heredoc, which JSON's escaping keeps from ending it, named all the same."""
         from adk_review.core.evidence import entry
         from adk_review.core.rules import run_rule
         from adk_review.judge.rule_helpers import self_check, try_rule
@@ -1992,6 +1993,15 @@ class TestTheShippedRules:
         wrapped += "      - run: node notify.js\n        env:\n          BODY: ${{ github.event.issue.body }}\n"
         wrapped += "      - run: make\n        name: Build ${{ github.event.pull_request.title }}\n"
         assert [hit.line for hit in try_rule(rule, {".github/workflows/notify.yml": wrapped})] == [3]
+        # Read by review: a whole event dumped, a `}` inside the expression, `workflow_run`'s committer and a name in
+        # capitals, which GitHub reads whatever its case, were not named; `defaults:` `run:` holds no script.
+        more = "defaults:\n  run:\n    working-directory: ${{ github.head_ref }}\njobs:\n  a:\n    steps:\n"
+        more += "      - run: echo '${{ toJSON(github.event.pull_request) }}'\n"
+        more += "      - run: echo \"${{ format('{0}', github.event.issue.title) }}\"\n"
+        more += "      - run: echo ${{ github.event.workflow_run.head_commit.committer.name }}\n"
+        more += "      - run: echo ${{ github.event.pull_request.TITLE }}\n"
+        more += "      - run: echo '${{ toJSON(github.event.repository) }}'\n"  # an owner's own fields
+        assert [hit.line for hit in try_rule(rule, {".github/workflows/more.yml": more})] == [7, 8, 9, 10]
         assert try_rule(rule, {"docs/ci.md": workflow}) == [], "a workflow or an action alone is read"
         assert self_check(rule) == []
 
