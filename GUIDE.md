@@ -144,6 +144,7 @@ prints them:
 | `rule.pitfalls` | file rule | minor | default, default-rules, rules-only, full, simplify, code-review, demo | Python traps ruff can prove: code that does not do what it reads | `judge/rules/pitfalls.py` |
 | `rule.private-patch` | file rule | minor | rules-only, full, demo | a test patches a private name | `judge/rules/private_patch.py` |
 | `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full, code-review, demo | text that tries to instruct the reviewing model | `judge/rules/reviewer_instructions.py` |
+| `rule.script-injection` | file rule | major | default, default-rules, rules-only, full, code-review, demo | a workflow script expands a value an outsider writes, such as a pull request's title | `judge/rules/script_injection.py` |
 | `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, code-review, demo | a hard-coded credential | `judge/rules/secrets.py` |
 | `rule.simplify` | file rule | minor | rules-only, full, simplify, code-review, demo | code ruff can write more simply | `judge/rules/simplify.py` |
 | `rule.steering-files` | file rule | minor | rules-only, full, demo | a file another tool or agent obeys has changed | `judge/rules/steering_files.py` |

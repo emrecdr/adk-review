@@ -1949,6 +1949,45 @@ class TestTheShippedRules:
         assert try_rule(rule, {"docs/ci.md": workflow}) == [], "a workflow or an action alone is read"
         assert self_check(rule) == []
 
+    def test_a_workflow_script_that_expands_what_an_outsider_writes_is_named(self) -> None:
+        """GitHub writes an expression's value into a step's script before it runs, so a pull request's title can run
+        as code. A `run:` line, a line inside a `run:` block, folded or literal, and `actions/github-script`'s `script:`
+        are named; a value passed through `env:` or to an action under `with:`, a condition and an owner's own field
+        are not, nor is a line the change kept. Measured on 362 workflows of twelve large projects: no finding, each
+        such value passed through `env:` or `with:`."""
+        from adk_review.core.evidence import entry
+        from adk_review.core.rules import run_rule
+        from adk_review.judge.rule_helpers import self_check, try_rule
+        from adk_review.judge.rules.script_injection import ScriptInjection
+
+        rule, sha = ScriptInjection(), "60a0d83039c74a4aee543508d2ffcb1c3799cdea"
+        workflow = (
+            "on: pull_request_target\njobs:\n  triage:\n    runs-on: ubuntu-latest\n    steps:\n"
+            '      - run: echo "${{ github.event.pull_request.title }}"\n'
+            "      - name: check out the branch\n        run: |\n          git fetch origin\n"
+            "          git checkout ${{ github.head_ref }}\n"
+            '      - env:\n          TITLE: ${{ github.event.pull_request.title }}\n        run: echo "$TITLE"\n'
+            f"      - uses: actions/github-script@{sha}\n        with:\n          script: |\n"
+            "            const message = `${{ github.event.head_commit.message }}`\n"
+            f"      - uses: actions/checkout@{sha}\n        with:\n          ref: ${{{{ github.head_ref }}}}\n"
+            "      - if: ${{ github.event.issue.title == 'bug' }}\n"
+            '        run: echo "${{ github.event.repository.name }}"\n'
+            "      - run: >-\n          echo ${{ github.event.commits[0].author.name }}\n"
+        )
+        hits = try_rule(rule, {".github/workflows/triage.yml": workflow})
+        assert [(hit.line, hit.text) for hit in hits] == [
+            (6, "`github.event.pull_request.title` is written into the script before it runs"),
+            (10, "`github.head_ref` is written into the script before it runs"),
+            (17, "`github.event.head_commit.message` is written into the script before it runs"),
+            (24, "`github.event.commits[0].author.name` is written into the script before it runs"),
+        ]
+        lines = workflow.splitlines()
+        added = [(number, lines[number - 1]) for number in (6, 7)]  # the block's line 10 kept
+        kept = run_rule(rule, [entry(".github/workflows/triage.yml", "M", None, added, text=workflow)], None)
+        assert [f.line for f in kept.findings] == [6]
+        assert try_rule(rule, {"docs/ci.md": workflow}) == [], "a workflow or an action alone is read"
+        assert self_check(rule) == []
+
     def test_the_money_rule_finds_cents_divided_into_a_float(self) -> None:
         from adk_review.judge.rule_helpers import try_rule
         from adk_review.judge.rules.demo_money_in_cents import MoneyInCents

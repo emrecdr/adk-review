@@ -305,10 +305,12 @@ The rules shipped with the reviewer are written as a project writes its own:
   public registry, the one check of a lockfile's sources, since the shipped skip list leaves lockfiles to the rules; the
   formats it reads, and why the rest are left to the credential rules, are its `REGISTRIES`), `pinned-actions` (a
   workflow or an action running another action at a tag, a branch or a short SHA, which can be moved to other code after
-  review, not its full commit SHA), `hidden-text` (tag characters, bidirectional controls, and text smuggled in
-  variation selectors, invisible operators or Hangul fillers, in any file) and `steering-files` (a change to a file
-  another tool or agent obeys: a coding agent's instructions or settings, Copilot's and Gemini CLI's among them, an
-  editor's settings and the tool servers an agent starts, a CI workflow, a hook, a `.pth` file);
+  review, not its full commit SHA), `script-injection` (a workflow's script expanding a value an outsider writes, a pull
+  request's title or a branch's name, which GitHub writes into the code before it runs), `hidden-text` (tag characters,
+  bidirectional controls, and text smuggled in variation selectors, invisible operators or Hangul fillers, in any file)
+  and `steering-files` (a change to a file another tool or agent obeys: a coding agent's instructions or settings,
+  Copilot's and Gemini CLI's among them, an editor's settings and the tool servers an agent starts, a CI workflow, a
+  hook, a `.pth` file);
 - for Python beside `lint`, each reading ruff with codes no other rule names: `pitfalls` (code that does not do what it
   reads: a naive UTC datetime from `utcnow()`, a dataclass default evaluated once and shared, an exception built and
   never raised, a `subprocess.run` whose failure goes unseen, an `assert` that always passes) and `simplify` (a simpler
@@ -326,7 +328,8 @@ A profile is a list in `config.toml`, and a check runs only where a profile name
 
 - `default` runs when no `--profile` names another, and the file must hold it: the basics, `rule.secrets`,
   `rule.named-secrets`, `rule.lint`, `rule.reviewer-instructions`, `rule.encoding-declaration`, `rule.lockfile-sources`,
-  `rule.pinned-actions` and `rule.pitfalls`, and the guidelines `security`, `tests` and `complexity`;
+  `rule.pinned-actions`, `rule.script-injection` and `rule.pitfalls`, and the guidelines `security`, `tests` and
+  `complexity`;
 - `default-rules` is the default's rules and no model, so it needs no key and fits any project's every pull request;
   a test keeps it to the default's rules;
 - `push-history` is what the pre-push hook reads each commit a push sends with, line by line: the credential rules;
@@ -457,13 +460,13 @@ class RequiredPaths(TreeRule):
    `file.added` holds the numbers of the lines the change added, and `file.changed` every path the change touched, for a
    rule about the change as a whole: a manifest changed and its lock file not. `file.arrived(*globs)` is whether its
    text came into the paths the globs name from outside them, renamed or copied: every line of it is new there though
-   the diff adds none, and `pinned-actions` and `lockfile-sources` read it whole. A file past the size limits is not
-   read whole, and a rule that asks for its `lines` could not look, a hole; `file.near(n)` gives line `n` of any file,
-   as far as its diff shows it, or None, for a rule that reads only what a change added and the lines around it, as
-   `reviewer-instructions` does. `file.module` and `tree.module(path)` are the file as Python reads it, or a sentence
-   saying why there is none. A `Hit` names its own title, severity or fix, where one rule covers several problems, as
-   `lint` does for ruff's codes. Anything else returned is a sentence naming what the kind takes, and a rule that raises
-   is named with the line of its own file that raised.
+   the diff adds none, and `pinned-actions`, `script-injection` and `lockfile-sources` read it whole. A file past the
+   size limits is not read whole, and a rule that asks for its `lines` could not look, a hole; `file.near(n)` gives line
+   `n` of any file, as far as its diff shows it, or None, for a rule that reads only what a change added and the lines
+   around it, as `reviewer-instructions` does. `file.module` and `tree.module(path)` are the file as Python reads it, or
+   a sentence saying why there is none. A `Hit` names its own title, severity or fix, where one rule covers several
+   problems, as `lint` does for ruff's codes. Anything else returned is a sentence naming what the kind takes, and a
+   rule that raises is named with the line of its own file that raised.
 3. Give it examples: `bad`, each of which it must flag, and `good`, each of which it must leave alone — a text, read at
    `example.py`; a `(path, text)` pair, for a rule that chooses its files; or `{path: text}`, several files at once. At
    every start the catalog holds every rule to its own examples, and a line or a file rule to firing on nothing in its
