@@ -136,8 +136,12 @@ def build_model(*, role: str = "", preset: Models | None = None) -> str | BaseLl
     logging.getLogger("LiteLLM").addFilter(_HIDE_BEARER)  # once: a filter already there is not added again
     # Copilot's attempts are the OpenAI SDK's own retries, spaced and waiting out a Retry-After, `RETRY_ATTEMPTS` in
     # all: the reviewer's constant, where LiteLLM's default of two retries made them before, unwritten here.
+    # LiteLLM's MCP gateway, which nothing here uses, is skipped: measured offline, from LiteLLM 1.106.0 a call carrying
+    # a tool imported it, and it needs `mcp`, a package of LiteLLM's proxy, so chat's intake failed before any call.
     bounded = _bounded()
-    models = [bounded(model=f"{COPILOT}/{name}", max_retries=RETRY_ATTEMPTS - 1) for name in names]
+    models = [
+        bounded(model=f"{COPILOT}/{name}", max_retries=RETRY_ATTEMPTS - 1, _skip_mcp_handler=True) for name in names
+    ]
     return models[0] if len(models) == 1 else FallbackModel(models=models, retriable_status_codes=_FALL_BACK_ON)
 
 

@@ -152,7 +152,9 @@ Load-bearing rules the tests enforce:
   Copilot is `LiteLlm("github_copilot/…")`; `judge/settings.py` only reads which arm and which names the environment
   sets. Every change must work on both arms. Judging agents run at temperature zero; a model that cannot, Copilot's
   `gpt-5`, `gpt-5.5` or o-series as LiteLLM says offline, is refused by `require_ready`, exit 2. Copilot is sent the
-  instruction as its system turn (`litellm.disable_copilot_system_to_assistant`), as Gemini reads it.
+  instruction as its system turn (`litellm.disable_copilot_system_to_assistant`), as Gemini reads it, and LiteLLM's
+  MCP gateway is skipped (`_skip_mcp_handler`): from LiteLLM 1.106.0 a call carrying a tool, as chat's intake makes,
+  imported it, and it needs `mcp`, a package of LiteLLM's proxy the reviewer does not install.
 - **Shape.** `agent.py` exports both `app` and `root_agent` (the loader prefers `app`, and a bare `root_agent` would
   lose the plugins). `build_app(chat=True)` adds an intake agent before the same middle and, after it, a grounding node,
   which holds the guidelines' findings to the diff and decides the verdict through the command's own functions, and a

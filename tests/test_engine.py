@@ -222,6 +222,41 @@ class TestRetriesOnBothArms:
         assert called.get("num_retries") is None and called["timeout"] == REQUEST_TIMEOUT_S
         assert called["temperature"] == 0.0
 
+    @pytest.mark.asyncio
+    async def test_a_copilot_call_carrying_a_tool_reaches_copilot(self, monkeypatch, tmp_path: Path) -> None:
+        """Measured offline: from LiteLLM 1.106.0, a call carrying a tool imported LiteLLM's MCP gateway, which needs
+        `mcp`, a package of LiteLLM's proxy the reviewer does not install, so chat's intake, which confirms a scope with
+        its tools, failed on the Copilot arm before anything was sent. The tests above replace ADK's client and run none
+        of LiteLLM's own code; here only the network is replaced, below LiteLLM."""
+        import httpx
+        from google.adk.models.llm_request import LlmRequest
+        from google.genai import types
+
+        from adk_review.judge.config import build_model, request_config
+
+        key = {"token": "a key", "expires_at": time.time() + 3600, "endpoints": {"api": "https://copilot.invalid"}}
+        (tmp_path / "api-key.json").write_text(json.dumps(key), encoding="utf-8")  # LiteLLM asks GitHub for none
+        _cached_copilot_token(monkeypatch, tmp_path)
+        monkeypatch.setenv("REVIEW_PROVIDER", "copilot")
+        monkeypatch.setenv("REVIEW_MODEL", "gpt-4.1")
+        monkeypatch.delenv("REVIEW_FALLBACK_MODEL", raising=False)
+        sent: list[dict] = []
+
+        async def send(_client, request, *_args, **_kwargs):
+            sent.append(json.loads(request.content))
+            choice = {"index": 0, "finish_reason": "stop", "message": {"role": "assistant", "content": "ok"}}
+            reply = {"id": "1", "object": "chat.completion", "created": 1, "model": "gpt-4.1", "choices": [choice]}
+            return httpx.Response(200, json=reply, request=request)
+
+        monkeypatch.setattr(httpx.AsyncClient, "send", send)
+        config = request_config()
+        config.tools = [types.Tool(function_declarations=[types.FunctionDeclaration(name="changed_files")])]
+        model = build_model()
+        request = LlmRequest(model=model.model, contents=[types.UserContent("review main")], config=config)
+        answered = [response async for response in model.generate_content_async(request)]
+        assert [body["tools"][0]["function"]["name"] for body in sent] == ["changed_files"], answered
+        assert answered[-1].content.parts[0].text == "ok", answered
+
     def test_a_run_past_its_deadline_is_named_and_degrades(self, demo_repo: Path, cli, monkeypatch, capsys):
         """Measured before: no run had a deadline of its own, and on the Copilot arm one guideline call could take its
         180 s seven times over. A run past the deadline is the run's failure, each guideline named with it."""

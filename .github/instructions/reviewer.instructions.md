@@ -14,7 +14,8 @@ applyTo: "adk_review/**"
 - `adk_review/__init__.py` imports nothing and answers `agent` lazily through PEP 562's `__getattr__`, since
   `python -m adk_review.review` imports the package before `main` reads `.env`; `agent.py` exports both `app` and
   `root_agent`, the loader preferring `app`, which carries the plugins. `judge/config.py` sends Copilot the instruction
-  as its system turn (`litellm.disable_copilot_system_to_assistant`), as Gemini reads it.
+  as its system turn (`litellm.disable_copilot_system_to_assistant`), as Gemini reads it, and skips LiteLLM's MCP
+  gateway (`_skip_mcp_handler`), which a call carrying a tool imported from LiteLLM 1.106.0 and which needs `mcp`.
 - Every check is one file, named after the check it holds, in a folder that holds checks and nothing else: a rule,
   decided by code, in `judge/rules/`; a guideline, judged by a model, in `judge/guidelines/`. No `__init__.py`, guide
   or template goes in either folder: the guides and the templates are "Write a rule" and "Write a guideline" in
