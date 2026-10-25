@@ -1291,6 +1291,37 @@ def test_a_merge_one_review_passes_is_pushed_though_another_stopped_on_a_reason_
     assert merged(passes="neither") is not None, "no review passes, and what stopped one is not known whole"
 
 
+def test_a_report_windows_holds_after_its_review_still_lets_the_review_decide(monkeypatch, tmp_path: Path) -> None:
+    """Measured on CI's Windows runner, for ruff's copies: another process held a file open after it was read, and the
+    temporary folder's removal raised. The hook's own report is such a file: read by review, a review that passed
+    raised there, and the push stopped on a traceback. Here the report refuses to go, as Windows refused ruff's copies;
+    the review decides, whether it passed or stopped."""
+    import errno
+    import tempfile
+
+    push = importlib.import_module("adk_review.push")
+    unlink = os.unlink
+
+    def held(path, *args, **kwargs):  # Windows' sharing violation, WinError 32, is a PermissionError
+        if str(path).endswith("review.json"):
+            raise PermissionError(errno.EACCES, "The process cannot access the file: another process uses it")
+        return unlink(path, *args, **kwargs)
+
+    def ending(code: int):
+        def review(argv: list[str]) -> int:
+            Path(argv[argv.index("--json") + 1]).write_text("{}", encoding="utf-8")
+            return code
+
+        return review
+
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))  # what cannot go stays in the test's own folder
+    monkeypatch.setattr(os, "unlink", held)
+    monkeypatch.setattr(push, "review", ending(0))
+    assert push.reviewed("repo", "HEAD", ["main"]) is None, "the review passed"
+    monkeypatch.setattr(push, "review", ending(1))
+    assert push.reviewed("repo", "HEAD", ["main"]) == (1, ""), "the review stopped it"
+
+
 def test_a_merge_review_interrupted_or_ending_with_no_report_stops_the_push_at_once(monkeypatch) -> None:
     """Read by review: once each base of a merge was reviewed, a review cut short, Ctrl-C's 130 or a job's SIGTERM,
     143, wrote no report, which read as a reason not known, and the next base's review ran and, passing, let the push

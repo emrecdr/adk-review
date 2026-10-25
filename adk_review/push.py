@@ -132,8 +132,10 @@ def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, s
     stopped, stops = None, []
     for base in bases or [None]:
         said = io.StringIO()
+        # A folder that will not go is left to the system's own cleaning, as ruff's is: another process can hold the
+        # report open on Windows after it was read, and its removal failing stopped a push its review passed.
         with (
-            tempfile.TemporaryDirectory() as folder,
+            tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as folder,
             contextlib.redirect_stdout(said),
             contextlib.redirect_stderr(said),
         ):
