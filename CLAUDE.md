@@ -201,16 +201,17 @@ Conventions:
   each path as `:(top,literal)` pathspec magic, the merge base's attributes (`--attr-source`, git 2.41; under `--all`,
   the empty tree's), `--no-color --no-ext-diff --no-textconv`; where a guideline reads a Python file the change
   modifies, `--function-context` with Python's own boundary as `diff.default.xfuncname`, each hunk within the function
-  or class around it, and git's three lines again for a file that widening pushes past the diff cap, and for every
-  widened file where the block, as it counts, leaves a file out. Each hunk header is left bare (`unguessed`): git
-  follows one with its guess at the function around the hunk, a line from above it cut at 80 bytes, and a credential
-  there, its closing quote past the cut, reached the model. A call that fails, cannot start or runs past its timeout
-  raises `GitError`, turned into an error envelope only where envelopes are built; never answer it as an empty result. A
-  user's ref reaches git after `--end-of-options`, in `_sha` and `_branch`, or inside a pattern under refs or after
-  `--disambiguate=`, so a ref spelled `-x` is never a flag. `_git(..., ok=(0, 1))` is only for calls whose exit code 1
-  is an answer. `_sha` alone also reads exit 128 as no commit, git's answer for a revision it cannot follow, such as
-  `main@{9}`, and only where git says nothing: an `error:` or `fatal:` line at exit 1 or 128 is a `GitError`, so a
-  corrupt object is never called missing, a peel's "expected … type" line alone being an answer.
+  or class around it, and git's three lines again for a file that widening pushes past the diff cap or past 16,000
+  characters (`WIDEN_CAP_CHARS`), and for every widened file where the block, as it counts, leaves a file out. Each hunk
+  header is left bare (`unguessed`): git follows one with its guess at the function around the hunk, a line from above
+  it cut at 80 bytes, and a credential there, its closing quote past the cut, reached the model. A call that fails,
+  cannot start or runs past its timeout raises `GitError`, turned into an error envelope only where envelopes are built;
+  never answer it as an empty result. A user's ref reaches git after `--end-of-options`, in `_sha` and `_branch`, or
+  inside a pattern under refs or after `--disambiguate=`, so a ref spelled `-x` is never a flag. `_git(..., ok=(0, 1))`
+  is only for calls whose exit code 1 is an answer. `_sha` alone also reads exit 128 as no commit, git's answer for a
+  revision it cannot follow, such as `main@{9}`, and only where git says nothing: an `error:` or `fatal:` line at exit 1
+  or 128 is a `GitError`, so a corrupt object is never called missing, a peel's "expected … type" line alone being an
+  answer.
 - Every string a model reads is capped in characters, with the cut named in the text, and the cut never falls inside a
   credential, and so is each title and change a model writes into a finding, cut where `core/findings.py` makes it. A
   dropped finding's file is a model's text too, cut in `drop_ungrounded` at `REASON_MAX_CHARS`. The report cuts each

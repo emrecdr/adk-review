@@ -1608,10 +1608,44 @@ class TestTheFunctionAroundEachHunk:
         narrowed = gathered(repo, "change", diff_cap=(len(plain) + len(wide)) // 2)["pay.py"]
         assert narrowed["diff"] == plain and narrowed["unread"] == "" and not narrowed["cut"], narrowed["unread"]
         entries = [{"path": path, "status": f["status"]} for path, f in ruled.items()]
-        whole = change.shown_to_guidelines(entries, [f["diff"] for f in ruled.values()], 16_000, ())[1]
+        cap = importlib.import_module("adk_review.collect.diff").DIFF_CAP_CHARS
+        whole = change.shown_to_guidelines(entries, [f["diff"] for f in ruled.values()], cap, ())[1]
         monkeypatch.setattr(change, "BLOCK_CAP_CHARS", len(whole))  # room for git's own diffs, not for the widened
         files = gathered(repo, "change")
         assert files["pay.py"]["diff"] == plain and not any(f["unread"] for f in files.values()), files["pay.py"]
+
+    def test_a_function_widened_past_sixteen_thousand_characters_is_read_as_git_prints_it(self, tmp_path: Path) -> None:
+        """Measured by review once the cap rose to 90,000: a one-line edit in a long function sent each guideline the
+        function whole, up to that cap, where past 16,000 it had been read as git prints it. The context widening adds
+        is held to `WIDEN_CAP_CHARS` whatever the cap; a file's own diff still reads to `diff_cap`."""
+        diff = importlib.import_module("adk_review.collect.diff")
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        steps = "".join(f"        step_{n} = {n}\n" for n in range(1_500))
+        _committed(repo, "pay.py", f"class Pay:\n    def total(self, items):\n{steps}        return step_0\n", "base")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        text = (repo / "pay.py").read_text(encoding="utf-8")
+        _committed(repo, "pay.py", text.replace("step_750 = 750\n", "step_750 = 7500\n"), "deep in total")
+        assert diff.WIDEN_CAP_CHARS < len(steps) < diff.DIFF_CAP_CHARS, "a function between the two"
+        plain = gathered(repo, "change", guidelines=False)["pay.py"]["diff"]
+        shown = gathered(repo, "change")["pay.py"]
+        assert shown["diff"] == plain and shown["unread"] == "" and not shown["cut"], len(shown["diff"])
+
+    def test_the_files_read_whole_take_the_block_before_a_file_cut_at_the_cap(self, monkeypatch) -> None:
+        """Measured by review once the cap rose to 90,000: the block took the files in path order, so a long file cut
+        at the cap, first in that order, took the room of small files read whole after it, and they were left out
+        whole; in one of this repository's commits, 2 files were left out where 5 had been cut. The files read whole
+        take the room first, then the cut ones, and the block shows them in path order still."""
+        change = importlib.import_module("adk_review.collect.change")
+        monkeypatch.setattr(change, "BLOCK_CAP_CHARS", 3_000)
+        small = "@@ -0,0 +1,20 @@\n" + "".join(f"+v_{n} = {n}\n" for n in range(20))
+        long = "@@ -0,0 +1,400 @@\n" + "".join(f"+value_{n} = {n}\n" for n in range(400))
+        paths = ["a_long.py", *(f"b_{n}.py" for n in range(6))]
+        entries = [{"path": path, "status": "A"} for path in paths]
+        files, block, _excluded, left_out = change.shown_to_guidelines(entries, [long] + [small] * 6, 2_000, ())
+        assert [bool(f["unread"]) for f in files] == [True] + [False] * 6, [f["unread"] for f in files]
+        assert left_out == 1 and block.index("b_0.py") < block.index("b_5.py"), block[-200:]
 
     def test_a_file_the_skip_list_leaves_out_never_costs_the_rest_their_function(self, tmp_path: Path) -> None:
         """Measured by review: a dependency bump's lockfile, 481,156 of a change's 527,509 characters and on the

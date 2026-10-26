@@ -157,6 +157,7 @@ def shown_to_guidelines(
     files: list[Entry] = []
     blocks: list[str] = []
     room, left_out, excluded = BLOCK_CAP_CHARS, 0, {}
+    shown_any: list[tuple[Entry, str, bool, int]] = []  # a file a guideline may read: its diff, cut, block size
     for listed, diff in zip(entries, diffs, strict=True):
         # A symbolic link is known by the change's own mode, with no tree listed.
         link = listed.get("mode") == LINK_MODE
@@ -173,14 +174,22 @@ def shown_to_guidelines(
             file["unread"] = unread(file, diff, cut=False, fits=True, cap=diff_cap)
             continue
         view, cut = capped(diff, diff_cap)
-        block, framing = framed(file["path"], view)
-        fits = len(block) <= room
+        shown_any.append((file, diff, cut, len(framed(file["path"], view)[0])))
+    # The files read whole take the room first, then the cut ones, each in path order: measured by review, a long file
+    # cut at the cap took the room of small files after it, read whole before the cap rose, and left them out whole.
+    fitted: set[int] = set()
+    for at in sorted(range(len(shown_any)), key=lambda at: shown_any[at][2]):  # stable: path order within each
+        if (size := shown_any[at][3]) <= room:
+            fitted.add(at)
+            room -= size + 2  # and the blank line joining it to the next
+    for at, (file, diff, cut, _size) in enumerate(shown_any):
         # The guidelines' limits alone: the rules read every added line.
-        file.update(unread=unread(file, diff, cut, fits, diff_cap), cut=cut or not fits)
-        if fits:  # a file no guideline read, none may quote
+        file.update(unread=unread(file, diff, cut, at in fitted, diff_cap), cut=cut or at not in fitted)
+        if at in fitted:  # a file no guideline read, none may quote; its view made again, none kept for the rest
+            view, _cut = capped(diff, diff_cap)
+            block, framing = framed(file["path"], view)
             file.update(quotable=quotable(view), framing=framing)
             blocks.append(block)
-            room -= len(block) + 2  # and the blank line joining it to the next
         else:
             left_out += 1
     if left_out:  # named to the guidelines too: a test left out is no test missing

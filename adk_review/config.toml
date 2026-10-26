@@ -17,7 +17,7 @@ diff_cap = 90000     # characters of a file's diff a guideline reads; a file cut
 # credential in a registry's URL among what they find. Not bun's binary `bun.lockb`, which no rule can read.
 # And protoc's generated modules, stubs and gRPC services, each written whole and saying not to edit it: a guideline's
 # finding there names nothing to fix in it, and measured over 1,090 of them, 10 to 15 % of the services and the stubs
-# are past the cap. The rules still read every line.
+# were past the cap of 16,000 characters then. The rules still read every line.
 skip = [
     "*.png", "*.PNG", "*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.gif", "*.GIF", "*.webp", "*.WEBP", "*.ico", "*.ICO",
     "*.bmp", "*.BMP", "*.tif", "*.TIF", "*.tiff", "*.TIFF", "*.avif", "*.AVIF", "*.heic", "*.HEIC", "*.heif", "*.HEIF",

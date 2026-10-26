@@ -50,7 +50,7 @@ roots it bundles, not the machine's, where the reviewer trusts the machine's own
 | `--check` | Run one check alone, this once: `rule.<name>`, `guideline.<name>`, or a group, `rules` or `guidelines`. Repeat it for more than one. Not with `--profile`. |
 | `--fail-on` | Exit 1 at or above this severity: `minor`, `major` or `blocker`. Default: the config's `fail_on`. |
 | `--max-tokens` | Stop spending past this many tokens; 0 is no ceiling. Default: the config's `max_tokens`. |
-| `--diff-cap` | Characters of one file's diff a guideline reads; a file cut there is named "not read". A Python file's diff shows each hunk within the function or class around it, and one that would pass the cap so shows git's three lines of context instead. Default: the config's `diff_cap`. |
+| `--diff-cap` | Characters of one file's diff a guideline reads; a file cut there is named "not read". A Python file's diff shows each hunk within the function or class around it, and one that would so grow past 16,000 characters, or past the cap, shows git's three lines of context instead. Default: the config's `diff_cap`. |
 | `--skip` | A glob of changed files the guidelines leave to the rules: each is named, never a hole. A submodule, which no rule reads, is never skipped. Adds to the config's `skip`. Repeat it for more than one. |
 | `--scan` | A glob of changed files a review reads, beside the config's `scan`: Python's, notebooks' and configs' by default, and always a file with no suffix. Any other changed file is ignored, only listed. The credential rules still read the project's own. Repeat it for more than one. |
 | `--third-party` | A glob of folders holding other projects' code, vendored or installed: a changed file under one is ignored, never read, only listed. Adds to the config's `third_party`. Repeat it for more than one. |
@@ -162,12 +162,13 @@ A rule's severity is its findings', but `lint` and `pitfalls` give each ruff cod
 own, and `encoding-declaration` is a hole, exit 3, rather than a finding: no rule read the code Python would run.
 `--explain ID` prints one check whole. `lint` leaves a line's length, E501, to the project's formatter: it reads no
 project's settings, so no width fits every project, and an operator takes it back in the rule's `IGNORE` and sets its
-width in `LINE_LENGTH`, ruff's 88 when unset. `types` runs pyrefly on each changed Python file alone, a name it imports
-from beyond itself read as `Any`, and keeps what it finds on the lines the change added: a call missing an argument or
-given too many by position, a major, and a missing attribute, a value of the wrong type passed or returned, or one an
-operation cannot take, added, compared, indexed or iterated, a minor. No branch's ignore comment silences it, though
-`@no_type_check` on a function does. It is in no default profile: name it with `--check rule.types`, or run `rules-only`
-or `full`.
+width in `LINE_LENGTH`, ruff's 88 when unset. It leaves `assert` out of a test file, ruff's S101 and `assert False`'s
+B011, since an assert is how pytest checks; in library code each is major, since `python -O` strips it. `types` runs
+pyrefly on each changed Python file alone, a name it imports from beyond itself read as `Any`, and keeps what it finds
+on the lines the change added: a call missing an argument or given too many by position, a major, and a missing
+attribute, a value of the wrong type passed or returned, or one an operation cannot take, added, compared, indexed or
+iterated, a minor. No branch's ignore comment silences it, though `@no_type_check` on a function does. It is in no
+default profile: name it with `--check rule.types`, or run `rules-only` or `full`.
 
 ## Configuration
 
@@ -310,6 +311,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | What | Limit | Where |
 |---|---|---|
 | One file's diff a guideline reads, unless `diff_cap` or `--diff-cap` names another | 90,000 characters | `collect/diff.py`, `DIFF_CAP_CHARS` |
+| One Python file's diff read within the function around each hunk, past which it is read as git prints it | 16,000 characters | `collect/diff.py`, `WIDEN_CAP_CHARS` |
 | All the diffs the guidelines read | 250,000 characters | `collect/change.py`, `BLOCK_CAP_CHARS` |
 | The most complex functions the health section names | 5 | `core/health.py`, `WORST_SHOWN` |
 | The findings the table under the verdict shows, the most severe first | 30 | `deliver/report.py`, `TABLE_ROWS` |

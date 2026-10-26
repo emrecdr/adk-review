@@ -45,6 +45,7 @@ from .diff import (
     DIFF_CAP_CHARS,
     LINK_MODE,
     SUBMODULE_MODE,
+    WIDEN_CAP_CHARS,
     headers,
     hunk_lines,
     readable,
@@ -1040,14 +1041,14 @@ def _read_change(
     Where a guideline reads the change, each Python hunk `widens` names is read within the function or class around
     it, as Claude Code's review reads the enclosing function of each hunk: git's three lines showed an edit deep in a
     method without its `def`, its arguments or its other branches. The context never costs a file its reading, as the
-    block counts it: a file widening pushes past `diff_cap` is read again as git prints it, and so is every widened
-    file where the block leaves a file out. Measured over this repository's last 31 commits, the widened Python diffs
-    were 1.7 times git's and one file of 191 went past the cap; measured by review, a total of the raw diffs, a
-    skip-listed lockfile's among them and the framing uncounted, read whole changes as git prints them that the
-    widened block held. The added lines, all the rules read, are the same either way."""
+    block counts it: a file widening pushes past `diff_cap`, or past `WIDEN_CAP_CHARS`, is read again as git prints
+    it, and so is every widened file where the block leaves a file out. Measured over this repository's last 31
+    commits, the widened Python diffs were 1.7 times git's and one file of 191 went past the cap; measured by review,
+    a total of the raw diffs, a skip-listed lockfile's among them and the framing uncounted, read whole changes as git
+    prints them that the widened block held. The added lines, all the rules read, are the same either way."""
     wide = [at for at, entry in enumerate(entries) if guidelines and widens(entry, skip)]
     diffs = _diffs(resolved, entries, scope, frozenset(wide))
-    over = {at for at in wide if len(diffs[at]) > diff_cap}
+    over = {at for at in wide if len(diffs[at]) > min(diff_cap, WIDEN_CAP_CHARS)}
     _narrowed(resolved, entries, diffs, sorted(over))
     files, block, excluded, left_out = shown_to_guidelines(entries, diffs, diff_cap, skip, shown=guidelines)
     if left_out and (rest := [at for at in wide if at not in over]):

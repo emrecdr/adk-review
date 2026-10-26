@@ -61,9 +61,10 @@ SEVERITY: dict[str, Severity] = {
     "invalid-syntax": "major",
 }
 #: Codes left out in a test file, where their pattern is how tests are written: `assert` is pytest's way to check,
-#: while in library code it vanishes under `python -O`. Measured: every test assert was a major S101, 762 of them in
-#: this repository's tests, 99% of its majors; rated minor they still filled each report.
-IN_TESTS: frozenset[str] = frozenset({"S101"})
+#: while in library code it vanishes under `python -O`, as `assert False` does, which ruff names B011 beside S101.
+#: Measured: every test assert was a major S101, 762 of them in this repository's tests, 99% of its majors; rated minor
+#: they still filled each report.
+IN_TESTS: frozenset[str] = frozenset({"S101", "B011"})
 #: The fix a finding names when ruff offers none: ruff says what is wrong, not what to do. Keyed as `SEVERITY` is:
 #: by family, since a sentence true of every rule in one is worth more than a guess per code, and by code where the
 #: family's would mislead.
@@ -105,4 +106,5 @@ class Lint(FileRule):
     tool_settings = MappingProxyType({"select": SELECT, "ignore": IGNORE, "line_length": LINE_LENGTH})
 
     def check(self, file: ChangedFile) -> list[Hit]:
-        return listed(file, lambda found: severity_of(found.code), FIX, IN_TESTS if is_test(file.path) else ())
+        leave_out = IN_TESTS if is_test(file.path) else ()
+        return listed(file, lambda found: severity_of(found.code), FIX, leave_out=leave_out)

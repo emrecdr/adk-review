@@ -17,9 +17,13 @@ from ..core.text import backticks, cut_at, squash
 #: 7,529-character file's planted shell call went unread, a hole, and so did 3 of a 17-file change's files; at 16,000
 #: each was read, the call named in both runs, for a fifth more tokens. Raised to 90,000 after a real project's long
 #: source file ended its review as not read: over this repository's 220 commits, 1.2% of the source files' diffs and
-#: 4.0% of the tests' passed 16,000, and at 90,000 none of the source's and 2 of 379 tests'. A larger one is the
-#: operator's, `diff_cap` or `--diff-cap`.
+#: 4.0% of the tests' passed 16,000, and at 90,000 none of the source's and 2 of 379 tests'.
 DIFF_CAP_CHARS = 90_000
+#: The most a Python file's diff may grow when each hunk is read within its function or class, past which it is read as
+#: git prints it: measured over this repository's last 31 commits, the widened diffs were 1.7 times git's and one file
+#: of 191 went past 16,000; held there when the cap rose, as a one-line edit in a long function then sent its whole
+#: function, up to the cap, to each guideline.
+WIDEN_CAP_CHARS = 16_000
 _HUNK_START = re.compile(r"^@@ -\S+ \+(\d+)(,0\b)?")
 #: The escapes git writes in a path it quotes, beside a byte's three octal digits.
 _ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}

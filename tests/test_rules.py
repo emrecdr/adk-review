@@ -877,20 +877,25 @@ class TestTheLintRule:
         )
 
     def test_an_assert_is_major_in_library_code_and_not_reported_in_a_test(self) -> None:
-        """`assert` is how pytest checks, and in library code it vanishes under `python -O`. Measured before: every
-        test assert was a major S101, 762 of them in this repository's tests, 99% of its majors. A test's other
-        findings stay."""
-        text = "def check(x):\n    assert x\n"
-        tiers = {
+        """`assert` is how pytest checks, and in library code it vanishes under `python -O`, as `assert False` does,
+        which ruff names twice, S101 and B011. Measured before: every test assert was a major S101, 762 of them in this
+        repository's tests, 99% of its majors. A test's other findings stay; and a code left out is dropped before the
+        lines the change did not add are counted, so it never raises that count's severity or adds to it."""
+        text = "def check(x):\n    assert x\n    assert False\n    print(eval('1'))\n"
+        codes = {
             path: {
-                (f.title.removeprefix("lint: ").split()[0], f.severity)
-                for f in lint_findings({"files": [_entry(path, text + "y = eval('1')\n")], "tree": None})
+                f.title.removeprefix("lint: ").split()[0]: f.severity
+                for f in lint_findings({"files": [_entry(path, text)], "tree": None})
             }
             for path in ("src/pay.py", "tests/test_pay.py")
         }
-        assert ("S101", "major") in tiers["src/pay.py"], tiers
-        assert not any(code == "S101" for code, _severity in tiers["tests/test_pay.py"]), tiers
-        assert ("S307", "major") in tiers["tests/test_pay.py"], tiers
+        assert codes["src/pay.py"]["S101"] == codes["src/pay.py"]["B011"] == "major", codes
+        assert "S101" not in codes["tests/test_pay.py"] and "B011" not in codes["tests/test_pay.py"], codes
+        assert codes["tests/test_pay.py"]["S307"] == "major", codes
+        kept = _entry("tests/test_pay.py", text)
+        kept["added"] = [(4, "    print(eval('1'))")]  # the asserts on lines the change kept
+        found = lint_findings({"files": [kept], "tree": None})
+        assert [(f.line, f.title.split()[1]) for f in found] == [(4, "S307")], found
 
     def test_a_call_without_a_shell_or_by_a_short_name_is_minor_and_a_shell_call_major(self) -> None:
         """S603 names every `subprocess` call whose arguments are not a literal list, and S607 every program named

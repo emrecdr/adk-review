@@ -503,7 +503,7 @@ and a credential's shape from `secrets.py`:
 | `functions_in(code)`, `imports_in(code)`, `nodes_in(code, *kinds)`, `name_of(node)` | Every function; every imported name with its line; every node of a kind; a name as written, dotted |
 | `defined(module)`, `classes(module)`, `parameters(module, function)` | What a module defines; its classes and their parents; a function's parameters |
 | `try_rule`, `lines_hit`, `self_check`, `self_test` | A rule tried on files, on a text, on its own source, on its own examples |
-| `listed(file, rate, fixes)`, `tier(table, code)`, `family(code)`, `fix_of(table, code, offered, label)`, `PER_FILE` | A ruff-backed rule's findings on one file, each diagnostic at the severity `rate` gives it, none for a file that is not Python: the change's own lines listed, at most `PER_FILE`, and the rest counted; a code's entry in a rule's table by the longest key in its family; ruff's own fix with its label, else the table's sentence |
+| `listed(file, rate, fixes, leave_out)`, `tier(table, code)`, `family(code)`, `fix_of(table, code, offered, label)`, `PER_FILE` | A ruff-backed rule's findings on one file, each diagnostic at the severity `rate` gives it, none for a file that is not Python: a code in `leave_out` dropped first, then the change's own lines listed, at most `PER_FILE`, and the rest counted; a code's entry in a rule's table by the longest key in its family; ruff's own fix with its label, else the table's sentence |
 
 Three limits stay. A line helper reads one line alone, so a line inside a docstring reads as code; a rule that must
 tell them apart reads the file. Names are read as written: after `from requests import get`, `get(url)` is not
@@ -862,14 +862,15 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   `x.py` beside `X.py/y.py` collides on no disk, and a `nul.py` or `a:b.py`, which Windows cannot hold, is linted like
   any other. Ruff lints what the collector read and no more: a file not read whole is the hole of each rule that reads
   ruff. What a code means, its severity and its fix, is the rule's: an `assert` is major in library code, where
-  `python -O` strips it, and minor in a test, where it is how pytest checks. Without ruff, or with one that fails, the
-  rule did not look and says so, exit 3. Its answer is read a finding at a time, as ruff writes one a line, each kept as
-  no more than the rule reads, and past 500,000 findings what it named is a hole: measured by review, three files of
-  unary minus chains made ruff write 589 MB of JSON each, read whole in 90 s and 4.5 GB. `types` reads the same copies
-  through pyrefly, each file alone, under a configuration of the reviewer's: the `default` preset, no installed package
-  and no interpreter asked, so a name a file imports from beyond itself reads as `Any`, and no ignore comment honoured,
-  as ruff runs `--ignore-noqa`. Measured over four libraries' source and 60 planted edits, each file alone found 27 of
-  30 type defects on their own lines, as the whole package did, at 0.1 s a file where the package took up to 5 s.
+  `python -O` strips it, and left out of a test, where it is how pytest checks, its S101 and `assert False`'s B011
+  dropped before anything is counted. Without ruff, or with one that fails, the rule did not look and says so, exit 3.
+  Its answer is read a finding at a time, as ruff writes one a line, each kept as no more than the rule reads, and past
+  500,000 findings what it named is a hole: measured by review, three files of unary minus chains made ruff write 589 MB
+  of JSON each, read whole in 90 s and 4.5 GB. `types` reads the same copies through pyrefly, each file alone, under a
+  configuration of the reviewer's: the `default` preset, no installed package and no interpreter asked, so a name a file
+  imports from beyond itself reads as `Any`, and no ignore comment honoured, as ruff runs `--ignore-noqa`. Measured over
+  four libraries' source and 60 planted edits, each file alone found 27 of 30 type defects on their own lines, as the
+  whole package did, at 0.1 s a file where the package took up to 5 s.
 - **Grounding.** A guideline's finding must quote, verbatim, whole lines of its own file's diff, within one hunk, as the
   guideline saw them: secrets redacted, diff markers gone, whitespace not counted. Where a quote's line breaks were
   lost, its lines begin and end where the file's do, a diff marker or a fence run into them or not: measured live on
@@ -958,15 +959,16 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   listed every module it reached, and a cycle of 4,000 took 9.3 s where it takes 0.09, litellm's 2,685 files 5.0 s where
   they take 0.69, and a path is indexed by no more of its tail than an import can name, where 100 files 1,000 folders
   deep took 20 s.
-- **What the guidelines read is capped.** Each file's diff is cut at `diff_cap`, and the block of diffs in all: a file
-  past the block's cap is left out whole, the block's end tells the guidelines how many, and the report names each under
-  "not read", a hole. With no cap, `--all` over 4,826 files gave each guideline and each verifier 14.9 MB. `--path`
-  narrows a review to fit. With no guideline on, a cut is no hole: the cap is the guidelines' limit, and the rules read
-  every added line. Measured live on Copilot at 4,000 characters a file: a 7,529-character file's planted shell call
-  went unread and so did 3 of a 17-file change's files, each a hole; at 16,000 each was read, the call named in both
-  runs, for a fifth more tokens. Raised to 90,000 after a real project's long source file ended its review as not read:
-  over this repository's 220 commits, 1.2% of the source files' diffs and 4.0% of the tests' passed 16,000, and at
-  90,000 none of the source's and 2 of 379 tests'.
+- **What the guidelines read is capped.** Each file's diff is cut at `diff_cap`, and the block of diffs in all: the
+  files read whole take its room first, then the cut ones, each shown in path order, and a file past the block's cap is
+  left out whole, the block's end tells the guidelines how many, and the report names each under "not read", a hole.
+  With no cap, `--all` over 4,826 files gave each guideline and each verifier 14.9 MB. `--path` narrows a review to fit.
+  With no guideline on, a cut is no hole: the cap is the guidelines' limit, and the rules read every added line.
+  Measured live on Copilot at 4,000 characters a file: a 7,529-character file's planted shell call went unread and so
+  did 3 of a 17-file change's files, each a hole; at 16,000 each was read, the call named in both runs, for a fifth more
+  tokens. Raised to 90,000 after a real project's long source file ended its review as not read: over this repository's
+  220 commits, 1.2% of the source files' diffs and 4.0% of the tests' passed 16,000, and at 90,000 none of the source's
+  and 2 of 379 tests'.
 - **A Python hunk is read within its function.** Where a guideline reads a Python file the change modifies, git widens
   each hunk to the function or class around it, `--function-context` with Python's own boundary set as
   `diff.default.xfuncname` through `GIT_CONFIG_COUNT`, as the settings fixed for every call are, so the repository's own
@@ -976,11 +978,12 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   cut at 80 bytes, and a credential there, its closing quote past the cut, reached every model. Every line shown can be
   quoted, so a finding may stand on an unchanged line of a function the change touched, and `on_added_line` says so.
   Measured over this repository's last 31 commits, the Python diffs grew 1.7 times and one file of 191 went past the
-  diff cap: a file the widening pushes past it is read as git prints it, and so is every widened file where the block,
-  counted as the block counts, leaves a file out, so the context never costs a file its reading. Measured by review, a
-  total of the raw diffs, a skip-listed lockfile's among them and the framing uncounted, had read whole changes as git
-  prints them that the widened block held. An added or a deleted file, whole already, a skip-listed one, any other file,
-  and every diff the rules alone read, are git's own, and the added lines are the same either way.
+  diff cap, 16,000 then: a file the widening pushes past 16,000 characters, `WIDEN_CAP_CHARS`, or past the diff cap is
+  read as git prints it, and so is every widened file where the block, counted as the block counts, leaves a file out,
+  so the context never costs a file its reading. Measured by review, a total of the raw diffs, a skip-listed lockfile's
+  among them and the framing uncounted, had read whole changes as git prints them that the widened block held. An added
+  or a deleted file, whole already, a skip-listed one, any other file, and every diff the rules alone read, are git's
+  own, and the added lines are the same either way.
 - **Fences carry a nonce.** A sentence at the top of an instruction is no boundary: what follows it is the branch's own
   text. Measured with a reviewer of the same shape on Copilot, a docstring declaring an override silenced most of its
   reviewing agents, each answering no findings. Each untrusted section a guideline, a verifier or chat's verdict reads
