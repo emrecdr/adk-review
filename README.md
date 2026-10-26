@@ -958,13 +958,15 @@ neither assistant may read it. Nothing here calls a model by itself; a review wh
   listed every module it reached, and a cycle of 4,000 took 9.3 s where it takes 0.09, litellm's 2,685 files 5.0 s where
   they take 0.69, and a path is indexed by no more of its tail than an import can name, where 100 files 1,000 folders
   deep took 20 s.
-- **What the guidelines read is capped.** Each file's diff is cut at `diff_cap`, and the block of diffs in all: a
-  file past the block's cap is left out whole, the block's end tells the guidelines how many, and the report names
-  each under "not read", a hole. With no cap, `--all` over 4,826 files gave each guideline and each verifier 14.9 MB.
-  `--path` narrows a review to fit. With no guideline on, a cut is no hole: the cap is the guidelines' limit, and
-  the rules read every added line. Measured live on Copilot at 4,000 characters a file: a 7,529-character file's
-  planted shell call went unread and so did 3 of a 17-file change's files, each a hole; at 16,000 each was read, the
-  call named in both runs, for a fifth more tokens.
+- **What the guidelines read is capped.** Each file's diff is cut at `diff_cap`, and the block of diffs in all: a file
+  past the block's cap is left out whole, the block's end tells the guidelines how many, and the report names each under
+  "not read", a hole. With no cap, `--all` over 4,826 files gave each guideline and each verifier 14.9 MB. `--path`
+  narrows a review to fit. With no guideline on, a cut is no hole: the cap is the guidelines' limit, and the rules read
+  every added line. Measured live on Copilot at 4,000 characters a file: a 7,529-character file's planted shell call
+  went unread and so did 3 of a 17-file change's files, each a hole; at 16,000 each was read, the call named in both
+  runs, for a fifth more tokens. Raised to 90,000 after a real project's long source file ended its review as not read:
+  over this repository's 220 commits, 1.2% of the source files' diffs and 4.0% of the tests' passed 16,000, and at
+  90,000 none of the source's and 2 of 379 tests'.
 - **A Python hunk is read within its function.** Where a guideline reads a Python file the change modifies, git widens
   each hunk to the function or class around it, `--function-context` with Python's own boundary set as
   `diff.default.xfuncname` through `GIT_CONFIG_COUNT`, as the settings fixed for every call are, so the repository's own

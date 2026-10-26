@@ -309,7 +309,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 
 | What | Limit | Where |
 |---|---|---|
-| One file's diff a guideline reads, unless `diff_cap` or `--diff-cap` names another | 16,000 characters | `collect/diff.py`, `DIFF_CAP_CHARS` |
+| One file's diff a guideline reads, unless `diff_cap` or `--diff-cap` names another | 90,000 characters | `collect/diff.py`, `DIFF_CAP_CHARS` |
 | All the diffs the guidelines read | 250,000 characters | `collect/change.py`, `BLOCK_CAP_CHARS` |
 | The most complex functions the health section names | 5 | `core/health.py`, `WORST_SHOWN` |
 | The findings the table under the verdict shows, the most severe first | 30 | `deliver/report.py`, `TABLE_ROWS` |

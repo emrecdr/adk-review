@@ -7,7 +7,7 @@
 fail_on = "blocker"  # exit 1 at or above this severity: minor, major or blocker (--fail-on)
 max_tokens = 0       # stop spending past this many tokens; 0 is no ceiling (--max-tokens)
 verify = false       # a second opinion on each guideline's finding no rule already made (--verify, --no-verify)
-diff_cap = 16000     # characters of a file's diff a guideline reads; a file cut there is named "not read" (--diff-cap)
+diff_cap = 90000     # characters of a file's diff a guideline reads; a file cut there is named "not read" (--diff-cap)
 # Globs of changed files the guidelines leave to the rules, each named, never a hole; --skip adds more for one run.
 # Images and fonts, in either case: no rule and no model reads one, and measured, a branch adding a logo alone ended
 # in exit 3 and its push stopped, which only --no-verify, skipping the credential rules too, let through. Not an

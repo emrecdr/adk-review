@@ -15,8 +15,11 @@ from ..core.text import backticks, cut_at, squash
 
 #: Every string the model reads is capped in characters, and the cut is named. Measured live on Copilot at 4,000: a
 #: 7,529-character file's planted shell call went unread, a hole, and so did 3 of a 17-file change's files; at 16,000
-#: each was read, the call named in both runs, for a fifth more tokens.
-DIFF_CAP_CHARS = 16_000
+#: each was read, the call named in both runs, for a fifth more tokens. Raised to 90,000 after a real project's long
+#: source file ended its review as not read: over this repository's 220 commits, 1.2% of the source files' diffs and
+#: 4.0% of the tests' passed 16,000, and at 90,000 none of the source's and 2 of 379 tests'. A larger one is the
+#: operator's, `diff_cap` or `--diff-cap`.
+DIFF_CAP_CHARS = 90_000
 _HUNK_START = re.compile(r"^@@ -\S+ \+(\d+)(,0\b)?")
 #: The escapes git writes in a path it quotes, beside a byte's three octal digits.
 _ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
