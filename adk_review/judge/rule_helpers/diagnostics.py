@@ -8,7 +8,7 @@ same for each, and lives here once.
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 
 from ...core.findings import RANK, Severity
 from ...core.rules import ChangedFile, Diagnostic, Hit, is_python
@@ -41,15 +41,21 @@ def fix_of(table: Mapping[str, str], code: str, offered: str | None, label: str 
     return tier(table, code) or f"see ruff rule {code}"
 
 
-def listed(file: ChangedFile, rate: Callable[[Diagnostic], Severity], fixes: Mapping[str, str]) -> list[Hit]:
+def listed(
+    file: ChangedFile,
+    rate: Callable[[Diagnostic], Severity],
+    fixes: Mapping[str, str],
+    leave_out: Collection[str] = (),
+) -> list[Hit]:
     """Each of ruff's diagnostics on `file`, at the severity `rate` gives it, as findings: those on lines the change
     added one by one, at most `PER_FILE` of them, the most severe first; the rest counted, one finding each for the
     lines the change did not add and for the ones past the cap, so the verdict reads the same. `fixes` is the rule's
-    own table of sentences, read where ruff offers no fix. None for a file that is not Python: ruff reads Python, and
-    another file's text is never asked for, so one not read whole is no rule's hole."""
+    own table of sentences, read where ruff offers no fix. A diagnostic whose code is in `leave_out` is neither listed
+    nor counted. None for a file that is not Python: ruff reads Python, and another file's text is never asked for,
+    so one not read whole is no rule's hole."""
     if not is_python(file.path, lambda: file.line(1)):
         return []
-    rated = [(found, rate(found)) for found in file.diagnostics]
+    rated = [(found, rate(found)) for found in file.diagnostics if found.code not in leave_out]
     tail: list[Hit] = []
     # What ruff reports on lines the change did not add is counted, one finding a file at the most severe of them,
     # so the verdict reads the same. Measured over this repository's 22 commits: 2,101 of lint's 2,435 findings,

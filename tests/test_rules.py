@@ -876,18 +876,21 @@ class TestTheLintRule:
             aside.title == "lint: 2 of ruff's findings on lines the change did not add" and aside.evidence == "F401 x2"
         )
 
-    def test_an_assert_is_major_in_library_code_and_minor_in_a_test(self) -> None:
+    def test_an_assert_is_major_in_library_code_and_not_reported_in_a_test(self) -> None:
         """`assert` is how pytest checks, and in library code it vanishes under `python -O`. Measured before: every
-        test assert was a major S101, 762 of them in this repository's tests, 99% of its majors."""
+        test assert was a major S101, 762 of them in this repository's tests, 99% of its majors. A test's other
+        findings stay."""
         text = "def check(x):\n    assert x\n"
         tiers = {
             path: {
                 (f.title.removeprefix("lint: ").split()[0], f.severity)
-                for f in lint_findings({"files": [_entry(path, text)], "tree": None})
+                for f in lint_findings({"files": [_entry(path, text + "y = eval('1')\n")], "tree": None})
             }
             for path in ("src/pay.py", "tests/test_pay.py")
         }
-        assert ("S101", "major") in tiers["src/pay.py"] and ("S101", "minor") in tiers["tests/test_pay.py"], tiers
+        assert ("S101", "major") in tiers["src/pay.py"], tiers
+        assert not any(code == "S101" for code, _severity in tiers["tests/test_pay.py"]), tiers
+        assert ("S307", "major") in tiers["tests/test_pay.py"], tiers
 
     def test_a_call_without_a_shell_or_by_a_short_name_is_minor_and_a_shell_call_major(self) -> None:
         """S603 names every `subprocess` call whose arguments are not a literal list, and S607 every program named
