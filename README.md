@@ -894,27 +894,29 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   Gemini, a guideline quoted each run of lines as one, its `-` markers and its fence left in, and every finding it made
   dropped, the review a hole. A redaction's placeholder stands for any other, its label the scrubber's and never the
   code's: measured live on Gemini, a guideline quoted the planted key's lines with the label renamed, and the finding
-  dropped. Each hunk is read as git prints it, as the new file reads and as the old file read. A finding's line is read
-  off the diff, never taken from the model: measured on Copilot, the guidelines named a wrong line for 4 of 5 findings.
-  A finding at the bar whose quote the diff does not bear out is a hole, since a real blocker dropped would approve, and
-  so is one a verifier refuted: the verifier reads the branch's own text, which could tell it a real blocker does not
-  hold. A quote carrying the framing its file was shown in — the heading, the fence, git's header lines and each hunk's
-  `@@`, git's `\ No newline at end of file`, the cap's cut — grounds as the lines inside it: measured live on Gemini,
-  the injection on the labelled set's `sql-from-input` came quoted inside its fence, and the blocker was dropped, the
-  review a hole; with the framing looked past, two runs more, three of five blocker quotes carried a fence or git's
-  header and both runs kept the blocker. The collector records each file's framing beside its lines as it renders them,
-  so only that file's own is looked past: measured by review with a list of such lines kept by hand instead, a file with
-  no final newline and a file cut at the cap, each quoted whole, were dropped. Measured live with the framing recorded,
-  on both arms, no quote was dropped: Gemini quoted `sql-from-input`'s blocker under git's whole header, down to the
-  hunk's `@@` and the function git named there, and four quotes on the planted branch inside fences, and each was kept.
-  A kept finding's evidence is then the lines its quote stands on, as the file reads them: the report, the JSON, the
-  hand-off, the verifier and the fingerprint read the diff's own text, never a model's framing of it; measured by
-  review, the same two lines quoted plain and inside their fence had two fingerprints, so `--previous` named one finding
-  resolved and new at once. A quote is placed from no line whose rest of the hunk is too short to hold it, and within
-  20,000 lines read on: measured by review, a hunk of 2,000 repeated lines quoted whole took 4.9 s a finding, read on
-  from every line, a branch's lines a model was steered to quote stalling the review. What was measured not to help:
-  told to quote whole lines and, for a missing test, the lines that lack one, Copilot's guidelines quoted whole files
-  under their `@@` headers, and 14 of 27 findings were dropped where 5 of 21 had been; that sentence was taken out.
+  dropped. Each hunk is read as git prints it, as the new file reads, as the old file read, and with each replaced line
+  beside the one that replaced it: measured live on Copilot, 16 of 41 findings quoted an old line beside its new one,
+  which git never prints together, and were dropped. A finding's line is read off the diff, never taken from the model:
+  measured on Copilot, the guidelines named a wrong line for 4 of 5 findings. A finding at the bar whose quote the diff
+  does not bear out is a hole, since a real blocker dropped would approve, and so is one a verifier refuted: the
+  verifier reads the branch's own text, which could tell it a real blocker does not hold. A quote carrying the framing
+  its file was shown in — the heading, the fence, git's header lines and each hunk's `@@`, git's
+  `\ No newline at end of file`, the cap's cut — grounds as the lines inside it: measured live on Gemini, the injection
+  on the labelled set's `sql-from-input` came quoted inside its fence, and the blocker was dropped, the review a hole;
+  with the framing looked past, two runs more, three of five blocker quotes carried a fence or git's header and both
+  runs kept the blocker. The collector records each file's framing beside its lines as it renders them, so only that
+  file's own is looked past: measured by review with a list of such lines kept by hand instead, a file with no final
+  newline and a file cut at the cap, each quoted whole, were dropped. Measured live with the framing recorded, on both
+  arms, no quote was dropped: Gemini quoted `sql-from-input`'s blocker under git's whole header, down to the hunk's `@@`
+  and the function git named there, and four quotes on the planted branch inside fences, and each was kept. A kept
+  finding's evidence is then the lines its quote stands on, as the file reads them: the report, the JSON, the hand-off,
+  the verifier and the fingerprint read the diff's own text, never a model's framing of it; measured by review, the same
+  two lines quoted plain and inside their fence had two fingerprints, so `--previous` named one finding resolved and new
+  at once. A quote is placed from no line whose rest of the hunk is too short to hold it, and within 20,000 lines read
+  on: measured by review, a hunk of 2,000 repeated lines quoted whole took 4.9 s a finding, read on from every line, a
+  branch's lines a model was steered to quote stalling the review. What was measured not to help: told to quote whole
+  lines and, for a missing test, the lines that lack one, Copilot's guidelines quoted whole files under their `@@`
+  headers, and 14 of 27 findings were dropped where 5 of 21 had been; that sentence was taken out.
 - **One finding per span of lines.** Rules and guidelines can all find one line; the report carries it once: the most
   severe reading first, whole; on a tie a defect before a cleanup's finding, then the first check — the rules, then the
   guidelines, each in the order the profile names them, which is the report's order too — and any finding one kept
@@ -965,10 +967,11 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   evidence: a finding that quotes it is dropped. Beside it they read each call into a function the change touched, from
   a line the change did not add, with three lines each way and three calls a function at most, a call from each file
   before a second: a side effect no diff shows, which a finding reports on the changed lines. Measured live over five
-  planted side effects: Copilot named one in 8 of 10 runs shown the calls, and in 2 of 10 without; Gemini named all five
-  either way, and the caller each relied on once shown it. The report shows it under the verdict, widest first — the
-  most modules importing a file directly, then the most reached — and the verdict never reads it: severity decides. An
-  import graph is a floor of what a change reaches, since a module loaded by name, a subprocess, a web route or a plugin
+  planted side effects, each a behaviour change a caller relied on: both arms raised each one with or without the calls,
+  but without them as a guess that callers may break, and with them naming the caller and what it relied on; neither
+  raised anything on a branch that kept its behaviour. The report shows it under the verdict, widest first — the most
+  modules importing a file directly, then the most reached — and the verdict never reads it: severity decides. An import
+  graph is a floor of what a change reaches, since a module loaded by name, a subprocess, a web route or a plugin
   registry is invisible to it. Where the head was not read whole — a file the parser refused, one past a cap, a tree
   that could not be listed — every count says it is a floor, and only a rule that asks for an unread file by name is a
   hole. The read takes the changed files first, within its budget, so a change past it is still measured. The head is

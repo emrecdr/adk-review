@@ -397,9 +397,9 @@ class TestTheBlastRadius:
     def test_the_guidelines_are_shown_each_call_into_a_changed_function_from_a_file_the_change_left_alone(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """Asked by the owner: the review acts on the blast radius, for side effects. Measured live on Copilot over six
-        branches, each a behaviour change a caller left alone relied on: the correctness guideline named 1 of 5 from
-        the diff and the radius, 3 of 5 shown each call, and nothing on the one that kept its behaviour."""
+        """Asked by the owner: the review acts on the blast radius, for side effects. Measured live on both arms over
+        five branches, each a behaviour change a caller left alone relied on: the correctness guideline raised each
+        either way, as a guess that callers may break without the calls, naming the caller with them."""
         from adk_review.collect.git import collect_evidence
         from adk_review.judge import agents
 

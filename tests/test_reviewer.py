@@ -750,6 +750,34 @@ class TestWhatGroundingKeeps:
         kept, _dropped = _grounded([finding], hunks)
         assert [(f.file, f.line, at) for f, at in kept] == [("orders.py", 21, (21, 21))]
 
+    def test_a_quote_of_a_replaced_line_beside_what_replaced_it_grounds(self) -> None:
+        """Measured live on Copilot over six branches, each replacing a function's docstring and its return: 16 of 41
+        findings quoted an old line beside the new one, `- return USERS[uid] + return USERS.get(uid)`, where git prints
+        a block's every removed line before its every added one, and each was dropped, 8 of them the side effect the
+        branch was made for. A quote that skips a line of the block is still not whole lines."""
+        from adk_review.collect.diff import quotable
+
+        _rule, _collect, schema = _grounding_of()
+        diff = (
+            '@@ -1,6 +1,6 @@\n USERS = {}\n \n \n def find_user(uid):\n-    """KeyError where there is none."""\n'
+            '-    return USERS[uid]\n+    """None where there is none."""\n+    return USERS.get(uid)\n'
+        )
+        hunks = {"users.py": quotable(diff)}
+
+        def placed(quote: str):
+            finding = schema.Finding(
+                file="users.py", line=None, severity="major", title="t", evidence=quote, suggestion="s"
+            )
+            return _placed_at(finding, hunks)
+
+        assert placed("- return USERS[uid] + return USERS.get(uid)"), "as the model wrote it, one line"
+        assert placed("-    return USERS[uid]\n+    return USERS.get(uid)"), "the same pair, a line each"
+        assert placed(
+            '- """KeyError where there is none.""" + """None where there is none.""" - return USERS[uid]'
+            " + return USERS.get(uid)"
+        ), "the whole block, pair by pair"
+        assert placed('- """KeyError where there is none.""" + return USERS.get(uid)') is None, "a line skipped"
+
     def test_where_redaction_joined_lines_no_line_is_named_rather_than_a_wrong_one(self) -> None:
         """The lane saw a private key's block as one redacted line, so its quote still grounds, but a seen line no
         longer counts one line of the file."""

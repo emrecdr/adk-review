@@ -211,10 +211,11 @@ CALL_CONTEXT = 3
 def callers_of(tree: Tree | None, files: list[Entry]) -> str:
     """Each call at the head into a module-level function whose lines the change added or removed, from a line the
     change did not add, with the lines around it: what a guideline weighs a change of behaviour against, where no diff
-    shows it, in a file the change left alone or elsewhere in its own. Asked by the owner, and measured live on
-    Copilot over six branches, each a behaviour change an unchanged caller relied on: the correctness guideline named
-    1 of 5 from the diff and the radius, and 3 of 5 shown each call. A call is followed through an import as
-    `Tree.imports` binds it; one through a method or an object is not."""
+    shows it, in a file the change left alone or elsewhere in its own. Asked by the owner, and measured live on both
+    arms over five branches, each a behaviour change an unchanged caller relied on: the correctness guideline raised
+    each with or without the calls, without them as a guess that callers may break, with them naming the caller and
+    what it relied on. A call is followed through an import as `Tree.imports` binds it; one through a method or an
+    object is not."""
     if tree is None or not (touched := _touched(tree, files)):
         return ""
     sites = _sites(tree, touched, {item["path"]: item["added_at"] for item in files})

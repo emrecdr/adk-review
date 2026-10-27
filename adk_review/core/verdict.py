@@ -258,17 +258,20 @@ def _placed(
     lines, so no line is named rather than a wrong one, and no text but the quote; None where the diff does not bear
     the quote out.
 
-    Each hunk is read three ways: as git prints it, as the new file reads it (its context and added lines) and as
-    the old file read it (its context and removed lines). Measured before, the hunk as git prints it alone: a correct
-    quote of the new code, running from a context line into a new one across a replaced line, was dropped, and as a
-    blocker the run degraded. Never across two hunks: measured before, the last line of one hunk joined to the first
-    of the next, twenty lines apart, grounded as one span, and a finding on the lines between folded into it."""
+    Each hunk is read four ways: as git prints it, as the new file reads it (its context and added lines), as the old
+    file read it (its context and removed lines), and with each replaced line beside what replaced it. Measured
+    before, the hunk as git prints it alone: a correct quote of the new code, running from a context line into a new
+    one across a replaced line, was dropped, and as a blocker the run degraded. Never across two hunks: measured
+    before, the last line of one hunk joined to the first of the next, twenty lines apart, grounded as one span, and a
+    finding on the lines between folded into it."""
     quotes = _quotes(finding.evidence, around)
     placed: list[tuple[tuple[int, int], str]] = []
     joined = False
     for hunk in hunks:
-        for kept in ("+- ", "+ ", "- "):  # as git prints it, as the new file reads, as the old file read
-            view = [(number, raw) for number, raw in hunk if raw[:1] in kept]
+        # As git prints it, as the new file reads, as the old file read, and each replaced line beside its new one.
+        views = [[(number, raw) for number, raw in hunk if raw[:1] in kept] for kept in ("+- ", "+ ", "- ")]
+        paired = _paired(hunk)
+        for view in views if paired == views[0] else (*views, paired):
             lines = seen_lines("\n".join(raw for _number, raw in view))
             runs = {run for quote in quotes for run in _whole_lines(quote, lines)}
             if not runs:
@@ -289,6 +292,31 @@ def _placed(
     # 22 was placed at 2. The diff decides where a quote can stand; the guideline's line only picks among those places,
     # the first where it named none and on a tie.
     return min(placed, key=lambda place: (abs(place[0][0] - finding.line) if finding.line else 0, place))
+
+
+def _paired(hunk: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """The hunk with each block of removed lines and the added lines right after it read in pairs, an old line beside
+    the one that replaced it. Measured live on Copilot over six branches, each replacing a function's docstring and its
+    return: git prints a block's every removed line before its every added one, and 16 of 41 findings, which quoted an
+    old line beside its new one, were dropped. Only lines of the hunk, and only their order within one block, change."""
+    paired: list[tuple[int, str]] = []
+    at = 0
+    while at < len(hunk):
+        end = at
+        while end < len(hunk) and hunk[end][1][:1] == "-":
+            end += 1
+        if end == at:
+            paired.append(hunk[at])
+            at += 1
+            continue
+        stop = end
+        while stop < len(hunk) and hunk[stop][1][:1] == "+":
+            stop += 1
+        removed, added = hunk[at:end], hunk[end:stop]
+        for index in range(max(len(removed), len(added))):
+            paired += removed[index : index + 1] + added[index : index + 1]
+        at = stop
+    return paired
 
 
 def _overlaps(x: str, x_lines: Lines, y: str, y_lines: Lines) -> bool:
