@@ -1875,6 +1875,111 @@ class TestTheCallersRule:
         out = capsys.readouterr().out
         assert "`pkg/service.py:3`" in out and "takes no keyword `user_id`" in out, out
 
+    def test_a_name_the_change_removed_is_named_where_code_still_uses_it(self) -> None:
+        """Asked by the owner: the review acts on the blast radius. Measured before: a branch renamed `get_user`, a file
+        it left alone still imported the old name, and every rule approved what raises `ImportError` on import."""
+        from adk_review.judge.rule_helpers.testing import as_change
+        from adk_review.judge.rules.callers import Callers
+
+        files = {
+            "pkg/__init__.py": "",
+            "pkg/repo.py": "def fetch_user(uid):\n    return uid\n",
+            "pkg/service.py": "from pkg.repo import get_user\n\n\ndef load():\n    return get_user(3)\n",
+            "pkg/worker.py": "from pkg import repo\n\n\ndef run():\n    return repo.get_user(3)\n",
+            "pkg/api.py": "import pkg.repo\n\nfound = pkg.repo.get_user\n",
+            "pkg/fine.py": "from pkg.repo import fetch_user\n\nfetch_user(3)\n",
+        }
+        said = "`pkg/repo.py` defines no `get_user`, which this line takes from it"
+        assert self.found(files, {"pkg/repo.py": None}) == [
+            ("pkg/api.py", 3, said),
+            ("pkg/service.py", 1, said),
+            ("pkg/worker.py", 5, said),
+        ]
+        entries, tree = as_change(files)
+        assert {hit.title for hit in Callers().hits(entries, tree)} == {"code uses a name its module no longer defines"}
+        kept = {**files, "pkg/repo.py": "def get_user(uid):\n    return uid\n"}
+        del kept["pkg/fine.py"]  # which takes `fetch_user`, a name this module lacks
+        assert self.found(kept, {"pkg/repo.py": None}) == [], "the name is there: nothing to name"
+
+    def test_a_missing_name_that_may_be_there_at_run_time_is_left_alone(self) -> None:
+        """Each way a module can hold a name no statement of it binds, and each use a guard keeps from raising."""
+        files = {
+            "pkg/__init__.py": "",
+            "pkg/_speed.so": "",
+            "pkg/native/data.txt": "",
+            "pkg/repo.py": (
+                "import sys\n\nif sys.platform == 'win32':\n    def get(uid):\n        return uid\n"
+                "else:\n    get = None\n"
+                "\n\ndef setup():\n    global late\n    late = 1\n"
+            ),
+            "pkg/lazy.py": "def __getattr__(name):\n    return name\n",
+            "pkg/star.py": "from os.path import *\n",
+            "pkg/table.py": "globals().update(made=1)\n",
+            "pkg/uses.py": (
+                "from pkg import _speed, native\n"
+                "from pkg.repo import get, late, __name__ as name\n"
+                "from pkg.lazy import anything\n"
+                "from pkg.star import join\n"
+                "from pkg.table import made\n"
+                "from pkg import repo\n"
+                "try:\n    from pkg.repo import gone\nexcept ImportError:\n    gone = None\n"
+                "if hasattr(repo, 'missing'):\n    repo.missing()\n"
+                "repo.patched = 1\nrepo.patched()\n"
+                "\n\ndef f(repo):\n    return repo.whatever\n"
+            ),
+        }
+        assert self.found(files) == []
+
+    def test_a_module_inside_a_package_never_imports_from_its_own_folder(self) -> None:
+        """Measured over litellm: `from tokenizers import Tokenizer`, in a folder with no `__init__.py` inside a
+        package, names the installed `tokenizers`, and was held to the folder of that name beside it. Python searches a
+        file's own folder for a script outside any package, and pytest's default mode for a test."""
+        files = {
+            "pkg/__init__.py": "",
+            "pkg/ns/tok.py": "from tokenizers import Tokenizer\n",
+            "pkg/ns/test_tok.py": "from tokenizers import Tokenizer\n",
+            "pkg/ns/tokenizers/__init__.py": "",
+            "tools/run.py": "from helpers import gone\n",
+            "tools/helpers.py": "",
+        }
+        assert [found[:2] for found in self.found(files)] == [("pkg/ns/test_tok.py", 1), ("tools/run.py", 1)]
+
+    def test_the_head_is_read_where_the_change_removed_a_name_its_module_defined(self) -> None:
+        """A change that only removes lines adds no parameter to check, yet a name it removed breaks each file that
+        still uses it: the head is read for that alone, never for a local name the change removed."""
+        import difflib
+
+        from adk_review.judge.rule_helpers.testing import as_change
+        from adk_review.judge.rules.callers import Callers, _before
+
+        def needs(before: str, after: str) -> bool:
+            diff = "".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True), "a", "b"))
+            assert _before(after, diff) == before, "the text before the change, rebuilt from the diff"
+            (item,), _tree = as_change({"pkg/repo.py": after})
+            return Callers().needs_head([{**item, "status": "M", "added_at": frozenset(), "diff": diff}])
+
+        kept = "".join(f"def keep{n}():\n    return {n}\n\n\n" for n in range(12))
+        assert needs(kept + "def gone():\n    return 0\n", kept), "a function removed whole"
+        assert needs("import os\n" + kept + "LIMIT = 1\n", "import sys\n" + kept), "two hunks, a constant removed"
+        assert needs("from .repo import (\n    a,\n    b,\n)\n", "from .repo import (\n    a,\n)\n"), "a re-export"
+        assert not needs("def keep():\n    x = 1\n    return 1\n", "def keep():\n    return 1\n"), "a local name"
+        assert not needs("def get():\n    pass\n", "if True:\n    def get():\n        pass\n"), "still defined"
+
+    def test_a_name_a_branch_removed_is_named_in_a_file_it_left_alone(self, cli, tmp_path: Path, capsys) -> None:
+        """End to end, from git, with no guideline to read the head: the branch only removes a function, and the
+        review reads the head for it and names the file that still imports it."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "pkg/__init__.py", "")
+        _committed(repo, "pkg/repo.py", "def keep():\n    return 1\n\n\ndef get_user(uid):\n    return uid\n")
+        _committed(repo, "pkg/service.py", "from pkg.repo import get_user\n\nget_user(3)\n")
+        _git_in(repo, "checkout", "-q", "-b", "remove")
+        _committed(repo, "pkg/repo.py", "def keep():\n    return 1\n")
+        assert cli.main([str(repo), "--head", "remove", "--base", BASE, "--check", "rule.callers"]) == 0
+        out = capsys.readouterr().out
+        assert "`pkg/service.py:1`" in out and "defines no `get_user`" in out, out
+
 
 class TestTheShippedRules:
     """Each shipped rule on the shapes it names, and on those it must leave."""

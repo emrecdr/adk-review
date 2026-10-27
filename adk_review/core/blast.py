@@ -207,7 +207,10 @@ class _Tree:
 
     def one(self, importer: str, level: int, parts: tuple[str, ...]) -> str | None:
         """The one file a module's dotted name names from `importer`, `level` dots before it, or None where none or
-        several do: what a call through an import is held to, where the radius errs wide."""
+        several do: what a call through an import is held to, where the radius errs wide. The importing file's own
+        folder is searched only where Python searches it: a script's outside any package, and a test's, as pytest's
+        default mode puts it on the path. Measured over litellm: a module in a folder with no `__init__.py`, inside a
+        package, had its import of an installed package held to a folder of that name beside it."""
         if level:
             folder = PurePosixPath(importer).parent.parts
             if level - 1 > len(folder):
@@ -217,8 +220,9 @@ class _Tree:
             found = self.exactly(parts)
         else:
             folder = PurePosixPath(importer).parent
-            own = None if folder in self.packages else folder.parts
-            found = self.by_tail.get(parts, set()) | (self.exactly((*own, *parts)) if own is not None else set())
+            below = not is_test(importer) and any(parent in self.packages for parent in folder.parents)
+            inside = folder in self.packages or below
+            found = self.by_tail.get(parts, set()) | (set() if inside else self.exactly((*folder.parts, *parts)))
         return next(iter(found)) if len(found) == 1 else None
 
 

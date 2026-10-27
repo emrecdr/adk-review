@@ -1,5 +1,6 @@
-"""A call that no longer fits the function it calls: a change to a function's parameters breaks each call it leaves
-behind, in any file, one the change never touched among them, where no diff shows it."""
+"""What a change leaves behind in the files that use what it changed: a call that no longer fits the function it
+calls, and a name the module no longer defines, in any file, one the change never touched among them, where no diff
+shows it."""
 
 from __future__ import annotations
 
@@ -8,7 +9,7 @@ import re
 from collections import Counter
 from collections.abc import Callable, Iterator, Sequence
 
-from ..rule_helpers import Entry, Tree, TreeRule, UnreadError, name_of, parse
+from ..rule_helpers import Entry, Hit, Tree, TreeRule, UnreadError, name_of, parse
 
 #: How many modules deep a name is followed where a module only imports it to pass it on, as a package's
 #: `__init__.py` does with `from .repo import get_user`, so `from pkg import get_user` reaches the function.
@@ -25,6 +26,18 @@ _WORD = re.compile(r"\w+")
 #: A line a diff removes, its file's header aside: a name one names was there before, as a two-line function whose
 #: parameter was renamed is, all of it added again, one moved to another file, or one an assignment bound.
 _REMOVED = re.compile(r"^-(?!--)(.*)$", re.MULTILINE)
+#: A hunk's header: how many old lines it holds, and where its new lines start and how many.
+_HUNK = re.compile(r"^@@ -\d+(?:,(\d+))? \+(\d+)(?:,(\d+))? @@")
+#: What a module holds that no statement of it binds: Python sets each as it runs the module.
+_IMPLICIT = frozenset(
+    {"__name__", "__doc__", "__file__", "__path__", "__spec__", "__loader__", "__package__", "__dict__"}
+    | {"__builtins__", "__cached__", "__annotations__"}
+)
+#: What an `except` names where it keeps an import that fails from raising.
+_CATCHES_IMPORT = frozenset({"ImportError", "ModuleNotFoundError", "Exception", "BaseException"})
+#: A name the module no longer defines, its own title and fix beside the rule's, which are a call's.
+GONE_TITLE = "code uses a name its module no longer defines"
+GONE_FIX = "Use the name the module defines now, or define the old name there again."
 
 type Scope = ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda | ast.ClassDef
 type Function_ = ast.FunctionDef | ast.AsyncFunctionDef
@@ -40,10 +53,14 @@ class Callers(TreeRule):
     each changed file alone and the guidelines read the diff, so a caller the change left alone is read here or
     nowhere. Left alone, since each may fit at run time: a decorated function or class, a call that unpacks `*args` or
     `**kwargs`, a name a scope binds to something else, a method on an object, a class a metaclass or `__new__` makes,
-    and an import two files could answer. Read as a floor where the head was not read whole. The head is read only
-    where the change touched the parameters of a name that was there before, one a line the change removed names or
-    one not all of whose lines it added; with none, nothing is read, since a function the change adds whole leaves no
-    caller behind."""
+    and an import two files could answer. A name a changed module no longer defines is held the same way to each
+    file that still takes it: a `from … import`, which raises `ImportError`, and a module's attribute, which raises
+    `AttributeError`. Left alone there: an import a `try` guards, a name the file asks for by its string or sets
+    itself, a submodule, and a module that may hold a name no statement binds — a module `__getattr__`, a `*` import,
+    a write to its globals. Read as a floor where the head was not read whole. The head is read only where the change
+    touched the parameters of a name that was there before, one a line the change removed names or one not all of
+    whose lines it added, or removed a name a module defined; with neither, nothing is read, since a function the
+    change adds whole leaves no caller behind."""
 
     id = "callers"
     severity = "major"
@@ -77,16 +94,17 @@ class Callers(TreeRule):
             for name, (_function, statement) in _touched(module, item["added_at"]).items():
                 if name in gone or not _span(statement) <= item["added_at"]:
                     return True
-        return False
+        return any(_removes_a_name(item) for item in files if item["status"] == "M" and item["path"].endswith(".py"))
 
-    def check(self, tree: Tree) -> list[tuple[str, int, str]]:
+    def check(self, tree: Tree) -> list[tuple[str, int, str] | Hit]:
         changed = _changed(tree)
-        if not changed:
-            return []
-        imports, found = _Imports(tree, changed), []
+        imports, gone = _Imports(tree, changed), _Gone(tree)
+        found: list[tuple[str, int, str] | Hit] = []
         for path, module in tree.modules():
-            if names := _names(path, imports.bound(path), changed, imports.defined):
+            bound = imports.bound(path)
+            if changed and (names := _names(path, bound, changed, imports.defined)):
                 found += _misfit_calls(path, module, names, changed)
+            found += gone.uses(path, module, bound)
         return found
 
 
@@ -119,6 +137,165 @@ class _Imports:
         return None
 
 
+class _Gone:
+    """What each changed module defines, read once a module, and each line of a file that takes from one a name it
+    no longer defines."""
+
+    def __init__(self, tree: Tree) -> None:
+        self.tree = tree
+        self.read: dict[str, set[str] | None] = {}
+
+    def uses(self, path: str, module: ast.Module, bound: dict[str, tuple[str, str | None]]) -> list[Hit]:
+        """Each line of the module at `path` that takes a name a changed module no longer defines: a `from … import`
+        no `try` around it guards, and an attribute read through the name an import bound to the module."""
+        taken = {name: target for name, target in bound.items() if target[0] in self.tree.added}
+        if not taken:
+            return []
+        found = []
+        for node, guarded in _imports_from(module):
+            for alias in node.names:
+                file, attribute = taken.get(alias.asname or alias.name, ("", None))
+                if attribute == alias.name and not guarded and self.lacks(file, alias.name):
+                    found.append(_gone_hit(path, alias.lineno, file, alias.name))
+        modules = {name: file for name, (file, attribute) in taken.items() if attribute is None}
+        if not modules:
+            return found
+        other, _imported, _declared = _bound(module.body)
+        spelled = _spelled(module)
+        for node, hidden in _scoped(module, ast.Attribute):
+            owner = name_of(node.value)
+            file, root = modules.get(owner), owner.split(".")[0]
+            if file is None or not isinstance(node.ctx, ast.Load) or root in hidden or other[root]:
+                continue
+            if not {node.attr, f"{owner}.{node.attr}"} & spelled and self.lacks(file, node.attr):
+                found.append(_gone_hit(path, node.lineno, file, node.attr))
+        return found
+
+    def lacks(self, path: str, name: str) -> bool:
+        """Whether the changed module at `path` defines no `name`, beside its `__init__.py` holds no file or folder
+        Python would import by that name, and binds every name it holds where a statement can be read."""
+        if path not in self.read:
+            try:
+                module = self.tree.module(path)
+            except UnreadError:  # not read whole: a floor, as the rest of the tree's reading is
+                module = "not read"
+            self.read[path] = None if isinstance(module, str) else _defines(module)
+        names = self.read[path]
+        if names is None or name in names:
+            return False
+        if path == "__init__.py" or path.endswith("/__init__.py"):
+            sub = path.removesuffix("__init__.py") + name
+            return not any(item == sub or item.startswith((f"{sub}.", f"{sub}/")) for item in self.tree.paths)
+        return True
+
+
+def _gone_hit(path: str, line: int, file: str, name: str) -> Hit:
+    """A line that takes `name` from the module at `file`, which no longer defines it."""
+    return Hit(path, line, f"`{file}` defines no `{name}`, which this line takes from it", GONE_TITLE, fix=GONE_FIX)
+
+
+def _removes_a_name(item: Entry) -> bool:
+    """Whether the change removed a name the module defined, which a file it left alone may still take: the module
+    before the change, rebuilt from its diff, against the module at the head."""
+    diff = item["diff"] or ""
+    if not _REMOVED.search(diff):
+        return False
+    if item["text"] is None:  # not read: what it removed cannot be told
+        return True
+    after = parse(item["text"])
+    if after is None or (now := _defines(after)) is None:  # nothing to name from, or a module that may hold any name
+        return False
+    before = parse(_before(item["text"], diff))
+    return before is None or bool((_defines(before) or set()) - now)
+
+
+def _before(text: str, diff: str) -> str:
+    """The file's text before the change, rebuilt from its text at the head and its diff: each hunk's old lines in
+    place of its new ones, split on a newline alone, as git numbers lines. Measured over this repository's last 195
+    commits: 1,134 of 1,137 modified files rebuilt exactly, the rest each a file's last newline, which no name needs."""
+    new, old, at = text.split("\n"), list[str](), 0
+    lines = iter(diff.split("\n"))
+    for line in lines:
+        if not (hunk := _HUNK.match(line)):
+            continue
+        removed, added = int(hunk[1] or 1), int(hunk[3] or 1)
+        start = int(hunk[2]) - (1 if added else 0)  # where no line is added, git names the line before them
+        old += new[at:start]
+        at = start
+        while (removed > 0 or added > 0) and (line := next(lines, None)) is not None:
+            mark, body = line[:1], line[1:]
+            if mark in (" ", ""):  # a blank line around the change, its space suppressed
+                old.append(body)
+                removed, added, at = removed - 1, added - 1, at + 1
+            elif mark == "-":
+                old.append(body)
+                removed -= 1
+            elif mark == "+":
+                added, at = added - 1, at + 1
+            elif mark != "\\":  # git's "No newline at end of file" aside, the hunk ended early
+                break
+    return "\n".join(old + new[at:])
+
+
+def _defines(module: ast.Module) -> set[str] | None:
+    """Each name the module binds at its top, wherever a statement there binds it, a function's `global` among them;
+    None where it may hold a name no statement binds: a module `__getattr__`, a `*` import, or a write to its globals
+    through `globals()`, `vars()`, `exec` or `sys.modules`."""
+    other, imported, _declared = _bound(module.body)
+    names = {*other, *imported, *_IMPLICIT}
+    if "__getattr__" in names:
+        return None
+    for node in ast.walk(module):
+        if _binds_unseen(node):
+            return None
+        if isinstance(node, ast.Global):
+            names.update(node.names)
+    return names
+
+
+def _binds_unseen(node: ast.AST) -> bool:
+    """Whether `node` may bind a module's name no statement spells: a `*` import, or a write to its globals."""
+    if isinstance(node, ast.ImportFrom):
+        return any(alias.name == "*" for alias in node.names)
+    if isinstance(node, ast.Call):
+        called = name_of(node.func)
+        return called in ("globals", "exec") or (called == "vars" and not node.args)
+    return isinstance(node, ast.Attribute) and name_of(node) == "sys.modules"
+
+
+def _imports_from(module: ast.Module) -> Iterator[tuple[ast.ImportFrom, bool]]:
+    """Each `from … import` in the module, and whether a `try` around it catches the `ImportError` it would raise."""
+    stack: list[tuple[ast.AST, bool]] = [(module, False)]
+    while stack:
+        node, guarded = stack.pop()
+        if isinstance(node, ast.ImportFrom):
+            yield node, guarded
+        elif isinstance(node, ast.Try | ast.TryStar):
+            catches = guarded or any(_catches_import(handler.type) for handler in node.handlers)
+            stack.extend((part, catches) for part in node.body)
+            stack.extend((part, guarded) for part in [*node.handlers, *node.orelse, *node.finalbody])
+        else:
+            stack.extend((child, guarded) for child in ast.iter_child_nodes(node))
+
+
+def _catches_import(kind: ast.expr | None) -> bool:
+    """Whether an `except` naming `kind`, none for a bare one, catches an import that fails."""
+    parts = kind.elts if isinstance(kind, ast.Tuple) else [kind]
+    return any(part is None or name_of(part).rsplit(".", 1)[-1] in _CATCHES_IMPORT for part in parts)
+
+
+def _spelled(module: ast.Module) -> set[str]:
+    """Each string the module spells and each attribute it sets or deletes, dotted: a name `hasattr` or `getattr`
+    asks for, or one the module puts on another, may be there when it runs."""
+    found = set()
+    for node in ast.walk(module):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            found.add(node.value)
+        elif isinstance(node, ast.Attribute) and not isinstance(node.ctx, ast.Load):
+            found.add(name_of(node))
+    return found
+
+
 def _misfit_calls(
     path: str, module: ast.Module, names: dict[str, Function], changed: Changed
 ) -> list[tuple[str, int, str]]:
@@ -126,7 +303,7 @@ def _misfit_calls(
     scope around it binds to something else, or the module binds to more than the function, is left alone."""
     other, _imported, _declared = _bound(module.body)
     found = []
-    for call, hidden in _calls(module):
+    for call, hidden in _scoped(module, ast.Call):
         target = names.get(spelled := name_of(call.func))
         root = spelled.split(".")[0]
         own = 1 if target == (path, spelled) else 0  # its own module's def binds the name once
@@ -237,14 +414,14 @@ def _bound(body: Sequence[ast.AST]) -> tuple[Counter[str], Counter[str], set[str
     return other, imported, declared
 
 
-def _calls(module: ast.Module) -> Iterator[tuple[ast.Call, frozenset[str]]]:
-    """Each call in `module`, with the names the scopes around it bind to something other than an import, which hide
-    the module's own: a parameter, a local, a comprehension's variable. Read without recursion, so no nesting depth
-    the parser accepts can stop it."""
+def _scoped[Node: ast.AST](module: ast.Module, kind: type[Node]) -> Iterator[tuple[Node, frozenset[str]]]:
+    """Each node of `kind` in `module`, a call or an attribute, with the names the scopes around it bind to something
+    other than an import, which hide the module's own: a parameter, a local, a comprehension's variable. Read without
+    recursion, so no nesting depth the parser accepts can stop it."""
     stack: list[tuple[ast.AST, frozenset[str]]] = [(module, frozenset())]
     while stack:
         node, hidden = stack.pop()
-        if isinstance(node, ast.Call):
+        if isinstance(node, kind):
             yield node, hidden
         if isinstance(node, _SCOPES):
             stack.extend((part, hidden) for part in _around(node))
