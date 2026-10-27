@@ -182,7 +182,8 @@ default profile: name it with `--check rule.types`, or run `rules-only` or `full
 whole: a section or a setting it does not know, one missing, one of the wrong kind, a profile that names an unknown
 check or turns none on, or no `default` profile is exit 2. It is the one config: nothing of the policy is read from the
 repository under review, and `--dry-run` names the file read. Another policy is a change to this file, or a flag for one
-run. An installed command reads the copy it was installed with: installed from your own checkout with `uv tool install
+run. A glob there or in a flag reads as `.gitignore` reads one, a backslash as a slash, as Windows writes a path. An
+installed command reads the copy it was installed with: installed from your own checkout with `uv tool install
 --editable <checkout>`, a change there applies at once, as to `uv run`; otherwise reinstall after one. A pre-commit hook
 reads the config of the commit it pins, so a policy of your own is a commit of your own fork, pinned instead. The
 shipped `skip` names images and fonts, in either case, which no rule or model reads, so a branch adding a logo is not a

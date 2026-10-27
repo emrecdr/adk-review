@@ -76,6 +76,12 @@ class TestThePathReaders:
         assert matches("src/payments/notes.txt", "src/payments/") and not matches("src/paymentsx.py", "src/payments/")
         assert matching(["b.py", "a.py", "c.txt"], "*.py", "*.md") == ["a.py", "b.py"]
 
+    def test_a_glob_written_with_backslashes_reads_as_one_written_with_slashes(self) -> None:
+        """Windows writes a path with `\\`, and `--path` takes one. Read by review, the outside audit's W1: `--skip
+        tests\\test_*.py` and a folder `vendor\\` matched nothing, and the files they named were read."""
+        assert matches("tests/test_billing.py", "tests\\test_*.py")
+        assert matches("vendor/lib/x.py", "vendor\\") and not matches("vendorx/x.py", "vendor\\")
+
 
 class TestTheSyntaxReaders:
     CODE = (

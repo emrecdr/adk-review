@@ -75,9 +75,12 @@ _TAG_OPENER = re.compile(r"<(?=[A-Za-z/!?])")
 #: Where a markdown image or link would open: `![` and `](`, broken as `! [` and `] (`.
 _LINK_OPENER = re.compile(r"!(?=\[)|\](?=\()")
 #: Where a pull request's page would act on a reference: `@name`, `@org/team` and Azure DevOps' `@<id>` notify a
-#: person, and `#12`, `owner/repo#12` and `!12` link an issue or a pull request, leaving a note on it. Each is broken
-#: by a space after its `@`, `#` or `!`; an email address and a word before `#`, as in `C#7`, are none.
-_REFERENCE = re.compile(r"(?<![\w.+-])@(?=[\w<])|(?<![\w&])#(?=\d)|(?<=[\w.-]/)[\w.-]+#(?=\d)|(?<![\w!])!(?=\d)")
+#: person, and `#12`, `owner/repo#12`, GitHub's `GH-12` and `!12` link an issue or a pull request, leaving a note on
+#: it. Each is broken by a space after its `@`, `#`, `GH-` or `!`; an email address and a word before `#`, as in `C#7`,
+#: are none.
+_REFERENCE = re.compile(
+    r"(?<![\w.+-])@(?=[\w<])|(?<![\w&])#(?=\d)|(?<=[\w.-]/)[\w.-]+#(?=\d)|(?<![\w!])!(?=\d)|(?<![\w-])(?i:gh)-(?=\d)"
+)
 #: A run of backticks: a code span opens at one and closes at the next run as long, as markdown reads it.
 _TICKS = re.compile(r"`+")
 

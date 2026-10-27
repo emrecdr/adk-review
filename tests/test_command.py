@@ -2184,6 +2184,14 @@ class TestWhatTheReportPrints:
         assert prose(kept) == kept, "an email address, a word before `#`, and a code span keep their text"
         assert prose("`@octocat` and `@octocat") == "`@octocat` and `@ octocat", "an unclosed backtick is text"
 
+    def test_a_ghs_issue_reference_is_broken_as_a_hash_one_is(self) -> None:
+        """GitHub links `GH-26` to issue 26 as it links `#26`, and leaves a backlink on it. Read by review, the outside
+        audit's R1: `GH-12` reached a comment as written. Broken by a space, either case, outside a code span."""
+        from adk_review.deliver.report import prose
+
+        assert prose("fixes GH-12 and gh-7, see `GH-12`") == "fixes GH- 12 and gh- 7, see `GH-12`"
+        assert prose("PGH-12, GH-x and AGH-3") == "PGH-12, GH-x and AGH-3", "a word before it, or no number after"
+
     def test_the_reports_prose_renders_no_markdown_image_or_link(self) -> None:
         """Read by review: a model's title or suggestion can carry `![x](https://…?q=…)`, which a job summary that
         renders the report as markdown fetches unasked, carrying out whatever the model read, as CamoLeak did through

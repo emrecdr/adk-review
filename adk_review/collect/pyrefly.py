@@ -389,8 +389,11 @@ def _roots(paths: Collection[str]) -> list[str]:
 
 def _config(roots: Sequence[str]) -> str:
     """The reviewer's configuration with where an import starts: the tree's top for a file alone, each root over a
-    tree."""
-    return f"search-path = {json.dumps(list(roots))}\n{CONFIG}"
+    tree. Each root written as TOML reads a string, JSON's escapes but each character as itself, DEL aside: read by
+    review, JSON wrote one past U+FFFF as two UTF-16 halves, which TOML refuses, and a package under `𠀀/` left the
+    radius unable to look; and TOML refuses a raw DEL too."""
+    listed = json.dumps(list(roots), ensure_ascii=False).replace("\x7f", "\\u007f")
+    return f"search-path = {listed}\n{CONFIG}"
 
 
 def _decorated(rows: Rows, number: int) -> int:

@@ -17,8 +17,9 @@ def matches(path: str, *globs: str) -> bool:
     """Whether one of `globs` names `path`, each read as `.gitignore` reads one. A name alone, `*.py` or
     `Dockerfile*`, is the file's own name, wherever the file lies. With a `/`, `deploy/*.yaml` or `src/**/*.py`, it
     is the whole path from the top, `**` standing for any folders. Ending in `/`, `src/payments/`, it is everything
-    under that folder. Letters match as written: `*.PY` is not `*.py`."""
-    return any(_matches(path, glob) for glob in globs)
+    under that folder. Letters match as written: `*.PY` is not `*.py`. A backslash reads as a slash, as Windows writes
+    a path and `--path` reads one: read by review, `tests\\test_*.py` and `vendor\\` matched nothing."""
+    return any(_matches(path, glob.replace("\\", "/")) for glob in globs)
 
 
 @functools.lru_cache(maxsize=4096)

@@ -2257,6 +2257,17 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         assert [(file, line) for file, line, _severity, _said in found] == [("shop/service.py", 5)], found
         assert "missing-attribute" in found[0][3]
 
+    def test_a_root_any_character_names_is_written_as_toml_reads_it(self) -> None:
+        """Read by review, the outside audit's P1: a package under `𠀀/` made the radius unable to look, exit 3, since
+        JSON wrote the root as two UTF-16 halves, `\\ud840\\udc00`, which TOML refuses; a DEL written raw it refuses
+        too."""
+        import tomllib
+
+        from adk_review.collect.pyrefly import _config
+
+        roots = [".", "𠀀", "😀/src", "a\x7fb", 'q"b\\c', "tab\tx"]
+        assert tomllib.loads(_config(roots))["search-path"] == roots
+
     def test_the_import_roots_are_one_set_for_both_runs_and_a_top_package_ends_them(self, tmp_path: Path) -> None:
         """Read by review: an `__init__.py` at the tree's top made the search for roots loop forever, and both hooks
         with it; and the roots were found apart for each run, so a branch that added a package's first `__init__.py`
