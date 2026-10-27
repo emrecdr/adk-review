@@ -17,10 +17,10 @@ from ..rule_helpers import ChangedFile, FileRule, Hit, Severity, is_test, listed
 
 #: ruff's codes, run --isolated: errors, pyflakes, warnings, bugbear and bandit, then what a reviewer asks for and no
 #: other check here makes, at ruff's own thresholds: complexity (C901: 10; PLR0911, PLR0912, PLR0913, PLR0915: 6
-#: returns, 12 branches, 5 arguments, 50 statements), blocking calls in async code (ASYNC), a task created and dropped
-#: (RUF006), a debugger call left in (T100), commented-out code (ERA001), a bidirectional control that makes code read
-#: in another order than it runs (PLE2502), and a name holding a letter that is not ASCII, which can look like another
-#: (PLC2401).
+#: returns, 12 branches, 5 arguments, 50 statements), async code that blocks the event loop or misuses a timeout, a
+#: sleep or an await (ASYNC), a task created and dropped (RUF006), a debugger call left in (T100), commented-out code
+#: (ERA001), a bidirectional control that makes code read in another order than it runs (PLE2502), and a name holding a
+#: letter that is not ASCII, which can look like another (PLC2401).
 SELECT = (
     "E", "F", "W", "B", "S", "C90", "PLR0911", "PLR0912", "PLR0913", "PLR0915", "ASYNC", "RUF006", "T100", "ERA001",
     "PLE2502", "PLC2401",
@@ -78,9 +78,22 @@ FIX = {
     "F": "Correct what pyflakes reports. An undefined or redefined name is a bug.",
     "B": "Rewrite the pattern: bugbear names shapes known to misbehave.",
     "S": "Use the safe form of the call. The security guideline weighs the rest.",
+    "S101": "Raise an error instead of the assert: python -O removes every assert.",
+    "S104": "Bind to the one interface the service needs, not to every interface.",
+    "S105": "If it is a credential, read it from the environment or a secret store.",
+    "S106": "If it is a credential, read it from the environment or a secret store.",
+    "S107": "If it is a credential, read it from the environment or a secret store.",
+    "S108": "Make the file with the tempfile module, never at a fixed path.",
+    "S110": "Log the exception, or catch only the error you expect.",
+    "S112": "Log the exception, or catch only the error you expect.",
     "C90": "Split the function until each part reads on its own.",
     "PLR": "Bring the count under ruff's threshold by extracting part of the construct.",
-    "ASYNC": "Move the blocking call off the event loop, or await its async equivalent.",
+    "ASYNC2": "Move the blocking call off the event loop, or await its async equivalent.",
+    "ASYNC100": "Add an await inside the timeout block, or remove the block: a timeout acts only at an await.",
+    "ASYNC105": "Await the call: without an await, it never runs.",
+    "ASYNC109": "Drop the timeout parameter, and let the caller wrap the call in a timeout block.",
+    "ASYNC110": "Wait on an Event, not on a sleep in a loop.",
+    "ASYNC116": "Use sleep_forever() for a sleep longer than a day.",
     "RUF006": "Keep a reference to the task and await it, so its failure is seen.",
     "T10": "Remove the debugger call.",
     "ERA": "Delete the commented-out code: version control keeps it.",

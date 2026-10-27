@@ -18,7 +18,9 @@ class OfflineTests(FileRule):
     """The suite that proves this reviewer runs offline, on a fake model; a project's tests should too. A fake at
     the boundary, a stub client or a recorded answer, keeps a test fast, repeatable and private. Read from the module,
     as Python reads a call: one a comment, a string or a docstring names is none, and one a formatter wrapped over
-    lines is found where it starts."""
+    lines is found where it starts. Not found, as known limits: a call through a name imported from the library,
+    `from requests import get`, or through an alias, `import requests as rq`, and one on what a call returned,
+    `requests.Session().get`."""
 
     id = "tests-offline"
     severity = "major"

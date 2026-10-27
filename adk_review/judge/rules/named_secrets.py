@@ -12,9 +12,11 @@ name alone found, and one more is found: every named value on a line is weighed,
 a token is no part of it, and only an unquoted value can be code: of 8 more credentials in formats those lack, 5 are
 found where none was, and the twelve projects' 4 are the same 4.
 
-Not read, as known limits: a docker-compose file's list item, `- DB_PASSWORD=...`, and a Dockerfile's `ENV` line
-continued with a backslash. Read by review, three rounds running: each widening of the shape this rule shares with the
-redaction before every model call moved what it missed and what it flagged, for every format at once.
+Not read, as known limits: a docker-compose file's list item, `- DB_PASSWORD=...`, a Dockerfile's `ENV` line continued
+with a backslash, and a value in triple quotes or split over lines, as a parenthesized concatenation writes it, which
+the redaction misses too: measured, none of the 2.3 million lines of library code this project installs held a
+credential so. Read by review, three rounds running: each widening of the shape this rule shares with the redaction
+before every model call moved what it missed and what it flagged, for every format at once.
 """
 
 from __future__ import annotations

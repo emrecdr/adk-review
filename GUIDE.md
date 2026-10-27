@@ -9,8 +9,10 @@ limits to the code.
 
 ## First run
 
-`README.md`'s Quick start walks these from a clone, step by step. They need uv 0.12 or later, which installs Python
-3.13 itself, and git 2.41 or later on `PATH`.
+`README.md`'s Quick start walks these from a clone, step by step. They need uv 0.12 or later, which installs Python 3.13
+itself, and git 2.41 or later on `PATH`, with the fix for CVE-2024-32465 (2.41.1, 2.42.2, 2.43.4, 2.44.1, 2.45 and
+later, or a distribution's build that carries it): without it, git ignores `GIT_NO_LAZY_FETCH`, and a review of a
+partial clone could fetch into it.
 
 ```bash
 uv sync --locked                             # once: the reviewer, its Python and its locked dependencies
@@ -42,7 +44,7 @@ roots it bundles, not the machine's, where the reviewer trusts the machine's own
 |---|---|
 | `repo` | The repository to review. A terminal asks for it when it is not given; a pipeline must give it. |
 | `--head` | The branch or commit under review. Default: the branch checked out; a detached head must name one. |
-| `--base` | The branch the change will merge into. With neither it nor `--all` or `--staged`, a terminal asks; a pipeline uses `main`, or `master`, or else the branch `origin/HEAD` names. A change against a base is refused in a shallow clone, where the merge base found can be the wrong one. |
+| `--base` | The branch the change will merge into. With neither it nor `--all` or `--staged`, a terminal asks; a pipeline uses `main`, or `master`, or else the branch `origin/HEAD` names. In a shallow clone, a change against a base is refused unless the base is one of the head's own commits: elsewhere the merge base found can be the wrong one. |
 | `--all` | Review every file at the head, not what it changes. A shallow clone serves. |
 | `--staged` | Review what is staged — the index, as the next commit would hold it — against `HEAD`. Nothing is written. A change not staged is neither reviewed nor named; an untracked file is named, never a hole. Takes no `--head`, `--base` or `--all`. |
 | `--path` | Review only what lies under this folder, or this file, of the repository; the rest of the change is counted in the report. Repeat it for more than one. |

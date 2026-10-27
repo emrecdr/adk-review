@@ -401,6 +401,19 @@ class TestTheLintRule:
         assert fix_of(FIX, "E722", None) == FIX["E"], "a family sentence true of every code"
         assert fix_of(FIX, "RUF006", None) == FIX["RUF006"] and fix_of(FIX, "ZZZ9", None) == "see ruff rule ZZZ9"
 
+    def test_a_code_its_family_sentence_would_mislead_names_its_own_fix(self) -> None:
+        """Read by review: every ASYNC code was told to move a blocking call, though ASYNC100 is a timeout block with
+        no `await`, and every bandit code to use a call's safe form, though S105 is a password string and S110 an
+        `except` that passes. Ruff offers no fix for these, so the rule's sentence is all a reader is given."""
+        from adk_review.judge.rule_helpers import fix_of
+        from adk_review.judge.rules.lint import FIX
+
+        for code in ("ASYNC100", "ASYNC105", "ASYNC109", "ASYNC110", "ASYNC116"):
+            assert "blocking" not in fix_of(FIX, code, None), code
+        for code in ("S101", "S104", "S105", "S106", "S107", "S108", "S110", "S112"):
+            assert "call" not in fix_of(FIX, code, None), code
+        assert "blocking" in fix_of(FIX, "ASYNC251", None) and fix_of(FIX, "S602", None) == FIX["S"], "the family's"
+
     def test_what_the_rule_ignores_ruff_never_reports(self, cli, demo_repo: Path, capsys) -> None:
         """Measured on this repository's whole project: of the rule's 2,800 findings, 2,230 were lines past ruff's 88
         characters, where the project holds 120; on its own review of a day's work, 91 of 112. The rule reads no

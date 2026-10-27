@@ -21,7 +21,9 @@ From a clone to a review of every push, in six steps. The first four call no mod
 ### 1. Install what it runs on
 
 The reviewer needs uv 0.12 or later (https://docs.astral.sh/uv/getting-started/installation/), which installs Python
-3.13 itself where the machine has none, and git 2.41 or later on `PATH`.
+3.13 itself where the machine has none, and git 2.41 or later on `PATH`, with the fix for CVE-2024-32465 (2.41.1,
+2.42.2, 2.43.4, 2.44.1, 2.45 and later, or a distribution's build that carries it): without it, git ignores
+`GIT_NO_LAZY_FETCH`, and a review of a partial clone could fetch into it.
 
 ### 2. Get the reviewer
 
@@ -840,11 +842,12 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   `core.fsmonitor` is off, so no program the repository's own config names ever starts. Measured, each before it was
   fixed: `GIT_DIR` reviewed another repository, a replace ref swapped the key's file for a harmless one, and the
   branch's own `-diff` attribute hid a planted key.
-- **Secrets are found by code.** Every model call is redacted, so no guideline ever sees a key: measured on Copilot
-  with the redaction on, no guideline reported the planted one. A key must be found by code, from the diff itself,
-  before any model runs: `secrets` reads the added lines of each file's whole diff, past any cap, and
-  `named-secrets` weighs a value given a name that says secret. No cut falls inside a credential, since half of one
-  matches no shape and would be sent unredacted.
+- **Secrets are found by code.** Every model call is redacted, so no guideline ever sees a key: measured on Copilot with
+  the redaction on, no guideline reported the planted one. A key must be found by code, from the diff itself, before any
+  model runs: `secrets` reads the added lines of each file's whole diff, past any cap, and `named-secrets` weighs a
+  value given a name that says secret. A value with no vendor's shape, in triple quotes or split over lines, is a known
+  limit: neither rule finds it, and no redaction hides it. No cut falls inside a credential, since half of one matches
+  no shape and would be sent unredacted.
 - **The rules run as one node.** Every rule runs the same way, through `run_rule`, in one `FunctionNode`, ADK 2.x's
   node for a deterministic step, before the guidelines: in the command's graph over the evidence it gathered, and in
   chat's, which gathers the same evidence for the commits its intake confirmed. Each rule's answer is left in state
