@@ -17,3 +17,14 @@
   pass_filenames: false
   always_run: true
   stages: [pre-push]
+# The commit hook: what a commit holds, the index git hands its hook, reviewed with default-rules before git writes it,
+# with pre-commit's pre-commit hook installed (`pre-commit install`). It takes no `args:` either.
+#       - id: adk-review-commit
+- id: adk-review-commit
+  name: adk-review (default-rules, what a commit holds)
+  description: Reviews what a commit holds, by code alone, before git writes it.
+  entry: adk-review-commit
+  language: python
+  pass_filenames: false
+  always_run: true
+  stages: [pre-commit]

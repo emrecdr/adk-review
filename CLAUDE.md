@@ -34,29 +34,31 @@ uv run adk-review <demo repo> --head feature/payments --base main --profile demo
 uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # what a review would cover and run, nothing run
 uv run adk-review-login                          # one-time GitHub device-flow login for the Copilot arm
 uv run adk web .                                 # the chat in a browser, over the same graph
+# the commit hook, after `make install`: GUIDE.md's "Before a commit" lines, what a commit holds (`git commit -a` and `<paths>` included) with default-rules; pre-commit's adk-review-commit hook runs the same
 # the pre-push hook, after `make install`: GUIDE.md's "Before a push" lines, which keep a pre-push hook already there (Git LFS's) and run it after the review; default-rules on what a push sends, push-history's credential rules on each commit and message; pre-commit's adk-review hook runs the same; --no-verify skips
 uv run python scripts/injection_suite.py --runs 3 [--profile NAME | --check ID] [--branch NAME] [--build-only]   # live: does a payload make a guideline lose the planted shell call
 uv run python scripts/labelled_set.py --runs 3 [--profile NAME | --check ID] [--branch NAME] [--build-only]      # live: one known defect a branch, or none: found (and by which guideline), missed, invented
 uv run python scripts/measure.py --runs 5 [--all] [--profile NAME | --check ID] # live: per planted defect, how often a guideline names it (--all: as a whole project)
 ```
 
-`make install` puts `adk-review`, `adk-review-push` and `adk-review-login` on `PATH` anywhere, every dependency at the
-lock's version, since `uv tool install` reads no lock; with no checkout, `uv tool install --exclude-newer P3D
-git+<address>` keeps the cooldown. With no `repo`, the command assumes none: a terminal is asked for the path, a
-pipeline is refused with exit 2. Exit codes: 0 approved, 1 a finding at the `--fail-on` bar (`blocker` unless set), 2 a
-usage error before any model call (an arm that is not ready, a branch that adds nothing or shares no history with its
-base: "no change to review", with `--head`, `--base` and `--all` named, a branch it does not hold, named with its remote
-copy and the `git fetch` for the person to run, a name no branch can have, said to be none, a `config.toml`, profile or
-rule file that cannot run, nothing under `--path`, or no choice made at the question asked when neither `--base` nor
-`--all` is given), 3 a hole: a rule or a guideline failed, a rule could not look (the head's tree not listed, a file it
-holds not read whole, or a link whose file was not read or followed), a changed file no check can read whole — binary, a
-submodule, a Git LFS pointer — or, where a guideline runs, one it was not shown whole — a symbolic link to a file it was
-not shown whole, cut at the diff cap or past the guidelines' block cap — unless the skip list names it, named under "not
-read", a finding at the `--fail-on` bar whose quote the diff does not bear out or that a verifier refuted, a guideline's
-call the token ceiling refused (a verifier's leaves its finding unverified), a `--json`, `--handoff` or `--comment` file
-that cannot be written, any error nothing else names (`main` wraps the command: a sentence, never Python's own exit 1,
-which would read as a blocker), a reader that closes the pipe early, and a reviewer that cannot load (a broken install).
-Ctrl-C is one sentence and 130, the shell's own code for it, and a job's SIGTERM 143.
+`make install` puts `adk-review`, `adk-review-push`, `adk-review-commit` and `adk-review-login` on `PATH` anywhere,
+every dependency at the lock's version, since `uv tool install` reads no lock; with no checkout,
+`uv tool install --exclude-newer P3D git+<address>` keeps the cooldown. With no `repo`, the command assumes none: a
+terminal is asked for the path, a pipeline is refused with exit 2. Exit codes: 0 approved, 1 a finding at the
+`--fail-on` bar (`blocker` unless set), 2 a usage error before any model call (an arm that is not ready, a branch that
+adds nothing or shares no history with its base: "no change to review", with `--head`, `--base` and `--all` named, a
+branch it does not hold, named with its remote copy and the `git fetch` for the person to run, a name no branch can
+have, said to be none, a `config.toml`, profile or rule file that cannot run, nothing under `--path`, or no choice made
+at the question asked when neither `--base` nor `--all` is given), 3 a hole: a rule or a guideline failed, a rule could
+not look (the head's tree not listed, a file it holds not read whole, or a link whose file was not read or followed), a
+changed file no check can read whole — binary, a submodule, a Git LFS pointer — or, where a guideline runs, one it was
+not shown whole — a symbolic link to a file it was not shown whole, cut at the diff cap or past the guidelines' block
+cap — unless the skip list names it, named under "not read", a finding at the `--fail-on` bar whose quote the diff does
+not bear out or that a verifier refuted, a guideline's call the token ceiling refused (a verifier's leaves its finding
+unverified), a `--json`, `--handoff` or `--comment` file that cannot be written, any error nothing else names (`main`
+wraps the command: a sentence, never Python's own exit 1, which would read as a blocker), a reader that closes the pipe
+early, and a reviewer that cannot load (a broken install). Ctrl-C is one sentence and 130, the shell's own code for it,
+and a job's SIGTERM 143.
 
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so. A
@@ -209,25 +211,25 @@ Conventions:
   stops the whole command (Git for Windows' `git.exe` starts the real git as its child), read-only verbs only, and
   nothing ever writes into the repository under review, not even the lazy fetch a partial clone would make, nor a fetch
   of a branch it does not hold: the message names the `git fetch` for the person to run. Every call runs in
-  `_environment(repo)`: the C locale, so git's messages read as written, no inherited `GIT_*` variable, no global or
-  system config and no attributes file but the repository's, `safe.directory` for the one repository named, no lazy
-  fetch, no replace refs or grafts, `core.precomposeUnicode`, `diff.suppressBlankEmpty` and `core.fsmonitor` fixed
-  through `GIT_CONFIG_COUNT`, and a call's own settings beside them there, never as `-c`. A file's diff is read as git
-  prints it for no one's settings, through plumbing (`diff-tree -r -p`, or `diff-index --cached -p` under `--staged`):
-  each path as `:(top,literal)` pathspec magic, the merge base's attributes (`--attr-source`, git 2.41; under `--all`,
-  the empty tree's), `--no-color --no-ext-diff --no-textconv`; where a guideline reads a Python file the change
-  modifies, `--function-context` with Python's own boundary as `diff.default.xfuncname`, each hunk within the function
-  or class around it, and git's three lines again for a file that widening pushes past the diff cap or past 16,000
-  characters (`WIDEN_CAP_CHARS`), and for every widened file where the block, as it counts, leaves a file out. Each hunk
-  header is left bare (`unguessed`): git follows one with its guess at the function around the hunk, a line from above
-  it cut at 80 bytes, and a credential there, its closing quote past the cut, reached the model. A call that fails,
-  cannot start or runs past its timeout raises `GitError`, turned into an error envelope only where envelopes are built;
-  never answer it as an empty result. A user's ref reaches git after `--end-of-options`, in `_sha` and `_branch`, or
-  inside a pattern under refs or after `--disambiguate=`, so a ref spelled `-x` is never a flag. `_git(..., ok=(0, 1))`
-  is only for calls whose exit code 1 is an answer. `_sha` alone also reads exit 128 as no commit, git's answer for a
-  revision it cannot follow, such as `main@{9}`, and only where git says nothing: an `error:` or `fatal:` line at exit 1
-  or 128 is a `GitError`, so a corrupt object is never called missing, a peel's "expected … type" line alone being an
-  answer.
+  `_environment(repo)`: the C locale, so git's messages read as written, no inherited `GIT_*` variable but
+  `GIT_INDEX_FILE`, made absolute, the index git hands a commit hook, which `--staged` reads, no global or system config
+  and no attributes file but the repository's, `safe.directory` for the one repository named, no lazy fetch, no replace
+  refs or grafts, `core.precomposeUnicode`, `diff.suppressBlankEmpty` and `core.fsmonitor` fixed through
+  `GIT_CONFIG_COUNT`, and a call's own settings beside them there, never as `-c`. A file's diff is read as git prints it
+  for no one's settings, through plumbing (`diff-tree -r -p`, or `diff-index --cached -p` under `--staged`): each path
+  as `:(top,literal)` pathspec magic, the merge base's attributes (`--attr-source`, git 2.41; under `--all`, the empty
+  tree's), `--no-color --no-ext-diff --no-textconv`; where a guideline reads a Python file the change modifies,
+  `--function-context` with Python's own boundary as `diff.default.xfuncname`, each hunk within the function or class
+  around it, and git's three lines again for a file that widening pushes past the diff cap or past 16,000 characters
+  (`WIDEN_CAP_CHARS`), and for every widened file where the block, as it counts, leaves a file out. Each hunk header is
+  left bare (`unguessed`): git follows one with its guess at the function around the hunk, a line from above it cut at
+  80 bytes, and a credential there, its closing quote past the cut, reached the model. A call that fails, cannot start
+  or runs past its timeout raises `GitError`, turned into an error envelope only where envelopes are built; never answer
+  it as an empty result. A user's ref reaches git after `--end-of-options`, in `_sha` and `_branch`, or inside a pattern
+  under refs or after `--disambiguate=`, so a ref spelled `-x` is never a flag. `_git(..., ok=(0, 1))` is only for calls
+  whose exit code 1 is an answer. `_sha` alone also reads exit 128 as no commit, git's answer for a revision it cannot
+  follow, such as `main@{9}`, and only where git says nothing: an `error:` or `fatal:` line at exit 1 or 128 is a
+  `GitError`, so a corrupt object is never called missing, a peel's "expected … type" line alone being an answer.
 - Every string a model reads is capped in characters, with the cut named in the text, and the cut never falls inside a
   credential, and so is each title and change a model writes into a finding, cut where `core/findings.py` makes it. A
   dropped finding's file is a model's text too, cut in `drop_ungrounded` at `REASON_MAX_CHARS`. The report cuts each

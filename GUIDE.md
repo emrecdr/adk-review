@@ -32,11 +32,12 @@ to `uv tool install --constraints`, every dependency at the version the lock hol
 `uv tool install --exclude-newer P3D git+https://github.com/emrecdr/adk-review`, the `git+` being uv's own and `P3D` the
 three days' cooldown the lock keeps, since `uv tool install` reads no lock: measured, the install without either took a
 LiteLLM three days old or less, the window LiteLLM 1.82.7 and 1.82.8 shipped a credential stealer in. Either puts
-`adk-review`, its pre-push hook, `adk-review-push`, and the Copilot login, `adk-review-login`, on `PATH`: the reviewer
-alone, with ruff beside it. An installed reviewer reads the model's settings from the shell alone, no `.env` being read
-outside the checkout, and its config from beside itself; inside the checkout, `uv run adk-review` is the same command.
-Behind a company proxy, set `UV_SYSTEM_CERTS=true` for uv's own commands, `uv sync` and `uv tool install`: uv trusts the
-roots it bundles, not the machine's, where the reviewer trusts the machine's own store.
+`adk-review`, its pre-push hook, `adk-review-push`, its commit hook, `adk-review-commit`, and the Copilot login,
+`adk-review-login`, on `PATH`: the reviewer alone, with ruff beside it. An installed reviewer reads the model's settings
+from the shell alone, no `.env` being read outside the checkout, and its config from beside itself; inside the checkout,
+`uv run adk-review` is the same command. Behind a company proxy, set `UV_SYSTEM_CERTS=true` for uv's own commands,
+`uv sync` and `uv tool install`: uv trusts the roots it bundles, not the machine's, where the reviewer trusts the
+machine's own store.
 
 ## Flags
 
@@ -448,6 +449,33 @@ What the hook cannot see, or stops on:
   own name by no tree rule and counted by no blast radius, even one to a `.py` file.
 - A repository with no `.git` folder of its own, a bare one or one used through `--git-dir`, and a tag of a tree or a
   blob, stop the push: the hook reviews a working tree's commits.
+
+## Before a commit
+
+`adk-review-commit`, installed beside `adk-review`, is a git pre-commit hook: what a commit holds, reviewed with
+`default-rules`, no model and no key, before git writes it, so a key never enters even this clone's history. To install
+the commit hook, run these lines in the repository to guard, in any shell git brings (Git Bash on Windows):
+
+    hooks="$(git rev-parse --path-format=absolute --git-path hooks)"
+    mkdir -p "$hooks"
+    [ ! -e "$hooks/pre-commit" ] || grep -q adk-review-commit "$hooks/pre-commit" ||
+      mv "$hooks/pre-commit" "$hooks/pre-commit.before-adk-review"
+    cat > "$hooks/pre-commit" <<'HOOK'
+    #!/bin/sh
+    adk-review-commit || exit
+    before="$(dirname "$0")/pre-commit.before-adk-review"
+    if [ -x "$before" ]; then "$before" "$@"; fi
+    HOOK
+    chmod +x "$hooks/pre-commit"
+
+They write the hook where the pre-push hook's lines write theirs, and keep a pre-commit hook already there beside it as
+`pre-commit.before-adk-review`, run after the review passes. The review reads the index git hands its hook, as
+`--staged` reads it, against `HEAD`, or the empty tree before a first commit: `git commit -a` and `git commit <paths>`
+stage into an index of their own, and the review reads that one. A commit that adds nothing to review, a message-only
+`--amend`, passes; any other exit but 0 stops the commit and prints why, a file no rule can read among them. `git commit
+--no-verify` skips it, as it skips any hook. It costs what a push's review costs, at each commit. A repository that uses
+pre-commit names the hook `adk-review-commit` from this repository's `.pre-commit-hooks.yaml`, with pre-commit's own
+hook installed (`pre-commit install`).
 
 ## More
 

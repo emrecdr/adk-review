@@ -27,6 +27,7 @@ dependencies = [
 [project.scripts]
 adk-review = "adk_review.review:run"
 adk-review-push = "adk_review.push:run"
+adk-review-commit = "adk_review.commit:run"
 adk-review-login = "adk_review.login:run"
 
 [build-system]

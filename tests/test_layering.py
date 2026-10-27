@@ -202,7 +202,7 @@ def test_the_modes_that_read_the_checks_alone_start_without_the_engine(tmp_path:
     probe = (
         "import contextlib, io, sys\n"
         "sys.modules['google'] = None  # an import of it raises, as it does when ADK is not installed\n"
-        "from adk_review import push\n"
+        "from adk_review import commit, push\n"
         "from adk_review.review import main\n"
         "codes = []\n"
         f"for argv in {asked!r}:\n"

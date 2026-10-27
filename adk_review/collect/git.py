@@ -103,9 +103,13 @@ def _environment(repo: str, settings: Mapping[str, str] | None = None) -> dict[s
     the key a line early. With a person's own config unread, so is their list of safe directories: the repository
     the operator named is the one this review trusts, as git's command-line scope allows since 2.38. Git speaks in
     the C locale, so its messages read as written: read by review, a German `Fehler:` was no error to `_sha`, and a
-    corrupt commit was called missing.
+    corrupt commit was called missing. One is kept, made absolute: `GIT_INDEX_FILE`, the index git hands a commit hook,
+    `git commit -a`'s and `git commit <paths>`' own, which `--staged` reads as the commit holds it, where no review of
+    commits reads an index at all. Measured before, the hook read the index as it was before the commit.
     """
     env = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
+    if index := os.environ.get("GIT_INDEX_FILE"):
+        env["GIT_INDEX_FILE"] = os.path.abspath(index)
     env |= {"LC_ALL": "C", "LANGUAGE": ""}
     env |= {"GIT_NO_LAZY_FETCH": "1", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_GRAFT_FILE": os.devnull}
     env |= {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_ATTR_NOSYSTEM": "1"}

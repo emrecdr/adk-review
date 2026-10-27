@@ -1004,6 +1004,45 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
     assert push.run() == 1, "the installed hook ends as its main does"
 
 
+def test_the_pre_commit_hook_reviews_the_index_each_way_git_commits(tmp_path, monkeypatch, capsys, cli) -> None:
+    """Measured before, a hook running `adk-review --staged`: `git commit -a` and `git commit <paths>` hand the hook an
+    index of their own in `GIT_INDEX_FILE`, which the review left out with every inherited `GIT_*` variable, so it read
+    the index as it was before the commit, and a message-only `--amend`, adding nothing, ended in exit 2. A commit stops
+    on what it holds, and one that adds nothing passes, as a clean one does, saying nothing."""
+    commit = importlib.import_module("adk_review.commit")
+    monkeypatch.setattr(commit, "review", cli.main)
+    key = 'AWS = "AKIA' + "Q" * 16 + '"\n'
+    work = tmp_path / "work"
+    work.mkdir()
+    _git_in(work, "init", "-q", "-b", "main")
+    monkeypatch.chdir(work)
+    (work / "app.py").write_text(key, encoding="utf-8", newline="\n")
+    _git_in(work, "add", "app.py")
+    assert commit.main([]) == 1, "a first commit, no HEAD yet, holding a key"
+    assert "rule.secrets" in capsys.readouterr().out
+    _git_in(work, "reset", "-q")
+    _committed(work, "app.py", "x = 1\n")
+
+    (work / "app.py").write_text("x = 1\n" + key, encoding="utf-8", newline="\n")
+    for ahead in ("-a", "<paths>"):  # git's own index for the commit, the one it hands its hook
+        index = tmp_path / f"next-index-{len(ahead)}.lock"
+        index.write_bytes((work / ".git" / "index").read_bytes())
+        monkeypatch.setenv("GIT_INDEX_FILE", str(index))
+        _git_in(work, "add", "app.py")  # into that index alone: `_git_in` hands git the variable
+        monkeypatch.setenv("GIT_INDEX_FILE", str(index))
+        assert commit.main([]) == 1, f"git commit {ahead}: the key is in what the commit holds"
+        assert "rule.secrets" in capsys.readouterr().out
+    monkeypatch.delenv("GIT_INDEX_FILE")
+    assert commit.main([]) == 0, "a message-only --amend: the index adds nothing to HEAD"
+    assert capsys.readouterr() == ("", ""), "a commit that adds nothing says nothing"
+    (work / "app.py").write_text("x = 2\n", encoding="utf-8", newline="\n")
+    _git_in(work, "add", "app.py")
+    assert commit.main([]) == 0 and capsys.readouterr() == ("", ""), "a clean commit says nothing"
+    monkeypatch.setattr(commit, "settle", lambda: None)
+    monkeypatch.setattr(commit, "main", lambda: 1)
+    assert commit.run() == 1, "the installed hook ends as its main does"
+
+
 def test_the_pre_push_hook_reads_each_commit_a_push_sends_for_credentials(tmp_path, monkeypatch, capsys, cli) -> None:
     """The change as a whole is reviewed, and each commit it is made of is read by the credential rules, what it says
     too: the history the remote receives holds what one commit adds and a later one takes out. Measured by review: a
@@ -1237,6 +1276,40 @@ def test_the_install_recipe_keeps_the_hook_it_finds_and_hands_both_gits_lines(tm
     assert shutil.which("sh", path=env["PATH"]), "a shell to run the recipe in"
 
 
+def test_the_commit_hooks_install_recipe_keeps_the_hook_it_finds(tmp_path) -> None:
+    """The guide's lines for the commit hook keep a pre-commit hook already there, as the push hook's keep Git LFS's,
+    and run it after the review passes, never after one that stopped the commit."""
+    import re
+
+    guide = ROOT.joinpath("GUIDE.md").read_text(encoding="utf-8")
+    start = re.search(r"To install\s+the commit hook, run these", guide)
+    assert start, "the guide's sentence"
+    recipe = re.search(r"\n\n((?:    [^\n]*\n|\n)+)", guide[start.start() :])
+    assert recipe, "the guide's recipe"
+    script = "\n".join(line.removeprefix("    ") for line in recipe.group(1).strip("\n").splitlines())
+    work, bin_ = tmp_path / "work", tmp_path / "bin"
+    work.mkdir()
+    bin_.mkdir()
+    _git_in(work, "init", "-q", "-b", "main")
+    hooks = work / ".git" / "hooks"
+    hooks.mkdir(exist_ok=True)
+    (hooks / "pre-commit").write_text(f'#!/bin/sh\ntouch "{tmp_path}/before.ran"\n')
+    (hooks / "pre-commit").chmod(0o755)
+    reviewed = bin_ / "adk-review-commit"
+    reviewed.write_text(f'#!/bin/sh\ntouch "{tmp_path}/review.ran"\nexit "${{REVIEW_EXIT:-0}}"\n')
+    reviewed.chmod(0o755)
+    env = {**os.environ, "PATH": f"{bin_}{os.pathsep}{os.environ['PATH']}", "GIT_CONFIG_GLOBAL": os.devnull}
+    subprocess.run(["sh", "-c", script], cwd=work, env=env, check=True)
+    hook = [str(hooks / "pre-commit")]
+    assert subprocess.run(hook, cwd=work, env=env, check=False).returncode == 0
+    assert (tmp_path / "review.ran").exists() and (tmp_path / "before.ran").exists()
+    (tmp_path / "before.ran").unlink()
+    stopped = subprocess.run(hook, cwd=work, env={**env, "REVIEW_EXIT": "1"}, check=False)
+    assert stopped.returncode == 1 and not (tmp_path / "before.ran").exists(), "a stopped commit runs nothing after"
+    subprocess.run(["sh", "-c", script], cwd=work, env=env, check=True)
+    assert not (hooks / "pre-commit.before-adk-review").read_text().count("adk-review-commit"), "run again, it keeps"
+
+
 def test_the_history_a_push_sends_reads_no_third_party_code(tmp_path) -> None:
     """Asked by the owner: never scan a third-party library's code, in the pre-push hook's reading of each commit too.
     A vendored package's key, binary and pointer are another project's: none is read or named. The credential rules
@@ -1454,10 +1527,12 @@ def test_the_reviewer_installs_as_one_command_that_runs_from_any_folder() -> Non
     assert project["project"]["scripts"] == {
         "adk-review": "adk_review.review:run",
         "adk-review-push": "adk_review.push:run",
+        "adk-review-commit": "adk_review.commit:run",
         "adk-review-login": "adk_review.login:run",
     }
     hooks = (ROOT / ".pre-commit-hooks.yaml").read_text(encoding="utf-8")
     assert "\n  entry: adk-review-push\n" in hooks and "\n  stages: [pre-push]\n" in hooks
+    assert "\n  entry: adk-review-commit\n" in hooks and "\n  stages: [pre-commit]\n" in hooks
     assert project["tool"]["hatch"]["build"]["targets"]["wheel"]["packages"] == ["adk_review"]
     assert any(need.startswith("ruff") for need in project["project"]["dependencies"]), "lint needs ruff installed"
     assert callable(review.run) and review.version() == project["project"]["version"]

@@ -33,8 +33,9 @@ cd adk-review                                # every command below runs at the r
 uv sync --locked                             # once: the reviewer and its locked dependencies, ruff among them
 ```
 
-Or, with no checkout, install it as a command, which puts `adk-review`, `adk-review-push` and `adk-review-login` on
-`PATH`, each command below then dropping its `uv run`; step 3's demo needs the checkout, its script not installed:
+Or, with no checkout, install it as a command, which puts `adk-review`, `adk-review-push`, `adk-review-commit` and
+`adk-review-login` on `PATH`, each command below then dropping its `uv run`; step 3's demo needs the checkout, its
+script not installed:
 
 ```bash
 uv tool install --exclude-newer P3D git+https://github.com/emrecdr/adk-review    # the git+ is uv's: it refuses the plain address
@@ -94,7 +95,9 @@ Then drop `--profile`: `uv run adk-review <repo> --base main` runs the rules, th
 
 The pre-push hook, `adk-review-push`, comes with the installed command, from step 2's address or from this checkout with
 `make install`. It reviews what a push sends with the default profile's rules, no model, and "Before a push" in
-`GUIDE.md` installs it in a repository. On a pull request, "In a pipeline" below runs the same command in CI.
+`GUIDE.md` installs it in a repository. The commit hook, `adk-review-commit`, reviews what each commit holds the same
+way, before git writes it, and "Before a commit" installs it. On a pull request, "In a pipeline" below runs the same
+command in CI.
 
 ### Which change: `--base` and `--head`
 
@@ -248,7 +251,7 @@ points the wrong way.
 | `collect/` | `core` | `git.py` (read-only git: what a review covers, each file's diff and its text at the head, the head's tree, `collect_evidence`), `change.py` (the change as the evidence holds it, decided from the diffs alone: what the guidelines are shown of each file and the block they read, what no one could read, the blast radius, and each call into what the change touched, `callers_of`), `history.py` (what a push sends, commit by commit, for the pre-push hook), `diff.py` (a unified diff read without git: the lines it adds, the text before it, the cap, the fence each guideline reads it in), `ruff.py` (ruff over the changed Python files' texts, in a folder of its own), `pyrefly.py` (pyrefly over the same copies, each file alone, under the reviewer's own configuration; and over the head's tree and the base's, for what a change broke elsewhere), `tools.py` (each outside tool a rule may name, and the adapter that runs it: ruff's, pyrefly's, and pyrefly's over the radius) |
 | `judge/` | `core`, `collect` | `rules/` (every rule, one file each, and nothing else), `guidelines/` (every guideline, one file each, and nothing else), `rule_helpers/` (the one door a rule imports: the contract, passed on from `core`, and helpers named after what they read), `catalog.py` (finds every check, reads `config.toml`, chooses what a profile runs, for the command and chat alike), `checks.py` (`run_rules`, every rule over a `Change`, and the node that runs it before the guidelines, in both shapes), `agents.py` (a guideline as an agent: the instruction around its role, the fences, the state keys spelled once, the read-back), `settings.py` (what the environment says: the arm, each role's model name, the fallback, Copilot's token path; read, nothing built, so the login and a rules-only review's cache key import no engine), `config.py` (the models built from it, and the request every call carries: temperature zero, a deadline, retries; readiness), `plugins.py` (redaction, the ledger and its ceiling, provider errors, progress, the recorder, and in chat the readiness check and the judging agents' one turn), `graph.py` (the graph and the `App` in both shapes; not `agent.py`, since `adk web` lists any folder holding one as an agent), `run.py` (one seeded run through the engine, guarded, and what it left in state read back), `tools.py` (chat's model-facing tools and the guardrail in front of them), `verify.py` (the second opinion) |
 | `deliver/` | `core` alone: the driver hands it the rest | `report.py` (the text report, the JSON, the hand-off, the comment for the branch's author, a previous report read back for `--previous`, what `--dry-run`, `--list-checks`, `--explain` and `--try` print, and the rules that keep the branch's text from forging any of them) |
-| the root | everything | `review.py` (the command: the driver that fixes the order of the steps; a profile with no guideline runs the rules as `--try` does, the engine never imported), `push.py` (the pre-push hook: what a push sends, reviewed with `default-rules`, and each of its commits read with `push-history`, the credential rules, for git's hook and pre-commit's alike), `login.py` (the Copilot arm's one-time login, `adk-review-login`: GitHub's device flow, the token cached where LiteLLM reads it), `agent.py` (the chat `App` for ADK's loader, `adk web` and `adk run`, the one place that wants it), `__init__.py` (answers `agent` without loading it, so `core/` imports alone), `config.toml` (the one config file) |
+| the root | everything | `review.py` (the command: the driver that fixes the order of the steps; a profile with no guideline runs the rules as `--try` does, the engine never imported), `push.py` (the pre-push hook: what a push sends, reviewed with `default-rules`, and each of its commits read with `push-history`, the credential rules, for git's hook and pre-commit's alike), `commit.py` (the pre-commit hook, `adk-review-commit`: what a commit holds, the index git hands its hook, reviewed with `default-rules`), `login.py` (the Copilot arm's one-time login, `adk-review-login`: GitHub's device flow, the token cached where LiteLLM reads it), `agent.py` (the chat `App` for ADK's loader, `adk web` and `adk run`, the one place that wants it), `__init__.py` (answers `agent` without loading it, so `core/` imports alone), `config.toml` (the one config file) |
 
 `core/`, the checks and `judge/rule_helpers/` import nothing that calls a model or runs a process — no `google`,
 `litellm`, `subprocess`, `httpx`, `asyncio`, `os`, `socket`, `urllib`, `http` or `ssl` — and a test imports them with
