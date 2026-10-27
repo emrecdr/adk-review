@@ -1532,6 +1532,27 @@ class TestWhatTheBranchCannotTellTheRules:
         assert not (tmp_path / "outer" / "escape.py").exists(), "written outside the rule's folder"
 
 
+def test_a_rule_that_says_what_is_wrong_is_titled_by_it_and_quotes_its_line() -> None:
+    """A rule's `(line, what)` answer, or a tree rule's `(path, line, what)`, names the finding by `what` and quotes the
+    line, as `lint` and `radius-types` do. Read by review: `what` was quoted as the evidence, so a comment's "Quoted:"
+    held a sentence and never the line, for `callers` and three rules beside it, and a hand-off gave a coding agent no
+    line to change."""
+    from adk_review.judge.catalog import catalog
+    from adk_review.judge.rule_helpers import try_rule
+
+    rules = {rule.check_id: rule for rule in catalog().rules}
+    workflow = "jobs:\n  t:\n    steps:\n      - uses: actions/checkout@v4\n"
+    [action] = try_rule(rules["rule.pinned-actions"], {".github/workflows/ci.yml": workflow})
+    assert (action.line, action.text, action.title) == (
+        4,
+        "+      - uses: actions/checkout@v4",
+        "actions/checkout runs at `v4`, not a full commit SHA",
+    )
+    [call] = try_rule(rules["rule.callers"], rules["rule.callers"].bad[0])
+    assert (call.line, call.text) == (3, "+get_user(user_id=3)"), call
+    assert call.title is not None and "takes no keyword `user_id`" in call.title, call
+
+
 class TestTreeRules:
     """A rule over the head: every path, and each module parsed once. What it finds is named at the path; what it
     could not read is a hole."""
@@ -1697,7 +1718,8 @@ class TestTheCallersRule:
             if changed is not None:
                 lines = changed.get(item["path"], set())
                 item["added_at"] = item["added_at"] if lines is None else frozenset(lines)
-        return sorted((hit.path, hit.line, hit.text) for hit in Callers().hits(entries, tree))
+        # What is wrong, each hit's title: the line itself is quoted, as every tree rule's is.
+        return sorted((hit.path, hit.line, hit.title or hit.text) for hit in Callers().hits(entries, tree))
 
     def test_a_caller_the_change_left_alone_is_named_where_it_breaks(self) -> None:
         files = {
@@ -1895,8 +1917,12 @@ class TestTheCallersRule:
             ("pkg/service.py", 1, said),
             ("pkg/worker.py", 5, said),
         ]
+        from adk_review.judge.rules.callers import GONE_FIX
+
         entries, tree = as_change(files)
-        assert {hit.title for hit in Callers().hits(entries, tree)} == {"code uses a name its module no longer defines"}
+        hits = Callers().hits(entries, tree)
+        assert {(hit.title, hit.fix) for hit in hits} == {(said, GONE_FIX)}, "named by what is wrong, with its own fix"
+        assert all(hit.text[1:] in files[hit.path] for hit in hits), "each line quoted as the head holds it"
         kept = {**files, "pkg/repo.py": "def get_user(uid):\n    return uid\n"}
         del kept["pkg/fine.py"]  # which takes `fetch_user`, a name this module lacks
         assert self.found(kept, {"pkg/repo.py": None}) == [], "the name is there: nothing to name"
@@ -1992,7 +2018,10 @@ class TestTheCallersRule:
             entries.append({**entries[0], "path": old, "status": "D", "added_at": frozenset(), "text": None})
         else:
             entries = [{**item, "status": "R", "old": old} if item["path"] == new else item for item in entries]
-        return sorted((hit.path, hit.line, hit.text, hit.title) for hit in Callers().hits(entries, tree))
+        hits = Callers().hits(entries, tree)
+        # Each line quoted as the head holds it; named by what is wrong, its fix telling a lost module from a lost name.
+        assert all(hit.text[1:] in files[hit.path] for hit in hits), hits
+        return sorted((hit.path, hit.line, hit.title, hit.fix) for hit in hits)
 
     def test_a_module_the_change_moved_or_removed_is_named_where_code_still_imports_it(self) -> None:
         """Asked by the owner: the review acts on the blast radius. Measured before: a branch moved `pkg/repo.py`, or
@@ -2006,7 +2035,10 @@ class TestTheCallersRule:
             "pkg/guarded.py": "try:\n    import pkg.repo as repo\nexcept ImportError:\n    repo = None\n",
             "pkg/fine.py": "from pkg.users import get_user\n",
         }
-        title = "code imports a module the change moved or removed"
+        from adk_review.judge.rules.callers import MOVED_FIX
+
+        title = MOVED_FIX  # a moved module's own fix, which tells it from a lost name
+
         moved = "`pkg/repo.py` moved to `pkg/users.py`, and this line still imports it"
         assert self.moved(
             {**users, "pkg/users.py": "def get_user(uid):\n    return uid\n"}, "pkg/repo.py", "pkg/users.py"
@@ -2031,7 +2063,7 @@ class TestTheCallersRule:
         files = {"pkg/__init__.py": "from . import contents\n", "pkg/flow.py": "x = 1\n"}
         said = "the change removed `pkg/contents.py`, which this line imports"
         assert self.moved(files, "pkg/contents.py", None) == [
-            ("pkg/__init__.py", 1, said, "code imports a module the change moved or removed")
+            ("pkg/__init__.py", 1, said, "Import the module from its new path, or keep a module at the old one.")
         ]
 
     def test_a_module_made_a_package_of_the_same_name_is_the_one_an_import_names(self) -> None:
@@ -2045,7 +2077,12 @@ class TestTheCallersRule:
         }
         said = "`pkg/repo/__init__.py` defines no `helpers`, which this line takes from it"
         assert self.moved(files, "pkg/repo.py", "pkg/repo/__init__.py") == [
-            ("pkg/repo/__init__.py", 2, said, "code uses a name its module no longer defines")
+            (
+                "pkg/repo/__init__.py",
+                2,
+                said,
+                "Use the name the module defines now, or define the old name there again.",
+            )
         ]
 
     def test_the_head_is_read_where_the_change_moved_or_removed_a_python_file(self) -> None:
@@ -2555,7 +2592,7 @@ class TestTheShippedRules:
         git = '"resolved": "git+ssh://git@github.com/someone/pad.git#1a2b3c",\n'
         plain = '"resolved": "http://registry.npmjs.org/pad/-/pad-1.0.0.tgz",\n'
         hits = try_rule(rule, {lock: public + mirror + at + mirror + git + plain})
-        assert [(hit.line, hit.text) for hit in hits] == [
+        assert [(hit.line, hit.title) for hit in hits] == [
             (2, f"{lock} fetches from https://npm.acme-corp.io, outside its public registry"),
             (5, f"{lock} fetches from git+ssh://github.com, outside its public registry"),
             (6, f"{lock} fetches from http://registry.npmjs.org, outside its public registry"),
@@ -2581,7 +2618,7 @@ class TestTheShippedRules:
 
         def named(path: str, text: str) -> list[str]:
             """The origins the rule names in `text` at `path`, in order."""
-            said = (hit.text for hit in try_rule(LockfileSources(), {path: text}))
+            said = (hit.title or "" for hit in try_rule(LockfileSources(), {path: text}))
             return [
                 one.removeprefix(f"{path} fetches from ").removesuffix(", outside its public registry") for one in said
             ]
@@ -2655,7 +2692,7 @@ class TestTheShippedRules:
             "  reuse:\n    uses: org/repo/.github/workflows/build.yml@main\n"
         )
         hits = try_rule(rule, {".github/workflows/ci.yml": workflow})
-        assert [(hit.line, hit.text) for hit in hits] == [
+        assert [(hit.line, hit.title) for hit in hits] == [
             (4, "actions/checkout runs at `v4`, not a full commit SHA"),
             (5, "actions/setup-python runs at `v5`, not a full commit SHA"),
             (10, "actions/checkout runs at `11bd719`, not a full commit SHA"),
@@ -2692,7 +2729,7 @@ class TestTheShippedRules:
             "      - run: >-\n          echo ${{ github.event.commits[0].author.name }}\n"
         )
         hits = try_rule(rule, {".github/workflows/triage.yml": workflow})
-        assert [(hit.line, hit.text) for hit in hits] == [
+        assert [(hit.line, hit.title) for hit in hits] == [
             (6, "`github.event.pull_request.title` is written into the script before it runs"),
             (10, "`github.head_ref` is written into the script before it runs"),
             (17, "`github.event.head_commit.message` is written into the script before it runs"),

@@ -32,11 +32,9 @@ _IMPLICIT = frozenset(
 )
 #: What an `except` names where it keeps an import that fails from raising.
 _CATCHES_IMPORT = frozenset({"ImportError", "ModuleNotFoundError", "Exception", "BaseException"})
-#: A name the module no longer defines, its own title and fix beside the rule's, which are a call's.
-GONE_TITLE = "code uses a name its module no longer defines"
+#: A name the module no longer defines, its own fix beside the rule's, which is a call's.
 GONE_FIX = "Use the name the module defines now, or define the old name there again."
-#: A module the change moved or removed, which a file still imports by its old path.
-MOVED_TITLE = "code imports a module the change moved or removed"
+#: A module the change moved or removed, which a file still imports by its old path: its own fix.
 MOVED_FIX = "Import the module from its new path, or keep a module at the old one."
 
 type Scope = ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda | ast.ClassDef
@@ -155,7 +153,7 @@ class _Gone:
         an import bound to the module."""
         lost = self.lost(path, bound)
         found = [
-            _moved_hit(path, alias.lineno, lost[local], self.tree.removed[lost[local]])
+            _moved_hit(self.tree, path, alias.lineno, lost[local], self.tree.removed[lost[local]])
             for node, guarded in ([] if not lost else _imports(module))
             for alias in node.names
             if (local := alias.asname or alias.name) in lost and not guarded
@@ -169,7 +167,7 @@ class _Gone:
             for alias in node.names:
                 file, attribute = taken.get(alias.asname or alias.name, ("", None))
                 if attribute == alias.name and not guarded and self.lacks(file, alias.name):
-                    found.append(_gone_hit(path, alias.lineno, file, alias.name))
+                    found.append(_gone_hit(self.tree, path, alias.lineno, file, alias.name))
         modules = {name: file for name, (file, attribute) in taken.items() if attribute is None}
         if not modules:
             return found
@@ -181,7 +179,7 @@ class _Gone:
             if file is None or not isinstance(node.ctx, ast.Load) or root in hidden or other[root]:
                 continue
             if not {node.attr, f"{owner}.{node.attr}"} & spelled and self.lacks(file, node.attr):
-                found.append(_gone_hit(path, node.lineno, file, node.attr))
+                found.append(_gone_hit(self.tree, path, node.lineno, file, node.attr))
         return found
 
     def lost(self, path: str, bound: dict[str, tuple[str, str | None]]) -> dict[str, str]:
@@ -215,16 +213,21 @@ class _Gone:
         return True
 
 
-def _gone_hit(path: str, line: int, file: str, name: str) -> Hit:
-    """A line that takes `name` from the module at `file`, which no longer defines it."""
-    return Hit(path, line, f"`{file}` defines no `{name}`, which this line takes from it", GONE_TITLE, fix=GONE_FIX)
+def _gone_hit(tree: Tree, path: str, line: int, file: str, name: str) -> Hit:
+    """A line that takes `name` from the module at `file`, which no longer defines it: quoted, and named by what is
+    wrong, as every tree rule's hit is."""
+    said = f"`{file}` defines no `{name}`, which this line takes from it"
+    return Hit(path, line, tree.quoted(path, line) or said, said, fix=GONE_FIX)
 
 
-def _moved_hit(path: str, line: int, old: str, new: str | None) -> Hit:
+def _moved_hit(tree: Tree, path: str, line: int, old: str, new: str | None) -> Hit:
     """A line that imports the module at `old`, which the change moved to `new`, or removed where `new` is None."""
-    if new:
-        return Hit(path, line, f"`{old}` moved to `{new}`, and this line still imports it", MOVED_TITLE, fix=MOVED_FIX)
-    return Hit(path, line, f"the change removed `{old}`, which this line imports", MOVED_TITLE, fix=MOVED_FIX)
+    said = (
+        f"`{old}` moved to `{new}`, and this line still imports it"
+        if new
+        else f"the change removed `{old}`, which this line imports"
+    )
+    return Hit(path, line, tree.quoted(path, line) or said, said, fix=MOVED_FIX)
 
 
 def _removes_a_name(item: Entry) -> bool:

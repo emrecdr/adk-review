@@ -220,7 +220,7 @@ class TestTheContractSaysWhatAKindTakes:
         assert "check(tree) returned 'README.md' among its hits. Each hit is a (path, what) pair" in (
             checked.could_not_look or ""
         )
-        assert Paths._hit(Hit("a", None, "b")) == Hit("a", None, "b")
+        assert Paths._hit(Hit("a", None, "b"), Tree([], {})) == Hit("a", None, "b")
 
 
 @pytest.fixture

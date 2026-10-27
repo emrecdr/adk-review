@@ -348,8 +348,10 @@ class FileRule(AnyRule):
     @staticmethod
     def _hit(file: ChangedFile, item: object) -> Hit:
         """One thing `check` returned, as a hit: a line number, quoted as the diff shows that line; a `(line, what
-        is wrong)` pair; or a `Hit`. Anything else is a sentence. Measured before: a list of messages ended as
-        "Hit.__init__() takes from 4 to 7 positional arguments but 25 were given"."""
+        is wrong)` pair, the line quoted and `what` its title; or a `Hit`. Anything else is a sentence. Measured
+        before: a list of messages ended as "Hit.__init__() takes from 4 to 7 positional arguments but 25 were
+        given"; and by review, `what` quoted as the evidence put a sentence under a comment's "Quoted:", never the
+        line."""
         if isinstance(item, Hit):
             return item
         if type(item) is int:
@@ -367,8 +369,9 @@ class FileRule(AnyRule):
         # none of is a hole, through `lines`, as any read of that file is.
         if (seen := file.near(line)) is None:
             raise ValueError(f"check(file) names line {line} of {file.path}, which has {len(file.lines)} line(s)")
-        # A line number alone is quoted as the diff shows that line: `+` where the change added it, a space where not.
-        return Hit(file.path, line, what if what is not None else ("+" if line in file.added else " ") + seen)
+        # The line is quoted as the diff shows it, `+` where the change added it, a space where not; `what`, where the
+        # rule says one, names the finding, as a ruff code's message does.
+        return Hit(file.path, line, ("+" if line in file.added else " ") + seen, title=what)
 
 
 def raised_line(exc: BaseException, owns: Callable[[str], bool]) -> int | None:
@@ -465,6 +468,15 @@ class Tree:
         # Read by review: a view without tests another rule made first was copied too, and held no diagnostics.
         view.__dict__.pop("without_tests", None)
         return view
+
+    def quoted(self, path: str, line: int | None) -> str | None:
+        """Line `line` of `path` as the report quotes a line, `+` where the change added it and a space where not; None
+        where the tree holds no such line. A tree rule's hit quotes it, as a file rule's quotes its file's."""
+        text = self.sources.get(path)
+        lines = lines_of(text) if text is not None and line else []
+        if line is None or not 0 < line <= len(lines):
+            return None
+        return ("+" if line in self.added.get(path, ()) else " ") + lines[line - 1]
 
     def changed_by(self, files: Iterable[Entry]) -> Tree:
         """The same head with the lines each changed file's change added, and the paths it moved or removed: a view,
@@ -573,13 +585,14 @@ class TreeRule(AnyRule):
             return []
         returns = "a list of (path, what is wrong) pairs, (path, line, what) triples or Hits"
         read = (tree if self.reads_tests else tree.without_tests).changed_by(files)
-        return [self._hit(item) for item in _each(self.check(read), "tree", returns)]
+        return [self._hit(item, read) for item in _each(self.check(read), "tree", returns)]
 
     @staticmethod
-    def _hit(item: object) -> Hit:
-        """One thing `check` returned, as a hit: `(path, what is wrong)`, `(path, line, what)`, or a `Hit`. Anything
-        else is a sentence. Measured before: a list of bare paths was read a character at a time, and `README.md`
-        became a finding at the file `R` whose evidence was `E`."""
+    def _hit(item: object, tree: Tree) -> Hit:
+        """One thing `check` returned, as a hit: `(path, what is wrong)`, `(path, line, what)`, the line quoted and
+        `what` its title where the tree holds the line, or a `Hit`. Anything else is a sentence. Measured before: a
+        list of bare paths was read a character at a time, and `README.md` became a finding at the file `R` whose
+        evidence was `E`."""
         if isinstance(item, Hit):
             return item
         if isinstance(item, tuple) and len(item) == 2 and all(isinstance(part, str) for part in item):
@@ -591,7 +604,9 @@ class TreeRule(AnyRule):
             and _whole(item[1])
             and (isinstance(item[2], str))
         ):
-            return Hit(*item)
+            path, line, what = item
+            quoted = tree.quoted(path, line)
+            return Hit(path, line, what) if quoted is None else Hit(path, line, quoted, title=what)
         raise TypeError(
             f"check(tree) returned {item!r} among its hits. Each hit is a (path, what) pair, a (path, line, what) "
             "triple, or a Hit"

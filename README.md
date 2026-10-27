@@ -472,8 +472,8 @@ class RequiredPaths(TreeRule):
    | Kind | `check` reads | and returns |
    |---|---|---|
    | `Rule` | `path`, `line` | `True` where the line breaks the rule |
-   | `FileRule` | `file.path`, `file.lines`, `file.line(n)`, `file.near(n)`, `file.added`, `file.changed`, `file.arrived(*globs)`, `file.new_lines(*globs)`, `file.module`, and `file.diagnostics` for a rule that names a `tool` | line numbers, the report quoting each line; `(line, what is wrong)` pairs, `None` for the file as a whole; or `Hit`s |
-   | `TreeRule` | `tree.paths`, `tree.has(path)`, a folder as `"tests/"`, `tree.module(path)`, `tree.modules()`, `tree.added`, `tree.imports(path)`, `tree.removed`, `tree.imports_before(path)` | `(path, what is wrong)` pairs, `(path, line, what)` triples, or `Hit`s |
+   | `FileRule` | `file.path`, `file.lines`, `file.line(n)`, `file.near(n)`, `file.added`, `file.changed`, `file.arrived(*globs)`, `file.new_lines(*globs)`, `file.module`, and `file.diagnostics` for a rule that names a `tool` | line numbers, the report quoting each line; `(line, what is wrong)` pairs, the line quoted and `what` its title, `None` for the file as a whole; or `Hit`s |
+   | `TreeRule` | `tree.paths`, `tree.has(path)`, a folder as `"tests/"`, `tree.module(path)`, `tree.modules()`, `tree.added`, `tree.imports(path)`, `tree.removed`, `tree.imports_before(path)` | `(path, what is wrong)` pairs, `(path, line, what)` triples, the line quoted and `what` its title, or `Hit`s |
 
    `file.added` holds the numbers of the lines the change added, and `file.changed` every path the change touched, for a
    rule about the change as a whole: a manifest changed and its lock file not. `file.arrived(*globs)` is whether its

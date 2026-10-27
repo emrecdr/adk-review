@@ -426,7 +426,9 @@ class TestTheRuleKinds:
         ]
         answer = run_rule(LongFunction(), files, None)
         assert answer.could_not_look is None
-        assert [(f.file, f.line, f.evidence) for f in answer.findings] == [("pay.py", 1, "a is 4 lines long")]
+        assert [(f.file, f.line, f.title, f.evidence) for f in answer.findings] == [
+            ("pay.py", 1, "long-function: a is 4 lines long", "+def a():")
+        ]
         big = [{"path": "big.py", "text": None, "added": [], "unread_text": "was not read whole"}]
         answer = run_rule(LongFunction(), big, None)
         assert answer.findings == []
@@ -511,7 +513,9 @@ class TestTheRuleKinds:
 
         answer = run_rule(FirstDefinition(), [], Tree(["a.py"], {"a.py": "\n\nx = 1\n"}))
         assert answer.could_not_look is None
-        assert [(f.file, f.line, f.evidence) for f in answer.findings] == [("a.py", 3, "the first definition")]
+        assert [(f.file, f.line, f.title, f.evidence) for f in answer.findings] == [
+            ("a.py", 3, "first-def: the first definition", " x = 1")
+        ]
 
     def test_the_helpers_try_a_rule_on_a_text_and_every_shipped_rule_on_its_own_source(self) -> None:
         from adk_review.judge.rule_helpers import FileRule, Rule, lines_hit, self_check
