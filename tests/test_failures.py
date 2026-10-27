@@ -1276,6 +1276,7 @@ def test_the_install_recipe_keeps_the_hook_it_finds_and_hands_both_gits_lines(tm
     assert shutil.which("sh", path=env["PATH"]), "a shell to run the recipe in"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="the recipe is a POSIX shell's, run by Git Bash there")
 def test_the_commit_hooks_install_recipe_keeps_the_hook_it_finds(tmp_path) -> None:
     """The guide's lines for the commit hook keep a pre-commit hook already there, as the push hook's keep Git LFS's,
     and run it after the review passes, never after one that stopped the commit."""
