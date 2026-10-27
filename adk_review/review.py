@@ -73,7 +73,7 @@ import threading
 import time
 import tomllib
 import warnings
-from collections.abc import Callable, Generator, Iterator, Sequence
+from collections.abc import Callable, Generator, Sequence
 from importlib import metadata
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import NoReturn, TextIO
@@ -759,7 +759,7 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
 
 
 @contextlib.contextmanager
-def _uncollected() -> Iterator[None]:
+def _uncollected() -> Generator[None]:
     """The garbage collector paused while the evidence is gathered, and what that made kept out of its later passes:
     the head's parsed modules hold no reference cycle, so counting references frees each when the tree is let go, and
     scanned, millions of nodes cost the collector seconds. Measured on a signature change's review, the same report
