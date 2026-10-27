@@ -1680,6 +1680,160 @@ class TestTreeRules:
         assert all(f"`rule.{rule}`" in quiet for rule in quiet_ones), out
 
 
+class TestTheCallersRule:
+    """A function whose parameters a change touched breaks each call that no longer fits it, in any file, a file the
+    change left alone among them: read by review, an outside audit's F.2 and P.1, the gap no other check reaches, since
+    pyrefly reads each changed file alone and the guidelines read the diff."""
+
+    @staticmethod
+    def found(files: dict[str, str], changed: dict[str, set[int] | None] | None = None) -> list[tuple]:
+        """What the rule finds in `files`, every line of each added unless `changed` names the lines added to it:
+        `None` for every line, a set for those, a file it leaves out none."""
+        from adk_review.judge.rule_helpers.testing import as_change
+        from adk_review.judge.rules.callers import Callers
+
+        entries, tree = as_change(files)
+        for item in entries:
+            if changed is not None:
+                lines = changed.get(item["path"], set())
+                item["added_at"] = item["added_at"] if lines is None else frozenset(lines)
+        return sorted((hit.path, hit.line, hit.text) for hit in Callers().hits(entries, tree))
+
+    def test_a_caller_the_change_left_alone_is_named_where_it_breaks(self) -> None:
+        files = {
+            "pkg/__init__.py": "",
+            "pkg/repo.py": "def get_user(uid, role='user'):\n    return uid, role\n",
+            "pkg/service.py": "from pkg.repo import get_user\n\n\ndef load():\n    return get_user(user_id=3)\n",
+        }
+        assert self.found(files, {"pkg/repo.py": None}) == [
+            (
+                "pkg/service.py",
+                5,
+                "`get_user()` in `pkg/repo.py` takes no keyword `user_id`, and the call passes no `uid`",
+            )
+        ]
+        assert self.found(files, {"pkg/repo.py": {2}}) == [], "a body changed, never the parameters: nothing to check"
+
+    def test_each_way_a_call_can_miss_its_function_is_named(self) -> None:
+        source = "def f(a, b=1, /, c=2, *, d):\n    pass\n\n\n"
+        calls = [
+            "f(1, 2, 3, 4, d=1)",
+            "f(d=1)",
+            "f(1, a=1, d=1)",
+            "f(1)",
+            "f(1, 2, 3, c=3, d=1)",
+            "f(1, d=1, e=2)",
+            "f(1, d=1)",  # each below fits
+            "f(1, 2, 3, d=4)",
+            "f(1, c=5, d=1)",
+        ]
+        found = self.found({"m.py": source + "\n".join(calls) + "\n"})
+        assert found == [
+            ("m.py", 5, "`f()` in `m.py` takes at most 3 positional arguments, and the call passes 4"),
+            ("m.py", 6, "the call passes no `a`, which `f()` in `m.py` needs"),
+            ("m.py", 7, "`f()` in `m.py` takes `a` by position only"),
+            ("m.py", 8, "the call passes no `d`, which `f()` in `m.py` needs"),
+            ("m.py", 9, "the call passes `c` twice to `f()` in `m.py`"),
+            ("m.py", 10, "`f()` in `m.py` takes no keyword `e`"),
+        ], found
+
+    def test_every_way_an_import_names_the_function_is_followed(self) -> None:
+        repo = "def get_user(uid):\n    return uid\n"
+        callers = {
+            "pkg/a.py": "import pkg.repo\npkg.repo.get_user(1, 2)\n",
+            "pkg/b.py": "import pkg.repo as r\nr.get_user(1, 2)\n",
+            "pkg/c.py": "from pkg import repo\nrepo.get_user(1, 2)\n",
+            "pkg/d.py": "from .repo import get_user as fetch\nfetch(1, 2)\n",
+            "app/e.py": "from pkg import get_user\nget_user(1, 2)\n",  # through the package's own import of it
+        }
+        files = {"pkg/__init__.py": "from .repo import get_user\n", "pkg/repo.py": repo, **callers}
+        found = self.found(files, {"pkg/repo.py": None})
+        assert [(path, line) for path, line, _ in found] == [(path, 2) for path in sorted(callers)], found
+
+    def test_a_class_is_called_as_its_init_takes_it(self) -> None:
+        files = {
+            "net.py": "class Client:\n    def __init__(self, host, *, timeout=5):\n        self.host = host\n",
+            "use.py": "from net import Client\n\nClient('h', port=1)\nClient('h', timeout=2)\n",
+        }
+        assert self.found(files, {"net.py": None}) == [("use.py", 3, "`Client()` in `net.py` takes no keyword `port`")]
+
+    def test_a_call_it_cannot_prove_wrong_is_left_alone(self) -> None:
+        """Each of these may fit at run time, so the rule says nothing: a decorator can change what a function takes,
+        a call that unpacks its arguments, a name bound twice, a method, a class whose call its metaclass or its
+        `__new__` decides, and an import two files could answer."""
+        files = {
+            "lib.py": (
+                "import functools\n\n\n@functools.cache\ndef cached(a):\n    return a\n\n\n"
+                "def plain(a):\n    return a\n\n\n"
+                "class Mode(Enum):\n    def __init__(self, a):\n        pass\n\n\n"
+                "class Made:\n    def __new__(cls, *args):\n        return object.__new__(cls)\n\n"
+                "    def __init__(self, a):\n        pass\n"
+            ),
+            "use.py": (
+                "from lib import Made, Mode, cached, plain\n\n"
+                "cached(1, 2)\nplain(*[1, 2])\nplain(**{'a': 1, 'b': 2})\nMode(1, 2)\nMade(1, 2)\nclient.plain(1, 2)\n"
+            ),
+            "again.py": "from lib import plain\n\n\ndef plain(a, b):\n    return a\n\n\nplain(1, 2)\n",
+            "x/twin.py": "def twin(a):\n    pass\n",
+            "y/twin.py": "def twin(a):\n    pass\n",
+            "far.py": "from twin import twin\n\ntwin(1, 2)\n",
+        }
+        assert self.found(files) == []
+
+    def test_a_changed_file_the_heads_read_left_out_is_read_from_its_text(self) -> None:
+        """Measured on litellm's 2,776 files: past the budget of the head's read, the changed file was left out, and the
+        rule could not look, exit 3. The review reads a changed file's text for the file rules, and the tree reads the
+        file from there; a file a name is passed on through that no one read stops the following, a floor."""
+        from adk_review.judge.rule_helpers import Tree
+        from adk_review.judge.rule_helpers.testing import as_change
+        from adk_review.judge.rules.callers import Callers
+
+        files = {
+            "repo.py": "def get(uid):\n    return uid\n",
+            "use.py": "from repo import get\n\nget(user_id=1)\n",
+            "pkg/__init__.py": "from repo import get\n",
+            "far.py": "from pkg import get\n\nget(user_id=1)\n",
+        }
+        entries, _whole = as_change(files)
+        changed = [item for item in entries if item["path"] == "repo.py"]
+        head = Tree(
+            files, {"use.py": files["use.py"], "far.py": files["far.py"]}, unread=["repo.py", "pkg/__init__.py"]
+        )
+        assert [(hit.path, hit.line) for hit in Callers().hits(changed, head)] == [("use.py", 3)]
+
+    def test_the_head_is_read_only_where_a_function_that_was_there_changed_its_parameters(self) -> None:
+        """Measured before: reading the head took 88% of gathering on a 625-file tree, and `default-rules`, the pre-push
+        hook's profile, read none. Over this repository's last 195 commits, 70 changed the parameters of a function
+        that was there before; only those need the head, where a caller the change left alone can be."""
+        from adk_review.judge.rule_helpers.testing import as_change
+        from adk_review.judge.rules.callers import Callers
+
+        (item,), _tree = as_change({"repo.py": "def get(uid):\n    return uid\n\n\ndef new(a):\n    return a\n"})
+
+        def needs(added: set[int], diff: str | None = None) -> bool:
+            return Callers().needs_head([{**item, "added_at": frozenset(added), "diff": diff}])
+
+        assert needs({1}), "an existing function's parameters changed: a caller anywhere may break"
+        assert not needs({2}), "a body changed, never the parameters"
+        assert not needs({5, 6}), "a function added whole leaves no caller behind"
+        assert needs({1, 2}, "-def get(user_id):\n"), "every line of it rewritten, yet the diff shows it was there"
+
+    def test_an_unchanged_caller_is_found_on_a_branch(self, cli, tmp_path: Path, capsys) -> None:
+        """End to end, from git: the branch renames a parameter, a file it leaves alone still passes the old name, and
+        the review names that file's line."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "pkg/__init__.py", "")
+        _committed(repo, "pkg/repo.py", "def get_user(user_id):\n    return user_id\n")
+        _committed(repo, "pkg/service.py", "from pkg.repo import get_user\n\nget_user(user_id=3)\n")
+        _git_in(repo, "checkout", "-q", "-b", "rename")
+        _committed(repo, "pkg/repo.py", "def get_user(uid):\n    return uid\n")
+        assert cli.main([str(repo), "--head", "rename", "--base", BASE, "--check", "rule.callers"]) == 0
+        out = capsys.readouterr().out
+        assert "`pkg/service.py:3`" in out and "takes no keyword `user_id`" in out, out
+
+
 class TestTheShippedRules:
     """Each shipped rule on the shapes it names, and on those it must leave."""
 

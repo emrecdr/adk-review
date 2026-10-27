@@ -155,7 +155,7 @@ def _blast(blast: Blast) -> list[str]:
     lines = ["## Blast radius", ""]
     lines += [f"- {code_span(one_line(r.path))}: {prose(describe(r, blast.floor))}" for r in blast.radii]
     if not blast.asked:
-        lines.append("- not asked: no tree rule or guideline ran, so the review did not read the head whole")
+        lines.append("- not asked: no check needed it for this change, so the review did not read the head whole")
     elif not blast.listed:
         lines.append("- not read: git could not list the head's tree. Every count above is a floor")
     elif blast.floor:

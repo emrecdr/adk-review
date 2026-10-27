@@ -700,7 +700,10 @@ class TestTheProfiles:
     def test_check_runs_one_check_this_once_and_names_it_in_the_report(self, demo_repo: Path, cli, capsys) -> None:
         assert run_review(cli, demo_repo, "--check", "rule.demo-money-in-cents") == 0, "a major, below the bar"
         out = capsys.readouterr().out
-        off = "rule.demo-derives-from, rule.demo-module-defines, rule.demo-parameters, rule.demo-required-paths,"
+        off = (
+            "rule.callers, rule.demo-derives-from, rule.demo-module-defines, rule.demo-parameters,"
+            " rule.demo-required-paths,"
+        )
         assert f"- profile      --check rule.demo-money-in-cents (off: {off} rule.encoding-declaration," in out
         assert "demo-money-in-cents: cents divided into a float (src/payments/report.py:5)" in out
         assert "### rule.secrets" not in out and "### guideline.security" not in out

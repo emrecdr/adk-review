@@ -75,17 +75,19 @@ third_party = [
 # leaves to the rules, fetches from, an action a workflow runs at a ref that can be moved, a workflow script that runs
 # what an outsider writes, Python's traps ruff can prove
 # — measured at 0.00 to 0.03 a thousand lines of four mature projects once the codes whose findings were idioms were
-# left out, all but one of those read a real defect — and the three guidelines.
+# left out, all but one of those read a real defect — a call a changed function no longer fits, in any file — measured
+# over 7,266 calls in six released projects, none named wrongly, and every call a changed signature broke named, for
+# a read of the whole head, 0.8 s on 815 files — and the three guidelines.
 default = [
     "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
-    "rule.lockfile-sources", "rule.pinned-actions", "rule.script-injection", "rule.pitfalls", "guideline.security",
-    "guideline.tests", "guideline.complexity",
+    "rule.lockfile-sources", "rule.pinned-actions", "rule.script-injection", "rule.pitfalls", "rule.callers",
+    "guideline.security", "guideline.tests", "guideline.complexity",
 ]
 # The default's rules and no model: what fits any project's every pull request, with no key needed. Kept to the
 # default's rules, a test holds it so; the payments project's own rules are in `demo`.
 default-rules = [
     "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
-    "rule.lockfile-sources", "rule.pinned-actions", "rule.script-injection", "rule.pitfalls",
+    "rule.lockfile-sources", "rule.pinned-actions", "rule.script-injection", "rule.pitfalls", "rule.callers",
 ]
 # What the pre-push hook reads each commit a push sends with, beside its review of the change with `default-rules`: a
 # credential one commit adds and a later one takes out is still in the history the remote receives. A commit is read
@@ -95,16 +97,17 @@ push-history = ["rule.secrets", "rule.named-secrets"]
 # by its id, as a test holds this list and `full`'s to every rule whose id does not start with `demo-`: a rule written
 # for one project, as the demo's are, would report another project's folders and money missing.
 rules-only = [
-    "rule.encoding-declaration", "rule.hidden-text", "rule.lint", "rule.lockfile-sources", "rule.named-secrets",
-    "rule.no-print", "rule.pinned-actions", "rule.pitfalls", "rule.private-patch", "rule.reviewer-instructions",
-    "rule.script-injection", "rule.secrets", "rule.simplify", "rule.steering-files", "rule.tests-offline", "rule.types",
+    "rule.callers", "rule.encoding-declaration", "rule.hidden-text", "rule.lint", "rule.lockfile-sources",
+    "rule.named-secrets", "rule.no-print", "rule.pinned-actions", "rule.pitfalls", "rule.private-patch",
+    "rule.reviewer-instructions", "rule.script-injection", "rule.secrets", "rule.simplify", "rule.steering-files",
+    "rule.tests-offline", "rule.types",
 ]
 # Every check there is but the payments demo's rules: `rules-only`'s and every guideline.
 full = [
-    "rule.encoding-declaration", "rule.hidden-text", "rule.lint", "rule.lockfile-sources", "rule.named-secrets",
-    "rule.no-print", "rule.pinned-actions", "rule.pitfalls", "rule.private-patch", "rule.reviewer-instructions",
-    "rule.script-injection", "rule.secrets", "rule.simplify", "rule.steering-files", "rule.tests-offline", "rule.types",
-    "guidelines",
+    "rule.callers", "rule.encoding-declaration", "rule.hidden-text", "rule.lint", "rule.lockfile-sources",
+    "rule.named-secrets", "rule.no-print", "rule.pinned-actions", "rule.pitfalls", "rule.private-patch",
+    "rule.reviewer-instructions", "rule.script-injection", "rule.secrets", "rule.simplify", "rule.steering-files",
+    "rule.tests-offline", "rule.types", "guidelines",
 ]
 # A simplify pass, as Claude Code's /simplify reads a change: the cleanup ruff can name, and the complexity, the
 # wasted work and the fix at the wrong depth a model judges, three calls. lint and pitfalls run beside them, at no cost,
@@ -117,7 +120,8 @@ simplify = [
 # the reviewed repository's own CLAUDE.md, the file steering-files names as one a person reads first.
 code-review = [
     "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
-    "rule.lockfile-sources", "rule.pinned-actions", "rule.script-injection", "rule.pitfalls", "rule.simplify",
+    "rule.lockfile-sources", "rule.pinned-actions", "rule.script-injection", "rule.pitfalls", "rule.callers",
+    "rule.simplify",
     "guideline.correctness", "guideline.security", "guideline.complexity", "guideline.efficiency", "guideline.altitude",
 ]
 # The payments demo's, as scripts/make_demo_repo.py builds it: every rule, the demo's own among them, and no model.

@@ -131,6 +131,7 @@ prints them:
 <!-- checks: the output of `uv run python -m adk_review.review --list-checks`; a test holds it so -->
 | id | kind | severity | profiles | what | where |
 |---|---|---|---|---|---|
+| `rule.callers` | tree rule | major | default, default-rules, rules-only, full, code-review, demo | a call does not fit the function it calls | `judge/rules/callers.py` |
 | `rule.demo-derives-from` | tree rule | major | demo | a class does not derive from the parent its name promises | `judge/rules/demo_derives_from.py` |
 | `rule.demo-module-defines` | tree rule | major | demo | a module no longer defines a name the project relies on | `judge/rules/demo_module_defines.py` |
 | `rule.demo-money-in-cents` | line rule | major | demo | cents divided into a float | `judge/rules/demo_money_in_cents.py` |

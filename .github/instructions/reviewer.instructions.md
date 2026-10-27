@@ -38,17 +38,19 @@ applyTo: "adk_review/**"
   those paths reads, `file.line(n)`, `file.near(n)` for a file past the size limits, as far as its diff shows it, and
   `file.diagnostics`, an outside tool's, for a rule that names its `tool`, whose adapter is in `collect/tools.py`); a
   `TreeRule` with `check(tree)` returning `(path, what)` or `(path, line, what)` over the head's paths and parsed
-  modules (`tree.paths`, `tree.has`, `tree.module`, `tree.modules`). Any other shape is a sentence. The helpers come
-  through the door: `is_test`, `matches`, `calls`, `comment_of`, `words`, `tokens`, `calls_in`, `argument`,
-  `functions_in`, `imports_in`, `defined`, `classes`, `parameters` and the rest. A hit may be a `Hit` naming its own
-  title, severity or fix, as `lint` does for ruff's codes. `secrets` and `lint` are written like any other rule;
-  redaction is not a check, and `core/secrets.py` keeps the shapes it scrubs with. A file's lines are numbered as git
-  numbers them (`core/text.py`'s `lines_of`), and a changed file the collector did not read whole is the hole of the
-  file rule that asks for its text — its lines, its module, ruff's diagnostics — and of no other, but a symbolic link, a
-  hole for each line rule too until its file is read as text, since its lines are that file's, unless it names no file,
-  a binary file or a Git LFS pointer, which the report names not read as that file is, or `scan` leaves it out, when the
-  credential rules read its own path; what that rule found on the files it read stands beside the hole. No rule reads
-  the head for itself. A rule's tests use `try_rule`, `lines_hit` and `self_check` from `judge/rule_helpers/`.
+  modules (`tree.paths`, `tree.has`, `tree.module`, `tree.modules`, `tree.added` the lines the change added by file,
+  `tree.imports(path)` what each import binds), and `needs_head(files)` False where the changed files alone show it has
+  nothing to read at the head, which it then reads alone. Any other shape is a sentence. The helpers come through the
+  door: `is_test`, `matches`, `calls`, `comment_of`, `words`, `tokens`, `calls_in`, `argument`, `functions_in`,
+  `imports_in`, `defined`, `classes`, `parameters` and the rest. A hit may be a `Hit` naming its own title, severity or
+  fix, as `lint` does for ruff's codes. `secrets` and `lint` are written like any other rule; redaction is not a check,
+  and `core/secrets.py` keeps the shapes it scrubs with. A file's lines are numbered as git numbers them
+  (`core/text.py`'s `lines_of`), and a changed file the collector did not read whole is the hole of the file rule that
+  asks for its text — its lines, its module, ruff's diagnostics — and of no other, but a symbolic link, a hole for each
+  line rule too until its file is read as text, since its lines are that file's, unless it names no file, a binary file
+  or a Git LFS pointer, which the report names not read as that file is, or `scan` leaves it out, when the credential
+  rules read its own path; what that rule found on the files it read stands beside the hole. No rule reads the head for
+  itself. A rule's tests use `try_rule`, `lines_hit` and `self_check` from `judge/rule_helpers/`.
 - A guideline names `id`, `title`, `role` (the instruction's opening: who the model is and what it judges) and
   `thinking_budget`, and `cleanup = True` where its findings change how code reads and never what it does, as
   `complexity`'s do (the hand-off lists them as tidies); optionally `models = Models(copilot=..., gemini=...)`, a model
@@ -74,11 +76,11 @@ applyTo: "adk_review/**"
 - `--staged` reads the index through plumbing alone (`diff-index --cached`, `ls-files -s`, `cat-file`), so nothing is
   written, no index refreshed and no lock taken. An untracked file is named, never reviewed and never a hole; a file
   changed but not staged is not listed, since `diff-files` ran a clean filter the repository's own config named.
-- The blast radius (`core/blast.py`) is parsed once from the head commit and shared with the tree rules; the
-  guidelines see it, the report shows it under the verdict, the verdict never reads it. Where the head was not read
-  whole, every count the report prints is a floor and says so; the tree is dropped from the evidence before the model
-  calls. The head is read whole only when a tree rule or a guideline runs; otherwise the radius says "not asked",
-  neither a hole nor a leaf.
+- The blast radius (`core/blast.py`) is parsed once from the head commit and shared with the tree rules; the guidelines
+  see it, the report shows it under the verdict, the verdict never reads it. Where the head was not read whole, every
+  count the report prints is a floor and says so; the tree is dropped from the evidence before the model calls. The head
+  is read whole only when a tree rule needs it for the change (`needs_head`) or a guideline runs; otherwise the radius
+  says "not asked", neither a hole nor a leaf.
 - Every untrusted section a guideline, a verifier or the chat's verdict reads goes through `fenced(label, inside)` in
   `judge/agents.py`: two marker lines carrying `BOUNDARY`, a nonce drawn once a process, or `JUDGED_BOUNDARY`, a second
   no guideline is shown, where a guideline's own words are read, and the instruction ends with a reminder, `REMINDER`

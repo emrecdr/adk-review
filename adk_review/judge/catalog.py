@@ -18,6 +18,7 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import Any, NoReturn
 
+from ..core.evidence import Entry
 from ..core.findings import RANK
 from ..core.guidelines import RESERVED_IDS, Guideline, Models
 from ..core.profiles import NAME, chosen, expand, expanded, nearest
@@ -195,11 +196,15 @@ class Catalog:
     rules: tuple[AnyRule, ...]
     guidelines: tuple[Guideline, ...]
 
-    def head_reading(self) -> dict[str, bool]:
-        """What gathering reads for these checks, as `gather` takes it: the head whole for a tree rule, and for a
-        guideline the view it is shown and the radius, which reads the head only where a changed file is Python. The
-        command and chat both ask here, so the two cannot gather differently."""
-        return {"tree_rules": any(rule.kind == "tree" for rule in self.rules), "guidelines": bool(self.guidelines)}
+    def head_reading(self) -> dict[str, Any]:
+        """What gathering reads for these checks, as `gather` takes it: the head whole for a tree rule that needs it
+        for the change, and for a guideline the view it is shown and the radius, which reads the head only where a
+        changed file is Python. The command and chat both ask here, so the two cannot gather differently."""
+        return {"tree_rules": self.needs_head, "guidelines": bool(self.guidelines)}
+
+    def needs_head(self, files: list[Entry]) -> bool:
+        """Whether a tree rule here needs the head read whole for the change `files` make."""
+        return any(isinstance(rule, TreeRule) and rule.needs_head(files) for rule in self.rules)
 
     def ids(self) -> tuple[str, ...]:
         """Every check's id, the rules and then the guidelines: the report's order, so on a tie the fold keeps the

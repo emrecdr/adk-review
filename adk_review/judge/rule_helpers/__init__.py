@@ -14,6 +14,7 @@ May import `core` alone, and runs nothing: no process, no network, no model. Sta
 """
 
 from ...core.blast import is_test
+from ...core.evidence import Entry
 from ...core.findings import RANK, Severity
 from ...core.paths import matches, matching
 from ...core.rules import ChangedFile, Diagnostic, FileRule, Hit, Rule, Tree, TreeRule, UnreadError, is_python
@@ -37,6 +38,7 @@ __all__ = [
     "SECRET_WORDS",
     "ChangedFile",
     "Diagnostic",
+    "Entry",
     "FileRule",
     "Hit",
     "Rule",

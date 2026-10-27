@@ -27,9 +27,9 @@ from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import PurePath, PurePosixPath
 from types import MappingProxyType
-from typing import ClassVar
+from typing import Any, ClassVar
 
-from .blast import is_test, parse, parsed
+from .blast import bindings, index, is_test, parse, parsed
 from .evidence import Entry, unreleased
 from .findings import Checked, Finding, Severity
 from .paths import matches
@@ -446,6 +446,37 @@ class Tree:
         self.paths = frozenset(paths)
         self.unread = frozenset(unread)
         self.parsed = parsed(sources)
+        #: The lines the change added, by changed file, for a tree rule about what the change did: set by
+        #: `changed_by`, as a tree rule is handed the head.
+        self.added: Mapping[str, frozenset[int]] = MappingProxyType({})
+
+    def changed_by(self, files: Iterable[Entry]) -> Tree:
+        """The same head with the lines each changed file's change added, and each changed Python file the head's own
+        read left out parsed from its text, as the file rules read it: a rule about the change reads the files it
+        changed. Measured: on a head past the read's budget, a changed file was left out, and a rule about its
+        callers could not look. A view; nothing else is parsed again."""
+        view, files = copy.copy(self), list(files)
+        view.added = MappingProxyType({item["path"]: item["added_at"] for item in files})
+        texts = {
+            item["path"]: text
+            for item in files
+            if item["path"] in self.unread and item["path"].endswith(".py") and (text := item.get("text")) is not None
+        }
+        if texts:
+            view.parsed = {**self.parsed, **parsed(texts)}
+            view.unread = self.unread - texts.keys()
+        return view
+
+    @functools.cached_property
+    def _index(self) -> Any:
+        """Every path, indexed both ways an import names a file, once a tree, whichever view asks."""
+        return index(self.paths)
+
+    def imports(self, path: str) -> dict[str, tuple[str, str | None]]:
+        """What each name an import in `path` binds names: the one file, and the name taken from it, None for the
+        module itself; `blast.bindings` says which. Nothing for a file that is no module here."""
+        module = self.module(path)
+        return {} if isinstance(module, str) else bindings(self._index, path, module)
 
     @functools.cached_property
     def without_tests(self) -> Tree:
@@ -491,13 +522,24 @@ class TreeRule(AnyRule):
     @abstractmethod
     def check(self, tree: Tree) -> Iterable[tuple[str, str] | tuple[str, int | None, str] | Hit]:
         """Each `(path, what is wrong)` the head breaks — or `(path, line, what)` where the rule knows the line, as one
-        over a module's syntax tree does, or a `Hit`; empty where it holds."""
+        over a module's syntax tree does, or a `Hit`; empty where it holds. `tree.added` names the lines the change
+        added, by file, for a rule about what the change did."""
 
-    def hits(self, files: list[Entry], tree: Tree | None) -> list[Hit]:  # noqa: ARG002 -- a tree rule reads no lines
+    def needs_head(self, files: list[Entry]) -> bool:  # noqa: ARG002 -- most tree rules need the head whatever changed
+        """Whether this change needs the head read whole for this rule: yes, unless the rule can tell from the changed
+        files alone that it has nothing to read there. Measured before: reading and parsing the head took 88% of
+        gathering on a 625-file tree, so the review reads it only where a rule or a guideline needs it."""
+        return True
+
+    def hits(self, files: list[Entry], tree: Tree | None) -> list[Hit]:
         if tree is None:
-            raise UnreadError("the tree at the head was not listed")
+            if self.needs_head(files):
+                raise UnreadError("the tree at the head was not listed")
+            # The change gave it nothing to read at the head, which was never asked for: it reads the changed files.
+            texts = {i["path"]: text for i in files if i["path"].endswith(".py") and (text := i["text"]) is not None}
+            tree = Tree((item["path"] for item in files), texts)
         returns = "a list of (path, what is wrong) pairs, (path, line, what) triples or Hits"
-        read = tree if self.reads_tests else tree.without_tests
+        read = (tree if self.reads_tests else tree.without_tests).changed_by(files)
         return [self._hit(item) for item in _each(self.check(read), "tree", returns)]
 
     @staticmethod

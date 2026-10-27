@@ -980,7 +980,7 @@ def gather(
     resolved: dict,
     scope: Sequence[str] = (),
     *,
-    tree_rules: bool = True,
+    tree_rules: bool | Callable[[list[Entry]], bool] = True,
     guidelines: bool = True,
     diff_cap: int = DIFF_CAP_CHARS,
     skip: Sequence[str] = (),
@@ -1005,16 +1005,17 @@ def gather(
     if not files and not ignored:  # measured: a branch already merged, or a base equal to its head, approved nothing
         return no_change(head, base, scope if listed else ())
     listing = head_listing(resolved)
-    # The head read whole, every Python file parsed, only for what reads it: a tree rule, or the radius a guideline
-    # is shown, which measures changed Python files alone. The changed files' own texts are read either way, for the
-    # file rules.
-    read = tree_rules or (guidelines and any(Radius(entry["path"]).measured for entry in files))
-    tree = tree_at_head(resolved, listing, third_party) if read else None
     # A link of a kind `scan` leaves out is read by the credential rules as its own path, as its diff shows it and a
     # secret scanner reads a link's blob: a key in the file it names is found where the review reads that file's own
     # change. Read by review, four rounds running: followed, it was a hole wherever its file could not be read, and each
     # way round that let a key through.
     read_texts(resolved, files, listing, excluded)
+    # The head read whole, every Python file parsed, only for what reads it: a tree rule that needs it for this change,
+    # which it tells from the changed files' texts, read first, or the radius a guideline is shown, which measures
+    # changed Python files alone. The changed files' own texts are read either way, for the file rules.
+    wanted = tree_rules(files) if callable(tree_rules) else tree_rules
+    read = wanted or (guidelines and any(Radius(entry["path"]).measured for entry in files))
+    tree = tree_at_head(resolved, listing, third_party) if read else None
     if guidelines:
         _links_unread(files, excluded, lambda path: in_review(path, scan, third_party))
     return {

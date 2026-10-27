@@ -205,6 +205,58 @@ class _Tree:
         """The one file `key` names from the tree's top, or none."""
         return {self.exact[key]} if key in self.exact else set()
 
+    def one(self, importer: str, level: int, parts: tuple[str, ...]) -> str | None:
+        """The one file a module's dotted name names from `importer`, `level` dots before it, or None where none or
+        several do: what a call through an import is held to, where the radius errs wide."""
+        if level:
+            folder = PurePosixPath(importer).parent.parts
+            if level - 1 > len(folder):
+                return None
+            found = self.exactly(folder[: len(folder) - (level - 1)] + parts)
+        elif parts and parts[0] in _STDLIB:
+            found = self.exactly(parts)
+        else:
+            folder = PurePosixPath(importer).parent
+            own = None if folder in self.packages else folder.parts
+            found = self.by_tail.get(parts, set()) | (self.exactly((*own, *parts)) if own is not None else set())
+        return next(iter(found)) if len(found) == 1 else None
+
+
+def index(paths: Iterable[str]) -> _Tree:
+    """The files an import may name, indexed once for a tree: what `bindings` reads."""
+    return _Tree(set(paths))
+
+
+def bindings(tree: _Tree, path: str, module: ast.Module) -> dict[str, tuple[str, str | None]]:
+    """Each name an import in `module` binds, at any depth, to the one file it names and the name it takes from that
+    file, None for the module itself: `import a.b` binds `a.b`, as a call spells it; `from a import b` binds `b` to
+    `a/b.py` where the tree holds that file, else to `b` in `a`'s file. A name bound to two things, an import two files
+    could answer, and `*` bind nothing."""
+    bound: dict[str, tuple[str, str | None] | None] = {}
+    for node in _statements(module):
+        made: list[tuple[str, tuple[str, str | None] | None]]
+        if isinstance(node, ast.Import):
+            pairs = [
+                (alias.asname or alias.name, tree.one(path, 0, tuple(alias.name.split(".")))) for alias in node.names
+            ]
+            made = [(name, (target, None) if target else None) for name, target in pairs]
+        elif isinstance(node, ast.ImportFrom):
+            parts = tuple(node.module.split(".")) if node.module else ()
+            made = []
+            for alias in node.names:
+                if alias.name == "*":
+                    continue
+                if sub := tree.one(path, node.level, (*parts, alias.name)):
+                    made.append((alias.asname or alias.name, (sub, None)))
+                else:
+                    base = tree.one(path, node.level, parts)
+                    made.append((alias.asname or alias.name, (base, alias.name) if base else None))
+        else:
+            continue
+        for name, target in made:
+            bound[name] = target if bound.get(name, target) == target else None
+    return {name: target for name, target in bound.items() if target is not None}
+
 
 def _resolve(lookup: Callable[[tuple[str, ...]], set[str]], base: tuple[str, ...], names: list[str]) -> set[str]:
     """The files an import depends on: every package on the way to `base`, `base` itself, and each name that is a

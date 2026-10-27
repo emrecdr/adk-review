@@ -255,7 +255,7 @@ class TestWhatAReviewCovers:
         assert run_review(cli, demo_repo, "--profile", "default-rules") in (0, 1)
         alone = capsys.readouterr().out
         assert head_reads == [], "neither a tree rule nor a guideline ran"
-        assert "- not asked: no tree rule or guideline ran, so the review did not read the head whole" in alone
+        assert "- not asked: no check needed it for this change, so the review did not read the head whole" in alone
         picked = [arg for check in (*rules, "rule.demo-required-paths") for arg in ("--check", check)]
         assert run_review(cli, demo_repo, *picked) in (0, 1)
         beside = capsys.readouterr().out
@@ -547,7 +547,8 @@ class TestTheDryRun:
         out = capsys.readouterr().out
         assert out.startswith("# Dry run: feature/payments against main\n")
         checks = "rule.secrets, rule.named-secrets, rule.lint, rule.reviewer-instructions, rule.encoding-declaration, "
-        checks += "rule.lockfile-sources, rule.pinned-actions, rule.script-injection, rule.pitfalls, guideline.security"
+        checks += "rule.lockfile-sources, rule.pinned-actions, rule.script-injection, rule.pitfalls, rule.callers, "
+        checks += "guideline.security"
         assert (
             "- changed      4 file(s):" in out
             and f"- checks       {checks}, guideline.tests, guideline.complexity" in out
@@ -2021,7 +2022,7 @@ class TestWhatANewcomerReads:
         ), out
         assert out.count("- no findings") == 0 and "### rule.secrets\n" in out and "### rule.no-print" not in out
         silent = out.split("### no findings from ", 1)[1].split("\n", 1)[0]
-        assert silent.startswith("17 checks"), silent
+        assert silent.startswith("18 checks"), silent
         assert "`rule.no-print`" in out.split("### no findings from ", 1)[1].split("\n\n", 1)[0]
 
     def test_a_check_named_without_its_kind_is_pointed_at_the_nearest_id(self, demo_repo: Path, cli, capsys) -> None:

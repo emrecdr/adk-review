@@ -216,8 +216,8 @@ The order is the architecture: evidence and rules first, the guidelines' judgeme
    each within the function around it where a guideline reads it, and the lines it added, its text at the head for the
    file rules, a symbolic link of a kind the review reads being the file it runs, followed through links as a system
    follows them, every line of it new under the link's name, where one `scan` leaves out is read as its own path, and,
-   where a tree rule or a guideline runs, the head's tree and each changed file's blast radius. The block of diffs the
-   guidelines read is built here, each diff capped and the block capped, every cut named.
+   where a tree rule needs it for the change or a guideline runs, the head's tree and each changed file's blast radius.
+   The block of diffs the guidelines read is built here, each diff capped and the block capped, every cut named.
 3. **Run every rule** before any model call: in one graph node where a guideline follows, straight from the driver
    where none does. Each rule answers with what it found, or why it could not look.
 4. **Let the guidelines judge the change.** Each is an ADK agent with a role of its own, and they run at once under a
@@ -287,14 +287,17 @@ there that will not load, holds no check or two, names its check after another f
 sentence and exit 2, never a check quietly left out.
 
 A rule is one of three kinds, one mental model — a line, a file, the tree. A `Rule`'s `check(path, line)` reads each
-line the change added and answers yes or no. A `FileRule`'s `check(file)` reads each file the change touched, whole
-at the head — its lines, the numbers of the lines the change added, every path the change touched and, for Python,
-its module — for what one line cannot show, as `reviewer_instructions.py` reads a directive wrapped over lines. A
-`TreeRule`'s `check(tree)` reads the head instead: every path, and each Python module parsed once with the blast
-radius, for what must exist, define a name, derive from a parent or take a parameter. None is handed a test's file
-unless it sets `reads_tests`, as the list of what a rule may do says below. A guideline names its role and
-a thinking budget, and `cleanup = True` where its findings change how code reads and never what it does; the
-instruction around the role is every guideline's.
+line the change added and answers yes or no. A `FileRule`'s `check(file)` reads each file the change touched, whole at
+the head — its lines, the numbers of the lines the change added, every path the change touched and, for Python, its
+module — for what one line cannot show, as `reviewer_instructions.py` reads a directive wrapped over lines. A
+`TreeRule`'s `check(tree)` reads the head instead: every path, and each Python module parsed once with the blast radius,
+for what must exist, define a name, derive from a parent or take a parameter, and with `tree.added`, the lines the
+change added by file, and `tree.imports(path)`, what each import binds, for the calls a change breaks. One that can tell
+from the changed files alone that it has nothing to read at the head says so in `needs_head(files)`, and reads those
+files alone: `callers` needs the head only where a function that was there before changed its parameters. None is handed
+a test's file unless it sets `reads_tests`, as the list of what a rule may do says below. A guideline names its role and
+a thinking budget, and `cleanup = True` where its findings change how code reads and never what it does; the instruction
+around the role is every guideline's.
 
 The rules shipped with the reviewer are written as a project writes its own:
 
@@ -312,7 +315,8 @@ The rules shipped with the reviewer are written as a project writes its own:
   bidirectional controls, and text smuggled in variation selectors, invisible operators or Hangul fillers, in any file)
   and `steering-files` (a change to a file another tool or agent obeys: a coding agent's instructions or settings,
   Copilot's and Gemini CLI's among them, an editor's settings and the tool servers an agent starts, a CI workflow, a
-  hook, a `.pth` file);
+  hook, a `.pth` file), and the tree rule `callers` (a call that no longer fits a function whose parameters the change
+  touched, in any file, one the change left alone among them, bound as Python binds a call);
 - for Python beside `lint`, each reading ruff with codes no other rule names: `pitfalls` (code that does not do what it
   reads: a naive UTC datetime from `utcnow()`, a dataclass default evaluated once and shared, an exception built and
   never raised, a `subprocess.run` whose failure goes unseen, an `assert` that always passes) and `simplify` (a simpler
@@ -330,8 +334,8 @@ A profile is a list in `config.toml`, and a check runs only where a profile name
 
 - `default` runs when no `--profile` names another, and the file must hold it: the basics, `rule.secrets`,
   `rule.named-secrets`, `rule.lint`, `rule.reviewer-instructions`, `rule.encoding-declaration`, `rule.lockfile-sources`,
-  `rule.pinned-actions`, `rule.script-injection` and `rule.pitfalls`, and the guidelines `security`, `tests` and
-  `complexity`;
+  `rule.pinned-actions`, `rule.script-injection`, `rule.pitfalls` and `rule.callers`, and the guidelines `security`,
+  `tests` and `complexity`;
 - `default-rules` is the default's rules and no model, so it needs no key and fits any project's every pull request;
   a test keeps it to the default's rules;
 - `push-history` is what the pre-push hook reads each commit a push sends with, line by line: the credential rules;
@@ -457,7 +461,7 @@ class RequiredPaths(TreeRule):
    |---|---|---|
    | `Rule` | `path`, `line` | `True` where the line breaks the rule |
    | `FileRule` | `file.path`, `file.lines`, `file.line(n)`, `file.near(n)`, `file.added`, `file.changed`, `file.arrived(*globs)`, `file.new_lines(*globs)`, `file.module`, and `file.diagnostics` for a rule that names a `tool` | line numbers, the report quoting each line; `(line, what is wrong)` pairs, `None` for the file as a whole; or `Hit`s |
-   | `TreeRule` | `tree.paths`, `tree.has(path)`, a folder as `"tests/"`, `tree.module(path)`, `tree.modules()` | `(path, what is wrong)` pairs, `(path, line, what)` triples, or `Hit`s |
+   | `TreeRule` | `tree.paths`, `tree.has(path)`, a folder as `"tests/"`, `tree.module(path)`, `tree.modules()`, `tree.added`, `tree.imports(path)` | `(path, what is wrong)` pairs, `(path, line, what)` triples, or `Hit`s |
 
    `file.added` holds the numbers of the lines the change added, and `file.changed` every path the change touched, for a
    rule about the change as a whole: a manifest changed and its lock file not. `file.arrived(*globs)` is whether its
@@ -955,15 +959,15 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   is a floor of what a change reaches, since a module loaded by name, a subprocess, a web route or a plugin registry is
   invisible to it. Where the head was not read whole — a file the parser refused, one past a cap, a tree that could not
   be listed — every count says it is a floor, and only a rule that asks for an unread file by name is a hole. The head
-  is read whole only for what reads it, a tree rule or a guideline; with neither, as under `default-rules`, the radius
-  says it was not asked, which is neither a hole nor a leaf. For a guideline alone it is read only when a changed file
-  is Python, all the radius measures: measured on a 2,040-file tree, a change to a Markdown file collected its evidence
-  in 56 ms where reading the head took over a second. A radius is counted, never listed, its own importers named: the
-  files in an import cycle reach each other, so a cycle is walked once, and the walks share what they read, within
-  2,000,000 steps in all, past which a radius says it was not counted. Measured by review: a walk from each changed file
-  listed every module it reached, and a cycle of 4,000 took 9.3 s where it takes 0.09, litellm's 2,685 files 5.0 s where
-  they take 0.69, and a path is indexed by no more of its tail than an import can name, where 100 files 1,000 folders
-  deep took 20 s.
+  is read whole only for what reads it, a tree rule that needs it for the change or a guideline; with neither, as under
+  `default-rules` for a change that alters no function's parameters, the radius says it was not asked, which is neither
+  a hole nor a leaf. For a guideline alone it is read only when a changed file is Python, all the radius measures:
+  measured on a 2,040-file tree, a change to a Markdown file collected its evidence in 56 ms where reading the head took
+  over a second. A radius is counted, never listed, its own importers named: the files in an import cycle reach each
+  other, so a cycle is walked once, and the walks share what they read, within 2,000,000 steps in all, past which a
+  radius says it was not counted. Measured by review: a walk from each changed file listed every module it reached, and
+  a cycle of 4,000 took 9.3 s where it takes 0.09, litellm's 2,685 files 5.0 s where they take 0.69, and a path is
+  indexed by no more of its tail than an import can name, where 100 files 1,000 folders deep took 20 s.
 - **What the guidelines read is capped.** Each file's diff is cut at `diff_cap`, and the block of diffs in all: the
   files read whole take its room first, then the cut ones, each shown in path order, and a file past the block's cap is
   left out whole, the block's end tells the guidelines how many, and the report names each under "not read", a hole.
