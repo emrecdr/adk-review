@@ -906,7 +906,16 @@ def _reported(
         else ""
     )
     comment = (
-        render_comment(evidence, outcome, verdict=verdict, fail_on=args.fail_on, tidies=tidies)
+        render_comment(
+            evidence,
+            outcome,
+            verdict=verdict,
+            fail_on=args.fail_on,
+            tidies=tidies,
+            profile=shown["profile"],
+            model=shown["model"],
+            checks=shown["checks"],
+        )
         if args.comment or keep
         else ""
     )

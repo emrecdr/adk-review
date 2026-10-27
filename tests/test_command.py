@@ -719,6 +719,27 @@ class TestThePreviousReportAndTheHandoff:
         written = comment.read_text(encoding="utf-8")
         assert "### Not checked" in written and "`src/payments/charge.py`" in written.split("### Not checked", 1)[1]
 
+    def test_a_comment_names_what_ran_so_an_approval_by_rules_alone_reads_as_one(
+        self, cli, demo_repo: Path, tmp_path: Path
+    ) -> None:
+        """Read by review: a comment opened the same whatever ran, so an approval from the rules alone, with no model,
+        read as one from every guideline, and the author it is pasted for cannot see the report's header."""
+        comment = tmp_path / "comment.md"
+        run_review(cli, demo_repo, "--profile", "default-rules", "--comment", str(comment))
+        first = comment.read_text(encoding="utf-8").splitlines()[0]
+        assert re.fullmatch(
+            r"\*\*Review of `feature/payments` at `\w{12}`\*\*, by `default-rules`: \d+ rules, no model\.", first
+        ), first
+        run_review(cli, demo_repo, "--check", "rule.lint", "--comment", str(comment))
+        assert (
+            comment.read_text(encoding="utf-8").splitlines()[0].endswith(", by `--check rule.lint`: 1 rule, no model.")
+        )
+        run_review(cli, demo_repo, "--comment", str(comment))
+        first = comment.read_text(encoding="utf-8").splitlines()[0]
+        assert (
+            re.search(r", by `default`: \d+ rules, and \d+ guidelines read by \S", first) and "no model" not in first
+        ), first
+
     @pytest.mark.parametrize(("fail_on", "at_bar"), [("major", True), ("blocker", False)])
     def test_a_handoff_names_each_folded_finding_and_whether_it_is_at_the_bar(
         self, fail_on: str, at_bar: bool, cli, demo_repo: Path, tmp_path: Path

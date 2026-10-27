@@ -341,19 +341,30 @@ COMMENT_OPENS = {
 
 
 def render_comment(
-    evidence: Evidence, outcome: Outcome, *, verdict: str, fail_on: str, tidies: frozenset[str] = frozenset()
+    evidence: Evidence,
+    outcome: Outcome,
+    *,
+    verdict: str,
+    fail_on: str,
+    tidies: frozenset[str] = frozenset(),
+    profile: str = "",
+    model: str = "",
+    checks: Sequence[str] = (),
 ) -> str:
     """`--comment FILE`: the review as a constructive comment for the branch's author, whatever its verdict — what must
     change before it merges, what is worth a look, an approved change's included, the tidy-ups it leaves to them, and
     what the review could not check — each place and quote in a code span, under the text report's safety rules. Asked
     by the owner, who reviews others' branches and pastes each comment into the pull request by hand: the reviewer posts
     nothing and prints no command that would. A finding is grouped with the others on its lines as the hand-off groups
-    it, and a tidy waiting under a defect is left out until the defect is fixed."""
+    it, and a tidy waiting under a defect is left out until the defect is fixed. Its first line names what ran, as the
+    report's header does, so an approval from the rules alone never reads as one a model read too."""
     pre = evidence["preflight"]
     fixes, tidy = _lanes(outcome, tidies)
     must = [group for group in fixes if at_or_above(group[0].finding.severity, fail_on)]
     worth = [group for group in fixes if not at_or_above(group[0].finding.severity, fail_on)]
-    head = f"**Review of {code_span(one_line(pre['head']))} at `{pre['head_sha'][:12]}`**"
+    head = f"**Review of {code_span(one_line(pre['head']))} at `{pre['head_sha'][:12]}`**" + _ran(
+        profile, model, checks
+    )
     lines = [head, "", COMMENT_OPENS[verdict]]
     if verdict == "APPROVED" and (worth or tidy):
         lines.append("The points below would still improve it.")
@@ -367,6 +378,23 @@ def render_comment(
     if unchecked := _unchecked(outcome, fail_on):
         lines += ["", "### Not checked", "", "The review could not check these. Check them by hand.", "", *unchecked]
     return inert("\n".join(lines)) + "\n"
+
+
+def _ran(profile: str, model: str, checks: Sequence[str]) -> str:
+    """What a comment's first line adds about the review: the profile, or `--check`, and how many rules and
+    guidelines it ran, the model that read the diff or none; nothing where the caller names no profile."""
+    if not profile:
+        return ""
+    rules = sum(check.startswith("rule.") for check in checks)
+    guidelines = len(checks) - rules
+    ran = [f"{rules} rule{'s' * (rules != 1)}"] if rules else []
+    if guidelines and model:
+        ran.append(f"{guidelines} guideline{'s' * (guidelines != 1)} read by {prose(one_line(model))}")
+    return (
+        f", by {code_span(one_line(profile))}: "
+        + (", and ".join(ran) if model else ", ".join([*ran, "no model"]))
+        + "."
+    )
 
 
 def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[str]:
