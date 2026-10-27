@@ -96,7 +96,8 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   `GitError`, a corrupt object never a missing name.
 - The reviewer posts nothing to a pull request: `--comment [FILE]` writes a comment for the branch's author, by default
   `comments-<repo>__<base>__<head>__<minute>.md`, which the person pastes by hand, and no command that would post it is
-  printed.
+  printed; `--handoff [FILE]` writes the findings for a coding agent, by default
+  `handoff-<repo>__<base>__<head>__<minute>.md`, and applies none of them itself.
 - Every string a model reads is capped in characters with the cut named in the text, and so is each title and change a
   model writes into a finding. A dropped finding's file is a model's text too, cut in `drop_ungrounded` at
   `REASON_MAX_CHARS`. Every `subprocess.run` that decodes passes `encoding=`; no source spells `/tmp/`

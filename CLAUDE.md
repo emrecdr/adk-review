@@ -151,15 +151,16 @@ guideline follows, and code decides the verdict. Around them: retries, a token c
 JSON report a pipeline reads (`--json FILE`, schema 2, written for every decided review, under the text report's safety
 rules), a comment for the branch's author (`--comment [FILE]`, by default `comments-<repo>__<base>__<head>__<minute>.md`
 where the command runs), which the person pastes into the pull request by hand: the reviewer posts nothing and prints no
-command that would, under `--all` a Health section (`core/health.py`: what was read, source and tests apart, McCabe
-complexity counted as ruff's C901 counts it, in bands graded A to E by SIG's published risk-profile rating where most of
-the source parsed, each rule's findings by severity, counted and never graded; never read by the verdict), each changed
-file's blast radius (`core/blast.py`: an import graph parsed from the head commit, shown to the guidelines as `{blast?}`
-with each call into a function the change touched from a line it did not add (`collect/change.py`'s `callers_of`), and
-heading the report, never read by the verdict), and fences around every untrusted section the guidelines, the verifiers
-and the chat's verdict read (`judge/agents.py`: two marker lines carrying a nonce drawn once a process, a second one, no
-guideline shown it, where a guideline's own words are read, a reminder after them, the content never escaped so a quote
-still grounds).
+command that would, a hand-off for a coding agent (`--handoff [FILE]`, by default
+`handoff-<repo>__<base>__<head>__<minute>.md`, named as the comment is), which applies nothing itself, under `--all` a
+Health section (`core/health.py`: what was read, source and tests apart, McCabe complexity counted as ruff's C901 counts
+it, in bands graded A to E by SIG's published risk-profile rating where most of the source parsed, each rule's findings
+by severity, counted and never graded; never read by the verdict), each changed file's blast radius (`core/blast.py`: an
+import graph parsed from the head commit, shown to the guidelines as `{blast?}` with each call into a function the
+change touched from a line it did not add (`collect/change.py`'s `callers_of`), and heading the report, never read by
+the verdict), and fences around every untrusted section the guidelines, the verifiers and the chat's verdict read
+(`judge/agents.py`: two marker lines carrying a nonce drawn once a process, a second one, no guideline shown it, where a
+guideline's own words are read, a reminder after them, the content never escaped so a quote still grounds).
 
 Load-bearing rules the tests enforce:
 
@@ -268,10 +269,10 @@ Conventions:
 The suite is fully offline. `tests/conftest.py` registers a `FakeModel` in ADK's `LLMRegistry` for `fake.*`.
 `load_agent(monkeypatch)` sets `REVIEW_MODEL=fake` and imports `adk_review.agent` fresh, so the real `build_model()`,
 Runner, `Workflow`, callbacks and plugins all run; the `cli` fixture is the command's module loaded that way. Both run
-on the Gemini arm, where the fake registers, unless a test names another:
-`load_agent(monkeypatch, "copilot", "gpt-4.1")`, or `load_command` for the command, with ADK's LiteLLM client replaced,
-runs the Copilot arm's own path offline (`test_the_planted_review_runs_end_to_end_on_the_copilot_arm`); a change to that
-path needs a test there. LiteLLM's own routing runs only where the network alone is replaced, below LiteLLM, as
+on the Gemini arm, where the fake registers, unless a test names another: `load_agent(monkeypatch, "copilot",
+"gpt-4.1")`, or `load_command` for the command, with ADK's LiteLLM client replaced, runs the Copilot arm's own path
+offline (`test_the_planted_review_runs_end_to_end_on_the_copilot_arm`); a change to that path needs a test there.
+LiteLLM's own routing runs only where the network alone is replaced, below LiteLLM, as
 `test_a_copilot_call_carrying_a_tool_reaches_copilot` does: a call carrying a tool, which LiteLLM 1.106.0 failed, passed
 every test above it. The fake answers whatever canned payload the request's response schema accepts, or a sentence when
 there is no schema. The `fake_provider` fixture's `raises_when(text, exc)` / `answers_when(text, payload)` /
@@ -280,10 +281,11 @@ an agent calling a tool; `confirms(fake_provider, repo)` makes chat's intake con
 would, `Chat(module)` holds one conversation over several turns, under the `run_config` a test names, as `adk web`'s
 Token Streaming does, its last turn's events in `chat.events`, and the `asked` fixture records each request as it was
 sent. `demo_repo` is a session-scoped real repository from `scripts/make_demo_repo.py`, and `hostile_repo` a branch per
-way a change once hid from the review. `asyncio_mode = "strict"`, so async tests need `@pytest.mark.asyncio`. A test
-still running after `faulthandler_timeout` prints every thread's stack and ends the run. Tests live only in `tests/`. A
-test is named as the sentence it proves (`test_the_gate_runs_before_any_model`), and a helper several tests need goes
-into `tests/conftest.py`, never into the package.
+way a change once hid from the review. A hook's script is written with `_script` (LF ends, the execute bit) and run
+through `_git_shell()`, git's own `sh`, as Git for Windows runs a hook. `asyncio_mode = "strict"`, so async tests need
+`@pytest.mark.asyncio`. A test still running after `faulthandler_timeout` prints every thread's stack and ends the run.
+Tests live only in `tests/`. A test is named as the sentence it proves (`test_the_gate_runs_before_any_model`), and a
+helper several tests need goes into `tests/conftest.py`, never into the package.
 
 ## The docs are tested, so update them with the code
 

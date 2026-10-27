@@ -18,6 +18,7 @@ applyTo: "tests/**"
   `asyncio_mode = "strict"`. A test still running after `faulthandler_timeout` prints every thread's stack and ends the
   run, so a hang names itself.
 - A test may run the developer's own git in folders it made (`S607` is ignored for `tests/*`); the reviewer under
-  test must still find git by its full path.
+  test must still find git by its full path. A hook's script is written with `_script` (LF ends, the execute bit) and
+  run through `_git_shell()`, git's own `sh`, as Git for Windows runs a hook, so the test runs on Windows too.
 - A test asserts one claim a reader can check and prefers the public functions; a helper several tests need goes
   into `conftest.py`, never into the package.
