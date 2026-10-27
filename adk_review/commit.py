@@ -69,6 +69,8 @@ def _main(argv: Sequence[str] | None) -> int:
     said = io.StringIO()
     with contextlib.redirect_stdout(said), contextlib.redirect_stderr(said):
         code = review([repository, "--staged", "--profile", PROFILE])
+    if code in (EXIT_INTERRUPTED, EXIT_TERMINATED):  # the review stopped, not refused: said as one before it is
+        raise KeyboardInterrupt if code == EXIT_INTERRUPTED else Terminated
     if code == 0:
         return 0
     sys.stdout.write(said.getvalue())  # the review's own report, made safe as it was written

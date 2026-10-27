@@ -2110,9 +2110,8 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
     def test_a_method_the_change_renamed_is_named_where_a_file_it_left_alone_calls_it(self, tmp_path: Path) -> None:
         """Measured over ADK, 31 method edits: 24 named, at 59 call sites and 4 kept lines of the edited file, none
         wrongly; over this repository's last 195 commits, the package's own each type-checked by its CI, none named."""
-        renamed = self.RENAMED
         repo = self.branch(
-            tmp_path, {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE}, {"shop/repo.py": renamed}
+            tmp_path, {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE}, {"shop/repo.py": self.RENAMED}
         )
         found = self.found(repo)
         assert [(file, line, severity) for file, line, severity, _evidence in found] == [
@@ -2166,9 +2165,8 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         from adk_review.judge.checks import run_rules
         from adk_review.judge.rules.radius_types import RadiusTypes
 
-        renamed = self.RENAMED
         repo = self.branch(
-            tmp_path, {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE}, {"shop/repo.py": renamed}
+            tmp_path, {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE}, {"shop/repo.py": self.RENAMED}
         )
         evidence = collect_evidence(str(repo), BASE, "change")
         assert evidence["tree"].without_tests is not None  # made first, as another rule would make it
@@ -2187,8 +2185,7 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
             "src/pkg/user.py": user,
             "src/pkg/rel.py": user.replace("from pkg.mod", "from .mod"),
         }
-        renamed = self.RENAMED
-        repo = self.branch(tmp_path, files, {"src/pkg/mod.py": renamed})
+        repo = self.branch(tmp_path, files, {"src/pkg/mod.py": self.RENAMED})
         assert [(file, line) for file, line, _severity, _said in self.found(repo)] == [
             ("src/pkg/rel.py", 5),
             ("src/pkg/user.py", 5),
@@ -2198,12 +2195,11 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         """Read by review: a new diagnostic on a line the change added was left to `types`, which reads each changed
         file alone, an imported name as `Any`, so a branch that renamed a method and edited the call to it elsewhere
         was approved by every rule. A call's or an attribute's on an added line is named here too."""
-        renamed = self.RENAMED
         edited = self.SERVICE.replace("get_user(3)", "get_user(4)")
         repo = self.branch(
             tmp_path,
             {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE},
-            {"shop/repo.py": renamed, "shop/service.py": edited},
+            {"shop/repo.py": self.RENAMED, "shop/service.py": edited},
         )
         found = self.found(repo)
         assert [(file, line) for file, line, _severity, _said in found] == [("shop/service.py", 5)], found
@@ -2254,15 +2250,26 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         repo = self.branch(tmp_path, {"shop/mod.py": mod}, {"shop/mod.py": mod.replace("1\r\n", "2\r\n", 1)})
         assert base_files(preflight(str(repo), BASE, "change"), {"shop/mod.py", "shop/gone.py"}) == {"shop/mod.py": mod}
 
+    def test_the_base_is_read_within_the_caps_the_heads_read_keeps(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review: the head's read leaves a file over `MAX_FILE_BYTES` unread, and the base's read it whole, a
+        4 MB file type-checked in 0.78 s, and with no budget for the tree, enough such files ran past pyrefly's
+        timeout."""
+        from adk_review.collect import git
+        from adk_review.collect.git import base_files, preflight
+
+        repo = self.branch(tmp_path, {"shop/big.py": "x = 1\n" * 4, "shop/small.py": "y = 1\n"}, {"shop/x.py": ""})
+        monkeypatch.setattr(git, "MAX_FILE_BYTES", 10)
+        resolved = preflight(str(repo), BASE, "change")
+        assert base_files(resolved, {"shop/big.py", "shop/small.py"}) == {"shop/small.py": "y = 1\n"}
+
     def test_a_link_the_change_made_a_file_is_compared_with_nothing_it_never_held(self, tmp_path: Path) -> None:
         """Measured before: a module that was a link at the base, made a file, was rebuilt as the one line it names, so
         a call wrong before the change, through the link, read as new. A link at the base is left as the head holds
         it."""
         user = "from shop.mod import Repo\n\n\ndef load(repo: Repo) -> str:\n    return repo.get_user('x')\n"
         repo = self.branch(tmp_path, {"shop/real.py": self.REPO, "shop/user.py": user}, {})
-        link = _git_in(repo, "hash-object", "-w", "--stdin", stdin="real.py").strip()  # no file system link needed
         _git_in(repo, "checkout", "-q", BASE)
-        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{link},shop/mod.py")
+        _link_staged(repo, "shop/mod.py", "real.py")  # no file system link needed
         _git_in(repo, "commit", "-qm", "a link")
         _git_in(repo, "checkout", "-q", "-B", "change")
         _committed(repo, "shop/mod.py", self.REPO)  # the link made a file of the same text
@@ -2275,7 +2282,7 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         repo = self.branch(tmp_path, {"shop/x.py": "y = 1\n"}, {})
         _git_in(repo, "checkout", "-q", BASE)
         for name, text in (("shop/A.py", "z = 1\n"), ("shop/a.py", 'x: int = "a"\n')):
-            blob = _git_in(repo, "hash-object", "-w", "--stdin", stdin=text).strip()
+            blob = _git_in(repo, "hash-object", "-w", "--stdin", stdin=text)
             _git_in(repo, "update-index", "--add", "--cacheinfo", f"100644,{blob},{name}")
         _git_in(repo, "commit", "-qm", "two names, one in case")
         _git_in(repo, "checkout", "-q", "-B", "change")
@@ -2298,26 +2305,65 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         assert "pyrefly checked nothing in shop/service.py" in (answer.could_not_look or ""), answer
         assert "far.py" not in (answer.could_not_look or ""), "a file the change does not reach is no hole of it"
 
+    def test_a_class_a_package_passes_on_reaches_the_file_that_defines_it(self, tmp_path: Path) -> None:
+        """Read by review: a package's `__init__.py` that passes a class on is the common layout, and a call on an
+        added line through it was left to `types`, since only the import's own file was asked whether the change
+        touched it, and the package's `__init__.py` it named was not."""
+        package = "from shop.repo import Repo\n"
+        service = self.SERVICE.replace("from shop.repo import Repo", "from shop import Repo")
+        repo = self.branch(
+            tmp_path,
+            {"shop/__init__.py": package, "shop/repo.py": self.REPO, "shop/service.py": service},
+            {"shop/repo.py": self.RENAMED, "shop/service.py": service.replace("get_user(3)", "get_user(4)")},
+        )
+        assert [(file, line) for file, line, _severity, _said in self.found(repo)] == [("shop/service.py", 5)]
+
+    def test_a_file_pyrefly_gave_up_on_that_the_change_deleted_is_no_hole(self, tmp_path: Path) -> None:
+        """Read by review: the base's run gave up on a file the change deleted, which no run at the head can read,
+        and the review could not look there, exit 3, a push stopped."""
+        nested = "x = " + "-" * 1000 + "1\n"
+        repo = self.branch(tmp_path, {"shop/repo.py": self.REPO, "shop/far.py": nested}, {})
+        _git_in(repo, "rm", "-q", "shop/far.py")
+        _git_in(repo, "commit", "-qm", "far.py goes")
+        assert self.found(repo) == []
+
+    def test_a_package_in_a_folder_python_cannot_name_is_read_from_its_root(self, tmp_path: Path) -> None:
+        """Read by review: the folder above a top package is a root, `my-app` among them, but a file was written only
+        where each folder of its path was a name Python could import, so nothing under `my-app/` was checked."""
+        service = self.SERVICE.replace("from shop.repo", "from pkg.repo")
+        repo = self.branch(
+            tmp_path,
+            {"my-app/pkg/__init__.py": "", "my-app/pkg/repo.py": self.REPO, "my-app/pkg/user.py": service},
+            {"my-app/pkg/repo.py": self.RENAMED},
+        )
+        assert [(file, line) for file, line, _severity, _said in self.found(repo)] == [("my-app/pkg/user.py", 5)]
+
     def test_a_whole_project_has_no_base_to_compare_and_names_nothing(self, tmp_path: Path) -> None:
         broken = self.SERVICE.replace("get_user", "fetch_user")
         repo = self.branch(tmp_path, {"shop/repo.py": self.REPO}, {"shop/service.py": broken})
         assert self.found(repo, whole=True) == [], "every diagnostic of the head would read as new"
 
-    def test_a_path_python_could_not_import_is_never_written(self, tmp_path: Path) -> None:
-        """A branch names its own paths: one outside the folder, a device name Windows holds, or two that differ only
-        in case would write where the reviewer never meant to, and Python imports none of them by these names."""
+    def test_a_path_a_system_reads_otherwise_is_never_written(self, tmp_path: Path) -> None:
+        """A branch names its own paths: one outside the folder, a device name Windows holds under any extension, a
+        drive's `:`, or two that differ only in case would write where the reviewer never meant to. A folder Python
+        cannot name, `my-dir`, is written: a root above a package may be one."""
         from adk_review.collect.pyrefly import written
 
         texts = {
             "../outside.py": "x = 1\n",
             "pkg/nul.py": "x = 1\n",
+            "pkg/nul.tar.py": "x = 1\n",
+            "pkg/c:d.py": "x = 1\n",
             "my-dir/x.py": "x = 1\n",
             "pkg/A.py": "x = 1\n",
             "pkg/a.py": "x = 1\n",
             "pkg/ok.py": "x = 1\n",
         }
-        assert sorted(written(str(tmp_path), texts)) == ["pkg/ok.py"]
-        assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.py")) == ["pkg/ok.py"]
+        assert sorted(written(str(tmp_path), texts)) == ["my-dir/x.py", "pkg/ok.py"]
+        assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.py")) == [
+            "my-dir/x.py",
+            "pkg/ok.py",
+        ]
 
     def test_pyrefly_that_cannot_run_is_this_rules_hole_alone(self, tmp_path: Path, monkeypatch) -> None:
         from adk_review.collect import pyrefly
@@ -2328,9 +2374,8 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
 
         monkeypatch.setattr(pyrefly, "beside", lambda: None)
         monkeypatch.setattr(pyrefly, "on_path", lambda name: name)
-        renamed = self.RENAMED
         repo = self.branch(
-            tmp_path, {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE}, {"shop/repo.py": renamed}
+            tmp_path, {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE}, {"shop/repo.py": self.RENAMED}
         )
         answers = run_rules(collect_evidence(str(repo), BASE, "change"), [RadiusTypes(), Callers()])
         assert "pyrefly is not on PATH" in (answers["rule.radius-types"].could_not_look or "")

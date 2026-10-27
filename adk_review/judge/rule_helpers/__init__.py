@@ -13,7 +13,7 @@ rules and nothing else.
 May import `core` alone, and runs nothing: no process, no network, no model. Standard library only.
 """
 
-from ...core.blast import is_test, parse
+from ...core.blast import PASSED_ON, is_test, parse
 from ...core.evidence import Entry
 from ...core.findings import RANK, Severity
 from ...core.paths import matches, matching
@@ -33,6 +33,7 @@ from .syntax import argument, calls_in, classes, defined, functions_in, imports_
 from .testing import lines_hit, self_check, self_test, try_rule
 
 __all__ = [
+    "PASSED_ON",
     "PER_FILE",
     "RANK",
     "SECRET_WORDS",

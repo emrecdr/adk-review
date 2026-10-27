@@ -620,7 +620,12 @@ def _listed(resolved: dict) -> list[tuple[str, str, str, str, str]]:
     one `cat-file --batch-check` gives each blob's size."""
     if resolved.get("staged"):
         return _index_listed(resolved)
-    _, listing = _git(resolved["repo"], "ls-tree", "-r", "-l", "-z", resolved["head_sha"], strip=False)
+    return _tree_listed(resolved["repo"], resolved["head_sha"])
+
+
+def _tree_listed(repo: str, commit: str) -> list[tuple[str, str, str, str, str]]:
+    """A commit's tree, one `(mode, kind, sha, size, path)` an entry, NUL-separated so any path holds."""
+    _, listing = _git(repo, "ls-tree", "-r", "-l", "-z", commit, strip=False)
     entries = []
     for record in filter(None, listing.split("\0")):
         meta, _, path = record.partition("\t")
@@ -696,19 +701,16 @@ def _blobs(resolved: dict, shas: Sequence[str]) -> list[str | None]:
 def base_files(resolved: dict, paths: Collection[str]) -> dict[str, str]:
     """Each of `paths` the base holds as a file, its text as git holds it, from one listing of the base's tree and one
     `cat-file --batch`: a link, whose text is the path it names, a binary file, a submodule and a path the base lacks
-    are left out. Read by review: rebuilt from the diff the rules read, which shows a form feed and a lone `\\r` as
-    escapes and drops CRLF's `\\r`, the base was not the file git holds, and a link made a file was rebuilt as the one
-    line it names. Listed whole, never by pathspec, so no number of paths can outgrow a command line."""
+    are left out, and so is one past the caps the head's read keeps, `_budgeted`'s. Read by review: rebuilt from the
+    diff the rules read, which shows a form feed and a lone `\\r` as escapes and drops CRLF's `\\r`, the base was not
+    the file git holds, and a link made a file was rebuilt as the one line it names; and read with no cap, a 4 MB file
+    the head's read left out was type-checked whole. Listed whole, never by pathspec, so no number of paths can outgrow
+    a command line."""
     wanted = set(paths)
     if not wanted:
         return {}
-    _, listing = _git(resolved["repo"], "ls-tree", "-r", "-z", resolved["merge_base"], strip=False)
-    blobs = []
-    for record in filter(None, listing.split("\0")):
-        meta, _, path = record.partition("\t")
-        mode, kind, sha = meta.split()
-        if path in wanted and kind == "blob" and mode != LINK_MODE:
-            blobs.append((path, sha))
+    listing = _tree_listed(resolved["repo"], resolved["merge_base"])
+    blobs, _unread = _budgeted(blob for blob in _plain(listing) if blob[0] in wanted)
     texts = _blobs(resolved, [sha for _path, sha in blobs])
     return {
         path: text

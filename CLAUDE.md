@@ -121,7 +121,8 @@ finds every check, reads `config.toml` and resolves what runs, for the command a
 door, `judge/rule_helpers/`: the contract, passed on from `core/` (`rules.py`'s kinds, `Hit` and `Diagnostic`,
 `evidence.py`'s `Entry`, `findings.py`'s `Severity` and `RANK`), helpers named after what they read (`lines.py`,
 `syntax.py`, `diagnostics.py`) and try a rule with (`testing.py`), and what a review reads too, passed on from `core/`:
-`matches`, the skip list's matcher, a test's path, the parser `parse` and a credential's shape. A rule is handed no
+`matches`, the skip list's matcher, a test's path, the parser `parse`, how far a name a package passes on is followed
+(`PASSED_ON`), and a credential's shape. A rule is handed no
 test's file unless it sets `reads_tests = True`, as each rule about what runs, leaks or steers does (`file.changed` and
 `tree.paths` still list every test). A rule reads only the files `scan` names unless it sets `reads_every_kind = True`,
 as the two credential rules do: a key leaks from a README as from code. A rule or a guideline whose findings change how

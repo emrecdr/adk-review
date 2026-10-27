@@ -1030,6 +1030,31 @@ def test_each_hook_ends_in_one_sentence_whatever_stops_it(tmp_path, monkeypatch,
             assert said.out.startswith(lead) and said.out.count("\n") == 1 and not said.err, (hook.__name__, said)
 
 
+def test_a_hook_whose_review_is_stopped_ends_as_the_review_does(tmp_path, monkeypatch, capsys) -> None:
+    """Ctrl-C or a job's SIGTERM while the review runs, where the time goes, ends each hook as one before it does:
+    130 or 143 and one sentence. Read by review: the review answered 130, which each hook read as a refusal, exit 1,
+    and its advice to skip the review with --no-verify followed a Ctrl-C the person pressed."""
+    commit = importlib.import_module("adk_review.commit")
+    push = importlib.import_module("adk_review.push")
+    review = importlib.import_module("adk_review.review")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(commit, "preflight_staged", lambda _repo: {"status": "success"})
+    monkeypatch.setattr(commit, "list_changed", lambda _resolved: ["a change"])
+    monkeypatch.setattr(push, "requested", lambda *_args: (None, [("feature", None, None)]))
+    monkeypatch.setattr(push, "push_scope", lambda *_args: ("feature", ["main"]))
+    for raised, code in ((KeyboardInterrupt(), 130), (review.Terminated(), 143)):
+
+        def stopped(*_args, raised=raised):
+            raise raised
+
+        monkeypatch.setattr(review, "_review", stopped)
+        for run, lead in ((lambda: commit.main([]), "pre-commit: "), (lambda: push.main(["o"]), "pre-push: ")):
+            assert run() == code, (lead, raised)
+            said = capsys.readouterr()
+            assert said.out.startswith(lead) and said.out.count("\n") == 1 and not said.err, (lead, said)
+            assert "--no-verify" not in said.out, said.out
+
+
 def test_the_pre_commit_hook_reviews_the_index_each_way_git_commits(tmp_path, monkeypatch, capsys, cli) -> None:
     """Measured before, a hook running `adk-review --staged`: `git commit -a` and `git commit <paths>` hand the hook an
     index of their own in `GIT_INDEX_FILE`, which the review left out with every inherited `GIT_*` variable, so it read

@@ -64,6 +64,9 @@ from .evidence import Entry
 
 #: A file that depends on a changed one is named; past this many, the rest are counted.
 NAMES_SHOWN = 5
+#: How many modules deep a name is followed where a module only imports it to pass it on, as a package's
+#: `__init__.py` does with `from .repo import get_user`, so `from pkg import get_user` reaches the function.
+PASSED_ON = 4
 #: A dotted name is read to its first parts, and a path looked up by its last, this many: measured by review, 100
 #: files 1,000 folders deep took 20 s and 432 MB to index, every tail of every path a key.
 _PARTS_READ = 32

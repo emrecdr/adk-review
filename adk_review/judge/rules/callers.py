@@ -9,11 +9,8 @@ import re
 from collections import Counter
 from collections.abc import Callable, Iterator, Sequence
 
-from ..rule_helpers import Entry, Hit, Tree, TreeRule, UnreadError, name_of, parse
+from ..rule_helpers import PASSED_ON, Entry, Hit, Tree, TreeRule, UnreadError, name_of, parse
 
-#: How many modules deep a name is followed where a module only imports it to pass it on, as a package's
-#: `__init__.py` does with `from .repo import get_user`, so `from pkg import get_user` reaches the function.
-PASSED_ON = 4
 #: Bases whose call a metaclass answers, never the class's own `__init__`: an enum's call looks up a member, a named
 #: tuple's and a typed dict's are made from their fields, and a protocol is never called.
 CALLED_BY_BASE = frozenset(

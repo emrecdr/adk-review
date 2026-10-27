@@ -307,9 +307,9 @@ def _main(argv: Sequence[str] | None) -> int:
             f"{remote} is out of date, or another server's. Run git fetch --prune {remote}. Then push again"
         )
         return 1
-    done = _Done()  # the first ref refused stops the push
-    refs_pushed = dict.fromkeys(pushed)
-    return 0 if all(_passes(repository, remote, head, held, done) for head, held, _ref in refs_pushed) else 1
+    done = _Done()
+    # The first ref refused stops the push.
+    return 0 if all(_passes(repository, remote, head, held, done) for head, held, _ref in dict.fromkeys(pushed)) else 1
 
 
 @dataclass
@@ -333,6 +333,8 @@ def _passes(repository: str, remote: str | None, head: str, held: str | None, do
     if scope is not None and (change := (scope[0], *scope[1])) not in done.changes:
         if (stopped := reviewed(repository, *scope)) is not None:
             code, said = stopped
+            if code in (EXIT_INTERRUPTED, EXIT_TERMINATED):  # the review stopped, not refused: said as one before it is
+                raise KeyboardInterrupt if code == EXIT_INTERRUPTED else Terminated
             sys.stdout.write(said)  # the review's own report, made safe as it was written
             _say(f"the review of {_named(head)} ended in exit {code}. Push with --no-verify to skip it")
             return False

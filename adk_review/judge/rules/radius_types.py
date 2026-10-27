@@ -50,7 +50,11 @@ class RadiusTypes(TreeRule):
     title = "code the change left alone no longer type-checks"
     fix = "Change the code to fit what the change made, or keep what that code relied on."
     tool = "pyrefly-radius"
-    tool_settings = MappingProxyType({"ignored": ("missing-import", "parse-error"), "added_kinds": ON_ADDED_LINES})
+    # A test's file is in neither of pyrefly's runs, as the rule reads none of its findings: measured on ADK, half its
+    # bytes tests, a run took 0.96 s where it took 1.59, the same findings.
+    tool_settings = MappingProxyType(
+        {"ignored": ("missing-import", "parse-error"), "added_kinds": ON_ADDED_LINES, "tests": False}
+    )
 
     def needs_head(self, files: list[Entry]) -> bool:
         """A Python file the change modified, moved or removed: what depends on it is in the head alone."""
