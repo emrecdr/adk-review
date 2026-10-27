@@ -121,27 +121,6 @@ def hunk_lines(diff: str) -> Iterator[tuple[int, str]]:
         yield from hunk
 
 
-def old_text(text: str, diff: str) -> str:
-    """The file's text before the change, rebuilt from its text at the head and its diff: each hunk's old lines, its
-    context and removed ones, in place of its new ones. A deleted file, "" at the head, rebuilds whole. Exact but for
-    a last newline git marks apart, which no type reads: measured over this repository's last 195 commits, 1,134 of
-    1,137 modified files rebuilt exactly, the rest each a file's last newline."""
-    new = text.split("\n")
-    old: list[str] = []
-    at = 0  # the next line of the new text no hunk has taken
-    for hunk in _hunks(diff):
-        kept = [number for number, raw in hunk if raw[:1] != "-"]
-        start = kept[0] - 1 if kept else hunk[0][0]  # a hunk that only removes carries the new line before it
-        old += new[at:start]
-        at = start
-        for _number, raw in hunk:
-            if raw[:1] != "+":
-                old.append(raw[1:])
-            if raw[:1] != "-":
-                at += 1
-    return "\n".join(old + new[at:])
-
-
 def added_lines(diff: str) -> list[tuple[int, str]]:
     """`(new line number, text)` for every line the change added: a rule that needs "what was added, and where"
     takes this list, never the diff."""

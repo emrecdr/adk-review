@@ -693,6 +693,30 @@ def _blobs(resolved: dict, shas: Sequence[str]) -> list[str | None]:
     return texts
 
 
+def base_files(resolved: dict, paths: Collection[str]) -> dict[str, str]:
+    """Each of `paths` the base holds as a file, its text as git holds it, from one listing of the base's tree and one
+    `cat-file --batch`: a link, whose text is the path it names, a binary file, a submodule and a path the base lacks
+    are left out. Read by review: rebuilt from the diff the rules read, which shows a form feed and a lone `\\r` as
+    escapes and drops CRLF's `\\r`, the base was not the file git holds, and a link made a file was rebuilt as the one
+    line it names. Listed whole, never by pathspec, so no number of paths can outgrow a command line."""
+    wanted = set(paths)
+    if not wanted:
+        return {}
+    _, listing = _git(resolved["repo"], "ls-tree", "-r", "-z", resolved["merge_base"], strip=False)
+    blobs = []
+    for record in filter(None, listing.split("\0")):
+        meta, _, path = record.partition("\t")
+        mode, kind, sha = meta.split()
+        if path in wanted and kind == "blob" and mode != LINK_MODE:
+            blobs.append((path, sha))
+    texts = _blobs(resolved, [sha for _path, sha in blobs])
+    return {
+        path: text
+        for (path, _sha), text in zip(blobs, texts, strict=True)
+        if text is not None and not isinstance(text, _Binary)
+    }
+
+
 def head_listing(resolved: dict) -> list[tuple[str, str, str, str, str]] | None:
     """The head's tree as `ls-tree -l` lists it, or None where git could not list it: never an empty list, which would
     read as a head that holds nothing. Taken once a review, for the tree and the changed files' texts both."""

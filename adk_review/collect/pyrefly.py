@@ -24,11 +24,10 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePath, PurePosixPath
 
-from ..core.evidence import Change, Entry, unreleased
+from ..core.evidence import Change, Entry, Evidence, unreleased
 from ..core.rules import Diagnostic, is_python_text
 from ..core.text import squash
-from .diff import old_text
-from .git import on_path
+from .git import GitError, base_files, on_path
 from .ruff import Rows, laid_out, rows_of
 
 PYREFLY_TIMEOUT_S = 60
@@ -180,7 +179,7 @@ type Ranged = tuple[Diagnostic, range]
 
 
 def radius(
-    evidence: Change, ignored: Collection[str], added_kinds: Collection[str]
+    evidence: Evidence, ignored: Collection[str], added_kinds: Collection[str]
 ) -> dict[str, list[Diagnostic]] | str:
     """Pyrefly over the head's tree and the base's, each laid out as it is so an import finds what it names: by path,
     each diagnostic new at the head, of a kind not `ignored`, in a file the change left alone or on a line of a changed
@@ -200,7 +199,18 @@ def radius(
     if pyrefly == "pyrefly":
         return "pyrefly is not on PATH. `uv run` puts the project's own there"
     head = {path: text for path, text in tree.sources.items() if path.endswith(".py")}
-    base, renamed = _base(head, evidence["files"])
+    olds = {f.get("old", f["path"]) for f in evidence["files"] if f["status"] in ("M", "T", "R", "D")}
+    if (resolved := evidence.get("preflight")) is None:  # files on disk, `--try`'s: no base to read
+        return {}
+    try:
+        held = base_files(resolved, {old for old in olds if old.endswith(".py")})
+    except GitError as exc:
+        return f"git could not read the base's files ({exc})"
+    base, renamed = _base(head, evidence["files"], held)
+    # Names that differ in case, in either tree, left out of both alike: read by review, a branch deleted `A.py` beside
+    # a kept `a.py`, neither was written for the base, the head's `a.py` was, and an error it held before read as new.
+    folded = Counter(path.casefold() for path in {*head, *base})
+    head, base = ({p: text for p, text in texts.items() if folded[p.casefold()] == 1} for texts in (head, base))
     try:
         # The two runs side by side: measured on ADK's 815 files, one after the other added 2.2 s to a push's review.
         # One set of roots for both runs, from both trees: found apart, a branch that added a package's first
@@ -208,7 +218,7 @@ def radius(
         roots = _roots({*head, *base})
         with ThreadPoolExecutor(max_workers=2) as pool:
             later = pool.submit(_whole, pyrefly, base, ignored, roots)
-            now, before = _whole(pyrefly, head, ignored, roots), later.result()
+            (now, gave_now), (before, gave_before) = _whole(pyrefly, head, ignored, roots), later.result()
     except OSError as exc:
         return f"pyrefly could not run on the head's tree ({exc.strerror or type(exc).__name__})"
     except _UnreadError as why:
@@ -217,29 +227,51 @@ def radius(
         return f"pyrefly exited {exc.returncode}: {squash(exc.stderr) or 'no reason given'}"
     except subprocess.TimeoutExpired:
         return f"pyrefly did not answer within {PYREFLY_TIMEOUT_S} s"
-    touched = {f["path"] for f in evidence["files"]} | {f["old"] for f in evidence["files"] if "old" in f}
-    imports = tree.imports  # bound where the tree is known to be read
+    lost = gave_now | {renamed.get(path, path) for path in gave_before}
+    return _compared(evidence["files"], tree.imports, (now, before), lost, renamed, frozenset(added_kinds))
+
+
+def _compared(
+    files: list[Entry],
+    imports: Callable[[str], Mapping[str, tuple[str, str | None]]],
+    runs: tuple[Mapping[Found, Ranged], Mapping[Found, Ranged]],
+    lost: set[str],
+    renamed: Mapping[str, str],
+    added_kinds: Collection[str],
+) -> dict[str, list[Diagnostic]] | str:
+    """The head's run against the base's, by `_new`, but for each file pyrefly checked nothing in, too deeply nested,
+    left out of both alike: where the change touched one or it reaches a file the change touched, the rule could not
+    look there, as `types` says of one, and a file the change does not reach is no hole of it."""
+    touched = {f["path"] for f in files} | {f["old"] for f in files if "old" in f}
 
     @functools.cache
     def reaches(path: str) -> bool:  # an import of another file the change touched: a cause elsewhere
         return any(file != path and file in touched for file, _name in imports(path).values())
 
-    added = {f["path"]: f["added_at"] for f in evidence["files"]}
-    return _new(now, before, renamed, added, frozenset(added_kinds), reaches)
+    if unread := sorted(path for path in lost if path in touched or reaches(path)):
+        return f"pyrefly checked nothing in {', '.join(unread)}: it is nested too deeply for pyrefly"
+    now, before = runs
+    now = {key: found for key, found in now.items() if key[0] not in lost}
+    before = {key: found for key, found in before.items() if renamed.get(key[0], key[0]) not in lost}
+    added = {f["path"]: f["added_at"] for f in files}
+    return _new(now, before, renamed, added, added_kinds, reaches)
 
 
-def _base(head: Mapping[str, str], files: list[Entry]) -> tuple[dict[str, str], dict[str, str]]:
-    """The base's tree, the head's with each changed Python file as it was, rebuilt from its diff, and where each such
-    file is at the head, by its path before the change."""
+def _base(
+    head: Mapping[str, str], files: list[Entry], held: Mapping[str, str]
+) -> tuple[dict[str, str], dict[str, str]]:
+    """The base's tree, the head's with each changed Python file as the base held it, `held` its text as git holds it,
+    and where each such file is at the head, by its path before the change. One `held` lacks, a link at the base or a
+    file git gave no text of, is left as the head holds it, compared with nothing it never was: measured, a link made
+    a file was rebuilt as the one line it names, and a call wrong before the change read as new."""
     base, renamed = dict(head), {}
     for f in files:
         path, old, status = f["path"], f.get("old", f["path"]), f["status"]
-        text = "" if status == "D" else f["text"]
-        if status in ("M", "T", "R", "D") and old.endswith(".py") and f["diff"] is not None and text is not None:
+        if status in ("A", "C", "R"):
+            base.pop(path, None)  # not there before, or there under another name
+        if status in ("M", "T", "R", "D") and old in held:
             base.pop(path, None)
-            base[old], renamed[old] = old_text(text, f["diff"]), path
-        elif status in ("A", "C", "R"):
-            base.pop(path, None)  # not there before; one not read at the head stays as both runs hold it
+            base[old], renamed[old] = held[old], path
     return base, renamed
 
 
@@ -282,13 +314,14 @@ def _new(
 
 def _whole(
     pyrefly: str, texts: Mapping[str, str], ignored: Collection[str], roots: Sequence[str]
-) -> dict[Found, Ranged]:
+) -> tuple[dict[Found, Ranged], set[str]]:
     """Pyrefly over `texts` laid out as one tree with the reviewer's configuration: each diagnostic of a kind not
-    `ignored`, by its key and the order pyrefly gave it in, on git's line, with the lines its range covers."""
+    `ignored`, by its key and the order pyrefly gave it in, on git's line, with the lines its range covers; and each
+    file pyrefly checked nothing in, too deeply nested."""
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         laid = written(tmp, texts)
         if not laid:  # no file an import could name: nothing to check, where pyrefly would refuse an empty project
-            return {}
+            return {}, set()
         Path(tmp, "pyrefly.toml").write_text(_config(roots), encoding="utf-8")
         argv = [pyrefly, "check", "-c", "pyrefly.toml", "--output-format", "json", "--summary=none", "--progress-bar"]
         answer, said = _answer([*argv, "no"], tmp)
@@ -305,8 +338,12 @@ def _whole(
     rows: dict[
         str, Rows
     ] = {}  # a file's lines, made where pyrefly names one: measured, every file's took 47% of the write
+    gave_up: set[str] = set()
     for index, error in enumerate(errors):
         path = _written_as(error["path"], laid)
+        if path is not None and error["name"] == "parse-error" and _GAVE_UP in error["description"]:
+            gave_up.add(path)
+            continue
         if error["name"] in ignored or path is None:
             continue
         if path not in rows:
@@ -319,7 +356,7 @@ def _whole(
             diagnostic,
             range(_decorated(rows[path], number), stop + 1),
         )
-    return found
+    return found, gave_up
 
 
 def _roots(paths: Collection[str]) -> list[str]:

@@ -30,7 +30,7 @@ ON_ADDED_LINES = (
 
 class RadiusTypes(TreeRule):
     """Pyrefly runs over the head's Python files laid out as the head holds them, and over the same files as the base
-    held them, each changed one rebuilt from its diff, with the reviewer's configuration: no installed package, no
+    held them, each changed one as git holds it there, with the reviewer's configuration: no installed package, no
     ignore comment honoured. A diagnostic is the change's where the head holds it and the base did not, told apart by
     its file, kind and line's text; one on a line the change added is named where it is a call's or an attribute's,
     which `types`, reading the file alone, cannot see across files, and a test's file is not read. Measured over ADK, 31

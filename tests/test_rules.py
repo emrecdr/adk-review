@@ -2245,21 +2245,63 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         )
         assert self.found(repo) == []
 
+    def test_the_base_is_read_as_git_holds_it_never_rebuilt_from_the_diff(self, tmp_path: Path) -> None:
+        """Read by review: the base was rebuilt from the diff the rules read, which shows a form feed and a lone `\\r`
+        as escapes and drops CRLF's `\\r`, so the base was not the file git holds. Read from git, it is."""
+        from adk_review.collect.git import base_files, preflight
+
+        mod = "def a() -> int:\r\n    return 1\r\n\x0cdef helper() -> int:\n    return 1\n"
+        repo = self.branch(tmp_path, {"shop/mod.py": mod}, {"shop/mod.py": mod.replace("1\r\n", "2\r\n", 1)})
+        assert base_files(preflight(str(repo), BASE, "change"), {"shop/mod.py", "shop/gone.py"}) == {"shop/mod.py": mod}
+
+    def test_a_link_the_change_made_a_file_is_compared_with_nothing_it_never_held(self, tmp_path: Path) -> None:
+        """Measured before: a module that was a link at the base, made a file, was rebuilt as the one line it names, so
+        a call wrong before the change, through the link, read as new. A link at the base is left as the head holds
+        it."""
+        user = "from shop.mod import Repo\n\n\ndef load(repo: Repo) -> str:\n    return repo.get_user('x')\n"
+        repo = self.branch(tmp_path, {"shop/real.py": self.REPO, "shop/user.py": user}, {})
+        link = _git_in(repo, "hash-object", "-w", "--stdin", stdin="real.py").strip()  # no file system link needed
+        _git_in(repo, "checkout", "-q", BASE)
+        _git_in(repo, "update-index", "--add", "--cacheinfo", f"120000,{link},shop/mod.py")
+        _git_in(repo, "commit", "-qm", "a link")
+        _git_in(repo, "checkout", "-q", "-B", "change")
+        _committed(repo, "shop/mod.py", self.REPO)  # the link made a file of the same text
+        assert self.found(repo) == [], "the call was wrong before the change, through the link"
+
+    def test_names_that_differ_in_case_are_left_out_of_both_runs_alike(self, tmp_path: Path) -> None:
+        """Read by review: a branch deleted `shop/A.py` beside a kept `shop/a.py`; the base held both, written in
+        neither run, and the head `shop/a.py` alone, so an error it held before read as new. Built by git's own
+        plumbing, as a disk that folds case cannot hold both."""
+        repo = self.branch(tmp_path, {"shop/x.py": "y = 1\n"}, {})
+        _git_in(repo, "checkout", "-q", BASE)
+        for name, text in (("shop/A.py", "z = 1\n"), ("shop/a.py", 'x: int = "a"\n')):
+            blob = _git_in(repo, "hash-object", "-w", "--stdin", stdin=text).strip()
+            _git_in(repo, "update-index", "--add", "--cacheinfo", f"100644,{blob},{name}")
+        _git_in(repo, "commit", "-qm", "two names, one in case")
+        _git_in(repo, "checkout", "-q", "-B", "change")
+        _git_in(repo, "rm", "-q", "--cached", "shop/A.py")
+        _git_in(repo, "commit", "-qm", "one removed")
+        assert self.found(repo) == [], "the error in shop/a.py was there before"
+
+    def test_a_file_pyrefly_gave_up_on_that_the_change_reaches_is_a_hole(self, tmp_path: Path) -> None:
+        """Read by review: pyrefly checks nothing in a file nested too deeply, and the radius read that as nothing
+        found, where the per-file read `types` makes calls it a hole. Where the file imports one the change touched,
+        it is a hole here too; elsewhere it is left out of both runs alike."""
+        from adk_review.collect.git import collect_evidence
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.radius_types import RadiusTypes
+
+        nested = "x = " + "-" * 1000 + "1\n"
+        files = {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE + nested, "shop/far.py": nested}
+        repo = self.branch(tmp_path, files, {"shop/repo.py": self.RENAMED})
+        answer = run_rules(collect_evidence(str(repo), BASE, "change"), [RadiusTypes()])["rule.radius-types"]
+        assert "pyrefly checked nothing in shop/service.py" in (answer.could_not_look or ""), answer
+        assert "far.py" not in (answer.could_not_look or ""), "a file the change does not reach is no hole of it"
+
     def test_a_whole_project_has_no_base_to_compare_and_names_nothing(self, tmp_path: Path) -> None:
         broken = self.SERVICE.replace("get_user", "fetch_user")
         repo = self.branch(tmp_path, {"shop/repo.py": self.REPO}, {"shop/service.py": broken})
         assert self.found(repo, whole=True) == [], "every diagnostic of the head would read as new"
-
-    def test_the_text_before_the_change_is_rebuilt_from_its_diff(self) -> None:
-        import difflib
-
-        from adk_review.collect.diff import old_text
-
-        before = "".join(f"def keep{n}():\n    return {n}\n\n\n" for n in range(9)) + "LIMIT = 1\n"
-        after = before.replace("return 3", "return 33").replace("LIMIT = 1\n", "") + "def new():\n    pass\n"
-        diff = "".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True), "a", "b"))
-        assert old_text(after, diff) == before
-        assert old_text("", "".join(difflib.unified_diff(before.splitlines(True), [], "a", "b"))) == before, "deleted"
 
     def test_a_path_python_could_not_import_is_never_written(self, tmp_path: Path) -> None:
         """A branch names its own paths: one outside the folder, a device name Windows holds, or two that differ only
