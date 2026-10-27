@@ -2455,8 +2455,13 @@ class TestTheShippedRules:
             "urllib.request.urlopen(u)\n",
             "s = socket.create_connection((h, p))\n",
             "await aiohttp.request('GET', u)\n",
+            "r = urllib3.request('GET', u)\n",
+            "async with websockets.connect(uri) as ws:\n    pass\n",
+            "with websockets.sync.client.connect(uri) as ws:\n    pass\n",
         ):
             assert lines_hit(rule, "tests/test_a.py", code) == [1], code
+        built = "pool = urllib3.PoolManager()\n"
+        assert lines_hit(rule, "tests/test_a.py", built) == [], "a client built opens nothing"
         for code in (
             "r = fake_requests.get(url)\n",
             "import requests\n",

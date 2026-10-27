@@ -7,11 +7,13 @@ from ..rule_helpers import ChangedFile, FileRule, calls_in, is_test
 #: The libraries a test is likeliest to reach the network through, and their calls that open a connection, as the code
 #: writes them. A client built is no connection opened: `httpx.Client(transport=MockTransport(...))` is the fake this
 #: rule asks for.
-LIBRARIES = ("requests", "httpx", "urllib.request", "aiohttp", "socket")
+LIBRARIES = ("requests", "httpx", "urllib.request", "urllib3", "aiohttp", "socket")
 CONNECTS = (
     "get", "post", "put", "delete", "patch", "head", "options", "request", "urlopen", "create_connection", "socket",
 )  # fmt: skip
-CALLS = tuple(f"{library}.{call}" for library in LIBRARIES for call in CONNECTS)
+#: A websocket's client opens its connection where it is called, asyncio's and the blocking one alike.
+WEBSOCKETS = ("websockets.connect", "websockets.sync.client.connect")
+CALLS = (*(f"{library}.{call}" for library in LIBRARIES for call in CONNECTS), *WEBSOCKETS)
 
 
 class OfflineTests(FileRule):
