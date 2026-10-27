@@ -442,7 +442,7 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
         place = _spot(f)
         lines += [
             f"{number}. {place}: {prose(f.title)} ({f.severity})",
-            f"   - Quoted: {_quoted(f)}",
+            *_quoted_lines(f),
             f"   - Suggested change: {prose(f.suggestion)}",
         ]
         lines += [
@@ -606,6 +606,19 @@ def _heading(check: str, failed: str | None) -> str:
 def _quoted(f: Finding, limit: int = EVIDENCE_MAX_CHARS) -> str:
     """A finding's evidence as every report prints it: one line, cut, in a code span."""
     return code_span(cut_at(one_line(f.evidence), limit))
+
+
+def _quoted_lines(f: Finding) -> list[str]:
+    """A finding's evidence as a comment shows it: in a code span where it is one line, else a fenced block under its
+    item, each line as written with its indentation, a credential hidden in the whole before the lines are split, cut
+    where every report cuts evidence. Read by review: 27 of 54 guideline quotes in a live run spanned lines, and the
+    comment flattened each into one, its code's shape lost."""
+    text = cut_at(scrub(f.evidence.strip("\n"))[0], EVIDENCE_MAX_CHARS, sep="\n")
+    lines = [_CONTROL.sub(" ", line).rstrip() for line in text.splitlines()]
+    if len(lines) <= 1:
+        return [f"   - Quoted: {_quoted(f)}"]
+    fence = "`" * max(3, backticks(text) + 1)
+    return ["   - Quoted:", f"     {fence}", *(f"     {line}".rstrip() for line in lines), f"     {fence}"]
 
 
 def _listed(f: Finding, mark: str = "") -> list[str]:

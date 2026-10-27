@@ -642,12 +642,13 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
 - `--comment [FILE]` writes the review as a comment for the branch's author, to paste into the pull request by hand,
   whatever the verdict: what must change before it merges, what is worth a look, an approved change's included, the
   tidy-ups, and what the review could not check. Its first line names what ran: the profile, how many rules and
-  guidelines, and the model, or no model, so an approval from the rules alone never reads as a model's. Each place and
-  quote sits in a code span. The reviewer posts nothing and prints no command that would: asked by the owner, who
-  reviews others' branches and pastes each comment by hand. With no file named, it is
-  `comments-<repo>__<base>__<head>__<YYYY-MM-DD-HH-MM>.md` in the current folder, every name lower case, each branch's
-  name without `refs/heads/`, `refs/remotes/` or `refs/tags/`, made safe for a file name and cut at 20 characters, and
-  the run names it by its full path, the last of the files written, unless `--quiet` silences a review that passes.
+  guidelines, and the model, or no model, so an approval from the rules alone never reads as a model's. Each place sits
+  in a code span, and each quote in one, or in a fenced block that keeps its lines where it spans several. The reviewer
+  posts nothing and prints no command that would: asked by the owner, who reviews others' branches and pastes each
+  comment by hand. With no file named, it is `comments-<repo>__<base>__<head>__<YYYY-MM-DD-HH-MM>.md` in the current
+  folder, every name lower case, each branch's name without `refs/heads/`, `refs/remotes/` or `refs/tags/`, made safe
+  for a file name and cut at 20 characters, and the run names it by its full path, the last of the files written, unless
+  `--quiet` silences a review that passes.
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint:
   its check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line,
   so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.

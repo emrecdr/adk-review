@@ -741,6 +741,35 @@ class TestThePreviousReportAndTheHandoff:
             re.search(r", by `default`: \d+ rules, and \d+ guidelines read by \S", first) and "no model" not in first
         ), first
 
+    def test_a_quote_over_several_lines_keeps_its_shape_in_the_comment(self) -> None:
+        """Read by review: in a live run 27 of the guidelines' 54 quotes spanned lines, and the comment flattened each
+        into one, its code's shape lost. A quote over several lines is a fenced block under its item, each line as
+        written, a credential still hidden, the fence longer than any backticks the quote holds."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import render_comment
+
+        token = "ghp_" + "a1B2" * 9
+        quote = f"+def load(path):\n+    if path:\n+        return read(path, key='{token}')  # ```"
+        found = Finding(file="a.py", line=1, severity="blocker", title="t", evidence=quote, suggestion="s")
+        evidence = {"preflight": {"head": "h", "head_sha": "0" * 40}}
+        said = render_comment(
+            evidence,
+            Outcome(kept=[Sourced("guideline.security", found, (1, 3))]),
+            verdict="DEGRADED",
+            fail_on="blocker",
+        )
+        block = (
+            "   - Quoted:\n     ````\n     +def load(path):\n     +    if path:\n     +        return read(path, key='"
+        )
+        assert block in said and "\n     ````\n   - Suggested change: s" in said, said
+        assert token not in said and "[REDACTED:github_token]" in said, said
+        one = Finding(file="a.py", line=1, severity="blocker", title="t", evidence="+x = 1", suggestion="s")
+        said = render_comment(
+            evidence, Outcome(kept=[Sourced("rule.lint", one, (1, 1))]), verdict="DEGRADED", fail_on="blocker"
+        )
+        assert "   - Quoted: `+x = 1`" in said, "one line stays a code span"
+
     @pytest.mark.parametrize(("fail_on", "at_bar"), [("major", True), ("blocker", False)])
     def test_a_handoff_names_each_folded_finding_and_whether_it_is_at_the_bar(
         self, fail_on: str, at_bar: bool, cli, demo_repo: Path, tmp_path: Path
