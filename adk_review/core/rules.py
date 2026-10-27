@@ -451,26 +451,18 @@ class Tree:
         self.added: Mapping[str, frozenset[int]] = MappingProxyType({})
 
     def changed_by(self, files: Iterable[Entry]) -> Tree:
-        """The same head with the lines each changed file's change added, and each changed Python file the head's own
-        read left out parsed from its text, as the file rules read it: a rule about the change reads the files it
-        changed. Measured: on a head past the read's budget, a changed file was left out, and a rule about its
-        callers could not look. A view; nothing else is parsed again."""
-        view, files = copy.copy(self), list(files)
+        """The same head with the lines each changed file's change added: a view, nothing parsed again. The head's read
+        takes the changed files first, so a rule about the change reads them where the head is past its budget."""
+        view = copy.copy(self)
         view.added = MappingProxyType({item["path"]: item["added_at"] for item in files})
-        texts = {
-            item["path"]: text
-            for item in files
-            if item["path"] in self.unread and item["path"].endswith(".py") and (text := item.get("text")) is not None
-        }
-        if texts:
-            view.parsed = {**self.parsed, **parsed(texts)}
-            view.unread = self.unread - texts.keys()
         return view
 
     @functools.cached_property
     def _index(self) -> Any:
-        """Every path, indexed both ways an import names a file, once a tree, whichever view asks."""
-        return index(self.paths)
+        """Every Python file, indexed both ways an import names one, once a tree, whichever view asks: a stub or a data
+        file beside a module, `repo.pyi` or `repo.json`, is no module an import names, and indexed it made the import
+        one two files could answer."""
+        return index(path for path in self.paths if path.endswith(".py"))
 
     def imports(self, path: str) -> dict[str, tuple[str, str | None]]:
         """What each name an import in `path` binds names: the one file, and the name taken from it, None for the
@@ -535,9 +527,9 @@ class TreeRule(AnyRule):
         if tree is None:
             if self.needs_head(files):
                 raise UnreadError("the tree at the head was not listed")
-            # The change gave it nothing to read at the head, which was never asked for: it reads the changed files.
-            texts = {i["path"]: text for i in files if i["path"].endswith(".py") and (text := i["text"]) is not None}
-            tree = Tree((item["path"] for item in files), texts)
+            # The change gave it nothing to read at the head, which was never asked for. Read by review: the changed
+            # files alone, read as a tree, answered an import the head holds two files for, and named a call wrongly.
+            return []
         returns = "a list of (path, what is wrong) pairs, (path, line, what) triples or Hits"
         read = (tree if self.reads_tests else tree.without_tests).changed_by(files)
         return [self._hit(item) for item in _each(self.check(read), "tree", returns)]

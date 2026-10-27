@@ -226,6 +226,11 @@ def _fold(path: str) -> str:
     return unicodedata.normalize("NFD", unicodedata.normalize("NFD", path).casefold())
 
 
+def in_scope(path: str, scope: Sequence[str]) -> bool:
+    """Whether a changed file is one of `scope`'s, or lies under one of its folders; no scope holds every file."""
+    return not scope or any(path == folder or path.startswith(f"{folder}/") for folder in scope)
+
+
 def in_review(path: str, scan: Sequence[str], third_party: Sequence[str]) -> bool:
     """Whether a review reads `path`: one `scan` names, Python's or a config's, every file where it names none, and
     one with no suffix, which may be a script that runs Python, as only its first line tells; and none under a folder

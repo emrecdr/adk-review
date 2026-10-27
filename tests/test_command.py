@@ -760,6 +760,34 @@ class TestThePreviousReportAndTheHandoff:
         assert said in written.split("### ", 1)[0], written
         capsys.readouterr()
 
+    def test_a_finding_counts_as_fixed_only_where_this_review_looked_for_it(self) -> None:
+        """Read by review: an earlier finding read as fixed when its check did not run this time, its file lay outside
+        `--path`, or it was folded under another reading of its lines, which the comment still listed: "1 fixed" of a
+        blocker no check looked at. Only a finding this review looked for and no reading found is fixed; and a review
+        that could not look at all says why it counts none."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import fingerprint, render_comment
+
+        def made(source: str, file: str, title: str) -> Sourced:
+            found = Finding(file=file, line=1, severity="major", title=title, evidence=f"+{title}", suggestion="s")
+            return Sourced(source, found, (1, 1))
+
+        lead, folded, gone = (
+            made("guideline.security", "a.py", "lead"),
+            made("rule.lint", "a.py", "folded"),
+            made("rule.lint", "a.py", "gone"),
+        )
+        unrun, outside = made("guideline.tests", "a.py", "unrun"), made("rule.lint", "lib/b.py", "outside")
+        previous = {fingerprint(i): {"check": i.source, "file": i.finding.file} for i in (folded, unrun, outside, gone)}
+        evidence = {"preflight": {"head": "h", "head_sha": "0" * 40}, "scope": ["a.py"]}
+        ran = ("guideline.security", "rule.lint")
+        outcome = Outcome(kept=[lead], folded=[(folded, lead)])
+        said = render_comment(evidence, outcome, verdict="APPROVED", fail_on="blocker", checks=ran, previous=previous)
+        assert "Since the last review: 1 fixed, 1 new, 0 still open." in said, said
+        holed = render_comment(evidence, outcome, verdict="DEGRADED", fail_on="blocker", checks=ran, previous=previous)
+        assert "Since the last review: 1 new, 0 still open. Fixed points are not counted" in holed, holed
+
     def test_a_comment_stays_short_enough_to_paste(self) -> None:
         """Measured by review: a branch of 354 findings wrote a comment of 88,393 characters, past the 65,536 GitHub
         takes, and more than any author reads. The comment stops at `COMMENT_MAX_CHARS`, the most severe points first,
@@ -792,6 +820,22 @@ class TestThePreviousReportAndTheHandoff:
         said = render_comment(evidence, unread, verdict="DEGRADED", fail_on="blocker")
         assert len(said) <= COMMENT_MAX_CHARS and "more, which the report lists" in said, len(said)
         assert "   - Suggested change:" in said, "a point still has room beside what the review could not check"
+        # Read by review: the cap was counted before `inert` broke each `<!--`, and the comment ran to 71,166.
+        openers = Outcome(kept=[finding(at) for at in range(400)])
+        for item in openers.kept:
+            item.finding.evidence = "<!--" * 100
+        assert len(render_comment(evidence, openers, verdict="APPROVED", fail_on="blocker")) <= COMMENT_MAX_CHARS
+        # Read by review: 3,000 unread files came first and pushed the guideline that failed out of the list.
+        failed = Outcome(kept=[finding(0)], unread=unread.unread, errors={"guideline.security": "RATE_LIMITED"})
+        assert "`guideline.security` could not look" in render_comment(
+            evidence, failed, verdict="DEGRADED", fail_on="blocker"
+        )
+        # Read by review: 300 readings folded on one point's lines made it larger than the room, and it, and every
+        # point after it, was left out.
+        lead = finding(0)
+        many = Outcome(kept=[lead, finding(1)], folded=[(finding(at), lead) for at in range(2, 302)])
+        said = render_comment(evidence, many, verdict="APPROVED", fail_on="blocker")
+        assert said.count("   - Also on these lines:") <= 6 and "left out" not in said, said[-600:]
 
     def test_a_quote_over_several_lines_keeps_its_shape_in_the_comment(self) -> None:
         """Read by review: in a live run 27 of the guidelines' 54 quotes spanned lines, and the comment flattened each
@@ -821,6 +865,13 @@ class TestThePreviousReportAndTheHandoff:
             evidence, Outcome(kept=[Sourced("rule.lint", one, (1, 1))]), verdict="DEGRADED", fail_on="blocker"
         )
         assert "   - Quoted: `+x = 1`" in said, "one line stays a code span"
+        long = Finding(
+            file="a.py", line=1, severity="blocker", title="t", evidence="+" + "x" * 1000 + "\n   ", suggestion="s"
+        )
+        said = render_comment(
+            evidence, Outcome(kept=[Sourced("rule.lint", long, (1, 1))]), verdict="DEGRADED", fail_on="blocker"
+        )
+        assert "   - Quoted: `+xxx" in said, "read by review: cut, a long line read as two, and became a block"
 
     @pytest.mark.parametrize(("fail_on", "at_bar"), [("major", True), ("blocker", False)])
     def test_a_handoff_names_each_folded_finding_and_whether_it_is_at_the_bar(

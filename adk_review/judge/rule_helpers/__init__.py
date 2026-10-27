@@ -13,7 +13,7 @@ rules and nothing else.
 May import `core` alone, and runs nothing: no process, no network, no model. Standard library only.
 """
 
-from ...core.blast import is_test
+from ...core.blast import is_test, parse
 from ...core.evidence import Entry
 from ...core.findings import RANK, Severity
 from ...core.paths import matches, matching
@@ -68,6 +68,7 @@ __all__ = [
     "named_values",
     "nodes_in",
     "parameters",
+    "parse",
     "self_check",
     "self_test",
     "shape_of",

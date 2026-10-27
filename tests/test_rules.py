@@ -1750,6 +1750,20 @@ class TestTheCallersRule:
         found = self.found(files, {"pkg/repo.py": None})
         assert [(path, line) for path, line, _ in found] == [(path, 2) for path in sorted(callers)], found
 
+    def test_a_file_beside_the_module_that_python_never_imports_leaves_the_call_found(self) -> None:
+        """Read by review: the imports were indexed over every path, so `pkg/repo.pyi` or `pkg/repo.json` beside
+        `pkg/repo.py` read as a second module of that name, the import two files could answer, and the call was missed,
+        or found, as the hash seed ordered a set. Only a Python file is a module an import names, as for the radius."""
+        files = {
+            "pkg/__init__.py": "",
+            "pkg/repo.py": "def get_user(uid):\n    return uid\n",
+            "pkg/repo.pyi": "def get_user(uid: int) -> int: ...\n",
+            "pkg/repo.json": "{}\n",
+            "pkg/service.py": "from pkg.repo import get_user\n\nget_user(user_id=3)\n",
+            "pkg/rel.py": "from .repo import get_user\n\nget_user(user_id=3)\n",
+        }
+        assert [(path, line) for path, line, _ in self.found(files)] == [("pkg/rel.py", 3), ("pkg/service.py", 3)]
+
     def test_a_class_is_called_as_its_init_takes_it(self) -> None:
         files = {
             "net.py": "class Client:\n    def __init__(self, host, *, timeout=5):\n        self.host = host\n",
@@ -1780,10 +1794,9 @@ class TestTheCallersRule:
         }
         assert self.found(files) == []
 
-    def test_a_changed_file_the_heads_read_left_out_is_read_from_its_text(self) -> None:
-        """Measured on litellm's 2,776 files: past the budget of the head's read, the changed file was left out, and the
-        rule could not look, exit 3. The review reads a changed file's text for the file rules, and the tree reads the
-        file from there; a file a name is passed on through that no one read stops the following, a floor."""
+    def test_a_name_passed_on_through_a_file_no_one_read_is_followed_no_further(self) -> None:
+        """A file the head's read left out stops the following of a name it passes on: a floor, as the rest of the
+        tree's reading is, never a hole of the rule's."""
         from adk_review.judge.rule_helpers import Tree
         from adk_review.judge.rule_helpers.testing import as_change
         from adk_review.judge.rules.callers import Callers
@@ -1796,10 +1809,28 @@ class TestTheCallersRule:
         }
         entries, _whole = as_change(files)
         changed = [item for item in entries if item["path"] == "repo.py"]
-        head = Tree(
-            files, {"use.py": files["use.py"], "far.py": files["far.py"]}, unread=["repo.py", "pkg/__init__.py"]
-        )
+        head = Tree(files, {path: files[path] for path in ("repo.py", "use.py", "far.py")}, unread=["pkg/__init__.py"])
         assert [(hit.path, hit.line) for hit in Callers().hits(changed, head)] == [("use.py", 3)]
+
+    def test_the_heads_read_takes_the_changed_files_first(self, tmp_path: Path, monkeypatch) -> None:
+        """Measured on litellm's 2,776 files: read in path order within its budget, the head left a changed file out,
+        and the radius and the tree rules lost it, the caller rule a hole, exit 3. The changed files are read first."""
+        from adk_review.collect import git
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        for name in ("a1.py", "a2.py", "a3.py"):
+            _committed(repo, name, "x = 1\n" * 200)
+        _committed(repo, "z_repo.py", "def get(uid):\n    return uid\n")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "z_repo.py", "def get(uid, role):\n    return uid\n")
+        monkeypatch.setattr(git, "MAX_TREE_BYTES", 2_420)  # two files fit, then 20 bytes are left
+        resolved = git.preflight(str(repo), BASE, "change")
+        listing = git.head_listing(resolved)
+        assert "z_repo.py" in git.tree_at_head(resolved, listing).unread, "in path order, the budget runs out first"
+        tree = git.tree_at_head(resolved, listing, first={"z_repo.py"})
+        assert "z_repo.py" not in tree.unread and "z_repo.py" in tree.parsed
 
     def test_the_head_is_read_only_where_a_function_that_was_there_changed_its_parameters(self) -> None:
         """Measured before: reading the head took 88% of gathering on a 625-file tree, and `default-rules`, the pre-push
@@ -1811,12 +1842,23 @@ class TestTheCallersRule:
         (item,), _tree = as_change({"repo.py": "def get(uid):\n    return uid\n\n\ndef new(a):\n    return a\n"})
 
         def needs(added: set[int], diff: str | None = None) -> bool:
-            return Callers().needs_head([{**item, "added_at": frozenset(added), "diff": diff}])
+            return Callers().needs_head([{**item, "status": "M", "added_at": frozenset(added), "diff": diff}])
 
         assert needs({1}), "an existing function's parameters changed: a caller anywhere may break"
         assert not needs({2}), "a body changed, never the parameters"
         assert not needs({5, 6}), "a function added whole leaves no caller behind"
         assert needs({1, 2}, "-def get(user_id):\n"), "every line of it rewritten, yet the diff shows it was there"
+        # Read by review: three ways a name that was there changed what its call takes, each missed with no head read.
+        (cls,), _tree = as_change({"foo.py": "class Foo:\n    def __init__(self, x):\n        self.x = x\n"})
+        assert Callers().needs_head([{**cls, "status": "M", "added_at": frozenset({2, 3}), "diff": ""}]), (
+            "a class that was there took its first `__init__`: its class line kept"
+        )
+        (moved, old_home), _tree = as_change({"pkg/new.py": "def get(uid):\n    return uid\n", "pkg/old.py": ""})
+        old_home = {**old_home, "status": "M", "added_at": frozenset(), "diff": "-def get(user_id):\n-    return 1\n"}
+        assert Callers().needs_head([moved, old_home]), "a function moved to a new file, its old one removed"
+        assigned = {**old_home, "diff": "-get = make_getter()\n"}
+        assert Callers().needs_head([moved, assigned]), "a name an assignment bound is a function now"
+        assert not Callers().needs_head([moved]), "a new file in a change that removes nothing leaves no caller behind"
 
     def test_an_unchanged_caller_is_found_on_a_branch(self, cli, tmp_path: Path, capsys) -> None:
         """End to end, from git: the branch renames a parameter, a file it leaves alone still passes the old name, and
@@ -2458,10 +2500,14 @@ class TestTheShippedRules:
             "r = urllib3.request('GET', u)\n",
             "async with websockets.connect(uri) as ws:\n    pass\n",
             "with websockets.sync.client.connect(uri) as ws:\n    pass\n",
+            "async with websockets.asyncio.client.connect(uri) as ws:\n    pass\n",
+            "reader, writer = await asyncio.open_connection(h, p)\n",
+            "with httpx.stream('GET', u) as r:\n    pass\n",
+            "urllib.request.urlretrieve(u, path)\n",
         ):
             assert lines_hit(rule, "tests/test_a.py", code) == [1], code
-        built = "pool = urllib3.PoolManager()\n"
-        assert lines_hit(rule, "tests/test_a.py", built) == [], "a client built opens nothing"
+        for built in ("pool = urllib3.PoolManager()\n", "s = socket.socket()\n"):
+            assert lines_hit(rule, "tests/test_a.py", built) == [], "a client or a socket built opens nothing"
         for code in (
             "r = fake_requests.get(url)\n",
             "import requests\n",

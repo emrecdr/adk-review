@@ -4,16 +4,25 @@ from __future__ import annotations
 
 from ..rule_helpers import ChangedFile, FileRule, calls_in, is_test
 
-#: The libraries a test is likeliest to reach the network through, and their calls that open a connection, as the code
-#: writes them. A client built is no connection opened: `httpx.Client(transport=MockTransport(...))` is the fake this
-#: rule asks for.
-LIBRARIES = ("requests", "httpx", "urllib.request", "urllib3", "aiohttp", "socket")
-CONNECTS = (
-    "get", "post", "put", "delete", "patch", "head", "options", "request", "urlopen", "create_connection", "socket",
-)  # fmt: skip
-#: A websocket's client opens its connection where it is called, asyncio's and the blocking one alike.
-WEBSOCKETS = ("websockets.connect", "websockets.sync.client.connect")
-CALLS = (*(f"{library}.{call}" for library in LIBRARIES for call in CONNECTS), *WEBSOCKETS)
+#: The calls a test is likeliest to reach the network through, each one that opens a connection where it is called,
+#: as the code writes it, checked in the packages themselves. A client or a socket built is no connection opened:
+#: `httpx.Client(transport=MockTransport(...))` is the fake this rule asks for, and `socket.socket()` opens nothing
+#: until it connects.
+VERBS = ("get", "post", "put", "delete", "patch", "head", "options", "request")
+CALLS = (
+    *(f"{library}.{verb}" for library in ("requests", "httpx") for verb in VERBS),
+    "httpx.stream",
+    "urllib.request.urlopen",
+    "urllib.request.urlretrieve",
+    "urllib3.request",
+    "aiohttp.request",
+    "socket.create_connection",
+    "asyncio.open_connection",
+    "websockets.connect",
+    "websockets.asyncio.client.connect",
+    "websockets.client.connect",
+    "websockets.sync.client.connect",
+)
 
 
 class OfflineTests(FileRule):

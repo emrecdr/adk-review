@@ -27,7 +27,7 @@ from typing import Any, NoReturn
 
 from ..core.blast import Radius
 from ..core.evidence import LINK_UNREAD, Entry, Evidence, Failure, unreleased
-from ..core.paths import Links, UnfollowedError, in_review, matches
+from ..core.paths import Links, UnfollowedError, in_review, in_scope, matches
 from ..core.rules import PYTHON_SUFFIXES, Tree
 from ..core.text import lines_of
 from .change import (
@@ -486,11 +486,6 @@ def default_base(repo: str) -> str | None:
     return remote if named else None
 
 
-def in_scope(path: str, scope: Sequence[str]) -> bool:
-    """Whether a changed file is one of `scope`'s, or lies under one of its folders; no scope holds every file."""
-    return not scope or any(path == folder or path.startswith(f"{folder}/") for folder in scope)
-
-
 def preflight_staged(repo: str) -> dict:
     """The scope of a review of what is staged: the index, as the next commit would hold it, against `HEAD`, or the
     empty tree before a first commit. Read through plumbing alone — `diff-index --cached`, `ls-files -s`, `cat-file` —
@@ -703,7 +698,10 @@ def head_listing(resolved: dict) -> list[tuple[str, str, str, str, str]] | None:
 
 
 def tree_at_head(
-    resolved: dict, listing: list[tuple[str, str, str, str, str]] | None, third_party: Sequence[str] = ()
+    resolved: dict,
+    listing: list[tuple[str, str, str, str, str]] | None,
+    third_party: Sequence[str] = (),
+    first: Collection[str] = (),
 ) -> Tree | None:
     """The head's tree: every path, every Python file read and parsed once, and the Python files not read; None when
     the tree could not be listed.
@@ -715,16 +713,18 @@ def tree_at_head(
     was asked for is named unread; so is a blob a partial clone lacks, which git lists with no size. `listing` is
     `head_listing`'s, taken once for the tree and the texts: a tree git could not list is None here too, never listed
     a second time. A module under a folder `third_party` names is another project's: listed, never read or parsed.
+    The files the change touched, `first`, are read first, within the same budget: measured on litellm's 2,776 files,
+    read in path order a changed file fell past the budget, and the radius and the tree rules lost it.
     """
     if listing is None:
         return None
     paths = [path for _mode, _kind, _sha, _size, path in listing]
-    python = (
+    python = [
         (path, sha, size)
         for path, sha, size in _plain(listing)
         if path.endswith(".py") and not matches(path, *third_party)
-    )
-    return Tree(paths, *_texts(resolved, python))
+    ]
+    return Tree(paths, *_texts(resolved, sorted(python, key=lambda blob: blob[0] not in first)))
 
 
 def _plain(listing: list[tuple[str, str, str, str, str]]) -> Iterator[tuple[str, str, str]]:
@@ -1015,7 +1015,7 @@ def gather(
     # changed Python files alone. The changed files' own texts are read either way, for the file rules.
     wanted = tree_rules(files) if callable(tree_rules) else tree_rules
     read = wanted or (guidelines and any(Radius(entry["path"]).measured for entry in files))
-    tree = tree_at_head(resolved, listing, third_party) if read else None
+    tree = tree_at_head(resolved, listing, third_party, {entry["path"] for entry in files}) if read else None
     if guidelines:
         _links_unread(files, excluded, lambda path: in_review(path, scan, third_party))
     return {

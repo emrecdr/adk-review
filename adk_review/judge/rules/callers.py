@@ -8,7 +8,7 @@ import re
 from collections import Counter
 from collections.abc import Callable, Iterator, Sequence
 
-from ..rule_helpers import Entry, Tree, TreeRule, UnreadError, name_of
+from ..rule_helpers import Entry, Tree, TreeRule, UnreadError, name_of, parse
 
 #: How many modules deep a name is followed where a module only imports it to pass it on, as a package's
 #: `__init__.py` does with `from .repo import get_user`, so `from pkg import get_user` reaches the function.
@@ -21,11 +21,13 @@ CALLED_BY_BASE = frozenset(
 #: What opens a scope of its own, whose names hide a module's from the code inside it.
 _SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
 _COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
-#: A function or class a diff's removed line defined: one whose every line the change rewrote was there before, as a
-#: two-line function whose parameter was renamed is, all of it added again.
-_REMOVED_DEF = re.compile(r"^-\s*(?:async\s+def|def|class)\s+(\w+)", re.MULTILINE)
+_WORD = re.compile(r"\w+")
+#: A line a diff removes, its file's header aside: a name one names was there before, as a two-line function whose
+#: parameter was renamed is, all of it added again, one moved to another file, or one an assignment bound.
+_REMOVED = re.compile(r"^-(?!--)(.*)$", re.MULTILINE)
 
 type Scope = ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda | ast.ClassDef
+type Function_ = ast.FunctionDef | ast.AsyncFunctionDef
 type Function = tuple[str, str]  # the file a function is defined in, and its name
 type Changed = dict[Function, tuple[ast.arguments, bool]]  # its parameters, and whether a call passes one fewer
 
@@ -39,8 +41,9 @@ class Callers(TreeRule):
     nowhere. Left alone, since each may fit at run time: a decorated function or class, a call that unpacks `*args` or
     `**kwargs`, a name a scope binds to something else, a method on an object, a class a metaclass or `__new__` makes,
     and an import two files could answer. Read as a floor where the head was not read whole. The head is read only
-    where the change touched the parameters of a function that was there before: one it adds whole leaves no caller
-    behind, and the calls to it in the change are read from the changed files."""
+    where the change touched the parameters of a name that was there before, one a line the change removed names or
+    one not all of whose lines it added; with none, nothing is read, since a function the change adds whole leaves no
+    caller behind."""
 
     id = "callers"
     severity = "major"
@@ -61,19 +64,18 @@ class Callers(TreeRule):
     )
 
     def needs_head(self, files: list[Entry]) -> bool:
-        for item in files:
-            if not item["path"].endswith(".py") or not item["added_at"]:
+        python = [item for item in files if item["path"].endswith(".py") and item["added_at"]]
+        if any(item["text"] is None for item in python):  # not read: what it touched cannot be told
+            return True
+        gone = {word for item in files for line in _REMOVED.findall(item["diff"] or "") for word in _WORD.findall(line)}
+        for item in python:
+            # A file the change adds whole defines nothing that was there, unless a name it defines was removed
+            # elsewhere: measured, parsing each new file took 433 ms of ADK's whole review for nothing.
+            if (item["status"] == "A" and not gone) or (module := parse(item["text"])) is None:
                 continue
-            if item["text"] is None:  # not read: what it touched cannot be told
-                return True
-            try:
-                module = ast.parse(item["text"])
-            except (SyntaxError, ValueError, RecursionError, MemoryError):
-                continue
-            gone = set(_REMOVED_DEF.findall(item["diff"] or ""))
-            touched = _touched(module, item["added_at"])
-            if any(name in gone or not _span(node) <= item["added_at"] for name, node in touched.items()):
-                return True
+            for name, (_function, statement) in _touched(module, item["added_at"]).items():
+                if name in gone or not _span(statement) <= item["added_at"]:
+                    return True
         return False
 
     def check(self, tree: Tree) -> list[tuple[str, int, str]]:
@@ -126,7 +128,8 @@ def _misfit_calls(
     for call, hidden in _calls(module):
         target = names.get(spelled := name_of(call.func))
         root = spelled.split(".")[0]
-        if target is None or _unpacks(call) or root in hidden or other[root] > (target == (path, spelled)):
+        own = 1 if target == (path, spelled) else 0  # its own module's def binds the name once
+        if target is None or _unpacks(call) or root in hidden or other[root] > own:
             continue
         params, method = changed[target]
         if said := _misfits(params, call, method, f"`{target[1]}()` in `{target[0]}`"):
@@ -139,35 +142,34 @@ def _changed(tree: Tree) -> Changed:
     its own, each undecorated and the one thing its name stands for in its module."""
     changed: Changed = {}
     for path, added in tree.added.items():
-        if not path.endswith(".py") or not added or path not in tree.paths:
-            continue
-        module = tree.module(path)
-        if not isinstance(module, str):
+        if added and not isinstance(module := tree.module(path), str):
             changed |= {
-                (path, name): (node.args, node.name == "__init__") for name, node in _touched(module, added).items()
+                (path, name): (function.args, function.name == "__init__")
+                for name, (function, _statement) in _touched(module, added).items()
             }
     return changed
 
 
-def _touched(module: ast.Module, added: frozenset[int]) -> dict[str, ast.FunctionDef | ast.AsyncFunctionDef]:
+def _touched(module: ast.Module, added: frozenset[int]) -> dict[str, tuple[Function_, ast.stmt]]:
     """By name, each module-level function, and each class's own `__init__`, whose parameters `added` touches, each
-    undecorated and the one thing its name stands for in the module."""
+    undecorated and the one thing its name stands for in the module, with the statement that defines the name: the
+    function, or its class."""
     other, imported, _declared = _bound(module.body)
-    touched: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = {}
+    touched: dict[str, tuple[Function_, ast.stmt]] = {}
     for node in module.body:
         if other[getattr(node, "name", "")] != 1 or imported[getattr(node, "name", "")]:
             continue
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
             if not node.decorator_list and _header(node) & added:
-                touched[node.name] = node
+                touched[node.name] = (node, node)
         elif isinstance(node, ast.ClassDef) and (init := _own_init(node)) and _header(init) & added:
-            touched[node.name] = init
+            touched[node.name] = (init, node)
     return touched
 
 
-def _span(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[int]:
-    """Every line a function is written on, its decorators' among them: all added, the change made it whole."""
-    first = min([decorator.lineno for decorator in node.decorator_list] + [node.lineno])
+def _span(node: ast.stmt) -> set[int]:
+    """Every line a statement is written on, its decorators' among them: all added, the change made it whole."""
+    first = min([decorator.lineno for decorator in getattr(node, "decorator_list", ())] + [node.lineno])
     return set(range(first, (node.end_lineno or node.lineno) + 1))
 
 
@@ -245,10 +247,10 @@ def _calls(module: ast.Module) -> Iterator[tuple[ast.Call, frozenset[str]]]:
             yield node, hidden
         if isinstance(node, _SCOPES):
             stack.extend((part, hidden) for part in _around(node))
-            other, _imported, declared = _bound(node.body if isinstance(node.body, list) else [node.body])
-            inner = hidden | (set(other) - declared) | _parameters(node)
             body = node.body if isinstance(node.body, list) else [node.body]
-            stack.extend((part, frozenset(inner)) for part in body)
+            other, _imported, declared = _bound(body)
+            inner = hidden | (set(other) - declared) | _parameters(node)
+            stack.extend((part, inner) for part in body)
             continue
         if isinstance(node, _COMPREHENSIONS):
             targets = {n.id for gen in node.generators for n in ast.walk(gen.target) if isinstance(n, ast.Name)}
@@ -282,11 +284,10 @@ def _unpacks(call: ast.Call) -> bool:
 def _misfits(params: ast.arguments, call: ast.Call, method: bool, function: str) -> str:
     """What makes `call` raise where it binds to `params`, as Python binds a call, one sentence; empty where it fits.
     `method`: the first parameter is passed for the call, as `self` is to `__init__`."""
-    positional = [*params.posonlyargs, *params.args]
-    names = [param.arg for param in positional]
+    names = [param.arg for param in (*params.posonlyargs, *params.args)]
     required = names[: len(names) - len(params.defaults)]
-    if method and names:
-        names, required = names[1:], [name for name in required if name != positional[0].arg]
+    if method and names:  # `self`, first of both: `required` is a prefix of `names`
+        names, required = names[1:], required[1:]
     needed = [
         param.arg for param, default in zip(params.kwonlyargs, params.kw_defaults, strict=True) if default is None
     ]

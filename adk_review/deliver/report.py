@@ -19,6 +19,7 @@ from ..core.blast import Blast, describe
 from ..core.evidence import Evidence
 from ..core.findings import RANK, Checked, Finding, at_or_above
 from ..core.health import Health, found_by_rule, grade
+from ..core.paths import in_scope
 from ..core.profiles import rule_id
 from ..core.secrets import scrub
 from ..core.text import EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, short_ref, squash
@@ -107,7 +108,9 @@ def _unreferenced(line: str) -> str:
     closer: list[int | None] = [None] * len(runs)  # each run's next run as long, read from the end
     last: dict[int, int] = {}
     for at in range(len(runs) - 1, -1, -1):
-        closer[at], last[runs[at][1] - runs[at][0]] = last.get(runs[at][1] - runs[at][0]), at
+        size = runs[at][1] - runs[at][0]
+        closer[at] = last.get(size)
+        last[size] = at
     spans, at = [], 0
     while at < len(runs):
         if (close := closer[at]) is None:
@@ -273,15 +276,16 @@ def render_handoff(
 
 def _unchecked(outcome: Outcome, fail_on: str) -> list[str]:
     """Each file no check read whole, each check that could not look, and each finding at the bar it could not prove,
-    with why, as a person checks them by hand: the comment's list and the hand-off's alike. Read by review: a review
-    degraded by an unproven blocker listed nothing in either."""
-    unchecked = [f"- {code_span(one_line(path))}: {_reason(why)}" for path, why in outcome.unread.items()]
-    unchecked += [f"- {code_span(check)} could not look: {_reason(why)}" for check, why in outcome.errors.items()]
-    return unchecked + [
+    with why, as a person checks them by hand: the comment's list and the hand-off's alike, the checks and the findings
+    first, since a long list is cut where it ends. Read by review: a review degraded by an unproven blocker listed
+    nothing in either, and 3,000 unread files once pushed a guideline that failed out of the comment."""
+    unchecked = [f"- {code_span(check)} could not look: {_reason(why)}" for check, why in outcome.errors.items()]
+    unchecked += [
         f"- {code_span(item.source)} at {_spot(item.finding)}: {prose(item.finding.title)}, a finding at the bar this "
         "review could not prove"
         for item in outcome.unproven(fail_on)
     ]
+    return unchecked + [f"- {code_span(one_line(path))}: {_reason(why)}" for path, why in outcome.unread.items()]
 
 
 def _lanes(outcome: Outcome, tidies: frozenset[str]) -> tuple[list[list[Sourced]], list[list[Sourced]]]:
@@ -371,8 +375,11 @@ def _to_fix(item: Sourced, identity: str, indent: str) -> list[str]:
 #: The most a comment holds, in characters: GitHub takes 65,536 in one, and no author reads more. Measured by review:
 #: a branch of 354 findings wrote 88,393. The most severe points come first, and the rest are counted.
 COMMENT_MAX_CHARS = 60_000
-#: What a comment keeps free under its cap: its closing count, and the spaces `inert` puts in.
+#: What a comment keeps free under its cap: its closing count.
 _COMMENT_ROOM = 1_000
+#: The other readings of one point's lines a comment names, the rest counted: read by review, 300 folded on one point
+#: made it larger than the comment's room, and it was left out with every point after it.
+ALSO_SHOWN = 5
 #: How a comment for the branch's author opens, by the verdict: a thank-you, then what the review decided.
 COMMENT_OPENS = {
     "APPROVED": "Thanks for this change. The review found nothing that blocks it.",
@@ -409,7 +416,7 @@ def render_comment(
     )
     lines = [head, "", COMMENT_OPENS[verdict]]
     if previous is not None:
-        lines.append(_since_last(outcome, verdict, previous))
+        lines.append(_since_last(outcome, verdict, previous, checks, evidence.get("scope", [])))
     if verdict == "APPROVED" and (worth or tidy):
         lines.append("The points below would still improve it.")
     lanes: list[tuple[list[str], list[list[str]]]] = []  # each section's heading, and its points
@@ -420,57 +427,62 @@ def render_comment(
     ):
         if groups:
             lanes.append((["", f"### {heading}", "", *([note, ""] if note else [])], _commented(groups, tidies)))
-    holes = []
-    if unchecked := _unchecked(outcome, fail_on):
-        holes = ["", "### Not checked", "", "The review could not check these. Check them by hand.", "", *unchecked]
-    return inert("\n".join(_within(lines, lanes, holes))) + "\n"
+    return inert("\n".join(_within(lines, lanes, _unchecked(outcome, fail_on)))) + "\n"
 
 
 def _within(lines: list[str], lanes: list[tuple[list[str], list[list[str]]]], holes: list[str]) -> list[str]:
     """The comment: `lines`, then each section's points, the most severe sections first, as long as it stays under
-    `COMMENT_MAX_CHARS`, the rest counted, and last what the review could not check, held to half the cap."""
-    if _size(holes) > COMMENT_MAX_CHARS // 2:
-        kept, used = [], 0
-        for line in holes:
-            used += len(line) + 1
-            if used > COMMENT_MAX_CHARS // 2:
-                break
-            kept.append(line)
-        holes = [*kept, f"- and {len(holes) - len(kept)} more, which the report lists"]
-    room = COMMENT_MAX_CHARS - _COMMENT_ROOM - _size(lines) - _size(holes)
-    made, left = list(lines), 0
-    for top, points in lanes:
-        room -= _size(top)
-        shown = []
-        for point in points:
-            if left or _size(point) > room:
-                left += 1
-            else:
-                shown.append(point)
-                room -= _size(point)
-        made += [*top, *(line for point in shown for line in point)] if shown else []
+    `COMMENT_MAX_CHARS`, the rest counted, and last what the review could not check, `holes`, held to half the cap."""
+    if holes:
+        shown, more, _room = _fit([[line] for line in holes], COMMENT_MAX_CHARS // 2)
+        listed = [*(line for (line,) in shown), *([f"- and {more:,} more, which the report lists"] if more else [])]
+        holes = ["", "### Not checked", "", "The review could not check these. Check them by hand.", "", *listed]
+    room, made, left = COMMENT_MAX_CHARS - _COMMENT_ROOM - _size(lines) - _size(holes), list(lines), 0
+    for heading, points in lanes:
+        shown, more, room = _fit(points, room - _size(heading), stop=bool(left))
+        made += [*heading, *(line for point in shown for line in point)] if shown else []
+        left += more
     if left:
+        said = "point is" if left == 1 else "points are"
         made += [
             "",
-            f"{left} more points are left out, to keep the comment short enough to paste. The report lists each.",
+            f"{left:,} more {said} left out, to keep the comment short enough to paste. The report lists each.",
         ]
     return made + holes
 
 
+def _fit(items: list[list[str]], room: int, *, stop: bool = False) -> tuple[list[list[str]], int, int]:
+    """The items that fit in `room`, in order, each whole, until the first that does not, or none where `stop`; how
+    many were left out; and the room left."""
+    shown: list[list[str]] = []
+    for at, item in enumerate(items):
+        if stop or _size(item) > room:
+            return shown, len(items) - at, room
+        shown.append(item)
+        room -= _size(item)
+    return shown, 0, room
+
+
 def _size(lines: Sequence[str]) -> int:
-    """How many characters `lines` take in a comment, each with its line break."""
-    return sum(len(line) + 1 for line in lines)
+    """How many characters `lines` take in a comment, each with its line break, as `inert` prints it: read by review,
+    counted before `inert` broke each `<!--`, a comment of 400 such quotes ran to 71,166."""
+    return sum(len(inert(line)) + 1 for line in lines)
 
 
-def _since_last(outcome: Outcome, verdict: str, previous: Mapping[str, dict]) -> str:
+def _since_last(
+    outcome: Outcome, verdict: str, previous: Mapping[str, dict], checks: Sequence[str], scope: Sequence[str]
+) -> str:
     """How the change moved since the review `--previous` names, as its author reads it: the points fixed, new and
-    still open, the fixed ones uncounted where this review could not look at all. Read by review: the text report said
-    it and the comment did not, so a second round read as the first."""
+    still open, the fixed ones uncounted, and said so, where this review could not look at all. Read by review: the text
+    report said it and the comment did not, so a second round read as the first."""
     identities = _identified(outcome.kept)
     new = sum(_since(identity, previous) == "new" for identity in identities)
-    fixed = _resolved(identities, verdict, previous)
+    fixed = _resolved(outcome, identities, verdict, previous, checks, scope)
     done = "" if fixed is None else f"{len(fixed)} fixed, "
-    return f"Since the last review: {done}{new} new, {len(identities) - new} still open."
+    said = f"Since the last review: {done}{new} new, {len(identities) - new} still open."
+    return said + (
+        " Fixed points are not counted, since the review could not check all of it." if fixed is None else ""
+    )
 
 
 def _ran(profile: str, model: str, checks: Sequence[str]) -> str:
@@ -478,7 +490,7 @@ def _ran(profile: str, model: str, checks: Sequence[str]) -> str:
     guidelines it ran, the model that read the diff or none; nothing where the caller names no profile."""
     if not profile:
         return ""
-    rules = sum(check.startswith("rule.") for check in checks)
+    rules = sum(check.startswith(rule_id("")) for check in checks)
     guidelines = len(checks) - rules
     ran = [f"{rules} rule{'s' * (rules != 1)}"] if rules else []
     if guidelines and model:
@@ -502,11 +514,13 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
             *_quoted_lines(f),
             f"   - Suggested change: {prose(f.suggestion)}",
         ]
+        others = [item for item in also if item.source not in tidies]
         lines += [
             f"   - Also on these lines: {prose(item.finding.title)} ({item.finding.severity})"
-            for item in also
-            if item.source not in tidies
+            for item in others[:ALSO_SHOWN]
         ]
+        if len(others) > ALSO_SHOWN:
+            lines.append(f"   - Also on these lines: {len(others) - ALSO_SHOWN:,} more, which the report lists")
         points.append(lines)
     return points
 
@@ -671,10 +685,15 @@ def _quoted_lines(f: Finding) -> list[str]:
     item, each line as written with its indentation, a credential hidden in the whole before the lines are split, cut
     where every report cuts evidence. Read by review: 27 of 54 guideline quotes in a live run spanned lines, and the
     comment flattened each into one, its code's shape lost."""
-    text = cut_at(scrub(f.evidence.strip("\n"))[0], EVIDENCE_MAX_CHARS, sep="\n")
-    lines = [_CONTROL.sub(" ", line).rstrip() for line in text.splitlines()]
-    if len(lines) <= 1:
+    quote = f.evidence.splitlines()
+    while quote and not quote[-1].strip():
+        quote.pop()
+    while quote and not quote[0].strip():
+        quote.pop(0)
+    if len(quote) <= 1:  # read by review: counted after the cut, a long line and its cut's mark made a block
         return [f"   - Quoted: {_quoted(f)}"]
+    text = cut_at(scrub("\n".join(quote))[0], EVIDENCE_MAX_CHARS, sep="\n")
+    lines = [_CONTROL.sub(" ", line).rstrip() for line in text.splitlines()]
     fence = "`" * max(3, backticks(text) + 1)
     return ["   - Quoted:", f"     {fence}", *(f"     {line}".rstrip() for line in lines), f"     {fence}"]
 
@@ -892,14 +911,27 @@ def _since(identity: str, previous: Mapping[str, dict] | None) -> str | None:
     return None if previous is None else "seen" if identity in previous else "new"
 
 
-def _resolved(identities: Sequence[str], verdict: str, previous: Mapping[str, dict] | None) -> list[dict] | None:
-    """A previous review's findings this one, its findings' `identities`, no longer finds: None with no previous review,
-    and where this review has a hole, which resolves nothing, since what it could not look at may hold them still, as
-    PR-Agent requires."""
+def _resolved(
+    outcome: Outcome,
+    identities: Sequence[str],
+    verdict: str,
+    previous: Mapping[str, dict] | None,
+    checks: Sequence[str],
+    scope: Sequence[str],
+) -> list[dict] | None:
+    """A previous review's findings this one, its kept findings' `identities` and those folded into them, no longer
+    finds, among those it looked for — a check that ran, a file in its scope: None with no previous review, and where
+    this review has a hole, which resolves nothing, since what it could not look at may hold them still, as PR-Agent
+    requires. Read by review: a blocker of a check this run left out read as fixed, and so did a finding folded under a
+    new one on its lines, which the same comment listed."""
     if previous is None or verdict == "DEGRADED":
         return None
-    found_now = set(identities)
-    return [found for identity, found in previous.items() if identity not in found_now]
+    found_now = {*identities, *(fingerprint(item) for item, _into in outcome.folded)}
+    return [
+        found
+        for identity, found in previous.items()
+        if identity not in found_now and found.get("check") in checks and in_scope(str(found.get("file", "")), scope)
+    ]
 
 
 def _spent(usage: dict) -> str:
@@ -949,7 +981,7 @@ def render(
     # Read against a previous review alone: with none, no finding is fingerprinted.
     identities = _identified(outcome.kept) if previous is not None else [""] * len(outcome.kept)
     lines += _sections(checks, outcome, identities, previous)
-    resolved = _resolved(identities, verdict, previous)
+    resolved = _resolved(outcome, identities, verdict, previous, checks, evidence["scope"])
     if previous is not None and resolved is None:
         lines.append("- resolved since the previous review: none counted, since this review could not look at all")
     elif resolved is not None:
@@ -1326,7 +1358,7 @@ def as_data(
         ],
         # The previous review's findings no longer found, as it wrote them; None with no previous review, or where
         # this one has a hole, which resolves nothing.
-        "resolved": _resolved(identities, verdict, previous),
+        "resolved": _resolved(outcome, identities, verdict, previous, checks, evidence["scope"]),
         "could_not_look": {source: safe_line(why, REASON_MAX_CHARS) for source, why in outcome.errors.items()},
         "not_read": {safe_line(path): safe_line(why, REASON_MAX_CHARS) for path, why in outcome.unread.items()},
         "folded": [{**_found(item, added), "into": into.source} for item, into in outcome.folded],
