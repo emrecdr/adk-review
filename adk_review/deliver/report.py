@@ -504,7 +504,8 @@ def _ran(profile: str, model: str, checks: Sequence[str]) -> str:
 
 def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[list[str]]:
     """Each group of a comment, numbered: its lead's place, title and severity, the lines quoted, the change, and the
-    other defects on the same lines by title."""
+    other defects on the same lines by title, each with its own change where the point does not show it yet, as the
+    hand-off gives it. Read by review: a fix that was a folded finding's own, `check=True`, was in no comment."""
     points = []
     for number, (lead, *also) in enumerate(groups, 1):
         f = lead.finding
@@ -515,10 +516,12 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
             f"   - Suggested change: {prose(f.suggestion)}",
         ]
         others = [item for item in also if item.source not in tidies]
-        lines += [
-            f"   - Also on these lines: {prose(item.finding.title)} ({item.finding.severity})"
-            for item in others[:ALSO_SHOWN]
-        ]
+        shown = {f.suggestion}
+        for item in others[:ALSO_SHOWN]:
+            lines.append(f"   - Also on these lines: {prose(item.finding.title)} ({item.finding.severity})")
+            if (change := item.finding.suggestion) not in shown:
+                shown.add(change)
+                lines.append(f"     - Suggested change: {prose(change)}")
         if len(others) > ALSO_SHOWN:
             lines.append(f"   - Also on these lines: {len(others) - ALSO_SHOWN:,} more, which the report lists")
         points.append(lines)

@@ -35,8 +35,10 @@ def tier[V](table: Mapping[str, V], code: str) -> V | None:
 def fix_of(table: Mapping[str, str], code: str, offered: str | None, label: str | None = None) -> str:
     """Ruff's own fix when it offers one, with ruff's own label for it, else the code's or its family's sentence in
     `table`, else a pointer. Only ruff labels a fix: a reader, or a coding agent, sees which `ruff check --fix` would
-    apply unasked, and which needs `--unsafe-fixes` and a person's reading."""
-    if offered:
+    apply unasked, and which needs `--unsafe-fixes` and a person's reading. A display-only fix, which ruff never
+    applies, gives way where `table` names the code itself: read by review, PLW1510's `check=False` reached the
+    comment where the rule's own `check=True` did not, and kept unseen the failure the rule names."""
+    if offered and not (label == "displayonly" and code in table):
         return f"{offered} (a fix ruff labels {label})" if label else offered
     return tier(table, code) or f"see ruff rule {code}"
 

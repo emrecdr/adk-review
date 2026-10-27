@@ -401,6 +401,21 @@ class TestTheLintRule:
         assert fix_of(FIX, "E722", None) == FIX["E"], "a family sentence true of every code"
         assert fix_of(FIX, "RUF006", None) == FIX["RUF006"] and fix_of(FIX, "ZZZ9", None) == "see ruff rule ZZZ9"
 
+    def test_a_display_only_fix_gives_way_to_the_rules_own_sentence_for_its_code(self) -> None:
+        """Ruff never applies a display-only fix, `--unsafe-fixes` or not. Read by review, the outside audit's C2:
+        PLW1510's, `check=False`, reached the comment where `pitfalls`' own sentence, `check=True`, did not, though it
+        keeps unseen the failure the rule names. A fix ruff can apply keeps its label; a code the table names only by
+        its family keeps ruff's hint."""
+        from adk_review.judge.rule_helpers import fix_of
+        from adk_review.judge.rules.pitfalls import FIX
+
+        hint = "Add explicit `check=False`"
+        assert fix_of(FIX, "PLW1510", hint, "displayonly") == FIX["PLW1510"], "the rule's own sentence"
+        assert fix_of(FIX, "PLW1510", hint, "unsafe") == f"{hint} (a fix ruff labels unsafe)", "one ruff applies"
+        assert (
+            fix_of({"PLW": "a family's"}, "PLW1510", hint, "displayonly") == f"{hint} (a fix ruff labels displayonly)"
+        )
+
     def test_a_code_its_family_sentence_would_mislead_names_its_own_fix(self) -> None:
         """Read by review: every ASYNC code was told to move a blocking call, though ASYNC100 is a timeout block with
         no `await`, and every bandit code to use a call's safe form, though S105 is a password string and S110 an

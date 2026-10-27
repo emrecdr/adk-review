@@ -857,6 +857,30 @@ class TestThePreviousReportAndTheHandoff:
         said = render_comment(evidence, many, verdict="APPROVED", fail_on="blocker")
         assert said.count("   - Also on these lines:") <= 6 and "left out" not in said, said[-600:]
 
+    def test_a_folded_finding_shows_its_own_change_where_it_differs(self) -> None:
+        """Read by review, the outside audit's C2: `subprocess.run` with no `check` was folded under ruff's S603,
+        whose change is its family's, and `check=True`, the fix the author needed, was in no comment, though the
+        hand-off gave it. A change the point already shows is not repeated."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import render_comment
+
+        def found(source: str, title: str, change: str) -> Sourced:
+            made = Finding(
+                file="b.py", line=15, severity="minor", title=title, evidence="+run(argv)", suggestion=change
+            )
+            return Sourced(source, made, (15, 15))
+
+        family = "Use the safe form of the call. The security guideline weighs the rest."
+        lead = found("rule.lint", "lint: S603 a subprocess call", family)
+        same = found("rule.lint", "lint: S607 a partial executable path", family)
+        own = found("rule.pitfalls", "pitfalls: PLW1510 no check", "Pass check=True, or read the return code.")
+        outcome = Outcome(kept=[lead], folded=[(same, lead), (own, lead)])
+        evidence = {"preflight": {"head": "h", "head_sha": "0" * 40}}
+        said = render_comment(evidence, outcome, verdict="APPROVED", fail_on="blocker")
+        assert "Pass check=True, or read the return code." in said, said
+        assert said.count(family) == 1, said
+
     def test_a_quote_over_several_lines_keeps_its_shape_in_the_comment(self) -> None:
         """Read by review: in a live run 27 of the guidelines' 54 quotes spanned lines, and the comment flattened each
         into one, its code's shape lost. A quote over several lines is a fenced block under its item, each line as
