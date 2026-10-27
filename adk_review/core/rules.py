@@ -462,6 +462,8 @@ class Tree:
         """The same head with an outside tool's diagnostics by path: a view, nothing parsed again."""
         view = copy.copy(self)
         view.diagnostics = MappingProxyType(dict(found))
+        # Read by review: a view without tests another rule made first was copied too, and held no diagnostics.
+        view.__dict__.pop("without_tests", None)
         return view
 
     def changed_by(self, files: Iterable[Entry]) -> Tree:

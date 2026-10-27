@@ -2157,6 +2157,56 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         repo = self.branch(tmp_path, {"shop/plugin.py": kept}, {"shop/plugin.py": grown})
         assert self.found(repo) == []
 
+    def test_a_view_without_tests_another_rule_made_first_still_carries_the_diagnostics(self, tmp_path: Path) -> None:
+        """Read by review: a tree rule that reads no tests, the demo's among them, made the tree's view without tests
+        before this rule ran, and the copy that carries pyrefly's diagnostics kept that view, which held none: under
+        `--profile demo` the rule found nothing it found under `rules-only`."""
+        from adk_review.collect.git import collect_evidence
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.radius_types import RadiusTypes
+
+        renamed = self.REPO.replace("def get_user", "def fetch_user")
+        repo = self.branch(
+            tmp_path, {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE}, {"shop/repo.py": renamed}
+        )
+        evidence = collect_evidence(str(repo), BASE, "change")
+        assert evidence["tree"].without_tests is not None  # made first, as another rule would make it
+        answer = run_rules(evidence, [RadiusTypes()])["rule.radius-types"]
+        assert [(f.file, f.line) for f in answer.findings] == [("shop/service.py", 5)]
+
+    def test_an_absolute_import_in_a_src_layout_is_followed(self, tmp_path: Path) -> None:
+        """Read by review: pyrefly searched the tree's top alone, so in a `src/` layout `from pkg.mod import Repo` named
+        nothing, `Repo` read as `Any`, and the call it broke went unnamed, where a relative import's was named. The
+        folder above each top package is searched too, as Python's path holds it."""
+        user = "from pkg.mod import Repo\n\n\ndef load(repo: Repo) -> str:\n    return repo.get_user(3)\n"
+        files = {
+            "src/pkg/__init__.py": "",
+            "src/pkg/mod.py": self.REPO,
+            "src/pkg/user.py": user,
+            "src/pkg/rel.py": user.replace("from pkg.mod", "from .mod"),
+        }
+        renamed = self.REPO.replace("def get_user", "def fetch_user")
+        repo = self.branch(tmp_path, files, {"src/pkg/mod.py": renamed})
+        assert [(file, line) for file, line, _severity, _said in self.found(repo)] == [
+            ("src/pkg/rel.py", 5),
+            ("src/pkg/user.py", 5),
+        ]
+
+    def test_a_call_the_change_edited_and_broke_from_another_file_is_named(self, tmp_path: Path) -> None:
+        """Read by review: a new diagnostic on a line the change added was left to `types`, which reads each changed
+        file alone, an imported name as `Any`, so a branch that renamed a method and edited the call to it elsewhere
+        was approved by every rule. A call's or an attribute's on an added line is named here too."""
+        renamed = self.REPO.replace("def get_user", "def fetch_user")
+        edited = self.SERVICE.replace("get_user(3)", "get_user(4)")
+        repo = self.branch(
+            tmp_path,
+            {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE},
+            {"shop/repo.py": renamed, "shop/service.py": edited},
+        )
+        found = self.found(repo)
+        assert [(file, line) for file, line, _severity, _said in found] == [("shop/service.py", 5)], found
+        assert "missing-attribute" in found[0][3]
+
     def test_a_whole_project_has_no_base_to_compare_and_names_nothing(self, tmp_path: Path) -> None:
         broken = self.SERVICE.replace("get_user", "fetch_user")
         repo = self.branch(tmp_path, {"shop/repo.py": self.REPO}, {"shop/service.py": broken})

@@ -12,18 +12,34 @@ from types import MappingProxyType
 
 from ..rule_helpers import PER_FILE, Diagnostic, Entry, Hit, Tree, TreeRule
 
+#: The kinds named on a line the change added: what a call, an attribute or a value breaks across files, which `types`
+#: cannot see, reading each changed file alone. A definition's kind, `bad-override` among them, is the change's own.
+ON_ADDED_LINES = (
+    "missing-attribute",
+    "missing-argument",
+    "bad-argument-count",
+    "unexpected-keyword",
+    "bad-argument-type",
+    "not-callable",
+    "bad-return",
+    "bad-assignment",
+    "not-iterable",
+    "unsupported-operation",
+)
+
 
 class RadiusTypes(TreeRule):
     """Pyrefly runs over the head's Python files laid out as the head holds them, and over the same files as the base
     held them, each changed one rebuilt from its diff, with the reviewer's configuration: no installed package, no
     ignore comment honoured. A diagnostic is the change's where the head holds it and the base did not, told apart by
-    its file, kind and line's text; one on a line the change added is the `types` rule's, and a test's file is not
-    read. Measured over ADK, 31 method edits: 24 named, at 59 call sites and 4 kept lines of the edited file, none
-    wrongly; over this repository's last 195 commits, the package's own each type-checked by its CI, none named; and
-    on litellm, a parameter added first in `get_secret` shifted 11 calls' arguments that `callers` reads as fitting.
-    Known limits: code without types reads as `Any`, and a use of it is not checked; a name an installed package holds
-    reads as `Any` too; a tree the head's read did not hold whole is a floor; and code loaded by name, `importlib` or
-    `getattr`, is invisible to it."""
+    its file, kind and line's text; one on a line the change added is named where it is a call's or an attribute's,
+    which `types`, reading the file alone, cannot see across files, and a test's file is not read. Measured over ADK, 31
+    method edits: 24 named, at 59 call sites and 4 kept lines of the edited file, none wrongly; over this repository's
+    last 195 commits, none wrongly, and one true break named, a value that may be None passed where a string is taken,
+    which the next commit fixed; and on litellm, a parameter added first in `get_secret` shifted 11 calls' arguments
+    that `callers` reads as fitting. Known limits: code without types reads as `Any`, and a use of it is not checked; a
+    name an installed package holds reads as `Any` too; a tree the head's read did not hold whole is a floor; and code
+    loaded by name, `importlib` or `getattr`, is invisible to it."""
 
     id = "radius-types"
     severity = "major"
@@ -34,7 +50,7 @@ class RadiusTypes(TreeRule):
     title = "code the change left alone no longer type-checks"
     fix = "Change the code to fit what the change made, or keep what that code relied on."
     tool = "pyrefly-radius"
-    tool_settings = MappingProxyType({"ignored": ("missing-import", "parse-error")})
+    tool_settings = MappingProxyType({"ignored": ("missing-import", "parse-error"), "added_kinds": ON_ADDED_LINES})
 
     def needs_head(self, files: list[Entry]) -> bool:
         """A Python file the change modified, moved or removed: what depends on it is in the head alone."""

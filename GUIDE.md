@@ -462,20 +462,20 @@ the commit hook, run these lines in the repository to guard, in any shell git br
       mv "$hooks/pre-commit" "$hooks/pre-commit.before-adk-review"
     cat > "$hooks/pre-commit" <<'HOOK'
     #!/bin/sh
-    adk-review-commit || exit
     before="$(dirname "$0")/pre-commit.before-adk-review"
-    if [ -x "$before" ]; then "$before" "$@"; fi
+    if [ -x "$before" ]; then "$before" "$@" || exit; fi
+    adk-review-commit
     HOOK
     chmod +x "$hooks/pre-commit"
 
 They write the hook where the pre-push hook's lines write theirs, and keep a pre-commit hook already there beside it as
-`pre-commit.before-adk-review`, run after the review passes. The review reads the index git hands its hook, as
-`--staged` reads it, against `HEAD`, or the empty tree before a first commit: `git commit -a` and `git commit <paths>`
-stage into an index of their own, and the review reads that one. A commit that adds nothing to review, a message-only
-`--amend`, passes; any other exit but 0 stops the commit and prints why, a file no rule can read among them. `git commit
---no-verify` skips it, as it skips any hook. It costs what a push's review costs, at each commit. A repository that uses
-pre-commit names the hook `adk-review-commit` from this repository's `.pre-commit-hooks.yaml`, with pre-commit's own
-hook installed (`pre-commit install`).
+`pre-commit.before-adk-review`, run first, so what it stages is reviewed too; one that fails stops the commit before the
+review runs. The review reads the index git hands its hook, as `--staged` reads it, against `HEAD`, or the empty tree
+before a first commit: `git commit -a` and `git commit <paths>` stage into an index of their own, and the review reads
+that one. A commit that adds nothing to review, a message-only `--amend`, passes; any other exit but 0 stops the commit
+and prints why, a file no rule can read among them. `git commit --no-verify` skips it, as it skips any hook. It costs
+what a push's review costs, at each commit. A repository that uses pre-commit names the hook `adk-review-commit` from
+this repository's `.pre-commit-hooks.yaml`, with pre-commit's own hook installed (`pre-commit install`).
 
 ## More
 

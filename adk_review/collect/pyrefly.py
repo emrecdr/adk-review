@@ -179,13 +179,17 @@ type Found = tuple[str, str, str, int]
 type Ranged = tuple[Diagnostic, range]
 
 
-def radius(evidence: Change, ignored: Collection[str]) -> dict[str, list[Diagnostic]] | str:
+def radius(
+    evidence: Change, ignored: Collection[str], added_kinds: Collection[str]
+) -> dict[str, list[Diagnostic]] | str:
     """Pyrefly over the head's tree and the base's, each laid out as it is so an import finds what it names: by path,
     each diagnostic new at the head, of a kind not `ignored`, in a file the change left alone or on a line of a changed
-    file it did not add, which the `types` rule reads. Nothing under `--all` or `--try`, which have no base, where the
-    change only adds files, nor where the head was not read. Measured over ADK, 31 method edits: 24 named, none
-    wrongly, 0.5 s a run; over this repository's last 195 commits, none named: 37 before a test's file was left out,
-    34 of them in tests, and before a new diagnostic was charged first to the lines the change added."""
+    file it kept, and on a line it added where its kind is one of `added_kinds`, a call's or an attribute's, which the
+    `types` rule, reading each changed file alone, cannot see across files. Nothing under `--all` or `--try`, which have
+    no base, where the change only adds files, nor where the head was not read. Measured over ADK, 31 method edits: 24
+    named, none wrongly, 0.5 s a run; over this repository's last 195 commits, none wrongly, where 37 were before a
+    test's file was left out, 34 of them in tests, and before a new diagnostic was charged first to the lines the change
+    added; and one true break, a value that may be None passed where a string is taken, which the next commit fixed."""
     tree = evidence.get("tree")
     altered = any(
         f["status"] in ("M", "T", "R", "D") and f.get("old", f["path"]).endswith(".py") for f in evidence["files"]
@@ -210,7 +214,7 @@ def radius(evidence: Change, ignored: Collection[str]) -> dict[str, list[Diagnos
         return f"pyrefly exited {exc.returncode}: {squash(exc.stderr) or 'no reason given'}"
     except subprocess.TimeoutExpired:
         return f"pyrefly did not answer within {PYREFLY_TIMEOUT_S} s"
-    return _new(now, before, renamed, {f["path"]: f["added_at"] for f in evidence["files"]})
+    return _new(now, before, renamed, {f["path"]: f["added_at"] for f in evidence["files"]}, frozenset(added_kinds))
 
 
 def _base(head: Mapping[str, str], files: list[Entry]) -> tuple[dict[str, str], dict[str, str]]:
@@ -233,12 +237,15 @@ def _new(
     before: Mapping[Found, Ranged],
     renamed: Mapping[str, str],
     added: Mapping[str, Collection[int]],
+    added_kinds: Collection[str],
 ) -> dict[str, list[Diagnostic]]:
     """Each diagnostic at the head the base did not hold, by its file, kind and line's text, counted: where the head
     holds a key more often than the base did, the surplus is charged first to the diagnostics whose range meets a line
-    the change added, the change's own and the `types` rule's, and only what is left to a line it kept. Measured over
-    this repository's history: a class the change added above two whose `def` lines read as its own had one of theirs
-    named, where its own was the new one."""
+    the change added, and only what is left to a line it kept. Measured over this repository's history: a class the
+    change added above two whose `def` lines read as its own had one of theirs named, where its own was the new one. One
+    on an added line is named where its kind is one of `added_kinds`: read by review, a branch that renamed a method and
+    edited the call to it in another file was approved by every rule; a definition's kind there, an `@override` over a
+    parent no installed package shows, is the change's own."""
     seen = Counter((renamed.get(path, path), kind, line) for path, kind, line, _order in before)
     grouped: defaultdict[tuple[str, str, str], list[Ranged]] = defaultdict(list)
     for (path, kind, line, _order), ranged in now.items():
@@ -246,10 +253,15 @@ def _new(
     found: dict[str, list[Diagnostic]] = {}
     for (path, kind, line), items in sorted(grouped.items()):
         mine = set(added.get(path, ()))
-        kept = sorted((diagnostic for diagnostic, lines in items if not mine & set(lines)), key=lambda d: d.line)
-        surplus = len(kept) - seen[path, kind, line]  # the new ones the added lines do not hold
-        if surplus > 0:
-            found.setdefault(path, []).extend(kept[-surplus:])
+        on_added = sorted((d for d, lines in items if mine & set(lines)), key=lambda d: d.line)
+        kept = sorted((d for d, lines in items if not mine & set(lines)), key=lambda d: d.line)
+        new = len(items) - seen[path, kind, line]
+        if new <= 0:
+            continue
+        named = on_added[:new] if kind in added_kinds else []
+        named += kept[len(kept) - (new - len(on_added)) :] if new > len(on_added) else []
+        if named:
+            found.setdefault(path, []).extend(named)
     return {path: sorted(items, key=lambda d: d.line) for path, items in found.items()}
 
 
@@ -260,7 +272,8 @@ def _whole(pyrefly: str, texts: Mapping[str, str], ignored: Collection[str]) -> 
         rows = written(tmp, texts)
         if not rows:  # no file an import could name: nothing to check, where pyrefly would refuse an empty project
             return {}
-        Path(tmp, "pyrefly.toml").write_text(CONFIG, encoding="utf-8")
+        searched = f"search-path = {json.dumps(_roots(rows))}"
+        Path(tmp, "pyrefly.toml").write_text(CONFIG.replace('search-path = ["."]', searched), encoding="utf-8")
         argv = [pyrefly, "check", "-c", "pyrefly.toml", "--output-format", "json", "--summary=none", "--progress-bar"]
         answer, said = _answer([*argv, "no"], tmp)
     if _UNTAKEN in said:
@@ -286,6 +299,19 @@ def _whole(pyrefly: str, texts: Mapping[str, str], ignored: Collection[str]) -> 
             range(_decorated(rows[path], number), stop + 1),
         )
     return found
+
+
+def _roots(paths: Collection[str]) -> list[str]:
+    """Where an import starts, as Python's path holds it: the tree's top, and the folder above each top package, `src`
+    in a `src/` layout. Read by review: with the top alone, `from pkg.mod import Repo` there named nothing, `Repo` read
+    as `Any`, and the call the change broke through it went unnamed."""
+    packages = {PurePosixPath(path).parent for path in paths if PurePosixPath(path).name == "__init__.py"}
+    roots = {"."}
+    for folder in packages:
+        while folder.parent in packages:
+            folder = folder.parent
+        roots.add(folder.parent.as_posix())
+    return sorted(roots)
 
 
 def _decorated(rows: Rows, number: int) -> int:

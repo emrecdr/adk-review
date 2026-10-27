@@ -1280,7 +1280,8 @@ def test_the_install_recipe_keeps_the_hook_it_finds_and_hands_both_gits_lines(tm
 
 def test_the_commit_hooks_install_recipe_keeps_the_hook_it_finds(tmp_path) -> None:
     """The guide's lines for the commit hook keep a pre-commit hook already there, as the push hook's keep Git LFS's,
-    and run it after the review passes, never after one that stopped the commit."""
+    and run it first, the review last: read by review, a hook that formats and stages files ran after the review, and
+    what it staged was committed unreviewed. A hook that fails stops the commit before the review runs."""
     import re
 
     guide = ROOT.joinpath("GUIDE.md").read_text(encoding="utf-8")
@@ -1296,7 +1297,11 @@ def test_the_commit_hooks_install_recipe_keeps_the_hook_it_finds(tmp_path) -> No
     _git_in(work, "init", "-q", "-b", "main")
     hooks = work / ".git" / "hooks"
     hooks.mkdir(exist_ok=True)
-    (hooks / "pre-commit").write_text(f'#!/bin/sh\ntouch "{at}/before.ran"\n', encoding="utf-8", newline="\n")
+    before = (
+        f'#!/bin/sh\n[ -e "{at}/review.ran" ] && touch "{at}/review.first"\n'
+        f'touch "{at}/before.ran"\nexit "${{BEFORE_EXIT:-0}}"\n'
+    )
+    (hooks / "pre-commit").write_text(before, encoding="utf-8", newline="\n")
     (hooks / "pre-commit").chmod(0o755)
     reviewed = bin_ / "adk-review-commit"
     reviewed.write_text(
@@ -1308,9 +1313,14 @@ def test_the_commit_hooks_install_recipe_keeps_the_hook_it_finds(tmp_path) -> No
     hook = [sh, (hooks / "pre-commit").as_posix()]  # as git runs a hook
     assert subprocess.run(hook, cwd=work, env=env, check=False).returncode == 0
     assert (tmp_path / "review.ran").exists() and (tmp_path / "before.ran").exists()
-    (tmp_path / "before.ran").unlink()
+    assert not (tmp_path / "review.first").exists(), "the hook already there runs first, the review last"
+    for ran in ("review.ran", "before.ran"):
+        (tmp_path / ran).unlink()
     stopped = subprocess.run(hook, cwd=work, env={**env, "REVIEW_EXIT": "1"}, check=False)
-    assert stopped.returncode == 1 and not (tmp_path / "before.ran").exists(), "a stopped commit runs nothing after"
+    assert stopped.returncode == 1, "the review stops the commit"
+    (tmp_path / "review.ran").unlink()
+    failed = subprocess.run(hook, cwd=work, env={**env, "BEFORE_EXIT": "1"}, check=False)
+    assert failed.returncode == 1 and not (tmp_path / "review.ran").exists(), "a hook that fails stops it first"
     subprocess.run([sh, "-c", script], cwd=work, env=env, check=True)
     assert not (hooks / "pre-commit.before-adk-review").read_text().count("adk-review-commit"), "run again, it keeps"
 
