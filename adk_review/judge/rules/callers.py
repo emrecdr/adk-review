@@ -71,7 +71,8 @@ class Callers(TreeRule):
         for item in python:
             # A file the change adds whole defines nothing that was there, unless a name it defines was removed
             # elsewhere: measured, parsing each new file took 433 ms of ADK's whole review for nothing.
-            if (item["status"] == "A" and not gone) or (module := parse(item["text"])) is None:
+            text = item["text"] or ""  # read, as the check above holds
+            if (item["status"] == "A" and not gone) or (module := parse(text)) is None:
                 continue
             for name, (_function, statement) in _touched(module, item["added_at"]).items():
                 if name in gone or not _span(statement) <= item["added_at"]:
