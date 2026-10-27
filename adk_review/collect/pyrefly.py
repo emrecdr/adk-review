@@ -11,6 +11,7 @@ up to 5 s. What the diagnostics mean, a kind kept and its severity, is the rule'
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
@@ -19,7 +20,7 @@ import sysconfig
 import tempfile
 import threading
 from collections import Counter, defaultdict
-from collections.abc import Collection, Mapping
+from collections.abc import Callable, Collection, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePath, PurePosixPath
 
@@ -38,7 +39,6 @@ PYREFLY_ANSWER_MAX_BYTES = 64_000_000
 #: pyrefly falls back to its `basic` preset; and asked, an interpreter on PATH types a branch against the reviewer's own
 #: installed packages, where a reviewed project's are not.
 CONFIG = """\
-search-path = ["."]
 disable-search-path-heuristics = true
 site-packages-path = []
 skip-interpreter-query = true
@@ -99,7 +99,7 @@ def _run(
     raises for `diagnose` to name. A folder that will not go is left to the system's own cleaning, as ruff's is."""
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
         targets, sources = laid_out(tmp, texts)
-        Path(tmp, "pyrefly.toml").write_text(CONFIG, encoding="utf-8")
+        Path(tmp, "pyrefly.toml").write_text(_config((".",)), encoding="utf-8")
         argv = [pyrefly, "check", "-c", "pyrefly.toml", "--output-format", "json", "--summary=none"]
         answer, said = _answer([*argv, "--progress-bar", "no", *targets], tmp)
     if _UNTAKEN in said:  # the configuration is the rule's guarantee: one not taken whole is no look
@@ -203,9 +203,12 @@ def radius(
     base, renamed = _base(head, evidence["files"])
     try:
         # The two runs side by side: measured on ADK's 815 files, one after the other added 2.2 s to a push's review.
+        # One set of roots for both runs, from both trees: found apart, a branch that added a package's first
+        # `__init__.py` gave the head a root the base lacked, and a call broken before it read as the change's.
+        roots = _roots({*head, *base})
         with ThreadPoolExecutor(max_workers=2) as pool:
-            later = pool.submit(_whole, pyrefly, base, ignored)
-            now, before = _whole(pyrefly, head, ignored), later.result()
+            later = pool.submit(_whole, pyrefly, base, ignored, roots)
+            now, before = _whole(pyrefly, head, ignored, roots), later.result()
     except OSError as exc:
         return f"pyrefly could not run on the head's tree ({exc.strerror or type(exc).__name__})"
     except _UnreadError as why:
@@ -214,7 +217,15 @@ def radius(
         return f"pyrefly exited {exc.returncode}: {squash(exc.stderr) or 'no reason given'}"
     except subprocess.TimeoutExpired:
         return f"pyrefly did not answer within {PYREFLY_TIMEOUT_S} s"
-    return _new(now, before, renamed, {f["path"]: f["added_at"] for f in evidence["files"]}, frozenset(added_kinds))
+    touched = {f["path"] for f in evidence["files"]} | {f["old"] for f in evidence["files"] if "old" in f}
+    imports = tree.imports  # bound where the tree is known to be read
+
+    @functools.cache
+    def reaches(path: str) -> bool:  # an import of another file the change touched: a cause elsewhere
+        return any(file != path and file in touched for file, _name in imports(path).values())
+
+    added = {f["path"]: f["added_at"] for f in evidence["files"]}
+    return _new(now, before, renamed, added, frozenset(added_kinds), reaches)
 
 
 def _base(head: Mapping[str, str], files: list[Entry]) -> tuple[dict[str, str], dict[str, str]]:
@@ -238,42 +249,47 @@ def _new(
     renamed: Mapping[str, str],
     added: Mapping[str, Collection[int]],
     added_kinds: Collection[str],
+    reaches: Callable[[str], bool],
 ) -> dict[str, list[Diagnostic]]:
     """Each diagnostic at the head the base did not hold, by its file, kind and line's text, counted: where the head
     holds a key more often than the base did, the surplus is charged first to the diagnostics whose range meets a line
     the change added, and only what is left to a line it kept. Measured over this repository's history: a class the
     change added above two whose `def` lines read as its own had one of theirs named, where its own was the new one. One
-    on an added line is named where its kind is one of `added_kinds`: read by review, a branch that renamed a method and
-    edited the call to it in another file was approved by every rule; a definition's kind there, an `@override` over a
-    parent no installed package shows, is the change's own."""
+    on an added line is named where its kind is one of `added_kinds` and its file `reaches` another the change touched:
+    read by review, a branch that renamed a method and edited the call to it in another file was approved by every
+    rule; and named for any file, a defect within the one file `types` reads and grades was named at major, and a new
+    file's beside an unrelated change."""
     seen = Counter((renamed.get(path, path), kind, line) for path, kind, line, _order in before)
     grouped: defaultdict[tuple[str, str, str], list[Ranged]] = defaultdict(list)
     for (path, kind, line, _order), ranged in now.items():
         grouped[path, kind, line].append(ranged)
     found: dict[str, list[Diagnostic]] = {}
     for (path, kind, line), items in sorted(grouped.items()):
-        mine = set(added.get(path, ()))
-        on_added = sorted((d for d, lines in items if mine & set(lines)), key=lambda d: d.line)
-        kept = sorted((d for d, lines in items if not mine & set(lines)), key=lambda d: d.line)
         new = len(items) - seen[path, kind, line]
         if new <= 0:
             continue
-        named = on_added[:new] if kind in added_kinds else []
-        named += kept[len(kept) - (new - len(on_added)) :] if new > len(on_added) else []
+        mine = set(added.get(path, ()))
+        ordered = sorted(items, key=lambda ranged: ranged[0].line)
+        on_added = [diagnostic for diagnostic, lines in ordered if not mine.isdisjoint(lines)]
+        kept = [diagnostic for diagnostic, lines in ordered if mine.isdisjoint(lines)]
+        surplus = len(kept) - seen[path, kind, line]  # the new ones the added lines do not hold
+        named = on_added[:new] if on_added and kind in added_kinds and reaches(path) else []
+        named += kept[-surplus:] if surplus > 0 else []
         if named:
             found.setdefault(path, []).extend(named)
-    return {path: sorted(items, key=lambda d: d.line) for path, items in found.items()}
+    return {path: sorted(items, key=lambda diagnostic: diagnostic.line) for path, items in found.items()}
 
 
-def _whole(pyrefly: str, texts: Mapping[str, str], ignored: Collection[str]) -> dict[Found, Ranged]:
+def _whole(
+    pyrefly: str, texts: Mapping[str, str], ignored: Collection[str], roots: Sequence[str]
+) -> dict[Found, Ranged]:
     """Pyrefly over `texts` laid out as one tree with the reviewer's configuration: each diagnostic of a kind not
     `ignored`, by its key and the order pyrefly gave it in, on git's line, with the lines its range covers."""
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-        rows = written(tmp, texts)
-        if not rows:  # no file an import could name: nothing to check, where pyrefly would refuse an empty project
+        laid = written(tmp, texts)
+        if not laid:  # no file an import could name: nothing to check, where pyrefly would refuse an empty project
             return {}
-        searched = f"search-path = {json.dumps(_roots(rows))}"
-        Path(tmp, "pyrefly.toml").write_text(CONFIG.replace('search-path = ["."]', searched), encoding="utf-8")
+        Path(tmp, "pyrefly.toml").write_text(_config(roots), encoding="utf-8")
         argv = [pyrefly, "check", "-c", "pyrefly.toml", "--output-format", "json", "--summary=none", "--progress-bar"]
         answer, said = _answer([*argv, "no"], tmp)
     if _UNTAKEN in said:
@@ -286,10 +302,15 @@ def _whole(pyrefly: str, texts: Mapping[str, str], ignored: Collection[str]) -> 
             f"pyrefly's answer could not be read ({type(exc).__name__}): {squash(said) or 'no reason'}"
         ) from exc
     found: dict[Found, Ranged] = {}
+    rows: dict[
+        str, Rows
+    ] = {}  # a file's lines, made where pyrefly names one: measured, every file's took 47% of the write
     for index, error in enumerate(errors):
-        path = _written_as(error["path"], rows)
+        path = _written_as(error["path"], laid)
         if error["name"] in ignored or path is None:
             continue
+        if path not in rows:
+            rows[path] = rows_of(texts[path])
         number, line = rows[path].place(error["line"])
         stop = rows[path].place(error.get("stop_line") or error["line"])[0]
         message = _LITERAL.sub("'…'", squash(error["concise_description"]))
@@ -302,16 +323,21 @@ def _whole(pyrefly: str, texts: Mapping[str, str], ignored: Collection[str]) -> 
 
 
 def _roots(paths: Collection[str]) -> list[str]:
-    """Where an import starts, as Python's path holds it: the tree's top, and the folder above each top package, `src`
-    in a `src/` layout. Read by review: with the top alone, `from pkg.mod import Repo` there named nothing, `Repo` read
-    as `Any`, and the call the change broke through it went unnamed."""
+    """Where an import starts, as Python's path holds it: the tree's top, and the folder above each top package, one
+    whose own folder is no package, `src` in a `src/` layout. Read by review: with the top alone, `from pkg.mod import
+    Repo` there named nothing, `Repo` read as `Any`, and the call the change broke through it went unnamed; and a loop
+    up the folders never ended at a package at the tree's top, whose folder's folder is itself."""
     packages = {PurePosixPath(path).parent for path in paths if PurePosixPath(path).name == "__init__.py"}
-    roots = {"."}
-    for folder in packages:
-        while folder.parent in packages:
-            folder = folder.parent
-        roots.add(folder.parent.as_posix())
-    return sorted(roots)
+    tops = {folder.parent for folder in packages if folder.parent not in packages}
+    # A folder inside a package is never where an import starts, though it holds no `__init__.py`: read by review, 60
+    # such on litellm shadowed installed packages. The tree's top aside, which a package there may be.
+    return sorted({".", *(top.as_posix() for top in tops if not any(up in packages for up in top.parents[:-1]))})
+
+
+def _config(roots: Sequence[str]) -> str:
+    """The reviewer's configuration with where an import starts: the tree's top for a file alone, each root over a
+    tree."""
+    return f"search-path = {json.dumps(list(roots))}\n{CONFIG}"
 
 
 def _decorated(rows: Rows, number: int) -> int:
@@ -326,20 +352,20 @@ def _decorated(rows: Rows, number: int) -> int:
     return number
 
 
-def _written_as(reported: str, rows: Mapping[str, Rows]) -> str | None:
+def _written_as(reported: str, laid: Collection[str]) -> str | None:
     """The path a file was written at, read off the end of the path pyrefly reports, however it spells the folder: on
     Windows, a temporary folder has a short name and a long one, and `_parsed` reads the index the same way."""
     parts = PurePath(reported).parts
-    return next((path for k in range(len(parts)) if (path := "/".join(parts[k:])) in rows), None)
+    return next((path for k in range(len(parts)) if (path := "/".join(parts[k:])) in laid), None)
 
 
-def written(folder: str, texts: Mapping[str, str]) -> dict[str, Rows]:
+def written(folder: str, texts: Mapping[str, str]) -> set[str]:
     """Each file Python could import by its path, written into `folder` at that path, the tree laid out as the head
-    holds it, with its lines by path. Never a path outside the folder, a device name Windows holds, or one that another
+    holds it. Never a path outside the folder, a device name Windows holds, or one that another
     differs from only in case: a branch names its own paths, and no import reaches a file by any of them. A file the
-    disk refuses is left out, as a file the head's read left out is."""
+    disk refuses is left out, as a file the head's read left out is. The paths written."""
     folded = Counter(path.casefold() for path in texts)
-    rows: dict[str, Rows] = {}
+    laid: set[str] = set()
     for path, text in texts.items():
         parts = PurePosixPath(path).parts
         names = [*parts[:-1], parts[-1].removesuffix(".py")] if parts and path.endswith(".py") else []
@@ -353,8 +379,8 @@ def written(folder: str, texts: Mapping[str, str]) -> dict[str, Rows]:
             target.write_text(text, encoding="utf-8", newline="")
         except OSError:
             continue
-        rows[path] = rows_of(text)
-    return rows
+        laid.add(path)
+    return laid
 
 
 def identity() -> str:

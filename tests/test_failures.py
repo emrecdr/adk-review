@@ -33,6 +33,7 @@ from conftest import (
     _github_answers,
     _held_on_windows,
     _pushed_from,
+    _script,
     _with_profiles,
     confirms,
     judge_module,
@@ -1257,14 +1258,8 @@ def test_the_install_recipe_keeps_the_hook_it_finds_and_hands_both_gits_lines(tm
     _git_in(work, "init", "-q", "-b", "main")
     hooks = work / ".git" / "hooks"
     hooks.mkdir(exist_ok=True)
-    before = f'#!/bin/sh\ncat > "{at}/before.in"\necho "$@" > "{at}/before.args"\n'
-    (hooks / "pre-push").write_text(before, encoding="utf-8", newline="\n")
-    (hooks / "pre-push").chmod(0o755)
-    reviewed = bin_ / "adk-review-push"
-    reviewed.write_text(
-        f'#!/bin/sh\ncat > "{at}/review.in"\nexit "${{REVIEW_EXIT:-0}}"\n', encoding="utf-8", newline="\n"
-    )
-    reviewed.chmod(0o755)
+    _script(hooks / "pre-push", f'cat > "{at}/before.in"\necho "$@" > "{at}/before.args"\n')
+    _script(bin_ / "adk-review-push", f'cat > "{at}/review.in"\nexit "${{REVIEW_EXIT:-0}}"\n')
     env = {**os.environ, "PATH": f"{bin_}{os.pathsep}{os.environ['PATH']}", "GIT_CONFIG_GLOBAL": os.devnull}
     subprocess.run([sh, "-c", script], cwd=work, env=env, check=True)
     lines = f"refs/heads/main {'a' * 40} refs/heads/main {'0' * 40}\n"
@@ -1298,16 +1293,10 @@ def test_the_commit_hooks_install_recipe_keeps_the_hook_it_finds(tmp_path) -> No
     hooks = work / ".git" / "hooks"
     hooks.mkdir(exist_ok=True)
     before = (
-        f'#!/bin/sh\n[ -e "{at}/review.ran" ] && touch "{at}/review.first"\n'
-        f'touch "{at}/before.ran"\nexit "${{BEFORE_EXIT:-0}}"\n'
+        f'[ -e "{at}/review.ran" ] && touch "{at}/review.first"\ntouch "{at}/before.ran"\nexit "${{BEFORE_EXIT:-0}}"\n'
     )
-    (hooks / "pre-commit").write_text(before, encoding="utf-8", newline="\n")
-    (hooks / "pre-commit").chmod(0o755)
-    reviewed = bin_ / "adk-review-commit"
-    reviewed.write_text(
-        f'#!/bin/sh\ntouch "{at}/review.ran"\nexit "${{REVIEW_EXIT:-0}}"\n', encoding="utf-8", newline="\n"
-    )
-    reviewed.chmod(0o755)
+    _script(hooks / "pre-commit", before)
+    _script(bin_ / "adk-review-commit", f'touch "{at}/review.ran"\nexit "${{REVIEW_EXIT:-0}}"\n')
     env = {**os.environ, "PATH": f"{bin_}{os.pathsep}{os.environ['PATH']}", "GIT_CONFIG_GLOBAL": os.devnull}
     subprocess.run([sh, "-c", script], cwd=work, env=env, check=True)
     hook = [sh, (hooks / "pre-commit").as_posix()]  # as git runs a hook

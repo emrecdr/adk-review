@@ -2081,6 +2081,7 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
     the review acts on the blast radius, for every side effect code can decide."""
 
     REPO = "class Repo:\n    def get_user(self, uid: int) -> str:\n        return str(uid)\n"
+    RENAMED = REPO.replace("def get_user", "def fetch_user")
     SERVICE = "from shop.repo import Repo\n\n\ndef load(repo: Repo) -> str:\n    return repo.get_user(3)\n"
 
     @staticmethod
@@ -2109,7 +2110,7 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
     def test_a_method_the_change_renamed_is_named_where_a_file_it_left_alone_calls_it(self, tmp_path: Path) -> None:
         """Measured over ADK, 31 method edits: 24 named, at 59 call sites and 4 kept lines of the edited file, none
         wrongly; over this repository's last 195 commits, the package's own each type-checked by its CI, none named."""
-        renamed = self.REPO.replace("def get_user", "def fetch_user")
+        renamed = self.RENAMED
         repo = self.branch(
             tmp_path, {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE}, {"shop/repo.py": renamed}
         )
@@ -2165,13 +2166,14 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         from adk_review.judge.checks import run_rules
         from adk_review.judge.rules.radius_types import RadiusTypes
 
-        renamed = self.REPO.replace("def get_user", "def fetch_user")
+        renamed = self.RENAMED
         repo = self.branch(
             tmp_path, {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE}, {"shop/repo.py": renamed}
         )
         evidence = collect_evidence(str(repo), BASE, "change")
         assert evidence["tree"].without_tests is not None  # made first, as another rule would make it
         answer = run_rules(evidence, [RadiusTypes()])["rule.radius-types"]
+        assert answer.could_not_look is None, answer.could_not_look
         assert [(f.file, f.line) for f in answer.findings] == [("shop/service.py", 5)]
 
     def test_an_absolute_import_in_a_src_layout_is_followed(self, tmp_path: Path) -> None:
@@ -2185,7 +2187,7 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
             "src/pkg/user.py": user,
             "src/pkg/rel.py": user.replace("from pkg.mod", "from .mod"),
         }
-        renamed = self.REPO.replace("def get_user", "def fetch_user")
+        renamed = self.RENAMED
         repo = self.branch(tmp_path, files, {"src/pkg/mod.py": renamed})
         assert [(file, line) for file, line, _severity, _said in self.found(repo)] == [
             ("src/pkg/rel.py", 5),
@@ -2196,7 +2198,7 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         """Read by review: a new diagnostic on a line the change added was left to `types`, which reads each changed
         file alone, an imported name as `Any`, so a branch that renamed a method and edited the call to it elsewhere
         was approved by every rule. A call's or an attribute's on an added line is named here too."""
-        renamed = self.REPO.replace("def get_user", "def fetch_user")
+        renamed = self.RENAMED
         edited = self.SERVICE.replace("get_user(3)", "get_user(4)")
         repo = self.branch(
             tmp_path,
@@ -2206,6 +2208,42 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         found = self.found(repo)
         assert [(file, line) for file, line, _severity, _said in found] == [("shop/service.py", 5)], found
         assert "missing-attribute" in found[0][3]
+
+    def test_the_import_roots_are_one_set_for_both_runs_and_a_top_package_ends_them(self, tmp_path: Path) -> None:
+        """Read by review: an `__init__.py` at the tree's top made the search for roots loop forever, and both hooks
+        with it; and the roots were found apart for each run, so a branch that added a package's first `__init__.py`
+        was blamed for a call that was broken before it."""
+        from adk_review.collect.pyrefly import _roots
+
+        assert _roots(["__init__.py", "mod.py"]) == ["."], "a package at the top: no folder above it to search"
+        assert _roots(["src/pkg/__init__.py", "src/pkg/sub/__init__.py", "tools/run.py"]) == [".", "src"]
+        # Read by review: a folder with no `__init__.py` inside a package, a namespace portion, was a root, 60 of them
+        # on litellm, and its folders shadowed installed packages: `import openai` named litellm's own `llms/openai`.
+        assert _roots(["pkg/__init__.py", "pkg/llms/openai/__init__.py", "pkg/llms/azure/__init__.py"]) == ["."]
+        assert _roots(["__init__.py", "src/pkg/__init__.py"]) == [".", "src"], "a top package keeps `src` a root"
+        broken = "from pkg.mod import Repo\n\n\ndef load(repo: Repo) -> str:\n    return repo.fetch_user(3)\n"
+        files = {"src/pkg/mod.py": self.REPO, "src/pkg/user.py": broken, "other.py": "x = 1\n"}
+        repo = self.branch(tmp_path, files, {"src/pkg/__init__.py": "", "other.py": "x = 2\n"})
+        assert self.found(repo) == [], "broken before the change, which only made the folder a package"
+
+    def test_a_defect_on_an_added_line_with_no_cause_in_another_changed_file_is_left_to_types(
+        self, tmp_path: Path
+    ) -> None:
+        """Read by review: an added line has no base to compare, so every diagnostic of a call's kind on one was named
+        at major, a defect within the one file `types` reads and grades among them, and a new file's beside an
+        unrelated change. One is named only where its file imports another file the change touched: a cause
+        elsewhere."""
+        util = "def f(x: int) -> int:\n    return x\n"
+        repo = self.branch(
+            tmp_path,
+            {"shop/util.py": util, "shop/other.py": "x = 1\n"},
+            {
+                "shop/util.py": util + '\n\ny: int = "a"\nf("a")\n',
+                "shop/new.py": 'z: int = "a"\n',
+                "shop/other.py": "x = 2\n",
+            },
+        )
+        assert self.found(repo) == []
 
     def test_a_whole_project_has_no_base_to_compare_and_names_nothing(self, tmp_path: Path) -> None:
         broken = self.SERVICE.replace("get_user", "fetch_user")
@@ -2248,7 +2286,7 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
 
         monkeypatch.setattr(pyrefly, "beside", lambda: None)
         monkeypatch.setattr(pyrefly, "on_path", lambda name: name)
-        renamed = self.REPO.replace("def get_user", "def fetch_user")
+        renamed = self.RENAMED
         repo = self.branch(
             tmp_path, {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE}, {"shop/repo.py": renamed}
         )

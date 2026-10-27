@@ -345,6 +345,14 @@ def _git_shell() -> str:
     return found
 
 
+def _script(path: Path, body: str) -> Path:
+    """A POSIX shell script at `path`, `body` after its `#!/bin/sh` line, written with "\\n" line ends and made
+    executable: a "\\r" a Windows text write puts after `#!/bin/sh` names no shell, and git runs no hook it cannot."""
+    path.write_text(f"#!/bin/sh\n{body}", encoding="utf-8", newline="\n")
+    path.chmod(0o755)
+    return path
+
+
 def _committed(repo: Path, name: str, text: str | bytes = "x = 1\n", message: str = "") -> str:
     """`name` written with `text` in `repo`, its folder made, and committed, by `message` or its name: the commit's
     id. Bytes are written as they are, for a file git reads as binary."""

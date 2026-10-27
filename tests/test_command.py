@@ -703,8 +703,6 @@ class TestThePreviousReportAndTheHandoff:
     ) -> None:
         """Asked by the owner: `--handoff` alone writes the hand-off where the command runs, named as the comment is,
         `handoff-<repo>__<base>__<head>__<minute>.md`; one run writes both, at the same minute."""
-        import re
-
         monkeypatch.chdir(tmp_path)
         assert run_review(cli, demo_repo, "--profile", "default-rules", "--comment", "--handoff") == 1
         (handoff,), (comment,) = tmp_path.glob("handoff-*.md"), tmp_path.glob("comments-*.md")
@@ -1463,7 +1461,7 @@ class TestWhatTheCommandTells:
             "- Fix the 2 findings at or above `--fail-on blocker`. Commit the fixes: a review reads commits, not the "
             "files on disk. Then review that commit.",
             "- 1 finding below the bar is worth a look.",
-            "- `adk-review --comment` writes them as a comment to paste by hand, `--handoff FILE` for a coding agent.",
+            "- `adk-review --comment` writes them as a comment to paste by hand, `--handoff` for a coding agent.",
         ], "the report's last section"
         assert _long([("the next steps", steps)]) == []
 

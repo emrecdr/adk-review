@@ -47,7 +47,7 @@ the steps:
    answer left in state as each guideline's is; a profile with no guideline
    runs them straight from here, as `--try` does, the engine never imported.
 9. Reports beside the text one, under its safety rules: JSON for a pipeline
-   (`--json FILE`) and a hand-off for a coding agent (`--handoff FILE`), both
+   (`--json FILE`) and a hand-off for a coding agent (`--handoff [FILE]`), both
    written whenever a review is decided, so never on exit 2.
 
 The order is the architecture: deterministic evidence and rules first, model
@@ -572,7 +572,7 @@ def _terminated(_signal: int, _frame: object) -> None:
 
 
 def _cleared(flag: str, given: str) -> None:
-    """`--json FILE`, `--handoff FILE` or `--comment FILE` made ready before the review: a missing folder or a
+    """`--json FILE`, `--handoff [FILE]` or `--comment [FILE]` made ready before the review: a missing folder or a
     folder refused, and an earlier file of that name removed, a link itself and never what it points to, so a run that
     ends in exit 2 leaves no report a pipeline could take for its own. Measured before: an earlier file outlived exit
     2, and a link was written through."""

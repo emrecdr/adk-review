@@ -28,6 +28,7 @@ from conftest import (
     _git_shell,
     _link_on_branch,
     _link_staged,
+    _script,
     gathered,
     missing_objects,
     run_review,
@@ -396,9 +397,7 @@ class TestGitPastItsTimeout:
         _git_shell()  # git runs the monitor through a POSIX shell; with none here, nothing is shown
         repo, marker = _branch_off_empty(tmp_path / "repo", "change"), tmp_path / "started"
         _committed(repo, "a.py")
-        monitor = tmp_path / "monitor.sh"
-        monitor.write_text(f"#!/bin/sh\necho started >> '{marker.as_posix()}'\n", encoding="utf-8", newline="\n")
-        monitor.chmod(0o755)
+        monitor = _script(tmp_path / "monitor.sh", f"echo started >> '{marker.as_posix()}'\n")
         _git_in(repo, "config", "core.fsmonitor", monitor.as_posix())
         _git_in(repo, "status", "--porcelain")
         assert marker.exists(), "git's own status started the monitor: it can run here"

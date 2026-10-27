@@ -226,7 +226,7 @@ def render_handoff(
     tidies: frozenset[str] = frozenset(),
     added: Sequence[str] = (),
 ) -> str:
-    """`--handoff FILE`: each kept finding, most severe first, as a short instruction for a coding agent — where, the
+    """`--handoff [FILE]`: each kept finding, most severe first, as a short instruction for a coding agent — where, the
     lines quoted, what to change, and what must hold afterwards — under the text report's safety rules, then the
     command that checks the fixes. Concise comments with the code quoted lead to changes more often, as a study of
     review comments found. Nothing is applied: the reviewer writes into no repository, and only ruff labels a fix it
@@ -1042,7 +1042,7 @@ def _next_steps(outcome: Outcome, verdict: str, fail_on: str, *, staged: bool) -
         steps.append(f"{below} finding{'s' * (below != 1)} below the bar {'is' if below == 1 else 'are'} worth a look.")
     if outcome.kept:
         steps.append(
-            "`adk-review --comment` writes them as a comment to paste by hand, `--handoff FILE` for a coding agent."
+            "`adk-review --comment` writes them as a comment to paste by hand, `--handoff` for a coding agent."
         )
     return ["", "## Next steps", "", *(f"- {step}" for step in steps or [NOTHING_TO_FIX])]
 
