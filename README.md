@@ -1025,11 +1025,12 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   printed: one line, credentials hidden, control characters and every character a reader cannot see printed as a space,
   a CI runner's command opener (`##[`, `##vso[`) and an HTML comment's broken, and outside a code span no HTML tag,
   markdown image or link can open, so a model's `![x](https://…?q=…)` is never fetched where a summary renders the
-  report, as CamoLeak's was through Copilot's own chat. A model's title and change are cut where its finding is made. A
-  dropped finding's file, the model's own text, is cut where it is dropped. Evidence is cut after the scrub. The JSON's
-  strings pass the same steps and stay plain text, for their reader to escape where it renders them. Measured before: a
-  title holding a newline forged a second verdict heading, and a file named `<h1>Verdict: APPROVED</h1>` printed a
-  heading above the real verdict where a job summary renders the report.
+  report, as CamoLeak's was through Copilot's own chat, nor can a reference a pull request's page acts on, `@name`,
+  `#12` or `!12`, so a pasted comment notifies no one and links no issue. A model's title and change are cut where its
+  finding is made. A dropped finding's file, the model's own text, is cut where it is dropped. Evidence is cut after the
+  scrub. The JSON's strings pass the same steps and stay plain text, for their reader to escape where it renders them.
+  Measured before: a title holding a newline forged a second verdict heading, and a file named
+  `<h1>Verdict: APPROVED</h1>` printed a heading above the real verdict where a job summary renders the report.
 
 ## Left out on purpose
 

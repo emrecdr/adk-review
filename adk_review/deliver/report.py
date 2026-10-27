@@ -73,6 +73,12 @@ def inert(text: str) -> str:
 _TAG_OPENER = re.compile(r"<(?=[A-Za-z/!?])")
 #: Where a markdown image or link would open: `![` and `](`, broken as `! [` and `] (`.
 _LINK_OPENER = re.compile(r"!(?=\[)|\](?=\()")
+#: Where a pull request's page would act on a reference: `@name`, `@org/team` and Azure DevOps' `@<id>` notify a
+#: person, and `#12`, `owner/repo#12` and `!12` link an issue or a pull request, leaving a note on it. Each is broken
+#: by a space after its `@`, `#` or `!`; an email address and a word before `#`, as in `C#7`, are none.
+_REFERENCE = re.compile(r"(?<![\w.+-])@(?=[\w<])|(?<![\w&])#(?=\d)|(?<=[\w.-]/)[\w.-]+#(?=\d)|(?<![\w!])!(?=\d)")
+#: A run of backticks: a code span opens at one and closes at the next run as long, as markdown reads it.
+_TICKS = re.compile(r"`+")
 
 
 def prose(text: str) -> str:
@@ -86,8 +92,38 @@ def prose(text: str) -> str:
 
 
 def _unopened(line: str) -> str:
-    """A line `one_line` made, with no HTML tag, markdown image or link able to open in it."""
-    return _LINK_OPENER.sub(r"\g<0> ", _TAG_OPENER.sub("< ", line))
+    """A line `one_line` made, with no HTML tag, markdown image or link able to open in it, and no reference a pull
+    request's page would act on: read by review, `@name` and `#12` reached a comment as written, to notify people and
+    link issues wherever it was pasted."""
+    return _unreferenced(_LINK_OPENER.sub(r"\g<0> ", _TAG_OPENER.sub("< ", line)))
+
+
+def _unreferenced(line: str) -> str:
+    """`line` with each reference broken outside its code spans, where none renders, so a quote keeps its text: a span
+    closes at the next run of as many backticks, and a run nothing closes is text, as markdown reads it. One pass over
+    the runs and one over the references: measured by review, a search per run and a check of every span per
+    reference took 30 s over 200,000 characters of backticks and `@`s."""
+    runs = [(run.start(), run.end()) for run in _TICKS.finditer(line)]
+    closer: list[int | None] = [None] * len(runs)  # each run's next run as long, read from the end
+    last: dict[int, int] = {}
+    for at in range(len(runs) - 1, -1, -1):
+        closer[at], last[runs[at][1] - runs[at][0]] = last.get(runs[at][1] - runs[at][0]), at
+    spans, at = [], 0
+    while at < len(runs):
+        if (close := closer[at]) is None:
+            at += 1
+        else:
+            spans.append((runs[at][0], runs[close][1]))
+            at = close + 1
+    out, done, span = [], 0, 0
+    for found in _REFERENCE.finditer(line):
+        while span < len(spans) and spans[span][1] <= found.start():
+            span += 1
+        if span < len(spans) and spans[span][0] <= found.start():
+            continue  # inside a code span: rendered as text
+        out += [line[done : found.end()], " "]
+        done = found.end()
+    return "".join([*out, line[done:]])
 
 
 def code_span(text: str) -> str:
