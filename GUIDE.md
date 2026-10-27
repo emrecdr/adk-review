@@ -357,6 +357,11 @@ A file past a guideline's cap is named under "not read", and the review ends in 
 found". `--path` narrows a review to fit. With no guideline
 on, a cut is no hole: the cap is the guidelines' limit, and the rules read every added line.
 
+A changed file's diff is read whole, whatever its size: a file past `MAX_FILE_BYTES` is still read as far as its diff
+shows it. That costs memory about 25 times the file's size. Measured: a branch adding a 112 MB Python file took 22.5 s
+and 2.9 GB before the review ended in exit 3. The pre-push hook read the commit again: 3.3 s and 2.2 GB at its peak.
+GitHub refuses a file over 100 MB. `--path` narrows a review by hand around a large file.
+
 ## Before a push
 
 `adk-review-push`, installed beside `adk-review`, is a git pre-push hook. To install it, run these lines in the
