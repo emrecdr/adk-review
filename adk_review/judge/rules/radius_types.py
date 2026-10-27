@@ -10,7 +10,7 @@ from collections import Counter
 from collections.abc import Sequence
 from types import MappingProxyType
 
-from ..rule_helpers import PER_FILE, Diagnostic, Entry, Hit, Tree, TreeRule
+from ..rule_helpers import PER_FILE, Diagnostic, Entry, Hit, Tree, TreeRule, is_test
 
 #: The kinds named on a line the change added: what a call, an attribute or a value breaks across files, which `types`
 #: cannot see, reading each changed file alone. A definition's kind, `bad-override` among them, is the change's own.
@@ -57,9 +57,14 @@ class RadiusTypes(TreeRule):
     )
 
     def needs_head(self, files: list[Entry]) -> bool:
-        """A Python file the change modified, moved or removed: what depends on it is in the head alone."""
+        """A Python file the change modified, moved or removed: what depends on it is in the head alone. Not a test's,
+        whose findings the rule reads none of and its runs leave out: read by review, on ADK a commit that edited one
+        test read and parsed the whole project for nothing."""
         return any(
-            item["status"] in ("M", "T", "R", "D") and item.get("old", item["path"]).endswith(".py") for item in files
+            item["status"] in ("M", "T", "R", "D")
+            and item.get("old", item["path"]).endswith(".py")
+            and not is_test(item["path"])
+            for item in files
         )
 
     def check(self, tree: Tree) -> list[Hit]:

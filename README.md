@@ -303,9 +303,9 @@ the modules a change breaks. One that can tell from the changed files alone that
 so in `needs_head(files)`, and is then handed nothing to read: `callers` needs the head only where a name that was there
 before changed its parameters, one a line the change removed names or one not all of whose lines it added, or where the
 change removed a name a module defined or moved or removed a module, and `radius-types` wherever the change modified,
-moved or removed a Python file. None is handed a test's file unless it sets `reads_tests`, as the list of what a rule
-may do says below. A guideline names its role and a thinking budget, and `cleanup = True` where its findings change how
-code reads and never what it does; the instruction around the role is every guideline's.
+moved or removed a Python file other than a test. None is handed a test's file unless it sets `reads_tests`, as the list
+of what a rule may do says below. A guideline names its role and a thinking budget, and `cleanup = True` where its
+findings change how code reads and never what it does; the instruction around the role is every guideline's.
 
 The rules shipped with the reviewer are written as a project writes its own:
 

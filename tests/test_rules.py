@@ -2401,6 +2401,19 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         )
         assert [(file, line) for file, line, _severity, _said in self.found(repo)] == [("my-app/pkg/user.py", 5)]
 
+    def test_a_change_to_tests_alone_asks_for_no_head(self) -> None:
+        """The rule reads no test's findings, and its runs leave tests out, so a test the change touched asks for no
+        head. Read by review, the owner's /code-review item 6: on ADK a commit that edited one test read and parsed the
+        whole project, for nothing."""
+        from adk_review.judge.rules.radius_types import RadiusTypes
+
+        def asks(*changed: dict) -> bool:
+            return RadiusTypes().needs_head([{"text": None, "added": [], **item} for item in changed])
+
+        assert not asks({"path": "tests/test_pay.py", "status": "M"}, {"path": "tests/conftest.py", "status": "D"})
+        assert asks({"path": "shop/pay.py", "status": "M"}), "a module the change modified"
+        assert asks({"path": "shop/pay.py", "status": "R", "old": "tests/helpers.py"}), "a test moved into the code"
+
     def test_a_whole_project_has_no_base_to_compare_and_names_nothing(self, tmp_path: Path) -> None:
         broken = self.SERVICE.replace("get_user", "fetch_user")
         repo = self.branch(tmp_path, {"shop/repo.py": self.REPO}, {"shop/service.py": broken})
