@@ -2025,6 +2025,29 @@ class TestTheCallersRule:
         package = {**users, "pkg/repo/__init__.py": "def get_user(uid):\n    return uid\n"}
         assert self.moved(package, "pkg/repo.py", "pkg/repo/__init__.py") == [], "a package of the same name imports"
 
+    def test_a_package_that_imports_the_module_it_lost_is_named(self) -> None:
+        """Measured over ADK: `flows/llm_flows/__init__.py` imports `contents` by `from . import contents`, and with
+        `contents.py` removed the name was read as one the package defines, bound by that very import."""
+        files = {"pkg/__init__.py": "from . import contents\n", "pkg/flow.py": "x = 1\n"}
+        said = "the change removed `pkg/contents.py`, which this line imports"
+        assert self.moved(files, "pkg/contents.py", None) == [
+            ("pkg/__init__.py", 1, said, "code imports a module the change moved or removed")
+        ]
+
+    def test_a_module_made_a_package_of_the_same_name_is_the_one_an_import_names(self) -> None:
+        """Measured over pydantic: a module made a package of the same name has the same dotted name as the file it
+        was, and which of the two an import named turned on the order of a set; the head's file is the one. Its own
+        relative import names the package's folder now, and breaks: named once, by the name the package lacks."""
+        files = {
+            "pkg/__init__.py": "",
+            "pkg/helpers.py": "",
+            "pkg/repo/__init__.py": "def get():\n    from . import helpers\n    return helpers\n",
+        }
+        said = "`pkg/repo/__init__.py` defines no `helpers`, which this line takes from it"
+        assert self.moved(files, "pkg/repo.py", "pkg/repo/__init__.py") == [
+            ("pkg/repo/__init__.py", 2, said, "code uses a name its module no longer defines")
+        ]
+
     def test_the_head_is_read_where_the_change_moved_or_removed_a_python_file(self) -> None:
         from adk_review.judge.rule_helpers.testing import as_change
         from adk_review.judge.rules.callers import Callers

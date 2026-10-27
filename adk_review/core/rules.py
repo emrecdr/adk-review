@@ -29,7 +29,7 @@ from pathlib import PurePath, PurePosixPath
 from types import MappingProxyType
 from typing import Any, ClassVar
 
-from .blast import bindings, index, is_test, parse, parsed
+from .blast import _module, bindings, index, is_test, parse, parsed
 from .evidence import Entry, unreleased
 from .findings import Checked, Finding, Severity
 from .paths import matches
@@ -485,8 +485,12 @@ class Tree:
 
     @functools.cached_property
     def _index_before(self) -> Any:
-        """Every Python file at the head and each the change moved or removed, indexed as `_index` is."""
-        return index(path for path in {*self.paths, *self.removed} if path.endswith(".py"))
+        """Every Python file at the head, and each the change moved or removed whose module the head holds no file
+        for, indexed as `_index` is. Measured over pydantic: a module made a package of the same name shares its dotted
+        name, and which of the two an import named turned on the order of a set."""
+        head = [path for path in self.paths if path.endswith(".py")]
+        held = {_module(path) for path in head}
+        return index([*head, *(p for p in self.removed if p.endswith(".py") and _module(p) not in held)])
 
     def imports_before(self, path: str) -> dict[str, tuple[str, str | None]]:
         """What `imports` answers where the files the change moved or removed are still where they were: an import

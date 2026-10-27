@@ -189,13 +189,14 @@ class _Gone:
 
     def lost(self, path: str, bound: dict[str, tuple[str, str | None]]) -> dict[str, str]:
         """Each name an import in `path` bound to a module the change moved or removed, by the module's old path, where
-        the head finds no module for it: no file by its name, nor a name a module there defines."""
+        the head finds no module for it: no file by its name, nor a name a module there defines but by this very
+        import, as a package's `from . import contents` binds `contents` in itself."""
         lost = {}
         for name, (file, _attribute) in self.tree.imports_before(path).items():
             if file not in self.tree.removed:
                 continue
             now, taken = bound.get(name, ("", None))
-            if not now or (taken is not None and self.lacks(now, taken)):
+            if not now or now == path or (taken is not None and self.lacks(now, taken)):
                 lost[name] = file
         return lost
 
