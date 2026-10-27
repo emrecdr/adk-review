@@ -5,13 +5,16 @@ No git runs here: `git.py` reads, this module arranges, so each piece is tried o
 
 from __future__ import annotations
 
+import ast
 import re
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 
 from ..core.blast import Blast, blast_radius
 from ..core.evidence import Entry, Failure, entry
 from ..core.paths import matches
-from ..core.rules import Tree, is_python_text
+from ..core.rules import Tree, UnreadError, is_python_text
+from ..core.text import lines_of, squash
 from .diff import BINARY, LINK_MODE, SUBMODULE, added_lines, capped, framed, headers, hunk_lines, quotable
 
 #: And the block of diffs the guidelines read, in all: a file past it is left out whole, and named. Measured with none,
@@ -197,6 +200,103 @@ def shown_to_guidelines(
     if excluded:
         blocks.append(f"[… {len(excluded)} more file(s) not shown: the operator's skip list leaves them out]")
     return files, "\n\n".join(blocks), excluded, left_out
+
+
+#: At most how many calls into one changed function the guidelines are shown, a call from each file before a second.
+CALLS_SHOWN = 3
+#: How many lines around a call the guidelines are shown, each way.
+CALL_CONTEXT = 3
+
+
+def callers_of(tree: Tree | None, files: list[Entry]) -> str:
+    """Each call at the head into a module-level function whose lines the change added or removed, from a line the
+    change did not add, with the lines around it: what a guideline weighs a change of behaviour against, where no diff
+    shows it, in a file the change left alone or elsewhere in its own. Asked by the owner, and measured live on
+    Copilot over six branches, each a behaviour change an unchanged caller relied on: the correctness guideline named
+    1 of 5 from the diff and the radius, and 3 of 5 shown each call. A call is followed through an import as
+    `Tree.imports` binds it; one through a method or an object is not."""
+    if tree is None or not (touched := _touched(tree, files)):
+        return ""
+    sites = _sites(tree, touched, {item["path"]: item["added_at"] for item in files})
+    return "\n".join(_calls_shown(tree, file, function, sites[file, function]) for file, function in sorted(sites))
+
+
+def _touched(tree: Tree, files: list[Entry]) -> set[tuple[str, str]]:
+    """Each module-level function, by its file and name, whose lines the change added, or between whose lines it
+    removed one: a file the change adds has no caller the change left alone."""
+    touched = set()
+    for item in files:
+        if item["status"] == "A" or not item["path"].endswith(".py"):
+            continue
+        try:
+            module = tree.module(item["path"])
+        except UnreadError:
+            continue
+        if isinstance(module, str):
+            continue
+        lines = item["added_at"] | {line for line, raw in hunk_lines(item["diff"] or "") if raw[:1] == "-"}
+        touched |= {
+            (item["path"], node.name)
+            for node in module.body
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and lines & _span(node)
+        }
+    return touched
+
+
+def _sites(
+    tree: Tree, touched: set[tuple[str, str]], added: Mapping[str, frozenset[int]]
+) -> defaultdict[tuple[str, str], list[tuple[str, int]]]:
+    """Each call into a touched function, by the function, from a line the change did not add: through an import, or
+    by its own name in its own module. Measured over ADK: a private helper's every call was in its own module, outside
+    the lines the diff shows."""
+    sites: defaultdict[tuple[str, str], list[tuple[str, int]]] = defaultdict(list)
+    for path, module in tree.modules():
+        spelled = {function: (owner, function) for owner, function in touched if owner == path}
+        for name, (file, attribute) in tree.imports(path).items():
+            if attribute is None:
+                spelled |= {f"{name}.{function}": (owner, function) for owner, function in touched if owner == file}
+            elif (file, attribute) in touched:
+                spelled[name] = (file, attribute)
+        new = added.get(path, frozenset())
+        for node in ast.walk(module) if spelled else ():
+            if isinstance(node, ast.Call) and node.lineno not in new and (target := spelled.get(_dotted(node.func))):
+                sites[target].append((path, node.lineno))
+    return sites
+
+
+def _calls_shown(tree: Tree, file: str, function: str, sites: list[tuple[str, int]]) -> str:
+    """The calls into `function` of `file` the guidelines are shown, a call from each file before a second, each with
+    the lines around it, and how many more there are."""
+    by_file: defaultdict[str, list[int]] = defaultdict(list)
+    for path, line in sites:
+        by_file[path].append(line)
+    ranked = sorted((rank, path, line) for path, lines in by_file.items() for rank, line in enumerate(sorted(lines)))
+    shown = []
+    for _rank, path, line in sorted(ranked[:CALLS_SHOWN], key=lambda site: site[1:]):
+        lines = lines_of(tree.sources[path])
+        around = range(max(1, line - CALL_CONTEXT), min(len(lines), line + CALL_CONTEXT) + 1)
+        numbered = "\n".join(f"{number:>4} | {lines[number - 1]}".rstrip() for number in around)
+        shown.append(f"- `{squash(path)}` calls `{function}()` from `{squash(file)}`:\n{numbered}")
+    if more := len(sites) - len(shown):
+        calls = "call" if more == 1 else "calls"
+        shown.append(f"- {more:,} more {calls} into `{function}()` from `{squash(file)}`, not shown")
+    return "\n".join(shown)
+
+
+def _span(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[int]:
+    """Every line a function is written on, its decorators' among them."""
+    first = min([decorator.lineno for decorator in node.decorator_list] + [node.lineno])
+    return set(range(first, (node.end_lineno or node.lineno) + 1))
+
+
+def _dotted(node: ast.expr) -> str:
+    """A called name as written, dotted, `find_user` or `users.find_user`; empty for anything else. Read without
+    recursion, so no chain of attributes the parser accepts can stop it."""
+    parts = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    return ".".join([node.id, *reversed(parts)]) if isinstance(node, ast.Name) else ""
 
 
 def radius(tree: Tree | None, files: list[Entry], *, read: bool, asked: bool) -> Blast:

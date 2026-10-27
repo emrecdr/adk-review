@@ -51,6 +51,13 @@ FAILURE = "temp:failure"
 #: The blast radius beside the diff is capped as the diff is, and widest first, so the cut takes the narrowest.
 #: Measured with none, `--all` over 4,826 files gave each guideline 800,272 characters of it; this repository, 11,161.
 BLAST_CAP_CHARS = 20_000
+#: The calls into what the change touched, in all, that a guideline is shown beside the radius.
+CALLERS_CAP_CHARS = 12_000
+#: What a guideline reads above those calls: where a finding about one belongs.
+CALLERS_HEADING = (
+    "## Callers the change left alone\nEach call at the head to a function the change touched, from a line the change "
+    "did not add. Where the change breaks one, report it on the changed lines.\n"
+)
 #: What the chat's verdict reads of the checks is capped the same way. Measured uncapped: lint over a 5-file branch of a
 #: 724-file tree gave it 21,814 characters, and that tree reviewed as one branch 619,116.
 FINDINGS_CAP_CHARS = 20_000
@@ -122,9 +129,10 @@ def without_evidence(callback_context: CallbackContext) -> types.Content | None:
     return types.ModelContent(Review(findings=[]).model_dump_json())
 
 
-def for_the_guidelines(blast: Blast) -> str:
+def for_the_guidelines(blast: Blast, callers: str = "") -> str:
     """The `{blast?}` section of a guideline's instruction: beside the diff, never inside it, so the block the
-    guidelines quote stays the change. The report's own section is `deliver/report.py`'s `_blast`.
+    guidelines quote stays the change, and after it each call into what the change touched from a file it left alone,
+    `callers`, fenced too. The report's own section is `deliver/report.py`'s `_blast`.
 
     Measured when it sat inside the diff block: a finding whose only evidence was a radius line passed the
     grounding of the day. Grounding now takes only whole lines of a finding's own file, so a quote of the radius is
@@ -137,7 +145,10 @@ def for_the_guidelines(blast: Blast) -> str:
     lines = [f"- {squash(r.path)}: {squash(describe(r, blast.floor))}" for r in blast.radii if r.measured]
     if not lines:
         return ""
-    return f"## Blast radius\n{fenced('blast radius', cut_at('\n'.join(lines), BLAST_CAP_CHARS, sep='\n'))}\n\n"
+    section = f"## Blast radius\n{fenced('blast radius', cut_at('\n'.join(lines), BLAST_CAP_CHARS, sep='\n'))}\n\n"
+    if callers:
+        section += f"{CALLERS_HEADING}{fenced('callers', cut_at(callers, CALLERS_CAP_CHARS, sep='\n'))}\n\n"
+    return section
 
 
 def for_the_verdict(outcome: Outcome, checks: Sequence[str], verdict: str, ignored: Sequence[str] = ()) -> str:

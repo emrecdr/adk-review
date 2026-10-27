@@ -446,6 +446,8 @@ class Tree:
         self.paths = frozenset(paths)
         self.unread = frozenset(unread)
         self.parsed = parsed(sources)
+        #: Each file's text as read, for the lines around a call the guidelines are shown.
+        self.sources = sources
         #: The lines the change added, by changed file, for a tree rule about what the change did: set by
         #: `changed_by`, as a tree rule is handed the head.
         self.added: Mapping[str, frozenset[int]] = MappingProxyType({})

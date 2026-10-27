@@ -33,6 +33,7 @@ from ..core.text import lines_of
 from .change import (
     BINARY_UNREAD,
     POINTER_UNREAD,
+    callers_of,
     lfs_pointer,
     no_change,
     pointer_text,
@@ -1024,6 +1025,7 @@ def gather(
         "files": files,
         "diff": block,
         "blast": radius(tree, files, read=read, asked=guidelines),
+        "callers": callers_of(tree, files) if guidelines else "",
         "tree": tree,
         "whole": base is None,
         "scope": list(scope),

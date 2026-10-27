@@ -142,10 +142,11 @@ command that would, under `--all` a Health section (`core/health.py`: what was r
 complexity counted as ruff's C901 counts it, in bands graded A to E by SIG's published risk-profile rating where most of
 the source parsed, each rule's findings by severity, counted and never graded; never read by the verdict), each changed
 file's blast radius (`core/blast.py`: an import graph parsed from the head commit, shown to the guidelines as `{blast?}`
-and heading the report, never read by the verdict), and fences around every untrusted section the guidelines, the
-verifiers and the chat's verdict read (`judge/agents.py`: two marker lines carrying a nonce drawn once a process, a
-second one, no guideline shown it, where a guideline's own words are read, a reminder after them, the content never
-escaped so a quote still grounds).
+with each call into a function the change touched from a line it did not add (`collect/change.py`'s `callers_of`), and
+heading the report, never read by the verdict), and fences around every untrusted section the guidelines, the verifiers
+and the chat's verdict read (`judge/agents.py`: two marker lines carrying a nonce drawn once a process, a second one, no
+guideline shown it, where a guideline's own words are read, a reminder after them, the content never escaped so a quote
+still grounds).
 
 Load-bearing rules the tests enforce:
 

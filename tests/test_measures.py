@@ -13,6 +13,7 @@ from conftest import (
     BASE,
     FORGED,
     HEAD,
+    _committed,
     _git_in,
     missing_objects,
     run_review,
@@ -369,6 +370,96 @@ class TestTheBlastRadius:
         bullets = [line for line in section.splitlines() if line.startswith("- ")]
         assert bullets[0].startswith("- `src/payments/charge.py`: 1 module and 1 test depend on it")
         assert sum("a leaf" in line for line in bullets) == 3
+
+    #: A module the branch `change` rewrites, and one it leaves alone that calls a function of it and reads another.
+    USERS = (
+        'USERS = {1: "ada"}\n\n\ndef find_user(uid):\n    if uid < 0:\n        raise ValueError(uid)\n'
+        "    return USERS[uid]\n\n\ndef count():\n    return len(USERS)\n"
+    )
+    GREET = (
+        "from shop import users\nfrom shop.users import find_user\n\n\ndef greet(uid):\n    try:\n"
+        "        name = find_user(uid)\n    except KeyError:\n        return 'guest'\n"
+        "    return name.title() + str(users.count())\n"
+    )
+
+    def shop(self, tmp_path: Path, users: str) -> Path:
+        """A repository whose branch `change` rewrites `shop/users.py` as `users`, `shop/greet.py` left alone."""
+        repo = tmp_path / "shop"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "shop/__init__.py", "")
+        _committed(repo, "shop/users.py", self.USERS)
+        _committed(repo, "shop/greet.py", self.GREET)
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "shop/users.py", users)
+        return repo
+
+    def test_the_guidelines_are_shown_each_call_into_a_changed_function_from_a_file_the_change_left_alone(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Asked by the owner: the review acts on the blast radius, for side effects. Measured live on Copilot over six
+        branches, each a behaviour change a caller left alone relied on: the correctness guideline named 1 of 5 from
+        the diff and the radius, 3 of 5 shown each call, and nothing on the one that kept its behaviour."""
+        from adk_review.collect.git import collect_evidence
+        from adk_review.judge import agents
+
+        repo = self.shop(tmp_path, self.USERS.replace("return USERS[uid]", "return USERS.get(uid)"))
+        evidence = collect_evidence(str(repo), BASE, "change")
+        assert evidence["callers"] == (
+            "- `shop/greet.py` calls `find_user()` from `shop/users.py`:\n"
+            "   4 |\n   5 | def greet(uid):\n   6 |     try:\n   7 |         name = find_user(uid)\n"
+            "   8 |     except KeyError:\n   9 |         return 'guest'\n"
+            "  10 |     return name.title() + str(users.count())"
+        ), "`count`, which the change left alone, is not shown"
+        section = agents.for_the_guidelines(evidence["blast"], evidence["callers"])
+        assert section.startswith("## Blast radius\n") and "\n## Callers the change left alone\n" in section
+        assert "\n<<< callers " in section and "         name = find_user(uid)" in section, "fenced, as the change is"
+        monkeypatch.setattr(agents, "CALLERS_CAP_CHARS", 60)
+        assert "[… cut at 60 characters]" in agents.for_the_guidelines(evidence["blast"], evidence["callers"])
+
+    def test_a_change_that_only_removes_lines_of_a_function_shows_its_callers(self, tmp_path: Path) -> None:
+        """A guard the change deletes adds no line, yet each caller that relied on it may break."""
+        from adk_review.collect.git import collect_evidence
+
+        repo = self.shop(tmp_path, self.USERS.replace("    if uid < 0:\n        raise ValueError(uid)\n", ""))
+        assert "`shop/greet.py` calls `find_user()`" in collect_evidence(str(repo), BASE, "change")["callers"]
+
+    def test_a_call_in_the_changed_file_the_change_did_not_add_is_shown_too(self, tmp_path: Path) -> None:
+        """Measured over ADK: a branch changed a private helper's parameters, each call to it in its own module, outside
+        the lines the diff shows, and the section was empty. A call the change added is in the diff already."""
+        from adk_review.collect.git import collect_evidence
+
+        users = self.USERS + "\n\ndef name_of(uid):\n    return find_user(uid)\n"
+        changed = (
+            users.replace("return USERS[uid]", "return USERS.get(uid)")
+            + "\n\ndef new(uid):\n    return find_user(uid)\n"
+        )
+        repo = tmp_path / "shop"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "shop/__init__.py", "")
+        _committed(repo, "shop/users.py", users)
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "shop/users.py", changed)
+        callers = collect_evidence(str(repo), BASE, "change")["callers"]
+        assert callers.startswith("- `shop/users.py` calls `find_user()` from `shop/users.py`:\n"), callers
+        assert "  15 |     return find_user(uid)" in callers and "  19 |" not in callers, (
+            "the added call is in the diff"
+        )
+
+    def test_no_call_is_gathered_where_no_guideline_reads_it(self, tmp_path: Path) -> None:
+        """The pre-push hook's profile runs no guideline: what it reads, and its time, stay as they were."""
+        from adk_review.collect.git import collect_evidence
+
+        repo = self.shop(tmp_path, self.USERS.replace("return USERS[uid]", "return USERS.get(uid)"))
+        assert collect_evidence(str(repo), BASE, "change", guidelines=False).get("callers", "") == ""
+
+    def test_a_guideline_is_sent_each_call_into_what_the_change_touched(self, tmp_path: Path, cli, asked) -> None:
+        repo = self.shop(tmp_path, self.USERS.replace("return USERS[uid]", "return USERS.get(uid)"))
+        cli.main([str(repo), "--head", "change", "--base", BASE, "--check", "guideline.correctness", "--no-verify"])
+        instructions = [instruction for instruction, _turns in asked]
+        assert instructions and all("## Callers the change left alone" in text for text in instructions), instructions
+        assert all("   7 |         name = find_user(uid)" in text for text in instructions)
 
 
 class TestTheHealthOfAWholeProject:

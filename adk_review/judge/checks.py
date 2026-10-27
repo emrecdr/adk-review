@@ -162,7 +162,9 @@ def build_checks(
             answers = {rule.check_id: _hole(found) for rule in rules}
         for check, answer in answers.items():
             ctx.state[state_key(check)] = answer.model_dump(mode="json")
-        ctx.state[BLAST] = for_the_guidelines(found["blast"]) if isinstance(found, dict) else ""
+        ctx.state[BLAST] = (
+            for_the_guidelines(found["blast"], found.get("callers", "")) if isinstance(found, dict) else ""
+        )
         if evidence is None:
             ctx.state[DIFF], ctx.state[IGNORED], ctx.state[QUOTABLE] = _seen(found)
         else:  # read by the rules, not held through the guidelines' model calls

@@ -119,6 +119,7 @@ class Evidence(Change):
         str  # the block the guidelines read: a `### <path>` heading and a fenced diff per file, capped, each cut named
     )
     blast: "Blast"  # what at the head depends on each changed file, read beside the block, never inside it
+    callers: NotRequired[str]  # each call into a function the change touched, from a file it left alone, with its lines
     whole: bool  # under --all: every file at the head is the change, diffed against the empty tree
     scope: list[str]  # the folders --path named, as git spells them; [] for the whole change
     skipped: dict[str, str]  # the files the operator's skip list left to the rules, by path with the glob
