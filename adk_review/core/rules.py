@@ -96,6 +96,12 @@ class AnyRule(ABC):
     #: Whether its findings change how code reads and never what it does, as a simplify pass's do: a handoff lists them
     #: apart, under what a tidy keeps, and holds one back where a defect at major or above names the same lines.
     cleanup: ClassVar[bool] = False
+    #: The outside tool the rule reads, by the name of its adapter in `collect/tools.py`, and the settings that adapter
+    #: takes, the rule's own and never the repository's: a file rule that names one is given each changed file with the
+    #: tool's diagnostics on `file.diagnostics`, a tree rule the tree with them by path on `tree.diagnostics`. None for
+    #: every rule but those that read a tool.
+    tool: ClassVar[str | None] = None
+    tool_settings: ClassVar[Mapping[str, object]] = MappingProxyType({})
 
     def reads(self, path: str) -> bool:
         """Whether the rule is handed what `path` holds: any file, for a rule that reads tests; else one no test."""
@@ -287,7 +293,7 @@ def _whole(line: object) -> bool:
 
 #: The outside tools a rule may name, each run by its adapter in `collect/tools.py`: named here, in the pure core, so
 #: the catalog refuses a name no adapter runs without loading what runs one. A test holds the two to each other.
-TOOLS = frozenset({"ruff", "pyrefly"})
+TOOLS = frozenset({"ruff", "pyrefly", "pyrefly-radius"})
 
 
 class FileRule(AnyRule):
@@ -296,11 +302,6 @@ class FileRule(AnyRule):
     decorator and its definition, a function a change grew past a length."""
 
     kind = "file"
-    #: The outside tool the rule reads, by the name of its adapter in `collect/tools.py` — `ruff` or `pyrefly` — and the
-    #: settings that adapter takes, the rule's own and never the repository's: a rule that names one is given each
-    #: changed file with the tool's diagnostics on `file.diagnostics`. None for every rule but those that read a tool.
-    tool: ClassVar[str | None] = None
-    tool_settings: ClassVar[Mapping[str, object]] = MappingProxyType({})
 
     @abstractmethod
     def check(self, file: ChangedFile) -> Iterable[int | tuple[int | None, str] | Hit]:
@@ -454,6 +455,14 @@ class Tree:
         #: Each path the change moved or removed, with the path it moved to, None where it removed it: set by
         #: `changed_by`, for a tree rule about what still imports it.
         self.removed: Mapping[str, str | None] = MappingProxyType({})
+        #: The outside tool's diagnostics by path, for a tree rule that names one: set by `diagnosed`.
+        self.diagnostics: Mapping[str, Sequence[Diagnostic]] = MappingProxyType({})
+
+    def diagnosed(self, found: Mapping[str, Sequence[Diagnostic]]) -> Tree:
+        """The same head with an outside tool's diagnostics by path: a view, nothing parsed again."""
+        view = copy.copy(self)
+        view.diagnostics = MappingProxyType(dict(found))
+        return view
 
     def changed_by(self, files: Iterable[Entry]) -> Tree:
         """The same head with the lines each changed file's change added, and the paths it moved or removed: a view,

@@ -146,6 +146,7 @@ prints them:
 | `rule.pinned-actions` | file rule | major | default, default-rules, rules-only, full, code-review, demo | a workflow runs an action at a tag, a branch or a short SHA, not its full commit SHA | `judge/rules/pinned_actions.py` |
 | `rule.pitfalls` | file rule | minor | default, default-rules, rules-only, full, simplify, code-review, demo | Python traps ruff can prove: code that does not do what it reads | `judge/rules/pitfalls.py` |
 | `rule.private-patch` | file rule | minor | rules-only, full, demo | a test patches a private name | `judge/rules/private_patch.py` |
+| `rule.radius-types` | tree rule | major | default, default-rules, rules-only, full, code-review, demo | code the change left alone no longer type-checks | `judge/rules/radius_types.py` |
 | `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full, code-review, demo | text that tries to instruct the reviewing model | `judge/rules/reviewer_instructions.py` |
 | `rule.script-injection` | file rule | major | default, default-rules, rules-only, full, code-review, demo | a workflow script expands a value an outsider writes, such as a pull request's title | `judge/rules/script_injection.py` |
 | `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, code-review, demo | a hard-coded credential | `judge/rules/secrets.py` |
@@ -392,19 +393,21 @@ For each ref a push sends, the hook asks git which commits the remote does not h
 with `default-rules`, against the commit they grow from on the remote's side, or with `--all` where the remote holds
 none of their history. Those rules read the whole head only where the change alters the parameters of a function that
 was there before, removes a name a module defined, or moves or removes a module, for `rule.callers`, which holds every
-call to the function and every file that still takes the name or imports the module; otherwise they read the changed
-files alone. A merge grows from more than one: the change is reviewed against each, and passes when one review passes,
-since a line the remote holds nowhere is new to every one of them; where every review stops, the push stops only on what
-all of them found, since what one side brings the remote holds already, or where one review's reasons were cut in its
-JSON or named none. A review interrupted, Ctrl-C's 130 or a job's 143, or one that wrote no report, stops the push at
-once. Then the rules `push-history` names, the credential rules `secrets` and `named-secrets`, read each of those
-commits as it was made, and what each says, a pushed tag's words too, those of each tag it was made of, and those of a
-signed tag a merge carries in its own header: a credential one commit adds and a later one takes out stops the push,
-though the change as a whole no longer holds it. A commit is read line by line, so the profile names line rules alone,
-and a commit a push sends under two names, a branch and its tag, is reviewed and read once. Any exit but 0 stops the
-push and prints why; so does a `git` the hook cannot find, or a line from git it cannot read. A push that sends nothing
-new, or commits that change nothing, says nothing, and so does a push to this repository itself, `git push . a:b`, which
-sends nothing off the machine. Through pre-commit by hand,
+call to the function and every file that still takes the name or imports the module, and wherever the change modifies,
+moves or removes a Python file, for `rule.radius-types`, which runs pyrefly over the head and the base: measured, a
+push's review took 0.7 s more on this repository, 2.0 s more on ADK's 815 files and 2.9 s more on litellm's 2,776;
+otherwise they read the changed files alone. A merge grows from more than one: the change is reviewed against each, and
+passes when one review passes, since a line the remote holds nowhere is new to every one of them; where every review
+stops, the push stops only on what all of them found, since what one side brings the remote holds already, or where one
+review's reasons were cut in its JSON or named none. A review interrupted, Ctrl-C's 130 or a job's 143, or one that
+wrote no report, stops the push at once. Then the rules `push-history` names, the credential rules `secrets` and
+`named-secrets`, read each of those commits as it was made, and what each says, a pushed tag's words too, those of each
+tag it was made of, and those of a signed tag a merge carries in its own header: a credential one commit adds and a
+later one takes out stops the push, though the change as a whole no longer holds it. A commit is read line by line, so
+the profile names line rules alone, and a commit a push sends under two names, a branch and its tag, is reviewed and
+read once. Any exit but 0 stops the push and prints why; so does a `git` the hook cannot find, or a line from git it
+cannot read. A push that sends nothing new, or commits that change nothing, says nothing, and so does a push to this
+repository itself, `git push . a:b`, which sends nothing off the machine. Through pre-commit by hand,
 `pre-commit run adk-review --hook-stage pre-push --from-ref A --to-ref B` reviews that range and its commits, and with
 neither ref, the whole project at `HEAD`. Run alone at a terminal, the hook says what it is, exit 2.
 `git push --no-verify` skips it.

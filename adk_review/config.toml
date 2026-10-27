@@ -77,10 +77,13 @@ third_party = [
 # — measured at 0.00 to 0.03 a thousand lines of four mature projects once the codes whose findings were idioms were
 # left out, all but one of those read a real defect — a call a changed function no longer fits, in any file — measured
 # over 7,266 calls in six released projects, none named wrongly, and every call a changed signature broke named, for
-# a read of the whole head, 0.8 s on 815 files — and the three guidelines.
+# a read of the whole head, 0.8 s on 815 files — what the change broke elsewhere as a type checker reads it, a method,
+# an attribute or a type, measured over 195 commits each type-checked by its CI and 31 method edits, none named
+# wrongly, for two pyrefly runs side by side, 1 s on 815 files — and the three guidelines.
 default = [
     "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
     "rule.lockfile-sources", "rule.pinned-actions", "rule.script-injection", "rule.pitfalls", "rule.callers",
+    "rule.radius-types",
     "guideline.security", "guideline.tests", "guideline.complexity",
 ]
 # The default's rules and no model: what fits any project's every pull request, with no key needed. Kept to the
@@ -88,6 +91,7 @@ default = [
 default-rules = [
     "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
     "rule.lockfile-sources", "rule.pinned-actions", "rule.script-injection", "rule.pitfalls", "rule.callers",
+    "rule.radius-types",
 ]
 # What the pre-push hook reads each commit a push sends with, beside its review of the change with `default-rules`: a
 # credential one commit adds and a later one takes out is still in the history the remote receives. A commit is read
@@ -99,14 +103,16 @@ push-history = ["rule.secrets", "rule.named-secrets"]
 rules-only = [
     "rule.callers", "rule.encoding-declaration", "rule.hidden-text", "rule.lint", "rule.lockfile-sources",
     "rule.named-secrets", "rule.no-print", "rule.pinned-actions", "rule.pitfalls", "rule.private-patch",
-    "rule.reviewer-instructions", "rule.script-injection", "rule.secrets", "rule.simplify", "rule.steering-files",
+    "rule.radius-types", "rule.reviewer-instructions", "rule.script-injection", "rule.secrets", "rule.simplify",
+    "rule.steering-files",
     "rule.tests-offline", "rule.types",
 ]
 # Every check there is but the payments demo's rules: `rules-only`'s and every guideline.
 full = [
     "rule.callers", "rule.encoding-declaration", "rule.hidden-text", "rule.lint", "rule.lockfile-sources",
     "rule.named-secrets", "rule.no-print", "rule.pinned-actions", "rule.pitfalls", "rule.private-patch",
-    "rule.reviewer-instructions", "rule.script-injection", "rule.secrets", "rule.simplify", "rule.steering-files",
+    "rule.radius-types", "rule.reviewer-instructions", "rule.script-injection", "rule.secrets", "rule.simplify",
+    "rule.steering-files",
     "rule.tests-offline", "rule.types", "guidelines",
 ]
 # A simplify pass, as Claude Code's /simplify reads a change: the cleanup ruff can name, and the complexity, the
@@ -121,6 +127,7 @@ simplify = [
 code-review = [
     "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
     "rule.lockfile-sources", "rule.pinned-actions", "rule.script-injection", "rule.pitfalls", "rule.callers",
+    "rule.radius-types",
     "rule.simplify",
     "guideline.correctness", "guideline.security", "guideline.complexity", "guideline.efficiency", "guideline.altitude",
 ]

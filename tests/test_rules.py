@@ -2074,6 +2074,139 @@ class TestTheCallersRule:
         assert "`pkg/service.py:1`" in out and "`pkg/repo.py` moved to `pkg/users.py`" in out, out
 
 
+class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
+    """`radius-types` runs pyrefly over the head's tree and the base's, and names what is new in a file the change left
+    alone, or on a line of a changed file it kept: a method, an attribute or a type the change broke where no diff shows
+    it, which `types`, reading each changed file alone, and `callers`, reading no types, both miss. Asked by the owner:
+    the review acts on the blast radius, for every side effect code can decide."""
+
+    REPO = "class Repo:\n    def get_user(self, uid: int) -> str:\n        return str(uid)\n"
+    SERVICE = "from shop.repo import Repo\n\n\ndef load(repo: Repo) -> str:\n    return repo.get_user(3)\n"
+
+    @staticmethod
+    def branch(tmp_path: Path, base: dict[str, str], changes: dict[str, str]) -> Path:
+        repo = tmp_path / "shop"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        for path, text in {"shop/__init__.py": "", **base}.items():
+            _committed(repo, path, text)
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        for path, text in changes.items():
+            _committed(repo, path, text)
+        return repo
+
+    @staticmethod
+    def found(repo: Path, **options) -> list[tuple]:
+        from adk_review.collect.git import collect_evidence
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.radius_types import RadiusTypes
+
+        evidence = collect_evidence(str(repo), BASE if not options.get("whole") else None, "change")
+        answer = run_rules(evidence, [RadiusTypes()])["rule.radius-types"]
+        assert answer.could_not_look is None, answer.could_not_look
+        return sorted((f.file, f.line, f.severity, f"{f.title} | {f.evidence}") for f in answer.findings)
+
+    def test_a_method_the_change_renamed_is_named_where_a_file_it_left_alone_calls_it(self, tmp_path: Path) -> None:
+        """Measured over ADK, 31 method edits: 24 named, at 59 call sites and 4 kept lines of the edited file, none
+        wrongly; over this repository's last 195 commits, the package's own each type-checked by its CI, none named."""
+        renamed = self.REPO.replace("def get_user", "def fetch_user")
+        repo = self.branch(
+            tmp_path, {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE}, {"shop/repo.py": renamed}
+        )
+        found = self.found(repo)
+        assert [(file, line, severity) for file, line, severity, _evidence in found] == [
+            ("shop/service.py", 5, "major")
+        ], found
+        assert "get_user" in found[0][3] and "missing-attribute" in found[0][3], found
+
+    def test_a_line_the_change_kept_in_a_file_it_changed_is_read_too(self, tmp_path: Path) -> None:
+        """The `types` rule's known limit: a defect the change causes on a line it kept."""
+        both = self.REPO + "\n\ndef first(repo: Repo) -> str:\n    return repo.get_user(1)\n"
+        changed = both.replace("def get_user", "def fetch_user")
+        repo = self.branch(tmp_path, {"shop/repo.py": both}, {"shop/repo.py": changed})
+        assert [(file, line) for file, line, _severity, _evidence in self.found(repo)] == [("shop/repo.py", 7)]
+
+    def test_a_change_that_keeps_the_types_names_nothing(self, tmp_path: Path) -> None:
+        kept = self.REPO.replace("return str(uid)", 'return f"{uid}"')
+        repo = self.branch(
+            tmp_path, {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE}, {"shop/repo.py": kept}
+        )
+        assert self.found(repo) == []
+
+    def test_what_a_decorator_the_change_added_raises_on_the_def_below_it_is_the_changes_own(
+        self, tmp_path: Path
+    ) -> None:
+        """Pyrefly puts the error a decorator raises on the `def` below it: where the change added the decorator alone,
+        the error is the change's own, though its line was kept."""
+        kept = (
+            "from typing import override\n\n\nclass Plugin:\n    pass\n\n\n"
+            "class Mine(Plugin):\n    def run(self) -> None:\n        pass\n"
+        )
+        marked = kept.replace("    def run(self)", "    @override\n    def run(self)")
+        repo = self.branch(tmp_path, {"shop/plugin.py": kept}, {"shop/plugin.py": marked})
+        assert self.found(repo) == []
+
+    def test_a_new_diagnostic_is_charged_to_the_lines_the_change_added_before_any_it_kept(self, tmp_path: Path) -> None:
+        """Measured over this repository's history: a commit added a class above two others, each with a method whose
+        `def` line reads as theirs, and the one more diagnostic of that line's text was named on a kept method."""
+        method = "    @override\n    def run(self) -> None:\n        pass\n"
+        kept = "from typing import override\n\n\nclass Plugin:\n    pass\n\n\n" + "".join(
+            f"class {name}(Plugin):\n{method}\n\n" for name in ("A", "B")
+        )
+        grown = kept.replace("class A(Plugin):", f"class New(Plugin):\n{method}\n\nclass A(Plugin):")
+        repo = self.branch(tmp_path, {"shop/plugin.py": kept}, {"shop/plugin.py": grown})
+        assert self.found(repo) == []
+
+    def test_a_whole_project_has_no_base_to_compare_and_names_nothing(self, tmp_path: Path) -> None:
+        broken = self.SERVICE.replace("get_user", "fetch_user")
+        repo = self.branch(tmp_path, {"shop/repo.py": self.REPO}, {"shop/service.py": broken})
+        assert self.found(repo, whole=True) == [], "every diagnostic of the head would read as new"
+
+    def test_the_text_before_the_change_is_rebuilt_from_its_diff(self) -> None:
+        import difflib
+
+        from adk_review.collect.diff import old_text
+
+        before = "".join(f"def keep{n}():\n    return {n}\n\n\n" for n in range(9)) + "LIMIT = 1\n"
+        after = before.replace("return 3", "return 33").replace("LIMIT = 1\n", "") + "def new():\n    pass\n"
+        diff = "".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True), "a", "b"))
+        assert old_text(after, diff) == before
+        assert old_text("", "".join(difflib.unified_diff(before.splitlines(True), [], "a", "b"))) == before, "deleted"
+
+    def test_a_path_python_could_not_import_is_never_written(self, tmp_path: Path) -> None:
+        """A branch names its own paths: one outside the folder, a device name Windows holds, or two that differ only
+        in case would write where the reviewer never meant to, and Python imports none of them by these names."""
+        from adk_review.collect.pyrefly import written
+
+        texts = {
+            "../outside.py": "x = 1\n",
+            "pkg/nul.py": "x = 1\n",
+            "my-dir/x.py": "x = 1\n",
+            "pkg/A.py": "x = 1\n",
+            "pkg/a.py": "x = 1\n",
+            "pkg/ok.py": "x = 1\n",
+        }
+        assert sorted(written(str(tmp_path), texts)) == ["pkg/ok.py"]
+        assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.py")) == ["pkg/ok.py"]
+
+    def test_pyrefly_that_cannot_run_is_this_rules_hole_alone(self, tmp_path: Path, monkeypatch) -> None:
+        from adk_review.collect import pyrefly
+        from adk_review.collect.git import collect_evidence
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.callers import Callers
+        from adk_review.judge.rules.radius_types import RadiusTypes
+
+        monkeypatch.setattr(pyrefly, "beside", lambda: None)
+        monkeypatch.setattr(pyrefly, "on_path", lambda name: name)
+        renamed = self.REPO.replace("def get_user", "def fetch_user")
+        repo = self.branch(
+            tmp_path, {"shop/repo.py": self.REPO, "shop/service.py": self.SERVICE}, {"shop/repo.py": renamed}
+        )
+        answers = run_rules(collect_evidence(str(repo), BASE, "change"), [RadiusTypes(), Callers()])
+        assert "pyrefly is not on PATH" in (answers["rule.radius-types"].could_not_look or "")
+        assert answers["rule.callers"].could_not_look is None
+
+
 class TestTheShippedRules:
     """Each shipped rule on the shapes it names, and on those it must leave."""
 

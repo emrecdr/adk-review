@@ -100,27 +100,30 @@ each changed file whole at the head, its lines, the lines the change added, its 
 diagnostics where it names the tool (`lint`, `pitfalls` and `simplify` name ruff, each with codes no other names, and
 `types` names pyrefly, whose adapters `collect/tools.py` holds, run by `collect/ruff.py` and `collect/pyrefly.py`); a
 `TreeRule`, `check(tree)` over the head's paths and parsed modules, naming a line where it knows one, with the lines the
-change added (`tree.added`), what each import binds (`tree.imports`) and the paths the change moved or removed
-(`tree.removed`, `tree.imports_before`); the head is read whole only where a tree rule's `needs_head(files)` or a
-guideline asks, `callers` asking only where a function that was there before changed its parameters, or the change
-removed a name a module defined or moved or removed a module. A guideline is a class naming its role, a thinking budget
-and, optionally, its own model per arm (`core/guidelines.py`), built into an agent by `judge/agents.py`.
-`judge/catalog.py` finds every check, reads `config.toml` and resolves what runs, for the command and the chat alike. A
-rule imports one door, `judge/rule_helpers/`: the contract, passed on from `core/` (`rules.py`'s kinds, `Hit` and
-`Diagnostic`, `evidence.py`'s `Entry`, `findings.py`'s `Severity` and `RANK`), helpers named after what they read
-(`lines.py`, `syntax.py`, `diagnostics.py`) and try a rule with (`testing.py`), and what a review reads too, passed on
-from `core/`: `matches`, the skip list's matcher, a test's path, the parser `parse` and a credential's shape. A rule is
-handed no test's file unless it sets `reads_tests = True`, as each rule about what runs, leaks or steers does
-(`file.changed` and `tree.paths` still list every test). A rule reads only the files `scan` names unless it sets
-`reads_every_kind = True`, as the two credential rules do: a key leaks from a README as from code. A rule or a guideline
-whose findings change how code reads and never what it does sets `cleanup = True`, as `simplify` and `complexity` do:
-the hand-off lists them under `## Tidy`, apart from the fixes, and holds one back on lines a defect at major or above
-names. A rule may carry `bad` and `good` examples (those that read an outside tool carry none), which the catalog holds
-it to at every start with its own source, a rule failing either being exit 2, and a `(path, text)` example names a file
-the shipped `scan` reads (`tests/test_catalog.py`); `try_rule`, `lines_hit` and `self_check` try a rule with no
-repository, `--list-checks` lists every check with its kind, its profiles and its file, `--check ID` runs one check
-alone. Each check has one id, `rule.<name>` or `guideline.<name>` (`core/profiles.py`), in the config, on the command
-line and as its own report section; inside ADK it is `state_key`'s identifier, `rule_<name>`.
+change added (`tree.added`), what each import binds (`tree.imports`), the paths the change moved or removed
+(`tree.removed`, `tree.imports_before`) and, where it names a tool, its diagnostics by path (`tree.diagnostics`:
+`radius-types` names `pyrefly-radius`, pyrefly over the head's tree and the base's, what is new in a file or on a line
+the change left alone); the head is read whole only where a tree rule's `needs_head(files)` or a guideline asks,
+`callers` asking only where a function that was there before changed its parameters, or the change removed a name a
+module defined or moved or removed a module, and `radius-types` wherever the change modified, moved or removed a Python
+file. A guideline is a class naming its role, a thinking budget and, optionally, its own model per arm
+(`core/guidelines.py`), built into an agent by `judge/agents.py`. `judge/catalog.py` finds every check, reads
+`config.toml` and resolves what runs, for the command and the chat alike. A rule imports one door,
+`judge/rule_helpers/`: the contract, passed on from `core/` (`rules.py`'s kinds, `Hit` and `Diagnostic`, `evidence.py`'s
+`Entry`, `findings.py`'s `Severity` and `RANK`), helpers named after what they read (`lines.py`, `syntax.py`,
+`diagnostics.py`) and try a rule with (`testing.py`), and what a review reads too, passed on from `core/`: `matches`,
+the skip list's matcher, a test's path, the parser `parse` and a credential's shape. A rule is handed no test's file
+unless it sets `reads_tests = True`, as each rule about what runs, leaks or steers does (`file.changed` and `tree.paths`
+still list every test). A rule reads only the files `scan` names unless it sets `reads_every_kind = True`, as the two
+credential rules do: a key leaks from a README as from code. A rule or a guideline whose findings change how code reads
+and never what it does sets `cleanup = True`, as `simplify` and `complexity` do: the hand-off lists them under
+`## Tidy`, apart from the fixes, and holds one back on lines a defect at major or above names. A rule may carry `bad`
+and `good` examples (those that read an outside tool carry none), which the catalog holds it to at every start with its
+own source, a rule failing either being exit 2, and a `(path, text)` example names a file the shipped `scan` reads
+(`tests/test_catalog.py`); `try_rule`, `lines_hit` and `self_check` try a rule with no repository, `--list-checks` lists
+every check with its kind, its profiles and its file, `--check ID` runs one check alone. Each check has one id,
+`rule.<name>` or `guideline.<name>` (`core/profiles.py`), in the config, on the command line and as its own report
+section; inside ADK it is `state_key`'s identifier, `rule_<name>`.
 
 The one config file, `config.toml` beside `review.py`, holds the profiles under `[profiles]` — named lists of check ids
 or the groups `rules` and `guidelines`, `default` the basics — and the review policy (`[review]` `fail_on`,

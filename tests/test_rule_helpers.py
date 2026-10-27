@@ -314,7 +314,7 @@ class TestTheCatalogHoldsARuleToItsExamples:
         rules = catalog().rules
         bare = [rule.id for rule in rules if not (rule.bad and rule.good)]
         named = [rule.id for rule in rules if getattr(rule, "tool", None)]
-        assert bare == named == ["lint", "pitfalls", "simplify", "types"]
+        assert bare == named == ["lint", "pitfalls", "radius-types", "simplify", "types"]
 
 
 def test_a_rule_names_a_tool_an_adapter_runs_or_is_refused(rules_folder) -> None:
@@ -323,7 +323,7 @@ def test_a_rule_names_a_tool_an_adapter_runs_or_is_refused(rules_folder) -> None
     from adk_review.collect.tools import ADAPTERS
     from adk_review.core.rules import TOOLS
 
-    assert set(ADAPTERS) == TOOLS == {"ruff", "pyrefly"}
+    assert set(ADAPTERS) == TOOLS == {"ruff", "pyrefly", "pyrefly-radius"}
     rule = (
         '"""A rule naming a tool no adapter runs."""\n\nfrom __future__ import annotations\n\n'
         "from ..rule_helpers import ChangedFile, FileRule\n\n\nclass NoTool(FileRule):\n"
@@ -332,7 +332,9 @@ def test_a_rule_names_a_tool_an_adapter_runs_or_is_refused(rules_folder) -> None
         "    def check(self, file: ChangedFile) -> list[int]:\n        return []\n"
     )
     rules_folder("no_tool", rule)
-    with pytest.raises(ValueError, match=r"names the tool 'gitleaks', which no adapter runs\. There are pyrefly, ruff"):
+    with pytest.raises(
+        ValueError, match=r"names the tool 'gitleaks', which no adapter runs\. There are pyrefly, pyrefly-radius, ruff"
+    ):
         catalog()
 
 

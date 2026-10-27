@@ -18,14 +18,17 @@ import subprocess
 import sysconfig
 import tempfile
 import threading
-from collections.abc import Collection
-from pathlib import Path, PurePath
+from collections import Counter, defaultdict
+from collections.abc import Collection, Mapping
+from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path, PurePath, PurePosixPath
 
-from ..core.evidence import Change, unreleased
+from ..core.evidence import Change, Entry, unreleased
 from ..core.rules import Diagnostic, is_python_text
 from ..core.text import squash
+from .diff import old_text
 from .git import on_path
-from .ruff import Rows, laid_out
+from .ruff import Rows, laid_out, rows_of
 
 PYREFLY_TIMEOUT_S = 60
 #: Pyrefly's answer is read up to this many bytes, and past them none of it is: the rule did not look. Measured by
@@ -164,6 +167,168 @@ def _parsed(
         message = _LITERAL.sub("'…'", squash(error["concise_description"]))
         found.setdefault(path, []).append(Diagnostic(number, line, error["name"], message))
     return found
+
+
+#: What Windows holds as a device under any extension: a module so named is written nowhere.
+_DEVICES = frozenset({"con", "prn", "aux", "nul", *(f"{port}{n}" for port in ("com", "lpt") for n in range(1, 10))})
+#: A diagnostic as the radius tells one from another across the base and the head: its file, its kind and its line's
+#: text, never its number, which moves wherever the change added or removed a line above it; and the order pyrefly
+#: gave it in, which keeps two of one line apart.
+type Found = tuple[str, str, str, int]
+#: A diagnostic and the lines its range covers, as git numbers them.
+type Ranged = tuple[Diagnostic, range]
+
+
+def radius(evidence: Change, ignored: Collection[str]) -> dict[str, list[Diagnostic]] | str:
+    """Pyrefly over the head's tree and the base's, each laid out as it is so an import finds what it names: by path,
+    each diagnostic new at the head, of a kind not `ignored`, in a file the change left alone or on a line of a changed
+    file it did not add, which the `types` rule reads. Nothing under `--all` or `--try`, which have no base, where the
+    change only adds files, nor where the head was not read. Measured over ADK, 31 method edits: 24 named, none
+    wrongly, 0.5 s a run; over this repository's last 195 commits, none named: 37 before a test's file was left out,
+    34 of them in tests, and before a new diagnostic was charged first to the lines the change added."""
+    tree = evidence.get("tree")
+    altered = any(
+        f["status"] in ("M", "T", "R", "D") and f.get("old", f["path"]).endswith(".py") for f in evidence["files"]
+    )
+    if tree is None or evidence.get("whole") or not altered:
+        return {}
+    pyrefly = beside() or on_path("pyrefly")
+    if pyrefly == "pyrefly":
+        return "pyrefly is not on PATH. `uv run` puts the project's own there"
+    head = {path: text for path, text in tree.sources.items() if path.endswith(".py")}
+    base, renamed = _base(head, evidence["files"])
+    try:
+        # The two runs side by side: measured on ADK's 815 files, one after the other added 2.2 s to a push's review.
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            later = pool.submit(_whole, pyrefly, base, ignored)
+            now, before = _whole(pyrefly, head, ignored), later.result()
+    except OSError as exc:
+        return f"pyrefly could not run on the head's tree ({exc.strerror or type(exc).__name__})"
+    except _UnreadError as why:
+        return str(why)
+    except subprocess.CalledProcessError as exc:
+        return f"pyrefly exited {exc.returncode}: {squash(exc.stderr) or 'no reason given'}"
+    except subprocess.TimeoutExpired:
+        return f"pyrefly did not answer within {PYREFLY_TIMEOUT_S} s"
+    return _new(now, before, renamed, {f["path"]: f["added_at"] for f in evidence["files"]})
+
+
+def _base(head: Mapping[str, str], files: list[Entry]) -> tuple[dict[str, str], dict[str, str]]:
+    """The base's tree, the head's with each changed Python file as it was, rebuilt from its diff, and where each such
+    file is at the head, by its path before the change."""
+    base, renamed = dict(head), {}
+    for f in files:
+        path, old, status = f["path"], f.get("old", f["path"]), f["status"]
+        text = "" if status == "D" else f["text"]
+        if status in ("M", "T", "R", "D") and old.endswith(".py") and f["diff"] is not None and text is not None:
+            base.pop(path, None)
+            base[old], renamed[old] = old_text(text, f["diff"]), path
+        elif status in ("A", "C", "R"):
+            base.pop(path, None)  # not there before; one not read at the head stays as both runs hold it
+    return base, renamed
+
+
+def _new(
+    now: Mapping[Found, Ranged],
+    before: Mapping[Found, Ranged],
+    renamed: Mapping[str, str],
+    added: Mapping[str, Collection[int]],
+) -> dict[str, list[Diagnostic]]:
+    """Each diagnostic at the head the base did not hold, by its file, kind and line's text, counted: where the head
+    holds a key more often than the base did, the surplus is charged first to the diagnostics whose range meets a line
+    the change added, the change's own and the `types` rule's, and only what is left to a line it kept. Measured over
+    this repository's history: a class the change added above two whose `def` lines read as its own had one of theirs
+    named, where its own was the new one."""
+    seen = Counter((renamed.get(path, path), kind, line) for path, kind, line, _order in before)
+    grouped: defaultdict[tuple[str, str, str], list[Ranged]] = defaultdict(list)
+    for (path, kind, line, _order), ranged in now.items():
+        grouped[path, kind, line].append(ranged)
+    found: dict[str, list[Diagnostic]] = {}
+    for (path, kind, line), items in sorted(grouped.items()):
+        mine = set(added.get(path, ()))
+        kept = sorted((diagnostic for diagnostic, lines in items if not mine & set(lines)), key=lambda d: d.line)
+        surplus = len(kept) - seen[path, kind, line]  # the new ones the added lines do not hold
+        if surplus > 0:
+            found.setdefault(path, []).extend(kept[-surplus:])
+    return {path: sorted(items, key=lambda d: d.line) for path, items in found.items()}
+
+
+def _whole(pyrefly: str, texts: Mapping[str, str], ignored: Collection[str]) -> dict[Found, Ranged]:
+    """Pyrefly over `texts` laid out as one tree with the reviewer's configuration: each diagnostic of a kind not
+    `ignored`, by its key and the order pyrefly gave it in, on git's line, with the lines its range covers."""
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
+        rows = written(tmp, texts)
+        if not rows:  # no file an import could name: nothing to check, where pyrefly would refuse an empty project
+            return {}
+        Path(tmp, "pyrefly.toml").write_text(CONFIG, encoding="utf-8")
+        argv = [pyrefly, "check", "-c", "pyrefly.toml", "--output-format", "json", "--summary=none", "--progress-bar"]
+        answer, said = _answer([*argv, "no"], tmp)
+    if _UNTAKEN in said:
+        untaken = said.split(_UNTAKEN, 1)[1].splitlines()[0].strip()
+        raise _UnreadError(f"pyrefly did not take the reviewer's configuration whole: no key {untaken}")
+    try:
+        errors = json.loads(answer)["errors"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise _UnreadError(
+            f"pyrefly's answer could not be read ({type(exc).__name__}): {squash(said) or 'no reason'}"
+        ) from exc
+    found: dict[Found, Ranged] = {}
+    for index, error in enumerate(errors):
+        path = _written_as(error["path"], rows)
+        if error["name"] in ignored or path is None:
+            continue
+        number, line = rows[path].place(error["line"])
+        stop = rows[path].place(error.get("stop_line") or error["line"])[0]
+        message = _LITERAL.sub("'…'", squash(error["concise_description"]))
+        diagnostic = Diagnostic(number, line, error["name"], message)
+        found[(path, error["name"], squash(line), index)] = (
+            diagnostic,
+            range(_decorated(rows[path], number), stop + 1),
+        )
+    return found
+
+
+def _decorated(rows: Rows, number: int) -> int:
+    """Where a `def` or `class` on line `number` starts, its decorators above it among it: pyrefly puts the error a
+    decorator raises, `@override` over no parent's method, on the `def` below it, which the change may have kept."""
+    if not rows.lines[number - 1 : number] or not rows.lines[number - 1].lstrip().startswith(
+        ("def ", "async ", "class ")
+    ):
+        return number
+    while number > 1 and rows.lines[number - 2].lstrip().startswith("@"):
+        number -= 1
+    return number
+
+
+def _written_as(reported: str, rows: Mapping[str, Rows]) -> str | None:
+    """The path a file was written at, read off the end of the path pyrefly reports, however it spells the folder: on
+    Windows, a temporary folder has a short name and a long one, and `_parsed` reads the index the same way."""
+    parts = PurePath(reported).parts
+    return next((path for k in range(len(parts)) if (path := "/".join(parts[k:])) in rows), None)
+
+
+def written(folder: str, texts: Mapping[str, str]) -> dict[str, Rows]:
+    """Each file Python could import by its path, written into `folder` at that path, the tree laid out as the head
+    holds it, with its lines by path. Never a path outside the folder, a device name Windows holds, or one that another
+    differs from only in case: a branch names its own paths, and no import reaches a file by any of them. A file the
+    disk refuses is left out, as a file the head's read left out is."""
+    folded = Counter(path.casefold() for path in texts)
+    rows: dict[str, Rows] = {}
+    for path, text in texts.items():
+        parts = PurePosixPath(path).parts
+        names = [*parts[:-1], parts[-1].removesuffix(".py")] if parts and path.endswith(".py") else []
+        if not names or folded[path.casefold()] > 1:
+            continue
+        if not all(name.isidentifier() and name.casefold() not in _DEVICES for name in names):
+            continue
+        target = Path(folder, *parts)
+        try:
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text, encoding="utf-8", newline="")
+        except OSError:
+            continue
+        rows[path] = rows_of(text)
+    return rows
 
 
 def identity() -> str:

@@ -65,8 +65,9 @@ def _diagnosed(tool: str, settings: Mapping[str, object], evidence: Change) -> d
 
 def run_rules(evidence: Change, rules: Sequence[AnyRule], stop: threading.Event | None = None) -> dict[str, Checked]:
     """Every rule over what it reads, each the same way, by its check id: what it found, or why it could not look. A
-    rule that names an outside tool is given its diagnostics on each changed Python file, beside the file. `stop`, once
-    set, ends the run before the next rule: the rules run in a thread, which no cancel reaches."""
+    file rule that names an outside tool is given its diagnostics on each changed Python file, beside the file, and a
+    tree rule on the tree. `stop`, once set, ends the run before the next rule: the rules run in a thread, which no
+    cancel reaches."""
     answers: dict[str, Checked] = {}
     for rule in rules:
         if stop is not None and stop.is_set():
@@ -74,13 +75,17 @@ def run_rules(evidence: Change, rules: Sequence[AnyRule], stop: threading.Event 
         files: list[Entry] = evidence["files"]
         if rule.reads_every_kind:  # the project's own files `scan` leaves out: a credential rule reads them too
             files = [*files, *evidence.get("unscanned", ())]
-        if isinstance(rule, FileRule) and (tool := rule.tool):
+        tree = evidence["tree"]
+        if tool := rule.tool:
             found = _diagnosed(tool, rule.tool_settings, evidence)
             if isinstance(found, str):
                 answers[rule.check_id] = _hole(found)
                 continue
-            files = [{**entry, "diagnostics": found.get(entry["path"], ())} for entry in files]
-        answers[rule.check_id] = run_rule(rule, files, evidence["tree"])
+            if isinstance(rule, FileRule):
+                files = [{**entry, "diagnostics": found.get(entry["path"], ())} for entry in files]
+            elif tree is not None:
+                tree = tree.diagnosed(found)
+        answers[rule.check_id] = run_rule(rule, files, tree)
     return answers
 
 

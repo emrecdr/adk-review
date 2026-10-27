@@ -93,7 +93,6 @@ try:
     from .core.guidelines import Guideline
     from .core.health import Health, measured
     from .core.profiles import DEFAULT
-    from .core.rules import FileRule
     from .core.text import short_ref
     from .core.verdict import (
         EXIT_CLEAN,
@@ -1056,7 +1055,7 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
     from .judge.settings import fallback_name
 
     digest = hashlib.sha256()
-    tools = sorted({rule.tool for rule in chosen.rules if isinstance(rule, FileRule) and rule.tool})
+    tools = sorted({rule.tool for rule in chosen.rules if rule.tool})
     here = Path(__file__).parent
     for path in sorted(here.rglob("*")):
         if path.suffix in (".py", ".toml") and "__pycache__" not in path.parts:

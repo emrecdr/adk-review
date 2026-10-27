@@ -15,7 +15,12 @@ from . import pyrefly, ruff
 ADAPTERS: dict[str, Callable[..., dict[str, list[Diagnostic]] | str]] = {
     "ruff": ruff.diagnose,
     "pyrefly": pyrefly.diagnose,
+    "pyrefly-radius": pyrefly.radius,
 }
 #: Each tool by the name a rule gives it, and which one would run, its version among it: what a rule's findings
 #: depend on beside the change, so a review kept under one tool is never served under another.
-IDENTITIES: dict[str, Callable[[], str]] = {"ruff": ruff.identity, "pyrefly": pyrefly.identity}
+IDENTITIES: dict[str, Callable[[], str]] = {
+    "ruff": ruff.identity,
+    "pyrefly": pyrefly.identity,
+    "pyrefly-radius": pyrefly.identity,
+}
