@@ -15,6 +15,14 @@ the long form of these instructions, which Copilot in VS Code and the cloud agen
 the recurring tasks in `.github/skills/`, each a slash command in VS Code's chat: `/new-rule`, `/new-guideline`,
 `/review-a-branch` and `/update-docs`, which keeps the docs true after a change.
 
+## Hard rules for every change
+
+- Double-check and validate before starting to implement: reproduce each finding first — a probe on a scratch
+  repository, a measurement, or a test that fails on the committed code — and confirm its cause in the code. A finding
+  that does not reproduce is reported, never fixed.
+- Size a change to its benefit: never implement a big or complex change for a very small, minor benefit. Prefer the
+  smallest fix, a sentence in the guide that names the limit, or no change, and say which was chosen and why.
+
 ## Secrets and configuration
 
 One `.env` at the root (gitignored, copied from `.env.example`) holds `REVIEW_PROVIDER`, `REVIEW_MODEL` and the keys;

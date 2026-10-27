@@ -10,6 +10,14 @@ judged by a model, in `adk_review/judge/guidelines/`. The command line is the ma
 same graph as a chat. `README.md` is the developer's guide — the architecture, and how to write a rule or a guideline —
 and `GUIDE.md` the user's: every flag, check, JSON field and limit, held to the code by tests.
 
+## Hard rules for every change
+
+- Double-check and validate before starting to implement: reproduce each finding first — a probe on a scratch
+  repository, a measurement, or a test that fails on the committed code — and confirm its cause in the code. A finding
+  that does not reproduce is reported, never fixed.
+- Size a change to its benefit: never implement a big or complex change for a very small, minor benefit. Prefer the
+  smallest fix, a sentence in the guide that names the limit, or no change, and say which was chosen and why.
+
 ## Commands
 
 ```bash
