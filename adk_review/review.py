@@ -59,6 +59,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import gc
 import hashlib
 import json
 import logging
@@ -72,7 +73,7 @@ import threading
 import time
 import tomllib
 import warnings
-from collections.abc import Callable, Generator, Sequence
+from collections.abc import Callable, Generator, Iterator, Sequence
 from importlib import metadata
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import NoReturn, TextIO
@@ -718,7 +719,7 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
     say = None if args.quiet else _say if args.progress or _terminal(sys.stderr) else None
     if say is not None:
         say(f"reading {head} against {base or 'the empty tree'}")
-    with _beating(say, lambda: "reading the change"):
+    with _beating(say, lambda: "reading the change"), _uncollected():
         evidence = collect_evidence(
             repo,
             base,
@@ -755,6 +756,20 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
         )
         return EXIT_CLEAN
     return _decided(args, chosen, evidence, shown, previous, say)
+
+
+@contextlib.contextmanager
+def _uncollected() -> Iterator[None]:
+    """The garbage collector paused while the evidence is gathered, and what that made kept out of its later passes:
+    the head's parsed modules hold no reference cycle, so counting references frees each when the tree is let go, and
+    scanned, millions of nodes cost the collector seconds. Measured on a signature change's review, the same report
+    either way: litellm's 2,776 files, 4.7 to 6.2 s against 2.7 to 2.9; ADK's 815, 1.7 s against 1.3."""
+    gc.disable()
+    try:
+        yield
+    finally:
+        gc.freeze()
+        gc.enable()
 
 
 def _arm(verify: bool, guidelines: Sequence[Guideline] = ()) -> tuple[str | None, str]:
