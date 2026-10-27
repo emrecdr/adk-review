@@ -733,7 +733,7 @@ class TestThePreviousReportAndTheHandoff:
 
         assert run_review(cli, demo_repo, "--check", "rule.lint", "--comment", str(comment)) == 0
         written = comment.read_text(encoding="utf-8")
-        assert "nothing that blocks it" in written and "### Must fix" not in written, written
+        assert "the level that blocks a merge here" in written and "### Must fix" not in written, written
         assert "### Worth a look" in written and "S602" in written, "an approved change gets its points to improve"
 
         assert run_review(cli, demo_repo, "--diff-cap", "100", "--comment", str(comment)) == 3
@@ -856,6 +856,22 @@ class TestThePreviousReportAndTheHandoff:
         many = Outcome(kept=[lead, finding(1)], folded=[(finding(at), lead) for at in range(2, 302)])
         said = render_comment(evidence, many, verdict="APPROVED", fail_on="blocker")
         assert said.count("   - Also on these lines:") <= 6 and "left out" not in said, said[-600:]
+
+    def test_an_approval_names_the_bar_it_was_held_to(self) -> None:
+        """Read by review, the outside audit's C3: four majors, each "fix before merge" on the scale, sat under "Worth a
+        look" below an opener that said the review "found nothing that blocks it", the bar it meant unnamed."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import render_comment
+
+        call = Finding(file="w.py", line=5, severity="major", title="t", evidence="+f()", suggestion="s")
+        evidence = {"preflight": {"head": "h", "head_sha": "0" * 40}}
+        outcome = Outcome(kept=[Sourced("rule.callers", call, (5, 5))])
+        said = render_comment(evidence, outcome, verdict="APPROVED", fail_on="blocker")
+        assert "found nothing of `blocker` severity or above, the level that blocks a merge here." in said, said
+        assert "### Worth a look" in said
+        said = render_comment(evidence, Outcome(), verdict="APPROVED", fail_on="minor")
+        assert "found nothing of `minor` severity or above" in said, said
 
     def test_a_folded_finding_shows_its_own_change_where_it_differs(self) -> None:
         """Read by review, the outside audit's C2: `subprocess.run` with no `check` was folded under ruff's S603,

@@ -380,9 +380,14 @@ _COMMENT_ROOM = 1_000
 #: The other readings of one point's lines a comment names, the rest counted: read by review, 300 folded on one point
 #: made it larger than the comment's room, and it was left out with every point after it.
 ALSO_SHOWN = 5
-#: How a comment for the branch's author opens, by the verdict: a thank-you, then what the review decided.
+#: How a comment for the branch's author opens, by the verdict: a thank-you, then what the review decided. An approval
+#: names its bar: read by review, majors, "fix before merge" on the scale, sat under "Worth a look" below a line that
+#: said the review found "nothing that blocks it", and the `blocker` bar it meant went unnamed.
 COMMENT_OPENS = {
-    "APPROVED": "Thanks for this change. The review found nothing that blocks it.",
+    "APPROVED": (
+        "Thanks for this change. The review found nothing of `{bar}` severity or above, the level that blocks a "
+        "merge here."
+    ),
     "REQUEST_CHANGES": "Thanks for this change. Please fix each point under Must fix before it merges.",
     "DEGRADED": "Thanks for this change. The review could not check all of it, so it approves nothing yet.",
 }
@@ -414,7 +419,7 @@ def render_comment(
     head = f"**Review of {code_span(one_line(pre['head']))} at `{pre['head_sha'][:12]}`**" + _ran(
         profile, model, checks
     )
-    lines = [head, "", COMMENT_OPENS[verdict]]
+    lines = [head, "", COMMENT_OPENS[verdict].format(bar=fail_on)]
     if previous is not None:
         lines.append(_since_last(outcome, verdict, previous, checks, evidence.get("scope", [])))
     if verdict == "APPROVED" and (worth or tidy):
