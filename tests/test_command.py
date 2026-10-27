@@ -760,6 +760,39 @@ class TestThePreviousReportAndTheHandoff:
         assert said in written.split("### ", 1)[0], written
         capsys.readouterr()
 
+    def test_a_comment_stays_short_enough_to_paste(self) -> None:
+        """Measured by review: a branch of 354 findings wrote a comment of 88,393 characters, past the 65,536 GitHub
+        takes, and more than any author reads. The comment stops at `COMMENT_MAX_CHARS`, the most severe points first,
+        and counts the rest, which the text report lists."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import COMMENT_MAX_CHARS, render_comment
+
+        def finding(at: int) -> Sourced:
+            made = Finding(
+                file=f"f{at}.py",
+                line=1,
+                severity="major",
+                title="t " * 40,
+                evidence="+x = 1 " * 50,
+                suggestion="s " * 200,
+            )
+            return Sourced("rule.lint", made, (1, 1))
+
+        evidence = {"preflight": {"head": "h", "head_sha": "0" * 40}}
+        said = render_comment(
+            evidence, Outcome(kept=[finding(at) for at in range(400)]), verdict="APPROVED", fail_on="blocker"
+        )
+        assert len(said) <= COMMENT_MAX_CHARS, len(said)
+        listed = said.count("   - Suggested change:")
+        assert 0 < listed < 400 and f"{400 - listed} more points are left out" in said, said[-400:]
+        few = render_comment(evidence, Outcome(kept=[finding(0)]), verdict="APPROVED", fail_on="blocker")
+        assert "left out" not in few
+        unread = Outcome(kept=[finding(0)], unread={f"vendor/f{at}.bin": "binary" for at in range(5_000)})
+        said = render_comment(evidence, unread, verdict="DEGRADED", fail_on="blocker")
+        assert len(said) <= COMMENT_MAX_CHARS and "more, which the report lists" in said, len(said)
+        assert "   - Suggested change:" in said, "a point still has room beside what the review could not check"
+
     def test_a_quote_over_several_lines_keeps_its_shape_in_the_comment(self) -> None:
         """Read by review: in a live run 27 of the guidelines' 54 quotes spanned lines, and the comment flattened each
         into one, its code's shape lost. A quote over several lines is a fenced block under its item, each line as

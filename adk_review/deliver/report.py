@@ -368,6 +368,11 @@ def _to_fix(item: Sourced, identity: str, indent: str) -> list[str]:
     ]
 
 
+#: The most a comment holds, in characters: GitHub takes 65,536 in one, and no author reads more. Measured by review:
+#: a branch of 354 findings wrote 88,393. The most severe points come first, and the rest are counted.
+COMMENT_MAX_CHARS = 60_000
+#: What a comment keeps free under its cap: its closing count, and the spaces `inert` puts in.
+_COMMENT_ROOM = 1_000
 #: How a comment for the branch's author opens, by the verdict: a thank-you, then what the review decided.
 COMMENT_OPENS = {
     "APPROVED": "Thanks for this change. The review found nothing that blocks it.",
@@ -407,16 +412,54 @@ def render_comment(
         lines.append(_since_last(outcome, verdict, previous))
     if verdict == "APPROVED" and (worth or tidy):
         lines.append("The points below would still improve it.")
+    lanes: list[tuple[list[str], list[list[str]]]] = []  # each section's heading, and its points
     for heading, groups, note in (
         ("Must fix before it merges", must, ""),
         ("Worth a look", worth, ""),
         ("Optional tidy-ups", tidy, "These change how the code reads, never what it does."),
     ):
         if groups:
-            lines += ["", f"### {heading}", "", *([note, ""] if note else []), *_commented(groups, tidies)]
+            lanes.append((["", f"### {heading}", "", *([note, ""] if note else [])], _commented(groups, tidies)))
+    holes = []
     if unchecked := _unchecked(outcome, fail_on):
-        lines += ["", "### Not checked", "", "The review could not check these. Check them by hand.", "", *unchecked]
-    return inert("\n".join(lines)) + "\n"
+        holes = ["", "### Not checked", "", "The review could not check these. Check them by hand.", "", *unchecked]
+    return inert("\n".join(_within(lines, lanes, holes))) + "\n"
+
+
+def _within(lines: list[str], lanes: list[tuple[list[str], list[list[str]]]], holes: list[str]) -> list[str]:
+    """The comment: `lines`, then each section's points, the most severe sections first, as long as it stays under
+    `COMMENT_MAX_CHARS`, the rest counted, and last what the review could not check, held to half the cap."""
+    if _size(holes) > COMMENT_MAX_CHARS // 2:
+        kept, used = [], 0
+        for line in holes:
+            used += len(line) + 1
+            if used > COMMENT_MAX_CHARS // 2:
+                break
+            kept.append(line)
+        holes = [*kept, f"- and {len(holes) - len(kept)} more, which the report lists"]
+    room = COMMENT_MAX_CHARS - _COMMENT_ROOM - _size(lines) - _size(holes)
+    made, left = list(lines), 0
+    for top, points in lanes:
+        room -= _size(top)
+        shown = []
+        for point in points:
+            if left or _size(point) > room:
+                left += 1
+            else:
+                shown.append(point)
+                room -= _size(point)
+        made += [*top, *(line for point in shown for line in point)] if shown else []
+    if left:
+        made += [
+            "",
+            f"{left} more points are left out, to keep the comment short enough to paste. The report lists each.",
+        ]
+    return made + holes
+
+
+def _size(lines: Sequence[str]) -> int:
+    """How many characters `lines` take in a comment, each with its line break."""
+    return sum(len(line) + 1 for line in lines)
 
 
 def _since_last(outcome: Outcome, verdict: str, previous: Mapping[str, dict]) -> str:
@@ -447,14 +490,14 @@ def _ran(profile: str, model: str, checks: Sequence[str]) -> str:
     )
 
 
-def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[str]:
+def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[list[str]]:
     """Each group of a comment, numbered: its lead's place, title and severity, the lines quoted, the change, and the
     other defects on the same lines by title."""
-    lines = []
+    points = []
     for number, (lead, *also) in enumerate(groups, 1):
         f = lead.finding
         place = _spot(f)
-        lines += [
+        lines = [
             f"{number}. {place}: {prose(f.title)} ({f.severity})",
             *_quoted_lines(f),
             f"   - Suggested change: {prose(f.suggestion)}",
@@ -464,7 +507,8 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
             for item in also
             if item.source not in tidies
         ]
-    return lines
+        points.append(lines)
+    return points
 
 
 def _check_again(
