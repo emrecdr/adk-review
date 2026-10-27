@@ -20,6 +20,7 @@ import functools
 import importlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -328,6 +329,20 @@ def _branch_off_empty(repo: Path, branch: str, base: str = BASE) -> Path:
     _git_in(repo, "commit", "-q", "--allow-empty", "-m", "base")
     _git_in(repo, "checkout", "-q", "-b", branch)
     return repo
+
+
+def _git_shell() -> str:
+    """The POSIX shell git runs its hooks and its monitor through, for a test to run them as git would: `sh` on PATH,
+    or on Windows the one Git for Windows ships beside `git.exe`. With none, the test is skipped, and says why."""
+    found = shutil.which("sh")
+    if found is None and os.name == "nt" and (git := shutil.which("git")):
+        root = Path(git).resolve().parents[1]  # <Git>\\cmd\\git.exe, or <Git>\\bin\\git.exe
+        found = next(
+            (str(sh) for sh in (root / "bin" / "sh.exe", root / "usr" / "bin" / "sh.exe") if sh.exists()), None
+        )
+    if found is None:
+        pytest.skip("no POSIX shell here: git runs its hooks through one, and Git for Windows ships its own")
+    return found
 
 
 def _committed(repo: Path, name: str, text: str | bytes = "x = 1\n", message: str = "") -> str:

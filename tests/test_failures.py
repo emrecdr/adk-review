@@ -29,6 +29,7 @@ from conftest import (
     _cut_reason,
     _file_url,
     _git_in,
+    _git_shell,
     _github_answers,
     _held_on_windows,
     _pushed_from,
@@ -1239,44 +1240,44 @@ def test_a_push_to_this_repository_itself_sends_nothing_off_the_machine(tmp_path
     assert push.main([".", "."]) == 0 and capsys.readouterr() == ("", "")
 
 
-@pytest.mark.skipif(os.name == "nt", reason="the recipe is a POSIX shell's, run by Git Bash there")
 def test_the_install_recipe_keeps_the_hook_it_finds_and_hands_both_gits_lines(tmp_path) -> None:
     """Read by review: the recipe in the guide replaced any pre-push hook already there, Git LFS's among them, so a
     pushed image's file was never uploaded and a fresh clone could not fetch it. The recipe keeps the hook it finds
     and runs it after the review passes, each given git's own lines."""
     import re
-    import shutil
 
     guide = ROOT.joinpath("GUIDE.md").read_text(encoding="utf-8")
+    sh = _git_shell()
     recipe = re.search(r"\n\n((?:    [^\n]*\n|\n)+)", guide[guide.index("To install it, run these lines") :])
     assert recipe, "the guide's recipe"
     script = "\n".join(line.removeprefix("    ") for line in recipe.group(1).strip("\n").splitlines())
-    work, bin_ = tmp_path / "work", tmp_path / "bin"
+    work, bin_, at = tmp_path / "work", tmp_path / "bin", tmp_path.as_posix()
     work.mkdir()
     bin_.mkdir()
     _git_in(work, "init", "-q", "-b", "main")
     hooks = work / ".git" / "hooks"
     hooks.mkdir(exist_ok=True)
-    (hooks / "pre-push").write_text(f'#!/bin/sh\ncat > "{tmp_path}/before.in"\necho "$@" > "{tmp_path}/before.args"\n')
+    before = f'#!/bin/sh\ncat > "{at}/before.in"\necho "$@" > "{at}/before.args"\n'
+    (hooks / "pre-push").write_text(before, encoding="utf-8", newline="\n")
     (hooks / "pre-push").chmod(0o755)
     reviewed = bin_ / "adk-review-push"
-    reviewed.write_text(f'#!/bin/sh\ncat > "{tmp_path}/review.in"\nexit "${{REVIEW_EXIT:-0}}"\n')
+    reviewed.write_text(
+        f'#!/bin/sh\ncat > "{at}/review.in"\nexit "${{REVIEW_EXIT:-0}}"\n', encoding="utf-8", newline="\n"
+    )
     reviewed.chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_}{os.pathsep}{os.environ['PATH']}", "GIT_CONFIG_GLOBAL": os.devnull}
-    subprocess.run(["sh", "-c", script], cwd=work, env=env, check=True)
+    subprocess.run([sh, "-c", script], cwd=work, env=env, check=True)
     lines = f"refs/heads/main {'a' * 40} refs/heads/main {'0' * 40}\n"
-    hook = [str(hooks / "pre-push"), "origin", "https://example.com/r.git"]
+    hook = [sh, (hooks / "pre-push").as_posix(), "origin", "https://example.com/r.git"]  # as git runs a hook
     done = subprocess.run(hook, cwd=work, env=env, input=lines, text=True, check=False)
     assert done.returncode == 0
     assert (tmp_path / "review.in").read_text() == lines == (tmp_path / "before.in").read_text()
-    assert (tmp_path / "before.args").read_text().split() == hook[1:]
+    assert (tmp_path / "before.args").read_text().split() == hook[2:]
     (tmp_path / "before.in").unlink()
     stopped = subprocess.run(hook, cwd=work, env={**env, "REVIEW_EXIT": "1"}, input=lines, text=True, check=False)
     assert stopped.returncode == 1 and not (tmp_path / "before.in").exists(), "a stopped push runs nothing after"
-    assert shutil.which("sh", path=env["PATH"]), "a shell to run the recipe in"
 
 
-@pytest.mark.skipif(os.name == "nt", reason="the recipe is a POSIX shell's, run by Git Bash there")
 def test_the_commit_hooks_install_recipe_keeps_the_hook_it_finds(tmp_path) -> None:
     """The guide's lines for the commit hook keep a pre-commit hook already there, as the push hook's keep Git LFS's,
     and run it after the review passes, never after one that stopped the commit."""
@@ -1288,26 +1289,29 @@ def test_the_commit_hooks_install_recipe_keeps_the_hook_it_finds(tmp_path) -> No
     recipe = re.search(r"\n\n((?:    [^\n]*\n|\n)+)", guide[start.start() :])
     assert recipe, "the guide's recipe"
     script = "\n".join(line.removeprefix("    ") for line in recipe.group(1).strip("\n").splitlines())
+    sh, at = _git_shell(), tmp_path.as_posix()
     work, bin_ = tmp_path / "work", tmp_path / "bin"
     work.mkdir()
     bin_.mkdir()
     _git_in(work, "init", "-q", "-b", "main")
     hooks = work / ".git" / "hooks"
     hooks.mkdir(exist_ok=True)
-    (hooks / "pre-commit").write_text(f'#!/bin/sh\ntouch "{tmp_path}/before.ran"\n')
+    (hooks / "pre-commit").write_text(f'#!/bin/sh\ntouch "{at}/before.ran"\n', encoding="utf-8", newline="\n")
     (hooks / "pre-commit").chmod(0o755)
     reviewed = bin_ / "adk-review-commit"
-    reviewed.write_text(f'#!/bin/sh\ntouch "{tmp_path}/review.ran"\nexit "${{REVIEW_EXIT:-0}}"\n')
+    reviewed.write_text(
+        f'#!/bin/sh\ntouch "{at}/review.ran"\nexit "${{REVIEW_EXIT:-0}}"\n', encoding="utf-8", newline="\n"
+    )
     reviewed.chmod(0o755)
     env = {**os.environ, "PATH": f"{bin_}{os.pathsep}{os.environ['PATH']}", "GIT_CONFIG_GLOBAL": os.devnull}
-    subprocess.run(["sh", "-c", script], cwd=work, env=env, check=True)
-    hook = [str(hooks / "pre-commit")]
+    subprocess.run([sh, "-c", script], cwd=work, env=env, check=True)
+    hook = [sh, (hooks / "pre-commit").as_posix()]  # as git runs a hook
     assert subprocess.run(hook, cwd=work, env=env, check=False).returncode == 0
     assert (tmp_path / "review.ran").exists() and (tmp_path / "before.ran").exists()
     (tmp_path / "before.ran").unlink()
     stopped = subprocess.run(hook, cwd=work, env={**env, "REVIEW_EXIT": "1"}, check=False)
     assert stopped.returncode == 1 and not (tmp_path / "before.ran").exists(), "a stopped commit runs nothing after"
-    subprocess.run(["sh", "-c", script], cwd=work, env=env, check=True)
+    subprocess.run([sh, "-c", script], cwd=work, env=env, check=True)
     assert not (hooks / "pre-commit.before-adk-review").read_text().count("adk-review-commit"), "run again, it keeps"
 
 

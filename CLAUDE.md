@@ -17,6 +17,10 @@ and `GUIDE.md` the user's: every flag, check, JSON field and limit, held to the 
   that does not reproduce is reported, never fixed.
 - Size a change to its benefit: never implement a big or complex change for a very small, minor benefit. Prefer the
   smallest fix, a sentence in the guide that names the limit, or no change, and say which was chosen and why.
+- Support Windows and macOS alike, and Linux: every change works, and is tested, on each. A test is skipped on one
+  only where what it tests cannot exist there — a signal Windows cannot catch, a file mode it does not hold — and its
+  reason says so; a feature a system runs another way is tested that way there, as Git for Windows runs a hook through
+  its own `sh`. Write each file a shell or git reads with `newline="\n"`, and each path given to a shell as POSIX.
 
 ## Commands
 

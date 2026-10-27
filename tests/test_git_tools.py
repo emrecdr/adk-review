@@ -25,6 +25,7 @@ from conftest import (
     _branch_off_empty,
     _committed,
     _git_in,
+    _git_shell,
     _link_on_branch,
     _link_staged,
     gathered,
@@ -386,18 +387,22 @@ class TestGitPastItsTimeout:
             repo = _branch_off_empty(tmp_path / f"repo{ending}", "feature")
             assert _preflight(str(repo), BASE, "feature")["status"] == "success", repr(ending)
 
-    @pytest.mark.skipif(os.name == "nt", reason="a POSIX shell script stands in for the monitor program")
     def test_the_reviewed_repositorys_file_system_monitor_never_starts(self, tmp_path) -> None:
         """`core.fsmonitor` names a program git starts beside a diff. A branch cannot set it, but a repository someone
         prepared, or a workspace where the change's own code ran first, can. Measured before: `diff-tree` started it in
-        the review's environment, provider keys and all."""
+        the review's environment, provider keys and all. Git's own `status` starts it first, so the test shows the
+        program can run here, on Windows through Git for Windows' `sh` as on the rest."""
         git = importlib.import_module("adk_review.collect.git")
+        _git_shell()  # git runs the monitor through a POSIX shell; with none here, nothing is shown
         repo, marker = _branch_off_empty(tmp_path / "repo", "change"), tmp_path / "started"
         _committed(repo, "a.py")
         monitor = tmp_path / "monitor.sh"
-        monitor.write_text(f"#!/bin/sh\necho started >> '{marker}'\n", encoding="utf-8", newline="\n")
+        monitor.write_text(f"#!/bin/sh\necho started >> '{marker.as_posix()}'\n", encoding="utf-8", newline="\n")
         monitor.chmod(0o755)
-        _git_in(repo, "config", "core.fsmonitor", str(monitor))
+        _git_in(repo, "config", "core.fsmonitor", monitor.as_posix())
+        _git_in(repo, "status", "--porcelain")
+        assert marker.exists(), "git's own status started the monitor: it can run here"
+        marker.unlink()
         git._git(str(repo), "diff-tree", "-r", "--name-only", "HEAD~1", "HEAD")
         git._git(str(repo), "diff-tree", "-r", "-p", "HEAD~1", "HEAD")
         assert not marker.exists(), "the repository's own monitor program ran"
