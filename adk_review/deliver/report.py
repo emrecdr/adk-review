@@ -798,7 +798,8 @@ def _resolved(identities: Sequence[str], verdict: str, previous: Mapping[str, di
 def _spent(usage: dict) -> str:
     """The spend as the text report prints it, from the numbers the JSON report carries: the usage ledger's summary."""
     calls, attempted, tokens = usage["calls"], usage["attempted"], usage["tokens"]
-    lines = [f"- spend: {calls} model call(s) completed of {attempted} attempted, {tokens:,} tokens"]
+    cached = f", {usage['cached_tokens']:,} of them from the provider's prompt cache" if usage["cached_tokens"] else ""
+    lines = [f"- spend: {calls} model call(s) completed of {attempted} attempted, {tokens:,} tokens{cached}"]
     lines += [f"  - `{name}`: {r['calls']} call(s), {r['tokens']:,} tokens" for name, r in usage["by_agent"].items()]
     if usage["ceiling"] is not None:
         lines.append(f"- ceiling: {usage['ceiling']:,} tokens")

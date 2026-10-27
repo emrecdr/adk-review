@@ -395,7 +395,7 @@ class UsageLedger(BasePlugin):
         self.reserved: dict[str, int] = {}  # agent name -> tokens reserved for the call it has in flight
 
     def _row(self, context: Any) -> dict[str, int]:
-        return self.rows.setdefault(context.agent_name, {"attempted": 0, "calls": 0, "tokens": 0})
+        return self.rows.setdefault(context.agent_name, {"attempted": 0, "calls": 0, "tokens": 0, "cached_tokens": 0})
 
     @override
     async def before_run_callback(self, *, invocation_context: Any) -> None:
@@ -451,6 +451,10 @@ class UsageLedger(BasePlugin):
         # The provider's own total when it reports one; the parts this code knows to read otherwise.
         prompt, candidates = usage.prompt_token_count or 0, usage.candidates_token_count or 0
         row["tokens"] += usage.total_token_count or (prompt + candidates)
+        # The prompt's part the provider served from its cache, as ADK reports it on both arms: Gemini's own count, and
+        # on Copilot the `cached_tokens` LiteLLM reads from an answer that carries one. Counted so a report shows
+        # whether a cache served a review.
+        row["cached_tokens"] += usage.cached_content_token_count or 0
         return None
 
     def summary(self) -> dict:
@@ -461,6 +465,7 @@ class UsageLedger(BasePlugin):
             "calls": sum(r["calls"] for r in self.rows.values()),
             "attempted": sum(r["attempted"] for r in self.rows.values()),
             "tokens": self.spent,
+            "cached_tokens": sum(r["cached_tokens"] for r in self.rows.values()),
             "ceiling": self.ceiling,
             "by_agent": {self.named.get(name, name): dict(row) for name, row in sorted(self.rows.items())},
         }

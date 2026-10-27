@@ -255,7 +255,14 @@ def test_a_review_with_no_guideline_runs_with_the_engine_absent(demo_repo: Path,
     import json
 
     data = json.loads(out.read_text(encoding="utf-8"))
-    assert data["usage"] == {"calls": 0, "attempted": 0, "tokens": 0, "ceiling": None, "by_agent": {}}
+    assert data["usage"] == {
+        "calls": 0,
+        "attempted": 0,
+        "tokens": 0,
+        "cached_tokens": 0,
+        "ceiling": None,
+        "by_agent": {},
+    }
     assert data["seconds"] == {} and data["secrets_redacted"] == 0, data
 
 

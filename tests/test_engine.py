@@ -354,6 +354,29 @@ class TestRetriesOnBothArms:
         assert ledger.rows["guideline_a"]["attempted"] == 1, "the command's ceiling still holds its run's count"
 
     @pytest.mark.asyncio
+    async def test_the_ledger_counts_the_prompt_tokens_a_provider_served_from_its_cache(self) -> None:
+        """Read by review: the ledger kept a call's prompt, answer and total and left out the part the provider served
+        from its prompt cache, which ADK fills on both arms, so no report could say whether a cache served a review."""
+        from google.adk.models.llm_response import LlmResponse
+        from google.genai import types
+
+        from adk_review.deliver.report import _spent
+        from adk_review.judge.plugins import UsageLedger
+
+        ledger = UsageLedger()
+        a = SimpleNamespace(agent_name="guideline_a", state={})
+        cached = types.GenerateContentResponseUsageMetadata(
+            prompt_token_count=4_000, cached_content_token_count=3_072, total_token_count=4_100
+        )
+        plain = types.GenerateContentResponseUsageMetadata(total_token_count=120)
+        for usage in (cached, plain):
+            await ledger.after_model_callback(callback_context=a, llm_response=LlmResponse(usage_metadata=usage))
+        spent = ledger.summary()
+        assert spent["cached_tokens"] == spent["by_agent"]["guideline_a"]["cached_tokens"] == 3_072, spent
+        assert "4,220 tokens, 3,072 of them from the provider's prompt cache" in _spent(spent)
+        assert "cache" not in _spent(UsageLedger().summary()), "a review no cache served says nothing of one"
+
+    @pytest.mark.asyncio
     async def test_a_run_whose_session_is_gone_names_why_for_every_answer_still_out(self) -> None:
         """ADK's session service answers None for a session it does not hold: every check and guideline is then a
         hole named with why, where `.state` on None would have been an AttributeError."""

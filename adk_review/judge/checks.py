@@ -44,7 +44,7 @@ def unspent(ceiling: int | None) -> dict:
     """The spend of a review that called no model: the shape `UsageLedger.summary` in `plugins.py` gives, every count
     zero, the ceiling as asked. Spelled here, where the rules run with no engine imported, because `plugins.py`
     imports it and the driver reads this module without it; a change to one is a change to both."""
-    return {"calls": 0, "attempted": 0, "tokens": 0, "ceiling": ceiling, "by_agent": {}}
+    return {"calls": 0, "attempted": 0, "tokens": 0, "cached_tokens": 0, "ceiling": ceiling, "by_agent": {}}
 
 
 def _hole(why: str) -> Checked:
