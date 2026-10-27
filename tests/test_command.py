@@ -741,6 +741,25 @@ class TestThePreviousReportAndTheHandoff:
             re.search(r", by `default`: \d+ rules, and \d+ guidelines read by \S", first) and "no model" not in first
         ), first
 
+    def test_a_comment_against_the_previous_review_says_what_was_fixed_and_what_is_new(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ) -> None:
+        """Read by review: `--previous` marked each finding new or seen and named what was fixed in the text report,
+        and the comment the author reads said none of it, so a second round read as the first. Its opening now says
+        how many points are fixed, new and still open."""
+        first, comment = tmp_path / "first.json", tmp_path / "comment.md"
+        assert run_review(cli, demo_repo, "--profile", "default-rules", "--json", str(first)) == 1
+        earlier = json.loads(first.read_text(encoding="utf-8"))
+        gone = {**earlier["findings"][0], "fingerprint": "f" * 16, "title": "a finding fixed since"}
+        first.write_text(json.dumps({**earlier, "findings": [*earlier["findings"][1:], gone]}), encoding="utf-8")
+        again = ["--profile", "default-rules", "--previous", str(first), "--comment", str(comment)]
+        assert run_review(cli, demo_repo, *again) == 1
+        kept = len(earlier["findings"])
+        written = comment.read_text(encoding="utf-8")
+        said = f"Since the last review: 1 fixed, 1 new, {kept - 1} still open."
+        assert said in written.split("### ", 1)[0], written
+        capsys.readouterr()
+
     def test_a_quote_over_several_lines_keeps_its_shape_in_the_comment(self) -> None:
         """Read by review: in a live run 27 of the guidelines' 54 quotes spanned lines, and the comment flattened each
         into one, its code's shape lost. A quote over several lines is a fenced block under its item, each line as

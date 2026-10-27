@@ -386,6 +386,7 @@ def render_comment(
     profile: str = "",
     model: str = "",
     checks: Sequence[str] = (),
+    previous: Mapping[str, dict] | None = None,
 ) -> str:
     """`--comment FILE`: the review as a constructive comment for the branch's author, whatever its verdict — what must
     change before it merges, what is worth a look, an approved change's included, the tidy-ups it leaves to them, and
@@ -402,6 +403,8 @@ def render_comment(
         profile, model, checks
     )
     lines = [head, "", COMMENT_OPENS[verdict]]
+    if previous is not None:
+        lines.append(_since_last(outcome, verdict, previous))
     if verdict == "APPROVED" and (worth or tidy):
         lines.append("The points below would still improve it.")
     for heading, groups, note in (
@@ -414,6 +417,17 @@ def render_comment(
     if unchecked := _unchecked(outcome, fail_on):
         lines += ["", "### Not checked", "", "The review could not check these. Check them by hand.", "", *unchecked]
     return inert("\n".join(lines)) + "\n"
+
+
+def _since_last(outcome: Outcome, verdict: str, previous: Mapping[str, dict]) -> str:
+    """How the change moved since the review `--previous` names, as its author reads it: the points fixed, new and
+    still open, the fixed ones uncounted where this review could not look at all. Read by review: the text report said
+    it and the comment did not, so a second round read as the first."""
+    identities = _identified(outcome.kept)
+    new = sum(_since(identity, previous) == "new" for identity in identities)
+    fixed = _resolved(identities, verdict, previous)
+    done = "" if fixed is None else f"{len(fixed)} fixed, "
+    return f"Since the last review: {done}{new} new, {len(identities) - new} still open."
 
 
 def _ran(profile: str, model: str, checks: Sequence[str]) -> str:

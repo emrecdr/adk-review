@@ -915,6 +915,7 @@ def _reported(
             profile=shown["profile"],
             model=shown["model"],
             checks=shown["checks"],
+            previous=seen,
         )
         if args.comment or keep
         else ""

@@ -649,9 +649,10 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   folder, every name lower case, each branch's name without `refs/heads/`, `refs/remotes/` or `refs/tags/`, made safe
   for a file name and cut at 20 characters, and the run names it by its full path, the last of the files written, unless
   `--quiet` silences a review that passes.
-- `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint:
-  its check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line,
-  so a finding keeps it when lines move. It lists what is no longer found; a review with a hole resolves nothing.
+- `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint: its
+  check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line, so a
+  finding keeps it when lines move. It lists what is no longer found, and the comment for the branch's author opens with
+  how many points are fixed, new and still open; a review with a hole resolves nothing.
 - `--cache DIR` keeps each decided review under a hash of everything its result depends on — the reviewer's own code,
   config and version, the Python it runs on, the commits or the index, what is covered and what of the tree went unread,
   the checks, every setting, a previous report as it was read, each model, and each outside tool a rule runs, ruff's and
