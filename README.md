@@ -173,6 +173,8 @@ uv run adk-review <repo> --staged --profile default-rules       # what is staged
 uv run adk-review <repo> --base main --check rule.secrets       # one check alone, this once
 uv run adk-review <repo> --base main --json review.json         # the report, and the same review as JSON
 uv run adk-review <repo> --base main --comment                  # a comment for the author: comments-<repo>__main__…md
+uv run adk-review <repo> --base main --handoff                  # fixes for a coding agent: handoff-<repo>__main__…md
+uv run adk-review <repo> --base main --comment --handoff        # both, from one review
 uv run adk-review <repo> --base main --dry-run                  # what a review would cover and run; nothing runs
 uv run adk-review --list-checks                                 # every check: its kind, severity, profiles and file
 uv run adk-review --explain rule.lint                           # one check whole, a rule with its own examples
@@ -623,34 +625,35 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   when a finding's `source` became its `check`. The file is written whenever a review is decided, so never on exit 2;
   an earlier file of that name is removed before the review, so a pipeline never reads a stale one, and the new one
   is written beside the path and moved into place, the operator's alone.
-- `--handoff FILE` writes each kept finding as a short instruction for a coding agent: where, the lines quoted, what to
-  change, and the fingerprint that must be gone afterwards, with each finding folded into it named under it, since
-  another reading of the same lines can be a second defect. It ends by asking for the project's own tests before a
-  commit, a fix done when they pass, and in the command that checks the fixes: the review again on the same scope with
-  only the rules that found something or could not look, so an agent checks its own work offline, no model called. It
-  checks the branch reviewed, by its full name in any spelling git gives it, or else `HEAD`, the fixes committed on a
-  new branch at the commit reviewed, since a commit leaves a sha, a tag, a remote's branch or `feature~1` where it was.
-  Its base is the merge base reviewed, by its sha, which no commit, push or merge moves: a base that took in the head
-  would hide the findings left. A base merged midway over-reports, and never approves. It repeats the `--skip`, `--scan`
-  and `--third-party` globs the review was given, but skips no other file for the person. After a degraded review it
-  says exit 3 means what the review could not check is still there, and that the fixes hold once each run reports no
-  finding at the bar, kept or dropped as unproven, a check that still cannot look being a person's to check by hand.
-  Where it kept no finding, its `## Check again` runs each check that could not look or prove a finding again, its head
-  named by the commit's sha, with no fix to hold, so a hole the change itself holds needs an edit and a new review. A
-  degraded hand-off whose only hole is files no check read ends by saying what exit 3 means. The scope is the
-  preflight's, which the cache's key holds, and with those globs it is the whole of what the rules read: `--diff-cap`
-  bounds the guidelines alone. The guidelines among them, one that could not prove a finding at the bar included, are
-  named apart, with their `--check` and no command, since checking a model's reading spends its quota and their review
-  took flags the scope does not hold. A branch's name is its author's: where no quoting keeps the command one command —
-  a line break, a name the report's safety rules would rewrite, or on Windows a character cmd or PowerShell still reads
-  inside double quotes, PowerShell's typographic quotes among them — none is printed, nor where a credential's shape or
-  a character no one sees is in it: the arguments are given instead, and each one left out is named. Nothing is applied.
-  A check whose findings change how code reads and never what it does sets `cleanup = True`, as `simplify` and
-  `complexity` do, and its findings are listed apart, after the fixes, under what a tidy keeps, one the project's tests
-  fail on reverted; one on lines another check's defect at major or above names is held back until that defect is fixed,
-  and is never given a fix's instruction, as a simplify pass keeps its two lanes: suspect code is never tidied.
-  `efficiency` and `altitude` are no cleanup: a cheaper form can reorder I/O and a deeper fix changes a shared
-  mechanism, each a change to weigh.
+- `--handoff [FILE]` writes each kept finding as a short instruction for a coding agent, by default to
+  `handoff-<repo>__<base>__<head>__<YYYY-MM-DD-HH-MM>.md` in the current folder, named as the comment is: where, the
+  lines quoted, what to change, and the fingerprint that must be gone afterwards, with each finding folded into it named
+  under it, since another reading of the same lines can be a second defect. It ends by asking for the project's own
+  tests before a commit, a fix done when they pass, and in the command that checks the fixes: the review again on the
+  same scope with only the rules that found something or could not look, so an agent checks its own work offline, no
+  model called. It checks the branch reviewed, by its full name in any spelling git gives it, or else `HEAD`, the fixes
+  committed on a new branch at the commit reviewed, since a commit leaves a sha, a tag, a remote's branch or `feature~1`
+  where it was. Its base is the merge base reviewed, by its sha, which no commit, push or merge moves: a base that took
+  in the head would hide the findings left. A base merged midway over-reports, and never approves. It repeats the
+  `--skip`, `--scan` and `--third-party` globs the review was given, but skips no other file for the person. After a
+  degraded review it says exit 3 means what the review could not check is still there, and that the fixes hold once each
+  run reports no finding at the bar, kept or dropped as unproven, a check that still cannot look being a person's to
+  check by hand. Where it kept no finding, its `## Check again` runs each check that could not look or prove a finding
+  again, its head named by the commit's sha, with no fix to hold, so a hole the change itself holds needs an edit and a
+  new review. A degraded hand-off whose only hole is files no check read ends by saying what exit 3 means. The scope is
+  the preflight's, which the cache's key holds, and with those globs it is the whole of what the rules read:
+  `--diff-cap` bounds the guidelines alone. The guidelines among them, one that could not prove a finding at the bar
+  included, are named apart, with their `--check` and no command, since checking a model's reading spends its quota and
+  their review took flags the scope does not hold. A branch's name is its author's: where no quoting keeps the command
+  one command — a line break, a name the report's safety rules would rewrite, or on Windows a character cmd or
+  PowerShell still reads inside double quotes, PowerShell's typographic quotes among them — none is printed, nor where a
+  credential's shape or a character no one sees is in it: the arguments are given instead, and each one left out is
+  named. Nothing is applied. A check whose findings change how code reads and never what it does sets `cleanup = True`,
+  as `simplify` and `complexity` do, and its findings are listed apart, after the fixes, under what a tidy keeps, one
+  the project's tests fail on reverted; one on lines another check's defect at major or above names is held back until
+  that defect is fixed, and is never given a fix's instruction, as a simplify pass keeps its two lanes: suspect code is
+  never tidied. `efficiency` and `altitude` are no cleanup: a cheaper form can reorder I/O and a deeper fix changes a
+  shared mechanism, each a change to weigh.
 - `--comment [FILE]` writes the review as a comment for the branch's author, to paste into the pull request by hand,
   whatever the verdict: what must change before it merges, what is worth a look, an approved change's included, the
   tidy-ups, and what the review could not check. Its first line names what ran: the profile, how many rules and

@@ -26,6 +26,9 @@ the recurring tasks in `.github/skills/`, each a slash command in VS Code's chat
   only where what it tests cannot exist there — a signal Windows cannot catch, a file mode it does not hold — and its
   reason says so; a feature a system runs another way is tested that way there, as Git for Windows runs a hook through
   its own `sh`. Write each file a shell or git reads with `newline="\n"`, and each path given to a shell as POSIX.
+- Make the user's life easier, always, as the owner asks again and again: a sensible default wherever one fits, so a
+  common task needs no extra flag or file; an example of each common task in the guides, ready to copy; and every
+  message, error or report naming what to do next. Where a choice is the user's, offer it with a recommendation.
 
 ## Secrets and configuration
 

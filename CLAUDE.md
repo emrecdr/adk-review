@@ -21,6 +21,9 @@ and `GUIDE.md` the user's: every flag, check, JSON field and limit, held to the 
   only where what it tests cannot exist there — a signal Windows cannot catch, a file mode it does not hold — and its
   reason says so; a feature a system runs another way is tested that way there, as Git for Windows runs a hook through
   its own `sh`. Write each file a shell or git reads with `newline="\n"`, and each path given to a shell as POSIX.
+- Make the user's life easier, always, as the owner asks again and again: a sensible default wherever one fits, so a
+  common task needs no extra flag or file; an example of each common task in the guides, ready to copy; and every
+  message, error or report naming what to do next. Where a choice is the user's, offer it with a recommendation.
 
 ## Commands
 
@@ -33,7 +36,7 @@ uv run pyrefly check                                  # types: the package and s
 
 uv run python scripts/make_demo_repo.py          # build <tmp>/adk-demo-repo: main + feature/payments with 4 planted defects
 uv run python scripts/make_demo_repo.py --fix    # commit the two fixes on feature/payments
-uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--handoff FILE] [--comment [FILE]] [--cache DIR] [--previous FILE] [--progress | --quiet] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
+uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--handoff [FILE]] [--comment [FILE]] [--cache DIR] [--previous FILE] [--progress | --quiet] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
 uv run adk-review <demo repo> --head feature/payments --base main --profile demo   # every rule, the demo's own among them, no model call, no key
 uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # what a review would cover and run, nothing run
 uv run adk-review-login                          # one-time GitHub device-flow login for the Copilot arm

@@ -22,13 +22,13 @@ catch the wrong branch; `--list-checks` shows every check with its kind, its pro
 2. With the guidelines, only when asked and when a `--dry-run` says the arm is ready: with nothing set the arm is
    Copilot, the one this reviewer targets, ready once the person has run `adk-review-login`; Gemini needs
    `REVIEW_PROVIDER=gemini` with `GOOGLE_API_KEY` or a Vertex AI project. Drop `--profile`. Never run the login, read
-   `.env`, or open the Copilot token's folder;
-   the report names the arm and the model that ran. `--profile simplify` reads the change as Claude Code's
-   `/simplify` does, the cleanup, with `lint` and `pitfalls` beside it; `--profile code-review` as its `/code-review`
-   does, correctness and security before the same cleanup; `--profile full` runs every check but the payments demo's
-   rules, `--verify` adds a second opinion on each guideline's
-   finding, `--handoff FILE` writes the findings for a coding agent to apply, and `--comment [FILE]` writes a comment
-   for the branch's author, to paste into the pull request by hand.
+   `.env`, or open the Copilot token's folder; the report names the arm and the model that ran. `--profile simplify`
+   reads the change as Claude Code's `/simplify` does, the cleanup, with `lint` and `pitfalls` beside it; `--profile
+   code-review` as its `/code-review` does, correctness and security before the same cleanup; `--profile full` runs
+   every check but the payments demo's rules, `--verify` adds a second opinion on each guideline's finding, `--handoff
+   [FILE]` writes the findings for a coding agent to apply, and `--comment [FILE]` writes a comment for the branch's
+   author, to paste into the pull request by hand; each names its own file where given none, and both can come from one
+   review.
 3. Read the exit code: 0 approved; 1 a finding at or above `--fail-on` (`blocker` by default); 2 a usage error before
    any model call, such as a branch that adds nothing or shares no history with its base, or one the repository does not
    hold, whose message names the `git fetch` to run: show it to the person and fetch nothing yourself, an arm that is

@@ -161,8 +161,10 @@ def setting(key: str) -> Callable[[str], int]:
 #: A comment's file where `--comment` names none, in the folder the command runs in: the repository's folder, the base
 #: and the head, each made safe for a file's name and lower case, then the minute it was written. Asked by the owner.
 COMMENT_NAME = "comments-{repo}__{base}__{head}__{at}.md"
-#: How much of each name the comment's file keeps, as the owner chose: a ticket number such as `JIRA-98765` stays whole,
-#: where 15 cut it, and `-v1` and `-v2` stay apart.
+#: A hand-off's file where `--handoff` names none, named as the comment's is. Asked by the owner.
+HANDOFF_NAME = "handoff-{repo}__{base}__{head}__{at}.md"
+#: How much of each name the comment's and the hand-off's file keep, as the owner chose: a ticket number such as
+#: `JIRA-98765` stays whole, where 15 cut it, and `-v1` and `-v2` stay apart.
 COMMENT_NAME_CHARS = 20
 #: Where a review's results go, which no result depends on: left out of what keys a kept review.
 OUTPUTS = {"json", "handoff", "comment", "cache", "record", "trace", "debug_log", "progress", "quiet"}
@@ -372,9 +374,12 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--handoff",
+        nargs="?",
+        const=HANDOFF_NAME,
         metavar="FILE",
-        help="also write each kept finding to FILE as a short instruction for a coding agent. Each names the place, "
-        "the quoted lines, the change, and what must still hold. The review applies nothing",
+        help="also write each kept finding to FILE as a short instruction for a coding agent. With no FILE, it is "
+        "handoff-repo__base__head__time.md in the current folder, in lower case. Each names the place, the quoted "
+        "lines, the change, and what must still hold. The review applies nothing",
     )
     parser.add_argument(
         "--comment",
@@ -641,7 +646,7 @@ def _review(argv: list[str] | None = None) -> int:
         explanation = explained(found, config["profiles"], args.explain) if args.explain else None
         previous = read_previous(args.previous) if args.previous else (None, None)
         for flag, given in (("--json", args.json), ("--handoff", args.handoff), ("--comment", args.comment)):
-            if given and given != COMMENT_NAME:  # a name to come, made once the branches are known
+            if given and given not in (COMMENT_NAME, HANDOFF_NAME):  # a name to come, made once branches are known
                 _cleared(flag, given)
     except ValueError as exc:
         _say(str(exc))
@@ -794,8 +799,11 @@ def _decided(
 ) -> int:
     """The review decided and reported: served from the cache where one holds it; else the rules, and the guidelines
     where any runs. `--trace`, `--debug-log` and `--record` are the engine's own and bring its run too."""
+    at = time.strftime("%Y-%m-%d-%H-%M")  # one minute for both files a run names itself
     if args.comment == COMMENT_NAME:
-        args.comment = _comment_named(evidence)
+        args.comment = _named_after(evidence, COMMENT_NAME, at)
+    if args.handoff == HANDOFF_NAME:
+        args.handoff = _named_after(evidence, HANDOFF_NAME, at)
     cached = _cached_at(args, chosen, evidence, shown["model"], previous) if args.cache else None
     if cached is not None and (hit := _from_cache(cached)) is not None:
         if not args.quiet:
@@ -997,16 +1005,13 @@ def _told(report: str, wrote: Sequence[tuple[str, Path]]) -> None:
         _say(f"wrote the {flag} to {path.resolve()}")
 
 
-def _comment_named(evidence: Evidence) -> str:
-    """The comment's file where `--comment` names none: `COMMENT_NAME` for this review's repository and branches,
-    `all` for the base under `--all`, `HEAD` and `staged` under `--staged`, and the local minute."""
+def _named_after(evidence: Evidence, template: str, at: str) -> str:
+    """A file `--comment` or `--handoff` names where given none: `template` for this review's repository and branches,
+    `all` for the base under `--all`, `HEAD` and `staged` under `--staged`, and `at`, the local minute."""
     pre = evidence["preflight"]
     base = "all" if evidence["whole"] else "HEAD" if pre.get("staged") else short_ref(pre["base"])
     head = "staged" if pre.get("staged") else short_ref(pre["head"])
-    at = time.strftime("%Y-%m-%d-%H-%M")
-    return COMMENT_NAME.format(
-        repo=_safe_name(Path(pre["repo"]).name), base=_safe_name(base), head=_safe_name(head), at=at
-    )
+    return template.format(repo=_safe_name(Path(pre["repo"]).name), base=_safe_name(base), head=_safe_name(head), at=at)
 
 
 def _safe_name(name: str) -> str:

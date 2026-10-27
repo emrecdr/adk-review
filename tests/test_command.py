@@ -692,11 +692,29 @@ class TestThePreviousReportAndTheHandoff:
         assert cli._safe_name("feat x$y`z") == "feat-x-y-z" and cli._safe_name("../..") == "branch"
         # Read by review: a hand-off's check names the head in full, and `refs-heads-` took the cut's characters.
         pre = {"repo": "/r/demo", "base": "refs/heads/main", "head": "refs/heads/feature/x"}
-        assert "__main__feature-x__" in cli._comment_named({"preflight": pre, "whole": False})
+        assert "__main__feature-x__" in cli._named_after({"preflight": pre, "whole": False}, cli.COMMENT_NAME, "t")
         pre |= {"base": "refs/remotes/origin/main", "head": "refs/tags/v1.2"}
-        assert "__origin-main__v1.2__" in cli._comment_named({"preflight": pre, "whole": False})
+        assert "__origin-main__v1.2__" in cli._named_after({"preflight": pre, "whole": False}, cli.COMMENT_NAME, "t")
         assert run_review(cli, demo_repo, "--dry-run", "--comment") == 2
         assert "--comment is a review's, and --dry-run runs no review" in capsys.readouterr().err
+
+    def test_a_handoff_named_by_no_file_is_named_as_the_comment_is(
+        self, cli, demo_repo: Path, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        """Asked by the owner: `--handoff` alone writes the hand-off where the command runs, named as the comment is,
+        `handoff-<repo>__<base>__<head>__<minute>.md`; one run writes both, at the same minute."""
+        import re
+
+        monkeypatch.chdir(tmp_path)
+        assert run_review(cli, demo_repo, "--profile", "default-rules", "--comment", "--handoff") == 1
+        (handoff,), (comment,) = tmp_path.glob("handoff-*.md"), tmp_path.glob("comments-*.md")
+        named = rf"handoff-{demo_repo.name.lower()}__main__feature-payments__\d{{4}}(-\d{{2}}){{4}}\.md"
+        assert re.fullmatch(named, handoff.name), handoff.name
+        assert handoff.name.removeprefix("handoff-") == comment.name.removeprefix("comments-"), "one minute for both"
+        assert handoff.read_text(encoding="utf-8").startswith("# Findings to fix: ")
+        assert f"review: wrote the hand-off to {handoff.resolve()}" in capsys.readouterr().err
+        assert run_review(cli, demo_repo, "--dry-run", "--handoff") == 2
+        assert "--handoff is a review's, and --dry-run runs no review" in capsys.readouterr().err
 
     def test_a_comment_tells_the_author_what_to_fix_and_what_to_improve_and_posts_nothing(
         self, cli, demo_repo: Path, tmp_path: Path
