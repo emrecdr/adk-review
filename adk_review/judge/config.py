@@ -215,7 +215,7 @@ def request_config(thinking_budget: int | None = None) -> types.GenerateContentC
     `HttpOptions.timeout` in milliseconds and retries the request `attempts` times
     on the status codes it deems transient, with backoff; ADK's LiteLLM wrapper
     converts the timeout to LiteLLM's seconds and forwards the attempts as
-    `num_retries` (`lite_llm.py`, 2.12.0). Measured against a server that never
+    `num_retries` (`lite_llm.py`, 2.13.0). Measured against a server that never
     answered, LiteLLM hands those to the OpenAI SDK as its retries and retries
     around it too: three became seven. So the Copilot arm asks for none, and the
     SDK's own retries, `RETRY_ATTEMPTS` in all, make its three, backing off and
