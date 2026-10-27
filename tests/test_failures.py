@@ -79,10 +79,10 @@ async def test_when_the_intake_fails_the_turn_ends_at_its_error_and_nothing_is_j
     assert not _judged(state), "nothing judged, and no verdict on nothing"
 
 
-def test_a_guideline_with_nothing_gathered_or_a_failure_before_it_says_so_and_why() -> None:
+def test_a_guideline_with_nothing_gathered_or_a_failure_before_it_is_skipped_and_grounding_says_why() -> None:
     """The guidelines' guard: no change, or a failure earlier in the turn, and the guideline is skipped with a
-    `Review` saying it did not look, and why, which the verdict is told never to approve on; with the change and no
-    failure it runs."""
+    `Review` naming no finding, which chat's grounding reads, through `unjudged`, as a check that could not look, and
+    why, which the verdict is told never to approve on; with the change and no failure it runs."""
     agents = importlib.import_module(judge_module("agents"))
 
     def guarded(**state) -> str | None:
@@ -90,8 +90,10 @@ def test_a_guideline_with_nothing_gathered_or_a_failure_before_it_says_so_and_wh
         return None if answer is None else answer.parts[0].text
 
     assert guarded(**{agents.DIFF: "+x = 1"}) is None
-    assert "Nothing was gathered, so nothing was judged against this guideline." in guarded(**{agents.DIFF: ""})
-    said = guarded(**{agents.DIFF: "+x = 1", agents.FAILURE: f"intake: {QUOTA_TEXT}"})
+    nothing, failed = {agents.DIFF: ""}, {agents.DIFF: "+x = 1", agents.FAILURE: f"intake: {QUOTA_TEXT}"}
+    assert guarded(**nothing) == guarded(**failed) == '{"findings":[]}'
+    assert agents.unjudged(nothing) == "Nothing was gathered, so nothing was judged against this guideline."
+    said = agents.unjudged(failed)
     assert "Nothing was judged" in said and QUOTA_TEXT in said, said
 
 

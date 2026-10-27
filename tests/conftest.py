@@ -85,7 +85,6 @@ CANNED_REVIEW = {
             "suggestion": "Pass an argv list and drop shell=True.",
         }
     ],
-    "summary": "One major finding.",
 }
 #: The verifier's answer: the finding holds. `REFUTED` is what a test tells the fake to answer instead.
 CANNED_JUDGEMENT = {"holds": True, "reason": "the quoted lines show it"}

@@ -148,7 +148,7 @@ class TestRetriesOnBothArms:
             if model == "github_copilot/gpt-4.1":
                 await asyncio.sleep(60)  # the primary never answers
             return litellm.ModelResponse(
-                choices=[{"message": {"role": "assistant", "content": '{"findings": [], "summary": "Nothing."}'}}],
+                choices=[{"message": {"role": "assistant", "content": '{"findings": []}'}}],
                 usage={"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120},
             )
 
@@ -178,7 +178,7 @@ class TestRetriesOnBothArms:
         async def answer(_client, model, **_request):
             asked.append(model)
             return litellm.ModelResponse(
-                choices=[{"message": {"role": "assistant", "content": '{"findings": [], "summary": "Nothing."}'}}],
+                choices=[{"message": {"role": "assistant", "content": '{"findings": []}'}}],
                 usage={"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120},
             )
 

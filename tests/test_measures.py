@@ -276,7 +276,7 @@ class TestTheBlastRadius:
             "evidence": radius[2:],
             "suggestion": "read what depends on it",
         }
-        fake_provider.answers_when(radius, {"findings": [finding], "summary": "one"})
+        fake_provider.answers_when(radius, {"findings": [finding]})
         run_review(cli, demo_repo)
         dropped = capsys.readouterr().out.split("findings dropped for evidence not in the diff")[1]
         assert "a widely imported module changed" in dropped

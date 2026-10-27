@@ -276,7 +276,7 @@ async def test_the_chat_gate_and_the_one_turn_hold_on_the_copilot_arm(monkeypatc
             }
             message = {"role": "assistant", "content": None, "tool_calls": [call]}
         else:
-            reply = '{"findings": [], "summary": "Nothing."}' if request.get("response_format") else "Noted."
+            reply = '{"findings": []}' if request.get("response_format") else "Noted."
             message = {"role": "assistant", "content": reply}
         return litellm.ModelResponse(
             choices=[{"message": message}], usage={"prompt_tokens": 100, "completion_tokens": 20, "total_tokens": 120}

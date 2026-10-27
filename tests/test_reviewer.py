@@ -512,7 +512,7 @@ def _grounding_of():
 def _grounded(findings: list, quotable: dict[str, list[list[tuple[int, str]]]], framing: dict | None = None):
     """`drop_ungrounded` over `findings` as one guideline's answer: the kept, each with its lines, and the dropped."""
     rule, _collect, schema = _grounding_of()
-    return rule.drop_ungrounded(schema.Review(summary="", findings=findings), quotable, framing or {})
+    return rule.drop_ungrounded(schema.Review(findings=findings), quotable, framing or {})
 
 
 def test_a_dropped_findings_path_is_cut_once_for_every_reader() -> None:
@@ -565,7 +565,7 @@ class TestWhatGroundingKeeps:
             quote = "\n".join("+x" for _ in range(lines))
             finding = Finding(file="a.py", line=1, severity="major", title="t", evidence=quote, suggestion="s")
             started = time.perf_counter()
-            kept, dropped = drop_ungrounded(Review(findings=[finding], summary="s"), {"a.py": [hunk]}, {"a.py": []})
+            kept, dropped = drop_ungrounded(Review(findings=[finding]), {"a.py": [hunk]}, {"a.py": []})
             assert time.perf_counter() - started < 1.0, f"a quote of {lines:,} lines"
             assert (len(kept), dropped) == (1, []), "and still placed"
 
@@ -805,6 +805,22 @@ def test_a_quote_the_diff_holds_twice_is_placed_nearest_the_line_the_lane_named(
     found = [(model_check("security"), said(22)), (model_check("tests"), said(2))]
     kept, _folded = verdict.dedupe([verdict.Sourced(key, f, _placed_at(f, quotable)) for key, f in found])
     assert len(kept) == 2
+
+
+def test_a_guideline_is_asked_for_no_summary_and_an_answer_with_no_findings_list_is_refused() -> None:
+    """Read by review: each guideline wrote a summary of the change that no code read, the command, chat's verdict
+    and the JSON alike, paid for on every call. It was the schema's one required field, so with it gone the findings
+    list is required: an answer that names none, `{}` or a misspelt key, is refused as a reply that does not fit, and
+    never read as a review that found nothing."""
+    from pydantic import ValidationError
+
+    from adk_review.core.findings import Review
+
+    assert list(Review.model_json_schema()["properties"]) == ["findings"]
+    for answer in ("{}", '{"finding": []}', '{"summary": "Nothing."}'):
+        with pytest.raises(ValidationError):
+            Review.model_validate_json(answer)
+    assert Review.model_validate_json('{"findings": []}').findings == []
 
 
 def test_the_tests_lane_is_asked_what_the_change_leaves_untested() -> None:

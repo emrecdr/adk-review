@@ -1016,10 +1016,11 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   guidelines would judge without the radius and nothing would say so: a test holds every placeholder an instruction
   reads to a key something writes.
 - **A failure is an answer, never a crash.** A provider error, a call past its deadline, or a reply that does not fit
-  its schema becomes that guideline's own error, through one plugin on the `App` that no agent can opt out of, so
-  every other guideline finishes; the run itself has a deadline, and whatever still escapes the engine is named. A
-  guideline with no evidence is skipped, its summary saying it did not look. `main` wraps the command: an error
-  nothing else names is one sentence and exit 3, never Python's own exit 1, which would read as a finding at the bar.
+  its schema becomes that guideline's own error, through one plugin on the `App` that no agent can opt out of, so every
+  other guideline finishes; the run itself has a deadline, and whatever still escapes the engine is named. A guideline
+  with no evidence is skipped, read as a check that could not look, never as one that found nothing. `main` wraps the
+  command: an error nothing else names is one sentence and exit 3, never Python's own exit 1, which would read as a
+  finding at the bar.
 - **The report cannot be forged by the branch.** Every string the branch or a model wrote is made safe before it is
   printed: one line, credentials hidden, control characters and every character a reader cannot see printed as a space,
   a CI runner's command opener (`##[`, `##vso[`) and an HTML comment's broken, and outside a code span no HTML tag,

@@ -48,8 +48,10 @@ class Finding(BaseModel):
 
 
 class Review(BaseModel):
-    findings: list[Finding] = Field(default_factory=list)
-    summary: str = Field(description="One or two sentences on the change as a whole.")
+    """A guideline's answer: its findings, and nothing no code reads. The list is required, even when empty, so an
+    answer that names none is refused as a reply that does not fit, never read as a review that found nothing."""
+
+    findings: list[Finding]
 
 
 class Checked(BaseModel):
