@@ -14,7 +14,9 @@
   },
   "python.testing.pytestEnabled": true,
   "python.testing.unittestEnabled": false,
-  "python.testing.pytestArgs": ["tests"],
+  "python.testing.pytestArgs": [
+    "tests"
+  ],
   "[python]": {
     "editor.defaultFormatter": "charliermarsh.ruff",
     "editor.formatOnSave": true,
@@ -45,6 +47,5 @@
     ".adk/**": true,
     ".scannerwork/**": true
   },
-  "workbench.tree.indent": 12,
-  "python.analysis.diagnosticsSource": "Pylance + Pyrefly"
+  "workbench.tree.indent": 12
 }
