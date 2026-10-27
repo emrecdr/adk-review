@@ -459,8 +459,12 @@ def _merge_base(repo: str, root: str, base: tuple[str, str], head: tuple[str, st
         _git(root, "rev-parse", "--is-shallow-repository")[1] == "true"
         and _git(root, "merge-base", "--is-ancestor", base_sha, head_sha, ok=(0, 1))[0] != 0
     ):
-        why = "a merge base found in one can be the wrong one: fetch its history first, git fetch --unshallow"
-        raise _ScopeError(f"{repo} is a shallow clone, and {why}")
+        # The next step for a person and for a pipeline, each pipeline's own key as README's recipes name it.
+        how = (
+            "Run git fetch --unshallow, or in a pipeline set fetchDepth: 0 (Azure), fetch-depth: 0 (GitHub)"
+            ' or GIT_DEPTH: "0" (GitLab)'
+        )
+        raise _ScopeError(f"{repo} is a shallow clone, so the merge base it finds can be wrong. {how}")
     code, merge_base = _git(root, "merge-base", base_sha, head_sha, ok=(0, 1))
     if code == 1:  # git's answer for two commits with no ancestor in common
         raise _UnrelatedError(f"{base_name!r} and {head_name!r} share no history: no change to review")

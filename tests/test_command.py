@@ -1656,19 +1656,46 @@ def _long(said: list) -> list[tuple[str, str]]:
     ]
 
 
-def _printed(node) -> str | None:
-    """A sentence `_say` prints, from its own literals, each value it formats read as one word; None where another
-    module made the sentence, an exception's or a check's."""
+def _printed(node, names: dict[str, str] | None = None) -> str | None:
+    """A sentence `_say` prints, from its own literals, each value it formats read as one word, but a name `names`
+    holds a literal for, read as that literal; None where another module made the sentence, an exception's or a
+    check's."""
     import ast
 
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return node.value
     if isinstance(node, ast.JoinedStr):
-        return "".join(part.value if isinstance(part, ast.Constant) else "X" for part in node.values)
+        held = names or {}
+        return "".join(
+            part.value if isinstance(part, ast.Constant) else held.get(getattr(part.value, "id", ""), "X")
+            for part in node.values
+        )
     if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        left, right = _printed(node.left), _printed(node.right)
+        left, right = _printed(node.left, names), _printed(node.right, names)
         return None if left is None or right is None else left + right
     return None
+
+
+def _scoped(tree) -> list[tuple[object, dict[str, str]]]:
+    """Each node of `tree`, and again each in a function with the literal each name holds that the function sets to
+    one, for `_printed`. Read by review: a message kept in a name, `why`, was read as one word, so a sentence of 24
+    words passed as one of 8."""
+    import ast
+
+    scoped: list[tuple[object, dict[str, str]]] = [(node, {}) for node in ast.walk(tree)]
+    for function in ast.walk(tree):
+        if not isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        names = {
+            node.targets[0].id: text
+            for node in ast.walk(function)
+            if isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and (text := _printed(node.value)) is not None
+        }
+        scoped += [(node, names) for node in ast.walk(function)] if names else []
+    return scoped
 
 
 def test_every_sentence_the_command_and_its_hook_print_is_short_and_one_command() -> None:
@@ -1681,8 +1708,10 @@ def test_every_sentence_the_command_and_its_hook_print_is_short_and_one_command(
     said = []
     for module in ("review.py", "push.py"):
         tree = ast.parse((ROOT / "adk_review" / module).read_text(encoding="utf-8"))
-        calls = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_say"]
-        said += [(module, text) for call in calls if call.args and (text := _printed(call.args[0])) is not None]
+        calls = [
+            (n, names) for n, names in _scoped(tree) if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "_say"
+        ]
+        said += [(module, text) for call, names in calls if call.args and (text := _printed(call.args[0], names))]
         flags = [n for n in ast.walk(tree) if isinstance(n, ast.Call) and getattr(n.func, "attr", "") == "add_argument"]
         said += [
             (module, text) for n in flags for kw in n.keywords if kw.arg == "help" and (text := _printed(kw.value))
@@ -1701,13 +1730,13 @@ def test_every_error_the_package_raises_or_answers_is_short_and_one_command() ->
 
     said = []
     for path in sorted((ROOT / "adk_review").rglob("*.py")):
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        for node, names in _scoped(ast.parse(path.read_text(encoding="utf-8"))):
             if isinstance(node, ast.Raise) and isinstance(node.exc, ast.Call) and node.exc.args:
-                said.append((f"{path.name}:{node.lineno}", _printed(node.exc.args[0])))
+                said.append((f"{path.name}:{node.lineno}", _printed(node.exc.args[0], names)))
             if isinstance(node, ast.Dict):
                 for key, value in zip(node.keys, node.values, strict=True):
                     if isinstance(key, ast.Constant) and key.value == "error_message":
-                        said.append((f"{path.name}:{node.lineno}", _printed(value)))
+                        said.append((f"{path.name}:{node.lineno}", _printed(value, names)))
     assert _long(said) == []
     # Each ends bare: read by review, a wrapper that adds its own next step after one, ". Push with --no-verify",
     # printed "..".

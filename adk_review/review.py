@@ -509,7 +509,7 @@ def target(repo: str, base: str | None, head: str | None, whole: bool) -> tuple[
         return _ask(head, default), head
     if default is None:
         why = "no main or master branch, and no origin/HEAD naming one"
-        raise ValueError(f"{repo} has {why}: name the base with --base, or review it all with --all")
+        raise ValueError(f"{repo} has {why}. Name the base with --base, or review it all with --all")
     return default, head
 
 
