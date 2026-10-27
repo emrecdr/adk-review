@@ -40,8 +40,8 @@ applyTo: "adk_review/**"
   `TreeRule` with `check(tree)` returning `(path, what)` or `(path, line, what)` over the head's paths and parsed
   modules (`tree.paths`, `tree.has`, `tree.module`, `tree.modules`, `tree.added` the lines the change added by file,
   `tree.imports(path)` what each import binds), and `needs_head(files)` False where the changed files alone show it has
-  nothing to read at the head, which it then reads alone. Any other shape is a sentence. The helpers come through the
-  door: `is_test`, `matches`, `calls`, `comment_of`, `words`, `tokens`, `calls_in`, `argument`, `functions_in`,
+  nothing to read at the head, where it then answers nothing. Any other shape is a sentence. The helpers come through
+  the door: `is_test`, `matches`, `calls`, `comment_of`, `words`, `tokens`, `calls_in`, `argument`, `functions_in`,
   `imports_in`, `defined`, `classes`, `parameters` and the rest. A hit may be a `Hit` naming its own title, severity or
   fix, as `lint` does for ruff's codes. `secrets` and `lint` are written like any other rule; redaction is not a check,
   and `core/secrets.py` keeps the shapes it scrubs with. A file's lines are numbered as git numbers them

@@ -244,7 +244,7 @@ points the wrong way.
 
 | Package | May import | Holds |
 |---|---|---|
-| `core/` | nothing else | `findings.py` (`Finding`, `Review`, `Checked`, the severity scale), `rules.py` (what a rule is: the `Rule`, the `FileRule` and the `TreeRule`, the `ChangedFile` and the `Tree` they read, the `Diagnostic` an outside tool hands a file rule, `Hit`, `UnreadError`, and `run_rule`, which runs any of them the same way), `guidelines.py` (what a guideline is), `health.py` (a whole project's measures under `--all`: what was read, size, McCabe complexity bands, each rule's findings in source and tests), `profiles.py` (a check's id and its state key, and the checks a profile turns on), `blast.py` (what at the head depends on each changed file, read from the syntax tree), `evidence.py` (what a review reads, each key spelled once: the `Evidence`, the `Change` of it the rules read, the `Failure` in its place, and each changed file in it, an `Entry`), `paths.py` (whether a glob names a path, as `.gitignore` reads one: the skip list's question, and a rule's; and `Links`, the file a symbolic link runs as, followed a part at a time as a system follows it), `secrets.py` (the credential shapes: what redaction hides and what the secrets rules ask), `text.py` (flat whitespace, a cut that names itself, lines as git numbers them, a ref's name without its folder), `verdict.py` (grounding, folding, deciding, `Outcome`, the exit codes) |
+| `core/` | nothing else | `findings.py` (`Finding`, `Review`, `Checked`, the severity scale), `rules.py` (what a rule is: the `Rule`, the `FileRule` and the `TreeRule`, the `ChangedFile` and the `Tree` they read, the `Diagnostic` an outside tool hands a file rule, `Hit`, `UnreadError`, and `run_rule`, which runs any of them the same way), `guidelines.py` (what a guideline is), `health.py` (a whole project's measures under `--all`: what was read, size, McCabe complexity bands, each rule's findings in source and tests), `profiles.py` (a check's id and its state key, and the checks a profile turns on), `blast.py` (what at the head depends on each changed file, read from the syntax tree), `evidence.py` (what a review reads, each key spelled once: the `Evidence`, the `Change` of it the rules read, the `Failure` in its place, and each changed file in it, an `Entry`), `paths.py` (whether a glob names a path, as `.gitignore` reads one: the skip list's question, and a rule's; and `Links`, the file a symbolic link runs as, followed a part at a time as a system follows it; and `in_scope`, whether a path lies in what `--path` names), `secrets.py` (the credential shapes: what redaction hides and what the secrets rules ask), `text.py` (flat whitespace, a cut that names itself, lines as git numbers them, a ref's name without its folder), `verdict.py` (grounding, folding, deciding, `Outcome`, the exit codes) |
 | `collect/` | `core` | `git.py` (read-only git: what a review covers, each file's diff and its text at the head, the head's tree, `collect_evidence`), `change.py` (the change as the evidence holds it, decided from the diffs alone: what the guidelines are shown of each file and the block they read, what no one could read, the blast radius), `history.py` (what a push sends, commit by commit, for the pre-push hook), `diff.py` (a unified diff read without git: the lines it adds, the cap, the fence each guideline reads it in), `ruff.py` (ruff over the changed Python files' texts, in a folder of its own), `pyrefly.py` (pyrefly over the same copies, each file alone, under the reviewer's own configuration), `tools.py` (each outside tool a rule may name, and the adapter that runs it: ruff's and pyrefly's) |
 | `judge/` | `core`, `collect` | `rules/` (every rule, one file each, and nothing else), `guidelines/` (every guideline, one file each, and nothing else), `rule_helpers/` (the one door a rule imports: the contract, passed on from `core`, and helpers named after what they read), `catalog.py` (finds every check, reads `config.toml`, chooses what a profile runs, for the command and chat alike), `checks.py` (`run_rules`, every rule over a `Change`, and the node that runs it before the guidelines, in both shapes), `agents.py` (a guideline as an agent: the instruction around its role, the fences, the state keys spelled once, the read-back), `settings.py` (what the environment says: the arm, each role's model name, the fallback, Copilot's token path; read, nothing built, so the login and a rules-only review's cache key import no engine), `config.py` (the models built from it, and the request every call carries: temperature zero, a deadline, retries; readiness), `plugins.py` (redaction, the ledger and its ceiling, provider errors, progress, the recorder, and in chat the readiness check and the judging agents' one turn), `graph.py` (the graph and the `App` in both shapes; not `agent.py`, since `adk web` lists any folder holding one as an agent), `run.py` (one seeded run through the engine, guarded, and what it left in state read back), `tools.py` (chat's model-facing tools and the guardrail in front of them), `verify.py` (the second opinion) |
 | `deliver/` | `core` alone: the driver hands it the rest | `report.py` (the text report, the JSON, the hand-off, the comment for the branch's author, a previous report read back for `--previous`, what `--dry-run`, `--list-checks`, `--explain` and `--try` print, and the rules that keep the branch's text from forging any of them) |
@@ -293,11 +293,11 @@ module — for what one line cannot show, as `reviewer_instructions.py` reads a 
 `TreeRule`'s `check(tree)` reads the head instead: every path, and each Python module parsed once with the blast radius,
 for what must exist, define a name, derive from a parent or take a parameter, and with `tree.added`, the lines the
 change added by file, and `tree.imports(path)`, what each import binds, for the calls a change breaks. One that can tell
-from the changed files alone that it has nothing to read at the head says so in `needs_head(files)`, and reads those
-files alone: `callers` needs the head only where a function that was there before changed its parameters. None is handed
-a test's file unless it sets `reads_tests`, as the list of what a rule may do says below. A guideline names its role and
-a thinking budget, and `cleanup = True` where its findings change how code reads and never what it does; the instruction
-around the role is every guideline's.
+from the changed files alone that it has nothing to read at the head says so in `needs_head(files)`, and is then handed
+nothing to read: `callers` needs the head only where a name that was there before changed its parameters, one a line the
+change removed names or one not all of whose lines it added. None is handed a test's file unless it sets `reads_tests`,
+as the list of what a rule may do says below. A guideline names its role and a thinking budget, and `cleanup = True`
+where its findings change how code reads and never what it does; the instruction around the role is every guideline's.
 
 The rules shipped with the reviewer are written as a project writes its own:
 
@@ -492,11 +492,11 @@ class RequiredPaths(TreeRule):
    `demo` runs it through the group. To run it in every review that names no profile, add it to `default` too, and
    to `default-rules` and `code-review`, which tests keep to the default's rules and open with them.
 
-The door passes on the contract — `Rule`, `FileRule`, `TreeRule`, `ChangedFile`, `Diagnostic`, `Tree`, `Hit`,
-`UnreadError` and the severity scale, `Severity` and `RANK` — and the helpers: each in a module named after what it
-reads (`lines.py`, `syntax.py`, `diagnostics.py`) or tries a rule with (`testing.py`), or passed on from `core/` where a
-review reads it too — `matches` and `matching` from `paths.py`, `is_test` from `blast.py`, `is_python` from `rules.py`,
-and a credential's shape from `secrets.py`:
+The door passes on the contract — `Rule`, `FileRule`, `TreeRule`, `ChangedFile`, `Diagnostic`, `Tree`, `Hit`, `Entry`, a
+changed file as `needs_head` reads it, `UnreadError` and the severity scale, `Severity` and `RANK` — and the helpers:
+each in a module named after what it reads (`lines.py`, `syntax.py`, `diagnostics.py`) or tries a rule with
+(`testing.py`), or passed on from `core/` where a review reads it too — `matches` and `matching` from `paths.py`,
+`is_test` and `parse` from `blast.py`, `is_python` from `rules.py`, and a credential's shape from `secrets.py`:
 
 | Helper | What it answers |
 |---|---|
@@ -962,16 +962,17 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   importing a file directly, then the most reached — and the verdict never reads it: severity decides. An import graph
   is a floor of what a change reaches, since a module loaded by name, a subprocess, a web route or a plugin registry is
   invisible to it. Where the head was not read whole — a file the parser refused, one past a cap, a tree that could not
-  be listed — every count says it is a floor, and only a rule that asks for an unread file by name is a hole. The head
-  is read whole only for what reads it, a tree rule that needs it for the change or a guideline; with neither, as under
-  `default-rules` for a change that alters no function's parameters, the radius says it was not asked, which is neither
-  a hole nor a leaf. For a guideline alone it is read only when a changed file is Python, all the radius measures:
-  measured on a 2,040-file tree, a change to a Markdown file collected its evidence in 56 ms where reading the head took
-  over a second. A radius is counted, never listed, its own importers named: the files in an import cycle reach each
-  other, so a cycle is walked once, and the walks share what they read, within 2,000,000 steps in all, past which a
-  radius says it was not counted. Measured by review: a walk from each changed file listed every module it reached, and
-  a cycle of 4,000 took 9.3 s where it takes 0.09, litellm's 2,685 files 5.0 s where they take 0.69, and a path is
-  indexed by no more of its tail than an import can name, where 100 files 1,000 folders deep took 20 s.
+  be listed — every count says it is a floor, and only a rule that asks for an unread file by name is a hole. The read
+  takes the changed files first, within its budget, so a change past it is still measured. The head is read whole only
+  for what reads it, a tree rule that needs it for the change or a guideline; with neither, as under `default-rules` for
+  a change that alters no function's parameters, the radius says it was not asked, which is neither a hole nor a leaf.
+  For a guideline alone it is read only when a changed file is Python, all the radius measures: measured on a 2,040-file
+  tree, a change to a Markdown file collected its evidence in 56 ms where reading the head took over a second. A radius
+  is counted, never listed, its own importers named: the files in an import cycle reach each other, so a cycle is walked
+  once, and the walks share what they read, within 2,000,000 steps in all, past which a radius says it was not counted.
+  Measured by review: a walk from each changed file listed every module it reached, and a cycle of 4,000 took 9.3 s
+  where it takes 0.09, litellm's 2,685 files 5.0 s where they take 0.69, and a path is indexed by no more of its tail
+  than an import can name, where 100 files 1,000 folders deep took 20 s.
 - **What the guidelines read is capped.** Each file's diff is cut at `diff_cap`, and the block of diffs in all: the
   files read whole take its room first, then the cut ones, each shown in path order, and a file past the block's cap is
   left out whole, the block's end tells the guidelines how many, and the report names each under "not read", a hole.
