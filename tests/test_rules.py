@@ -1980,6 +1980,76 @@ class TestTheCallersRule:
         out = capsys.readouterr().out
         assert "`pkg/service.py:1`" in out and "defines no `get_user`" in out, out
 
+    @staticmethod
+    def moved(files: dict[str, str], old: str, new: str | None) -> list[tuple]:
+        """What the rule finds where the change moved the module at `old` to `new`, or removed it where `new` is None,
+        every other file of `files` added whole."""
+        from adk_review.judge.rule_helpers.testing import as_change
+        from adk_review.judge.rules.callers import Callers
+
+        entries, tree = as_change(files)
+        if new is None:
+            entries.append({**entries[0], "path": old, "status": "D", "added_at": frozenset(), "text": None})
+        else:
+            entries = [{**item, "status": "R", "old": old} if item["path"] == new else item for item in entries]
+        return sorted((hit.path, hit.line, hit.text, hit.title) for hit in Callers().hits(entries, tree))
+
+    def test_a_module_the_change_moved_or_removed_is_named_where_code_still_imports_it(self) -> None:
+        """Asked by the owner: the review acts on the blast radius. Measured before: a branch moved `pkg/repo.py`, or
+        removed it, three files it left alone still imported it, and every rule approved what raises
+        `ModuleNotFoundError` on import. A module made a package of the same name still imports, and is left alone."""
+        users = {
+            "pkg/__init__.py": "",
+            "pkg/service.py": "from pkg.repo import get_user\n",
+            "pkg/worker.py": "from pkg import repo\n",
+            "pkg/api.py": "import pkg.repo\n",
+            "pkg/guarded.py": "try:\n    import pkg.repo as repo\nexcept ImportError:\n    repo = None\n",
+            "pkg/fine.py": "from pkg.users import get_user\n",
+        }
+        title = "code imports a module the change moved or removed"
+        moved = "`pkg/repo.py` moved to `pkg/users.py`, and this line still imports it"
+        assert self.moved(
+            {**users, "pkg/users.py": "def get_user(uid):\n    return uid\n"}, "pkg/repo.py", "pkg/users.py"
+        ) == [
+            ("pkg/api.py", 1, moved, title),
+            ("pkg/service.py", 1, moved, title),
+            ("pkg/worker.py", 1, moved, title),
+        ]
+        removed = "the change removed `pkg/repo.py`, which this line imports"
+        del users["pkg/fine.py"]
+        assert self.moved(users, "pkg/repo.py", None) == [
+            ("pkg/api.py", 1, removed, title),
+            ("pkg/service.py", 1, removed, title),
+            ("pkg/worker.py", 1, removed, title),
+        ]
+        package = {**users, "pkg/repo/__init__.py": "def get_user(uid):\n    return uid\n"}
+        assert self.moved(package, "pkg/repo.py", "pkg/repo/__init__.py") == [], "a package of the same name imports"
+
+    def test_the_head_is_read_where_the_change_moved_or_removed_a_python_file(self) -> None:
+        from adk_review.judge.rule_helpers.testing import as_change
+        from adk_review.judge.rules.callers import Callers
+
+        (item,), _tree = as_change({"pkg/users.py": "x = 1\n"})
+        assert Callers().needs_head([{**item, "status": "R", "old": "pkg/repo.py"}]), "a module moved"
+        assert Callers().needs_head([{**item, "path": "pkg/repo.py", "status": "D"}]), "a module removed"
+        assert not Callers().needs_head([{**item, "path": "notes.txt", "status": "D"}]), "no module: nothing imports it"
+
+    def test_a_module_a_branch_moved_is_named_in_the_files_it_left_alone(self, cli, tmp_path: Path, capsys) -> None:
+        """End to end, from git, which finds the rename: no guideline reads the head, and the review reads it for the
+        move and names each file that still imports the module by its old path."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "pkg/__init__.py", "")
+        _committed(repo, "pkg/repo.py", "def get_user(uid):\n    return uid\n")
+        _committed(repo, "pkg/service.py", "from pkg.repo import get_user\n\nget_user(3)\n")
+        _git_in(repo, "checkout", "-q", "-b", "move")
+        _git_in(repo, "mv", "pkg/repo.py", "pkg/users.py")
+        _git_in(repo, "commit", "-qm", "move")
+        assert cli.main([str(repo), "--head", "move", "--base", BASE, "--check", "rule.callers"]) == 0
+        out = capsys.readouterr().out
+        assert "`pkg/service.py:1`" in out and "`pkg/repo.py` moved to `pkg/users.py`" in out, out
+
 
 class TestTheShippedRules:
     """Each shipped rule on the shapes it names, and on those it must leave."""

@@ -449,12 +449,25 @@ class Tree:
         #: The lines the change added, by changed file, for a tree rule about what the change did: set by
         #: `changed_by`, as a tree rule is handed the head.
         self.added: Mapping[str, frozenset[int]] = MappingProxyType({})
+        #: Each path the change moved or removed, with the path it moved to, None where it removed it: set by
+        #: `changed_by`, for a tree rule about what still imports it.
+        self.removed: Mapping[str, str | None] = MappingProxyType({})
 
     def changed_by(self, files: Iterable[Entry]) -> Tree:
-        """The same head with the lines each changed file's change added: a view, nothing parsed again. The head's read
-        takes the changed files first, so a rule about the change reads them where the head is past its budget."""
+        """The same head with the lines each changed file's change added, and the paths it moved or removed: a view,
+        nothing parsed again. The head's read takes the changed files first, so a rule about the change reads them
+        where the head is past its budget."""
+        files = list(files)
         view = copy.copy(self)
         view.added = MappingProxyType({item["path"]: item["added_at"] for item in files})
+        view.removed = MappingProxyType(
+            {
+                old: item["path"] if item["status"] == "R" else None
+                for item in files
+                if item["status"] in ("D", "R") and (old := item.get("old", item["path"])) not in self.paths
+            }
+        )
+        view.__dict__.pop("_index_before", None)  # made for another change's moves
         return view
 
     @functools.cached_property
@@ -469,6 +482,17 @@ class Tree:
         module itself; `blast.bindings` says which. Nothing for a file that is no module here."""
         module = self.module(path)
         return {} if isinstance(module, str) else bindings(self._index, path, module)
+
+    @functools.cached_property
+    def _index_before(self) -> Any:
+        """Every Python file at the head and each the change moved or removed, indexed as `_index` is."""
+        return index(path for path in {*self.paths, *self.removed} if path.endswith(".py"))
+
+    def imports_before(self, path: str) -> dict[str, tuple[str, str | None]]:
+        """What `imports` answers where the files the change moved or removed are still where they were: an import
+        that binds one of them by its old path names a module the head no longer holds there."""
+        module = self.module(path)
+        return {} if isinstance(module, str) or not self.removed else bindings(self._index_before, path, module)
 
     @functools.cached_property
     def without_tests(self) -> Tree:

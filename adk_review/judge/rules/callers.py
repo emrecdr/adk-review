@@ -1,6 +1,6 @@
 """What a change leaves behind in the files that use what it changed: a call that no longer fits the function it
-calls, and a name the module no longer defines, in any file, one the change never touched among them, where no diff
-shows it."""
+calls, a name the module no longer defines, and an import of a module the change moved or removed, in any file, one
+the change never touched among them, where no diff shows it."""
 
 from __future__ import annotations
 
@@ -38,6 +38,9 @@ _CATCHES_IMPORT = frozenset({"ImportError", "ModuleNotFoundError", "Exception", 
 #: A name the module no longer defines, its own title and fix beside the rule's, which are a call's.
 GONE_TITLE = "code uses a name its module no longer defines"
 GONE_FIX = "Use the name the module defines now, or define the old name there again."
+#: A module the change moved or removed, which a file still imports by its old path.
+MOVED_TITLE = "code imports a module the change moved or removed"
+MOVED_FIX = "Import the module from its new path, or keep a module at the old one."
 
 type Scope = ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda | ast.ClassDef
 type Function_ = ast.FunctionDef | ast.AsyncFunctionDef
@@ -57,10 +60,12 @@ class Callers(TreeRule):
     file that still takes it: a `from … import`, which raises `ImportError`, and a module's attribute, which raises
     `AttributeError`. Left alone there: an import a `try` guards, a name the file asks for by its string or sets
     itself, a submodule, and a module that may hold a name no statement binds — a module `__getattr__`, a `*` import,
-    a write to its globals. Read as a floor where the head was not read whole. The head is read only where the change
-    touched the parameters of a name that was there before, one a line the change removed names or one not all of
-    whose lines it added, or removed a name a module defined; with neither, nothing is read, since a function the
-    change adds whole leaves no caller behind."""
+    a write to its globals. An import of a module the change moved or removed, by its old path, raises
+    `ModuleNotFoundError` unless the head still holds a module there, a package of that name among them. Read as a
+    floor where the head was not read whole. The head is read only where the change touched the parameters of a name
+    that was there before, one a line the change removed names or one not all of whose lines it added, removed a name
+    a module defined, or moved or removed a module; with none, nothing is read, since a function the change adds
+    whole leaves no caller behind."""
 
     id = "callers"
     severity = "major"
@@ -81,6 +86,8 @@ class Callers(TreeRule):
     )
 
     def needs_head(self, files: list[Entry]) -> bool:
+        if any(item["status"] in ("D", "R") and item.get("old", item["path"]).endswith(".py") for item in files):
+            return True  # a module moved or removed: what imports it is in the head alone
         python = [item for item in files if item["path"].endswith(".py") and item["added_at"]]
         if any(item["text"] is None for item in python):  # not read: what it touched cannot be told
             return True
@@ -146,13 +153,22 @@ class _Gone:
         self.read: dict[str, set[str] | None] = {}
 
     def uses(self, path: str, module: ast.Module, bound: dict[str, tuple[str, str | None]]) -> list[Hit]:
-        """Each line of the module at `path` that takes a name a changed module no longer defines: a `from … import`
-        no `try` around it guards, and an attribute read through the name an import bound to the module."""
-        taken = {name: target for name, target in bound.items() if target[0] in self.tree.added}
+        """Each line of the module at `path` that imports a module the change moved or removed, or takes a name a
+        changed module no longer defines: an import no `try` around it guards, and an attribute read through the name
+        an import bound to the module."""
+        lost = self.lost(path, bound)
+        found = [
+            _moved_hit(path, alias.lineno, lost[local], self.tree.removed[lost[local]])
+            for node, guarded in ([] if not lost else _imports(module))
+            for alias in node.names
+            if (local := alias.asname or alias.name) in lost and not guarded
+        ]
+        taken = {name: target for name, target in bound.items() if target[0] in self.tree.added and name not in lost}
         if not taken:
-            return []
-        found = []
-        for node, guarded in _imports_from(module):
+            return found
+        for node, guarded in _imports(module):
+            if not isinstance(node, ast.ImportFrom):
+                continue
             for alias in node.names:
                 file, attribute = taken.get(alias.asname or alias.name, ("", None))
                 if attribute == alias.name and not guarded and self.lacks(file, alias.name):
@@ -170,6 +186,18 @@ class _Gone:
             if not {node.attr, f"{owner}.{node.attr}"} & spelled and self.lacks(file, node.attr):
                 found.append(_gone_hit(path, node.lineno, file, node.attr))
         return found
+
+    def lost(self, path: str, bound: dict[str, tuple[str, str | None]]) -> dict[str, str]:
+        """Each name an import in `path` bound to a module the change moved or removed, by the module's old path, where
+        the head finds no module for it: no file by its name, nor a name a module there defines."""
+        lost = {}
+        for name, (file, _attribute) in self.tree.imports_before(path).items():
+            if file not in self.tree.removed:
+                continue
+            now, taken = bound.get(name, ("", None))
+            if not now or (taken is not None and self.lacks(now, taken)):
+                lost[name] = file
+        return lost
 
     def lacks(self, path: str, name: str) -> bool:
         """Whether the changed module at `path` defines no `name`, beside its `__init__.py` holds no file or folder
@@ -192,6 +220,13 @@ class _Gone:
 def _gone_hit(path: str, line: int, file: str, name: str) -> Hit:
     """A line that takes `name` from the module at `file`, which no longer defines it."""
     return Hit(path, line, f"`{file}` defines no `{name}`, which this line takes from it", GONE_TITLE, fix=GONE_FIX)
+
+
+def _moved_hit(path: str, line: int, old: str, new: str | None) -> Hit:
+    """A line that imports the module at `old`, which the change moved to `new`, or removed where `new` is None."""
+    if new:
+        return Hit(path, line, f"`{old}` moved to `{new}`, and this line still imports it", MOVED_TITLE, fix=MOVED_FIX)
+    return Hit(path, line, f"the change removed `{old}`, which this line imports", MOVED_TITLE, fix=MOVED_FIX)
 
 
 def _removes_a_name(item: Entry) -> bool:
@@ -263,12 +298,12 @@ def _binds_unseen(node: ast.AST) -> bool:
     return isinstance(node, ast.Attribute) and name_of(node) == "sys.modules"
 
 
-def _imports_from(module: ast.Module) -> Iterator[tuple[ast.ImportFrom, bool]]:
-    """Each `from … import` in the module, and whether a `try` around it catches the `ImportError` it would raise."""
+def _imports(module: ast.Module) -> Iterator[tuple[ast.Import | ast.ImportFrom, bool]]:
+    """Each import in the module, and whether a `try` around it catches the `ImportError` it would raise."""
     stack: list[tuple[ast.AST, bool]] = [(module, False)]
     while stack:
         node, guarded = stack.pop()
-        if isinstance(node, ast.ImportFrom):
+        if isinstance(node, ast.Import | ast.ImportFrom):
             yield node, guarded
         elif isinstance(node, ast.Try | ast.TryStar):
             catches = guarded or any(_catches_import(handler.type) for handler in node.handlers)

@@ -292,13 +292,15 @@ the head — its lines, the numbers of the lines the change added, every path th
 module — for what one line cannot show, as `reviewer_instructions.py` reads a directive wrapped over lines. A
 `TreeRule`'s `check(tree)` reads the head instead: every path, and each Python module parsed once with the blast radius,
 for what must exist, define a name, derive from a parent or take a parameter, and with `tree.added`, the lines the
-change added by file, and `tree.imports(path)`, what each import binds, for the calls and the names a change breaks. One
-that can tell from the changed files alone that it has nothing to read at the head says so in `needs_head(files)`, and
-is then handed nothing to read: `callers` needs the head only where a name that was there before changed its parameters,
-one a line the change removed names or one not all of whose lines it added, or where the change removed a name a module
-defined. None is handed a test's file unless it sets `reads_tests`, as the list of what a rule may do says below. A
-guideline names its role and a thinking budget, and `cleanup = True` where its findings change how code reads and never
-what it does; the instruction around the role is every guideline's.
+change added by file, and `tree.imports(path)`, what each import binds, with `tree.removed`, the paths the change moved
+or removed, and `tree.imports_before(path)`, what each import bound while they were there, for the calls, the names and
+the modules a change breaks. One that can tell from the changed files alone that it has nothing to read at the head says
+so in `needs_head(files)`, and is then handed nothing to read: `callers` needs the head only where a name that was there
+before changed its parameters, one a line the change removed names or one not all of whose lines it added, or where the
+change removed a name a module defined or moved or removed a module. None is handed a test's file unless it sets
+`reads_tests`, as the list of what a rule may do says below. A guideline names its role and a thinking budget, and
+`cleanup = True` where its findings change how code reads and never what it does; the instruction around the role is
+every guideline's.
 
 The rules shipped with the reviewer are written as a project writes its own:
 
@@ -317,8 +319,8 @@ The rules shipped with the reviewer are written as a project writes its own:
   and `steering-files` (a change to a file another tool or agent obeys: a coding agent's instructions or settings,
   Copilot's and Gemini CLI's among them, an editor's settings and the tool servers an agent starts, a CI workflow, a
   hook, a `.pth` file), and the tree rule `callers` (a call that no longer fits a function whose parameters the change
-  touched, bound as Python binds a call, and a name a changed module no longer defines, each in any file, one the change
-  left alone among them);
+  touched, bound as Python binds a call, a name a changed module no longer defines, and an import of a module the change
+  moved or removed, each in any file, one the change left alone among them);
 - for Python beside `lint`, each reading ruff with codes no other rule names: `pitfalls` (code that does not do what it
   reads: a naive UTC datetime from `utcnow()`, a dataclass default evaluated once and shared, an exception built and
   never raised, a `subprocess.run` whose failure goes unseen, an `assert` that always passes) and `simplify` (a simpler
@@ -463,7 +465,7 @@ class RequiredPaths(TreeRule):
    |---|---|---|
    | `Rule` | `path`, `line` | `True` where the line breaks the rule |
    | `FileRule` | `file.path`, `file.lines`, `file.line(n)`, `file.near(n)`, `file.added`, `file.changed`, `file.arrived(*globs)`, `file.new_lines(*globs)`, `file.module`, and `file.diagnostics` for a rule that names a `tool` | line numbers, the report quoting each line; `(line, what is wrong)` pairs, `None` for the file as a whole; or `Hit`s |
-   | `TreeRule` | `tree.paths`, `tree.has(path)`, a folder as `"tests/"`, `tree.module(path)`, `tree.modules()`, `tree.added`, `tree.imports(path)` | `(path, what is wrong)` pairs, `(path, line, what)` triples, or `Hit`s |
+   | `TreeRule` | `tree.paths`, `tree.has(path)`, a folder as `"tests/"`, `tree.module(path)`, `tree.modules()`, `tree.added`, `tree.imports(path)`, `tree.removed`, `tree.imports_before(path)` | `(path, what is wrong)` pairs, `(path, line, what)` triples, or `Hit`s |
 
    `file.added` holds the numbers of the lines the change added, and `file.changed` every path the change touched, for a
    rule about the change as a whole: a manifest changed and its lock file not. `file.arrived(*globs)` is whether its
