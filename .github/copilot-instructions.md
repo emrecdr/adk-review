@@ -9,11 +9,11 @@ retries, a token ceiling, `--verify`, each file's blast radius and the calls int
 nonce around all the guidelines read, what a review covers (`--path`, `--all`, `--staged`) and reads (`[review] scan`:
 Python's files and the configs beside them, never another project's code under `third_party`, the credential rules alone
 reading the project's own files of every kind), a JSON report for pipelines (`--json`), `--quiet` for a pipeline's
-silent log, progress with a heartbeat at a terminal, and a pre-push hook. `CLAUDE.md` at the root is the long form of
-these instructions, which Copilot in VS Code and the cloud agent read as well, so the two agree; `README.md` is the
-developer's guide and `GUIDE.md` the user's. Path-specific rules sit in `.github/instructions/`, and the recurring tasks
-in `.github/skills/`, each a slash command in VS Code's chat: `/new-rule`, `/new-guideline`, `/review-a-branch` and
-`/update-docs`, which keeps the docs true after a change.
+silent log, progress with a heartbeat at a terminal, and a pre-push hook and a commit hook. `CLAUDE.md` at the root is
+the long form of these instructions, which Copilot in VS Code and the cloud agent read as well, so the two agree;
+`README.md` is the developer's guide and `GUIDE.md` the user's. Path-specific rules sit in `.github/instructions/`, and
+the recurring tasks in `.github/skills/`, each a slash command in VS Code's chat: `/new-rule`, `/new-guideline`,
+`/review-a-branch` and `/update-docs`, which keeps the docs true after a change.
 
 ## Hard rules for every change
 

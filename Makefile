@@ -12,7 +12,7 @@ LOCKED := $(shell uv run python -c "import os, tempfile; print(os.path.join(temp
 
 help:
 	@echo "make sync                                    - install (uv)"
-	@echo "make install                                 - adk-review, adk-review-push and adk-review-login on PATH, every dependency at the lock's version"
+	@echo "make install                                 - adk-review, adk-review-push, adk-review-commit and adk-review-login on PATH, every dependency at the lock's version"
 	@echo "make web                                     - adk web .  (the chat, in a browser)"
 	@echo "make demo                                    - build the demo repository and review its branch with the demo profile: no model, exit 1 is the point"
 	@echo "make demo-repo                               - build the throwaway repository with its planted defects"

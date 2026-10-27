@@ -858,11 +858,11 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   untracked files the report names.
 - **Git is read, never trusted.** Every call is a read-only verb, an argv list with a timeout, run by git's full path
   from `PATH`'s absolute entries, never from the checkout under review. Its environment drops every inherited `GIT_*`
-  variable, runs git in the C locale so its messages read as written, and reads no global or system config; attributes
-  come from the merge base, never from the branch; no replace ref or graft is followed and nothing is fetched; and
-  `core.fsmonitor` is off, so no program the repository's own config names ever starts. Measured, each before it was
-  fixed: `GIT_DIR` reviewed another repository, a replace ref swapped the key's file for a harmless one, and the
-  branch's own `-diff` attribute hid a planted key.
+  variable but `GIT_INDEX_FILE`, the index git hands a commit hook, which `--staged` reads, runs git in the C locale so
+  its messages read as written, and reads no global or system config; attributes come from the merge base, never from
+  the branch; no replace ref or graft is followed and nothing is fetched; and `core.fsmonitor` is off, so no program the
+  repository's own config names ever starts. Measured, each before it was fixed: `GIT_DIR` reviewed another repository,
+  a replace ref swapped the key's file for a harmless one, and the branch's own `-diff` attribute hid a planted key.
 - **Secrets are found by code.** Every model call is redacted, so no guideline ever sees a key: measured on Copilot with
   the redaction on, no guideline reported the planted one. A key must be found by code, from the diff itself, before any
   model runs: `secrets` reads the added lines of each file's whole diff, past any cap, and `named-secrets` weighs a

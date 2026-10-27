@@ -16,21 +16,23 @@ The shape of a rule — the three kinds, the constants it names, what it may imp
    `file.added`, `file.changed`, `file.module` and `file.arrived(*globs)`, which a file renamed or copied into the paths
    a rule reads answers True, every line of it new there, and `file.new_lines(*globs)` the lines to read for them, read
    with `calls_in` and `argument`, or `file.near(n)` where only the lines around what a change added matter, so a file
-   past the size limits is read; a `TreeRule` when it needs the head's paths or every module. Every name comes from one
-   import line, `from ..rule_helpers import …`, the door in `adk_review/judge/rule_helpers/`.
+   past the size limits is read; a `TreeRule` when it needs the head's paths or every module, with `needs_head(files)`
+   saying where a change needs the head read at all, and `tree.diagnostics` where it names an outside tool, as
+   `radius-types` does. Every name comes from one import line, `from ..rule_helpers import …`, the door in
+   `adk_review/judge/rule_helpers/`.
 2. Keep the rule's expectations as constants at the top of its file, as `REQUIRED` is in `demo_required_paths.py`, and
-   give it `bad` and `good` examples: the catalog holds the rule to them, and to firing on nothing in its own source, at
-   every start. A `(path, text)` example names a file the shipped `[review] scan` reads, or the rule never fires where
-   it was made to: `tests/test_catalog.py` holds every line and file rule to it, so a new kind of file is a glob in
-   `scan` too. Write the `title` and `fix` as short sentences, one command each, at most 20 words:
-   `tests/test_command.py` holds every sentence the package prints to it. The folder holds rules and nothing else: no
-   helper module and no guide; a helper several rules share belongs in `adk_review/judge/rule_helpers/`, in the module
-   named after what it reads, and in the door's `__all__`. A rule reads no test by default; set `reads_tests = True`
-   when what it finds matters in a test too — a credential, hidden text, a workflow named `test_*.yml` — and a `bad`
-   example at a test's path proves it. A rule reads only the files `scan` names; a credential rule sets
-   `reads_every_kind = True` to read the project's own files of every kind. Set `cleanup = True` when what it finds
-   changes how code reads and never what it does, as `simplify`'s does: the hand-off then lists it as a tidy, apart from
-   the fixes.
+   give it `bad` and `good` examples, unless it reads an outside tool, which no example can run without: the catalog
+   holds the rule to them, and to firing on nothing in its own source, at every start. A `(path, text)` example names a
+   file the shipped `[review] scan` reads, or the rule never fires where it was made to: `tests/test_catalog.py` holds
+   every line and file rule to it, so a new kind of file is a glob in `scan` too. Write the `title` and `fix` as short
+   sentences, one command each, at most 20 words: `tests/test_command.py` holds every sentence the package prints to it.
+   The folder holds rules and nothing else: no helper module and no guide; a helper several rules share belongs in
+   `adk_review/judge/rule_helpers/`, in the module named after what it reads, and in the door's `__all__`. A rule reads
+   no test by default; set `reads_tests = True` when what it finds matters in a test too — a credential, hidden text, a
+   workflow named `test_*.yml` — and a `bad` example at a test's path proves it. A rule reads only the files `scan`
+   names; a credential rule sets `reads_every_kind = True` to read the project's own files of every kind. Set `cleanup =
+   True` when what it finds changes how code reads and never what it does, as `simplify`'s does: the hand-off then lists
+   it as a tidy, apart from the fixes.
 3. Profiles in `adk_review/config.toml`: add `rule.<name>` to `rules-only` and `full`, which a test holds to every
    rule whose id does not start with `demo-`, the prefix a rule written for the demo alone takes; `demo` runs every
    rule through the group `rules`. Add it to `default` only when every review should run it, since `default` holds

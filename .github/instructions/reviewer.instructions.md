@@ -5,12 +5,11 @@ applyTo: "adk_review/**"
 # The reviewer
 
 - Layering is one way and tested (`tests/test_layering.py`): `core` → `collect` → `judge` → `deliver`, the steps of a
-  review, imports relative and never spelled from the top (`adk_review.…`); `deliver/` imports `core` alone;
-  `core/`, the checks and `judge/rule_helpers/` must import with ADK absent and never import `google`, `litellm`,
-  `subprocess`, `httpx`, `asyncio`, `os`, `socket`, `urllib`, `http` or `ssl`. `review.py` imports ADK and the
-  judge's engine modules where a review starts, never at its top, so the modes that read the checks alone and the
-  pre-push hook start without them, and a profile with no guideline runs the rules with none of them; keep a new
-  engine import there.
+  review, imports relative and never spelled from the top (`adk_review.…`); `deliver/` imports `core` alone; `core/`,
+  the checks and `judge/rule_helpers/` must import with ADK absent and never import `google`, `litellm`, `subprocess`,
+  `httpx`, `asyncio`, `os`, `socket`, `urllib`, `http` or `ssl`. `review.py` imports ADK and the judge's engine modules
+  where a review starts, never at its top, so the modes that read the checks alone and the pre-push and commit hooks
+  start without them, and a profile with no guideline runs the rules with none of them; keep a new engine import there.
 - `adk_review/__init__.py` imports nothing and answers `agent` lazily through PEP 562's `__getattr__`, since
   `python -m adk_review.review` imports the package before `main` reads `.env`; `agent.py` exports both `app` and
   `root_agent`, the loader preferring `app`, which carries the plugins. `judge/config.py` sends Copilot the instruction

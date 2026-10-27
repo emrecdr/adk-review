@@ -346,7 +346,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | The lines shown around each of those calls, each way | 3 | `collect/change.py`, `CALL_CONTEXT` |
 | Every check's findings chat's verdict reads, grounded and decided | 20,000 characters | `judge/agents.py`, `FINDINGS_CAP_CHARS` |
 | The changed-files list a model reads in chat | 20,000 characters | `judge/tools.py`, `LISTED_MAX_CHARS` |
-| A tool's findings listed for one file by a rule that names ruff or pyrefly; the rest are counted in one finding | 50 | `judge/rule_helpers/diagnostics.py`, `PER_FILE` |
+| A tool's findings listed for one file by a rule that names ruff or pyrefly, or pyrefly over the radius; the rest are counted in one finding | 50 | `judge/rule_helpers/diagnostics.py`, `PER_FILE` |
 | A finding's evidence in the report | 400 characters | `core/text.py`, `EVIDENCE_MAX_CHARS` |
 | A reason in the report: why a check failed, a verifier's word, a provider's error, a dropped finding's file as a model wrote it | 400 characters | `core/text.py`, `REASON_MAX_CHARS` |
 | A finding's title, as a model wrote it | 200 characters | `core/text.py`, `TITLE_MAX_CHARS` |
