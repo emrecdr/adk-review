@@ -44,11 +44,11 @@ from .core.findings import Finding, at_or_above
 from .core.paths import in_review, matches
 from .core.rules import AnyRule, run_rule
 from .core.text import CUT_MARK, lines_of
-from .core.verdict import EXIT_INTERRUPTED, EXIT_TERMINATED, EXIT_USAGE
+from .core.verdict import EXIT_DEGRADED, EXIT_INTERRUPTED, EXIT_TERMINATED, EXIT_USAGE
 from .deliver.report import safe_line
 from .judge.catalog import CONFIG, catalog, load_config, select
+from .review import Terminated, settle
 from .review import main as review
-from .review import settle
 
 #: What git writes for a commit that does not exist: a deleted ref's local side, a new ref's remote side.
 NONE = {"0" * 40, "0" * 64}
@@ -260,6 +260,23 @@ def _say(sentence: str, lead: str = "pre-push: ") -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """The hook, with the command's last resort: whatever stops it ends as one sentence, Ctrl-C as the shell's 130, a
+    job's SIGTERM as 143, any other error as 3, never a traceback nor Python's own exit 1. Read by review: Ctrl-C was
+    caught around the reviews alone, and one while git listed what a push sends ended in a traceback."""
+    try:
+        return _main(argv)
+    except KeyboardInterrupt:
+        _say("interrupted: git sent nothing")
+        return EXIT_INTERRUPTED
+    except Terminated:
+        _say("terminated: git sent nothing")
+        return EXIT_TERMINATED
+    except Exception as exc:  # noqa: BLE001 -- a crash must never read as a verdict
+        _say(f"the review of what this push sends did not finish ({type(exc).__name__}: {exc}). Push with --no-verify")
+        return EXIT_DEGRADED
+
+
+def _main(argv: Sequence[str] | None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # a report printed on a Windows console
     try:
@@ -290,13 +307,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"{remote} is out of date, or another server's. Run git fetch --prune {remote}. Then push again"
         )
         return 1
-    done = _Done()
-    try:  # the first ref refused stops the push
-        refs_pushed = dict.fromkeys(pushed)
-        return 0 if all(_passes(repository, remote, head, held, done) for head, held, _ref in refs_pushed) else 1
-    except KeyboardInterrupt:
-        _say("interrupted: git sent nothing")
-        return EXIT_INTERRUPTED
+    done = _Done()  # the first ref refused stops the push
+    refs_pushed = dict.fromkeys(pushed)
+    return 0 if all(_passes(repository, remote, head, held, done) for head, held, _ref in refs_pushed) else 1
 
 
 @dataclass

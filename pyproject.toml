@@ -23,7 +23,8 @@ dependencies = [
 ]
 
 # `adk-review`: the command, installed where it is needed — `uv tool install <this repository>` — and run from any
-# folder, with `adk-review-push`, its pre-push hook, and `adk-review-login`, the Copilot arm's one-time login.
+# folder, with `adk-review-push`, its pre-push hook, `adk-review-commit`, its commit hook, and `adk-review-login`, the
+# Copilot arm's one-time login.
 [project.scripts]
 adk-review = "adk_review.review:run"
 adk-review-push = "adk_review.push:run"

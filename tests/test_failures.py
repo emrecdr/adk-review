@@ -1006,6 +1006,30 @@ def test_the_pre_push_hook_reviews_what_a_push_sends_and_stops_it_at_the_bar(
     assert push.run() == 1, "the installed hook ends as its main does"
 
 
+def test_each_hook_ends_in_one_sentence_whatever_stops_it(tmp_path, monkeypatch, capsys) -> None:
+    """As the command does: a sentence, never a traceback nor Python's own exit 1, which would read as a blocker;
+    Ctrl-C the shell's 130, a job's SIGTERM 143, any other error 3. Read by review: each hook caught Ctrl-C alone,
+    and only around its review, so one while git listed the index, or any error there, ended in a traceback."""
+    commit = importlib.import_module("adk_review.commit")
+    push = importlib.import_module("adk_review.push")
+    review = importlib.import_module("adk_review.review")
+    monkeypatch.chdir(tmp_path)
+    for raised, code in ((KeyboardInterrupt(), 130), (review.Terminated(), 143), (RuntimeError("git said no"), 3)):
+
+        def stopped(*_args, raised=raised):
+            raise raised
+
+        monkeypatch.setattr(commit, "preflight_staged", stopped)
+        monkeypatch.setattr(push, "requested", stopped)
+        for hook, run, lead in (
+            (commit, lambda: commit.main([]), "pre-commit: "),
+            (push, lambda: push.main(["o"]), "pre-push: "),
+        ):
+            assert run() == code, (hook.__name__, raised)
+            said = capsys.readouterr()
+            assert said.out.startswith(lead) and said.out.count("\n") == 1 and not said.err, (hook.__name__, said)
+
+
 def test_the_pre_commit_hook_reviews_the_index_each_way_git_commits(tmp_path, monkeypatch, capsys, cli) -> None:
     """Measured before, a hook running `adk-review --staged`: `git commit -a` and `git commit <paths>` hand the hook an
     index of their own in `GIT_INDEX_FILE`, which the review left out with every inherited `GIT_*` variable, so it read

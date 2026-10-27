@@ -21,15 +21,35 @@ import sys
 from collections.abc import Sequence
 
 from .collect.git import GitError, list_changed, preflight_staged
-from .core.verdict import EXIT_INTERRUPTED, EXIT_USAGE
+from .core.verdict import EXIT_DEGRADED, EXIT_INTERRUPTED, EXIT_TERMINATED, EXIT_USAGE
 from .deliver.report import safe_line
+from .review import Terminated, settle
 from .review import main as review
-from .review import settle
 
 PROFILE = "default-rules"
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """The hook, with the command's last resort: whatever stops it ends as one sentence, Ctrl-C as the shell's 130, a
+    job's SIGTERM as 143, any other error as 3, never a traceback nor Python's own exit 1. Read by review: Ctrl-C was
+    caught around the review alone, and one while git listed the index ended in a traceback."""
+    try:
+        return _main(argv)
+    except KeyboardInterrupt:
+        _say("interrupted: git wrote nothing")
+        return EXIT_INTERRUPTED
+    except Terminated:
+        _say("terminated: git wrote nothing")
+        return EXIT_TERMINATED
+    except Exception as exc:  # noqa: BLE001 -- a crash must never read as a verdict
+        _say(
+            f"the review of what this commit holds did not finish ({type(exc).__name__}: {exc}). "
+            "Commit with --no-verify"
+        )
+        return EXIT_DEGRADED
+
+
+def _main(argv: Sequence[str] | None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # a report printed on a Windows console
     if sys.argv[1:] if argv is None else argv:
@@ -47,12 +67,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         _say(f"git could not list what this commit holds ({exc}). Commit with --no-verify to skip the review")
         return 1
     said = io.StringIO()
-    try:
-        with contextlib.redirect_stdout(said), contextlib.redirect_stderr(said):
-            code = review([repository, "--staged", "--profile", PROFILE])
-    except KeyboardInterrupt:
-        _say("interrupted: git wrote nothing")
-        return EXIT_INTERRUPTED
+    with contextlib.redirect_stdout(said), contextlib.redirect_stderr(said):
+        code = review([repository, "--staged", "--profile", PROFILE])
     if code == 0:
         return 0
     sys.stdout.write(said.getvalue())  # the review's own report, made safe as it was written
