@@ -808,10 +808,11 @@ docs. The recurring tasks are skills in `.github/skills/`, each a slash command 
 GitHub, Copilot's cloud agent starts from `.github/workflows/copilot-setup-steps.yml`, the project installed from its
 lock, so it runs the lint, the type check and the suite as a person would.
 
-In VS Code, `.vscode/` recommends Copilot Chat beside Ruff, Pyrefly and SonarQube for IDE, and lets an agent run the
-offline gate without asking each time: `uv run ruff check`, `ruff format --check`, `pyrefly check` and `pytest`, and
-`make lint`, `typecheck`, `test` and `ci`. Any other command asks first, and one that names `.env` always does, since
-neither assistant may read it. Nothing here calls a model by itself; a review whose profile names a guideline does.
+In VS Code, `.vscode/` recommends Copilot Chat beside Ruff, Pyrefly and SonarQube for IDE, has Pylance, where it runs,
+show Pyrefly's type errors (Pyrefly's own extension turns Pylance off), and lets an agent run the offline gate without
+asking each time: `uv run ruff check`, `ruff format --check`, `pyrefly check` and `pytest`, and `make lint`,
+`typecheck`, `test` and `ci`. Any other command asks first, and one that names `.env` always does, since neither
+assistant may read it. Nothing here calls a model by itself; a review whose profile names a guideline does.
 
 ## Design notes
 

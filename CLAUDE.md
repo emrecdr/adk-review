@@ -274,9 +274,10 @@ guide says it. The docs state no static counts of the repository's current state
 `.github/instructions/`, skills for the recurring tasks in `.github/skills/`, each a slash command in VS Code's chat, a
 custom agent in `.github/agents/` and the cloud agent's setup in `.github/workflows/copilot-setup-steps.yml`. Copilot in
 VS Code and the cloud agent read this file too, so a rule that changes here changes there too; `tests/test_copilot.py`
-holds those files to their format. `.vscode/` recommends Copilot Chat beside Ruff, Pyrefly and SonarQube for IDE, and
-lets an agent run the offline gate (`uv run ruff check`, `ruff format --check`, `pyrefly check`, `pytest`, and the
-`make` targets `lint`, `typecheck`, `test` and `ci`) without asking; any command naming `.env` always asks.
+holds those files to their format. `.vscode/` recommends Copilot Chat beside Ruff, Pyrefly and SonarQube for IDE, has
+Pylance, where it runs, show Pyrefly's type errors (Pyrefly's own extension turns Pylance off), and lets an agent run
+the offline gate (`uv run ruff check`, `ruff format --check`, `pyrefly check`, `pytest`, and the `make` targets `lint`,
+`typecheck`, `test` and `ci`) without asking; any command naming `.env` always asks.
 
 Claude Code loads none of them by itself, and they hold procedures this file does not repeat. Before adding a rule,
 read `.github/skills/new-rule/SKILL.md` and `.github/instructions/reviewer.instructions.md` (a rule's constants,
