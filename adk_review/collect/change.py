@@ -6,11 +6,12 @@ No git runs here: `git.py` reads, this module arranges, so each piece is tried o
 from __future__ import annotations
 
 import ast
+import functools
 import re
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 
-from ..core.blast import Blast, blast_radius
+from ..core.blast import PASSED_ON, Blast, blast_radius
 from ..core.evidence import Entry, Failure, entry
 from ..core.paths import matches
 from ..core.rules import Tree, UnreadError, is_python_text
@@ -214,8 +215,8 @@ def callers_of(tree: Tree | None, files: list[Entry]) -> str:
     shows it, in a file the change left alone or elsewhere in its own. Asked by the owner, and measured live on both
     arms over five branches, each a behaviour change an unchanged caller relied on: the correctness guideline raised
     each with or without the calls, without them as a guess that callers may break, with them naming the caller and
-    what it relied on. A call is followed through an import as `Tree.imports` binds it; one through a method or an
-    object is not."""
+    what it relied on. A call is followed through an import as `Tree.imports` binds it, and on where a file only passes
+    the name on, as a package's `__init__.py` does; one through a method or an object is not."""
     if tree is None or not (touched := _touched(tree, files)):
         return ""
     sites = _sites(tree, touched, {item["path"]: item["added_at"] for item in files})
@@ -251,18 +252,49 @@ def _sites(
     by its own name in its own module. Measured over ADK: a private helper's every call was in its own module, outside
     the lines the diff shows."""
     sites: defaultdict[tuple[str, str], list[tuple[str, int]]] = defaultdict(list)
+    bound = _bound(tree)
     for path, module in tree.modules():
         spelled = {function: (owner, function) for owner, function in touched if owner == path}
-        for name, (file, attribute) in tree.imports(path).items():
+        for name, (file, attribute) in bound(path).items():
             if attribute is None:
                 spelled |= {f"{name}.{function}": (owner, function) for owner, function in touched if owner == file}
-            elif (file, attribute) in touched:
-                spelled[name] = (file, attribute)
+            elif target := _defined((file, attribute), touched, bound):
+                spelled[name] = target
         new = added.get(path, frozenset())
         for node in ast.walk(module) if spelled else ():
             if isinstance(node, ast.Call) and node.lineno not in new and (target := spelled.get(_dotted(node.func))):
                 sites[target].append((path, node.lineno))
     return sites
+
+
+def _bound(tree: Tree) -> Callable[[str], Mapping[str, tuple[str, str | None]]]:
+    """What each file's imports bind, read once a file; nothing for one the head's read left out, a floor."""
+
+    @functools.cache
+    def bound(path: str) -> Mapping[str, tuple[str, str | None]]:
+        try:
+            return tree.imports(path)
+        except UnreadError:
+            return {}
+
+    return bound
+
+
+def _defined(
+    target: tuple[str, str],
+    touched: set[tuple[str, str]],
+    bound: Callable[[str], Mapping[str, tuple[str, str | None]]],
+) -> tuple[str, str] | None:
+    """The touched function `target` stands for, followed `PASSED_ON` files deep where a file only passes it on, as
+    `callers` follows it: read by review, a call through a package's `__init__.py` was not shown."""
+    for _ in range(PASSED_ON + 1):
+        if target in touched:
+            return target
+        passed = bound(target[0]).get(target[1])
+        if passed is None or passed[1] is None:
+            return None
+        target = (passed[0], passed[1])
+    return None
 
 
 def _calls_shown(tree: Tree, file: str, function: str, sites: list[tuple[str, int]]) -> str:

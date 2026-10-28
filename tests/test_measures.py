@@ -447,6 +447,37 @@ class TestTheBlastRadius:
             "the added call is in the diff"
         )
 
+    def passed_on(self, tmp_path: Path, package: str) -> Path:
+        """A repository whose `shop/__init__.py` is `package` and whose `shop/greet.py` imports `find_user` from the
+        package, the branch `change` rewriting `shop/users.py`, where the function is."""
+        repo = tmp_path / "shop"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "shop/__init__.py", package)
+        _committed(repo, "shop/users.py", self.USERS)
+        _committed(repo, "shop/greet.py", self.GREET.replace("from shop.users import", "from shop import"))
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "shop/users.py", self.USERS.replace("return USERS[uid]", "return USERS.get(uid)"))
+        return repo
+
+    def test_a_call_through_a_package_that_passes_the_function_on_is_shown_too(self, tmp_path: Path) -> None:
+        """Read by review: a package's `__init__.py` that passes a function on is the common layout, and a call through
+        `from shop import find_user` was not shown, where `callers` follows the same name `PASSED_ON` files deep."""
+        from adk_review.collect.git import collect_evidence
+
+        repo = self.passed_on(tmp_path, "from shop.users import find_user\n")
+        callers = collect_evidence(str(repo), BASE, "change")["callers"]
+        assert "- `shop/greet.py` calls `find_user()` from `shop/users.py`:\n" in callers, callers
+
+    def test_a_package_the_heads_read_left_out_passes_nothing_on(self, tmp_path: Path, monkeypatch) -> None:
+        """A floor, as the rest of the tree's reading is: the call through it is not shown, and nothing raises."""
+        from adk_review.collect import git
+        from adk_review.collect.git import collect_evidence
+
+        repo = self.passed_on(tmp_path, "from shop.users import find_user\n" + "# padding\n" * 30)
+        monkeypatch.setattr(git, "MAX_FILE_BYTES", 300)
+        assert "shop/greet.py" not in collect_evidence(str(repo), BASE, "change")["callers"]
+
     def test_no_call_is_gathered_where_no_guideline_reads_it(self, tmp_path: Path) -> None:
         """The pre-push hook's profile runs no guideline: what it reads, and its time, stay as they were."""
         from adk_review.collect.git import collect_evidence
