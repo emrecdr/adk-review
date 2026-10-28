@@ -110,7 +110,7 @@ def served(roles: tuple[str, ...], presets: Mapping[str, Models] | None = None) 
 
 def build_model(*, role: str = "", preset: Models | None = None) -> str | BaseLlm:
     """The model for `REVIEW_PROVIDER`: a name ADK resolves natively on Gemini, a LiteLLM model otherwise — and, when
-    `REVIEW_FALLBACK_MODEL` names one, ADK's `FallbackModel` over both.
+    `REVIEW_FALLBACK_MODEL` names another, ADK's `FallbackModel` over both.
 
     A fallback moves a call to the next model on a 429, a 5xx or a timeout,
     each model tried once, the request's own retries spent first. Seen live on
@@ -121,7 +121,10 @@ def build_model(*, role: str = "", preset: Models | None = None) -> str | BaseLl
     a review's call is read, never acted on, and an operator who names a
     fallback has chosen to pay for a second answer.
     """
-    names = [model_name(role, preset)] + ([fallback] if (fallback := fallback_name()) else [])
+    primary = model_name(role, preset)
+    # A fallback the role runs already is not asked again: read by review, a verifier whose model was the fallback fell
+    # back to itself, its attempts and its wait doubled.
+    names = [primary] + ([fallback] if (fallback := fallback_name()) and fallback != primary else [])
     if provider() == "gemini":
         return names[0] if len(names) == 1 else FallbackModel(models=names, retriable_status_codes=_FALL_BACK_ON)
     litellm = _litellm()

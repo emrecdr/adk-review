@@ -434,6 +434,21 @@ class TestRetriesOnBothArms:
         monkeypatch.delenv("REVIEW_FALLBACK_MODEL")
         assert not isinstance(build_model(), FallbackModel), "no fallback named, no wrapper"
 
+    @pytest.mark.parametrize("provider", ["gemini", "copilot"])
+    def test_a_fallback_that_is_the_roles_own_model_is_not_tried_twice(self, provider: str, monkeypatch) -> None:
+        """Read by review: with `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` one model, the verifier fell back
+        to itself, so a 429 or a timeout asked the same model again, its attempts and its wait doubled."""
+        from google.adk.models import FallbackModel
+
+        from adk_review.judge.config import build_model
+
+        monkeypatch.setenv("REVIEW_PROVIDER", provider)
+        monkeypatch.setenv("REVIEW_MODEL", "first")
+        monkeypatch.setenv("REVIEW_VERIFIER_MODEL", "second")
+        monkeypatch.setenv("REVIEW_FALLBACK_MODEL", "second")
+        assert isinstance(build_model(), FallbackModel), "the guidelines' model still has the fallback behind it"
+        assert not isinstance(build_model(role="verifier"), FallbackModel), "one model, no wrapper"
+
     def test_a_model_name_no_class_claims_is_a_sentence_for_every_role_the_run_builds(self, monkeypatch) -> None:
         from adk_review.judge.config import require_ready
 
