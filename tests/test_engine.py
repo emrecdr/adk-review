@@ -255,6 +255,61 @@ class TestRetriesOnBothArms:
         assert [body["tools"][0]["function"]["name"] for body in sent] == ["changed_files"], answered
         assert answered[-1].content.parts[0].text == "ok", answered
 
+    @pytest.mark.asyncio
+    async def test_a_copilot_rate_limit_says_when_to_try_again_where_copilot_names_it(
+        self, monkeypatch, tmp_path: Path
+    ) -> None:
+        """Asked by the owner: a 429 said only "Sorry, you've exceeded your rate limit", nothing of when it clears.
+        Measured offline: LiteLLM keeps Copilot's headers on its error as `litellm_response_headers`, and its
+        `response` holds none. Only the network is replaced, below LiteLLM."""
+        import httpx
+        import litellm
+        from google.adk.models.llm_request import LlmRequest
+        from google.genai import types
+
+        from adk_review.judge.config import build_model, request_config
+        from adk_review.judge.plugins import describe
+
+        key = {"token": "a key", "expires_at": time.time() + 3600, "endpoints": {"api": "https://copilot.invalid"}}
+        (tmp_path / "api-key.json").write_text(json.dumps(key), encoding="utf-8")
+        _cached_copilot_token(monkeypatch, tmp_path)
+        monkeypatch.setenv("REVIEW_PROVIDER", "copilot")
+        monkeypatch.setenv("REVIEW_MODEL", "gpt-4.1")
+
+        async def send(_client, request, *_args, **_kwargs):
+            said = "Sorry, you've exceeded your rate limit for utility models."
+            return httpx.Response(429, headers={"retry-after": "1800"}, text=said, request=request)
+
+        monkeypatch.setattr(httpx.AsyncClient, "send", send)
+        model = build_model()
+        request = LlmRequest(model=model.model, contents=[types.UserContent("hi")], config=request_config())
+        with pytest.raises(litellm.RateLimitError) as raised:
+            async for _ in model.generate_content_async(request):
+                pass
+        said = describe(raised.value)
+        sorry = r"429: Sorry, you've exceeded your rate limit for utility models\."
+        assert re.fullmatch(sorry + r" Try again after 30 min, at \d\d:\d\d\.", said), said
+
+    def test_a_rate_limit_names_its_wait_from_either_header_and_nothing_without_one(self) -> None:
+        """`retry-after` in seconds or as an HTTP date, or GitHub's `x-ratelimit-reset`, the second it clears; a time
+        already past, or none, adds nothing, never a wait the provider did not name."""
+        from email.utils import formatdate
+
+        import litellm
+
+        from adk_review.judge.plugins import describe
+
+        def limited(headers: dict[str, str]) -> str:
+            error = litellm.RateLimitError("Sorry, you've exceeded your rate limit.", "github_copilot", "gpt-4.1")
+            error.litellm_response_headers = headers
+            return describe(error)
+
+        assert "Try again after 45 s, at " in limited({"Retry-After": "45"}), "a header's name in any case"
+        assert "Try again after 2 h, at " in limited({"x-ratelimit-reset": str(int(time.time()) + 7200)})
+        assert "Try again after 2 min, at " in limited({"retry-after": formatdate(time.time() + 90, usegmt=True)})
+        for none in ({}, {"x-ratelimit-reset": str(int(time.time()) - 60)}, {"retry-after": "soon"}):
+            assert "Try again" not in limited(none), none
+
     def test_a_run_past_its_deadline_is_named_and_degrades(self, demo_repo: Path, cli, monkeypatch, capsys):
         """Measured before: no run had a deadline of its own, and on the Copilot arm one guideline call could take its
         180 s seven times over. A run past the deadline is the run's failure, each guideline named with it."""

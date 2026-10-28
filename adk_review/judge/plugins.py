@@ -14,9 +14,12 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import math
 import sys
 import time
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from datetime import datetime
+from email.utils import parsedate_to_datetime
 from functools import partial
 from pathlib import Path
 from typing import Any, override
@@ -51,13 +54,49 @@ def describe(error: Exception) -> str:
     quota … Please retry in 19s"; LiteLLM's errors carry `.status_code` and a
     `.message` that wraps the provider's own; `config.said` reads both, the one
     place that knows a provider's format. One line, cut at `REASON_MAX_CHARS`,
-    the cut named.
+    the cut named. A rate limit says when to try again, where the provider names it.
     """
     code = getattr(error, "code", None) or getattr(error, "status_code", None)
     message = said(error)
     if not message.strip() and isinstance(error, TimeoutError):  # Gemini's past its deadline says nothing of itself
         message = f"no answer within the call's deadline, {REQUEST_TIMEOUT_S:.0f} s"
-    return cut_at(squash(f"{code}: {message}" if code else message), REASON_MAX_CHARS)
+    # LiteLLM's `code` is the text "429" and its `status_code` the number, as `StopAtRateLimit` reads them.
+    wait = _wait_of(error) if 429 in (getattr(error, "code", None), getattr(error, "status_code", None)) else None
+    room = REASON_MAX_CHARS - (len(wait) + 1 if wait else 0)  # the wait is kept whole, inside the cap
+    line = cut_at(squash(f"{code}: {message}" if code else message), room)
+    return f"{line} {wait}" if wait else line
+
+
+def _wait_of(error: Exception) -> str | None:
+    """When a rate limit clears, as a sentence: from `retry-after`, seconds or an HTTP date, or GitHub's
+    `x-ratelimit-reset`, the second it clears; None where the provider named no time to come. Asked by the owner: a
+    429 said only "Sorry, you've exceeded your rate limit". Measured offline, LiteLLM keeps the provider's headers on
+    its error as `litellm_response_headers`, and its `response` holds none. Gemini names its wait in its own words."""
+    headers = {name.lower(): value.strip() for name, value in _headers(error).items()}
+    now, seconds = time.time(), None
+    if after := headers.get("retry-after", ""):
+        try:
+            seconds = float(after) if after.isdigit() else parsedate_to_datetime(after).timestamp() - now
+        except (TypeError, ValueError):
+            seconds = None
+    if seconds is None and (reset := headers.get("x-ratelimit-reset", "")).isdigit():
+        seconds = int(reset) - now
+    if seconds is None or seconds <= 0:
+        return None
+    return f"Try again after {_span(seconds)}, at {datetime.fromtimestamp(now + seconds):%H:%M}."
+
+
+def _headers(error: Exception) -> Mapping[str, str]:
+    """The headers of the answer an error stands for, as LiteLLM keeps them; none for any other error."""
+    return getattr(error, "litellm_response_headers", None) or {}
+
+
+def _span(seconds: float) -> str:
+    """A wait as a person reads it: seconds under a minute, else whole minutes, and hours past an hour."""
+    if seconds < 60:
+        return f"{math.ceil(seconds)} s"
+    hours, minutes = divmod(math.ceil(seconds / 60), 60)
+    return " ".join(part for part in (f"{hours} h" if hours else "", f"{minutes} min" if minutes else "") if part)
 
 
 class RedactSecretsPlugin(BasePlugin):
