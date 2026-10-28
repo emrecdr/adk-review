@@ -249,18 +249,20 @@ class TestWhatAReviewCovers:
     ) -> None:
         """Measured before: reading and parsing every Python file at the head took 88% of evidence collection on a
         625-file tree, whatever ran. With no tree rule that needs it and no guideline, only the changed files are read;
-        the radius says it was not asked, never a hole and never a leaf; and the line and file rules find what they
-        found. `radius-types`, in `default-rules`, needs it wherever a change alters a Python file, as this one does."""
+        the report shows no radius, which nothing measured, never a hole and never a leaf; and the line and file rules
+        find what they found. `radius-types`, in `default-rules`, needs it wherever a change alters a Python file, as
+        this one does. Asked by the owner: a radius not asked said only what the review did inside, nothing to act
+        on."""
         rules = [check for check in profiles_of()["default-rules"] if check != "rule.radius-types"]
 
         assert run_review(cli, demo_repo, *[arg for check in rules for arg in ("--check", check)]) in (0, 1)
         alone = capsys.readouterr().out
         assert head_reads == [], "no tree rule that needs it ran, nor a guideline"
-        assert "- not asked: no check needed it for this change, so the review did not read the head whole" in alone
+        assert "## Blast radius" not in alone, "nothing measured it, so nothing is shown"
         picked = [arg for check in (*rules, "rule.demo-required-paths") for arg in ("--check", check)]
         assert run_review(cli, demo_repo, *picked) in (0, 1)
         beside = capsys.readouterr().out
-        assert head_reads == [1] and "not asked" not in beside
+        assert head_reads == [1] and "## Blast radius" in beside, "measured, the radius is shown"
         secrets = [out.split("### rule.secrets", 1)[1].split("\n### ", 1)[0] for out in (alone, beside)]
         assert secrets[0] == secrets[1], "the secrets rule read the same change either way"
         assert run_review(cli, demo_repo, "--profile", "default-rules") in (0, 1)
@@ -872,6 +874,49 @@ class TestThePreviousReportAndTheHandoff:
         assert "### Worth a look" in said
         said = render_comment(evidence, Outcome(), verdict="APPROVED", fail_on="minor")
         assert "found nothing of `minor` severity or above" in said, said
+
+    def test_an_approval_counts_the_major_issues_below_its_bar(self) -> None:
+        """Asked by the owner: under the `blocker` bar an approval named the bar alone, so the majors under Worth a
+        look, each "fix before merge" on the scale, read as nothing much. The opener counts them, minors not."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import render_comment
+
+        def at(line: int, severity: str) -> Sourced:
+            found = Finding(
+                file="w.py", line=line, severity=severity, title="t", evidence=f"+f({line})", suggestion="s"
+            )
+            return Sourced("rule.lint", found, (line, line))
+
+        evidence = {"preflight": {"head": "h", "head_sha": "0" * 40}}
+        approved = {"verdict": "APPROVED", "fail_on": "blocker"}
+        said = render_comment(evidence, Outcome(kept=[at(5, "major"), at(9, "major"), at(12, "minor")]), **approved)
+        assert "It did find 2 major issues, under Worth a look. A major should be fixed before it merges." in said
+        said = render_comment(evidence, Outcome(kept=[at(5, "major")]), **approved)
+        assert "It did find 1 major issue, under Worth a look." in said, said
+        said = render_comment(evidence, Outcome(kept=[at(12, "minor")]), **approved)
+        assert "major" not in said.split("### ")[0] and "The points below would still improve it." in said, said
+
+    def test_an_approving_hand_off_counts_the_major_issues_below_its_bar_too(self) -> None:
+        """Asked by the owner: the hand-off says what the comment says, so an agent fixes the majors first."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import render_handoff
+
+        def at(line: int, severity: str) -> Sourced:
+            found = Finding(
+                file="w.py", line=line, severity=severity, title="t", evidence=f"+f({line})", suggestion="s"
+            )
+            return Sourced("rule.lint", found, (line, line))
+
+        pre = {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40}
+        evidence = {"preflight": pre, "whole": False, "scope": []}
+        majors = Outcome(kept=[at(5, "major"), at(9, "major"), at(12, "minor")])
+        said = render_handoff(evidence, majors, verdict="APPROVED", fail_on="blocker")
+        opening = said.split("\n\n", 2)[1]
+        assert "It did find 2 major issues below the `blocker` bar. Fix those first." in opening, opening
+        minors = render_handoff(evidence, Outcome(kept=[at(12, "minor")]), verdict="APPROVED", fail_on="blocker")
+        assert "major" not in minors.split("\n\n", 2)[1], minors
 
     def test_a_folded_finding_shows_its_own_change_where_it_differs(self) -> None:
         """Read by review, the outside audit's C2: `subprocess.run` with no `check` was folded under ruff's S603,

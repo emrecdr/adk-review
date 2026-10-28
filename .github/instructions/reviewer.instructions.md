@@ -83,7 +83,7 @@ applyTo: "adk_review/**"
   capped at `CALLERS_CAP_CHARS`), the report shows it under the verdict, the verdict never reads it. Where the head was
   not read whole, every count the report prints is a floor and says so; the tree is dropped from the evidence before the
   model calls. The head is read whole only when a tree rule needs it for the change (`needs_head`) or a guideline runs;
-  otherwise the radius says "not asked", neither a hole nor a leaf.
+  otherwise the report shows no radius, neither a hole nor a leaf.
 - Every untrusted section a guideline, a verifier or the chat's verdict reads goes through `fenced(label, inside)` in
   `judge/agents.py`: two marker lines carrying `BOUNDARY`, a nonce drawn once a process, or `JUDGED_BOUNDARY`, a second
   no guideline is shown, where a guideline's own words are read, and the instruction ends with a reminder, `REMINDER`

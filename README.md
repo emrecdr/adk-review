@@ -659,7 +659,8 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
 - `--comment [FILE]` writes the review as a comment for the branch's author, to paste into the pull request by hand,
   whatever the verdict: what must change before it merges, what is worth a look, an approved change's included, the
   tidy-ups, and what the review could not check. Its first line names what ran: the profile, how many rules and
-  guidelines, and the model, or no model, so an approval from the rules alone never reads as a model's. Each place sits
+  guidelines, and the model, or no model, so an approval from the rules alone never reads as a model's. An approval
+  names its bar and counts the major issues below it: asked by the owner, a major read as nothing much. Each place sits
   in a code span, and each quote in one, or in a fenced block that keeps its lines where it spans several, and the whole
   holds at most 60,000 characters, under the 65,536 GitHub takes in a comment, the most severe points first and the rest
   counted. The reviewer posts nothing and prints no command that would: asked by the owner, who reviews others' branches
@@ -989,8 +990,8 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   that could not be listed — every count says it is a floor, and only a rule that asks for an unread file by name is a
   hole. The read takes the changed files first, within its budget, so a change past it is still measured. The head is
   read whole only for what reads it, a tree rule that needs it for the change or a guideline; with neither, as under
-  `default-rules` for a change that alters no function's parameters, the radius says it was not asked, which is neither
-  a hole nor a leaf. For a guideline alone it is read only when a changed file is Python, all the radius measures:
+  `default-rules` for a change that alters no function's parameters, the report shows no radius, which is neither a
+  hole nor a leaf. For a guideline alone it is read only when a changed file is Python, all the radius measures:
   measured on a 2,040-file tree, a change to a Markdown file collected its evidence in 56 ms where reading the head took
   over a second. A radius is counted, never listed, its own importers named: the files in an import cycle reach each
   other, so a cycle is walked once, and the walks share what they read, within 2,000,000 steps in all, past which a
