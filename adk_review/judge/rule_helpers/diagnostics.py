@@ -80,6 +80,7 @@ def listed(
             title=f"{found.code} {found.message}",
             severity=severity,
             fix=fix_of(fixes, found.code, found.fix, found.applicability),
+            why=found.url and f"Ruff's page for {found.code} says why it matters, with an example: {found.url}",
         )
         for found, severity in rated
     ]

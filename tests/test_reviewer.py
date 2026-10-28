@@ -898,6 +898,20 @@ class TestWhatTheLanesRead:
         verdict = graph._verdict().instruction
         assert "ASD-STE100" in verdict and "Quote the evidence unchanged" in verdict, "and so does its verdict"
 
+    def test_every_guideline_says_why_a_blocker_or_a_major_matters_and_gives_its_code(self, monkeypatch) -> None:
+        """Asked by the owner: each blocker and major is handled in more detail. The answer's schema holds a reason and
+        the corrected code, and each guideline is told to fill both for a blocker or a major alone."""
+        load_agent(monkeypatch)
+        from adk_review.core.findings import Review
+        from adk_review.judge.agents import build_guideline
+        from adk_review.judge.catalog import catalog
+
+        finding = Review.model_json_schema()["$defs"]["Finding"]["properties"]
+        assert {"why", "code"} <= finding.keys(), finding.keys()
+        for guideline in catalog().guidelines:
+            instruction = build_guideline(guideline).instruction
+            assert "For a blocker or a major, say why it matters" in instruction, guideline.check_id
+
     def test_the_report_drops_what_a_terminal_would_run_or_reorder(self) -> None:
         """U+009B is ESC [ in one character; U+202E turns the text after it around."""
         from adk_review.deliver.report import one_line

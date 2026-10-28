@@ -44,6 +44,7 @@ class EncodingDeclaration(FileRule):
     reads_tests = True  # a test is code Python runs too, in CI with the job's keys
     title = "an encoding that rewrites the code every rule reads"
     fix = "Save the file as UTF-8 and remove the encoding declaration."
+    why = "Python reads the file in that encoding, so the code that runs can differ from the code a reviewer sees."
     bad = (
         "# -*- coding: utf_7 -*-\nx = 1\n",
         "#!/usr/bin/env python\n# coding=raw_unicode_escape\n",

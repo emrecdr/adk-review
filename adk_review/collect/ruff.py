@@ -195,7 +195,10 @@ def _parsed(answer: Iterable[str], sources: dict[str, Rows]) -> dict[str, list[D
         code = hit["code"] or "invalid-syntax"  # ruff 0.12.0 to 0.12.7 name a file that does not parse with null
         offered = hit.get("fix") or {}
         fix, label = offered.get("message"), offered.get("applicability")
-        said = Diagnostic(row, line, once(code), once(hit["message"]), fix and once(fix), label and once(label))
+        url = hit.get("url")
+        said = Diagnostic(
+            row, line, once(code), once(hit["message"]), fix and once(fix), label and once(label), url and once(url)
+        )
         found.setdefault(path, []).append(said)
     return found
 

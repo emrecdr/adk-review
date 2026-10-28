@@ -67,6 +67,7 @@ class Callers(TreeRule):
     reads_tests = True  # a test that calls the function breaks with it
     title = "a call does not fit the function it calls"
     fix = "Change the call to fit the function, or keep the parameters its callers pass."
+    why = "The call fails when it runs: Python raises TypeError at that line, in a file the change did not touch."
     bad = (
         {
             "pkg/repo.py": "def get_user(uid):\n    return uid\n",

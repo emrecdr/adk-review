@@ -16,6 +16,7 @@ class Parameters(TreeRule):
     severity = "major"
     title = "a function no longer takes a parameter its callers pass"
     fix = "Take the parameter again, or move every caller with it and change the list in this rule."
+    why = "Each caller that passes the parameter fails with TypeError when the call runs."
     bad = ({"src/payments/charge.py": "def charge(amount_cents):\n    pass\n"},)
     good = ({"src/payments/charge.py": "def charge(amount_cents, currency):\n    pass\n"},)
 

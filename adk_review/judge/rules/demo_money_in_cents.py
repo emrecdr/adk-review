@@ -19,6 +19,7 @@ class MoneyInCents(Rule):
     severity = "major"
     title = "cents divided into a float"
     fix = "Keep money in whole cents: format them with divmod or Decimal, never a float division."
+    why = "A float cannot hold most decimal amounts exactly, so totals can drift by a cent."
     bad = ('    return f"{amount_cents / 100:.2f} {currency}"', "total_cents /= 100", "float(amount_cents) / 100")
     good = (
         "whole = amount_cents // 100",

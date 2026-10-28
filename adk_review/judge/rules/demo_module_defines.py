@@ -16,6 +16,7 @@ class ModuleDefines(TreeRule):
     severity = "major"
     title = "a module no longer defines a name the project relies on"
     fix = "Define the name again, or move every importer with it and change the list in this rule."
+    why = "Every module that imports the name fails with ImportError when it loads."
     bad = (
         {"src/payments/charge.py": "def charge(amount_cents):\n    pass\n", "src/payments/config.py": "REGION = 1\n"},
     )

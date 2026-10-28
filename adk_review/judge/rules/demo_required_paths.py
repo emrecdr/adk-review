@@ -16,6 +16,7 @@ class RequiredPaths(TreeRule):
     severity = "major"
     title = "a file or folder the project needs is missing"
     fix = "Restore it, or change the list in this rule if the shape has changed on purpose."
+    why = "The tools and the code that read this path fail when it is missing."
     bad = ({"README.md": ""},)
     good = ({"README.md": "", "src/payments/__init__.py": "", "tests/test_charge.py": ""},)
 

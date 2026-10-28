@@ -23,6 +23,10 @@ EVIDENCE_MAX_CHARS = 400
 #: sentences or a short snippet. Cut where the finding is made, so every reader reads the same.
 TITLE_MAX_CHARS = 200
 SUGGESTION_MAX_CHARS = 1_200
+#: A blocker's or a major's reason and its corrected code, a model's words too, cut as the change is: a reason is a few
+#: sentences, the code the lines it fixes.
+WHY_MAX_CHARS = 600
+CODE_MAX_CHARS = 1_200
 
 
 def squash(text: str) -> str:

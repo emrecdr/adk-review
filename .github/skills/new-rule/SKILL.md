@@ -24,7 +24,8 @@ The shape of a rule — the three kinds, the constants it names, what it may imp
    give it `bad` and `good` examples, unless it reads an outside tool, which no example can run without: the catalog
    holds the rule to them, and to firing on nothing in its own source, at every start. A `(path, text)` example names a
    file the shipped `[review] scan` reads, or the rule never fires where it was made to: `tests/test_catalog.py` holds
-   every line and file rule to it, so a new kind of file is a glob in `scan` too. Write the `title` and `fix` as short
+   every line and file rule to it, so a new kind of file is a glob in `scan` too. Write the `title`, `fix` and,
+   past minor, `why` as short
    sentences, one command each, at most 20 words: `tests/test_command.py` holds every sentence the package prints to it.
    The folder holds rules and nothing else: no helper module and no guide; a helper several rules share belongs in
    `adk_review/judge/rule_helpers/`, in the module named after what it reads, and in the door's `__all__`. A rule reads

@@ -29,6 +29,7 @@ class Secrets(Rule):
     reads_tests = True  # a key in a test is a key in the history all the same
     title = "a hard-coded credential"
     fix = "Read it from the environment or a secret store, remove it from history, and rotate it."
+    why = "A key in the code is in every clone and in the history. Anyone who reads either can use it."
     reads_every_kind = True  # a key leaks from a README or a script as from code
     bad = (
         'client = Github("ghp_' + "a1B2" * 9 + '")',

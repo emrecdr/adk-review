@@ -39,6 +39,7 @@ class Types(FileRule):
     severity = "minor"  # a kind the table above does not name, which this rule never reads
     title = "a call or a value its own types say is wrong"
     fix = "Make the call or the value match the type its definition or annotation names."
+    why = "Python raises an error at this call or this value when the code runs."
     tool = "pyrefly"
     tool_settings = MappingProxyType({"kinds": tuple(SEVERITY)})
 

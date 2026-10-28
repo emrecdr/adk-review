@@ -105,6 +105,7 @@ class NamedSecrets(Rule):
     severity = "blocker"
     title = "a value assigned to a name that says secret"
     fix = "Read it from the environment or a secret store, remove it from history, and rotate it."
+    why = "A value in the code is in every clone and in the history. Anyone who reads either can use it."
     bad = (
         'password = "correct horse battery staple"',
         ("settings.yaml", "api_key: 4f8a1c2e9b7d6035"),

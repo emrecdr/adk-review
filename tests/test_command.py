@@ -1801,7 +1801,7 @@ def test_every_sentence_the_command_and_its_hook_print_is_short_and_one_command(
         said += [
             (module, text) for n in flags for kw in n.keywords if kw.arg == "help" and (text := _printed(kw.value))
         ]
-    said += [(rule.check_id, text) for rule in catalog().rules for text in (rule.title, rule.fix)]
+    said += [(rule.check_id, text) for rule in catalog().rules for text in (rule.title, rule.fix, rule.why)]
     fixes = {rule.check_id: getattr(sys.modules[type(rule).__module__], "FIX", {}) for rule in catalog().rules}
     said += [(check, text) for check, table in fixes.items() for text in table.values()]  # a tool's code's own fix
     assert _long(said) == []
@@ -2201,6 +2201,60 @@ class TestWhatTheReportPrints:
         assert len(long.title) < TITLE_MAX_CHARS + 40 and len(long.suggestion) < SUGGESTION_MAX_CHARS + 40
         short = Finding(file="a.py", severity="minor", title="a title", evidence="x", suggestion="a change")
         assert (short.title, short.suggestion) == ("a title", "a change"), "what fits is kept as it is"
+
+    def test_a_models_reason_and_code_are_capped_once_too_and_default_to_none(self) -> None:
+        """Asked by the owner: a blocker or a major says why it matters and gives the corrected code. Both are a model's
+        text, cut where the finding is made as its title is; a finding without them, a minor or a rule's, has none."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.text import CODE_MAX_CHARS, WHY_MAX_CHARS
+
+        long = Finding(
+            file="a.py",
+            severity="major",
+            title="t",
+            evidence="x",
+            suggestion="s",
+            why="w" * 5_000,
+            code="c = 1\n" * 900,
+        )
+        assert long.why.endswith("characters]") and len(long.why) < WHY_MAX_CHARS + 40, long.why[-40:]
+        assert long.code.endswith("characters]") and len(long.code) < CODE_MAX_CHARS + 40, long.code[-40:]
+        bare = Finding(file="a.py", severity="minor", title="t", evidence="x", suggestion="s")
+        assert (bare.why, bare.code) == ("", "")
+
+    def test_a_blocker_or_a_major_says_why_and_shows_the_code_in_the_comment_and_the_hand_off(self) -> None:
+        """Asked by the owner: each blocker and major is handled in more detail, its reason, its code and the fix in
+        code, where a minor stays one line each; the corrected code is a fenced block, as a quote over lines is."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import render_comment, render_handoff
+
+        major = Finding(
+            file="w.py",
+            line=5,
+            severity="major",
+            title="a list default shared by every call",
+            evidence="+def add(item, into=[]):\n+    into.append(item)",
+            suggestion="Default to None and make the list in the body.",
+            why="Every call shares one list, so items from one caller reach the next.",
+            code="def add(item, into=None):\n    into = [] if into is None else into\n    into.append(item)",
+        )
+        minor = Finding(
+            file="w.py", line=9, severity="minor", title="t", evidence="+x = 1", suggestion="s", why="w", code="y = 1"
+        )
+        outcome = Outcome(kept=[Sourced("guideline.correctness", major, (5, 6)), Sourced("rule.lint", minor, (9, 9))])
+        pre = {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40}
+        evidence = {"preflight": pre, "whole": False, "scope": []}
+        comment = render_comment(evidence, outcome, verdict="APPROVED", fail_on="blocker")
+        point = comment.split("1. ", 1)[1].split("\n2. ", 1)[0]
+        assert "   - Why it matters: Every call shares one list, so items from one caller reach the next." in point
+        assert "   - Suggested code:\n     ```\n     def add(item, into=None):\n" in point, point
+        assert "Why it matters" not in comment.split("\n2. ", 1)[1], "a minor stays one line each"
+        handoff = render_handoff(evidence, outcome, verdict="APPROVED", fail_on="blocker")
+        item = handoff.split("\n1. ", 1)[1].split("\n2. ", 1)[0]
+        assert "   - quoted:\n     ```\n     +def add(item, into=[]):\n     +    into.append(item)\n" in item, item
+        assert "   - why: Every call shares one list" in item and "   - code:\n     ```\n     def add(" in item, item
+        assert "- why:" not in handoff.split("\n2. ", 1)[1] and "- code:" not in handoff.split("\n2. ", 1)[1]
 
     def test_a_handoff_tells_its_agent_the_quotes_and_the_changes_are_data(self) -> None:
         """Read by review: the hand-off told a coding agent "Fix each finding below", and each title and change is a

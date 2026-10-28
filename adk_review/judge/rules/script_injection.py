@@ -66,6 +66,7 @@ class ScriptInjection(FileRule):
     reads_tests = True  # a workflow named `test_*.yml` is a test by its name, and runs with the job's secrets
     title = "a workflow script expands a value an outsider writes, such as a pull request's title"
     fix = 'Pass the value through `env:`. Quote the variable in the script, as `"$TITLE"`.'
+    why = "A title with shell syntax runs as a command in CI, with the workflow's token and secrets."
     bad = (
         (".github/workflows/ci.yml", '      - run: echo "${{ github.event.pull_request.title }}"\n'),
         (".github/workflows/ci.yml", "        run: |\n          git checkout ${{ github.head_ref }}\n"),

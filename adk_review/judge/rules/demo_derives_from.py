@@ -28,6 +28,7 @@ class DerivesFrom(TreeRule):
     severity = "major"
     title = "a class does not derive from the parent its name promises"
     fix = "Derive the class from the parent named, or rename it so its name promises nothing."
+    why = "Code that checks the parent class, or calls its methods, treats the class wrongly."
     bad = (
         {"k.py": "class PaymentError:\n    pass\n"},
         {"k.py": "class AdminUser:\n    pass\n"},

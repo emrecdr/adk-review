@@ -332,7 +332,8 @@ def _items(
         f = lead.finding
         lines += [
             f"{number}. {prose(f.title)} ({_where(f)}), {f.severity}{_bar(f, fail_on)}",
-            f"   - quoted: {_quoted(f)}",
+            *(_quoted_lines(f, "quoted") if _serious(f) else [f"   - quoted: {_quoted(f)}"]),
+            *_why(f, "   - why"),
             *_to_fix(lead, identity[id(lead)], "   "),
             *_folded_under(also, fail_on, identity, held),
         ]
@@ -370,10 +371,11 @@ def _bar(f: Finding, fail_on: str) -> str:
 
 
 def _to_fix(item: Sourced, identity: str, indent: str) -> list[str]:
-    """A handoff finding's instruction: what to change, and the fingerprint a review of the fixed commit no longer
-    reports, which is what must hold after."""
+    """A handoff finding's instruction: what to change, the corrected code of a blocker or a major, and the fingerprint
+    a review of the fixed commit no longer reports, which is what must hold after."""
     return [
         f"{indent}- change: {prose(item.finding.suggestion)}",
+        *_code_lines(item.finding, "code", indent),
         f"{indent}- after: `{item.source}` no longer reports fingerprint `{identity}`",
     ]
 
@@ -531,7 +533,9 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
         lines = [
             f"{number}. {place}: {prose(f.title)} ({f.severity})",
             *_quoted_lines(f),
+            *_why(f, "   - Why it matters"),
             f"   - Suggested change: {prose(f.suggestion)}",
+            *_code_lines(f, "Suggested code", "   "),
         ]
         others = [item for item in also if item.source not in tidies]
         shown = {f.suggestion}
@@ -701,7 +705,7 @@ def _quoted(f: Finding, limit: int = EVIDENCE_MAX_CHARS) -> str:
     return code_span(cut_at(one_line(f.evidence), limit))
 
 
-def _quoted_lines(f: Finding) -> list[str]:
+def _quoted_lines(f: Finding, label: str = "Quoted") -> list[str]:
     """A finding's evidence as a comment shows it: in a code span where it is one line, else a fenced block under its
     item, each line as written with its indentation, a credential hidden in the whole before the lines are split, cut
     where every report cuts evidence. Read by review: 27 of 54 guideline quotes in a live run spanned lines, and the
@@ -712,11 +716,38 @@ def _quoted_lines(f: Finding) -> list[str]:
     while quote and not quote[0].strip():
         quote.pop(0)
     if len(quote) <= 1:  # read by review: counted after the cut, a long line and its cut's mark made a block
-        return [f"   - Quoted: {_quoted(f)}"]
-    text = cut_at(scrub("\n".join(quote))[0], EVIDENCE_MAX_CHARS, sep="\n")
+        return [f"   - {label}: {_quoted(f)}"]
+    return [f"   - {label}:", *_fenced(cut_at(scrub("\n".join(quote))[0], EVIDENCE_MAX_CHARS, sep="\n"), "     ")]
+
+
+def _fenced(text: str, indent: str) -> list[str]:
+    """`text`, its credentials hidden and cut already, as a fenced block under an item: each line as written with its
+    indentation, every character a reader cannot see a space, the fence longer than any run of backticks inside."""
     lines = [_CONTROL.sub(" ", line).rstrip() for line in text.splitlines()]
     fence = "`" * max(3, backticks(text) + 1)
-    return ["   - Quoted:", f"     {fence}", *(f"     {line}".rstrip() for line in lines), f"     {fence}"]
+    return [f"{indent}{fence}", *(f"{indent}{line}".rstrip() for line in lines), f"{indent}{fence}"]
+
+
+def _serious(f: Finding) -> bool:
+    """Whether a point shows its reason and its corrected code: a blocker or a major. Asked by the owner, a major read
+    as nothing much in one line each, where a minor stays one line each."""
+    return at_or_above(f.severity, "major")
+
+
+def _why(f: Finding, label: str) -> list[str]:
+    """A blocker's or a major's reason under `label`, nothing where it has none."""
+    return [f"{label}: {prose(f.why)}"] if _serious(f) and f.why.strip() else []
+
+
+def _code_lines(f: Finding, label: str, indent: str) -> list[str]:
+    """A blocker's or a major's corrected code as a fenced block under `label`, a credential hidden, a fence a model
+    wrapped it in, as a chat answer does, unwrapped; nothing where it gave none."""
+    lines = f.code.strip("\n").splitlines()
+    if len(lines) > 1 and lines[0].lstrip().startswith("```") and lines[-1].strip().startswith("```"):
+        lines = lines[1:-1]
+    if not _serious(f) or not "".join(lines).strip():
+        return []
+    return [f"{indent}- {label}:", *_fenced(scrub("\n".join(lines))[0], f"{indent}  ")]
 
 
 def _listed(f: Finding, mark: str = "") -> list[str]:

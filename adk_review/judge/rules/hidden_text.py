@@ -37,6 +37,7 @@ class HiddenText(Rule):
     reads_tests = True  # a test's text reaches its readers, and a model, as any file's does
     title = "text a reader cannot see: tag characters, bidirectional controls or smuggled selectors"
     fix = "Remove the hidden characters, so a reader sees what a program or a model reads."
+    why = "A person reviews what they see, but a program or a model reads the hidden text too."
     bad = (
         'access = "user"  # \u202e admin only',
         "x = 1  # \U000e0069\U000e0067\U000e006e\U000e006f\U000e0072\U000e0065",

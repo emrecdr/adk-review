@@ -394,6 +394,7 @@ class NoTodo(Rule):
     severity = "minor"  # blocker: must not merge; major: fix before merge; minor: worth fixing
     title = "a marker left in the code"  # one line naming the problem, as the report prints it
     fix = "Resolve it before merging, or move it to the tracker."  # what to change, concretely
+    why = "A marker names work no one owns, and it stays in the code."  # shown beside a blocker or a major
     bad = ("x = 1  # TODO: handle refunds",)  # what it flags: held to at every start
     good = ('label = "TODO list"', ("notes.md", "TODO: write the guide"))  # what it leaves alone
 
@@ -423,6 +424,7 @@ class HttpTimeout(FileRule):
     severity = "major"
     title = "a network call with no timeout"
     fix = "Pass timeout=, in seconds, to every call."
+    why = "A call with no timeout can wait for ever, and the worker it holds serves nothing else."
     bad = ("r = requests.get(url)\n", "r = requests.post(\n    url,\n    json=payload,\n)\n")
     good = ("r = requests.get(url, timeout=5)\n", "r = session.get(url)\n")
 
@@ -457,6 +459,7 @@ class RequiredPaths(TreeRule):
     severity = "major"
     title = "a file or folder the project needs is missing"
     fix = "Restore it, or change the list in this rule if the shape has changed on purpose."
+    why = "The tools and the code that read this path fail when it is missing."
     bad = ({"README.md": ""},)
     good = ({"README.md": "", "src/payments/__init__.py": "", "tests/test_charge.py": ""},)
 
@@ -491,8 +494,9 @@ class RequiredPaths(TreeRule):
    every start the catalog holds every rule to its own examples, and a line or a file rule to firing on nothing in its
    own source, its examples aside: a rule that fails either is a sentence and exit 2, never a rule that quietly finds
    nothing. A `(path, text)` example names a file the shipped `scan` reads, or any file of the project's own for a rule
-   that sets `reads_every_kind` (`tests/test_catalog.py`). Its `title` and `fix` hold one command and at most 20 words a
-   sentence, as every sentence the package prints does (`tests/test_command.py`).
+   that sets `reads_every_kind` (`tests/test_catalog.py`). Its `title`, `fix` and `why`, the reason a blocker or a major
+   matters, which a rule past minor names, hold one command and at most 20 words a sentence, as every sentence the
+   package prints does (`tests/test_command.py`).
 4. See it fire, with no repository, no model and no key:
    `uv run python -m adk_review.review --try src/ --check rule.no-todo` reads files on disk, each as wholly
    added — a file at the path given, a folder's files at their paths inside it — and `--explain rule.no-todo` prints
@@ -660,7 +664,9 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   whatever the verdict: what must change before it merges, what is worth a look, an approved change's included, the
   tidy-ups, and what the review could not check. Its first line names what ran: the profile, how many rules and
   guidelines, and the model, or no model, so an approval from the rules alone never reads as a model's. An approval
-  names its bar and counts the major issues below it: asked by the owner, a major read as nothing much. Each place sits
+  names its bar and counts the major issues below it: asked by the owner, a major read as nothing much. A blocker or a
+  major says why it matters, a rule's `why` or ruff's page for its code, and shows the corrected code a guideline
+  gave. Each place sits
   in a code span, and each quote in one, or in a fenced block that keeps its lines where it spans several, and the whole
   holds at most 60,000 characters, under the 65,536 GitHub takes in a comment, the most severe points first and the rest
   counted. The reviewer posts nothing and prints no command that would: asked by the owner, who reviews others' branches

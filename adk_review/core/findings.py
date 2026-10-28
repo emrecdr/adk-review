@@ -12,7 +12,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, field_validator
 
-from .text import SUGGESTION_MAX_CHARS, TITLE_MAX_CHARS, cut_at
+from .text import CODE_MAX_CHARS, SUGGESTION_MAX_CHARS, TITLE_MAX_CHARS, WHY_MAX_CHARS, cut_at
 
 Severity = Literal["blocker", "major", "minor"]
 #: The scale, low to high: `decide` and `dedupe` key on it, and the command offers it for `--fail-on`.
@@ -31,7 +31,15 @@ class Finding(BaseModel):
     severity: Severity = Field(description="blocker: must not merge; major: fix before merge; minor: worth fixing.")
     title: str = Field(description="One line naming the problem.")
     evidence: str = Field(description="The exact diff lines this finding is about, quoted verbatim.")
+    why: str = Field(
+        default="",
+        description="For a blocker or a major: why it matters, the failure it causes and when. Empty for a minor.",
+    )
     suggestion: str = Field(description="What to change, concretely.")
+    code: str = Field(
+        default="",
+        description="For a blocker or a major that code fixes: the corrected lines, as the file should read them.",
+    )
 
     @field_validator("title")
     @classmethod
@@ -45,6 +53,18 @@ class Finding(BaseModel):
     def _suggestion_cut(cls, suggestion: str) -> str:
         """A model's change, cut at `SUGGESTION_MAX_CHARS` as the title is."""
         return cut_at(suggestion, SUGGESTION_MAX_CHARS)
+
+    @field_validator("why")
+    @classmethod
+    def _why_cut(cls, why: str) -> str:
+        """A model's reason, cut at `WHY_MAX_CHARS` as the title is."""
+        return cut_at(why, WHY_MAX_CHARS)
+
+    @field_validator("code")
+    @classmethod
+    def _code_cut(cls, code: str) -> str:
+        """A model's corrected code, cut at `CODE_MAX_CHARS` between its lines."""
+        return cut_at(code, CODE_MAX_CHARS, sep="\n")
 
 
 class Review(BaseModel):

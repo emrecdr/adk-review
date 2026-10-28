@@ -1019,6 +1019,31 @@ def ruff_rule_findings(rule, files: list[dict]) -> list:
     return answer.findings
 
 
+class TestABlockerOrAMajorSaysWhyItMatters:
+    """Asked by the owner: each blocker and major is handled in more detail, its reason among it. A rule says it once,
+    in its `why`; a ruff code's reason, with an example, is ruff's own page for the code."""
+
+    def test_every_rule_that_reports_past_minor_says_why(self) -> None:
+        from adk_review.judge.catalog import catalog
+
+        silent = [rule.check_id for rule in catalog().rules if rule.severity != "minor" and not rule.why]
+        assert silent == [], silent
+
+    def test_a_rule_finding_carries_its_rules_reason(self) -> None:
+        from adk_review.core.rules import run_rule
+        from adk_review.judge.rules.secrets import Secrets
+
+        key = "AKIA" + "IOSFODNN7EXAMPLE"  # built here, so this file holds no key a review would stop on
+        (found,) = run_rule(Secrets(), [_entry("app.py", f'KEY = "{key}"\n')], None).findings
+        assert found.why and found.why == Secrets.why, found
+
+    def test_a_ruff_codes_reason_is_its_page_on_ruffs_site(self) -> None:
+        from adk_review.judge.rules.pitfalls import Pitfalls
+
+        found = ruff_rule_findings(Pitfalls(), [_entry("app.py", "import subprocess\n\nsubprocess.run(['ls'])\n")])
+        assert any("https://docs.astral.sh/ruff/rules/subprocess-run-without-check" in f.why for f in found), found
+
+
 class TestTypesReadsWhatPyreflyFinds:
     """`types` runs pyrefly on each changed Python file alone, a name it imports read as `Any`, and keeps what pyrefly
     finds on the lines the change added, of the kinds measured to be defects: 27 of 30 planted ones, where ruff found 3,

@@ -23,7 +23,8 @@ applyTo: "adk_review/**"
   line that raised, a file that will not load, holds no check or two, names its check after another file, writes its
   own `hits`, or fails its own examples. No other folder is read for checks: one place for each kind, one way.
 - A rule names `id` (its file's name with `-` for `_`), `severity` (`blocker`, `major` or `minor`), `title` and `fix` as
-  class constants, each sentence one command of at most 20 words (`tests/test_command.py`), its expectations as
+  class constants, and `why` past minor (`tests/test_rules.py`), each sentence one command of at most 20 words
+  (`tests/test_command.py`), its expectations as
   constants in its file, `bad` and `good` examples (a text, read at `example.py`; a `(path, text)` pair, at a path the
   shipped `scan` reads, as `tests/test_catalog.py` holds; or `{path: text}`), `reads_tests = True` where what it finds
   matters in a test too (a credential, hidden text, a workflow named `test_*.yml`; no test's file reaches any other

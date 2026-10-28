@@ -38,6 +38,7 @@ class OfflineTests(FileRule):
     reads_tests = True  # tests alone, which `check` chooses
     title = "a test reaches the network"
     fix = "Fake the network at the boundary: a stub client or a recorded answer, never a live call."
+    why = "A test that needs the network fails when the network is down, runs slowly, and can send data out."
     bad = (
         ("tests/test_a.py", "r = requests.get(url)\n"),
         ("tests/test_a.py", "s = socket.create_connection(\n    (h, p),\n)\n"),

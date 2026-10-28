@@ -54,12 +54,14 @@ class Hit:
     title: str | None = None
     severity: Severity | None = None
     fix: str | None = None
+    why: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class Diagnostic:
     """One thing ruff reports on a file: the line, as ruff counts lines, and that line's text; the code, the message,
-    and the fix ruff offers, if any, with ruff's own label for it: `safe`, `unsafe` or `display-only`."""
+    and the fix ruff offers, if any, with ruff's own label for it: `safe`, `unsafe` or `display-only`; and ruff's page
+    for the code, which says why it matters, with an example."""
 
     line: int
     source: str
@@ -67,6 +69,7 @@ class Diagnostic:
     message: str
     fix: str | None = None
     applicability: str | None = None
+    url: str | None = None
 
 
 class AnyRule(ABC):
@@ -77,6 +80,9 @@ class AnyRule(ABC):
     severity: ClassVar[Severity]
     title: ClassVar[str]
     fix: ClassVar[str]
+    #: Why a finding of the rule matters, a sentence the comment and the hand-off print beside a blocker or a major:
+    #: asked by the owner, a major read as nothing much without it. A rule that reports past minor names one.
+    why: ClassVar[str] = ""
     #: What the rule reads, as `--list-checks` names it: a line, a file, the tree. Each kind below names its own, and
     #: the catalog takes a rule of none of the three kinds for no rule.
     kind: ClassVar[str]
@@ -416,6 +422,7 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
                 # was scrubbed again by every later reader, 160 s in all, and one 2 MB line whole took 9 s.
                 evidence=cut_at(scrub(hit.text[:read], cut=len(hit.text) > read)[0], EVIDENCE_MAX_CHARS),
                 suggestion=hit.fix or rule.fix,
+                why=hit.why or rule.why,
             )
             for hit in hits
         ]

@@ -49,6 +49,7 @@ class RadiusTypes(TreeRule):
     reads_tests = False
     title = "code the change left alone no longer type-checks"
     fix = "Change the code to fit what the change made, or keep what that code relied on."
+    why = "Code the change left alone now gets values of another type, so it fails or misbehaves when it runs."
     tool = "pyrefly-radius"
     # A test's file is in neither of pyrefly's runs, as the rule reads none of its findings: measured on ADK, half its
     # bytes tests, a run took 0.96 s where it took 1.59, the same findings.
