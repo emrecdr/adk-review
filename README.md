@@ -664,9 +664,9 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   whatever the verdict: what must change before it merges, what is worth a look, an approved change's included, the
   tidy-ups, and what the review could not check. Its first line names what ran: the profile, how many rules and
   guidelines, and the model, or no model, so an approval from the rules alone never reads as a model's. An approval
-  names its bar and counts the major issues below it: asked by the owner, a major read as nothing much. A blocker or a
-  major says why it matters, a rule's `why` or ruff's page for its code, and shows the corrected code a guideline
-  gave. Each place sits
+  names its bar, and every comment counts the major issues below it: asked by the owner, a major read as nothing
+  much. A blocker or a major says why it matters, a rule's `why` or ruff's page for its code, and shows the
+  corrected code a guideline gave. Each place sits
   in a code span, and each quote in one, or in a fenced block that keeps its lines where it spans several, and the whole
   holds at most 60,000 characters, under the 65,536 GitHub takes in a comment, the most severe points first and the rest
   counted. The reviewer posts nothing and prints no command that would: asked by the owner, who reviews others' branches

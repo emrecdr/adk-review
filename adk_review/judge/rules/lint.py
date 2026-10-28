@@ -115,6 +115,7 @@ class Lint(FileRule):
     reads_tests = True  # ruff reads a test too, less the codes in `IN_TESTS`
     title = "what ruff reports, at a severity for each code"
     fix = "Correct what ruff reports."
+    why = "Ruff names code that fails, leaks or misleads. Run ruff on the file to see each code and its page."
     tool = "ruff"
     tool_settings = MappingProxyType({"select": SELECT, "ignore": IGNORE, "line_length": LINE_LENGTH})
 

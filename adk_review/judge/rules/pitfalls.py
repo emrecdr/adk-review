@@ -70,6 +70,7 @@ class Pitfalls(FileRule):
     reads_tests = True  # a test can hold a trap too: an assert that never fails
     title = "Python traps ruff can prove: code that does not do what it reads"
     fix = "Rewrite it as ruff names."
+    why = "The code does not do what it reads, so it fails where it looks correct. Run ruff on the file."
     tool = "ruff"
     tool_settings = MappingProxyType({"select": SELECT, "ignore": IGNORE, "line_length": None})
 

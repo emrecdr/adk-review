@@ -1024,10 +1024,21 @@ class TestABlockerOrAMajorSaysWhyItMatters:
     in its `why`; a ruff code's reason, with an example, is ruff's own page for the code."""
 
     def test_every_rule_that_reports_past_minor_says_why(self) -> None:
-        from adk_review.judge.catalog import catalog
+        """A rule's own severity, or one its table rates a code at: read by review, ruff's syntax error and the count
+        of what the change did not add, each major, had no page to name and no reason."""
+        import sys
 
-        silent = [rule.check_id for rule in catalog().rules if rule.severity != "minor" and not rule.why]
+        from adk_review.judge.catalog import catalog
+        from adk_review.judge.rules.lint import Lint
+
+        def past_minor(rule) -> bool:
+            table = getattr(sys.modules[type(rule).__module__], "SEVERITY", {})
+            return rule.severity != "minor" or any(severity != "minor" for severity in table.values())
+
+        silent = [rule.check_id for rule in catalog().rules if past_minor(rule) and not rule.why]
         assert silent == [], silent
+        syntax = ruff_rule_findings(Lint(), [_entry("bad.py", "def f(:\n    pass\n")])
+        assert syntax and all(f.why for f in syntax), [(f.title, f.why) for f in syntax]
 
     def test_a_rule_finding_carries_its_rules_reason(self) -> None:
         from adk_review.core.rules import run_rule
