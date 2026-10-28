@@ -26,7 +26,7 @@ from pathlib import Path, PurePath, PurePosixPath
 
 from ..core.blast import PASSED_ON, is_test
 from ..core.evidence import Change, Entry, Evidence, unreleased
-from ..core.rules import Diagnostic, is_python_text
+from ..core.rules import Diagnostic, UnreadError, is_python_text
 from ..core.text import squash
 from .git import GitError, base_files, on_path
 from .ruff import Rows, laid_out, rows_of
@@ -264,7 +264,15 @@ def _compared(
     left out of both alike: where the change touched one or it reaches a file the change touched, the rule could not
     look there, as `types` says of one, and a file the change does not reach is no hole of it."""
     touched = {f["path"] for f in files} | {f["old"] for f in files if "old" in f}
-    bound = functools.cache(imports)
+
+    @functools.cache
+    def bound(path: str) -> Mapping[str, tuple[str, str | None]]:
+        """What `path`'s imports bind; nothing for a file the head's read left out, a floor as `callers` reads it: read
+        by review, a name imported from one past `MAX_FILE_BYTES` raised, and the rule could not look."""
+        try:
+            return imports(path)
+        except UnreadError:
+            return {}
 
     @functools.cache
     def reaches(path: str) -> bool:

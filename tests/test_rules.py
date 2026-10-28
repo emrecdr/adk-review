@@ -2325,6 +2325,24 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         resolved = preflight(str(repo), BASE, "change")
         assert base_files(resolved, {"shop/big.py", "shop/small.py"}) == {"shop/small.py": "y = 1\n"}
 
+    def test_an_import_from_a_file_the_heads_read_left_out_is_a_floor_not_a_hole(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by review: a changed file imported a name from one the head's read left out, past `MAX_FILE_BYTES`,
+        and a call error on a line it added asked where that name came from: `UnreadError`, the rule could not look,
+        exit 3. The tree's reading is a floor, as `callers` reads it, so the call is left to `types`."""
+        from adk_review.collect import git
+
+        big = "def make() -> str:\n    return 'x'\n" + "# padding\n" * 20
+        service = "from shop.big import make\n\n\ndef total(x: int) -> int:\n    return x\n\n\nvalue = make()\n"
+        repo = self.branch(
+            tmp_path,
+            {"shop/big.py": big, "shop/service.py": service},
+            {"shop/service.py": service + "count = total(1, 2)\n"},
+        )
+        monkeypatch.setattr(git, "MAX_FILE_BYTES", 150)
+        assert self.found(repo) == [], "the call error is on the line the change added: `types` names it"
+
     def test_a_link_the_change_made_a_file_is_compared_with_nothing_it_never_held(self, tmp_path: Path) -> None:
         """Measured before: a module that was a link at the base, made a file, was rebuilt as the one line it names, so
         a call wrong before the change, through the link, read as new. A link at the base is left as the head holds
