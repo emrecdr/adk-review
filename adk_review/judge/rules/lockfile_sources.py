@@ -12,13 +12,18 @@ from ..rule_helpers import ChangedFile, FileRule, matches
 #: skip list's other lockfiles are read by the credential rules alone: `go.sum`, `gradle.lockfile` and NuGet's
 #: `packages.lock.json` name no source, Swift's `Package.resolved`, Nix's `flake.lock` and Composer's `composer.lock`
 #: name a URL for every package with no one registry to hold it to, and Deno's `deno.lock`, whose imports are URLs by
-#: design, is not read until a real one is measured.
+#: design, is not read until a real one is measured. uv's tuple holds the company's own Nexus, by scheme, host and port:
+#: its projects declare it as their default index, and every change to a lock drew a finding for it.
 REGISTRIES = {
     "package-lock.json": ("https://registry.npmjs.org/",),
     "npm-shrinkwrap.json": ("https://registry.npmjs.org/",),
     "yarn.lock": ("https://registry.yarnpkg.com/", "https://registry.npmjs.org/"),
     "pnpm-lock.yaml": ("https://registry.npmjs.org/",),
-    "uv.lock": ("https://pypi.org/simple", "https://files.pythonhosted.org/"),
+    "uv.lock": (
+        "https://pypi.org/simple",
+        "https://files.pythonhosted.org/",
+        "https://p-nexus-3.development.nl.eu.abnamro.com:8443/",
+    ),
     "poetry.lock": ("https://pypi.org/", "https://files.pythonhosted.org/"),
     "pdm.lock": ("https://pypi.org/", "https://files.pythonhosted.org/"),
     "Pipfile.lock": ("https://pypi.org/simple", "https://pypi.python.org/simple"),

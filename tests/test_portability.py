@@ -523,6 +523,30 @@ def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(t
     assert row == "| repeated-io | its defect named | 3 of 3 | guideline.efficiency x3, guideline.tests x1 |", row
 
 
+def test_the_labelled_sets_rename_with_its_callers_is_clean_and_names_the_old_name_on_deleted_lines_alone(
+    tmp_path,
+) -> None:
+    """Read by review on a branch that renamed a function and removed a field with every use of each: guidelines asked
+    for a change the head already held, the old names being in the diff's deleted lines. The labelled set holds that
+    shape as a clean change, so a live run can count the false findings it draws: nothing at the head names the old
+    function, and the diff names it only on lines it deletes."""
+    import labelled_set as labelled
+
+    name, repo = "clean-rename-with-callers", tmp_path / "repo"
+    made = labelled.branches(repo)
+    assert name in made and labelled.BRANCHES[name][1] is None, "a clean change: nothing to find"
+
+    def git(*args: str) -> str:
+        return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, encoding="utf-8", check=True).stdout
+
+    for path in ("src/payments/charge.py", "tests/test_charge.py"):
+        text = git("show", f"{made[name]}:{path}")
+        assert "format_money" in text and "format_amount" not in text, path
+    diff = git("diff", "main", made[name]).splitlines()
+    assert any(line.startswith("-") and "format_amount" in line for line in diff), "the old name, deleted"
+    assert not any(line.startswith("+") and "format_amount" in line for line in diff), "and added nowhere"
+
+
 def test_the_copilot_login_is_a_command_of_the_install(monkeypatch, tmp_path: Path) -> None:
     """Measured by walking a first run: the Copilot refusal told an installed user to run `scripts/copilot_login.py`,
     which `uv tool install` never installs and `uv run` needs the checkout for, so the default arm had no way in. The

@@ -305,7 +305,9 @@ class TestRetriesOnBothArms:
             return describe(error)
 
         assert "Try again after 45 s, at " in limited({"Retry-After": "45"}), "a header's name in any case"
+        assert "Try again after 46 s, at " in limited({"Retry-After": "45.2"}), "float seconds in retry-after"
         assert "Try again after 2 h, at " in limited({"x-ratelimit-reset": str(int(time.time()) + 7200)})
+        assert "Try again after 1 h, at " in limited({"x-ratelimit-user-reset": str(time.time() + 3600)})
         assert "Try again after 2 min, at " in limited({"retry-after": formatdate(time.time() + 90, usegmt=True)})
         for none in ({}, {"x-ratelimit-reset": str(int(time.time()) - 60)}, {"retry-after": "soon"}):
             assert "Try again" not in limited(none), none

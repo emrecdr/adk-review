@@ -76,11 +76,20 @@ def _wait_of(error: Exception) -> str | None:
     now, seconds = time.time(), None
     if after := headers.get("retry-after", ""):
         try:
-            seconds = float(after) if after.isdigit() else parsedate_to_datetime(after).timestamp() - now
-        except (TypeError, ValueError):
-            seconds = None
-    if seconds is None and (reset := headers.get("x-ratelimit-reset", "")).isdigit():
-        seconds = int(reset) - now
+            seconds = float(after)
+        except ValueError:
+            try:
+                seconds = parsedate_to_datetime(after).timestamp() - now
+            except (TypeError, ValueError):
+                seconds = None
+    if seconds is None:
+        for key in ("x-ratelimit-reset", "x-ratelimit-user-reset"):
+            if raw := headers.get(key, ""):
+                try:
+                    seconds = float(raw) - now
+                    break
+                except ValueError:
+                    pass
     if seconds is None or seconds <= 0:
         return None
     return f"Try again after {_span(seconds)}, at {datetime.fromtimestamp(now + seconds):%H:%M}."

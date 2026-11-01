@@ -497,7 +497,7 @@ class TestTheLintRule:
         assert len(listed) == PER_FILE and counted.line is None, len(found)
         assert any(f.title.startswith("lint: S602") for f in listed), "the major is listed, whatever its line"
         assert "more of ruff's findings in this file, not listed" in counted.title, counted
-        assert counted.severity == "minor" and counted.evidence.startswith("F401 x"), counted
+        assert counted.severity == "minor" and counted.evidence.startswith("F401 (unused-import) x"), counted
 
     @staticmethod
     def _pairwise(kept: list, tidies: frozenset[str] = frozenset()) -> tuple[list, list]:
@@ -901,7 +901,9 @@ class TestTheLintRule:
         assert [f.line for f in counted if f.line is not None] == [3]
         (aside,) = [f for f in counted if f.line is None]
         assert (
-            aside.title == "lint: 2 of ruff's findings on lines the change did not add" and aside.evidence == "F401 x2"
+            aside.title == "lint: 2 of ruff's findings on lines the change did not add"
+            and aside.evidence == "F401 (unused-import) x2"
+            and aside.suggestion == "Run ruff check m.py to inspect each occurrence."
         )
 
     def test_an_assert_is_major_in_library_code_and_not_reported_in_a_test(self) -> None:
@@ -924,6 +926,26 @@ class TestTheLintRule:
         kept["added"] = [(4, "    print(eval('1'))")]  # the asserts on lines the change kept
         found = lint_findings({"files": [kept], "tree": None})
         assert [(f.line, f.title.split()[1]) for f in found] == [(4, "S307")], found
+
+    def test_a_databricks_notebook_is_not_told_its_runtimes_own_names_are_undefined(self) -> None:
+        """Read by review on a branch of 20 Databricks notebooks: 192 of lint's findings were F821 on `dbutils`,
+        `spark` and `display`, nearly all of its 86 majors, where the project's own ruff reported none. Databricks
+        defines the three in every notebook it runs. Only a file whose first line marks it a notebook passes them over,
+        and only those three: any other name it leaves undefined is still a bug, and so are those three elsewhere."""
+        body = "df = spark.read.table('t')\ndbutils.widgets.get('x')\ndisplay(df)\nprint(undefined_here)\n"
+        notebook = "# Databricks notebook source\n" + body
+        named = {
+            path: sorted(f.title.split("`")[1] for f in lint_findings({"files": [_entry(path, text)], "tree": None}))
+            for path, text in (
+                ("src/bin/job.py", notebook),
+                ("src/bin/bom.py", "\ufeff" + notebook),
+                ("src/bin/header.py", "# Copyright (c) 2026\n" + notebook),
+                ("src/service.py", "\n" + body),
+                ("src/late.py", "x = 1\n# Databricks notebook source\n" + body),
+            )
+        }
+        assert named["src/bin/job.py"] == named["src/bin/bom.py"] == named["src/bin/header.py"] == ["undefined_here"]
+        assert named["src/service.py"] == named["src/late.py"] == ["dbutils", "display", "spark", "undefined_here"]
 
     def test_a_call_without_a_shell_or_by_a_short_name_is_minor_and_a_shell_call_major(self) -> None:
         """S603 names every `subprocess` call whose arguments are not a literal list, and S607 every program named
@@ -2697,6 +2719,31 @@ class TestTheShippedRules:
         assert try_rule(rule, {"uv.lock": pypi}) == [], "its own registry"
         assert try_rule(rule, {"src/sources.py": mirror}) == [], "a lockfile alone is read"
         assert self_check(rule) == []
+
+    def test_the_companys_own_nexus_is_a_known_registry_of_uv_and_nothing_near_it_is(self) -> None:
+        """Read by review on two projects' branches, every change to `uv.lock` drew a minor finding that it fetched
+        from the company's Nexus, which the projects declare as their default index in `pyproject.toml`; the same
+        wheel stood on a line the lock's rewrite moved. The Nexus joins uv's known registries, by its scheme, host
+        and port: another port, plain HTTP, a user's name before a lookalike host, and a host that only begins with
+        its name are each still a source a person reads."""
+        from adk_review.judge.rule_helpers import try_rule
+        from adk_review.judge.rules.lockfile_sources import LockfileSources
+
+        nexus = "p-nexus-3.development.nl.eu.abnamro.com"
+        wheel = "/repository/python-group/packages/abnamro-pita-servicenow/1.3.2/abnamro_pita_servicenow-1.3.2.whl"
+
+        def fetched(url: str) -> list[str]:
+            line = f'wheels = [{{ url = "{url}", hash = "sha256:ace4" }}]\n'
+            return [hit.title or "" for hit in try_rule(LockfileSources(), {"uv.lock": line})]
+
+        assert fetched(f"https://{nexus}:8443{wheel}") == [], "the company's Nexus over TLS"
+        for url, origin in (
+            (f"https://{nexus}:9999{wheel}", f"https://{nexus}"),
+            (f"http://{nexus}:8443{wheel}", f"http://{nexus}"),
+            (f"https://{nexus}:8443@evil.example{wheel}", "https://evil.example"),
+            (f"https://{nexus}:8443.evil.example{wheel}", f"https://{nexus}"),
+        ):
+            assert fetched(url) == [f"uv.lock fetches from {origin}, outside its public registry"], url
 
     def test_a_dart_elixir_bun_or_cocoapods_lockfile_is_read_as_its_package_manager_writes_it(self) -> None:
         """Lines from real lockfiles: harmonoid's pubspec.lock, elixir-ls's mix.lock, wow.export's and ens-contracts'

@@ -80,12 +80,17 @@ _GLOB = re.compile(r"[*?[\\]")
 #: environment, they outrank every config file, the repository's own included. No attributes file but the
 #: repository's, and no file-system monitor: `core.fsmonitor` names a program git starts beside a diff. Measured,
 #: `diff-tree` started the one the reviewed repository's own config named, in the review's environment, keys and all,
-#: and `core.fsmonitor=true` started git's own daemon, which wrote into `.git`.
+#: and `core.fsmonitor=true` started git's own daemon, which wrote into `.git`. And `core.autocrlf`: with the person's
+#: config left out it read off, and `diff-tree` diffed a checked-out file its index called up to date in place of its
+#: blob, where no conversion would apply; written with CRLF over blobs of LF, as Windows does, every line of it
+#: differed. Measured on a branch of 35 modified files: all 35, one of them 248 lines removed and 243 added where it
+#: changed 6 and 1. `input` writes no CRLF, and makes git read the blob, as the person's `true` does.
 _SETTLED = {
     "core.precomposeUnicode": "false",
     "diff.suppressBlankEmpty": "false",
     "core.attributesFile": os.devnull,
     "core.fsmonitor": "false",
+    "core.autocrlf": "input",
 }
 
 
@@ -1032,7 +1037,9 @@ def gather(
         listed = list_changed(resolved)
         entries = [entry for entry in listed if in_scope(entry["path"], scope)]
         own, others, ignored = _split(entries, scan, third_party)
-        files, block, excluded = _read_change(resolved, own, scope, guidelines=guidelines, diff_cap=diff_cap, skip=skip)
+        files, block, excluded, parts = _read_change(
+            resolved, own, scope, guidelines=guidelines, diff_cap=diff_cap, skip=skip
+        )
         unscanned = _read_change(resolved, others, scope, guidelines=False, diff_cap=diff_cap, skip=skip)[0]
         away = untracked(resolved) if resolved.get("staged") else None
     except GitError as exc:  # the change half read is not the change: named, never reviewed as it stands
@@ -1063,6 +1070,7 @@ def gather(
         "tree": tree,
         "whole": base is None,
         "scope": list(scope),
+        "parts": parts,
         "skipped": excluded,
         "unscanned": unscanned,
         "ignored": ignored,
@@ -1073,7 +1081,7 @@ def gather(
 
 def _read_change(
     resolved: dict, entries: list[dict], scope: Sequence[str], *, guidelines: bool, diff_cap: int, skip: Sequence[str]
-) -> tuple[list[Entry], str, dict[str, str]]:
+) -> tuple[list[Entry], str, dict[str, str], list[list[str]]]:
     """Each entry's diff, as the rules read it, and the block the guidelines read, as `shown_to_guidelines` builds it.
     Where a guideline reads the change, each Python hunk `widens` names is read within the function or class around
     it, as Claude Code's review reads the enclosing function of each hunk: git's three lines showed an edit deep in a
@@ -1087,11 +1095,12 @@ def _read_change(
     diffs = _diffs(resolved, entries, scope, frozenset(wide))
     over = {at for at in wide if len(diffs[at]) > min(diff_cap, WIDEN_CAP_CHARS)}
     _narrowed(resolved, entries, diffs, sorted(over))
-    files, block, excluded, left_out = shown_to_guidelines(entries, diffs, diff_cap, skip, shown=guidelines)
+    shown = {"shown": guidelines, "scope": scope}
+    files, block, excluded, left_out, parts = shown_to_guidelines(entries, diffs, diff_cap, skip, **shown)
     if left_out and (rest := [at for at in wide if at not in over]):
         _narrowed(resolved, entries, diffs, rest)
-        files, block, excluded, _left_out = shown_to_guidelines(entries, diffs, diff_cap, skip, shown=guidelines)
-    return files, block, excluded
+        files, block, excluded, _left_out, parts = shown_to_guidelines(entries, diffs, diff_cap, skip, **shown)
+    return files, block, excluded, parts
 
 
 def _diffs(resolved: dict, entries: list[dict], scope: Sequence[str], wide: frozenset[int]) -> list[str]:

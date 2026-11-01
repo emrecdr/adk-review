@@ -48,16 +48,21 @@ def listed(
     rate: Callable[[Diagnostic], Severity],
     fixes: Mapping[str, str],
     leave_out: Collection[str] = (),
+    passes_over: Callable[[Diagnostic], bool] | None = None,
 ) -> list[Hit]:
     """Each of ruff's diagnostics on `file`, at the severity `rate` gives it, as findings: those on lines the change
     added one by one, at most `PER_FILE` of them, the most severe first; the rest counted, one finding each for the
     lines the change did not add and for the ones past the cap, so the verdict reads the same. `fixes` is the rule's
-    own table of sentences, read where ruff offers no fix. A diagnostic whose code is in `leave_out` is neither listed
-    nor counted. None for a file that is not Python: ruff reads Python, and another file's text is never asked for,
-    so one not read whole is no rule's hole."""
+    own table of sentences, read where ruff offers no fix. A diagnostic whose code is in `leave_out`, or that
+    `passes_over` names, is neither listed nor counted. None for a file that is not Python: ruff reads Python, and
+    another file's text is never asked for, so one not read whole is no rule's hole."""
     if not is_python(file.path, lambda: file.line(1)):
         return []
-    rated = [(found, rate(found)) for found in file.diagnostics if found.code not in leave_out]
+    rated = [
+        (found, rate(found))
+        for found in file.diagnostics
+        if found.code not in leave_out and not (passes_over and passes_over(found))
+    ]
     tail: list[Hit] = []
     # What ruff reports on lines the change did not add is counted, one finding a file at the most severe of them,
     # so the verdict reads the same. Measured over this repository's 22 commits: 2,101 of lint's 2,435 findings,
@@ -87,15 +92,30 @@ def listed(
     return hits + tail
 
 
+def _slug(diag: Diagnostic) -> str | None:
+    """The rule's documentation slug from its URL: e.g. 'hardcoded-password-string' for S105."""
+    if not diag.url:
+        return None
+    clean = diag.url.split("?")[0].split("#")[0].removesuffix(".html").rstrip("/")
+    slug = clean.split("/")[-1]
+    return slug if slug and slug != diag.code else None
+
+
 def _counted(path: str, rated: list[tuple[Diagnostic, Severity]], title: str) -> Hit:
     """`rated` as one finding at the file: how many of each code, at the most severe of them, so no tier is lost and
     the verdict reads the same."""
     codes = Counter(found.code for found, _severity in rated)
+    slugs = {found.code: _slug(found) for found, _severity in rated if found.url}
+    parts = []
+    for code, count in codes.most_common():
+        slug = slugs.get(code)
+        name = f"{code} ({slug})" if slug else code
+        parts.append(f"{name} x{count}")
     return Hit(
         path,
         None,
-        ", ".join(f"{code} x{count}" for code, count in codes.most_common()),
+        ", ".join(parts),
         title=title,
         severity=max((severity for _found, severity in rated), key=RANK.__getitem__),
-        fix="Run ruff on the file to see each one.",
+        fix=f"Run ruff check {path} to inspect each occurrence.",
     )

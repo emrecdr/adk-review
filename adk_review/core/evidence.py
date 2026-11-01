@@ -122,6 +122,9 @@ class Evidence(Change):
     callers: NotRequired[str]  # each call into a function the change touched, from a file it left alone, with its lines
     whole: bool  # under --all: every file at the head is the change, diffed against the empty tree
     scope: list[str]  # the folders --path named, as git spells them; [] for the whole change
+    #: Where the guidelines cannot read the change in one run, the runs that can, each the `--path` values one names;
+    #: [] where it fits.
+    parts: NotRequired[list[list[str]]]
     skipped: dict[str, str]  # the files the operator's skip list left to the rules, by path with the glob
     #: The changed files the review leaves out, by the config's scan and third_party: the credential rules still read
     #: the project's own among them, and nothing reads another project's code.

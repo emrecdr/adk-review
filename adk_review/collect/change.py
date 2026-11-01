@@ -10,10 +10,11 @@ import functools
 import re
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
+from pathlib import PurePosixPath
 
 from ..core.blast import PASSED_ON, Blast, blast_radius
 from ..core.evidence import Entry, Failure, entry
-from ..core.paths import matches
+from ..core.paths import in_scope, matches
 from ..core.rules import Tree, UnreadError, is_python_text
 from ..core.text import lines_of, squash
 from .diff import BINARY, LINK_MODE, SUBMODULE, added_lines, capped, framed, headers, hunk_lines, quotable
@@ -105,10 +106,10 @@ def lfs_pointer(diff: str) -> bool:
     return pointer_text("\n".join(opening))
 
 
-def unread(entry: Entry, diff: str, cut: bool, fits: bool, cap: int) -> str:
+def unread(entry: Entry, diff: str, cut: bool, fits: bool, cap: int, folder: str | None = None) -> str:
     """Why the guidelines could not read all of a changed file, or "" when they could: named, never read as "found
     nothing". A deleted file adds nothing: what it removes was reviewed when it came in. `fits` is False for a
-    file past the block's cap."""
+    file past the block's cap, and `folder` the `--path` that reviews it in a run of fewer files, where one does."""
     if entry["status"] == "D":
         return ""
     if not diff.strip():
@@ -120,10 +121,75 @@ def unread(entry: Entry, diff: str, cut: bool, fits: bool, cap: int) -> str:
     if lfs_pointer(diff):
         return POINTER_UNREAD
     if not fits:
-        return f"past the {BLOCK_CAP_CHARS:,} characters the guidelines read in all. --path narrows a review"
+        then = f"Review its folder alone with --path {folder}" if folder else "--path narrows a review"
+        return f"past the {BLOCK_CAP_CHARS:,} characters the guidelines read in all. {then}"
     if cut:
         return f"cut at {cap:,} characters: the guidelines read only its start"
     return ""
+
+
+#: A folder a person can give `--path` as it stands, in any shell: no space, quote or sign one would read.
+_PLAIN_FOLDER = re.compile(r"[A-Za-z0-9._/-]+")
+
+
+def narrower(path: str, scope: Sequence[str], shown: Sequence[str]) -> str | None:
+    """The folder `--path` names to review `path` in a run of fewer files: the first below the review's own `--path`
+    that holds it and not every file in `shown`, so the run it names never names itself again; None where none does,
+    or where a shell would need its name quoted."""
+    root = next((folder for folder in scope if path.startswith(f"{folder}/")), "")
+    parts = PurePosixPath(path.removeprefix(root).lstrip("/")).parts[:-1]
+    for depth in range(1, len(parts) + 1):
+        folder = "/".join(filter(None, (root, *parts[:depth])))
+        if not all(in_scope(other, [folder]) for other in shown):
+            return folder if _PLAIN_FOLDER.fullmatch(folder) else None
+    return None
+
+
+def in_parts(sizes: Mapping[str, int], scope: Sequence[str], cap: int) -> list[list[str]]:
+    """The runs that read a change the guidelines cannot read in one, each the `--path` values one run names, every
+    file in one run; [] where the change fits, or where one file alone is past `cap`. Each file costs its size in the
+    block and the line joining it to the next, as the block counts it. A folder goes whole where it fits, else its
+    folders and files one level down; the runs are filled in path order."""
+    if _cost(sizes, list(sizes)) <= cap:
+        return []
+    roots: dict[str, list[str]] = defaultdict(list)
+    for path in sorted(sizes):
+        roots[next((folder for folder in scope if in_scope(path, [folder])), "")].append(path)
+    units = [unit for root in sorted(roots) for unit in _units(sizes, root, roots[root], cap)]
+    return _packed(units, cap)
+
+
+def _cost(sizes: Mapping[str, int], paths: Sequence[str]) -> int:
+    """What `paths` take of the block: each file's size, and the line joining each to the next."""
+    return sum(sizes[path] for path in paths) + 2 * (len(paths) - 1)
+
+
+def _units(sizes: Mapping[str, int], prefix: str, paths: list[str], cap: int) -> list[tuple[str, int]]:
+    """`paths` under `prefix` as `--path` values and what each costs: the folder whole where it fits or holds one
+    file, else each folder and file one level down, in path order."""
+    if len(paths) == 1 or _cost(sizes, paths) <= cap:
+        return [(prefix, _cost(sizes, paths))]
+    below: dict[str, list[str]] = defaultdict(list)
+    for path in paths:
+        part = path.removeprefix(prefix).lstrip("/").partition("/")[0]
+        below[f"{prefix}/{part}" if prefix else part].append(path)
+    return [unit for key in sorted(below) for unit in _units(sizes, key, below[key], cap)]
+
+
+def _packed(units: list[tuple[str, int]], cap: int) -> list[list[str]]:
+    """`units` filled into runs in order, each run's cost at most `cap`; [] where one unit alone is past it."""
+    runs: list[list[str]] = []
+    room = -1
+    for value, size in units:
+        if size > cap:
+            return []
+        if runs and size + 2 <= room:
+            runs[-1].append(value)
+            room -= size + 2
+        else:
+            runs.append([value])
+            room = cap - size
+    return runs
 
 
 def widens(entry: Mapping[str, str], skip: Sequence[str]) -> bool:
@@ -149,12 +215,13 @@ def shown_to_guidelines(
     skip: Sequence[str],
     *,
     shown: bool = True,
-) -> tuple[list[Entry], str, dict[str, str], int]:
+    scope: Sequence[str] = (),
+) -> tuple[list[Entry], str, dict[str, str], int, list[list[str]]]:
     """Each changed file with its whole diff and its added lines, for the rules, and what the guidelines are shown of
     it; the block they read, each file capped at `diff_cap` and the block at `BLOCK_CAP_CHARS`, what it leaves out
-    counted at its end; the files the operator's skip list left out, by path with the glob; and how many files the
+    counted at its end; the files the operator's skip list left out, by path with the glob; how many files the
     block's cap left out, which the collector reads to know whether the function around each hunk cost one its
-    reading. Decided from the
+    reading; and, where it left any out, the runs that read them all, as `in_parts` plans them. Decided from the
     diffs alone: no git runs here. With no guideline to show it to, `shown` False, no file is capped, framed or
     shown: measured, the view cost 2.3 s of a 10.5 s `default-rules` review of 2,683 files, the pre-push hook's
     profile, and nothing read it."""
@@ -186,9 +253,11 @@ def shown_to_guidelines(
         if (size := shown_any[at][3]) <= room:
             fitted.add(at)
             room -= size + 2  # and the blank line joining it to the next
+    paths = [each["path"] for each, *_ in shown_any]
     for at, (file, diff, cut, _size) in enumerate(shown_any):
         # The guidelines' limits alone: the rules read every added line.
-        file.update(unread=unread(file, diff, cut, at in fitted, diff_cap), cut=cut or at not in fitted)
+        folder = None if at in fitted else narrower(file["path"], scope, paths)
+        file.update(unread=unread(file, diff, cut, at in fitted, diff_cap, folder), cut=cut or at not in fitted)
         if at in fitted:  # a file no guideline read, none may quote; its view made again, none kept for the rest
             view, _cut = capped(diff, diff_cap)
             block, framing = framed(file["path"], view)
@@ -200,7 +269,9 @@ def shown_to_guidelines(
         blocks.append(f"[… {left_out} more file(s) not shown: past {BLOCK_CAP_CHARS:,} characters in all]")
     if excluded:
         blocks.append(f"[… {len(excluded)} more file(s) not shown: the operator's skip list leaves them out]")
-    return files, "\n\n".join(blocks), excluded, left_out
+    sizes = {file["path"]: size for file, _diff, _cut, size in shown_any}
+    parts = in_parts(sizes, scope, BLOCK_CAP_CHARS) if left_out else []
+    return files, "\n\n".join(blocks), excluded, left_out, parts
 
 
 #: At most how many calls into one changed function the guidelines are shown, a call from each file before a second.

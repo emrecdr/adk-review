@@ -673,6 +673,20 @@ class TestWhatGroundingKeeps:
         assert _grounds([f"+{key}"], 'AWS_SECRET_ACCESS_KEY = "[REDACTED]"')
         assert not _grounds(['+name = "alice"'], 'name = "[REDACTED:name]"'), "plain text is no placeholder"
 
+    def test_a_quote_standing_on_a_deleted_line_keeps_the_minus_of_that_line_alone(self) -> None:
+        """Read by review on a branch that removed a field: 15 of 43 findings quoted lines the change deleted and asked
+        for the code the head already held, and the comment printed each with its marker cut, a deleted line and the
+        line that replaced it one under the other, alike. A kept finding's evidence keeps the `-` of a line the change
+        deleted, as every diff prints one, and no `+` or space: the lines without it are the head's."""
+        hunk = [" class Run:", "-    correlation_id: str", "+    trace_id: str", "     name: str"]
+        both = ("correlation_id: str\ntrace_id: str", "-    correlation_id: str\n    trace_id: str")
+        deleted = ("    correlation_id: str", "-    correlation_id: str")
+        for quote, evidence in (both, deleted):
+            _rule, _collect, schema = _grounding_of()
+            finding = schema.Finding(file="a.py", line=2, severity="major", title="t", evidence=quote, suggestion="s")
+            ((kept, _at),) = _grounded([finding], {"a.py": _numbered(hunk)})[0]
+            assert kept.evidence == evidence, kept.evidence
+
     def test_a_quote_without_what_no_reader_sees_grounds(self) -> None:
         """Measured live on Gemini: beside the injection suite's payload in tag characters, the guidelines quoted the
         comment that holds it as `#` and the shell call under it, both dropped, and the review was a hole where it had
@@ -897,6 +911,38 @@ class TestWhatTheLanesRead:
         assert "ASD-STE100" in graph._intake().instruction, "chat's intake writes to the person too"
         verdict = graph._verdict().instruction
         assert "ASD-STE100" in verdict and "Quote the evidence unchanged" in verdict, "and so does its verdict"
+
+    def test_chats_verdict_is_told_what_a_quoted_deleted_line_is_and_to_say_so(self, monkeypatch) -> None:
+        """Read by review: a kept quote holds the `-` of a line the change deleted, and chat's verdict, a model told to
+        quote the evidence unchanged, was told nothing of the marker, where a model had read such lines as the code to
+        fix. It is told what the marker says, as the comment and the hand-off tell their readers, and to say so."""
+        load_agent(monkeypatch)
+        from adk_review.core.verdict import DELETED_QUOTED
+        from adk_review.judge import graph
+
+        verdict = graph._verdict().instruction
+        assert DELETED_QUOTED in verdict and "say that the change deleted it" in verdict, verdict
+
+    def test_every_guideline_and_every_verifier_is_told_what_a_deleted_line_is(self, monkeypatch) -> None:
+        """Read by review on a branch that removed a field: 15 of 43 findings quoted lines the change deleted, as the
+        code to fix, and asked for what the branch already held. The instruction named no marker of the diff, and only
+        `correctness` spoke of a deleted line. Each guideline is told what `-` and `+` say and to report a defect only
+        in code the branch holds, a deleted line left to show what it lost; each verifier is told the markers."""
+        load_agent(monkeypatch)
+        import re
+
+        from adk_review.judge.agents import DIFF_MARKS, build_guideline
+        from adk_review.judge.catalog import catalog
+        from adk_review.judge.verify import build_verifier
+
+        assert "A line that starts with `-` was deleted by the change." in DIFF_MARKS
+        for guideline in catalog().guidelines:
+            instruction = build_guideline(guideline).instruction
+            assert DIFF_MARKS in instruction, guideline.check_id
+            assert "Report a defect only in code the branch holds." in instruction, guideline.check_id
+        assert DIFF_MARKS in build_verifier(0).instruction
+        for sentence in re.split(r"(?<=[.!?])\s+", DIFF_MARKS):
+            assert len(sentence.split()) <= 20 and ";" not in sentence, f"ASD-STE100: {sentence}"
 
     def test_every_guideline_says_why_a_blocker_or_a_major_matters_and_gives_its_code(self, monkeypatch) -> None:
         """Asked by the owner: each blocker and major is handled in more detail. The answer's schema holds a reason and

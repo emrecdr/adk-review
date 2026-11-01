@@ -104,7 +104,8 @@ applyTo: "adk_review/**"
 - `--json FILE` writes the review as data (`as_data` in `deliver/report.py`): every string through the text report's
   own safety steps, `one_line` then `inert`, evidence cut where the report cuts it. Raise `SCHEMA` when a field
   changes its meaning or goes; add a field freely. A finding's `fingerprint` is built from its check, file and evidence,
-  never its line — a guideline's evidence is the lines its quote stands on, which grounding sets — and `--previous FILE`
+  never its line — a guideline's evidence is the lines its quote stands on, which grounding sets, a line the change
+  deleted with its `-` — and `--previous FILE`
   compares by it; a review with a hole resolves nothing.
 - `GUIDE.md` is held to the code by `tests/test_docs.py`: a new flag, check, JSON field or limit
   fails the suite until the guide says it. Regenerate its check table from `--list-checks`.

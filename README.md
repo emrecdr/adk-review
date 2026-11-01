@@ -172,7 +172,7 @@ uv run adk-review <repo> --all --profile rules-only             # every file at 
 uv run adk-review <repo> --staged --profile default-rules       # what is staged, against HEAD
 uv run adk-review <repo> --base main --check rule.secrets       # one check alone, this once
 uv run adk-review <repo> --base main --json review.json         # the report, and the same review as JSON
-uv run adk-review <repo> --base main --comment                  # a comment for the author: comments-<repo>__main__…md
+uv run adk-review <repo> --base main --comment                  # a comment for the author: comment-<repo>__main__…md
 uv run adk-review <repo> --base main --handoff                  # fixes for a coding agent: handoff-<repo>__main__…md
 uv run adk-review <repo> --base main --comment --handoff        # both, from one review
 uv run adk-review <repo> --base main --dry-run                  # what a review would cover and run; nothing runs
@@ -632,9 +632,10 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   an earlier file of that name is removed before the review, so a pipeline never reads a stale one, and the new one
   is written beside the path and moved into place, the operator's alone.
 - `--handoff [FILE]` writes each kept finding as a short instruction for a coding agent, by default to
-  `handoff-<repo>__<base>__<head>__<YYYY-MM-DD-HH-MM>.md` in the current folder, named as the comment is: where, the
-  lines quoted, what to change, and the fingerprint that must be gone afterwards, with each finding folded into it named
-  under it, since another reading of the same lines can be a second defect. It ends by asking for the project's own
+  `handoff-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md` in the current folder, named as the comment is:
+  where, the lines quoted, what to change, and the fingerprint that must be gone afterwards,
+  with each finding folded into it named under it, since another reading of the same lines can be
+  a second defect. It ends by asking for the project's own
   tests before a commit, a fix done when they pass, and in the command that checks the fixes: the review again on the
   same scope with only the rules that found something or could not look, so an agent checks its own work offline, no
   model called. It checks the branch reviewed, by its full name in any spelling git gives it, or else `HEAD`, the fixes
@@ -670,10 +671,16 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   in a code span, and each quote in one, or in a fenced block that keeps its lines where it spans several, and the whole
   holds at most 60,000 characters, under the 65,536 GitHub takes in a comment, the most severe points first and the rest
   counted. The reviewer posts nothing and prints no command that would: asked by the owner, who reviews others' branches
-  and pastes each comment by hand. With no file named, it is `comments-<repo>__<base>__<head>__<YYYY-MM-DD-HH-MM>.md` in
-  the current folder, every name lower case, each branch's name without `refs/heads/`, `refs/remotes/` or `refs/tags/`,
-  made safe for a file name and cut at 20 characters, and the run names it by its full path, the last of the files
-  written, unless `--quiet` silences a review that passes.
+  and pastes each comment by hand. With no file named, it is
+  `comment-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md` in the current folder, its prefix the flag's own name
+  as the hand-off's is, every name lower case, each branch's name without `refs/heads/`, `refs/remotes/` or
+  `refs/tags/`, made safe for a file name and cut at 40 characters, the commit the 12 characters of the one reviewed
+  that the comment's first line prints, `HEAD`'s under `--staged`, and the run names it by its full path, the last of
+  the files written, unless `--quiet` silences a review that passes. Read by review, 20 characters left the company's
+  repositories one letter each apart (`raas-batch-wrapper-s`), and the time is to the second, since a review served
+  from `--cache`, one with no guideline, and two started in one minute end within it, and a name made by the minute let
+  the second replace the first. Asked by the owner, the commit tells two rounds of review on one branch apart, and
+  comes last so one branch's files list by time.
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint: its
   check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line, so a
   finding keeps it when lines move. It lists what is no longer found, among what this review looked for, a check that
@@ -875,6 +882,10 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   the branch; no replace ref or graft is followed and nothing is fetched; and `core.fsmonitor` is off, so no program the
   repository's own config names ever starts. Measured, each before it was fixed: `GIT_DIR` reviewed another repository,
   a replace ref swapped the key's file for a harmless one, and the branch's own `-diff` attribute hid a planted key.
+  `core.autocrlf` is `input` too: with the person's config left out it read off, and `diff-tree` diffed a checked-out
+  file its index called up to date in place of its blob, where no conversion applies, so a checkout Windows wrote with
+  CRLF over blobs of LF read as changed in every line (35 of 35 modified files on one branch, one of them 248 lines
+  removed and 243 added where it changed 6 and 1); `input` writes no CRLF and makes git read the blob.
 - **Secrets are found by code.** Every model call is redacted, so no guideline ever sees a key: measured on Copilot with
   the redaction on, no guideline reported the planted one. A key must be found by code, from the diff itself, before any
   model runs: `secrets` reads the added lines of each file's whole diff, past any cap, and `named-secrets` weighs a
@@ -900,7 +911,10 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   any other. Ruff lints what the collector read and no more: a file not read whole is the hole of each rule that reads
   ruff. What a code means, its severity and its fix, is the rule's: an `assert` is major in library code, where
   `python -O` strips it, and left out of a test, where it is how pytest checks, its S101 and `assert False`'s B011
-  dropped before anything is counted. Without ruff, or with one that fails, the rule did not look and says so, exit 3.
+  dropped before anything is counted. In a Databricks notebook, a file whose first line is `# Databricks notebook
+  source`, F821 on `spark`, `dbutils` or `display` is dropped the same way, since Databricks defines the three: read by
+  review on a branch of 20 notebooks, they were 192 of lint's findings and nearly all its majors, where the project's
+  own ruff reported none. Without ruff, or with one that fails, the rule did not look and says so, exit 3.
   Its answer is read a finding at a time, as ruff writes one a line, each kept as no more than the rule reads, and past
   500,000 findings what it named is a hole: measured by review, three files of unary minus chains made ruff write 589 MB
   of JSON each, read whole in 90 s and 4.5 GB. `types` reads the same copies through pyrefly, each file alone, under a
@@ -929,7 +943,8 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   newline and a file cut at the cap, each quoted whole, were dropped. Measured live with the framing recorded, on both
   arms, no quote was dropped: Gemini quoted `sql-from-input`'s blocker under git's whole header, down to the hunk's `@@`
   and the function git named there, and four quotes on the planted branch inside fences, and each was kept. A kept
-  finding's evidence is then the lines its quote stands on, as the file reads them: the report, the JSON, the hand-off,
+  finding's evidence is then the lines its quote stands on, as the file reads them, a line the change deleted with its
+  `-`, which the comment, the hand-off and chat's verdict explain: the report, the JSON, the hand-off,
   the verifier and the fingerprint read the diff's own text, never a model's framing of it; measured by review, the same
   two lines quoted plain and inside their fence had two fingerprints, so `--previous` named one finding resolved and new
   at once. A quote is placed from no line whose rest of the hunk is too short to hold it, and within 20,000 lines read
@@ -980,7 +995,13 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   guideline's finding that only says again what a rule found, no more severely, which the fold folds into the rule's
   as it would without `--verify`. Measured live on Copilot before that: 2 of 5 verifier calls judged a guideline's
   reading of a key the secrets rule had found. It is the guidelines' shape again, one agent per finding under the
-  same plugins, so the redaction, the ledger and the ceiling cover each call.
+  same plugins, so the redaction, the ledger and the ceiling cover each call. Measured live on Copilot (gpt-4.1) over
+  the labelled set's `clean-rename-with-callers`, a function renamed with its caller, under `full`: the marker and the
+  instruction's `-` and `+` sentences ended the guidelines' asks for the rename already made, yet a guideline still
+  said the rename broke callers in 1 of 3 reviews and in 2 of 5 with an added sentence against it, which was dropped;
+  with `--verify` the verifier refuted that major in both reviews where it appeared (3 reviews, none kept), and kept
+  the planted SQL injection's blocker in 2 of 2, for about a quarter more tokens. Recall of three planted defects
+  under `code-review`, two reviews each, was the same before and after, 6 of 6.
 - **The blast radius says where to read.** What at the head depends on each changed Python file, directly or through
   another, tests counted apart: read from git in one batch and parsed with Python's own `ast`, never run. The guidelines
   read it beside the diff, told to weigh a change to shared behaviour by how far it reaches, as context and never as
@@ -1007,7 +1028,14 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
 - **What the guidelines read is capped.** Each file's diff is cut at `diff_cap`, and the block of diffs in all: the
   files read whole take its room first, then the cut ones, each shown in path order, and a file past the block's cap is
   left out whole, the block's end tells the guidelines how many, and the report names each under "not read", a hole.
-  With no cap, `--all` over 4,826 files gave each guideline and each verifier 14.9 MB. `--path` narrows a review to fit.
+  With no cap, `--all` over 4,826 files gave each guideline and each verifier 14.9 MB. `--path` narrows a review to fit,
+  and a file left out names the folder that does: the first under the review's own `--path` that holds it and not every
+  file shown, so the run it names reads fewer files and never names itself again. Read by review on a branch of 58
+  files, nine test files were left out with no folder named, where the branch's `tests` alone fit. Where the block
+  leaves any file out, `in_parts` plans the runs that read the change from what each file takes of the block, a folder
+  whole where it fits, else one level down, filled in path order; a dry run prints them as commands, and a review
+  prints them before its first model call and, at a terminal, asks whether to go on, a stop being exit 2. Asked by the
+  owner: the review knew before any call that it could not approve, and spent a whole review's calls on it.
   With no guideline on, a cut is no hole: the cap is the guidelines' limit, and the rules read every added line.
   Measured live on Copilot at 4,000 characters a file: a 7,529-character file's planted shell call went unread and so
   did 3 of a 17-file change's files, each a hole; at 16,000 each was read, the call named in both runs, for a fifth more

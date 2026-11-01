@@ -394,7 +394,8 @@ def _raised_at(rule: AnyRule, exc: BaseException) -> str:
         source = inspect.getsourcefile(type(rule))
     except (TypeError, OSError):
         source = None
-    line = raised_line(exc, lambda name: name == source)
+    # As paths, not strings: Windows reads two spellings of one file alike, and a cached test file can hold one.
+    line = raised_line(exc, lambda name: bool(source) and PurePath(name) == PurePath(source))
     return f" ({PurePath(source).name} line {line})" if line and source else ""
 
 

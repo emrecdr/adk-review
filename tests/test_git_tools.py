@@ -107,6 +107,23 @@ class TestNoOnesSettings:
         plain = gathered(repo, "change", guidelines=False)["pay.py"]["diff"]
         assert sum(line.startswith(" ") for line in plain.splitlines()) == 6, "git's three lines, for the rules"
 
+    def test_a_checkout_written_with_crlf_reads_the_diff_its_blobs_hold(self, tmp_path: Path) -> None:
+        """Read by review on a Windows checkout, where `core.autocrlf=true` writes CRLF over blobs of LF: the review
+        left the person's config out, so git read `autocrlf` off, and a checked-out file its index called up to date
+        was diffed in place of its blob, every line of it changed. Measured on a branch of 35 modified files: all 35
+        read so, one of them 248 lines removed and 243 added where it changed 6 and 1, and 11 files past the guidelines'
+        cap. Only a file the index trusts reads so, which a `git status` made of it, and any editor makes one."""
+        repo = _twenty_lines(tmp_path)
+        _files, lf = _listed_and_shown(repo, "change", "pay.py")
+        (repo / "pay.py").unlink()
+        _git_in(repo, "-c", "core.autocrlf=true", "checkout", "-f", "pay.py")  # as Windows writes it, on any system
+        assert b"\r\n" in (repo / "pay.py").read_bytes(), "the checkout holds CRLF over blobs of LF"
+        old = time.time() - 60  # git trusts a file's stat data once it is older than its index
+        os.utime(repo / "pay.py", (old, old))
+        _git_in(repo, "-c", "core.autocrlf=true", "update-index", "--refresh")
+        _files, crlf = _listed_and_shown(repo, "change", "pay.py")
+        assert crlf == lf, crlf
+
     def test_a_variable_naming_another_repositorys_refs_is_never_inherited(
         self, tmp_path: Path, demo_repo: Path, monkeypatch
     ) -> None:
@@ -1647,7 +1664,7 @@ class TestTheFunctionAroundEachHunk:
         long = "@@ -0,0 +1,400 @@\n" + "".join(f"+value_{n} = {n}\n" for n in range(400))
         paths = ["a_long.py", *(f"b_{n}.py" for n in range(6))]
         entries = [{"path": path, "status": "A"} for path in paths]
-        files, block, _excluded, left_out = change.shown_to_guidelines(entries, [long] + [small] * 6, 2_000, ())
+        files, block, _excluded, left_out, _parts = change.shown_to_guidelines(entries, [long] + [small] * 6, 2_000, ())
         assert [bool(f["unread"]) for f in files] == [True] + [False] * 6, [f["unread"] for f in files]
         assert left_out == 1 and block.index("b_0.py") < block.index("b_5.py"), block[-200:]
 
@@ -1678,7 +1695,9 @@ class TestWhatTheGuidelinesAreShown:
         diffs = [self._diff("a.py", "x = 1"), self._diff("b.py", "y = 2"), self._diff("logo.png", "binary")]
         first, _ = diff.framed("a.py", diffs[0])
         monkeypatch.setattr(change, "BLOCK_CAP_CHARS", len(first))  # room for `a.py` alone
-        files, block, excluded, left_out = change.shown_to_guidelines(entries, diffs, diff.DIFF_CAP_CHARS, ["*.png"])
+        shown = change.shown_to_guidelines(entries, diffs, diff.DIFF_CAP_CHARS, ["*.png"])
+        files, block, excluded, left_out, parts = shown
+        assert parts == [["a.py"], ["b.py"]], "the runs that read every file the block left out"
         shown, past, skipped = files
         assert shown["quotable"] and not shown["cut"] and shown["unread"] == "", shown
         assert past["quotable"] == [] and past["cut"] and past["unread"].startswith("past the"), past
@@ -1688,6 +1707,47 @@ class TestWhatTheGuidelinesAreShown:
         assert left_out == 1, "how many the block's cap left out, which the collector reads"
         assert [sorted(f["added_at"]) for f in files] == [[1], [1], [1]], "every file's added lines, shown or not"
 
+    def test_a_file_past_the_block_names_the_folder_that_reviews_it_in_a_smaller_run(self, monkeypatch) -> None:
+        """Read by review on a branch of 58 files: nine test files past the block were each named with "--path
+        narrows a review", and the person had to find which folder. The branch's `tests` alone fit. Each file left out
+        names the first folder under the review's own `--path` that holds it and not every file shown, so the run it
+        names reads fewer files and never names itself again; where none does, or a shell would need the name quoted,
+        the sentence names no folder."""
+        from adk_review.collect import change, diff
+
+        def why(paths: list[str], scope: tuple[str, ...] = ()) -> dict[str, str]:
+            entries = [{"path": p, "status": "A"} for p in paths]
+            diffs = [self._diff(p, "x = 1") for p in paths]
+            monkeypatch.setattr(change, "BLOCK_CAP_CHARS", len(diff.framed(paths[0], diffs[0])[0]))
+            files = change.shown_to_guidelines(entries, diffs, diff.DIFF_CAP_CHARS, [], scope=scope)[0]
+            cap = f"past the {change.BLOCK_CAP_CHARS:,} characters the guidelines read in all. "
+            return {f["path"]: f["unread"].removeprefix(cap) for f in files if f["unread"]}
+
+        found = why(["src/a.py", "tests/unit/b.py"])
+        assert found == {"tests/unit/b.py": "Review its folder alone with --path tests"}, found
+        found = why(["tests/a/x.py", "tests/b/y.py"], scope=("tests",))
+        assert found == {"tests/b/y.py": "Review its folder alone with --path tests/b"}, found
+        for paths in (["src/a.py", "src/b.py"], ["a.py", "b.py"], ["src/a.py", "my tests/b.py"]):
+            (said,) = why(paths).values()
+            assert said == "--path narrows a review", (paths, said)
+
+    def test_a_change_too_large_for_one_run_is_planned_as_runs_that_each_fit(self) -> None:
+        """Asked by the owner, after a branch of 58 files left nine unread: the review knows before any model call
+        that the guidelines cannot read it all, so it plans the runs that can, each the `--path` values one run
+        names. A folder goes whole where it fits, else its folders and files one level down; runs are filled in
+        path order. A change that fits needs no plan."""
+        from adk_review.collect.change import in_parts
+
+        assert in_parts({"src/a.py": 100, "tests/b.py": 100}, (), 250) == [], "it fits: one run"
+        assert in_parts({"src/a.py": 100, "tests/b.py": 200}, (), 250) == [["src"], ["tests"]]
+        assert in_parts({"a/x.py": 50, "b/y.py": 50, "c/z.py": 200}, (), 250) == [["a", "b"], ["c"]]
+        assert in_parts({"tests/a/x.py": 150, "tests/b/y.py": 150}, ("tests",), 250) == [["tests/a"], ["tests/b"]]
+        assert in_parts({"a.py": 200, "src/b.py": 200}, (), 250) == [["a.py"], ["src"]], "a file at the top"
+        sizes = {"src/one/a.py": 150, "src/one/b.py": 150, "src/two.py": 50}  # each costs 2 more, the line between
+        planned = in_parts(sizes, (), 250)
+        assert planned == [["src/one/a.py"], ["src/one/b.py", "src/two.py"]], planned
+        assert sorted(path for run in planned for path in run) == sorted(sizes), "every file in one run alone"
+
     def test_with_no_guideline_no_file_is_capped_or_shown_and_what_no_one_reads_is_still_named(self) -> None:
         """Measured: the view cost 2.3 s of a 10.5 s `default-rules` review of 2,683 files, the pre-push hook's
         profile, and nothing read it. The rules read every added line, so only what no one can read is named."""
@@ -1696,7 +1756,10 @@ class TestWhatTheGuidelinesAreShown:
         binary = "diff --git a/logo.png b/logo.png\nBinary files /dev/null and b/logo.png differ\n"
         entries = [{"path": p, "status": "A"} for p in ("a.py", "logo.png", "vendor.png")]
         diffs = [self._diff("a.py", "x" * 50), binary, binary]
-        files, block, excluded, left_out = change.shown_to_guidelines(entries, diffs, 10, ["vendor*"], shown=False)
+        files, block, excluded, left_out, parts = change.shown_to_guidelines(
+            entries, diffs, 10, ["vendor*"], shown=False
+        )
+        assert parts == [], "with no guideline, no run is planned"
         code, image, _vendor = files
         assert code["quotable"] == [] and not code["cut"] and code["unread"] == "", "past the cap, cut for no one"
         assert image["unread"].startswith("binary"), "what no one can read is still named"

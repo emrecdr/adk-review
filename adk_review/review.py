@@ -119,6 +119,7 @@ try:
         render_handoff,
         render_tried,
         safe_line,
+        told_in_parts,
     )
     from .judge.catalog import (
         CONFIG,
@@ -158,14 +159,19 @@ def setting(key: str) -> Callable[[str], int]:
     return parsed
 
 
-#: A comment's file where `--comment` names none, in the folder the command runs in: the repository's folder, the base
-#: and the head, each made safe for a file's name and lower case, then the minute it was written. Asked by the owner.
-COMMENT_NAME = "comments-{repo}__{base}__{head}__{at}.md"
+#: A comment's file where `--comment` names none, in the folder the command runs in: the flag's name, the repository's
+#: folder, the base and the head, each made safe for a file's name and lower case, the second it was written, and the
+#: commit reviewed as the comment's first line names it, last so one branch's files list by time. Asked by the owner,
+#: one format for both files.
+COMMENT_NAME = "comment-{repo}__{base}__{head}__{at}__{commit}.md"
 #: A hand-off's file where `--handoff` names none, named as the comment's is. Asked by the owner.
-HANDOFF_NAME = "handoff-{repo}__{base}__{head}__{at}.md"
-#: How much of each name the comment's and the hand-off's file keep, as the owner chose: a ticket number such as
-#: `JIRA-98765` stays whole, where 15 cut it, and `-v1` and `-v2` stay apart.
-COMMENT_NAME_CHARS = 20
+HANDOFF_NAME = "handoff-{repo}__{base}__{head}__{at}__{commit}.md"
+#: How much of each name the comment's and the hand-off's file keep, as the owner chose: read by review at 20, the
+#: company's repositories, which share their first 19 characters, kept one letter each apart.
+COMMENT_NAME_CHARS = 40
+#: The time in each name a run makes itself, date and time apart: by the second, since read by review, two runs five
+#: seconds apart, named by the minute, left one comment, the second over the first.
+NAME_TIME = "%Y%m%d-%H%M%S"
 #: Where a review's results go, which no result depends on: left out of what keys a kept review.
 OUTPUTS = {"json", "handoff", "comment", "cache", "record", "trace", "debug_log", "progress", "quiet"}
 #: How often a person at a terminal is told the review still works, in seconds. A model's call can take a minute, and
@@ -378,8 +384,8 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         const=HANDOFF_NAME,
         metavar="FILE",
         help="also write each kept finding to FILE as a short instruction for a coding agent. With no FILE, it is "
-        "handoff-repo__base__head__time.md in the current folder, in lower case. Each names the place, the quoted "
-        "lines, the change, and what must still hold. The review applies nothing",
+        "handoff-repo__base__head__time__commit.md in the current folder, in lower case. Each names the place, the "
+        "quoted lines, the change, and what must still hold. The review applies nothing",
     )
     parser.add_argument(
         "--comment",
@@ -387,8 +393,8 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         const=COMMENT_NAME,
         metavar="FILE",
         help="also write the review to FILE as a comment for the branch's author, to paste by hand. With no FILE, it "
-        "is comments-repo__base__head__time.md in the current folder, in lower case. It says what to fix, what to "
-        "improve and what went unchecked. The review posts nothing",
+        "is comment-repo__base__head__time__commit.md in the current folder, in lower case. It says what to fix, what "
+        "to improve and what went unchecked. The review posts nothing",
     )
     parser.add_argument(
         "--cache",
@@ -755,11 +761,38 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
         unread = not_read(evidence["files"], guidelines)
         print(
             render_dry_run(
-                evidence, **shown, guidelines=guidelines, ready=why or "ready", unread=unread, config=str(CONFIG)
+                evidence,
+                **shown,
+                guidelines=guidelines,
+                ready=why or "ready",
+                unread=unread,
+                config=str(CONFIG),
+                added=args.added,
             )
         )
         return EXIT_CLEAN
+    if guidelines and not args.quiet and not _goes_on(told_in_parts(evidence, chosen.name, args.added)):
+        _say("stopped: review it in parts, one run each, as listed above")
+        return EXIT_USAGE
     return _decided(args, chosen, evidence, shown, previous, say)
+
+
+def _goes_on(told: Sequence[str]) -> bool:
+    """Whether a review the guidelines cannot read in one run goes on, before its first model call: `told`, the runs
+    that read it, on stderr; then a person at a terminal chooses, and a pipeline, which nothing can ask, goes on, the
+    hole named in its report. True where the change fits, `told` empty."""
+    if not told:
+        return True
+    for line in told:
+        print(line, file=sys.stderr)
+    if not _a_terminal():
+        return True
+    while True:
+        answer = _answer("review: go on anyway, the files above unread? Answer y or n: ").strip().lower()
+        if answer in ("y", "yes"):
+            return True
+        if answer in ("", "n", "no"):  # "" is the end of the input, or Ctrl-C: no choice to spend the calls
+            return False
 
 
 @contextlib.contextmanager
@@ -799,7 +832,7 @@ def _decided(
 ) -> int:
     """The review decided and reported: served from the cache where one holds it; else the rules, and the guidelines
     where any runs. `--trace`, `--debug-log` and `--record` are the engine's own and bring its run too."""
-    at = time.strftime("%Y-%m-%d-%H-%M")  # one minute for both files a run names itself
+    at = time.strftime(NAME_TIME)  # one second for both files a run names itself
     if args.comment == COMMENT_NAME:
         args.comment = _named_after(evidence, COMMENT_NAME, at)
     if args.handoff == HANDOFF_NAME:
@@ -1007,19 +1040,24 @@ def _told(report: str, wrote: Sequence[tuple[str, Path]]) -> None:
 
 def _named_after(evidence: Evidence, template: str, at: str) -> str:
     """A file `--comment` or `--handoff` names where given none: `template` for this review's repository and branches,
-    `all` for the base under `--all`, `HEAD` and `staged` under `--staged`, and `at`, the local minute."""
+    `all` for the base under `--all`, `HEAD` and `staged` under `--staged`, `at`, the local second, and the commit
+    reviewed in the 12 characters the comment's first line prints, `HEAD`'s under `--staged`, which has none yet."""
     pre = evidence["preflight"]
     base = "all" if evidence["whole"] else "HEAD" if pre.get("staged") else short_ref(pre["base"])
     head = "staged" if pre.get("staged") else short_ref(pre["head"])
-    return template.format(repo=_safe_name(Path(pre["repo"]).name), base=_safe_name(base), head=_safe_name(head), at=at)
+    commit = (pre["base_sha"] if pre.get("staged") else pre["head_sha"])[:12]
+    return template.format(
+        repo=_safe_name(Path(pre["repo"]).name), base=_safe_name(base), head=_safe_name(head), at=at, commit=commit
+    )
 
 
 def _safe_name(name: str) -> str:
     """A name as part of a file's, on every system: lower case, as the owner asked, since some systems tell `Main` from
-    `main` and others do not; each run of what is not a letter, a digit, `.`, `_` or `-` one `-`; at most
-    `COMMENT_NAME_CHARS` characters; no `.` or `-` at either end, so no name climbs a folder or ends cut on one;
-    `branch` where none is left. A branch's name is its author's, and `/`, `$` and a backtick are legal in one."""
-    safe = re.sub(r"[^a-z0-9._-]+", "-", name.lower()).strip(".-")
+    `main` and others do not; each run of what is not a letter, a digit, `.`, `_` or `-` one `-`, and of `_` one `_`,
+    since `__` joins the parts; at most `COMMENT_NAME_CHARS` characters; no `.` or `-` at either end, so no name climbs
+    a folder or ends cut on one; `branch` where none is left. A branch's name is its author's, and `/`, `$` and a
+    backtick are legal in one."""
+    safe = re.sub(r"_+", "_", re.sub(r"[^a-z0-9._-]+", "-", name.lower())).strip(".-")
     return safe[:COMMENT_NAME_CHARS].rstrip(".-") or "branch"
 
 

@@ -27,6 +27,9 @@ EXIT_TERMINATED = 143
 #: by a type checker, grounding kept `(None, None)` where a redaction joined lines, and the JSON report, reading it as
 #: two numbers, raised after every model call, the review printing no report.
 type Lines = tuple[int, int] | None
+#: What a kept quote's `-` says, told to each reader of one: with the marker unexplained, a model read deleted lines as
+#: the code to fix.
+DELETED_QUOTED = "A quoted line that starts with `-` is one the change deleted. The branch no longer holds that line."
 
 
 @dataclass
@@ -220,7 +223,8 @@ def drop_ungrounded(
     is grounded by it. A kept finding's line is where its quote starts, read
     off the diff: measured live on Copilot, the guidelines named a wrong line for
     4 of 5 findings. And its evidence is the lines its quote stands on, as the
-    file reads them, secrets redacted: measured by review, the same two lines
+    file reads them, a line the change deleted with its `-`, secrets redacted:
+    measured by review, the same two lines
     quoted plain and inside their fence under their `@@` header were two
     fingerprints, and `--previous` named one finding resolved and new at once.
     """
@@ -285,7 +289,11 @@ def _placed(
                 continue
             for start, end in runs:
                 (first, since), (last, until) = at[start], at[end]
-                placed.append(((first, last), "\n".join(raw[1:] for _number, raw in view[since : until + 1])))
+                # A deleted line keeps its `-`, as every diff prints one: read by review, the marker cut from a quote
+                # of a replaced line printed it as the code the head holds, and 15 of 43 findings on a branch that
+                # removed a field asked for what the head already had.
+                text = "\n".join(raw if raw[:1] == "-" else raw[1:] for _number, raw in view[since : until + 1])
+                placed.append(((first, last), text))
     if not placed:
         return (None, None) if joined else None
     # A short quote can stand in several places: measured by review, `return None` at lines 2 and 22, a guideline naming

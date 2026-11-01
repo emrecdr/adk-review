@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from types import MappingProxyType
 
-from ..rule_helpers import ChangedFile, FileRule, Hit, Severity, is_test, listed, tier
+from ..rule_helpers import ChangedFile, Diagnostic, FileRule, Hit, Severity, is_test, listed, tier
 
 #: ruff's codes, run --isolated: errors, pyflakes, warnings, bugbear and bandit, then what a reviewer asks for and no
 #: other check here makes, at ruff's own thresholds: complexity (C901: 10; PLR0911, PLR0912, PLR0913, PLR0915: 6
@@ -65,6 +65,12 @@ SEVERITY: dict[str, Severity] = {
 #: Measured: every test assert was a major S101, 762 of them in this repository's tests, 99% of its majors; rated minor
 #: they still filled each report.
 IN_TESTS: frozenset[str] = frozenset({"S101", "B011"})
+#: The names Databricks defines in every notebook it runs, which ruff, reading the notebook as a module, calls undefined
+#: (F821). Read by review on a branch of 20 notebooks: 192 of lint's findings named these three, nearly all of its 86
+#: majors, where the project's own ruff reported none.
+NOTEBOOK_NAMES = frozenset({"spark", "dbutils", "display"})
+#: The first line Databricks writes in a notebook kept as a `.py` source file.
+NOTEBOOK_MARK = "# Databricks notebook source"
 #: The fix a finding names when ruff offers none: ruff says what is wrong, not what to do. Keyed as `SEVERITY` is:
 #: by family, since a sentence true of every rule in one is worth more than a guess per code, and by code where the
 #: family's would mislead.
@@ -107,6 +113,23 @@ def severity_of(code: str) -> Severity:
     return tier(SEVERITY, code) or "minor"
 
 
+def is_databricks_notebook(file: ChangedFile) -> bool:
+    """Whether the file is a Databricks notebook, marked at the top with optional BOM or comment lines."""
+    for i in range(1, min(6, len(file.lines) + 1)):
+        line = file.line(i).strip().lstrip("\ufeff")
+        if line == NOTEBOOK_MARK:
+            return True
+        if line and not line.startswith("#"):
+            return False
+    return False
+
+
+def defined_by_databricks(file: ChangedFile, found: Diagnostic) -> bool:
+    """Whether `found` calls undefined a name Databricks defines, in a file marked as a Databricks notebook."""
+    named = found.message.split("`")
+    return found.code == "F821" and len(named) > 1 and named[1] in NOTEBOOK_NAMES and is_databricks_notebook(file)
+
+
 class Lint(FileRule):
     """A finding ruff can make is one no guideline need spend a model's attention on, and one no model can miss."""
 
@@ -121,4 +144,10 @@ class Lint(FileRule):
 
     def check(self, file: ChangedFile) -> list[Hit]:
         leave_out = IN_TESTS if is_test(file.path) else ()
-        return listed(file, lambda found: severity_of(found.code), FIX, leave_out=leave_out)
+        return listed(
+            file,
+            lambda found: severity_of(found.code),
+            FIX,
+            leave_out=leave_out,
+            passes_over=lambda found: defined_by_databricks(file, found),
+        )

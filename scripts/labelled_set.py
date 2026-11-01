@@ -8,7 +8,8 @@ misses its last item, a function with no test, a long file whose defect sits pas
 runs privileged; what `simplify` and `code-review` add guidelines for, a file read again for each item of a loop, a
 shared function patched for one caller's input and a function copied with one value changed; a settlement's return
 changed to the balance its statement clamps nine lines above, which forgives a debt its docstring says is carried; and
-three clean changes, a document, a rename and a division a guard twelve lines above makes safe. The settlement's two
+four clean changes, a document, a rename, a function renamed with its caller whose old name only the diff's deleted
+lines hold, and a division a guard twelve lines above makes safe. The settlement's two
 show a guideline their cause only within the function around the hunk, git's three lines of context leave it out. Each
 is reviewed K times, under `--profile` where one is named, each guideline `--check` names alone where one is, and the
 default profile otherwise. A labelled branch scores the runs in which a guideline named a finding on the defect's lines;
@@ -25,7 +26,7 @@ from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 
-from make_demo_repo import BASE_REF, CHARGE, _git, branch, build, commit
+from make_demo_repo import BASE_REF, CHARGE, TESTS, _git, branch, build, commit
 from measure import ROOT, judged, options, picked, reviewed, tally
 
 #: The characters of a file's diff a guideline reads, as the shipped config sets them: each review here runs the
@@ -173,6 +174,15 @@ def usd_total(amounts: list[tuple[int, str]]) -> int:
     "clean-rename": (
         {"src/payments/charge.py": CHARGE.replace("def format_amount(amount_cents: int", "def format_amount(cents: int")
          .replace("{amount_cents / 100:.2f}", "{cents / 100:.2f}")},
+        None,
+    ),
+    # Read by review on a branch that renamed a function and removed a field with every use: guidelines asked for a
+    # change the head held, the old name being in the diff's deleted lines. Here the old name is in no line of the head.
+    "clean-rename-with-callers": (
+        {
+            "src/payments/charge.py": CHARGE.replace("format_amount", "format_money"),
+            "tests/test_charge.py": TESTS.replace("format_amount", "format_money"),
+        },
         None,
     ),
     "guarded-above": (

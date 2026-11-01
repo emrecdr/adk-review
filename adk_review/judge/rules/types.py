@@ -75,5 +75,5 @@ class Types(FileRule):
             ", ".join(f"{kind} x{count}" for kind, count in kinds.most_common()),
             title=f"{len(rest)} more of pyrefly's findings in this file, not listed",
             severity=max((SEVERITY[item.code] for item in rest), key=RANK.__getitem__),
-            fix="Run pyrefly on the file to see each one.",
+            fix=f"Run pyrefly check {path} to inspect each occurrence.",
         )

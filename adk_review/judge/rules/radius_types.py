@@ -75,7 +75,14 @@ class RadiusTypes(TreeRule):
                 continue
             # At most `PER_FILE` listed, the rest counted in one finding, as `types` lists pyrefly's.
             shown = sorted(found[:PER_FILE], key=lambda item: item.line)
-            hits += [Hit(path, item.line, item.source, title=f"{item.code} {item.message}") for item in shown]
+            for item in shown:
+                is_added = item.line in tree.added.get(path, ())
+                why = (
+                    "New code does not type-check against imported definitions, so it fails or misbehaves when it runs."
+                    if is_added
+                    else self.why
+                )
+                hits.append(Hit(path, item.line, item.source, title=f"{item.code} {item.message}", why=why))
             if rest := found[PER_FILE:]:
                 hits.append(_counted(path, rest))
         return hits
@@ -88,5 +95,5 @@ def _counted(path: str, rest: Sequence[Diagnostic]) -> Hit:
         None,
         ", ".join(f"{kind} x{count}" for kind, count in kinds.most_common()),
         title=f"{len(rest)} more of pyrefly's findings in this file, not listed",
-        fix="Run pyrefly over the project to see each one.",
+        fix="Run pyrefly check to inspect each occurrence across the project.",
     )

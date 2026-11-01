@@ -55,8 +55,10 @@ terminal is asked for the path, a pipeline is refused with exit 2. Exit codes: 0
 `--fail-on` bar (`blocker` unless set), 2 a usage error before any model call (an arm that is not ready, a branch that
 adds nothing or shares no history with its base: "no change to review", with `--head`, `--base` and `--all` named, a
 branch it does not hold, named with its remote copy and the `git fetch` for the person to run, a name no branch can
-have, said to be none, a `config.toml`, profile or rule file that cannot run, nothing under `--path`, or no choice made
-at the question asked when neither `--base` nor `--all` is given), 3 a hole: a rule or a guideline failed, a rule could
+have, said to be none, a `config.toml`, profile or rule file that cannot run, nothing under `--path`, no choice made
+at the question asked when neither `--base` nor `--all` is given, or a stop at the question a terminal is asked when
+the guidelines cannot read the change in one run, its parts planned and printed first), 3 a hole: a rule or a
+guideline failed, a rule could
 not look (the head's tree not listed, a file it holds not read whole, or a link whose file was not read or followed), a
 changed file no check can read whole — binary, a submodule, a Git LFS pointer — or, where a guideline runs, one it was
 not shown whole — a symbolic link to a file it was not shown whole, cut at the diff cap or past the guidelines' block
@@ -149,10 +151,11 @@ Evidence is gathered in Python first, the rules run as one `FunctionNode` before
 (`judge/checks.py`, every rule through `run_rule`), or straight from the driver through the same `run_rules` where no
 guideline follows, and code decides the verdict. Around them: retries, a token ceiling, a `--verify` second opinion, a
 JSON report a pipeline reads (`--json FILE`, schema 2, written for every decided review, under the text report's safety
-rules), a comment for the branch's author (`--comment [FILE]`, by default `comments-<repo>__<base>__<head>__<minute>.md`
-where the command runs), which the person pastes into the pull request by hand: the reviewer posts nothing and prints no
-command that would, a hand-off for a coding agent (`--handoff [FILE]`, by default
-`handoff-<repo>__<base>__<head>__<minute>.md`, named as the comment is), which applies nothing itself, under `--all` a
+rules), a comment for the branch's author (`--comment [FILE]`, by default
+`comment-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md` where the command runs), which the person pastes into
+the pull request by hand: the reviewer posts nothing and prints no command that would, a hand-off for a coding agent
+(`--handoff [FILE]`, by default `handoff-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md`, named as the comment
+is), which applies nothing itself, under `--all` a
 Health section (`core/health.py`: what was read, source and tests apart, McCabe complexity counted as ruff's C901 counts
 it, in bands graded A to E by SIG's published risk-profile rating where most of the source parsed, each rule's findings
 by severity, counted and never graded; never read by the verdict), each changed file's blast radius (`core/blast.py`: an
@@ -223,7 +226,8 @@ Conventions:
   `_environment(repo)`: the C locale, so git's messages read as written, no inherited `GIT_*` variable but
   `GIT_INDEX_FILE`, made absolute, the index git hands a commit hook, which `--staged` reads, no global or system config
   and no attributes file but the repository's, `safe.directory` for the one repository named, no lazy fetch, no replace
-  refs or grafts, `core.precomposeUnicode`, `diff.suppressBlankEmpty` and `core.fsmonitor` fixed through
+  refs or grafts, `core.precomposeUnicode`, `diff.suppressBlankEmpty`, `core.fsmonitor` and `core.autocrlf` (`input`:
+  a checkout Windows wrote with CRLF over blobs of LF is never diffed in place of its blobs) fixed through
   `GIT_CONFIG_COUNT`, and a call's own settings beside them there, never as `-c`. A file's diff is read as git prints it
   for no one's settings, through plumbing (`diff-tree -r -p`, or `diff-index --cached -p` under `--staged`): each path
   as `:(top,literal)` pathspec magic, the merge base's attributes (`--attr-source`, git 2.41; under `--all`, the empty
@@ -248,7 +252,10 @@ Conventions:
   request's page acts on (`@name`, `#12`, `!12`), every character a reader cannot see printed as a space.
 - Every sentence the package prints itself — a stderr line, a flag's `--help`, an error it raises or answers, a rule's
   title, fix and why — is ASD-STE100: one command, at most 20 words, no `;` joining two (`tests/test_command.py`). The
-  guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged. An
+  guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged;
+  each guideline and verifier is told what a `-` and a `+` line are (`DIFF_MARKS`, `judge/agents.py`), since a model
+  read deleted lines as the code to fix, and a kept finding's evidence keeps the `-` of a deleted line, which the
+  comment, the hand-off and chat's verdict explain (`DELETED_QUOTED`, `core/verdict.py`). An
   error a person can act on names what to do instead, a flag to drop or give, a path or a command, as the owner asked of
   a tool that guides its user; argparse's own end by naming `--help`. An error's text ends bare, with no full stop,
   since a caller may add a sentence after it, as the pre-push hook adds its own; and the flags that rescope a change

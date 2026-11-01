@@ -95,9 +95,9 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   revision git cannot follow, and only where git says nothing: an `error:` or `fatal:` line at exit 1 or 128 is a
   `GitError`, a corrupt object never a missing name.
 - The reviewer posts nothing to a pull request: `--comment [FILE]` writes a comment for the branch's author, by default
-  `comments-<repo>__<base>__<head>__<minute>.md`, which the person pastes by hand, and no command that would post it is
-  printed; `--handoff [FILE]` writes the findings for a coding agent, by default
-  `handoff-<repo>__<base>__<head>__<minute>.md`, and applies none of them itself.
+  `comment-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md`, which the person pastes by hand, and no command
+  that would post it is printed; `--handoff [FILE]` writes the findings for a coding agent, by default
+  `handoff-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md`, and applies none of them itself.
 - Every string a model reads is capped in characters with the cut named in the text, and so is each title and change a
   model writes into a finding. A dropped finding's file is a model's text too, cut in `drop_ungrounded` at
   `REASON_MAX_CHARS`. Every `subprocess.run` that decodes passes `encoding=`; no source spells `/tmp/`
@@ -105,7 +105,10 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   hold a file in it open; a file a script or a fixture commits is written with `newline="\n"`.
 - Every sentence the package prints itself — a stderr line, a flag's `--help`, an error it raises or answers, a rule's
   title, fix and why — is ASD-STE100: one command, at most 20 words, no `;` joining two (`tests/test_command.py`). The
-  guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged. An
+  guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged;
+  each guideline and verifier is told what a `-` and a `+` line are (`DIFF_MARKS`, `judge/agents.py`), since a model
+  read deleted lines as the code to fix, and a kept finding's evidence keeps the `-` of a deleted line, which the
+  comment, the hand-off and chat's verdict explain (`DELETED_QUOTED`, `core/verdict.py`). An
   error a person can act on names what to do instead, a flag to drop or give, a path or a command, as the owner asked of
   a tool that guides its user; argparse's own end by naming `--help`. An error's text ends bare, with no full stop,
   since a caller may add a sentence after it; and the flags that rescope a change with nothing to compare are added by
