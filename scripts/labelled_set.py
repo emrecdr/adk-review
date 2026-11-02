@@ -7,10 +7,11 @@ the demo's `main`, a ledger's settlement committed beside it: a modification tha
 misses its last item, a function with no test, a long file whose defect sits past the guidelines' cut, a container that
 runs privileged; what `simplify` and `code-review` add guidelines for, a file read again for each item of a loop, a
 shared function patched for one caller's input and a function copied with one value changed; a settlement's return
-changed to the balance its statement clamps nine lines above, which forgives a debt its docstring says is carried; and
-four clean changes, a document, a rename, a function renamed with its caller whose old name only the diff's deleted
-lines hold, and a division a guard twelve lines above makes safe. The settlement's two
-show a guideline their cause only within the function around the hunk, git's three lines of context leave it out. Each
+changed to the balance its statement clamps nine lines above, which forgives a debt its docstring says is carried; a
+guard deleted from a charge, the defect on lines the change deleted alone; and four clean changes, a document, a rename,
+a function renamed with its caller whose old name only the diff's deleted lines hold, and a division a guard twelve
+lines above makes safe. The settlement's two show a guideline their cause only within the function around the hunk,
+git's three lines of context leave it out. Each
 is reviewed K times, under `--profile` where one is named, each guideline `--check` names alone where one is, and the
 default profile otherwise. A labelled branch scores the runs in which a guideline named a finding on the defect's lines;
 a clean branch scores the runs a guideline made a finding at major or above, a false one; each says which guidelines
@@ -169,6 +170,15 @@ def usd_total(amounts: list[tuple[int, str]]) -> int:
     "forgives-debt": (
         {"src/payments/settle.py": SETTLE.replace("    return balance_cents + net\n", "    return shown + net\n")},
         ("src/payments/settle.py", range(24, 25)),
+    ),
+    # Read by review: a guideline told to report a defect only in code the branch holds might pass over a guard the
+    # change deleted. Here the defect is lines the change deleted alone, the guard that refused a non-positive amount,
+    # and a deleted line is numbered with the head's line before it, 12.
+    "drops-the-guard": (
+        {"src/payments/charge.py": CHARGE.replace(
+            '    if amount_cents <= 0:\n        raise ValueError("amount must be positive")\n', ""
+        )},
+        ("src/payments/charge.py", range(12, 14)),
     ),
     "clean-docs": ({"README.md": "# payments (demo)\n\nA tiny service the ADK demo reviews, in euro cents.\n"}, None),
     "clean-rename": (

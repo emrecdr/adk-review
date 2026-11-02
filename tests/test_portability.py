@@ -523,6 +523,28 @@ def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(t
     assert row == "| repeated-io | its defect named | 3 of 3 | guideline.efficiency x3, guideline.tests x1 |", row
 
 
+def test_the_labelled_sets_dropped_guard_is_a_defect_on_deleted_lines_alone(tmp_path) -> None:
+    """Read by review: a guideline told to report a defect only in code the branch holds might pass over a guard the
+    change deleted, and no labelled branch held that shape. Here the change deletes the guard and adds nothing, so a
+    live run counts whether a guideline still names what the branch lost, at the lines around the deletion."""
+    import labelled_set as labelled
+
+    name, repo = "drops-the-guard", tmp_path / "repo"
+    made = labelled.branches(repo)
+    path, lines = labelled.BRANCHES[name][1]
+
+    def git(*args: str) -> str:
+        return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, encoding="utf-8", check=True).stdout
+
+    head = git("show", f"{made[name]}:{path}").splitlines()
+    assert "amount_cents <= 0" not in "\n".join(head) and head[lines.start - 1].startswith("def charge("), head
+    diff = [line for line in git("diff", "main", made[name], "--", path).splitlines() if line[:1] in "+-"]
+    assert [line for line in diff if not line.startswith(("---", "+++"))] == [
+        "-    if amount_cents <= 0:",
+        '-        raise ValueError("amount must be positive")',
+    ], diff
+
+
 def test_the_labelled_sets_rename_with_its_callers_is_clean_and_names_the_old_name_on_deleted_lines_alone(
     tmp_path,
 ) -> None:
