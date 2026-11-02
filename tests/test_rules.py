@@ -2757,7 +2757,7 @@ class TestTheShippedRules:
         from adk_review.judge.rules.lockfile_sources import LockfileSources
 
         nexus = "p-nexus-3.development.nl.eu.abnamro.com"
-        wheel = "/repository/python-group/packages/abnamro-pita-servicenow/1.3.2/abnamro_pita_servicenow-1.3.2.whl"
+        wheel = "/repository/python-group/packages/example-package/1.0.0/example_package-1.0.0.whl"
 
         def fetched(url: str) -> list[str]:
             line = f'wheels = [{{ url = "{url}", hash = "sha256:ace4" }}]\n'

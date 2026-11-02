@@ -723,7 +723,7 @@ class TestThePreviousReportAndTheHandoff:
         assert cli._safe_name("RepoX") == "repox" and cli._safe_name("Feature/ABC_1") == "feature-abc_1"
         # Asked by the owner, at 40: read by review at 20, the company's repositories, which share their first 19
         # characters, kept one letter each apart, and a branch lost the words after its ticket number.
-        assert cli._safe_name("raas-batch-wrapper-shared") == "raas-batch-wrapper-shared"
+        assert cli._safe_name("acme-batch-wrapper-shared") == "acme-batch-wrapper-shared"
         assert cli._safe_name("feature/refactor-config-loading") == "feature-refactor-config-loading"
         assert cli._safe_name("bugfix/JIRA-98765-null-check") == "bugfix-jira-98765-null-check"
         assert cli._safe_name("a" * 39 + "-tail") == "a" * 39, "a cut ends on no `-`"

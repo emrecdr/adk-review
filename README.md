@@ -677,7 +677,7 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   `refs/tags/`, made safe for a file name and cut at 40 characters, the commit the 12 characters of the one reviewed
   that the comment's first line prints, `HEAD`'s under `--staged`, and the run names it by its full path, the last of
   the files written, unless `--quiet` silences a review that passes. Read by review, 20 characters left the company's
-  repositories one letter each apart (`raas-batch-wrapper-s`), and the time is to the second, since a review served
+  repositories one letter each apart (`acme-batch-wrapper-s`), and the time is to the second, since a review served
   from `--cache`, one with no guideline, and two started in one minute end within it, and a name made by the minute let
   the second replace the first. Asked by the owner, the commit tells two rounds of review on one branch apart, and
   comes last so one branch's files list by time.

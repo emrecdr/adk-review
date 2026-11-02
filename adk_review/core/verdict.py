@@ -298,8 +298,16 @@ def _placed(
         return (None, None) if joined else None
     # A short quote can stand in several places: measured by review, `return None` at lines 2 and 22, a guideline naming
     # 22 was placed at 2. The diff decides where a quote can stand; the guideline's line only picks among those places,
-    # the first where it named none and on a tie.
-    return min(placed, key=lambda place: (abs(place[0][0] - finding.line) if finding.line else 0, place))
+    # and where it does not, as where it named none, a place the head holds goes before a deleted one, then the first:
+    # read by review, a moved line was placed on its deleted copy and read as gone from the branch.
+    return min(
+        placed,
+        key=lambda place: (
+            abs(place[0][0] - finding.line) if finding.line else 0,
+            any(line[:1] == "-" for line in place[1].split("\n")),
+            place,
+        ),
+    )
 
 
 def _paired(hunk: list[tuple[int, str]]) -> list[tuple[int, str]]:

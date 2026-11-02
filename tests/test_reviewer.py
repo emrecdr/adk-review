@@ -687,6 +687,20 @@ class TestWhatGroundingKeeps:
             ((kept, _at),) = _grounded([finding], {"a.py": _numbered(hunk)})[0]
             assert kept.evidence == evidence, kept.evidence
 
+    def test_a_quote_the_head_holds_too_is_placed_on_the_heads_copy_where_its_line_does_not_choose(self) -> None:
+        """Read by review: a moved line, `import os` deleted above and added below, stood in both places, and a finding
+        that named no line was placed on the deleted copy, its evidence `-import os`, so the comment told the reader the
+        branch no longer held a line it holds. Where the guideline's line does not choose, the head's copy is taken;
+        where it does, the nearest stands, as a short quote's place always has."""
+        hunk = ["-import os", " import sys", " import re", "+import os"]
+        _rule, _collect, schema = _grounding_of()
+        for line, evidence in ((None, "import os"), (4, "import os"), (1, "-import os")):
+            finding = schema.Finding(
+                file="a.py", line=line, severity="major", title="t", evidence="import os", suggestion="s"
+            )
+            ((kept, _at),) = _grounded([finding], {"a.py": _numbered(hunk)})[0]
+            assert kept.evidence == evidence, (line, kept.evidence)
+
     def test_a_quote_without_what_no_reader_sees_grounds(self) -> None:
         """Measured live on Gemini: beside the injection suite's payload in tag characters, the guidelines quoted the
         comment that holds it as `#` and the shell call under it, both dropped, and the review was a hole where it had
