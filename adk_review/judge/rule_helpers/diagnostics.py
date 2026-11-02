@@ -7,6 +7,7 @@ same for each, and lives here once.
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from collections.abc import Callable, Collection, Mapping
 
@@ -111,11 +112,25 @@ def _counted(path: str, rated: list[tuple[Diagnostic, Severity]], title: str) ->
         slug = slugs.get(code)
         name = f"{code} ({slug})" if slug else code
         parts.append(f"{name} x{count}")
+    # The command as the review ran it, so it shows what was counted: read by review, a bare `ruff check` read the
+    # project's own config and honoured its noqa, and said "All checks passed!" over a counted S105.
+    command = f"ruff check --isolated --ignore-noqa --select {','.join(sorted(codes))} {_pasted(path)}"
     return Hit(
         path,
         None,
         ", ".join(parts),
         title=title,
         severity=max((severity for _found, severity in rated), key=RANK.__getitem__),
-        fix=f"Run ruff check {path} to inspect each occurrence.",
+        fix=f"Run `{command}` to see each one.",
     )
+
+
+#: A path a command shows bare: one no shell splits or reads a character of.
+_PLAIN_PATH = re.compile(r"[\w./-]+")
+
+
+def _pasted(path: str) -> str:
+    """`path` as a command takes it: bare where it is plain, else in double quotes, which a POSIX shell, PowerShell and
+    cmd.exe each read as one word; and never read as a flag."""
+    shown = path if _PLAIN_PATH.fullmatch(path) else f'"{path}"'
+    return f"./{shown}" if shown.startswith("-") else shown

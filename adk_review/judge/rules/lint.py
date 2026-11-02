@@ -114,14 +114,10 @@ def severity_of(code: str) -> Severity:
 
 
 def is_databricks_notebook(file: ChangedFile) -> bool:
-    """Whether the file is a Databricks notebook, marked at the top with optional BOM or comment lines."""
-    for i in range(1, min(6, len(file.lines) + 1)):
-        line = file.line(i).strip().lstrip("\ufeff")
-        if line == NOTEBOOK_MARK:
-            return True
-        if line and not line.startswith("#"):
-            return False
-    return False
+    """Whether the file is a Databricks notebook: its first line the mark, a byte order mark before it aside. Databricks
+    reads the mark on the first line alone, so a comment above it makes the file a plain module, where the names are
+    undefined. Read by review: comments let in above the mark passed over a plain module's undefined `spark`."""
+    return bool(file.lines) and file.line(1).lstrip("\ufeff").strip() == NOTEBOOK_MARK
 
 
 def defined_by_databricks(file: ChangedFile, found: Diagnostic) -> bool:

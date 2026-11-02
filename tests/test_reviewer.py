@@ -944,6 +944,16 @@ class TestWhatTheLanesRead:
         for sentence in re.split(r"(?<=[.!?])\s+", DIFF_MARKS):
             assert len(sentence.split()) <= 20 and ";" not in sentence, f"ASD-STE100: {sentence}"
 
+    def test_each_sentence_of_the_callers_heading_is_short_and_one_command(self) -> None:
+        """The guidelines are told ASD-STE100, and their own instruction holds to it. Read by review: a sentence added
+        to the heading ran to 21 words, and spoke of a rename whose callers are never shown under it."""
+        import re
+
+        from adk_review.judge.agents import CALLERS_HEADING
+
+        for sentence in re.split(r"(?<=[.!?])\s+", CALLERS_HEADING.split("\n", 1)[1].strip()):
+            assert len(sentence.split()) <= 20 and ";" not in sentence, f"ASD-STE100: {sentence}"
+
     def test_every_guideline_says_why_a_blocker_or_a_major_matters_and_gives_its_code(self, monkeypatch) -> None:
         """Asked by the owner: each blocker and major is handled in more detail. The answer's schema holds a reason and
         the corrected code, and each guideline is told to fill both for a blocker or a major alone."""

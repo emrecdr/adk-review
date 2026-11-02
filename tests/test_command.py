@@ -1061,6 +1061,14 @@ class TestThePreviousReportAndTheHandoff:
             handoff_evidence, Outcome(kept=[Sourced("rule.lint", file_level)]), verdict="DEGRADED", fail_on="major"
         )
         assert "   - linter rules: `S105 (hardcoded-password-string) x1`" in handoff
+        for check in ("pitfalls", "simplify", "types", "radius-types"):  # read by review: two said "Evidence"
+            rolled = file_level.model_copy(
+                update={"title": f"{check}: 1 of the findings on lines the change did not add"}
+            )
+            said = render_comment(
+                evidence, Outcome(kept=[Sourced(f"rule.{check}", rolled)]), verdict="DEGRADED", fail_on="major"
+            )
+            assert "   - Linter rules: `S105" in said, check
         steer_level = Finding(
             file=".github/copilot-instructions.md",
             line=None,

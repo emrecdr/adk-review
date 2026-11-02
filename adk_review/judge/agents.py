@@ -56,9 +56,7 @@ CALLERS_CAP_CHARS = 12_000
 #: What a guideline reads above those calls: where a finding about one belongs.
 CALLERS_HEADING = (
     "## Callers the change left alone\nEach call at the head to a function the change touched, from a line the change "
-    "did not add. Where the change breaks one, report it on the changed lines. "
-    "Do not report that a rename breaks callers if all usages in the repository were updated and none are listed "
-    "here.\n"
+    "did not add. Where the change breaks one, report it on the changed lines.\n"
 )
 #: What the chat's verdict reads of the checks is capped the same way. Measured uncapped: lint over a 5-file branch of a
 #: 724-file tree gave it 21,814 characters, and that tree reviewed as one branch 619,116.

@@ -745,10 +745,11 @@ def _quoted(f: Finding, limit: int = EVIDENCE_MAX_CHARS) -> str:
 
 def _quote_label(f: Finding, upper: bool = True) -> str:
     """The label for a finding's evidence: Quoted when placed at a line, or Linter rules for rolled-up diagnostics
-    without a line."""
+    without a line, from each rule that reads ruff or pyrefly. Read by review: `pitfalls` and `simplify` were left
+    out, and their codes read as Evidence."""
     if f.line is not None:
         return "Quoted" if upper else "quoted"
-    if f.title.startswith(("lint:", "types:", "radius-types:")):
+    if f.title.startswith(("lint:", "pitfalls:", "simplify:", "types:", "radius-types:")):
         return "Linter rules" if upper else "linter rules"
     return "Evidence" if upper else "evidence"
 

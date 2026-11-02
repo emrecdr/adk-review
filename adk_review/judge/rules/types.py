@@ -75,5 +75,8 @@ class Types(FileRule):
             ", ".join(f"{kind} x{count}" for kind, count in kinds.most_common()),
             title=f"{len(rest)} more of pyrefly's findings in this file, not listed",
             severity=max((SEVERITY[item.code] for item in rest), key=RANK.__getitem__),
-            fix=f"Run pyrefly check {path} to inspect each occurrence.",
+            fix=(
+                "Run `pyrefly check` on the file to see each one. "
+                "The project's own settings and ignore comments can hide some."
+            ),
         )

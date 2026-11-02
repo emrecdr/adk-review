@@ -309,7 +309,10 @@ class TestRetriesOnBothArms:
         assert "Try again after 2 h, at " in limited({"x-ratelimit-reset": str(int(time.time()) + 7200)})
         assert "Try again after 1 h, at " in limited({"x-ratelimit-user-reset": str(time.time() + 3600)})
         assert "Try again after 2 min, at " in limited({"retry-after": formatdate(time.time() + 90, usegmt=True)})
-        for none in ({}, {"x-ratelimit-reset": str(int(time.time()) - 60)}, {"retry-after": "soon"}):
+        # Read by review: `float` takes "nan", "inf" and an exponent, and the wait past a date's range raised inside
+        # the error's own callback, so a 429 read as a crash. None adds a wait, and none raises.
+        hostile = ({"retry-after": value} for value in ("nan", "inf", "1e400", "1e12", "99999999999999", "-30"))
+        for none in ({}, {"x-ratelimit-reset": str(int(time.time()) - 60)}, {"retry-after": "soon"}, *hostile):
             assert "Try again" not in limited(none), none
 
     def test_a_run_past_its_deadline_is_named_and_degrades(self, demo_repo: Path, cli, monkeypatch, capsys):

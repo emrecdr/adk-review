@@ -171,7 +171,9 @@ width in `LINE_LENGTH`, ruff's 88 when unset. It leaves `assert` out of a test f
 B011, since an assert is how pytest checks; in library code each is major, since `python -O` strips it. The rules that
 run ruff, `lint`, `pitfalls` and `simplify`, read none of the project's ruff settings and honour no `noqa` comment, so
 that no branch can silence them: a finding there can be one the project's own ruff configuration, or its author's
-`noqa` with a reason, already accepts. Read the line before you ask for a change. In a Databricks notebook, a file
+`noqa` with a reason, already accepts. Read the line before you ask for a change. Their findings on lines the change
+did not add are counted in one finding a file. It names each code with ruff's name for it, and the command that
+shows them as the review saw them. In a Databricks notebook, a file
 whose first line is `# Databricks notebook source`, `lint` does not call `spark`, `dbutils` or `display` undefined:
 Databricks defines the three in every notebook it runs. Any other undefined name there, and those three in any other
 file, are still reported. `types` runs

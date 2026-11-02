@@ -903,8 +903,8 @@ class TestTheLintRule:
         assert (
             aside.title == "lint: 2 of ruff's findings on lines the change did not add"
             and aside.evidence == "F401 (unused-import) x2"
-            and aside.suggestion == "Run ruff check m.py to inspect each occurrence."
-        )
+            and aside.suggestion == "Run `ruff check --isolated --ignore-noqa --select F401 m.py` to see each one."
+        ), "read by review: a bare `ruff check` reads the project's config and noqa, and showed none of them"
 
     def test_an_assert_is_major_in_library_code_and_not_reported_in_a_test(self) -> None:
         """`assert` is how pytest checks, and in library code it vanishes under `python -O`, as `assert False` does,
@@ -931,7 +931,9 @@ class TestTheLintRule:
         """Read by review on a branch of 20 Databricks notebooks: 192 of lint's findings were F821 on `dbutils`,
         `spark` and `display`, nearly all of its 86 majors, where the project's own ruff reported none. Databricks
         defines the three in every notebook it runs. Only a file whose first line marks it a notebook passes them over,
-        and only those three: any other name it leaves undefined is still a bug, and so are those three elsewhere."""
+        a byte order mark before it aside, and only those three: any other name it leaves undefined is still a bug, and
+        so are those three elsewhere. Databricks reads the mark on the first line alone, so a comment above it makes
+        the file a plain module, where the three are undefined."""
         body = "df = spark.read.table('t')\ndbutils.widgets.get('x')\ndisplay(df)\nprint(undefined_here)\n"
         notebook = "# Databricks notebook source\n" + body
         named = {
@@ -944,8 +946,9 @@ class TestTheLintRule:
                 ("src/late.py", "x = 1\n# Databricks notebook source\n" + body),
             )
         }
-        assert named["src/bin/job.py"] == named["src/bin/bom.py"] == named["src/bin/header.py"] == ["undefined_here"]
-        assert named["src/service.py"] == named["src/late.py"] == ["dbutils", "display", "spark", "undefined_here"]
+        assert named["src/bin/job.py"] == named["src/bin/bom.py"] == ["undefined_here"]
+        every = ["dbutils", "display", "spark", "undefined_here"]
+        assert named["src/service.py"] == named["src/late.py"] == named["src/bin/header.py"] == every
 
     def test_a_call_without_a_shell_or_by_a_short_name_is_minor_and_a_shell_call_major(self) -> None:
         """S603 names every `subprocess` call whose arguments are not a literal list, and S607 every program named

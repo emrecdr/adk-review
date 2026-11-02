@@ -95,5 +95,5 @@ def _counted(path: str, rest: Sequence[Diagnostic]) -> Hit:
         None,
         ", ".join(f"{kind} x{count}" for kind, count in kinds.most_common()),
         title=f"{len(rest)} more of pyrefly's findings in this file, not listed",
-        fix="Run pyrefly check to inspect each occurrence across the project.",
+        fix="Run `pyrefly check` on the project to see each one. Its own settings and ignore comments can hide some.",
     )

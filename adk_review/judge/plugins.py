@@ -67,6 +67,12 @@ def describe(error: Exception) -> str:
     return f"{line} {wait}" if wait else line
 
 
+#: The longest wait a rate limit's header is read as naming, a week, the longest limit GitHub's documents name. Past it,
+#: or not a number, the header names no wait a person can use: read by review, `float` took "nan", "inf" and "1e12",
+#: and the date they made raised inside the error's own callback, so a 429 read as a crash.
+WAIT_MAX_S = 7 * 24 * 60 * 60
+
+
 def _wait_of(error: Exception) -> str | None:
     """When a rate limit clears, as a sentence: from `retry-after`, seconds or an HTTP date, or GitHub's
     `x-ratelimit-reset`, the second it clears; None where the provider named no time to come. Asked by the owner: a
@@ -80,7 +86,7 @@ def _wait_of(error: Exception) -> str | None:
         except ValueError:
             try:
                 seconds = parsedate_to_datetime(after).timestamp() - now
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 seconds = None
     if seconds is None:
         for key in ("x-ratelimit-reset", "x-ratelimit-user-reset"):
@@ -90,7 +96,7 @@ def _wait_of(error: Exception) -> str | None:
                     break
                 except ValueError:
                     pass
-    if seconds is None or seconds <= 0:
+    if seconds is None or not 0 < seconds <= WAIT_MAX_S:  # NaN, too, is no wait: every comparison with it is false
         return None
     return f"Try again after {_span(seconds)}, at {datetime.fromtimestamp(now + seconds):%H:%M}."
 
