@@ -358,6 +358,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | Pyrefly's answer the rules read: past it, none of it is read, a hole | 64,000,000 bytes | `collect/pyrefly.py`, `PYREFLY_ANSWER_MAX_BYTES` |
 | The findings one ruff run names that the rules read: past them, a hole | 500,000 findings | `collect/ruff.py`, `RUFF_FINDINGS_MAX` |
 | One model call, every retry Copilot's client makes of it included | 180 seconds | `judge/config.py`, `REQUEST_TIMEOUT_S` |
+| The longest wait a rate limit's header is read as naming, past which the report names none | 604,800 seconds | `judge/plugins.py`, `WAIT_MAX_S` |
 | One run of the guidelines, or of the verifiers | 600 seconds | `judge/config.py`, `RUN_DEADLINE_S` |
 | Model calls in flight at once | 3 | `judge/config.py`, `CONCURRENCY` |
 | The radius a guideline is shown | 20,000 characters | `judge/agents.py`, `BLAST_CAP_CHARS` |
@@ -375,9 +376,9 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | A blocker's or a major's corrected code, as a model wrote it | 1,200 characters | `core/text.py`, `CODE_MAX_CHARS` |
 
 A file past a guideline's cap is named under "not read", and the review ends in exit 3: a hole, never "nothing
-found". `--path` narrows a review to fit. A file past all the diffs the guidelines read names the folder that reviews
-it in a smaller run, the first under the review's own `--path` that holds it and not every file shown. A branch too
-large for one run is reviewed in parts, one run a folder, each with its own verdict:
+found". `--path` narrows a review to fit. A file past all the diffs the guidelines read names the `--path` of the
+planned run that reads it, one that fits. A branch too large for one run is reviewed in parts, one run a folder, each
+with its own verdict:
 
 ```
 adk-review <repo> --head <branch> --base develop --path src --comment

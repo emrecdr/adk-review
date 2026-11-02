@@ -526,7 +526,7 @@ each in a module named after what it reads (`lines.py`, `syntax.py`, `diagnostic
 | `functions_in(code)`, `imports_in(code)`, `nodes_in(code, *kinds)`, `name_of(node)` | Every function; every imported name with its line; every node of a kind; a name as written, dotted |
 | `defined(module)`, `classes(module)`, `parameters(module, function)` | What a module defines; its classes and their parents; a function's parameters |
 | `try_rule`, `lines_hit`, `self_check`, `self_test` | A rule tried on files, on a text, on its own source, on its own examples |
-| `listed(file, rate, fixes, leave_out)`, `tier(table, code)`, `family(code)`, `fix_of(table, code, offered, label)`, `PER_FILE` | A ruff-backed rule's findings on one file, each diagnostic at the severity `rate` gives it, none for a file that is not Python: a code in `leave_out` dropped first, then the change's own lines listed, at most `PER_FILE`, and the rest counted; a code's entry in a rule's table by the longest key in its family; ruff's own fix with its label, but not a display-only one where the table names the code itself, else the table's sentence |
+| `listed(file, rate, fixes, leave_out, passes_over)`, `tier(table, code)`, `family(code)`, `fix_of(table, code, offered, label)`, `PER_FILE` | A ruff-backed rule's findings on one file, each diagnostic at the severity `rate` gives it, none for a file that is not Python: a code in `leave_out` dropped first, then the change's own lines listed, at most `PER_FILE`, and the rest counted; a code's entry in a rule's table by the longest key in its family; ruff's own fix with its label, but not a display-only one where the table names the code itself, else the table's sentence |
 
 Three limits stay. A line helper reads one line alone, so a line inside a docstring reads as code; a rule that must
 tell them apart reads the file. Names are read as written: after `from requests import get`, `get(url)` is not
@@ -1029,9 +1029,9 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   files read whole take its room first, then the cut ones, each shown in path order, and a file past the block's cap is
   left out whole, the block's end tells the guidelines how many, and the report names each under "not read", a hole.
   With no cap, `--all` over 4,826 files gave each guideline and each verifier 14.9 MB. `--path` narrows a review to fit,
-  and a file left out names the folder that does: the first under the review's own `--path` that holds it and not every
-  file shown, so the run it names reads fewer files and never names itself again. Read by review on a branch of 58
-  files, nine test files were left out with no folder named, where the branch's `tests` alone fit. Where the block
+  and a file left out names the `--path` of the planned run that reads it, below. Read by review on a branch of 58
+  files, nine test files were left out with no folder named, where the branch's `tests` alone fit; and a folder guessed
+  from the paths alone was past the block again, where the plan named runs that fit. Where the block
   leaves any file out, `in_parts` plans the runs that read the change from what each file takes of the block, a folder
   whole where it fits, else one level down, filled in path order; a dry run prints them as commands, and a review
   prints them before its first model call and, at a terminal, asks whether to go on, a stop being exit 2. Asked by the

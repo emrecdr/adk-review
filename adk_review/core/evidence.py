@@ -125,6 +125,7 @@ class Evidence(Change):
     #: Where the guidelines cannot read the change in one run, the runs that can, each the `--path` values one names;
     #: [] where it fits.
     parts: NotRequired[list[list[str]]]
+    left_out: NotRequired[int]  # how many changed files the guidelines' block left out: its cap's, as `parts` reads it
     skipped: dict[str, str]  # the files the operator's skip list left to the rules, by path with the glob
     #: The changed files the review leaves out, by the config's scan and third_party: the credential rules still read
     #: the project's own among them, and nothing reads another project's code.

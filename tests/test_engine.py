@@ -312,6 +312,8 @@ class TestRetriesOnBothArms:
         # Read by review: `float` takes "nan", "inf" and an exponent, and the wait past a date's range raised inside
         # the error's own callback, so a 429 read as a crash. None adds a wait, and none raises.
         hostile = ({"retry-after": value} for value in ("nan", "inf", "1e400", "1e12", "99999999999999", "-30"))
+        reset = {"retry-after": "0", "x-ratelimit-reset": str(time.time() + 3600)}
+        assert "Try again after 1 h, at " in limited(reset), "read by review: a retry-after of 0 hid the reset header"
         for none in ({}, {"x-ratelimit-reset": str(int(time.time()) - 60)}, {"retry-after": "soon"}, *hostile):
             assert "Try again" not in limited(none), none
 

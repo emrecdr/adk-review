@@ -102,35 +102,29 @@ def _slug(diag: Diagnostic) -> str | None:
     return slug if slug and slug != diag.code else None
 
 
+#: A ruff rule's code, as `--select` takes one. `invalid-syntax`, the collector's name for a file that does not
+#: parse, is none, and ruff refused a command selecting it, exit 2; it names a parse error whatever it selects.
+_RULE_CODE = re.compile(r"[A-Z]+[0-9]+")
+
+
 def _counted(path: str, rated: list[tuple[Diagnostic, Severity]], title: str) -> Hit:
-    """`rated` as one finding at the file: how many of each code, at the most severe of them, so no tier is lost and
-    the verdict reads the same."""
+    """`rated` as one finding at the file: how many of each code, with ruff's name for it, at the most severe of them,
+    so no tier is lost and the verdict reads the same; and the command that shows them as the review ran ruff. Read by
+    review: a bare `ruff check` read the project's own config and honoured its noqa, and said "All checks passed!" over
+    a counted S105. The file is the finding's own and never in the command: a path is the branch's text, and a shell
+    runs what double quotes hold, `$(…)` among it."""
     codes = Counter(found.code for found, _severity in rated)
-    slugs = {found.code: _slug(found) for found, _severity in rated if found.url}
-    parts = []
-    for code, count in codes.most_common():
-        slug = slugs.get(code)
-        name = f"{code} ({slug})" if slug else code
-        parts.append(f"{name} x{count}")
-    # The command as the review ran it, so it shows what was counted: read by review, a bare `ruff check` read the
-    # project's own config and honoured its noqa, and said "All checks passed!" over a counted S105.
-    command = f"ruff check --isolated --ignore-noqa --select {','.join(sorted(codes))} {_pasted(path)}"
+    slugs = {found.code: _slug(found) for found, _severity in rated}
+    counted = ", ".join(
+        f"{code} ({slugs[code]}) x{n}" if slugs[code] else f"{code} x{n}" for code, n in codes.most_common()
+    )
+    selected = ",".join(sorted(code for code in codes if _RULE_CODE.fullmatch(code)))
+    command = "ruff check --isolated --ignore-noqa" + (f" --select {selected}" if selected else "")
     return Hit(
         path,
         None,
-        ", ".join(parts),
+        counted,
         title=title,
         severity=max((severity for _found, severity in rated), key=RANK.__getitem__),
-        fix=f"Run `{command}` to see each one.",
+        fix=f"Run `{command}` on the file to see each one.",
     )
-
-
-#: A path a command shows bare: one no shell splits or reads a character of.
-_PLAIN_PATH = re.compile(r"[\w./-]+")
-
-
-def _pasted(path: str) -> str:
-    """`path` as a command takes it: bare where it is plain, else in double quotes, which a POSIX shell, PowerShell and
-    cmd.exe each read as one word; and never read as a flag."""
-    shown = path if _PLAIN_PATH.fullmatch(path) else f'"{path}"'
-    return f"./{shown}" if shown.startswith("-") else shown

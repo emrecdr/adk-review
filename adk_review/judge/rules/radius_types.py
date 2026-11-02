@@ -49,7 +49,9 @@ class RadiusTypes(TreeRule):
     reads_tests = False
     title = "code the change left alone no longer type-checks"
     fix = "Change the code to fit what the change made, or keep what that code relied on."
-    why = "Code the change left alone now gets values of another type, so it fails or misbehaves when it runs."
+    #: True of both kinds of hit, a line the change left alone and an added one another file's change breaks: read by
+    #: review, one sentence a hit, picked by whether its line was added, patched a reason that held for one kind.
+    why = "Code now gets a value of another type than it expects, so it fails or misbehaves when it runs."
     tool = "pyrefly-radius"
     # A test's file is in neither of pyrefly's runs, as the rule reads none of its findings: measured on ADK, half its
     # bytes tests, a run took 0.96 s where it took 1.59, the same findings.
@@ -75,14 +77,7 @@ class RadiusTypes(TreeRule):
                 continue
             # At most `PER_FILE` listed, the rest counted in one finding, as `types` lists pyrefly's.
             shown = sorted(found[:PER_FILE], key=lambda item: item.line)
-            for item in shown:
-                is_added = item.line in tree.added.get(path, ())
-                why = (
-                    "New code does not type-check against imported definitions, so it fails or misbehaves when it runs."
-                    if is_added
-                    else self.why
-                )
-                hits.append(Hit(path, item.line, item.source, title=f"{item.code} {item.message}", why=why))
+            hits += [Hit(path, item.line, item.source, title=f"{item.code} {item.message}") for item in shown]
             if rest := found[PER_FILE:]:
                 hits.append(_counted(path, rest))
         return hits

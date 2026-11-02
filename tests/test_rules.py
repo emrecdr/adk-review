@@ -903,8 +903,23 @@ class TestTheLintRule:
         assert (
             aside.title == "lint: 2 of ruff's findings on lines the change did not add"
             and aside.evidence == "F401 (unused-import) x2"
-            and aside.suggestion == "Run `ruff check --isolated --ignore-noqa --select F401 m.py` to see each one."
+            and aside.suggestion
+            == "Run `ruff check --isolated --ignore-noqa --select F401` on the file to see each one."
         ), "read by review: a bare `ruff check` reads the project's config and noqa, and showed none of them"
+
+    def test_a_roll_ups_command_names_only_ruffs_codes_and_never_the_branchs_path(self) -> None:
+        """Read by review: the command selected `invalid-syntax`, which ruff refuses, exit 2; and a path in double
+        quotes ran what `$(…)` held in the shell of whoever pasted it. A parse error needs no selecting, and the file
+        is the finding's own."""
+        from adk_review.judge.rule_helpers import Diagnostic
+        from adk_review.judge.rule_helpers.diagnostics import _counted
+
+        hostile = "src/x$(touch PWNED).py"
+        found = [Diagnostic(1, "x", "invalid-syntax", "m"), Diagnostic(2, "y", "F401", "m")]
+        hit = _counted(hostile, [(d, "major") for d in found], "lint: 2 of ruff's findings")
+        assert hit.fix == "Run `ruff check --isolated --ignore-noqa --select F401` on the file to see each one."
+        alone = _counted(hostile, [(found[0], "major")], "lint: 1 of ruff's findings")
+        assert alone.fix == "Run `ruff check --isolated --ignore-noqa` on the file to see each one.", alone.fix
 
     def test_an_assert_is_major_in_library_code_and_not_reported_in_a_test(self) -> None:
         """`assert` is how pytest checks, and in library code it vanishes under `python -O`, as `assert False` does,
@@ -1064,6 +1079,15 @@ class TestABlockerOrAMajorSaysWhyItMatters:
         assert silent == [], silent
         syntax = ruff_rule_findings(Lint(), [_entry("bad.py", "def f(:\n    pass\n")])
         assert syntax and all(f.why for f in syntax), [(f.title, f.why) for f in syntax]
+
+    def test_every_rule_that_reads_a_tool_has_its_roll_up_labelled_linter_rules(self) -> None:
+        """Read by review: `pitfalls` and `simplify` were left out of the report's list, and their codes read as
+        Evidence. A rule that names ruff or pyrefly is in it, so a new one cannot be left out again."""
+        from adk_review.deliver.report import TOOL_TITLES
+        from adk_review.judge.catalog import catalog
+
+        missing = [rule.check_id for rule in catalog().rules if rule.tool and f"{rule.id}:" not in TOOL_TITLES]
+        assert missing == [], missing
 
     def test_a_rule_finding_carries_its_rules_reason(self) -> None:
         from adk_review.core.rules import run_rule

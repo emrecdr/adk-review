@@ -232,9 +232,14 @@ class TestWhatAReviewCovers:
         evidence = git.collect_evidence(str(demo_repo), BASE, HEAD)
         assert evidence["diff"] == f"{first}\n\n[… 3 more file(s) not shown: past {len(first):,} characters in all]"
         left = [f for f in evidence["files"] if f["path"] != "src/payments/charge.py"]
-        why = f"past the {len(first):,} characters the guidelines read in all. --path narrows a review"
-        assert all(f["unread"] == why and f["cut"] and not f["quotable"] for f in left), left
+        cap = f"past the {len(first):,} characters the guidelines read in all. "
+        # Each names the planned run that reads it: here the file alone, as the parts below are planned.
+        assert all(
+            f["unread"] == f"{cap}Review it in a smaller run with --path {f['path']}" and f["cut"] and not f["quotable"]
+            for f in left
+        ), left
         assert run_review(cli, demo_repo) == 3, "with guidelines on, what they never read is a hole"
+        why = f"{cap}Review it in a smaller run with --path src/payments/config.py"
         assert f"- not read     `src/payments/config.py`: {why}\n" in capsys.readouterr().out
         assert run_review(cli, demo_repo, "--profile", "rules-only") == 1
         assert "- not read" not in capsys.readouterr().out, "the rules read every file whatever the guidelines' cap"
@@ -260,7 +265,7 @@ class TestWhatAReviewCovers:
         assert "Too large for the guidelines in one run: 3 file(s) would go unread. Review it in 4 parts" in out, out
         runs = [line.strip() for line in out.splitlines() if line.strip().startswith("adk-review ")]
         assert len(runs) == 4 and all("--head feature/payments --base main" in run for run in runs), runs
-        assert runs[0].endswith("--path src/payments/charge.py"), runs
+        assert runs[0].endswith("--path=src/payments/charge.py"), runs
         monkeypatch.setattr(sys.stderr, "isatty", lambda: True)
         monkeypatch.setattr(sys, "stdin", _Terminal("n\n"))
         assert run_review(cli, demo_repo) == 2

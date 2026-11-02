@@ -1037,7 +1037,7 @@ def gather(
         listed = list_changed(resolved)
         entries = [entry for entry in listed if in_scope(entry["path"], scope)]
         own, others, ignored = _split(entries, scan, third_party)
-        files, block, excluded, parts = _read_change(
+        files, block, excluded, left_out, parts = _read_change(
             resolved, own, scope, guidelines=guidelines, diff_cap=diff_cap, skip=skip
         )
         unscanned = _read_change(resolved, others, scope, guidelines=False, diff_cap=diff_cap, skip=skip)[0]
@@ -1071,6 +1071,7 @@ def gather(
         "whole": base is None,
         "scope": list(scope),
         "parts": parts,
+        "left_out": left_out,
         "skipped": excluded,
         "unscanned": unscanned,
         "ignored": ignored,
@@ -1081,7 +1082,7 @@ def gather(
 
 def _read_change(
     resolved: dict, entries: list[dict], scope: Sequence[str], *, guidelines: bool, diff_cap: int, skip: Sequence[str]
-) -> tuple[list[Entry], str, dict[str, str], list[list[str]]]:
+) -> tuple[list[Entry], str, dict[str, str], int, list[list[str]]]:
     """Each entry's diff, as the rules read it, and the block the guidelines read, as `shown_to_guidelines` builds it.
     Where a guideline reads the change, each Python hunk `widens` names is read within the function or class around
     it, as Claude Code's review reads the enclosing function of each hunk: git's three lines showed an edit deep in a
@@ -1099,8 +1100,8 @@ def _read_change(
     files, block, excluded, left_out, parts = shown_to_guidelines(entries, diffs, diff_cap, skip, **shown)
     if left_out and (rest := [at for at in wide if at not in over]):
         _narrowed(resolved, entries, diffs, rest)
-        files, block, excluded, _left_out, parts = shown_to_guidelines(entries, diffs, diff_cap, skip, **shown)
-    return files, block, excluded, parts
+        files, block, excluded, left_out, parts = shown_to_guidelines(entries, diffs, diff_cap, skip, **shown)
+    return files, block, excluded, left_out, parts
 
 
 def _diffs(resolved: dict, entries: list[dict], scope: Sequence[str], wide: frozenset[int]) -> list[str]:

@@ -1718,16 +1718,22 @@ class TestWhatTheGuidelinesAreShown:
         def why(paths: list[str], scope: tuple[str, ...] = ()) -> dict[str, str]:
             entries = [{"path": p, "status": "A"} for p in paths]
             diffs = [self._diff(p, "x = 1") for p in paths]
-            monkeypatch.setattr(change, "BLOCK_CAP_CHARS", len(diff.framed(paths[0], diffs[0])[0]))
+            # Room for the largest file alone: each fits a run of its own, and no two fit one.
+            largest = max(len(diff.framed(p, d)[0]) for p, d in zip(paths, diffs, strict=True))
+            monkeypatch.setattr(change, "BLOCK_CAP_CHARS", largest)
             files = change.shown_to_guidelines(entries, diffs, diff.DIFF_CAP_CHARS, [], scope=scope)[0]
             cap = f"past the {change.BLOCK_CAP_CHARS:,} characters the guidelines read in all. "
             return {f["path"]: f["unread"].removeprefix(cap) for f in files if f["unread"]}
 
         found = why(["src/a.py", "tests/unit/b.py"])
-        assert found == {"tests/unit/b.py": "Review its folder alone with --path tests"}, found
+        assert found == {"tests/unit/b.py": "Review it in a smaller run with --path tests"}, found
         found = why(["tests/a/x.py", "tests/b/y.py"], scope=("tests",))
-        assert found == {"tests/b/y.py": "Review its folder alone with --path tests/b"}, found
-        for paths in (["src/a.py", "src/b.py"], ["a.py", "b.py"], ["src/a.py", "my tests/b.py"]):
+        assert found == {"tests/b/y.py": "Review it in a smaller run with --path tests/b"}, found
+        # The planned run's own `--path`, which fits, a file where its folder does not: read by review, a folder
+        # guessed from the paths alone, `--path src`, held both files and was past the block again.
+        assert why(["src/a.py", "src/b.py"]) == {"src/b.py": "Review it in a smaller run with --path src/b.py"}
+        assert why(["a.py", "b.py"]) == {"b.py": "Review it in a smaller run with --path b.py"}
+        for paths in (["a/x.py", "my tests/b.py"], ["-a/x.py", "-cfg/b.py"]):  # quoting, or read as a flag
             (said,) = why(paths).values()
             assert said == "--path narrows a review", (paths, said)
 

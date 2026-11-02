@@ -12,6 +12,7 @@ secret shapes themselves live in `core/secrets.py`, shared with the rule.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import math
@@ -79,26 +80,28 @@ def _wait_of(error: Exception) -> str | None:
     429 said only "Sorry, you've exceeded your rate limit". Measured offline, LiteLLM keeps the provider's headers on
     its error as `litellm_response_headers`, and its `response` holds none. Gemini names its wait in its own words."""
     headers = {name.lower(): value.strip() for name, value in _headers(error).items()}
-    now, seconds = time.time(), None
-    if after := headers.get("retry-after", ""):
-        try:
-            seconds = float(after)
-        except ValueError:
-            try:
-                seconds = parsedate_to_datetime(after).timestamp() - now
-            except (TypeError, ValueError, OverflowError):
-                seconds = None
-    if seconds is None:
-        for key in ("x-ratelimit-reset", "x-ratelimit-user-reset"):
-            if raw := headers.get(key, ""):
-                try:
-                    seconds = float(raw) - now
-                    break
-                except ValueError:
-                    pass
-    if seconds is None or not 0 < seconds <= WAIT_MAX_S:  # NaN, too, is no wait: every comparison with it is false
-        return None
-    return f"Try again after {_span(seconds)}, at {datetime.fromtimestamp(now + seconds):%H:%M}."
+    now = time.time()
+    for seconds in _waits(headers, now):
+        if 0 < seconds <= WAIT_MAX_S:  # NaN, too, is no wait: every comparison with it is false
+            return f"Try again after {_span(seconds)}, at {datetime.fromtimestamp(now + seconds):%H:%M}."
+    return None
+
+
+def _waits(headers: Mapping[str, str], now: float) -> list[float]:
+    """Each wait the headers name, in seconds from `now`: `retry-after`, a number or an HTTP date, then a reset's
+    second. One that reads as neither is left out, and the caller passes over one past use: read by review, a
+    `retry-after` of 0 hid the reset header beside it."""
+    waits: list[float] = []
+    after = headers.get("retry-after", "")
+    with contextlib.suppress(ValueError):
+        waits.append(float(after))
+    if after and not waits:
+        with contextlib.suppress(TypeError, ValueError, OverflowError):
+            waits.append(parsedate_to_datetime(after).timestamp() - now)
+    for key in ("x-ratelimit-reset", "x-ratelimit-user-reset"):
+        with contextlib.suppress(ValueError):
+            waits.append(float(headers.get(key, "")) - now)
+    return waits
 
 
 def _headers(error: Exception) -> Mapping[str, str]:

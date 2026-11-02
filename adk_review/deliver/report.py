@@ -349,7 +349,7 @@ def _items(
     lines = []
     for number, (lead, *also) in enumerate(groups, start):
         f = lead.finding
-        label = _quote_label(f, upper=False)
+        label = _quote_label(f).lower()
         lines += [
             f"{number}. {prose(f.title)} ({_where(f)}), {f.severity}{_bar(f, fail_on)}",
             *(_quoted_lines(f, label) if _serious(f) else [f"   - {label}: {_quoted(f)}"]),
@@ -743,15 +743,18 @@ def _quoted(f: Finding, limit: int = EVIDENCE_MAX_CHARS) -> str:
     return code_span(cut_at(one_line(f.evidence), limit))
 
 
-def _quote_label(f: Finding, upper: bool = True) -> str:
-    """The label for a finding's evidence: Quoted when placed at a line, or Linter rules for rolled-up diagnostics
-    without a line, from each rule that reads ruff or pyrefly. Read by review: `pitfalls` and `simplify` were left
-    out, and their codes read as Evidence."""
+#: The rules that read ruff or pyrefly, by the prefix of their findings' titles: a roll-up of theirs, with no line,
+#: names linter rules. Read by review: `pitfalls` and `simplify` were left out, and their codes read as Evidence; the
+#: catalog test holds every rule naming a tool to this list.
+TOOL_TITLES = ("lint:", "pitfalls:", "simplify:", "types:", "radius-types:")
+
+
+def _quote_label(f: Finding) -> str:
+    """The label for a finding's evidence: Quoted when placed at a line, Linter rules for a tool's roll-up with none,
+    else Evidence. The hand-off writes it in lower case."""
     if f.line is not None:
-        return "Quoted" if upper else "quoted"
-    if f.title.startswith(("lint:", "pitfalls:", "simplify:", "types:", "radius-types:")):
-        return "Linter rules" if upper else "linter rules"
-    return "Evidence" if upper else "evidence"
+        return "Quoted"
+    return "Linter rules" if f.title.startswith(TOOL_TITLES) else "Evidence"
 
 
 def _quoted_lines(f: Finding, label: str | None = None) -> list[str]:
@@ -759,7 +762,7 @@ def _quoted_lines(f: Finding, label: str | None = None) -> list[str]:
     item, each line as written with its indentation, a credential hidden in the whole before the lines are split, cut
     where every report cuts evidence. Read by review: 27 of 54 guideline quotes in a live run spanned lines, and the
     comment flattened each into one, its code's shape lost."""
-    label = label or _quote_label(f, upper=True)
+    label = label or _quote_label(f)
     quote = f.evidence.splitlines()
     while quote and not quote[-1].strip():
         quote.pop()
@@ -934,37 +937,33 @@ def _untracked(names: Sequence[str] | None) -> list[str]:
 
 def told_in_parts(evidence: Evidence, profile: str, added: Sequence[str] = ()) -> list[str]:
     """Where the guidelines cannot read the change in one run: how many files they would leave unread, and each run
-    that reads them all as a command to copy, built from this review's repository, branches, checks and globs; [] where
-    the change fits. Asked by the owner: a branch of 58 files spent a whole review's calls, and left nine unread."""
-    left = sum(1 for f in evidence.get("files", ()) if "past the " in f.get("unread", ""))
-    parts = evidence.get("parts") or ()
-    if not parts:
-        if not left:
-            return []
-        lines = [
-            f"Too large for the guidelines in one run: {left} file(s) would go unread, but cannot be partitioned into "
-            "parts.",
-            "A single file exceeds the guideline block cap. Review with rules-only, exclude it with --skip, or lower "
-            "with --diff-cap.",
+    that reads them all as a command to copy, built from this review's repository, branches, checks and globs as
+    `_check_again` builds its own; [] where the change fits. Asked by the owner: a branch of 58 files spent a whole
+    review's calls, and left nine unread. Read by review: the count was read back from a sentence's wording, and one
+    name no shell keeps as one word left each run its paths alone."""
+    if not (left := evidence.get("left_out", 0)):
+        return []
+    if not (parts := evidence.get("parts") or ()):  # one file's diff past the block alone, under a raised --diff-cap
+        return [
+            f"Too large for the guidelines in one run: {left} file(s) would go unread, and no plan of runs fits.",
+            "One file's diff is past the block alone. Lower --diff-cap, skip it with --skip, or use --profile "
+            "rules-only.",
         ]
-        return [inert(line) for line in lines]
     pre = evidence["preflight"]
-    head = [] if pre.get("staged") else ["--head", pre["head"]]
-    pinned = ["--staged"] if pre.get("staged") else ["--all"] if evidence["whole"] else ["--base", pre["base"]]
-    checks = (
-        [arg for check in profile.removeprefix("--check ").split() for arg in ("--check", check)]
-        if profile.startswith("--check ")
-        else ["--profile", profile]
-    )
+    head = [] if pre.get("staged") else [("--head", pre["head"])]
+    pinned = [("--staged",)] if pre.get("staged") else [("--all",)] if evidence["whole"] else [("--base", pre["base"])]
+    named = profile.removeprefix("--check ").split() if profile.startswith("--check ") else []
+    checks = [("--check", check) for check in named] or [("--profile", profile)]
+    command = _pasted(["adk-review", pre["repo"]]) or "adk-review <the repository>"
     lines = [
         f"Too large for the guidelines in one run: {left} file(s) would go unread. Review it in {len(parts)} parts, "
         "one run each:",
         "",
     ]
     for run in parts:
-        paths = [arg for value in run for arg in ((f"--path={value}",) if value[:1] == "-" else ("--path", value))]
-        command = _pasted(["adk-review", pre["repo"], *head, *pinned, *checks, *added, *paths])
-        lines.append(f"    {command}" if command else "    " + " ".join(code_span(one_line(value)) for value in run))
+        units = [*head, *pinned, *checks, *((glob,) for glob in added), *((f"--path={value}",) for value in run)]
+        shown, also = _shown(units)
+        lines += [f"    {command} {shown}", *(f"    {sentence}" for sentence in also)]
     return [inert(line) for line in [*lines, "", "Give each run any other flag this review had."]]
 
 
