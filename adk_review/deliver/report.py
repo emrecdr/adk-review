@@ -11,7 +11,7 @@ import re
 import shlex
 import textwrap
 from collections import Counter
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path, PurePath
 from typing import Any
 
@@ -303,9 +303,14 @@ def _unchecked(outcome: Outcome, fail_on: str) -> list[str]:
     first, since a long list is cut where it ends. Read by review: a review degraded by an unproven blocker listed
     nothing in either, and 3,000 unread files once pushed a guideline that failed out of the comment."""
     unchecked = [f"- {code_span(check)} could not look: {_reason(why)}" for check, why in outcome.errors.items()]
+    removed = {id(item) for item in outcome.done}  # read by review: "could not prove" gave no reason to check
     unchecked += [
-        f"- {code_span(item.source)} at {_spot(item.finding)}: {prose(item.finding.title)}, a finding at the bar this "
-        "review could not prove"
+        f"- {code_span(item.source)} at {_spot(item.finding)}: {prose(item.finding.title)}, "
+        + (
+            "removed: its suggested code is already in the branch. Check it by hand"
+            if id(item) in removed
+            else "a finding at the bar this review could not prove"
+        )
         for item in outcome.unproven(fail_on)
     ]
     return unchecked + [f"- {code_span(one_line(path))}: {_reason(why)}" for path, why in outcome.unread.items()]
@@ -485,6 +490,11 @@ def render_comment(
         lines.append(MAJORS_BELOW_BAR.format(found=found, n=majors, s="" if majors == 1 else "s"))
     elif verdict == "APPROVED" and (worth or tidy):
         lines.append("The points below would still improve it.")
+    if removed := len(outcome.done):  # read by review: one removed wrongly was gone from the comment without a word
+        lines.append(
+            f"The review removed {removed} finding{'s' * (removed != 1)} whose suggested code is already in the "
+            "branch. The report lists them."
+        )
     if _quotes_a_deleted_line(outcome):
         lines.append(DELETED_QUOTED)
     lanes: list[tuple[list[str], list[list[str]]]] = []  # each section's heading, and its points
@@ -570,7 +580,8 @@ def _since_last(
     new = sum(_since(identity, previous) == "new" for identity in identities)
     fixed = _resolved(outcome, identities, verdict, previous, checks, scope, exclude)
     done = "" if fixed is None else f"{len(fixed)} fixed, "
-    said = f"Since the last review: {done}{new} new, {len(identities) - new} still open."
+    removed = f", {len(outcome.done)} removed" if outcome.done else ""  # read by review: else in no count
+    said = f"Since the last review: {done}{new} new, {len(identities) - new} still open{removed}."
     return said + (
         " Fixed points are not counted, since the review could not check all of it." if fixed is None else ""
     )
@@ -936,19 +947,29 @@ def reviewed_where(evidence: Evidence) -> list[str]:
     lines = [f"- Repository: {code_span(one_line(PurePath(pre['repo']).name))}"] if pre.get("repo") else []
     if evidence.get("whole"):
         lines.append("- Against: nothing: every file at the head")
+    elif pre.get("staged"):  # its merge base is HEAD itself, or git's empty tree with no commit yet: no merge base
+        lines.append(f"- Against: {code_span(one_line(pre.get('base') or 'HEAD'))}")
     elif pre.get("base") and pre.get("merge_base"):
         lines.append(f"- Against: {code_span(one_line(pre['base']))}, merge base `{pre['merge_base'][:12]}`")
     if "scope" in evidence:
-        scope, exclude = evidence["scope"], evidence.get("exclude", ())
-        unmatched = set(evidence.get("unmatched", ()))
-        nothing = " (no changed file lies there: check its spelling and case)"
-        covered = ", ".join(code_span(one_line(folder)) for folder in scope) or "the whole change"
-        if exclude:
-            covered += ", less " + ", ".join(code_span(one_line(x)) + nothing * (x in unmatched) for x in exclude)
-        if outside := evidence.get("outside", 0):
-            covered += f": {outside} changed file(s) outside it, not reviewed"
-        lines.append(f"- Scope: {covered}")
+        covered, left = _covered(evidence, lambda name: code_span(one_line(name)))
+        lines.append(f"- Scope: {covered}" + (f": {left}" if evidence.get("outside") else ""))
     return lines
+
+
+def _covered(evidence: Evidence, name: Callable[[str], str]) -> tuple[str, str]:
+    """What a review covers, its folders and what it left out, each spelled by `name`, and how many files lie outside
+    it, changed ones or, under `--all`, the head's: the report's header and the comment's scope line, read from one
+    place. Read by review: copied, they already differed. A misspelt or wrongly cased exclusion, which left everything
+    in, says so."""
+    scope, exclude = evidence.get("scope", ()), evidence.get("exclude", ())
+    unmatched = set(evidence.get("unmatched", ()))
+    nothing = " (no changed file lies there: check its spelling and case)"
+    covered = ", ".join(name(folder) for folder in scope) or "the whole change"
+    if exclude:
+        covered += ", less " + ", ".join(name(path) + nothing * (path in unmatched) for path in exclude)
+    kind = "file(s)" if evidence.get("whole") else "changed file(s)"
+    return covered, f"{evidence.get('outside', 0)} {kind} outside it, not reviewed"
 
 
 def what(evidence: Evidence) -> str:
@@ -963,20 +984,15 @@ def header(evidence: Evidence, *, model: str, profile: str, off: Sequence[str], 
     that serve it, what it covers, and what no one could read."""
     pre, files, scope = evidence["preflight"], evidence["files"], evidence["scope"]
     if evidence["whole"]:  # no base: every file at the head, each read as added
-        against, listed, kind = ["- against      nothing: every file, as if added"], "files", "file(s)"
+        against, listed = ["- against      nothing: every file, as if added"], "files"
     else:
         against = [
             f"- against      {_as_resolved(pre['base'], pre.get('base_ref', ''))} @ {pre['base_sha'][:9]}",
             f"- merge-base   {pre['merge_base'][:9]}",
         ]
-        listed, kind = "changed", "changed file(s)"
-    left = f"{evidence['outside']} {kind} outside it, not reviewed"
+        listed = "changed"
+    covered, left = _covered(evidence, lambda name: name)  # the file(s) outside it, by `--all` or not
     exclude = evidence.get("exclude", ())
-    covered = ", ".join(scope) or "the whole change"
-    # Read by review: a misspelt or wrongly cased exclusion left everything in, and the header named it as left out.
-    unmatched = set(evidence.get("unmatched", ()))
-    nothing = " (no changed file lies there: check its spelling and case)"
-    covered += f", less {', '.join(x + nothing * (x in unmatched) for x in exclude)}" if exclude else ""
     return [
         f"- repository   {pre['repo']}",
         f"- branch       {_as_resolved(pre['head'], pre.get('head_ref', ''))} @ {pre['head_sha'][:9]}",
@@ -1211,8 +1227,8 @@ def _resolved(
     if previous is None or verdict == "DEGRADED":
         return None
     # A finding already in a touched file is still found: listed apart, it is never fixed by being so. Nor is one the
-    # review removed, its suggested code already in the branch: a guideline still found it.
-    held = [*(f for f, _ in outcome.folded), *outcome.old, *outcome.done]
+    # review removed, its suggested code already in the branch, nor one a verifier refuted: a guideline still found it.
+    held = [*(f for f, _ in outcome.folded), *outcome.old, *outcome.done, *(item for item, _why in outcome.refuted)]
     found_now = {*identities, *(fingerprint(item) for item in held)}
     return [
         found

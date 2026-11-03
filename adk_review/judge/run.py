@@ -25,7 +25,6 @@ from ..core.evidence import Entry, entry
 from ..core.findings import Checked, Review
 from ..core.profiles import guideline_id, state_key
 from ..core.rules import AnyRule
-from ..core.text import TITLE_MAX_CHARS, cut_at
 from ..core.verdict import Outcome, Sourced, already_done, decide, drop_ungrounded, fold, from_rules, not_read
 from .agents import FINDINGS, IGNORED, QUOTABLE, for_the_verdict, read_back, unjudged
 from .checks import NAME as CHECKS
@@ -104,18 +103,13 @@ def read_guidelines(run: Run, files: list[Entry], guidelines: Sequence[str], hol
         if isinstance(answer, str):
             outcome.errors[check] = answer
             continue
-        # Each finding names its check, as a rule's does: read by review, a comment named none, and its reader could not
-        # tell which guideline wrote what. Cut again, as a rule's is cut with its name: the model's own was cut alone.
-        # The fingerprint reads no title, so `--previous` still matches.
+        # Each finding names its check, as a rule's does; the fingerprint reads no title, so `--previous` still matches.
         name = check.removeprefix(guideline_id(""))
-        titled = [
-            f.model_copy(update={"title": cut_at(f"{name}: {f.title}", TITLE_MAX_CHARS)}) for f in answer.findings
-        ]
-        named = answer.model_copy(update={"findings": titled})
+        named = answer.model_copy(update={"findings": [f.by(name) for f in answer.findings]})
         kept, dropped = drop_ungrounded(named, quotable, framing)
         for f, lines, deleted in kept:
             item = Sourced(check, f, lines, deleted)
-            done = already_done(f, deleted, quotable.get(f.file, []), framing.get(f.file, ()))
+            done = already_done(f, lines, deleted, quotable.get(f.file, []), framing.get(f.file, ()))
             (outcome.done if done else outcome.kept).append(item)
         outcome.dropped += [Sourced(check, f) for f in dropped]
     return outcome

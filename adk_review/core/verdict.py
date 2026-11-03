@@ -7,6 +7,7 @@ what was removed and why. Nothing here calls a model or a process.
 from __future__ import annotations
 
 import re
+import textwrap
 import unicodedata
 from bisect import bisect_left, bisect_right
 from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
@@ -258,22 +259,68 @@ def drop_ungrounded(
 
 
 def already_done(
-    finding: Finding, deleted: bool, hunks: list[list[tuple[int, str]]], around: Sequence[str] = ()
+    finding: Finding, lines: Lines, deleted: bool, hunks: list[list[tuple[int, str]]], around: Sequence[str] = ()
 ) -> bool:
-    """Whether a grounded finding asks for code the branch already holds: its quote holds a line the change deleted,
-    and the code it suggests stands whole, in the hunk the quote sits in, as the branch reads that hunk. Read by review
-    on a branch that removed a parameter at every use: six majors quoted the deleted lines as code the branch still
-    held, and each suggested the code the branch already had. A finding that restores what the change deleted
-    suggests lines the branch lacks, and stays."""
-    if not (deleted and any(ch.isalnum() for ch in finding.code)):
+    """Whether a grounded finding asks for no change: its quote holds lines the change deleted, and the code it suggests
+    is what replaced them, as the branch holds it. In the hunk grounding chose alone; line by line, the indent kept
+    within the code; and over the spot of one quoted deleted block, the lines that replaced it or, where none did, the
+    lines either side of the gap. Read by review on a branch that removed a parameter at every use: six majors read the
+    deleted lines as held code and suggested the code the branch already had. Read by review again: a first rule, the
+    code anywhere in the hunk with every space gone, removed real bugs, a write moved out of its `with`, a check deleted
+    from one branch and kept in another, and one standing in another hunk."""
+    if not (deleted and lines and any(ch.isalnum() for ch in finding.code)):
         return False
-    for hunk in hunks:
-        if _placed(finding, [hunk], around) is None:
-            continue
-        held = seen_lines("\n".join(raw for _number, raw in hunk if raw[:1] in "+ "))
-        if any(next(_whole_lines(code, held), None) is not None for code in _quotes(finding.code, ())):
+    hunk = next((hunk for hunk in hunks if (_placed(finding, [hunk], around) or (None,))[0] == lines), None)
+    if hunk is None:
+        return False
+    raws = [raw for _number, raw in hunk]
+    quoted = {"".join(line[1:].split()) for line in finding.evidence.splitlines() if line.startswith("-")}
+    held = [at for at, raw in enumerate(raws) if raw[:1] in "+ " and raw[1:].strip()]  # the branch's lines, no blank
+    wanted = [line.rstrip() for line in textwrap.dedent(_unfenced(finding.code)).splitlines() if line.strip()]
+    spots = _spots(raws, quoted, held)
+    for start in range(len(held) - len(wanted) + 1):
+        run = held[start : start + len(wanted)]
+        seen = [line.rstrip() for line in textwrap.dedent("\n".join(raws[at][1:] for at in run)).splitlines()]
+        if seen == wanted and any(spot <= set(run) for spot in spots):
             return True
     return False
+
+
+def _unfenced(code: str) -> str:
+    """`code` without a fence of the model's own at either end."""
+    lines = code.splitlines()
+    while lines and lines[0].lstrip().startswith("```"):
+        lines = lines[1:]
+    while lines and lines[-1].lstrip().startswith("```"):
+        lines = lines[:-1]
+    return "\n".join(lines)
+
+
+def _spots(raws: Sequence[str], quoted: set[str], held: Sequence[int]) -> list[set[int]]:
+    """Where each quoted block of deleted lines stands on the branch's side of the hunk: the added lines right after
+    it, which replaced it, or, where none did, the branch's lines either side of the gap; none where the gap has no
+    line on one side, so a deletion at a hunk's edge is never read as replaced."""
+    spots: list[set[int]] = []
+    at = 0
+    while at < len(raws):
+        if not (raws[at][:1] == "-" and "".join(raws[at][1:].split()) in quoted):
+            at += 1
+            continue
+        end = at
+        while end < len(raws) and raws[end][:1] == "-":
+            end += 1
+        added = end
+        while added < len(raws) and raws[added][:1] == "+":
+            added += 1
+        if added > end:
+            spots.append({line for line in range(end, added) if line in held})
+        else:
+            before = [line for line in held if line < at]
+            after = [line for line in held if line >= end]
+            if before and after:
+                spots.append({before[-1], after[0]})
+        at = added
+    return [spot for spot in spots if spot]
 
 
 def _meant(path: str, quotable: dict[str, list[list[tuple[int, str]]]]) -> str:

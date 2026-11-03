@@ -1224,18 +1224,61 @@ class TestThePreviousReportAndTheHandoff:
         everything = {**whole, "whole": True}
         said = render_comment(everything, Outcome(), verdict="APPROVED", fail_on="blocker")
         assert "- Against: nothing: every file at the head" in said, said
+        # Read by review: under `--all` every file at the head is counted, not the changed ones, as the report says.
+        some = render_comment(
+            {**everything, "scope": ["src"], "outside": 12}, Outcome(), verdict="APPROVED", fail_on="blocker"
+        )
+        assert "- Scope: `src`: 12 file(s) outside it, not reviewed" in some, some
+        # And under `--staged` the merge base is HEAD itself, or git's empty tree in a repository with no commit.
+        staged = {
+            **whole,
+            "preflight": {**pre, "base": "HEAD", "staged": True, "merge_base": "4b825dc642cb" + "0" * 28},
+        }
+        said = render_comment(staged, Outcome(), verdict="APPROVED", fail_on="blocker")
+        assert "- Against: `HEAD`\n" in said and "merge base" not in said, said
 
     def test_a_finding_the_review_removed_is_never_read_as_resolved(self) -> None:
         """Read by review: a finding the review removed, its suggested code already in the branch, was no fingerprint
         found now, so `--previous` named it resolved, as if a commit had fixed it. A guideline still found it."""
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Outcome, Sourced
-        from adk_review.deliver.report import _resolved, fingerprint
+        from adk_review.deliver.report import _resolved, fingerprint, render_comment
 
         found = Finding(file="a.py", line=2, severity="major", title="t", evidence="-x = 1", suggestion="s", code="y")
         item = Sourced("guideline.correctness", found, (2, 2), deleted=True)
         previous = {fingerprint(item): {"check": "guideline.correctness", "file": "a.py", "title": "t"}}
         assert _resolved(Outcome(done=[item]), [], "APPROVED", previous, ["guideline.correctness"], []) == []
+        # Read by review: nor is one a verifier refuted, which a guideline still found.
+        refuted = Outcome(refuted=[(item, "no")], verified=True)
+        assert _resolved(refuted, [], "APPROVED", previous, ["guideline.correctness"], []) == []
+        # And the comment's count says what was removed, so it adds up: before, a removed point was in no count.
+        said = render_comment(
+            {"preflight": {"head": "h", "head_sha": "0" * 40}, "scope": []},
+            Outcome(done=[item]),
+            verdict="APPROVED",
+            fail_on="blocker",
+            previous=previous,
+            checks=["guideline.correctness"],
+        )
+        assert "Since the last review: 0 fixed, 0 new, 0 still open, 1 removed" in said, said
+
+    def test_a_comment_says_what_the_review_removed_and_why(self) -> None:
+        """Read by review: a finding the review removed as already done below the bar was in no comment, so one removed
+        wrongly was gone without a word; and one at the bar was "a finding this review could not prove", no reason
+        given. The comment counts them, and names one at the bar with why, for a person to check."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import render_comment
+
+        def at(severity: str) -> Sourced:
+            found = Finding(file="a.py", line=2, severity=severity, title="t", evidence="-x", suggestion="s", code="y")
+            return Sourced("guideline.correctness", found, (2, 2), deleted=True)
+
+        evidence = {"preflight": {"head": "h", "head_sha": "0" * 40}}
+        said = render_comment(evidence, Outcome(done=[at("major"), at("minor")]), verdict="APPROVED", fail_on="blocker")
+        assert "The review removed 2 findings whose suggested code is already in the branch." in said, said
+        said = render_comment(evidence, Outcome(done=[at("blocker")]), verdict="DEGRADED", fail_on="blocker")
+        assert "removed: its suggested code is already in the branch. Check it by hand" in said, said
 
     def test_an_approving_hand_off_counts_the_major_issues_below_its_bar_too(self) -> None:
         """Asked by the owner: the hand-off says what the comment says, so an agent fixes the majors first."""

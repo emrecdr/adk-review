@@ -48,6 +48,11 @@ class Finding(BaseModel):
         so a long one is cut, never refused as a reply that does not fit."""
         return cut_at(title, TITLE_MAX_CHARS)
 
+    def by(self, check: str) -> Finding:
+        """This finding titled by the check that made it, `name: title`, as a rule's is, and cut as a model's title
+        is: read by review, a guideline's finding named no check, and a name added after the cut ran past it."""
+        return self.model_copy(update={"title": cut_at(f"{check}: {self.title}", TITLE_MAX_CHARS)})
+
     @field_validator("suggestion")
     @classmethod
     def _suggestion_cut(cls, suggestion: str) -> str:

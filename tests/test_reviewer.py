@@ -917,6 +917,61 @@ def test_the_tests_lane_is_asked_what_the_change_leaves_untested() -> None:
     assert "tested at all" in Tests.role and "tests are honest" in Tests.role, Tests.role
 
 
+class TestWhatIsAlreadyDone:
+    """A guideline's finding asks for no change where the code it suggests is what replaced the deleted lines it
+    quotes. Read by review: six majors on a branch that removed a parameter at every use read its deleted lines as held
+    code. Read by review again: a first rule, the code anywhere in the hunk with every space gone, removed real bugs:
+    a write moved out of its `with`, a check deleted from one branch and kept in another, and one in another hunk."""
+
+    @staticmethod
+    def removed(hunks: list[str], evidence: str, code: str) -> bool:
+        """Whether the finding is removed, grounded as the review grounds it, the first hunk its file's."""
+        from adk_review.core.findings import Finding, Review
+        from adk_review.core.verdict import already_done, drop_ungrounded
+
+        quotable = {"a.py": [list(enumerate(hunk.split("\n"), 1)) for hunk in hunks]}
+        finding = Finding(file="a.py", severity="major", title="t", evidence=evidence, suggestion="s", code=code)
+        (kept, lines, deleted), *_ = drop_ungrounded(Review(findings=[finding]), quotable, {"a.py": ()})[0]
+        return already_done(kept, lines, deleted, quotable["a.py"])
+
+    def test_a_fix_that_replaced_the_quoted_lines_asks_for_no_change(self) -> None:
+        replaced = "     cleaned = name.strip()\n-    return Validator(cleaned, correlation_id)\n"
+        replaced += "+    return Validator(cleaned)"
+        assert self.removed([replaced], "-    return Validator(cleaned, correlation_id)", "return Validator(cleaned)")
+        call = "     return validator_cls(\n         logger=self._logger,\n         trace_id=self._trace_id,\n"
+        call += "-        correlation_id=self._correlation_id,\n         model_code=self._model_code,\n     )"
+        quote = "-        correlation_id=self._correlation_id,\n        model_code=self._model_code,\n    )"
+        code = "return validator_cls(\n    logger=self._logger,\n    trace_id=self._trace_id,\n"
+        code += "    model_code=self._model_code,\n)"
+        assert self.removed([call], quote, code), "the lines around a pure deletion, as the branch holds them"
+
+    def test_a_real_bug_stays(self) -> None:
+        moved = "     with open(path) as fh:\n-        fh.write(data)\n+    fh.write(data)\n     return path"
+        assert not self.removed(
+            [moved], "-        fh.write(data)\n+    fh.write(data)", "with open(path) as fh:\n    fh.write(data)"
+        )
+        branch = (
+            "     if req.admin:\n-        check_auth(req)\n         grant(req)\n     else:\n         check_auth(req)"
+        )
+        assert not self.removed([branch], "-        check_auth(req)\n        grant(req)", "check_auth(req)")
+        save = " def save(db):\n     db.add(1)\n-    db.commit()\n     return 1"
+        assert not self.removed(
+            [save, " def load(db):\n     db.commit()\n     return 2"], "-    db.commit()", "db.commit()"
+        )
+        guard = " def pay(user, amount):\n-    check_auth(user)\n     charge(user, amount)\n+    check_auth(user)"
+        assert not self.removed([guard], "-    check_auth(user)", "check_auth(user)"), "a guard moved after its call"
+        split = "-    compute(\n-        a,\n-        b,\n-    )\n+    compute(a, b)"
+        assert not self.removed(
+            [split], "-    compute(\n-        a,\n-        b,\n-    )", "compute(\n    a,\n    b,\n)"
+        )
+        kept = "         self._trace_id = trace_id\n-        self._correlation_id = correlation_id\n"
+        kept += "         self._model_code = 1"
+        restore = "self._trace_id = trace_id\nself._correlation_id = correlation_id"
+        assert not self.removed([kept], "-        self._correlation_id = correlation_id", restore), (
+            "it restores the line"
+        )
+
+
 class TestWhatTheLanesRead:
     """The change is fenced as data, and told to be. Measured before: a context line of three backticks, a markdown
     file's own fence, closed the fence of three the change was written in, so the text after it read as the prompt's;
