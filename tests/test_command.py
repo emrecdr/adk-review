@@ -264,7 +264,9 @@ class TestWhatAReviewCovers:
         assert run_review(cli, demo_repo, "--dry-run") == 0
         out = capsys.readouterr().out
         assert "Too large for the guidelines in one run: 3 file(s) would go unread. Review it in 4 parts" in out, out
-        commands = [line.strip() for line in out.splitlines() if line.strip().startswith("adk-review ")]
+        # Without the double quotes Windows gives a word holding `=`, as cmd and PowerShell both read one.
+        plain = out.replace('"', "")
+        commands = [line.strip() for line in plain.splitlines() if line.strip().startswith("adk-review ")]
         runs, rest = [c for c in commands if "--path=" in c], [c for c in commands if "--path=" not in c]
         assert len(runs) == 4 and all("--head feature/payments --base main" in run for run in runs), runs
         assert runs[0].endswith("--path=src/payments/charge.py"), runs
@@ -277,7 +279,8 @@ class TestWhatAReviewCovers:
         assert "this review's rules over the whole change" in out and "but no --path" in out, out
         assert "A --max-tokens ceiling holds for each run alone." in out, "read by review: eight parts, eight ceilings"
         assert run_review(cli, demo_repo, "--dry-run", "--path", "src/payments") == 0
-        scoped = [line.strip() for line in capsys.readouterr().out.splitlines() if "--profile default-rules" in line]
+        said = capsys.readouterr().out.replace('"', "")
+        scoped = [line.strip() for line in said.splitlines() if "--profile default-rules" in line]
         assert scoped and scoped[0].endswith("--path=src/payments"), "the review's own scope, not the whole branch"
         assert not any("--diff-cap" in run for run in runs), "the config's cap goes unsaid"
         # Read by review: the plan is made at this run's cap, and a run copied without it read past the block again.
