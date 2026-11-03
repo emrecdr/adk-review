@@ -173,16 +173,17 @@ S106 and S107 weigh a name alone, so `lint` passes over one whose string is no c
 `token = "("` and `token = "Bearer "` are no finding, `token: str = "Xk9mQ2vL8pR4"` is. The rules that run ruff, `lint`,
 `pitfalls` and `simplify`, read none of the project's ruff settings and honour no `noqa` comment, so that no branch can
 silence them: a finding there can be one the project's own ruff configuration, or its author's `noqa` with a reason,
-already accepts. Read the line before you ask for a change. Their findings on lines the change did not add are counted
-in one finding a file. It names each code with ruff's name for it, and the command that shows them as the review saw
-them. In a Databricks notebook, a file whose first line is `# Databricks notebook source`, `lint` does not call `spark`,
-`dbutils`, `display`, `displayHTML`, `sql` or `udf` undefined: Databricks defines the six in every notebook it runs. Any
-other undefined name there, and those six in any other file, are still reported. `types` runs pyrefly on each changed
-Python file alone, a name it imports from beyond itself read as `Any`, and keeps what it finds on the lines the change
-added: a call missing an argument or given too many by position, a major, and a missing attribute, a value of the wrong
-type passed or returned, or one an operation cannot take, added, compared, indexed or iterated, a minor. No branch's
-ignore comment silences it, though `@no_type_check` on a function does. It is in no default profile: name it with
-`--check rule.types`, or run `rules-only` or `full`.
+already accepts. Read the line before you ask for a change. Their findings on lines the change did not touch, already in
+the file, are counted in one finding a file, which says so. It names each code with ruff's name for it and the lines it
+is on, and the command that shows them as the review saw them. In a Databricks notebook, a file whose first line is `#
+Databricks notebook source`, `lint` does not call `spark`, `dbutils`, `display`, `displayHTML`, `sql` or `udf`
+undefined: Databricks defines the six in every notebook it runs. Any other undefined name there, and those six in any
+other file, are still reported. `types` runs pyrefly on each changed Python file alone, a name it imports from beyond
+itself read as `Any`, and keeps what it finds on the lines the change added: a call missing an argument or given too
+many by position, a major, and a missing attribute, a value of the wrong type passed or returned, or one an operation
+cannot take, added, compared, indexed or iterated, a minor. No branch's ignore comment silences it, though
+`@no_type_check` on a function does. It is in no default profile: name it with `--check rule.types`, or run `rules-only`
+or `full`.
 
 ## Configuration
 

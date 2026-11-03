@@ -69,8 +69,10 @@ def listed(
     # so the verdict reads the same. Measured over this repository's 22 commits: 2,101 of lint's 2,435 findings,
     # 86.3%, sat on lines the commit did not add, and listed one by one they buried the change's own.
     aside = [(found, severity) for found, severity in rated if found.line not in file.added]
-    if aside:
-        tail.append(_counted(file.path, aside, f"{len(aside)} of ruff's findings on lines the change did not add"))
+    if aside:  # asked by the owner: "on lines the change did not add" read as a defect of the change
+        one = len(aside) == 1
+        title = f"{len(aside)} ruff finding{'' if one else 's'} already in this file, on {'a line' if one else 'lines'}"
+        tail.append(_counted(file.path, aside, f"{title} this change did not touch", why=BEFORE_THIS_CHANGE))
         rated = [(found, severity) for found, severity in rated if found.line in file.added]
     if len(rated) > PER_FILE:
         ranked = sorted(range(len(rated)), key=lambda at: -RANK[rated[at][1]])  # stable: by line
@@ -107,7 +109,27 @@ def _slug(diag: Diagnostic) -> str | None:
 _RULE_CODE = re.compile(r"[A-Z]+[0-9]+")
 
 
-def _counted(path: str, rated: list[tuple[Diagnostic, Severity]], title: str) -> Hit:
+#: Why a roll-up of ruff's findings on lines the change did not touch is there: the change did not make them.
+BEFORE_THIS_CHANGE = (
+    "These lines were in the file before this change. A fix is welcome, but this change did not add them."
+)
+#: How many lines a roll-up names for one code before it counts the rest.
+LINES_NAMED = 5
+
+
+def _on_lines(numbers: list[int]) -> str:
+    """Where a code's findings are, as a reader finds them: `on line 12`, `on lines 3, 9 and 12`, at most `LINES_NAMED`
+    lines and the rest counted."""
+    lines = sorted(set(numbers))
+    if len(lines) == 1:
+        return f"on line {lines[0]}"
+    named, more = [str(n) for n in lines[:LINES_NAMED]], len(lines) - LINES_NAMED
+    if more > 0:
+        return f"on lines {', '.join(named)} and {more} more"
+    return f"on lines {', '.join(named[:-1])} and {named[-1]}"
+
+
+def _counted(path: str, rated: list[tuple[Diagnostic, Severity]], title: str, why: str = "") -> Hit:
     """`rated` as one finding at the file: how many of each code, with ruff's name for it, at the most severe of them,
     so no tier is lost and the verdict reads the same; and the command that shows them as the review ran ruff. Read by
     review: a bare `ruff check` read the project's own config and honoured its noqa, and said "All checks passed!" over
@@ -115,8 +137,10 @@ def _counted(path: str, rated: list[tuple[Diagnostic, Severity]], title: str) ->
     runs what double quotes hold, `$(…)` among it."""
     codes = Counter(found.code for found, _severity in rated)
     slugs = {found.code: _slug(found) for found, _severity in rated}
+    lines = {code: [found.line for found, _severity in rated if found.code == code] for code in codes}
     counted = ", ".join(
-        f"{code} ({slugs[code]}) x{n}" if slugs[code] else f"{code} x{n}" for code, n in codes.most_common()
+        f"{code}{f' ({slugs[code]})' if slugs[code] else ''} x{n} {_on_lines(lines[code])}"
+        for code, n in codes.most_common()
     )
     selected = ",".join(sorted(code for code in codes if _RULE_CODE.fullmatch(code)))
     command = "ruff check --isolated --ignore-noqa" + (f" --select {selected}" if selected else "")
@@ -127,4 +151,5 @@ def _counted(path: str, rated: list[tuple[Diagnostic, Severity]], title: str) ->
         title=title,
         severity=max((severity for _found, severity in rated), key=RANK.__getitem__),
         fix=f"Run `{command}` on the file to see each one.",
+        why=why,
     )

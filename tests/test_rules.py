@@ -901,11 +901,23 @@ class TestTheLintRule:
         assert [f.line for f in counted if f.line is not None] == [3]
         (aside,) = [f for f in counted if f.line is None]
         assert (
-            aside.title == "lint: 2 of ruff's findings on lines the change did not add"
-            and aside.evidence == "F401 (unused-import) x2"
+            aside.title == "lint: 2 ruff findings already in this file, on lines this change did not touch"
+            and aside.evidence == "F401 (unused-import) x2 on lines 1 and 2"
             and aside.suggestion
             == "Run `ruff check --isolated --ignore-noqa --select F401` on the file to see each one."
         ), "read by review: a bare `ruff check` reads the project's config and noqa, and showed none of them"
+        # Asked by the owner: "1 of ruff's findings on lines the change did not add" read as a defect of the change,
+        # and named no line. It says the lines were there before, and where they are.
+        before = "These lines were in the file before this change. A fix is welcome, but this change did not add them."
+        assert aside.why == before, aside.why
+
+    def test_a_roll_up_names_the_lines_of_each_code_and_counts_the_rest(self) -> None:
+        """Asked by the owner: a roll-up named no line, so a reader could not find what it counted."""
+        from adk_review.judge.rule_helpers.diagnostics import _on_lines
+
+        assert _on_lines([12]) == "on line 12"
+        assert _on_lines([9, 3, 12, 3]) == "on lines 3, 9 and 12", "in order, each once"
+        assert _on_lines(list(range(1, 9))) == "on lines 1, 2, 3, 4, 5 and 3 more"
 
     def test_a_roll_ups_command_names_only_ruffs_codes_and_never_the_branchs_path(self) -> None:
         """Read by review: the command selected `invalid-syntax`, which ruff refuses, exit 2; and a path in double
