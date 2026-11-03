@@ -885,7 +885,10 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   `core.autocrlf` is `input` too: with the person's config left out it read off, and `diff-tree` diffed a checked-out
   file its index called up to date in place of its blob, where no conversion applies, so a checkout Windows wrote with
   CRLF over blobs of LF read as changed in every line (35 of 35 modified files on one branch, one of them 248 lines
-  removed and 243 added where it changed 6 and 1); `input` writes no CRLF and makes git read the blob.
+  removed and 243 added where it changed 6 and 1); `input` writes no CRLF and makes git read the blob. A filter from
+  the person's own config, Git LFS's or git-crypt's, is left out the same way, and no setting stops that reading: a
+  review of commits diffs under an index no file holds, `NO_INDEX`, so git reads every blob. Read by review, a token on
+  disk alone, never in the commit, was reported with that branch checked out and not with another.
 - **Secrets are found by code.** Every model call is redacted, so no guideline ever sees a key: measured on Copilot with
   the redaction on, no guideline reported the planted one. A key must be found by code, from the diff itself, before any
   model runs: `secrets` reads the added lines of each file's whole diff, past any cap, and `named-secrets` weighs a

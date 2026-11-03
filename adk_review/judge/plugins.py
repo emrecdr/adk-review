@@ -86,8 +86,8 @@ WAIT_MAX_S = 7 * 24 * 60 * 60
 
 
 def _wait_of(error: Exception) -> str | None:
-    """When a rate limit clears, as a sentence: from `retry-after`, seconds or an HTTP date, or GitHub's
-    `x-ratelimit-reset`, the second it clears; None where the provider named no time to come. Asked by the owner: a
+    """When a rate limit clears, as a sentence: from `retry-after`, seconds or an HTTP date, or a reset header's
+    second, as `_waits` reads them; None where the provider named no time to come. Asked by the owner: a
     429 said only "Sorry, you've exceeded your rate limit". Measured offline, LiteLLM keeps the provider's headers on
     its error as `litellm_response_headers`, and its `response` holds none. Gemini names its wait in its own words."""
     headers = {name.lower(): value.strip() for name, value in _headers(error).items()}

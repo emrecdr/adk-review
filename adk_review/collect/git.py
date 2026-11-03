@@ -20,6 +20,8 @@ import re
 import shutil
 import string
 import subprocess
+import tempfile
+import uuid
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
@@ -86,6 +88,11 @@ _GLOB = re.compile(r"[*?[\\]")
 #: blob, where no conversion would apply; written with CRLF over blobs of LF, as Windows does, every line of it
 #: differed. Measured on a branch of 35 modified files: all 35, one of them 248 lines removed and 243 added where it
 #: changed 6 and 1. `input` writes no CRLF, and makes git read the blob, as the person's `true` does.
+#: An index no file holds, which a review of commits diffs under: git reads a checked-out file in place of its blob
+#: where the index calls it up to date and no conversion it knows would apply, and a filter defined in a person's own
+#: config, Git LFS's or git-crypt's, is one the review leaves out. Read by review: a token on disk alone, never in the
+#: commit, was reported with that branch checked out and not with another. A missing index git reads as empty.
+NO_INDEX = os.path.join(tempfile.gettempdir(), f"adk-review-no-index-{uuid.uuid4().hex}", "index")
 _SETTLED = {
     "core.precomposeUnicode": "false",
     "diff.suppressBlankEmpty": "false",
@@ -95,7 +102,7 @@ _SETTLED = {
 }
 
 
-def _environment(repo: str, settings: Mapping[str, str] | None = None) -> dict[str, str]:
+def _environment(repo: str, settings: Mapping[str, str] | None = None, index: str | None = None) -> dict[str, str]:
     """git's environment for a review: the caller's with every `GIT_*` variable left out, as git's own test suite
     leaves them out, and then only what a review needs: no config but the repository's own and what is fixed here,
     no attributes but the repository's, nothing fetched (a partial clone would fetch what it lacks, into the
@@ -114,16 +121,18 @@ def _environment(repo: str, settings: Mapping[str, str] | None = None) -> dict[s
     commits reads an index at all. Measured before, the hook read the index as it was before the commit.
     """
     env = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
-    if index := os.environ.get("GIT_INDEX_FILE"):
-        env["GIT_INDEX_FILE"] = os.path.abspath(index)
+    if inherited := os.environ.get("GIT_INDEX_FILE"):
+        env["GIT_INDEX_FILE"] = os.path.abspath(inherited)
+    if index:  # the call's own: `NO_INDEX`, for a review of commits
+        env["GIT_INDEX_FILE"] = index
     env |= {"LC_ALL": "C", "LANGUAGE": ""}
     env |= {"GIT_NO_LAZY_FETCH": "1", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_GRAFT_FILE": os.devnull}
     env |= {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_ATTR_NOSYSTEM": "1"}
     # A call's own `settings` first, so that none of them can move what is fixed for every call.
     settled = dict(settings or {}) | _SETTLED | {"safe.directory": Path(os.path.realpath(repo)).as_posix()}
     env["GIT_CONFIG_COUNT"] = str(len(settled))
-    for index, (key, value) in enumerate(settled.items()):
-        env[f"GIT_CONFIG_KEY_{index}"], env[f"GIT_CONFIG_VALUE_{index}"] = key, value
+    for at, (key, value) in enumerate(settled.items()):
+        env[f"GIT_CONFIG_KEY_{at}"], env[f"GIT_CONFIG_VALUE_{at}"] = key, value
     return env
 
 
@@ -169,6 +178,7 @@ def _git(
     strip: bool = True,
     ok: tuple[int, ...] = (0,),
     settings: Mapping[str, str] | None = None,
+    index: str | None = None,
 ) -> tuple[int, str]:
     """One read-only git command: an argv list, no shell, a timeout, no fetch, stdout captured, decoded as UTF-8.
 
@@ -177,9 +187,9 @@ def _git(
     code, and a failure read as an empty answer would read as nothing there. `ok` names the codes a caller
     reads as an answer: 1 is `rev-parse`'s for a ref that does not exist. `strip` is off for a file's content,
     where the line numbers must survive, and for a folder's path, whose name may end in a space. `settings` are the
-    call's own, set as the fixed ones are, through `_environment`.
+    call's own, set as the fixed ones are, through `_environment`, and so is `index`, the index it reads.
     """
-    done = _git_raw(repo, *args, ok=ok, settings=settings)
+    done = _git_raw(repo, *args, ok=ok, settings=settings, index=index)
     return done.returncode, _text(done.stdout, strip)
 
 
@@ -196,12 +206,13 @@ def _git_raw(
     stdin: bytes | None = None,
     ok: tuple[int, ...] = (0,),
     settings: Mapping[str, str] | None = None,
+    index: str | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     """`_git`'s call with its answer left as bytes, what a batch read counts its sizes in."""
     if (git := on_path("git")) == "git":  # not on PATH: Git for Windows can be installed for Git Bash alone
         raise GitError(f"git {_verb(args)} could not start: install git with its folder on PATH")
     try:
-        done = _run([git, "-C", repo, *args], _environment(repo, settings), stdin)
+        done = _run([git, "-C", repo, *args], _environment(repo, settings, index), stdin)
     except subprocess.TimeoutExpired:
         raise GitError(f"git {_verb(args)} did not answer within {GIT_TIMEOUT_S} s") from None
     except OSError as exc:  # found, and still could not start: no permission to run it, say
@@ -579,7 +590,9 @@ def diff_of(resolved: dict, path: str, old: str = "", *, functions: bool = False
     if resolved.get("staged"):  # the index's text, against the base, as the next commit would hold it
         _, diff = _git(repo, attrs, "diff-index", "--cached", "-p", *shown, base, "--", *paths, settings=settings)
     else:
-        _, diff = _git(repo, attrs, "diff-tree", "-r", "-p", *shown, base, head, "--", *paths, settings=settings)
+        _, diff = _git(
+            repo, attrs, "diff-tree", "-r", "-p", *shown, base, head, "--", *paths, settings=settings, index=NO_INDEX
+        )
     return unguessed(readable(diff))
 
 
@@ -596,7 +609,7 @@ def whole_diffs(resolved: dict, entries: list[dict[str, str]], scope: Sequence[s
     args = (f"--attr-source={base}", "diff-tree", "-r", "-p", *_PLAIN, base, head, *specs)
     # Every line of an added file opens with `+`, so a line opening with `diff --git ` is a file's header: a literal
     # split, where a pattern tested every line's start (measured: 45 ms against 5 on a 15 MB patch).
-    pieces = _git_raw(repo, *args).stdout.split(b"\ndiff --git ")  # the whole, freed once split
+    pieces = _git_raw(repo, *args, index=NO_INDEX).stdout.split(b"\ndiff --git ")  # the whole, freed once split
     first = [pieces[0]] if pieces[0].startswith(b"diff --git ") else []
     parts = first + [b"diff --git " + piece for piece in pieces[1:]]
     asked = {entry["path"] for entry in entries}

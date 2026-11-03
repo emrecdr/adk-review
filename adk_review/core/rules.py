@@ -32,7 +32,7 @@ from typing import Any, ClassVar
 from .blast import _module, bindings, index, is_test, parse, parsed
 from .evidence import Entry, unreleased
 from .findings import Checked, Finding, Severity
-from .paths import matches
+from .paths import _fold, matches
 from .profiles import rule_id
 from .secrets import CREDENTIAL_REACH, scrub
 from .text import EVIDENCE_MAX_CHARS, cut_at, lines_of
@@ -401,8 +401,9 @@ def _raised_at(rule: AnyRule, exc: BaseException) -> str:
 
 
 def _folded(path: str) -> str:
-    """`path` as a comparison of two spellings of one file reads it: in `/` form and case-folded."""
-    return PurePath(path).as_posix().casefold()
+    """`path` as a comparison of two spellings of one file reads it: in `/` form, as a file system blind to case and to
+    Unicode's forms reads it, macOS's among them."""
+    return _fold(PurePath(path).as_posix())
 
 
 def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:

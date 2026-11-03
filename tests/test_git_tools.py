@@ -124,6 +124,29 @@ class TestNoOnesSettings:
         _files, crlf = _listed_and_shown(repo, "change", "pay.py")
         assert crlf == lf, crlf
 
+    def test_a_checked_out_file_a_filter_rewrites_is_read_as_its_blob_holds_it(self, tmp_path: Path) -> None:
+        """Read by review: Git LFS and git-crypt define their filter in a person's own config, which the review leaves
+        out, so a checked-out file the index called up to date was diffed in place of its blob. A token the commit
+        never held, only the file on disk, was reported, exit 1, with that branch checked out and not with another. A
+        review of commits reads no index at all, so git reads each blob as the commit holds it."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        fake = ("-c", "filter.fake.clean=git hash-object --stdin", "-c", "filter.fake.smudge=cat")  # theirs alone
+        _git_in(repo, "init", "-q", "-b", BASE)
+        (repo / ".gitattributes").write_text("data.py filter=fake -text\n", encoding="utf-8", newline="\n")
+        (repo / "data.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
+        _git_in(repo, *fake, "add", ".")
+        _git_in(repo, *fake, "commit", "-qm", "base")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        (repo / "data.py").write_text('token = "on disk alone"\n', encoding="utf-8", newline="\n")
+        _git_in(repo, *fake, "commit", "-qam", "head")
+        old = time.time() - 60  # git trusts a file's stat data once it is older than its index
+        os.utime(repo / "data.py", (old, old))
+        _git_in(repo, *fake, "update-index", "--refresh")
+        blob = _git_in(repo, "show", "change:data.py")
+        _files, shown = _listed_and_shown(repo, "change", "data.py")
+        assert f"+{blob}" in shown.splitlines() and "on disk alone" not in shown, shown
+
     def test_a_variable_naming_another_repositorys_refs_is_never_inherited(
         self, tmp_path: Path, demo_repo: Path, monkeypatch
     ) -> None:
