@@ -4,9 +4,10 @@ Ruff runs with `--isolated` and the codes below, never the reviewed repository's
 be able to configure the rule that judges it, nor, with `--ignore-noqa`, silence it line by line. Running ruff is
 `collect/ruff.py`'s; what its diagnostics mean is this file's. The ruff installed beside the reviewer runs, else the
 one on `PATH`; without either, or with one that fails, the rule did not look, and says so: the run is degraded and the
-report names it, for the reason a failed guideline is named rather than empty. Each hit on a line the change added is
-listed, at most `PER_FILE` a file and the rest counted; those on the lines it did not add are counted too, one finding
-a file at the most severe of them, since ruff reads whole files and listed one by one they buried the change's own.
+report names it, for the reason a failed guideline is named rather than empty. Each hit the change caused, on a line
+it added or one it did not touch, is listed, at most `PER_FILE` a file and the rest counted; what the base held too on
+an untouched line is counted in one old finding a file, apart and never at the bar, since ruff reads whole files and
+listed one by one they buried the change's own.
 """
 
 from __future__ import annotations

@@ -106,16 +106,16 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   hold a file in it open; a file a script or a fixture commits is written with `newline="\n"`.
 - Every sentence the package prints itself — a stderr line, a flag's `--help`, an error it raises or answers, a rule's
   title, fix and why — is ASD-STE100: one command, at most 20 words, no `;` joining two (`tests/test_command.py`). The
-  guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged;
-  each guideline and verifier is told what a `-` and a `+` line are (`DIFF_MARKS`, `judge/agents.py`), since a model
-  read deleted lines as the code to fix, and a kept finding's evidence keeps the `-` of a deleted line, recorded from
-  the diff's own marks (`Sourced.deleted`), which the comment and the hand-off explain (`DELETED_QUOTED`,
-  `core/verdict.py`) and chat's verdict is shown as `(deleted)`. An
-  error a person can act on names what to do instead, a flag to drop or give, a path or a command, as the owner asked of
-  a tool that guides its user; argparse's own end by naming `--help`. An error's text ends bare, with no full stop,
-  since a caller may add a sentence after it; and the flags that rescope a change with nothing to compare are added by
-  the command, from a mark on the error envelope (`rescope`). A rule's `(path, text)` example names a file the shipped
-  `scan` reads (`tests/test_catalog.py`).
+  guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged; each
+  guideline and verifier is told what a `-` and a `+` line are (`DIFF_MARKS`, `judge/agents.py`), since a model read
+  deleted lines as the code to fix, and a kept finding's evidence keeps the `-` of a deleted line, recorded from the
+  diff's own marks (`Sourced.deleted`), which the comment and the hand-off explain (`DELETED_QUOTED`, `core/verdict.py`)
+  and chat's verdict is shown as `(deleted)`. An error a person can act on names what to do instead, a flag to drop or
+  give, a path or a command, as the owner asked of a tool that guides its user; argparse's own end by naming `--help`.
+  An error's text ends bare, with no full stop, since a caller may add a sentence after it; and the flags that rescope a
+  change with nothing to compare are added by the command, from a mark on the error envelope (`rescope`), and those that
+  narrow one to nothing from another (`narrowed`). A rule's `(path, text)` example names a file the shipped `scan` reads
+  (`tests/test_catalog.py`).
 
 ## Tests
 

@@ -488,8 +488,9 @@ class RequiredPaths(TreeRule):
    `file.near(n)` gives line `n` of any file, as far as its diff shows it, or None, for a rule that reads only what a
    change added and the lines around it, as `reviewer-instructions` does. `file.module` and `tree.module(path)` are the
    file as Python reads it, or a sentence saying why there is none. A `Hit` names its own title, severity or fix, where
-   one rule covers several problems, as `lint` does for ruff's codes. Anything else returned is a sentence naming what
-   the kind takes, and a rule that raises is named with the line of its own file that raised.
+   one rule covers several problems, as `lint` does for ruff's codes. `listed` marks `old` the roll-up of what the base
+   held too, which the verdict never reads; a rule sets it on no other hit. Anything else returned is a sentence naming
+   what the kind takes, and a rule that raises is named with the line of its own file that raised.
 3. Give it examples: `bad`, each of which it must flag, and `good`, each of which it must leave alone — a text, read at
    `example.py`; a `(path, text)` pair, for a rule that chooses its files; or `{path: text}`, several files at once. At
    every start the catalog holds every rule to its own examples, and a line or a file rule to firing on nothing in its
@@ -527,7 +528,7 @@ each in a module named after what it reads (`lines.py`, `syntax.py`, `diagnostic
 | `functions_in(code)`, `imports_in(code)`, `nodes_in(code, *kinds)`, `name_of(node)` | Every function; every imported name with its line; every node of a kind; a name as written, dotted |
 | `defined(module)`, `classes(module)`, `parameters(module, function)` | What a module defines; its classes and their parents; a function's parameters |
 | `try_rule`, `lines_hit`, `self_check`, `self_test` | A rule tried on files, on a text, on its own source, on its own examples |
-| `listed(file, rate, fixes, leave_out, passes_over)`, `tier(table, code)`, `family(code)`, `fix_of(table, code, offered, label)`, `PER_FILE` | A ruff-backed rule's findings on one file, each diagnostic at the severity `rate` gives it, none for a file that is not Python: a code in `leave_out` dropped first, then the change's own lines listed, at most `PER_FILE`, and the rest counted; a code's entry in a rule's table by the longest key in its family; ruff's own fix with its label, but not a display-only one where the table names the code itself, else the table's sentence |
+| `listed(file, rate, fixes, leave_out, passes_over)`, `tier(table, code)`, `family(code)`, `fix_of(table, code, offered, label)`, `PER_FILE` | A ruff-backed rule's findings on one file, each diagnostic at the severity `rate` gives it, none for a file that is not Python: a code in `leave_out` dropped first, then what the change caused listed, on its own lines or on one it did not touch, at most `PER_FILE`, and the rest counted; what the base held too on an untouched line counted in one old finding, apart and never at the bar, and one not set against the base in one finding at the bar; a code's entry in a rule's table by the longest key in its family; ruff's own fix with its label, but not a display-only one where the table names the code itself, else the table's sentence |
 
 Three limits stay. A line helper reads one line alone, so a line inside a docstring reads as code; a rule that must
 tell them apart reads the file. Names are read as written: after `from requests import get`, `get(url)` is not
@@ -664,24 +665,23 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   shared mechanism, each a change to weigh.
 - `--comment [FILE]` writes the review as a comment for the branch's author, to paste into the pull request by hand,
   whatever the verdict: what must change before it merges, what is worth a look, an approved change's included, the
-  tidy-ups, what the review could not check, and, last and apart, what was already in the files the change touched. Its first line names what ran: the profile, how many rules and
-  guidelines, and the model, or no model, so an approval from the rules alone never reads as a model's. An approval
-  names its bar, and every comment counts the major issues below it: asked by the owner, a major read as nothing
-  much. A blocker or a major says why it matters, a rule's `why` or ruff's page for its code, and shows the
-  corrected code a guideline gave. Each place sits
-  in a code span, and each quote in one, or in a fenced block that keeps its lines where it spans several, and the whole
-  holds at most 60,000 characters, under the 65,536 GitHub takes in a comment, the most severe points first and the rest
-  counted. The reviewer posts nothing and prints no command that would: asked by the owner, who reviews others' branches
-  and pastes each comment by hand. With no file named, it is
-  `comment-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md` in the current folder, its prefix the flag's own name
-  as the hand-off's is, every name lower case, each branch's name without `refs/heads/`, `refs/remotes/` or
-  `refs/tags/`, made safe for a file name and cut at 40 characters, the commit the 12 characters of the one reviewed
-  that the comment's first line prints, `HEAD`'s under `--staged`, and the run names it by its full path, the last of
-  the files written, unless `--quiet` silences a review that passes. Read by review, 20 characters left the company's
-  repositories one letter each apart (`acme-batch-wrapper-s`), and the time is to the second, since a review served
-  from `--cache`, one with no guideline, and two started in one minute end within it, and a name made by the minute let
-  the second replace the first. Asked by the owner, the commit tells two rounds of review on one branch apart, and
-  comes last so one branch's files list by time.
+  tidy-ups, what the review could not check, and, last and apart, what was already in the files the change touched. Its
+  first line names what ran: the profile, how many rules and guidelines, and the model, or no model, so an approval from
+  the rules alone never reads as a model's. An approval names its bar, and every comment counts the major issues below
+  it: asked by the owner, a major read as nothing much. A blocker or a major says why it matters, a rule's `why` or
+  ruff's page for its code, and shows the corrected code a guideline gave. Each place sits in a code span, and each
+  quote in one, or in a fenced block that keeps its lines where it spans several, and the whole holds at most 60,000
+  characters, under the 65,536 GitHub takes in a comment, the most severe points first and the rest counted. The
+  reviewer posts nothing and prints no command that would: asked by the owner, who reviews others' branches and pastes
+  each comment by hand. With no file named, it is `comment-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md` in
+  the current folder, its prefix the flag's own name as the hand-off's is, every name lower case, each branch's name
+  without `refs/heads/`, `refs/remotes/` or `refs/tags/`, made safe for a file name and cut at 40 characters, the commit
+  the 12 characters of the one reviewed that the comment's first line prints, `HEAD`'s under `--staged`, and the run
+  names it by its full path, the last of the files written, unless `--quiet` silences a review that passes. Read by
+  review, 20 characters left the company's repositories one letter each apart (`acme-batch-wrapper-s`), and the time is
+  to the second, since a review served from `--cache`, one with no guideline, and two started in one minute end within
+  it, and a name made by the minute let the second replace the first. Asked by the owner, the commit tells two rounds of
+  review on one branch apart, and comes last so one branch's files list by time.
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint: its
   check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line, so a
   finding keeps it when lines move. It lists what is no longer found, among what this review looked for, a check that
