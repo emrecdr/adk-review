@@ -1063,7 +1063,8 @@ def gather(
         return {"status": "error", "error_message": str(exc)}
     if not files and not ignored:  # measured: a branch already merged, or a base equal to its head, approved nothing
         return no_change(head, base, scope if listed else ())
-    if guidelines and (outside := len(listed) - len(entries)):
+    # Only beside a file shown: read by review, the note alone made a block of no file, and each guideline ran, billed.
+    if guidelines and block and (outside := len(listed) - len(entries)):
         # Named to the guidelines, as a file past the cap is: a test outside is no test missing. Read by review, the
         # parts of a change split its source from its tests, and `tests` could only call the source untested.
         what = "file(s) of the project" if base is None else "changed file(s)"  # under --all, every file is listed

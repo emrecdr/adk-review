@@ -1764,7 +1764,7 @@ class TestWhatTheGuidelinesAreShown:
         assert in_parts(sizes, ("a/b", "a"), 120) == in_parts(sizes, ("a", "a/b"), 120) == [["a/b"], ["a/x.py"]]
 
     def test_the_guidelines_are_told_how_many_changed_files_lie_outside_the_folders_reviewed(
-        self, demo_repo: Path
+        self, demo_repo: Path, tmp_path: Path
     ) -> None:
         """Read by review: the parts of a change too large for one run split its source from its tests, and a part's
         guidelines were never told that changed files lay outside its folders, so `tests` could only call the source
@@ -1775,6 +1775,17 @@ class TestWhatTheGuidelinesAreShown:
         scoped = git.collect_evidence(str(demo_repo), BASE, HEAD, scope=("src/payments/refund.py",))
         assert scoped["outside"] == 3 and "outside the folders" not in whole["diff"], whole["diff"][-200:]
         assert scoped["diff"].endswith("[… 3 more changed file(s) outside the folders reviewed: not shown here]")
+        # Read by review: a scope that held only files the review ignores got the note alone, so each guideline ran,
+        # billed, over a block that held no file. With nothing shown, the block stays empty and each guideline skips.
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "a.py", "x = 1\n", "base")
+        _git_in(repo, "checkout", "-q", "-b", "docs-only")
+        _committed(repo, "docs/notes.md", "# notes\n", "a note")
+        _committed(repo, "b.py", "y = 2\n", "code")
+        ignored = git.collect_evidence(str(repo), BASE, "docs-only", scope=("docs",), scan=["*.py"])
+        assert ignored["files"] == [] and ignored["diff"] == "", ignored["diff"]
         # Read by review: under --all every file is listed, and none of those outside the folders changed.
         project = git.collect_evidence(str(demo_repo), None, HEAD, scope=("src/payments/refund.py",))
         assert "file(s) of the project outside the folders reviewed" in project["diff"], project["diff"][-200:]

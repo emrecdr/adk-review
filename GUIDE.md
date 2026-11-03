@@ -394,8 +394,9 @@ this review's guidelines alone, with its repository, branches, globs and a `--di
 made at that cap. Then it prints one run of the review's rules over the whole change, in the review's own `--path`, with
 no model call: the rules read files no part reads, a skip-listed lockfile or a README, and each rule's finding is
 reported once. Give each run any other flag the review had, but no `--path`, `--profile` or `--check`, and give each its
-own `--json`, `--comment` or `--handoff` file. Each part's guidelines are told how many changed files lie outside its
-folders, so a test there is no test missing.
+own `--json`, `--comment` or `--handoff` file. A `--max-tokens` ceiling holds for each run alone, so parts spend up to
+that much each. Each part's guidelines are told how many changed files lie outside its folders, so a test there is no
+test missing.
 A review prints the same before its first model call. At a terminal it asks whether to go on, and a stop is exit 2;
 a pipeline goes on, and the files it cannot read are a hole, exit 3.
 

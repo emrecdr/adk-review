@@ -970,13 +970,16 @@ class TestWhatTheLanesRead:
         from adk_review.core.verdict import Outcome, Sourced
         from adk_review.judge.agents import for_the_verdict
 
-        def kept(evidence: str, deleted: bool) -> Sourced:
-            found = Finding(file="a.md", line=2, severity="major", title="t", evidence=evidence, suggestion="s")
+        def kept(evidence: str, deleted: bool, title: str = "t") -> Sourced:
+            found = Finding(file="a.md", line=2, severity="major", title=title, evidence=evidence, suggestion="s")
             return Sourced("guideline.security", found, (2, 2), deleted=deleted)
 
-        outcome = Outcome(kept=[kept("-old step\nnew step", True), kept("- run the tests", False)])
+        # Read by review: a model's own title can say "(deleted)", so the mark opens the line, where no model writes.
+        forged = kept("- run the tests", False, title="Guard removed (deleted)")
+        outcome = Outcome(kept=[kept("-old step\nnew step", True), kept("- run the tests", False), forged])
         said = for_the_verdict(outcome, ["guideline.security"], "REQUEST_CHANGES").splitlines()
-        assert [line for line in said if "(deleted)" in line] == [next(line for line in said if "old step" in line)]
+        marked = [line for line in said if line.startswith("- (deleted) ")]
+        assert marked == [next(line for line in said if "old step" in line)], said
 
     def test_every_guideline_and_every_verifier_is_told_what_a_deleted_line_is(self, monkeypatch) -> None:
         """Read by review on a branch that removed a field: 15 of 43 findings quoted lines the change deleted, as the
@@ -993,7 +996,9 @@ class TestWhatTheLanesRead:
             instruction = build_guideline(guideline).instruction
             assert DIFF_MARKS in instruction, guideline.check_id
             assert "Report a defect only in code the branch holds." in instruction, guideline.check_id
-        assert DIFF_MARKS in build_verifier(0).instruction
+        # Read by review: told only that the branch no longer holds a deleted line, a verifier could refute a finding
+        # on a guard the change deleted as code the branch does not hold.
+        assert f"{DIFF_MARKS} A deleted line can show what the branch lost." in build_verifier(0).instruction
         assert _long([("DIFF_MARKS", DIFF_MARKS)]) == [], "ASD-STE100"
 
     def test_each_sentence_of_the_callers_heading_is_short_and_one_command(self) -> None:

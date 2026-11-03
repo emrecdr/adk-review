@@ -980,6 +980,7 @@ def told_in_parts(
     given = [
         "Give each run any other flag this review had, but no --path, --profile or --check.",
         "Give each its own --json, --comment or --handoff file.",
+        "A --max-tokens ceiling holds for each run alone.",
     ]
     return [inert(line) for line in [*lines, "", *given]]
 

@@ -176,9 +176,9 @@ def for_the_verdict(outcome: Outcome, checks: Sequence[str], verdict: str, ignor
         for item in kept:
             # Marked from the diff, as grounding read it: a quote on one line hides a deleted line's `-`, and a Markdown
             # bullet the branch holds starts with one of its own.
-            f, gone = item.finding, " (deleted)" if item.deleted else ""
+            f, gone = item.finding, "(deleted) " if item.deleted else ""  # before the severity, where no model writes
             quote = cut_at(squash(f.evidence), EVIDENCE_MAX_CHARS)
-            lines.append(f"- {f.severity} {_where(f)}: {squash(f.title)}{gone} — {quote}")
+            lines.append(f"- {gone}{f.severity} {_where(f)}: {squash(f.title)} — {quote}")
         lines += [
             f"- dropped, the diff does not bear its quote out: {f.severity} {_where(f)}: {squash(f.title)}"
             for f in dropped

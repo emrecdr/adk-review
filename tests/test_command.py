@@ -275,6 +275,7 @@ class TestWhatAReviewCovers:
         assert all(guided in run and "--profile" not in run for run in runs), runs
         assert rest == [runs[0].split(" --check ")[0] + " --profile default-rules"], rest
         assert "this review's rules over the whole change" in out and "but no --path" in out, out
+        assert "A --max-tokens ceiling holds for each run alone." in out, "read by review: eight parts, eight ceilings"
         assert run_review(cli, demo_repo, "--dry-run", "--path", "src/payments") == 0
         scoped = [line.strip() for line in capsys.readouterr().out.splitlines() if "--profile default-rules" in line]
         assert scoped and scoped[0].endswith("--path=src/payments"), "the review's own scope, not the whole branch"
