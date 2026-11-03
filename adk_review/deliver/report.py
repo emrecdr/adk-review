@@ -456,10 +456,13 @@ COMMENT_OPENS = {
     "REQUEST_CHANGES": "Fix each point of `{bar}` severity or above before it merges.",
     "DEGRADED": "The review could not check all of it, so it approves nothing yet.",
 }
-#: What a comment and a hand-off say over the points whose suggested code the branch already holds: asked by the owner,
+#: What a comment and a hand-off say over the points that ask for what the branch already does: asked by the owner,
 #: a notice, never a major issue to fix.
 APART_HEADING = "Possibly already done"
-ALREADY_NOTE = "Each suggests code the branch already holds. Check whether the change already did it."
+ALREADY_NOTE = (
+    "Each asks for what the branch already does: code it holds, or a line it removed. Check whether the change "
+    "already did it."
+)
 ALREADY_FOR_AGENT = "Change nothing the branch already does."
 #: What a comment says under its tidy-ups' heading.
 TIDY_NOTE = "These change how the code reads, never what it does."
@@ -1427,7 +1430,7 @@ def _sections(
         for identity, item in findings:
             f = item.finding
             mark = " — new since the previous review" if _since(identity, previous) == "new" else ""
-            mark += " — possibly already done: its suggested code is already in the branch" * item.done
+            mark += " — possibly already done: it asks for what the branch already does" * item.done
             lines += [*_listed(f, mark), f"  - fix: {prose(f.suggestion)}"]
             lines += [
                 f"  - also on these lines: `{also.source}`: {prose(also.finding.title)} ({_where(also.finding)})"

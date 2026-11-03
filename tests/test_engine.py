@@ -958,7 +958,7 @@ class TestWhatTheBranchAlreadyHolds:
         # A restoring finding is never flagged: the unit tests show it, apart, since on the same lines it would fold.
         held = {f["title"][:12]: f["already_held"] for f in data["findings"]}
         assert held == {"make passes ": True, "x" * 12: False}, held
-        assert "possibly already done: its suggested code is already in the branch" in out, out
+        assert "possibly already done: it asks for what the branch already does" in out, out
         said = comment.read_text(encoding="utf-8")
         apart = said.split("### Possibly already done", 1)[1]
         assert "correctness: make passes the removed" in apart, said

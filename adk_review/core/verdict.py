@@ -260,14 +260,30 @@ def drop_ungrounded(
             # past its kept blocker.
             dropped.append(finding.model_copy(update={"file": cut_at(finding.file, REASON_MAX_CHARS)}))
             continue
-        lines, stood, deleted, hunk = placed
+        lines, stood, deleted, hunk, gone = placed
         update = {"file": path, "line": lines[0] if lines else None}
         if stood is not None:  # where the redaction joined lines, the model's quote is all there is
             update["evidence"] = scrub(stood)[0]
         grounded = finding.model_copy(update=update)
-        done = hunk is not None and already_done(grounded, lines, deleted, quotable[path][hunk])
+        done = (gone and asks_to_remove(grounded)) or (
+            hunk is not None and already_done(grounded, lines, deleted, quotable[path][hunk])
+        )
         kept.append((grounded, lines, deleted, done))
     return kept, dropped
+
+
+#: The verbs a change asking to take a line out starts with: the guidelines write each change in Simplified Technical
+#: English, its verb first.
+REMOVAL_VERBS = frozenset({"remove", "delete", "drop"})
+
+
+def asks_to_remove(finding: Finding) -> bool:
+    """Whether a finding's change asks to take something out: its first word one of `REMOVAL_VERBS`. Read with a quote
+    of deleted lines alone, it asks for what the change already did. Asked by the owner, on a real review: "Quoted:
+    `- self._correlation_id = correlation_id`. Suggested change: Remove unused correlation_id." A dropped guard's
+    finding asks to restore the guard, never to remove it."""
+    words = finding.suggestion.split(maxsplit=1)
+    return bool(words) and words[0].strip(".,:;").lower() in REMOVAL_VERBS
 
 
 def already_done(finding: Finding, lines: Lines, deleted: bool, hunk: list[tuple[int, str]]) -> bool:
@@ -356,11 +372,12 @@ def _meant(path: str, quotable: dict[str, list[list[tuple[int, str]]]]) -> str:
 
 def _placed(
     finding: Finding, hunks: list[list[tuple[int, str]]], around: Sequence[str]
-) -> tuple[Lines, str | None, bool, int | None] | None:
+) -> tuple[Lines, str | None, bool, int | None, bool] | None:
     """The first and last line of `finding`'s quote in its own file's diff, where it is whole lines of one hunk, in
     order, as the guideline saw them, those lines as the file reads them, a deleted one with its `-`, whether one is,
-    and which hunk it stands in; `(None, None, False, None)` where the redaction joined lines, so no line is named
-    rather than a wrong one, and no text but the quote; None where the diff does not bear the quote out.
+    which hunk it stands in, and whether every line it holds is a deleted one, by the diff's own marks; `(None, None,
+    False, None, False)` where the redaction joined lines, so no line is named rather than a wrong one, and no text but
+    the quote; None where the diff does not bear the quote out.
 
     Each hunk is read four ways: as git prints it, as the new file reads it (its context and added lines), as the old
     file read it (its context and removed lines), and with each replaced line beside what replaced it. Measured
@@ -369,7 +386,7 @@ def _placed(
     before, the last line of one hunk joined to the first of the next, twenty lines apart, grounded as one span, and a
     finding on the lines between folded into it."""
     quotes = _quotes(finding.evidence, around)
-    placed: list[tuple[tuple[int, int], str, bool, int]] = []
+    placed: list[tuple[tuple[int, int], str, bool, int, bool]] = []
     joined = False
     for index, hunk in enumerate(hunks):
         # As git prints it, as the new file reads, as the old file read, and each replaced line beside its new one.
@@ -394,9 +411,10 @@ def _placed(
                 # removed a field asked for what the head already had.
                 stood = view[since : until + 1]
                 text = "\n".join(raw if raw[:1] == "-" else raw[1:] for _number, raw in stood)
-                placed.append(((first, last), text, any(raw[:1] == "-" for _number, raw in stood), index))
+                marks = [raw[:1] for _number, raw in stood if raw[1:].strip()]
+                placed.append(((first, last), text, "-" in marks, index, set(marks) == {"-"}))
     if not placed:
-        return (None, None, False, None) if joined else None
+        return (None, None, False, None, False) if joined else None
     # A short quote can stand in several places: measured by review, `return None` at lines 2 and 22, a guideline naming
     # 22 was placed at 2. The diff decides where a quote can stand; the guideline's line only picks among those places,
     # and where it does not, as where it named none, a place the head holds goes before a deleted one, then the first:

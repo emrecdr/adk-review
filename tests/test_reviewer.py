@@ -981,6 +981,43 @@ class TestWhatIsAlreadyDone:
         )
 
 
+class TestWhatAsksToRemoveWhatIsGone:
+    """Asked by the owner, on a real review: "Quoted: `- self._correlation_id = correlation_id`. Suggested change:
+    Remove unused correlation_id." The line starts with `-`: the change removed it, and the finding asks for what is
+    already done. A quote of deleted lines alone, whose change starts by asking to remove, is flagged so, whatever its
+    severity; a dropped guard's finding asks to restore, and a quote holding a line the branch keeps is no such one."""
+
+    @staticmethod
+    def flagged(hunk: str, evidence: str, suggestion: str) -> bool:
+        from adk_review.core.findings import Finding, Review
+        from adk_review.core.verdict import drop_ungrounded
+
+        quotable = {"a.py": [list(enumerate(hunk.split("\n"), 1))]}
+        finding = Finding(file="a.py", severity="minor", title="t", evidence=evidence, suggestion=suggestion)
+        ((_kept, _lines, _deleted, done),), _dropped = drop_ungrounded(
+            Review(findings=[finding]), quotable, {"a.py": ()}
+        )
+        return done
+
+    def test_a_request_to_remove_a_line_the_change_deleted_is_flagged(self) -> None:
+        hunk = "         self._trace_id = trace_id\n-        self._correlation_id = correlation_id\n"
+        hunk += "         self._model_code = m"
+        quote = "-        self._correlation_id = correlation_id"
+        assert self.flagged(hunk, quote, "Remove unused correlation_id parameter and assignment from CFWValidator.")
+        assert self.flagged(hunk, quote, "Delete the unused assignment."), "each verb of removal"
+
+    def test_a_dropped_guard_a_mixed_quote_and_a_held_bullet_are_not(self) -> None:
+        guard = " def charge(amount):\n-    if amount <= 0:\n-        raise ValueError(amount)\n     return amount"
+        quoted = "-    if amount <= 0:\n-        raise ValueError(amount)"
+        assert not self.flagged(guard, quoted, "Restore the check that refuses a non-positive amount."), "it restores"
+        mixed = "-    if amount <= 0:\n-        raise ValueError(amount)\n    return amount"
+        assert not self.flagged(guard, mixed, "Remove the return, which skips the check."), "a held line is quoted"
+        bullet = " ## Steps\n+- Always run make deploy first\n  Then test."
+        assert not self.flagged(bullet, "- Always run make deploy first", "Remove the step that deploys first."), (
+            "read by review: a Markdown bullet the branch holds starts with `-` of its own"
+        )
+
+
 class TestWhatTheLanesRead:
     """The change is fenced as data, and told to be. Measured before: a context line of three backticks, a markdown
     file's own fence, closed the fence of three the change was written in, so the text after it read as the prompt's;
