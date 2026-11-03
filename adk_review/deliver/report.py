@@ -512,8 +512,8 @@ def render_comment(
         lines.append(MAJORS_BELOW_BAR.format(found=found, n=majors, s="" if majors == 1 else "s"))
     elif verdict == "APPROVED" and (worth or tidy):
         lines.append("The points below would still improve it.")
-    if _quotes_a_deleted_line(outcome):
-        lines.append(DELETED_QUOTED)
+    # No note of what a `-` is: asked by the owner, its readers read diffs every day, and it was noise. The hand-off's
+    # agent, a model that read deleted lines as code to fix, is still told.
     lanes: list[tuple[list[str], list[list[str]]]] = []  # each section's heading, and its points
     # Asked by the owner: first what the change caused, then what was already in the files it touched, each a section
     # a severity, the most severe first; one at the bar is marked so. Before, majors and minors below the bar sat
@@ -990,23 +990,30 @@ def reviewed_where(evidence: Evidence) -> list[str]:
         lines.append(f"- Against: {code_span(one_line(pre['base']))}, merge base `{pre['merge_base'][:12]}`")
     if "scope" in evidence:
         covered, left = _covered(evidence, lambda name: code_span(one_line(name)))
-        lines.append(f"- Scope: {covered}" + (f": {left}" if evidence.get("outside") else ""))
+        lines.append(f"- Scope: {covered}" + (f". {left}" if evidence.get("outside") else ""))
     return lines
 
 
 def _covered(evidence: Evidence, name: Callable[[str], str]) -> tuple[str, str]:
-    """What a review covers, its folders and what it left out, each spelled by `name`, and how many files lie outside
-    it, changed ones or, under `--all`, the head's: the report's header and the comment's scope line, read from one
-    place. Read by review: copied, they already differed. A misspelt or wrongly cased exclusion, which left everything
-    in, says so."""
+    """What a review covers, its folders and what it left out, each spelled by `name`, and a sentence counting the
+    files it left out, changed ones or, under `--all`, the head's: the report's header and the comment's scope line,
+    read from one place. Asked by the owner: "the whole change, less tests, docs: 34 changed file(s) outside it" read
+    badly. A misspelt or wrongly cased exclusion, which left everything in, says so."""
     scope, exclude = evidence.get("scope", ()), evidence.get("exclude", ())
     unmatched = set(evidence.get("unmatched", ()))
     nothing = " (no changed file lies there: check its spelling and case)"
-    covered = ", ".join(name(folder) for folder in scope) or "the whole change"
+    noun = "file" if evidence.get("whole") else "changed file"
+    covered = f"only {_and([name(folder) for folder in scope])}" if scope else f"every {noun}"
     if exclude:
-        covered += ", less " + ", ".join(name(path) + nothing * (path in unmatched) for path in exclude)
-    kind = "file(s)" if evidence.get("whole") else "changed file(s)"
-    return covered, f"{evidence.get('outside', 0)} {kind} outside it, not reviewed"
+        covered += ", except " + _and([name(path) + nothing * (path in unmatched) for path in exclude])
+    count = evidence.get("outside", 0)
+    left = f"no {noun}" if not count else f"1 {noun}" if count == 1 else f"{count:,} {noun}s"
+    return covered, f"The review left out {left}."
+
+
+def _and(names: Sequence[str]) -> str:
+    """Names as a sentence lists them: `a`, `a and b`, `a, b and c`."""
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
 def what(evidence: Evidence) -> str:
@@ -1036,7 +1043,7 @@ def header(evidence: Evidence, *, model: str, profile: str, off: Sequence[str], 
         *against,
         *([f"- model        {model}"] if model else []),
         f"- profile      {profile}" + (f" (off: {', '.join(off)})" if off else ""),
-        *([f"- scope        {prose(covered)}: {left}"] if scope or exclude else []),
+        *([f"- scope        {prose(covered)}. {left}"] if scope or exclude else []),
         f"- {listed:<12} {len(files)} file(s): {_spans([f['path'] for f in files])}",
         *(f"- not read     {code_span(one_line(path))}: {why}" for path, why in unread.items()),
         *(

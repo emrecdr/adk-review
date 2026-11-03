@@ -289,7 +289,9 @@ def already_done(finding: Finding, lines: Lines, deleted: bool, hunk: list[tuple
     held = [at for at, raw in enumerate(raws) if raw[:1] in "+ " and raw[1:].strip()]  # the branch's lines, no blank
     if not (spots := _spots(raws, quoted, held, inside)):
         return False
-    wanted = [line.rstrip() for line in textwrap.dedent(_unfenced(finding.code)).splitlines() if line.strip()]
+    wanted = [
+        line.rstrip() for line in textwrap.dedent(_branch_side(_unfenced(finding.code))).splitlines() if line.strip()
+    ]
     for start in range(len(held) - len(wanted) + 1):
         run = held[start : start + len(wanted)]
         if not any(spot <= set(run) for spot in spots):  # only a run over a spot can be the fix: never dedented
@@ -298,6 +300,17 @@ def already_done(finding: Finding, lines: Lines, deleted: bool, hunk: list[tuple
         if seen == wanted:
             return True
     return False
+
+
+def _branch_side(code: str) -> str:
+    """`code` as the branch holds it: where a model wrote it as a diff, every line marked and one `-` or `+`, its
+    deleted lines left out and each mark dropped. Read by review: code written `-old` and `+new` asked for the branch's
+    own line, and never matched it."""
+    lines = code.splitlines()
+    marked = [line for line in lines if line.strip()]
+    if not (marked and all(line[:1] in "+- " for line in marked) and any(line[:1] in "+-" for line in marked)):
+        return code
+    return "\n".join(line[1:] for line in lines if line[:1] != "-")
 
 
 def _unfenced(code: str) -> str:

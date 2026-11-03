@@ -944,6 +944,11 @@ class TestWhatIsAlreadyDone:
         code = "return validator_cls(\n    logger=self._logger,\n    trace_id=self._trace_id,\n"
         code += "    model_code=self._model_code,\n)"
         assert self.removed([call], quote, code), "the lines around a pure deletion, as the branch holds them"
+        # Read by review: a model wrote its suggested code as a diff, `-` the old line and `+` the branch's, which never
+        # matched the branch's own; it is read as the branch's side.
+        path = "   crca_data:\n-    location: /old/data/\n+    location: /new/data/\n     items:"
+        quoted = "-    location: /old/data/\n    location: /new/data/"
+        assert self.removed([path], quoted, "-    location: /old/data/\n+    location: /new/data/")
 
     def test_a_real_bug_stays(self) -> None:
         moved = "     with open(path) as fh:\n-        fh.write(data)\n+    fh.write(data)\n     return path"

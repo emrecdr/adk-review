@@ -64,7 +64,7 @@ class TestWhatAReviewCovers:
         rules_only = (cli, demo_repo, "--profile", "rules-only")
         assert run_review(*rules_only, "--path", "src/payments/config.py") == 1  # its two keys
         out = capsys.readouterr().out
-        assert "- scope        src/payments/config.py: 3 changed file(s) outside it, not reviewed\n" in out, out
+        assert "- scope        only src/payments/config.py. The review left out 3 changed files.\n" in out, out
         assert "- changed      1 file(s): `src/payments/config.py`\n" in out
         assert run_review(*rules_only, "--path", "./docs/") == 2
         err = capsys.readouterr().err
@@ -82,7 +82,10 @@ class TestWhatAReviewCovers:
         # `config.py` holds the planted keys: left out, its blockers go, and what remains is the rest's own.
         assert run_review(*rules_only, "--path-exclude", "src/payments/config.py", "--json", str(report)) != 3
         out = capsys.readouterr().out
-        assert "- scope        the whole change, less src/payments/config.py: 1 changed file(s) outside it" in out, out
+        assert (
+            "- scope        every changed file, except src/payments/config.py. The review left out 1 changed file."
+            in out
+        ), out
         data = json.loads(report.read_text(encoding="utf-8"))
         assert data["reviewed"]["exclude"] == ["src/payments/config.py"], data["reviewed"]
         assert not any(f["file"] == "src/payments/config.py" for f in data["findings"]), "no check read it"
@@ -102,7 +105,7 @@ class TestWhatAReviewCovers:
         # Read by review: a misspelt or wrongly cased exclusion left everything in, and the report said "less" it.
         run_review(*rules_only, "--path-exclude", "src/payments/Config.py")
         out = capsys.readouterr().out
-        assert "less src/payments/Config.py (no changed file lies there: check its spelling and case)" in out, out
+        assert "except src/payments/Config.py (no changed file lies there: check its spelling and case)" in out, out
 
     def test_what_was_already_in_a_touched_file_is_apart_and_never_fails_the_review(
         self, cli, tmp_path: Path, capsys
@@ -1233,9 +1236,17 @@ class TestThePreviousReportAndTheHandoff:
         ):
             assert "- Repository: `raas-batch`" in said and "/home/someone" not in said, said
             assert "- Against: `develop`, merge base `111111111111`" in said, said
-            assert "- Scope: `src`, less `tests`: 40 changed file(s) outside it, not reviewed" in said, said
+            assert "- Scope: only `src`, except `tests`. The review left out 40 changed files." in said, said
         whole = {**evidence, "scope": [], "exclude": [], "outside": 0}
-        assert "- Scope: the whole change" in render_comment(whole, Outcome(), verdict="APPROVED", fail_on="blocker")
+        # Asked by the owner: "the whole change, less tests, docs: 34 changed file(s) outside it" read badly.
+        said = render_comment(whole, Outcome(), verdict="APPROVED", fail_on="blocker")
+        assert "- Scope: every changed file\n" in said, said
+        two = render_comment(
+            {**whole, "exclude": ["tests", "docs"], "outside": 34}, Outcome(), verdict="APPROVED", fail_on="blocker"
+        )
+        assert "- Scope: every changed file, except `tests` and `docs`. The review left out 34 changed files." in two, (
+            two
+        )
         everything = {**whole, "whole": True}
         said = render_comment(everything, Outcome(), verdict="APPROVED", fail_on="blocker")
         assert "- Against: nothing: every file at the head" in said, said
@@ -1243,7 +1254,7 @@ class TestThePreviousReportAndTheHandoff:
         some = render_comment(
             {**everything, "scope": ["src"], "outside": 12}, Outcome(), verdict="APPROVED", fail_on="blocker"
         )
-        assert "- Scope: `src`: 12 file(s) outside it, not reviewed" in some, some
+        assert "- Scope: only `src`. The review left out 12 files." in some, some
         # And under `--staged` the merge base is HEAD itself, or git's empty tree in a repository with no commit.
         staged = {
             **whole,
@@ -2361,13 +2372,13 @@ class TestWhatAReviewKeeps:
         _git_in(repo, "add", "src/a.py")
         argv = [str(repo), "--staged", "--path", "src", "--profile", "default-rules", "--cache", str(tmp_path / "c")]
         assert cli.main(argv) == 0
-        assert re.search(r"\b0 \S+ file\(s\) outside it", capsys.readouterr().out)
+        assert "The review left out no changed file." in capsys.readouterr().out
         (repo / "other" / "b.py").write_text("y = 2\n", encoding="utf-8", newline="\n")
         _git_in(repo, "add", "other/b.py")
         assert cli.main(argv) == 0
         said = capsys.readouterr()
         assert "served from the cache" not in said.err, said.err
-        assert re.search(r"\b1 \S+ file\(s\) outside it", said.out), said.out
+        assert "The review left out 1 changed file." in said.out, said.out
 
     def test_the_cache_key_reads_the_whole_index_under_staged(self, cli, tmp_path: Path, capsys) -> None:
         """Read by review: --staged names the index by a constant, and the key read only the diffs reviewed, so a
@@ -2839,7 +2850,10 @@ class TestWhatTheReportPrints:
         replaced = kept('-    "CORRELATION_ID": self.correlation_id,\n    "TRACE_ID": self.trace_id,', deleted=True)
         # Read by review: a Markdown bullet the branch holds starts with `-` of its own, and was said to be deleted.
         bullet = kept("- Always run make deploy first")
-        for render in (render_comment, render_handoff):
+        # Asked by the owner: in the comment the note was noise, its readers reading diffs every day. A coding agent,
+        # a model that read deleted lines as code to fix, is still told.
+        assert DELETED_QUOTED not in render_comment(evidence, replaced, verdict="APPROVED", fail_on="blocker")
+        for render in (render_handoff,):
             said = render(evidence, replaced, verdict="APPROVED", fail_on="blocker")
             assert said.index(DELETED_QUOTED) < said.index('-    "CORRELATION_ID"'), said
             for held in (kept('    "TRACE_ID": self.trace_id,'), bullet):

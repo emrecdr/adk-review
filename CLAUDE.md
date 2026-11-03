@@ -262,14 +262,14 @@ Conventions:
   guidelines, chat's intake and its verdict are told the same for their own words, and to quote the diff unchanged; each
   guideline and verifier is told what a `-` and a `+` line are (`DIFF_MARKS`, `judge/agents.py`), since a model read
   deleted lines as the code to fix, and a kept finding's evidence keeps the `-` of a deleted line, recorded from the
-  diff's own marks (`Sourced.deleted`), which the comment and the hand-off explain (`DELETED_QUOTED`, `core/verdict.py`)
-  and chat's verdict is shown as `(deleted)`, a finding whose suggested code the branch already holds then as `(possibly
-  already done)`, which its verdict is told of. An error a person can act on names what to do instead, a flag to drop or
-  give, a path or a command, as the owner asked of a tool that guides its user; argparse's own end by naming `--help`.
-  An error's text ends bare, with no full stop, since a caller may add a sentence after it, as the pre-push hook adds
-  its own; and the flags that rescope a change with nothing to compare are added by the command, from a mark on the
-  error envelope (`rescope`), and those that narrow one to nothing from another (`narrowed`), since chat shares the
-  collector's words and takes no flag.
+  diff's own marks (`Sourced.deleted`), which the hand-off explains to its agent (`DELETED_QUOTED`, `core/verdict.py`),
+  the comment's readers reading diffs every day, and chat's verdict is shown as `(deleted)`, a finding whose suggested
+  code the branch already holds then as `(possibly already done)`, which its verdict is told of. An error a person can
+  act on names what to do instead, a flag to drop or give, a path or a command, as the owner asked of a tool that guides
+  its user; argparse's own end by naming `--help`. An error's text ends bare, with no full stop, since a caller may add
+  a sentence after it, as the pre-push hook adds its own; and the flags that rescope a change with nothing to compare
+  are added by the command, from a mark on the error envelope (`rescope`), and those that narrow one to nothing from
+  another (`narrowed`), since chat shares the collector's words and takes no flag.
 - State moves between agents via `output_key` and `{placeholder}` (`{key?}` where the key may be missing). Each key
   more than one module uses is spelled once, in `judge/agents.py`; a check's key is its id through `state_key`.
 - Every `subprocess.run` that decodes passes `encoding=`; no source under `adk_review/` or `scripts/` spells `/tmp/`
