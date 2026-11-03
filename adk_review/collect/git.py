@@ -514,7 +514,8 @@ def preflight_staged(repo: str) -> dict:
     root = os.path.expanduser(repo)
     try:
         _refused(repo, root)
-        head = _sha(root, "HEAD") or _empty_tree(root)  # no commit yet: the index against the empty tree
+        born = _sha(root, "HEAD")
+        head = born or _empty_tree(root)  # no commit yet: the index against the empty tree
         # What names the index as a commit names its tree: each entry `ls-files -s` lists, its mode, blob and path.
         # Read by review: named by a constant, a change staged outside the diffs reviewed served a stale verdict.
         _, listed = _git(root, "ls-files", "-s", "-z", strip=False)
@@ -529,6 +530,7 @@ def preflight_staged(repo: str) -> dict:
         "head_sha": "staged",
         "index_sha": hashlib.sha256(listed.encode()).hexdigest(),
         "merge_base": head,
+        "unborn": not born,  # no commit yet, for a report to say so rather than name the empty tree
         "commits_ahead": 0,
         "base_ref": "",
         "head_ref": "",

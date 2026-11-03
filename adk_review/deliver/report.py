@@ -20,7 +20,7 @@ from ..core.evidence import Evidence
 from ..core.findings import RANK, Checked, Finding, at_or_above
 from ..core.health import Health, found_by_rule, grade
 from ..core.paths import in_scope
-from ..core.profiles import rule_id
+from ..core.profiles import guideline_id, rule_id
 from ..core.secrets import scrub
 from ..core.text import EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, short_ref, squash
 from ..core.verdict import DELETED_QUOTED, Outcome, Sourced, at_bar
@@ -246,6 +246,8 @@ def render_handoff(
     identity |= {id(item): fingerprint(item) for item in outcome.old}
     identity |= {id(folded): fingerprint(folded) for folded, _into in outcome.folded}
     fixes, tidy = _lanes(outcome, tidies)
+    apart = [group for group in [*fixes, *tidy] if group[0].done]  # may be done already: checked, never fixed blind
+    fixes, tidy = [group for group in fixes if not group[0].done], [group for group in tidy if not group[0].done]
     majors = sum(group[0].finding.severity == "major" and not at_or_above("major", fail_on) for group in fixes)
     approved = verdict == "APPROVED"
     told = HANDOFF_MAJORS.format(
@@ -277,9 +279,13 @@ def render_handoff(
     if tidy:
         lines += [*([""] if fixes else []), "## Tidy", "", *TIDY_KEEPS, ""]
         lines += _items(tidy, len(fixes) + 1, identity, frozenset(), fail_on)
+    if apart:  # asked by the owner: a notice, never a fix to make
+        lines += [*([""] if fixes or tidy else []), "## Possibly already done", "", ALREADY_NOTE, ALREADY_FOR_AGENT, ""]
+        lines += _items(apart, len(fixes) + len(tidy) + 1, identity, frozenset(), fail_on)
     if outcome.old:  # asked by the owner: never mixed with what the change caused
-        lines += [*([""] if fixes or tidy else []), f"## {OLD_HEADING}", "", OLD_FOR_AGENT, ""]
-        lines += _items([[item] for item in outcome.old], len(fixes) + len(tidy) + 1, identity, frozenset(), None)
+        lines += [*([""] if fixes or tidy or apart else []), f"## {OLD_HEADING}", "", OLD_FOR_AGENT, ""]
+        number = len(fixes) + len(tidy) + len(apart) + 1
+        lines += _items([[item] for item in outcome.old], number, identity, frozenset(), None)
     # Never "nothing to fix" where the review could not check everything, as its report's next steps, and what it did
     # not check named: read by review, a finding at the bar left unproven ended there, and a hole of another kind said
     # it first, with nothing for an agent to check by hand.
@@ -303,14 +309,9 @@ def _unchecked(outcome: Outcome, fail_on: str) -> list[str]:
     first, since a long list is cut where it ends. Read by review: a review degraded by an unproven blocker listed
     nothing in either, and 3,000 unread files once pushed a guideline that failed out of the comment."""
     unchecked = [f"- {code_span(check)} could not look: {_reason(why)}" for check, why in outcome.errors.items()]
-    removed = {id(item) for item in outcome.done}  # read by review: "could not prove" gave no reason to check
     unchecked += [
-        f"- {code_span(item.source)} at {_spot(item.finding)}: {prose(item.finding.title)}, "
-        + (
-            "removed: its suggested code is already in the branch. Check it by hand"
-            if id(item) in removed
-            else "a finding at the bar this review could not prove"
-        )
+        f"- {code_span(item.source)} at {_spot(item.finding)}: {prose(item.finding.title)}, a finding at the bar this "
+        "review could not prove"
         for item in outcome.unproven(fail_on)
     ]
     return unchecked + [f"- {code_span(one_line(path))}: {_reason(why)}" for path, why in outcome.unread.items()]
@@ -367,7 +368,7 @@ def _items(
         lines += _nested(
             number,
             [
-                f"{number}. {prose(f.title)} ({_where(f)}), {f.severity}{_bar(f, fail_on)}",
+                f"{number}. {_titled(lead)} ({_where(f)}), {f.severity}{_bar(f, fail_on)}",
                 *(_quoted_lines(f, label) if _serious(f) else [f"   - {label}: {_quoted(f)}"]),
                 *_why(f, "   - why"),
                 *_to_fix(lead, identity[id(lead)], "   "),
@@ -391,12 +392,12 @@ def _folded_under(
         f = item.finding
         if item.source in held:
             lines.append(
-                f"   - held back, a tidy of these lines: {prose(f.title)}, {f.severity}. Leave it until the finding"
+                f"   - held back, a tidy of these lines: {_titled(item)}, {f.severity}. Leave it until the finding"
                 " above is fixed and a review no longer reports it."
             )
             continue
         lines += [
-            f"   - also on these lines: {prose(f.title)}, {f.severity}{_bar(f, fail_on)}",
+            f"   - also on these lines: {_titled(item)}, {f.severity}{_bar(f, fail_on)}",
             *_why(f, "     - why"),
             *_to_fix(item, identity[id(item)], "     "),
         ]
@@ -439,16 +440,23 @@ OLD_FOR_AGENT = "Not caused by this change. By the Boy Scout rule, fix them too,
 #: `blocker` bar it meant went unnamed.
 COMMENT_OPENS = {
     "APPROVED": "The review found nothing of `{bar}` severity or above, the level that blocks a merge here.",
-    "REQUEST_CHANGES": "Fix each point under a section marked must fix before it merges.",
+    "REQUEST_CHANGES": "Fix each point of `{bar}` severity or above before it merges.",
     "DEGRADED": "The review could not check all of it, so it approves nothing yet.",
 }
+#: What a comment and a hand-off say over the points whose suggested code the branch already holds: asked by the owner,
+#: a notice, never a major issue to fix.
+ALREADY_NOTE = "Each suggests code the branch already holds. Check whether the change already did it."
+ALREADY_FOR_AGENT = "Change nothing the branch already does."
 #: What a comment says under its tidy-ups' heading.
 TIDY_NOTE = "These change how the code reads, never what it does."
 #: What a comment's section heading adds where its severity is at the `--fail-on` bar, so the review fails on it.
 MUST_FIX = " — must fix before it merges"
 #: What an approval adds where majors sat below its bar: asked by the owner, a major is important, and an opener that
 #: named the bar alone read as nothing much to fix.
-MAJORS_BELOW_BAR = "It {found} {n} major issue{s}, under Major findings. A major should be fixed before it merges."
+MAJORS_BELOW_BAR = (
+    "It {found} {n} major issue{s}, under Major findings, caused by this change. A major should be fixed before it "
+    "merges."
+)
 #: The same count in a hand-off, which lists every finding most severe first: on an approval the majors lead it, else
 #: they follow what the bar holds. Read by review: a review that asked for changes counted none.
 HANDOFF_MAJORS = "It {found} {n} major issue{s} below the `{bar}` bar. Fix those {when}."
@@ -477,6 +485,9 @@ def render_comment(
     model read too."""
     pre = evidence["preflight"]
     fixes, tidy = _lanes(outcome, tidies)
+    # What may be done already is listed apart, never among the points to fix, and never counted as a major issue.
+    apart = [group for group in [*fixes, *tidy] if group[0].done]
+    fixes, tidy = [group for group in fixes if not group[0].done], [group for group in tidy if not group[0].done]
     worth = [group for group in fixes if not at_or_above(group[0].finding.severity, fail_on)]
     head = f"**Review of {code_span(one_line(pre['head']))} at `{pre['head_sha'][:12]}`**" + _ran(
         profile, model, checks
@@ -490,11 +501,6 @@ def render_comment(
         lines.append(MAJORS_BELOW_BAR.format(found=found, n=majors, s="" if majors == 1 else "s"))
     elif verdict == "APPROVED" and (worth or tidy):
         lines.append("The points below would still improve it.")
-    if removed := len(outcome.done):  # read by review: one removed wrongly was gone from the comment without a word
-        lines.append(
-            f"The review removed {removed} finding{'s' * (removed != 1)} whose suggested code is already in the "
-            "branch. The report lists them."
-        )
     if _quotes_a_deleted_line(outcome):
         lines.append(DELETED_QUOTED)
     lanes: list[tuple[list[str], list[list[str]]]] = []  # each section's heading, and its points
@@ -510,7 +516,10 @@ def render_comment(
         )
         for severity in severities
     ]
-    caused.append(("Optional tidy-ups", tidy, TIDY_NOTE))
+    # Read by review: a tidy at the bar sat under Optional tidy-ups, a section the opener's mark never reached.
+    blocking = any(at_or_above(group[0].finding.severity, fail_on) for group in tidy)
+    caused.append((f"Tidy-ups{MUST_FIX}" if blocking else "Optional tidy-ups", tidy, TIDY_NOTE))
+    caused.append(("Possibly already done", apart, ALREADY_NOTE))
     old = [
         (f"{severity.capitalize()} findings", [[item] for item in outcome.old if item.finding.severity == severity], "")
         for severity in severities
@@ -580,8 +589,7 @@ def _since_last(
     new = sum(_since(identity, previous) == "new" for identity in identities)
     fixed = _resolved(outcome, identities, verdict, previous, checks, scope, exclude)
     done = "" if fixed is None else f"{len(fixed)} fixed, "
-    removed = f", {len(outcome.done)} removed" if outcome.done else ""  # read by review: else in no count
-    said = f"Since the last review: {done}{new} new, {len(identities) - new} still open{removed}."
+    said = f"Since the last review: {done}{new} new, {len(identities) - new} still open."
     return said + (
         " Fixed points are not counted, since the review could not check all of it." if fixed is None else ""
     )
@@ -613,7 +621,7 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
         f = lead.finding
         place = _spot(f)
         lines = [
-            f"{number}. {place}: {prose(f.title)} ({f.severity})",
+            f"{number}. {place}: {_titled(lead)} ({f.severity})",
             *_quoted_lines(f),
             *_why(f, "   - Why it matters"),
             f"   - Suggested change: {prose(f.suggestion)}",
@@ -622,11 +630,21 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
         others = [item for item in also if item.source not in tidies]
         shown = {f.why, f.suggestion, f.code}
         for item in others[:ALSO_SHOWN]:
-            lines += _also_shown(item.finding, shown)
+            lines += _also_shown(item, shown)
         if len(others) > ALSO_SHOWN:
             lines.append(f"   - Also on these lines: {len(others) - ALSO_SHOWN:,} more, which the report lists")
         points.append(_nested(number, lines))
     return points
+
+
+def _titled(item: Sourced) -> str:
+    """A point's title as the comment and the hand-off print it, a guideline's named by its check as a rule's title
+    already is. Read by review: a comment named no guideline, and its reader could not tell which wrote what; put in
+    the title, the check was named twice in the report, the JSON and chat, which name it already."""
+    title = item.finding.title
+    if item.source.startswith(guideline_id("")):
+        title = f"{item.source.removeprefix(guideline_id(''))}: {title}"
+    return prose(title)
 
 
 def _nested(number: int, lines: list[str]) -> list[str]:
@@ -637,11 +655,12 @@ def _nested(number: int, lines: list[str]) -> list[str]:
     return [lines[0], *(more + line if line else line for line in lines[1:])]
 
 
-def _also_shown(f: Finding, shown: set[str]) -> list[str]:
+def _also_shown(item: Sourced, shown: set[str]) -> list[str]:
     """Another reading of a point's lines: its title, and its reason, change and corrected code where the point does
     not show them yet. Read by review: on a tie the rule leads, and the guideline's reason and code under it were
     lost."""
-    lines = [f"   - Also on these lines: {prose(f.title)} ({f.severity})"]
+    f = item.finding
+    lines = [f"   - Also on these lines: {_titled(item)} ({f.severity})"]
     for text, said in (
         (f.why, _why(f, "     - Why it matters")),
         (f.suggestion, [f"     - Suggested change: {prose(f.suggestion)}"]),
@@ -944,10 +963,14 @@ def reviewed_where(evidence: Evidence) -> list[str]:
     branch and its commit alone. The folder's name, never its path: a comment is pasted where others read it, and a
     full path names the reviewer's home."""
     pre = evidence["preflight"]
-    lines = [f"- Repository: {code_span(one_line(PurePath(pre['repo']).name))}"] if pre.get("repo") else []
+    # A repository at a root has no folder name: its path, as given, names it. Read by review: the line named nothing.
+    repository = PurePath(pre["repo"]).name or pre["repo"] if pre.get("repo") else ""
+    lines = [f"- Repository: {code_span(one_line(repository))}"] if repository else []
     if evidence.get("whole"):
         lines.append("- Against: nothing: every file at the head")
-    elif pre.get("staged"):  # its merge base is HEAD itself, or git's empty tree with no commit yet: no merge base
+    elif pre.get("unborn"):  # the index of a repository with no commit yet, held against git's empty tree
+        lines.append("- Against: nothing, no commit yet")
+    elif pre.get("staged"):  # its merge base is HEAD itself: no merge base to name
         lines.append(f"- Against: {code_span(one_line(pre.get('base') or 'HEAD'))}")
     elif pre.get("base") and pre.get("merge_base"):
         lines.append(f"- Against: {code_span(one_line(pre['base']))}, merge base `{pre['merge_base'][:12]}`")
@@ -1226,9 +1249,9 @@ def _resolved(
     new one on its lines, which the same comment listed."""
     if previous is None or verdict == "DEGRADED":
         return None
-    # A finding already in a touched file is still found: listed apart, it is never fixed by being so. Nor is one the
-    # review removed, its suggested code already in the branch, nor one a verifier refuted: a guideline still found it.
-    held = [*(f for f, _ in outcome.folded), *outcome.old, *outcome.done, *(item for item, _why in outcome.refuted)]
+    # A finding already in a touched file is still found: listed apart, it is never fixed by being so. Nor is one a
+    # verifier refuted: a guideline still found it.
+    held = [*(f for f, _ in outcome.folded), *outcome.old, *(item for item, _why in outcome.refuted)]
     found_now = {*identities, *(fingerprint(item) for item in held)}
     return [
         found
@@ -1298,11 +1321,8 @@ def render(
     # Named with the quote, so a reader can tell a guideline that invented one from one that merely paraphrased: in a
     # code span, as the guideline wrote it, never as prose, which breaks a tag's `<`.
     lines += _named((item, f"quoted {_quoted(item.finding, 120)}") for item in outcome.dropped)
-    if outcome.done:  # read by review: a guideline read deleted lines as held code, and asked for what the branch had
-        lines.append(f"- findings removed, the branch already holds their suggested code: {len(outcome.done)}")
-        if severe := at_bar(outcome.done, fail_on):
-            lines.append(f"  - {severe} at or above `--fail-on {fail_on}`: not approved until a person reads them")
-        lines += _named((item, f"quoted {_quoted(item.finding, 120)}") for item in outcome.done)
+    if flagged := sum(item.done for item in outcome.kept):
+        lines.append(f"- findings flagged possibly already done, their suggested code already in the branch: {flagged}")
     if outcome.verified:
         lines += [
             f"- findings refuted by the verifier: {len(outcome.refuted)}",
@@ -1386,6 +1406,7 @@ def _sections(
         for identity, item in findings:
             f = item.finding
             mark = " — new since the previous review" if _since(identity, previous) == "new" else ""
+            mark += " — possibly already done: its suggested code is already in the branch" * item.done
             lines += [*_listed(f, mark), f"  - fix: {prose(f.suggestion)}"]
             lines += [
                 f"  - also on these lines: `{also.source}`: {prose(also.finding.title)} ({_where(also.finding)})"
@@ -1618,6 +1639,8 @@ def _found(item: Sourced, added: Mapping[str, frozenset[int]], identity: str = "
         "title": safe_line(f.title),
         "evidence": safe_line(f.evidence, EVIDENCE_MAX_CHARS),
         "suggestion": safe_line(f.suggestion),
+        # Whether its suggested code is what replaced the deleted lines it quotes: the change may have done it already.
+        "already_held": item.done,
     }
 
 
@@ -1692,8 +1715,6 @@ def as_data(
         "folded": [{**_found(item, added), "into": into.source} for item, into in outcome.folded],
         "dropped": [_found(item, added) for item in outcome.dropped],
         "dropped_at_fail_on": at_bar(outcome.dropped, fail_on),
-        "already_held": [_found(item, added) for item in outcome.done],
-        "already_held_at_fail_on": at_bar(outcome.done, fail_on),
         "verified": outcome.verified,
         "refuted": _reasoned(outcome.refuted, added),
         "refuted_at_fail_on": at_bar([item for item, _why in outcome.refuted], fail_on),

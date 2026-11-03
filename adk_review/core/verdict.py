@@ -46,6 +46,9 @@ class Sourced:
     deleted: bool = False
     #: Whether it was already in the file before the change, not caused by it: kept apart in `Outcome.old`.
     old: bool = False
+    #: Whether its suggested code is what replaced the deleted lines it quotes, so the change may have done it already:
+    #: kept, decided on as any finding is, and listed apart. Asked by the owner: a notice, not a major issue.
+    done: bool = False
 
 
 @dataclass
@@ -62,15 +65,12 @@ class Outcome:
     redacted: int = 0
     verified: bool = False  # `--verify` ran
     refuted: list[tuple[Sourced, str]] = field(default_factory=list)  # dropped on the verifier's say-so, with why
-    #: Removed: a guideline's finding whose suggested code the branch already holds, so it asks for no change.
-    done: list[Sourced] = field(default_factory=list)
     unverified: list[tuple[Sourced, str]] = field(default_factory=list)  # the verifier could not judge; kept, with why
 
     def unproven(self, fail_on: str) -> list[Sourced]:
-        """The findings at the bar set aside unproven, their quote not borne out, a verifier refuting them, or code
-        reading their fix as already made: a hole `decide` names, and a hand-off and a comment list, read from one
-        place. Code that removes a finding can be wrong, so one at the bar waits for a person."""
-        unproven = [*self.dropped, *(item for item, _why in self.refuted), *self.done]
+        """The findings at the bar set aside unproven, their quote not borne out or a verifier refuting them: a hole
+        `decide` names, and a hand-off and a comment list, read from one place."""
+        unproven = [*self.dropped, *(item for item, _why in self.refuted)]
         return [item for item in unproven if at_or_above(item.finding.severity, fail_on)]
 
     def folded_into(self) -> dict[int, list[Sourced]]:
@@ -261,13 +261,15 @@ def drop_ungrounded(
 def already_done(
     finding: Finding, lines: Lines, deleted: bool, hunks: list[list[tuple[int, str]]], around: Sequence[str] = ()
 ) -> bool:
-    """Whether a grounded finding asks for no change: its quote holds lines the change deleted, and the code it suggests
-    is what replaced them, as the branch holds it. In the hunk grounding chose alone; line by line, the indent kept
-    within the code; and over the spot of one quoted deleted block, the lines that replaced it or, where none did, the
-    lines either side of the gap. Read by review on a branch that removed a parameter at every use: six majors read the
-    deleted lines as held code and suggested the code the branch already had. Read by review again: a first rule, the
-    code anywhere in the hunk with every space gone, removed real bugs, a write moved out of its `with`, a check deleted
-    from one branch and kept in another, and one standing in another hunk."""
+    """Whether a grounded finding may ask for no change: its quote holds lines the change deleted, and the code it
+    suggests is what replaced them, as the branch holds it. A flag, never a removal: read by review twice, code that
+    removed such findings removed real bugs too, a block moved out of its `with` read as already done. In the hunk
+    grounding chose alone; line by line, the indent kept within the code; and over the spot of one quoted deleted block,
+    the lines that replaced it or, where none did, the lines either side of the gap. Read by review on a branch that
+    removed a parameter at every use: six majors read the deleted lines as held code and suggested the code the branch
+    already had. Read by review again: a first rule, the code anywhere in the hunk with every space gone, removed real
+    bugs, a write moved out of its `with`, a check deleted from one branch and kept in another, and one standing in
+    another hunk."""
     if not (deleted and lines and any(ch.isalnum() for ch in finding.code)):
         return False
     hunk = next((hunk for hunk in hunks if (_placed(finding, [hunk], around) or (None,))[0] == lines), None)
@@ -287,11 +289,11 @@ def already_done(
 
 
 def _unfenced(code: str) -> str:
-    """`code` without a fence of the model's own at either end."""
+    """`code` without a fence of the model's own at either end, as grounding reads one: backticks or tildes."""
     lines = code.splitlines()
-    while lines and lines[0].lstrip().startswith("```"):
+    while lines and _OWN_FENCE.fullmatch(lines[0].strip()):
         lines = lines[1:]
-    while lines and lines[-1].lstrip().startswith("```"):
+    while lines and _OWN_FENCE.fullmatch(lines[-1].strip()):
         lines = lines[:-1]
     return "\n".join(lines)
 

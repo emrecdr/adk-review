@@ -177,8 +177,9 @@ def for_the_verdict(outcome: Outcome, checks: Sequence[str], verdict: str, ignor
             # Marked from the diff, as grounding read it: a quote on one line hides a deleted line's `-`, and a Markdown
             # bullet the branch holds starts with one of its own.
             f, gone = item.finding, "(deleted) " if item.deleted else ""  # before the severity, where no model writes
+            held = "(possibly already done) " if item.done else ""  # its suggested code already in the branch
             quote = cut_at(squash(f.evidence), EVIDENCE_MAX_CHARS)
-            lines.append(f"- {gone}{f.severity} {_where(f)}: {squash(f.title)} — {quote}")
+            lines.append(f"- {held}{gone}{f.severity} {_where(f)}: {squash(f.title)} — {quote}")
         lines += [
             f"- dropped, the diff does not bear its quote out: {f.severity} {_where(f)}: {squash(f.title)}"
             for f in dropped
@@ -188,15 +189,10 @@ def for_the_verdict(outcome: Outcome, checks: Sequence[str], verdict: str, ignor
             for f, into in folded
         ]
         old = [item.finding for item in outcome.old if item.source == check]
-        done = [item.finding for item in outcome.done if item.source == check]
-        lines += [
-            f"- removed, the branch already holds its suggested code: {f.severity} {_where(f)}: {squash(f.title)}"
-            for f in done
-        ]
         lines += [
             f"- already in the file, not caused by the change: {f.severity} {_where(f)}: {squash(f.title)}" for f in old
         ]
-        if not (kept or dropped or folded or old or done or hole):
+        if not (kept or dropped or folded or old or hole):
             lines.append("- no findings")
     lines += [f"## not read: {squash(path)} — {squash(why)}" for path, why in outcome.unread.items()]
     if ignored:  # as the command's report lists them; read by review, chat named none

@@ -36,7 +36,7 @@ from conftest import (
 )
 
 from adk_review.core.profiles import rule_id, state_key
-from adk_review.core.text import TITLE_MAX_CHARS, cut_at
+from adk_review.core.text import TITLE_MAX_CHARS
 
 #: The heading only a verifier's instruction carries: a rule on it reaches the verifiers and no guideline.
 THE_VERIFIER = "## The finding"
@@ -830,10 +830,7 @@ class TestTheSecondOpinion:
         assert code == 3, out  # a blocker refuted is no approval: a person reads it, as a blocker dropped
         refuted = len(GUIDELINE_NAMES)
         assert f"findings refuted by the verifier: {refuted}\n  - {refuted} at or above `--fail-on blocker`" in out
-        assert (
-            "- `guideline.security`: security: shell=True with request-controlled input — the lines do not show it"
-            in out
-        )
+        assert "- `guideline.security`: shell=True with request-controlled input — the lines do not show it" in out
         assert "`guideline.security`" in out.split("### no findings from ", 1)[1], "it looked, and found nothing"
         # The rules' findings are facts: never asked, so never refuted, and a rule's reading of the line stands
         # whatever the verifier said of a guideline's.
@@ -875,9 +872,7 @@ class TestTheSecondOpinion:
             assert f"`verifier_{number}`: 1 call(s)" in out, "one verifier per guideline finding, each in the ledger"
         # Measured before: the count was read before the verifiers ran, and their calls hid the keys unnamed.
         assert f"- secrets redacted before any model call: {2 * 2 * len(GUIDELINE_NAMES)}" in out, "2 keys, 6 calls"
-        assert (
-            "### guideline.security\n- **blocker** security: shell=True" in out and "- **major** lint: S602" not in out
-        )
+        assert "### guideline.security\n- **blocker** shell=True" in out and "- **major** lint: S602" not in out
         assert "  - also on these lines: `rule.lint`: lint: S602" in out, "ruff's reading, under the finding it repeats"
         counted = "### rule.lint\n- folded: 2 on lines another finding already holds, each listed under that finding"
         assert counted in out, "S105 and S602, each counted in its own section"
@@ -907,7 +902,7 @@ class TestTheSecondOpinion:
         out = capsys.readouterr().out
         assert f"could not judge, kept: {len(GUIDELINE_NAMES)}" in out
         assert (
-            "- `guideline.security`: security: shell=True with request-controlled input"
+            "- `guideline.security`: shell=True with request-controlled input"
             " — RuntimeError: provider said: 429 quota" in out
         )
         guidelines = verifiers = len(GUIDELINE_NAMES)
@@ -917,14 +912,15 @@ class TestTheSecondOpinion:
 
 
 class TestWhatTheBranchAlreadyHolds:
-    def test_a_finding_whose_suggested_code_the_branch_already_holds_is_removed_and_named(
+    def test_a_finding_whose_suggested_code_the_branch_already_holds_is_flagged_never_removed(
         self, cli, fake_provider, tmp_path: Path, capsys
     ) -> None:
         """Read by review on a branch that removed a parameter at every use: six majors quoted a deleted line, read it
-        as code the branch still holds, and suggested the code the branch already held. Such a finding asks for no
-        change: it is removed and named, and one at the bar still holds the approval back, as a dropped one does. A
-        finding that restores what the change deleted asks for a change, and stays. Each guideline's finding names
-        its check, as a rule's does."""
+        as code the branch still holds, and suggested the code the branch already held. Such a finding is flagged and
+        listed apart, under Possibly already done, never counted as a major issue; it is never removed, since read by
+        review twice, code that removed one removed real bugs too. The verdict is as before. A finding that restores
+        what the change deleted is no such finding. The comment names each finding's check, a guideline's as a
+        rule's."""
         call = "def make(logger, model_code):\n    return build(\n        logger=logger,\n"
         call += "{}        model_code=model_code,\n    )\n"
         before = {"app.py": call.format("        correlation_id=correlation_id,\n")}
@@ -959,17 +955,20 @@ class TestWhatTheBranchAlreadyHolds:
         assert cli.main([*argv, "--json", str(report), "--comment", str(comment)]) == 0
         out = capsys.readouterr().out
         data = json.loads(report.read_text(encoding="utf-8"))
-        titles = [f["title"] for f in data["findings"]]
-        assert titles[0] == "correctness: the call no longer passes correlation_id", titles
-        assert titles[1].startswith("correctness: xxx") and titles[1] == cut_at(titles[1], TITLE_MAX_CHARS), titles
-        assert [f["title"] for f in data["already_held"]] == ["correctness: make passes the removed correlation_id"]
-        assert data["already_held_at_fail_on"] == 0, data
-        assert "findings removed, the branch already holds their suggested code: 1" in out, out
-        assert "make passes the removed" not in comment.read_text(encoding="utf-8"), "never a point to fix"
-        # At the bar it holds the approval back until a person reads it: code removed it, and code can be wrong.
-        assert cli.main([*argv, "--fail-on", "major", "--json", str(report)]) == 3
+        # The restoring finding quotes the same lines, so it folds under the flagged one; the unit tests show it is
+        # never flagged itself.
+        held = {f["title"][:12]: f["already_held"] for f in data["findings"]}
+        assert held == {"make passes ": True, "x" * 12: False}, held
+        assert "possibly already done: its suggested code is already in the branch" in out, out
+        said = comment.read_text(encoding="utf-8")
+        apart = said.split("### Possibly already done", 1)[1]
+        assert "correctness: make passes the removed" in apart, said
+        assert "make passes the removed" not in said.split("### Possibly already done", 1)[0], "never a major point"
+        assert "It did find" not in said, "never counted as a major issue"
+        assert "correctness: xxxx" in said, "the comment names a guideline's check"
+        # The verdict is as before: one at the bar fails the review, as any kept finding does.
+        assert cli.main([*argv, "--fail-on", "major"]) == 1
         capsys.readouterr()
-        assert json.loads(report.read_text(encoding="utf-8"))["already_held_at_fail_on"] == 1
 
 
 class TestTheFences:

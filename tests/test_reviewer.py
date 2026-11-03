@@ -177,9 +177,7 @@ class TestTheReport:
         capsys.readouterr()
         said = json.loads(data.read_text(encoding="utf-8"))
         assert said["checks"] == ["guideline.complexity", "guideline.correctness"], said["checks"]
-        assert [(f["check"], f["title"]) for f in said["findings"]] == [
-            ("guideline.correctness", "correctness: exit code lost")
-        ]
+        assert [(f["check"], f["title"]) for f in said["findings"]] == [("guideline.correctness", "exit code lost")]
         assert [(f["check"], f["into"]) for f in said["folded"]] == [("guideline.complexity", "guideline.correctness")]
 
     def test_a_quote_framed_as_it_was_shown_is_kept_as_its_lines_and_known_again(
@@ -1048,10 +1046,10 @@ class TestWhatTheLanesRead:
         found = Finding(file="a.py", line=None, severity="major", title="lint: F401", evidence="F401", suggestion="s")
         said = for_the_verdict(Outcome(old=[Sourced("rule.lint", found, old=True)]), ["rule.lint"], "APPROVED")
         assert "already in the file" in said and "no findings" not in said, said
-        # And one the review removed, its suggested code already in the branch, is named as removed, never as nothing.
-        said = for_the_verdict(Outcome(done=[Sourced("guideline.correctness", found)]), ["guideline.correctness"], "X")
-        assert "- removed, the branch already holds its suggested code: major" in said, said
-        assert "no findings" not in said, said
+        # And one whose suggested code the branch already holds is marked so, as the comment lists it apart.
+        flagged = Outcome(kept=[Sourced("guideline.correctness", found, done=True)])
+        said = for_the_verdict(flagged, ["guideline.correctness"], "X")
+        assert "- (possibly already done) major a.py: lint: F401" in said, said
 
     def test_every_guideline_and_every_verifier_is_told_what_a_deleted_line_is(self, monkeypatch) -> None:
         """Read by review on a branch that removed a field: 15 of 43 findings quoted lines the change deleted, as the

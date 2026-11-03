@@ -23,7 +23,7 @@ from google.genai import types
 
 from ..core.evidence import Entry, entry
 from ..core.findings import Checked, Review
-from ..core.profiles import guideline_id, state_key
+from ..core.profiles import state_key
 from ..core.rules import AnyRule
 from ..core.verdict import Outcome, Sourced, already_done, decide, drop_ungrounded, fold, from_rules, not_read
 from .agents import FINDINGS, IGNORED, QUOTABLE, for_the_verdict, read_back, unjudged
@@ -103,14 +103,12 @@ def read_guidelines(run: Run, files: list[Entry], guidelines: Sequence[str], hol
         if isinstance(answer, str):
             outcome.errors[check] = answer
             continue
-        # Each finding names its check, as a rule's does; the fingerprint reads no title, so `--previous` still matches.
-        name = check.removeprefix(guideline_id(""))
-        named = answer.model_copy(update={"findings": [f.by(name) for f in answer.findings]})
-        kept, dropped = drop_ungrounded(named, quotable, framing)
+        kept, dropped = drop_ungrounded(answer, quotable, framing)
+        # One whose suggested code the branch already holds is flagged, never removed: read by review twice, code that
+        # removed such findings removed real bugs too.
         for f, lines, deleted in kept:
-            item = Sourced(check, f, lines, deleted)
             done = already_done(f, lines, deleted, quotable.get(f.file, []), framing.get(f.file, ()))
-            (outcome.done if done else outcome.kept).append(item)
+            outcome.kept.append(Sourced(check, f, lines, deleted, done=done))
         outcome.dropped += [Sourced(check, f) for f in dropped]
     return outcome
 

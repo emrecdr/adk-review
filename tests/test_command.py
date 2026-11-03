@@ -1130,7 +1130,10 @@ class TestThePreviousReportAndTheHandoff:
         evidence = {"preflight": {"head": "h", "head_sha": "0" * 40}}
         approved = {"verdict": "APPROVED", "fail_on": "blocker"}
         said = render_comment(evidence, Outcome(kept=[at(5, "major"), at(9, "major"), at(12, "minor")]), **approved)
-        assert "It did find 2 major issues, under Major findings. A major should be fixed before it merges." in said
+        assert (
+            "It did find 2 major issues, under Major findings, caused by this change. A major should be fixed before it"
+            " merges." in said
+        )
 
         # Asked by the owner: the sections follow the severity, where majors and minors below the bar sat under one
         # "Worth a look". The most severe come first, and each at the bar says it must be fixed before it merges.
@@ -1144,9 +1147,15 @@ class TestThePreviousReportAndTheHandoff:
         assert headings(said) == [f"### Blocker findings{must}", f"### Major findings{must}", "### Minor findings"], (
             said
         )
-        assert "Fix each point under a section marked must fix before it merges." in said, said
+        assert "Fix each point of `major` severity or above before it merges." in said, said
+        # Read by review: a tidy at the bar sat under Optional tidy-ups, a section the opener's mark never reached.
+        tidy = Outcome(kept=[Sourced("rule.simplify", at(4, "minor").finding, (4, 4))])
+        said = render_comment(
+            evidence, tidy, verdict="REQUEST_CHANGES", fail_on="minor", tidies=frozenset({"rule.simplify"})
+        )
+        assert headings(said) == [f"### Tidy-ups{must}"], said
         said = render_comment(evidence, Outcome(kept=[at(5, "major")]), **approved)
-        assert "It did find 1 major issue, under Major findings." in said, said
+        assert "It did find 1 major issue, under Major findings, caused by this change." in said, said
         said = render_comment(evidence, Outcome(kept=[at(12, "minor")]), **approved)
         assert "major" not in said.split("### ")[0] and "The points below would still improve it." in said, said
 
@@ -1236,49 +1245,51 @@ class TestThePreviousReportAndTheHandoff:
         }
         said = render_comment(staged, Outcome(), verdict="APPROVED", fail_on="blocker")
         assert "- Against: `HEAD`\n" in said and "merge base" not in said, said
+        first = {**staged, "preflight": {**staged["preflight"], "unborn": True}}
+        said = render_comment(first, Outcome(), verdict="APPROVED", fail_on="blocker")
+        assert "- Against: nothing, no commit yet" in said, said
+        # Read by review: a repository at a root has no folder name, and the line named nothing.
+        root = render_comment(
+            {**whole, "preflight": {**pre, "repo": "/"}}, Outcome(), verdict="APPROVED", fail_on="blocker"
+        )
+        assert "- Repository: `/`" in root, root
 
-    def test_a_finding_the_review_removed_is_never_read_as_resolved(self) -> None:
-        """Read by review: a finding the review removed, its suggested code already in the branch, was no fingerprint
-        found now, so `--previous` named it resolved, as if a commit had fixed it. A guideline still found it."""
+    def test_a_finding_a_verifier_refuted_is_never_read_as_resolved(self) -> None:
+        """Read by review: a finding a verifier refuted was no fingerprint found now, so `--previous` named it
+        resolved, as if a commit had fixed it, though a guideline still found it."""
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Outcome, Sourced
-        from adk_review.deliver.report import _resolved, fingerprint, render_comment
+        from adk_review.deliver.report import _resolved, fingerprint
 
         found = Finding(file="a.py", line=2, severity="major", title="t", evidence="-x = 1", suggestion="s", code="y")
         item = Sourced("guideline.correctness", found, (2, 2), deleted=True)
         previous = {fingerprint(item): {"check": "guideline.correctness", "file": "a.py", "title": "t"}}
-        assert _resolved(Outcome(done=[item]), [], "APPROVED", previous, ["guideline.correctness"], []) == []
-        # Read by review: nor is one a verifier refuted, which a guideline still found.
         refuted = Outcome(refuted=[(item, "no")], verified=True)
         assert _resolved(refuted, [], "APPROVED", previous, ["guideline.correctness"], []) == []
-        # And the comment's count says what was removed, so it adds up: before, a removed point was in no count.
-        said = render_comment(
-            {"preflight": {"head": "h", "head_sha": "0" * 40}, "scope": []},
-            Outcome(done=[item]),
-            verdict="APPROVED",
-            fail_on="blocker",
-            previous=previous,
-            checks=["guideline.correctness"],
-        )
-        assert "Since the last review: 0 fixed, 0 new, 0 still open, 1 removed" in said, said
 
-    def test_a_comment_says_what_the_review_removed_and_why(self) -> None:
-        """Read by review: a finding the review removed as already done below the bar was in no comment, so one removed
-        wrongly was gone without a word; and one at the bar was "a finding this review could not prove", no reason
-        given. The comment counts them, and names one at the bar with why, for a person to check."""
+    def test_a_point_whose_suggested_code_the_branch_holds_is_listed_apart_and_never_counted_as_major(self) -> None:
+        """Asked by the owner: a finding asking for code the branch already holds is a notice, not a major issue.
+        It is listed apart, under Possibly already done, never removed: read by review twice, code that removed such
+        findings removed real bugs too. Each point names its check, a guideline's as a rule's."""
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Outcome, Sourced
-        from adk_review.deliver.report import render_comment
+        from adk_review.deliver.report import render_comment, render_handoff
 
-        def at(severity: str) -> Sourced:
-            found = Finding(file="a.py", line=2, severity=severity, title="t", evidence="-x", suggestion="s", code="y")
-            return Sourced("guideline.correctness", found, (2, 2), deleted=True)
+        def at(line: int, severity: str, done: bool) -> Sourced:
+            found = Finding(file="a.py", line=line, severity=severity, title=f"t{line}", evidence="-x", suggestion="s")
+            return Sourced("guideline.correctness", found, (line, line), deleted=True, done=done)
 
-        evidence = {"preflight": {"head": "h", "head_sha": "0" * 40}}
-        said = render_comment(evidence, Outcome(done=[at("major"), at("minor")]), verdict="APPROVED", fail_on="blocker")
-        assert "The review removed 2 findings whose suggested code is already in the branch." in said, said
-        said = render_comment(evidence, Outcome(done=[at("blocker")]), verdict="DEGRADED", fail_on="blocker")
-        assert "removed: its suggested code is already in the branch. Check it by hand" in said, said
+        pre = {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40}
+        evidence = {"preflight": pre, "whole": False, "scope": []}
+        outcome = Outcome(kept=[at(2, "major", True), at(5, "minor", False)])
+        said = render_comment(evidence, outcome, verdict="APPROVED", fail_on="blocker")
+        headings = [line for line in said.splitlines() if line.startswith("### ")]
+        assert headings == ["### Minor findings", "### Possibly already done"], said
+        apart = said.split("### Possibly already done", 1)[1]
+        assert "Check whether the change already did it." in apart and "correctness: t2 (major)" in apart, said
+        assert "It did find" not in said and "correctness: t5 (minor)" in said, said
+        handoff = render_handoff(evidence, outcome, verdict="APPROVED", fail_on="blocker")
+        assert "## Possibly already done" in handoff and "correctness: t2" in handoff.split("## Possibly", 1)[1]
 
     def test_an_approving_hand_off_counts_the_major_issues_below_its_bar_too(self) -> None:
         """Asked by the owner: the hand-off says what the comment says, so an agent fixes the majors first."""
@@ -1319,7 +1330,9 @@ class TestThePreviousReportAndTheHandoff:
         evidence = {"preflight": pre, "whole": False, "scope": []}
         both = Outcome(kept=[at(3, "blocker"), at(5, "major")])
         said = render_comment(evidence, both, verdict="REQUEST_CHANGES", fail_on="blocker")
-        assert "It also found 1 major issue, under Major findings." in said.split("### ")[0], said
+        assert "It also found 1 major issue, under Major findings, caused by this change." in said.split("### ")[0], (
+            said
+        )
         said = render_handoff(evidence, both, verdict="REQUEST_CHANGES", fail_on="blocker")
         opening = said.split("\n\n", 3)[2]
         assert "It also found 1 major issue below the `blocker` bar. Fix those after the ones at the bar." in opening
@@ -1686,15 +1699,16 @@ class TestThePreviousReportAndTheHandoff:
             {**evidence, "scope": []}, outcome, verdict="REQUEST_CHANGES", fail_on="blocker", tidies=tidies
         )
         fixes, tidy = said.split("\n## Fix\n", 1)[1].split("\n## Tidy\n", 1)
-        assert "1. shell call (a.py:3), major" in fixes and "2. error swallowed (a.py:12), major" in fixes, fixes
-        assert "3. line too long (a.py:7), minor" in fixes and "4. off by one (a.py:30), minor" in fixes, fixes
+        # A guideline's point names its check, as a rule's title already does: read by review, none did.
+        assert "1. shell call (a.py:3), major" in fixes and "2. correctness: error swallowed (a.py:12), major" in fixes
+        assert "3. line too long (a.py:7), minor" in fixes and "4. correctness: off by one (a.py:30), minor" in fixes
         assert "   - held back, a tidy of these lines: nested if, minor." in fixes, "a major defect holds its tidy back"
-        assert "   - held back, a tidy of these lines: copied block, major." in fixes, (
+        assert "   - held back, a tidy of these lines: complexity: copied block, major." in fixes, (
             "the defect leads, the tidy waits"
         )
         assert f"`rule.simplify` no longer reports fingerprint `{fingerprint(nested)}`" not in said, "no instruction"
         assert "manual list" not in fixes and "copied again" not in fixes, "a minor defect holds nothing back"
-        assert "5. copied again (a.py:30), major" in tidy and "6. manual list (a.py:7), minor" in tidy, tidy
+        assert "5. complexity: copied again (a.py:30), major" in tidy and "6. manual list (a.py:7), minor" in tidy, tidy
         assert f"`rule.simplify` no longer reports fingerprint `{fingerprint(loop)}`" in tidy, "its own instruction"
         assert " ".join(TIDY_KEEPS) in " ".join(tidy.split()) and "7. redundant dict() (a.py:20), minor" in tidy
         assert "held back" not in tidy
