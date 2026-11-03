@@ -104,7 +104,7 @@ def read_guidelines(run: Run, files: list[Entry], guidelines: Sequence[str], hol
             outcome.errors[check] = answer
             continue
         kept, dropped = drop_ungrounded(answer, quotable, framing)
-        outcome.kept += [Sourced(check, f, lines) for f, lines in kept]
+        outcome.kept += [Sourced(check, f, lines, deleted) for f, lines, deleted in kept]
         outcome.dropped += [Sourced(check, f) for f in dropped]
     return outcome
 

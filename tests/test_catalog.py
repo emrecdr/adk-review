@@ -4,7 +4,6 @@ and the config that holds both."""
 from __future__ import annotations
 
 import importlib
-import os
 import re
 from pathlib import Path
 
@@ -302,11 +301,11 @@ class TestTheRuleKinds:
         got = run_rule(_broken(error), [{"path": "a.py", "added": [(1, "x")]}], None).could_not_look
         assert got.startswith(f"{said} (conftest.py line "), got  # where `_broken` is written
 
-    @pytest.mark.skipif(os.name != "nt", reason="only Windows reads one path spelled in two cases as one file")
     def test_a_rules_own_file_is_found_whatever_case_its_path_is_spelled_in(self, monkeypatch) -> None:
         """Read on a machine whose editor ran the tests from `c:\\Users\\…` and whose terminal from `C:\\Users\\…`:
         pytest's cached copy of `conftest.py` kept the first spelling, Python reported the second, and a strict
-        comparison of the two names found no line of the rule's own file, so two tests failed by whichever ran last."""
+        comparison of the two names found no line of the rule's own file, so two tests failed by whichever ran last.
+        Read by review: macOS reads two spellings as one file too, so the names are compared alike everywhere."""
         import inspect
 
         real = inspect.getsourcefile

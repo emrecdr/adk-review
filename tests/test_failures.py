@@ -357,7 +357,11 @@ def test_each_arms_error_reads_as_its_reason_not_its_body() -> None:
     raw = GithubCopilotConfig().get_error_class(error_message=body, status_code=400, headers={})
     with pytest.raises(litellm.exceptions.BadRequestError) as mapped:
         exception_type(model="gpt-5", original_exception=raw, custom_llm_provider="github_copilot")
-    assert describe(mapped.value) == "400: model_not_supported: The requested model is not supported."
+    # Read by review: on this path the code is 400 and Copilot's own code is in the message, so the step goes there too.
+    assert describe(mapped.value) == (
+        "400: model_not_supported: The requested model is not supported. "
+        "Name a model your Copilot seat serves, in REVIEW_MODEL or the variable that chose this one."
+    )
     assert "deadline" in describe(TimeoutError()), "the one error that says nothing of itself"
     # Measured live, Copilot's rate limit: a body of plain text, read as "RateLimitError: 429: RateLimitError:
     # Github_copilotException - Sorry, …", the class named twice and the provider's own once.

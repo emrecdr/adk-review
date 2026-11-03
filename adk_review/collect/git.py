@@ -33,6 +33,7 @@ from ..core.text import lines_of
 from .change import (
     BINARY_UNREAD,
     POINTER_UNREAD,
+    _pastable,
     callers_of,
     lfs_pointer,
     no_change,
@@ -302,9 +303,6 @@ class _UnrelatedError(_ScopeError):
 
 #: A name a command printed for a person to paste keeps as itself in a POSIX shell, cmd and PowerShell alike. A branch's
 #: name is its author's, and `;`, `$` and a backtick are legal in one.
-_PASTABLE = re.compile(r"[A-Za-z0-9._/-]+")
-
-
 def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn:
     """Refuse `name`, which names nothing in the repository, with the way to it: its remote copy where a fetch brought
     one, else the fetch that brings one. Asked by the owner: a branch on the remote read as no branch at all. The review
@@ -354,11 +352,6 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     if remotes:
         raise _ScopeError(f"{said}, nor as a remote branch fetched there. Fetch every remote there: git fetch --all")
     raise _ScopeError(f"{said}. Name one that git branch lists")
-
-
-def _pastable(*words: str) -> bool:
-    """Whether a printed command can hold each of `words` as it is: no character a shell reads, and none a flag."""
-    return all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in words)
 
 
 def _resolves(root: str, revision: str) -> bool:

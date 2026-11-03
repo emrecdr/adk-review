@@ -9,7 +9,7 @@ import ast
 import functools
 import re
 from collections import defaultdict
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 
 from ..core.blast import PASSED_ON, Blast, blast_radius
 from ..core.evidence import Entry, Failure, entry
@@ -127,18 +127,25 @@ def unread(entry: Entry, diff: str, cut: bool, fits: bool, cap: int, folder: str
     return ""
 
 
-#: A path a person can give `--path` as it stands, in any shell: no space, quote or sign one would read, and no leading
-#: `-`, which reads as a flag.
-_PLAIN_PATH = re.compile(r"[A-Za-z0-9._/][A-Za-z0-9._/-]*")
+#: What a printed command holds as it stands, in any shell: no space, quote or sign one would read.
+_PASTABLE = re.compile(r"[A-Za-z0-9._/-]+")
 
 
-def _planned(path: str, parts: Sequence[Sequence[str]]) -> str | None:
-    """The `--path` value of the planned run that reads `path`, which fits the block on its own; None where no plan
-    fits, or where a shell would need it quoted. Read by review: a folder guessed from the paths alone, `--path
-    src`, was three times the block, where the plan beside it named runs that fit, and the guess took seconds on a big
-    tree."""
-    unit = next((unit for run in parts for unit in run if in_scope(path, [unit])), None)
-    return unit if unit and _PLAIN_PATH.fullmatch(unit) else None
+def _pastable(*words: str) -> bool:
+    """Whether a printed command can hold each of `words` as it is: no character a shell reads, and none a flag."""
+    return all(_PASTABLE.fullmatch(word) and not word.startswith("-") for word in words)
+
+
+def _planned(path: str, units: Collection[str]) -> str | None:
+    """The `--path` value of the planned run that reads `path`, the file or the nearest folder above it among `units`,
+    which fits the block on its own; None where no plan fits, or where a shell would need it quoted. Read by review: a
+    folder guessed from the paths alone, `--path src`, was three times the block, where the plan beside it named runs
+    that fit; and each file scanned every unit, 1.28 s over 3,000 files, where a walk up its folders takes one look a
+    level."""
+    unit = path
+    while unit and unit not in units:
+        unit = unit.rpartition("/")[0]
+    return unit if unit and _pastable(unit) else None
 
 
 def in_parts(sizes: Mapping[str, int], scope: Sequence[str], cap: int) -> list[list[str]]:
@@ -150,7 +157,9 @@ def in_parts(sizes: Mapping[str, int], scope: Sequence[str], cap: int) -> list[l
         return []
     roots: dict[str, list[str]] = defaultdict(list)
     for path in sorted(sizes):
-        roots[next((folder for folder in scope if in_scope(path, [folder])), "")].append(path)
+        # The outermost folder given that holds it, as a folder sorts before every one inside it: read by review, the
+        # first given put `a/b` beside `a`, and the run `--path a` read `a/b` again.
+        roots[next((folder for folder in sorted(scope) if in_scope(path, [folder])), "")].append(path)
     units = [unit for root in sorted(roots) for unit in _units(sizes, root, roots[root], cap)]
     return _packed(units, cap)
 
@@ -215,12 +224,12 @@ def shown_to_guidelines(
 ) -> tuple[list[Entry], str, dict[str, str], int, list[list[str]]]:
     """Each changed file with its whole diff and its added lines, for the rules, and what the guidelines are shown of
     it; the block they read, each file capped at `diff_cap` and the block at `BLOCK_CAP_CHARS`, what it leaves out
-    counted at its end; the files the operator's skip list left out, by path with the glob; how many files the
-    block's cap left out, which the collector reads to know whether the function around each hunk cost one its
-    reading; and, where it left any out, the runs that read them all, as `in_parts` plans them. Decided from the
-    diffs alone: no git runs here. With no guideline to show it to, `shown` False, no file is capped, framed or
-    shown: measured, the view cost 2.3 s of a 10.5 s `default-rules` review of 2,683 files, the pre-push hook's
-    profile, and nothing read it."""
+    counted at its end; the files the operator's skip list left out, by path with the glob; how many files the block's
+    cap left out that the change keeps, each a hole, which the collector reads to know whether the function around each
+    hunk cost one its reading; and, where it left any out, the runs that read them all, as `in_parts` plans them.
+    Decided from the diffs alone: no git runs here. With no guideline to show it to, `shown` False, no file is capped,
+    framed or shown: measured, the view cost 2.3 s of a 10.5 s `default-rules` review of 2,683 files, the pre-push
+    hook's profile, and nothing read it."""
     files: list[Entry] = []
     blocks: list[str] = []
     room, excluded = BLOCK_CAP_CHARS, {}
@@ -244,25 +253,30 @@ def shown_to_guidelines(
         shown_any.append((file, diff, cut, len(framed(file["path"], view)[0])))
     # The files read whole take the room first, then the cut ones, each in path order: measured by review, a long file
     # cut at the cap took the room of small files after it, read whole before the cap rose, and left them out whole.
+    # A deleted file goes last and is never counted as left out, since it is never a hole: read by review, one took the
+    # room of a file the change added, which was then a hole, and alone it asked whether to go on.
     fitted: set[int] = set()
-    for at in sorted(range(len(shown_any)), key=lambda at: shown_any[at][2]):  # stable: path order within each
+    first = sorted(range(len(shown_any)), key=lambda at: (shown_any[at][0]["status"] == "D", shown_any[at][2]))
+    for at in first:  # stable: path order within each
         if (size := shown_any[at][3]) <= room:
             fitted.add(at)
             room -= size + 2  # and the blank line joining it to the next
-    left_out = len(shown_any) - len(fitted)
+    not_shown = len(shown_any) - len(fitted)
+    left_out = sum(at not in fitted and file["status"] != "D" for at, (file, *_rest) in enumerate(shown_any))
     sizes = {file["path"]: size for file, _diff, _cut, size in shown_any}
     parts = in_parts(sizes, scope, BLOCK_CAP_CHARS) if left_out else []
+    units = {unit for run in parts for unit in run}
     for at, (file, diff, cut, _size) in enumerate(shown_any):
         # The guidelines' limits alone: the rules read every added line.
-        folder = None if at in fitted else _planned(file["path"], parts)
+        folder = None if at in fitted else _planned(file["path"], units)
         file.update(unread=unread(file, diff, cut, at in fitted, diff_cap, folder), cut=cut or at not in fitted)
         if at in fitted:  # a file no guideline read, none may quote; its view made again, none kept for the rest
             view, _cut = capped(diff, diff_cap)
             block, framing = framed(file["path"], view)
             file.update(quotable=quotable(view), framing=framing)
             blocks.append(block)
-    if left_out:  # named to the guidelines too: a test left out is no test missing
-        blocks.append(f"[… {left_out} more file(s) not shown: past {BLOCK_CAP_CHARS:,} characters in all]")
+    if not_shown:  # named to the guidelines too: a test left out is no test missing
+        blocks.append(f"[… {not_shown} more file(s) not shown: past {BLOCK_CAP_CHARS:,} characters in all]")
     if excluded:
         blocks.append(f"[… {len(excluded)} more file(s) not shown: the operator's skip list leaves them out]")
     return files, "\n\n".join(blocks), excluded, left_out, parts

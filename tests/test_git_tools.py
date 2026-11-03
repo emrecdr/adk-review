@@ -1707,6 +1707,33 @@ class TestWhatTheGuidelinesAreShown:
         assert left_out == 1, "how many the block's cap left out, which the collector reads"
         assert [sorted(f["added_at"]) for f in files] == [[1], [1], [1]], "every file's added lines, shown or not"
 
+    def test_each_file_is_in_one_run_where_one_path_given_holds_another(self) -> None:
+        """Read by review: with `--path a/b --path a`, a file under `a/b` went to the first folder that held it and
+        the rest to `a`, so the run `--path a` read `a/b` again, past the block the plan had counted for it. A folder
+        given inside another is read as part of it."""
+        from adk_review.collect.change import in_parts
+
+        sizes = {"a/x.py": 50, "a/b/y.py": 50, "a/b/z.py": 50}
+        assert in_parts(sizes, ("a/b", "a"), 120) == in_parts(sizes, ("a", "a/b"), 120) == [["a/b"], ["a/x.py"]]
+
+    def test_a_deleted_file_takes_the_room_last_and_is_never_counted_as_left_out(self, monkeypatch) -> None:
+        """Read by review: a deleted file is never a hole, what it removes reviewed when it came in, yet the block gave
+        it the room before a file the change added, which was then a hole, and counted it as left out, so the review
+        printed runs and asked whether to go on for a change it could read. The files the change keeps take the room
+        first; a deleted one left out is named in the block and counted nowhere else."""
+        from adk_review.collect import change, diff
+
+        gone = "diff --git a/a_old.py b/a_old.py\ndeleted file mode 100644\n--- a/a_old.py\n+++ /dev/null\n"
+        gone += "@@ -1,2 +0,0 @@\n-x = 1\n-y = 2\n"
+        added = self._diff("b_new.py", "z = 3")
+        entries = [{"path": "a_old.py", "status": "D"}, {"path": "b_new.py", "status": "A"}]
+        room = max(len(diff.framed(path, text)[0]) for path, text in (("a_old.py", gone), ("b_new.py", added)))
+        monkeypatch.setattr(change, "BLOCK_CAP_CHARS", room)  # room for one of the two
+        files, block, _excluded, left_out, parts = change.shown_to_guidelines(entries, [gone, added], 2_000, ())
+        assert [f["unread"] for f in files] == ["", ""] and "b_new.py" in block, block
+        assert left_out == 0 and parts == [], (left_out, parts)
+        assert "[… 1 more file(s) not shown: past" in block, "the deleted file is still named as not shown"
+
     def test_a_file_past_the_block_names_the_folder_that_reviews_it_in_a_smaller_run(self, monkeypatch) -> None:
         """Read by review on a branch of 58 files: nine test files past the block were each named with "--path
         narrows a review", and the person had to find which folder. The branch's `tests` alone fit. Each file left out

@@ -117,7 +117,7 @@ def is_databricks_notebook(file: ChangedFile) -> bool:
     """Whether the file is a Databricks notebook: its first line the mark, a byte order mark before it aside. Databricks
     reads the mark on the first line alone, so a comment above it makes the file a plain module, where the names are
     undefined. Read by review: comments let in above the mark passed over a plain module's undefined `spark`."""
-    return bool(file.lines) and file.line(1).lstrip("\ufeff").strip() == NOTEBOOK_MARK
+    return file.line(1).lstrip("\ufeff").strip() == NOTEBOOK_MARK
 
 
 def defined_by_databricks(file: ChangedFile, found: Diagnostic) -> bool:

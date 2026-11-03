@@ -757,6 +757,8 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
     # What every report says of the review itself, a dry run's too: with no guideline there is no model to name; an
     # arm that is not ready names no model either: `why` says why.
     shown = {"model": model, "profile": chosen.name, "off": chosen.off, "checks": chosen.ids()}
+    # The runs that read a change the guidelines cannot read in one, which the dry run prints and a review asks about.
+    told = told_in_parts(evidence, chosen.name, args.added) if guidelines else []
     if args.dry_run:
         unread = not_read(evidence["files"], guidelines)
         print(
@@ -767,11 +769,12 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
                 ready=why or "ready",
                 unread=unread,
                 config=str(CONFIG),
-                added=args.added,
+                told=told,
             )
         )
         return EXIT_CLEAN
-    if guidelines and not args.quiet and not _goes_on(told_in_parts(evidence, chosen.name, args.added)):
+    # Under `--quiet` too, which silences a review that passes: one with files unread never does.
+    if not _goes_on(told):
         _say("stopped: review it in parts, one run each, as listed above")
         return EXIT_USAGE
     return _decided(args, chosen, evidence, shown, previous, say)
@@ -788,11 +791,11 @@ def _goes_on(told: Sequence[str]) -> bool:
     if not _a_terminal():
         return True
     while True:
-        answer = _answer("review: go on anyway, the files above unread? Answer y or n: ").strip().lower()
-        if answer in ("y", "yes"):
-            return True
-        if answer in ("", "n", "no"):  # "" is the end of the input, or Ctrl-C: no choice to spend the calls
+        said = _answer("review: go on anyway, the files above unread? Answer y or n: ")
+        if not said:  # the end of the input, or Ctrl-C: no choice to spend the calls
             return False
+        if (answer := said.strip().lower()) in ("y", "yes", "n", "no"):  # a bare Enter is asked again, as `_ask` does
+            return answer in ("y", "yes")
 
 
 @contextlib.contextmanager
@@ -1054,11 +1057,11 @@ def _named_after(evidence: Evidence, template: str, at: str) -> str:
 def _safe_name(name: str) -> str:
     """A name as part of a file's, on every system: lower case, as the owner asked, since some systems tell `Main` from
     `main` and others do not; each run of what is not a letter, a digit, `.`, `_` or `-` one `-`, and of `_` one `_`,
-    since `__` joins the parts; at most `COMMENT_NAME_CHARS` characters; no `.` or `-` at either end, so no name climbs
-    a folder or ends cut on one; `branch` where none is left. A branch's name is its author's, and `/`, `$` and a
-    backtick are legal in one."""
-    safe = re.sub(r"_+", "_", re.sub(r"[^a-z0-9._-]+", "-", name.lower())).strip(".-")
-    return safe[:COMMENT_NAME_CHARS].rstrip(".-") or "branch"
+    since `__` joins the parts; at most `COMMENT_NAME_CHARS` characters; no `.`, `_` or `-` at either end, so no name
+    climbs a folder, runs into a `__` or ends cut on one; `branch` where none is left. A branch's name is its author's,
+    and `/`, `$` and a backtick are legal in one."""
+    safe = re.sub(r"_+", "_", re.sub(r"[^a-z0-9._-]+", "-", name.lower())).strip("._-")
+    return safe[:COMMENT_NAME_CHARS].rstrip("._-") or "branch"
 
 
 @contextlib.contextmanager

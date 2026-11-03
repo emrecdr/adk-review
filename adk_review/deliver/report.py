@@ -332,13 +332,9 @@ def _lanes(outcome: Outcome, tidies: frozenset[str]) -> tuple[list[list[Sourced]
 
 
 def _quotes_a_deleted_line(outcome: Outcome) -> bool:
-    """Whether a guideline's kept or folded quote holds a line the change deleted, which grounding keeps with its `-`:
-    a rule quotes the head's own lines, where a `-` is the file's."""
-    items = [*outcome.kept, *(folded for folded, _into in outcome.folded)]
-    return any(
-        not item.source.startswith(rule_id("")) and any(line[:1] == "-" for line in item.finding.evidence.splitlines())
-        for item in items
-    )
+    """Whether a guideline's kept or folded quote holds a line the change deleted, which grounding keeps with its `-`
+    and records: a `-` a line's own text starts with, a Markdown bullet's, is the file's."""
+    return any(item.deleted for item in [*outcome.kept, *(folded for folded, _into in outcome.folded)])
 
 
 def _items(
@@ -978,12 +974,11 @@ def render_dry_run(
     ready: str,
     unread: Mapping[str, str],
     config: str,
-    added: Sequence[str] = (),
+    told: Sequence[str] = (),
 ) -> str:
     """`--dry-run`: what a review would cover and run, resolved as the review resolves it, and nothing run — the
     cheapest way to find the wrong branch, the wrong profile, or a key that is not there before any of it costs, and a
-    change too large for the guidelines in one run, with the runs that read it."""
-    parts = told_in_parts(evidence, profile, added) if guidelines else []
+    change too large for the guidelines in one run, with the runs that read it: `told`, from `told_in_parts`."""
     lines = [
         f"# Dry run: {what(evidence)}",
         "",
@@ -993,7 +988,7 @@ def render_dry_run(
         f"- config       {one_line(config)}",
         "",
         *_blast(evidence["blast"]),
-        *([*parts, ""] if parts else []),
+        *([*told, ""] if told else []),
         "Nothing ran: no rule, no guideline, no model call. Drop --dry-run to review.",
     ]
     return inert("\n".join(lines))  # the paths are the branch's, here as in the review

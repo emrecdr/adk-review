@@ -20,6 +20,7 @@ import functools
 import importlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -262,8 +263,29 @@ def demo_repo(tmp_path_factory) -> Path:
     return build_demo_repo(tmp_path_factory.mktemp("demo") / "repo")
 
 
+@pytest.fixture(scope="session")
+def labelled_repo(tmp_path_factory) -> tuple[Path, dict[str, str]]:
+    """The repository `scripts/labelled_set.py` builds, and its branch for each label, once per test session: the tests
+    that read it write nothing. Measured: a build took 0.66 s on macOS, made by each test that read it."""
+    import labelled_set
+
+    repo = tmp_path_factory.mktemp("labelled") / "repo"
+    return repo, labelled_set.branches(repo)
+
+
 #: A branch that shares no commit with `main`: git has no merge base for the two, so no change between them.
 UNRELATED = "unrelated"
+
+
+def _long(said: list) -> list[tuple[str, str]]:
+    """Each sentence of `said`, `(where, text)` pairs, past ASD-STE100's 20 words or with a `;` joining two."""
+    return [
+        (where, sentence)
+        for where, text in said
+        if text is not None
+        for sentence in re.split(r"(?<=[.!?])\s+", text)
+        if len(sentence.split()) > 20 or ";" in sentence
+    ]
 
 
 def catalog():

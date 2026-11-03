@@ -21,6 +21,7 @@ from conftest import (
     _branch_off_empty,
     _committed,
     _git_in,
+    _long,
     in_tags,
     judge_module,
     load_agent,
@@ -77,10 +78,10 @@ class TestDecision:
             for n, (file, quote) in enumerate(cases)
         ]
         kept, _dropped = _grounded_in(files.values(), findings)
-        grounded = {int(f.title) for f, _at in kept}
+        grounded = {int(f.title) for f, _at, _deleted in kept}
         wrong = [case for n, (case, want) in enumerate(cases.items()) if (n in grounded) != want]
         assert wrong == [], wrong
-        assert {f.title: f.line for f, _at in kept if f.title in ("0", "2")} == {"0": 28, "2": 27}
+        assert {f.title: f.line for f, _at, _deleted in kept if f.title in ("0", "2")} == {"0": 28, "2": 27}
 
 
 class TestPlugins:
@@ -660,8 +661,8 @@ class TestWhatGroundingKeeps:
             for quote in quotes
         ]
         kept, dropped = _grounded_in(files, found)
-        assert not dropped and [f.evidence for f, _at in kept] == [lines] * len(quotes)
-        assert len({fingerprint(rule.Sourced("guideline.security", f, at)) for f, at in kept}) == 1
+        assert not dropped and [f.evidence for f, _at, _deleted in kept] == [lines] * len(quotes)
+        assert len({fingerprint(rule.Sourced("guideline.security", f, at)) for f, at, _deleted in kept}) == 1
 
     def test_a_quote_that_renames_a_redactions_placeholder_still_grounds(self) -> None:
         """Measured live on Gemini: shown `[REDACTED:aws_secret_access_key]`, a guideline quoted the planted key's two
@@ -684,7 +685,7 @@ class TestWhatGroundingKeeps:
         for quote, evidence in (both, deleted):
             _rule, _collect, schema = _grounding_of()
             finding = schema.Finding(file="a.py", line=2, severity="major", title="t", evidence=quote, suggestion="s")
-            ((kept, _at),) = _grounded([finding], {"a.py": _numbered(hunk)})[0]
+            ((kept, _at, _deleted),) = _grounded([finding], {"a.py": _numbered(hunk)})[0]
             assert kept.evidence == evidence, kept.evidence
 
     def test_a_quote_the_head_holds_too_is_placed_on_the_heads_copy_where_its_line_does_not_choose(self) -> None:
@@ -698,8 +699,20 @@ class TestWhatGroundingKeeps:
             finding = schema.Finding(
                 file="a.py", line=line, severity="major", title="t", evidence="import os", suggestion="s"
             )
-            ((kept, _at),) = _grounded([finding], {"a.py": _numbered(hunk)})[0]
+            ((kept, _at, _deleted),) = _grounded([finding], {"a.py": _numbered(hunk)})[0]
             assert kept.evidence == evidence, (line, kept.evidence)
+
+    def test_a_moved_line_that_starts_with_a_dash_of_its_own_is_placed_on_the_heads_copy(self) -> None:
+        """Read by review: a Markdown bullet moved down, quoted with no line, was placed on its deleted copy, since a
+        deleted line was told by the `-` its text starts with, and the bullet's own `-` read as one. What the diff
+        deleted is told by the diff's own mark."""
+        hunk = ["-- run the tests", " keep this", "+- run the tests"]
+        _rule, _collect, schema = _grounding_of()
+        finding = schema.Finding(
+            file="a.md", line=None, severity="major", title="t", evidence="- run the tests", suggestion="s"
+        )
+        ((kept, at, deleted),) = _grounded([finding], {"a.md": _numbered(hunk)})[0]
+        assert (kept.evidence, at, deleted) == ("- run the tests", (3, 3), False), (kept.evidence, at, deleted)
 
     def test_a_quote_without_what_no_reader_sees_grounds(self) -> None:
         """Measured live on Gemini: beside the injection suite's payload in tag characters, the guidelines quoted the
@@ -776,7 +789,7 @@ class TestWhatGroundingKeeps:
             file="b/orders.py", line=9, severity="major", title="t", evidence="def label(order):", suggestion="s"
         )
         kept, _dropped = _grounded([finding], hunks)
-        assert [(f.file, f.line, at) for f, at in kept] == [("orders.py", 21, (21, 21))]
+        assert [(f.file, f.line, at) for f, at, _deleted in kept] == [("orders.py", 21, (21, 21))]
 
     def test_a_quote_of_a_replaced_line_beside_what_replaced_it_grounds(self) -> None:
         """Measured live on Copilot over six branches, each replacing a function's docstring and its return: 16 of 41
@@ -813,7 +826,7 @@ class TestWhatGroundingKeeps:
         block = ["+-----BEGIN RSA PRIVATE KEY-----", "+MIIEowIBAAKCAQEA", "+-----END RSA PRIVATE KEY-----", "+x = 1"]
         finding = schema.Finding(file="k.py", line=2, severity="major", title="t", evidence="x = 1", suggestion="s")
         kept, dropped = _grounded([finding], {"k.py": _numbered(block)})
-        assert [(f.line, f.evidence, at) for f, at in kept] == [(None, "x = 1", None)] and not dropped
+        assert [(f.line, f.evidence, at) for f, at, _deleted in kept] == [(None, "x = 1", None)] and not dropped
 
 
 def test_a_short_quote_elsewhere_in_the_file_is_no_duplicate() -> None:
@@ -943,8 +956,6 @@ class TestWhatTheLanesRead:
         `correctness` spoke of a deleted line. Each guideline is told what `-` and `+` say and to report a defect only
         in code the branch holds, a deleted line left to show what it lost; each verifier is told the markers."""
         load_agent(monkeypatch)
-        import re
-
         from adk_review.judge.agents import DIFF_MARKS, build_guideline
         from adk_review.judge.catalog import catalog
         from adk_review.judge.verify import build_verifier
@@ -955,18 +966,14 @@ class TestWhatTheLanesRead:
             assert DIFF_MARKS in instruction, guideline.check_id
             assert "Report a defect only in code the branch holds." in instruction, guideline.check_id
         assert DIFF_MARKS in build_verifier(0).instruction
-        for sentence in re.split(r"(?<=[.!?])\s+", DIFF_MARKS):
-            assert len(sentence.split()) <= 20 and ";" not in sentence, f"ASD-STE100: {sentence}"
+        assert _long([("DIFF_MARKS", DIFF_MARKS)]) == [], "ASD-STE100"
 
     def test_each_sentence_of_the_callers_heading_is_short_and_one_command(self) -> None:
         """The guidelines are told ASD-STE100, and their own instruction holds to it. Read by review: a sentence added
         to the heading ran to 21 words, and spoke of a rename whose callers are never shown under it."""
-        import re
-
         from adk_review.judge.agents import CALLERS_HEADING
 
-        for sentence in re.split(r"(?<=[.!?])\s+", CALLERS_HEADING.split("\n", 1)[1].strip()):
-            assert len(sentence.split()) <= 20 and ";" not in sentence, f"ASD-STE100: {sentence}"
+        assert _long([("CALLERS_HEADING", CALLERS_HEADING.split("\n", 1)[1].strip())]) == [], "ASD-STE100"
 
     def test_every_guideline_says_why_a_blocker_or_a_major_matters_and_gives_its_code(self, monkeypatch) -> None:
         """Asked by the owner: each blocker and major is handled in more detail. The answer's schema holds a reason and

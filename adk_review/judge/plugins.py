@@ -64,9 +64,11 @@ def describe(error: Exception) -> str:
         message = f"no answer within the call's deadline, {REQUEST_TIMEOUT_S:.0f} s"
     # LiteLLM's `code` is the text "429" and its `status_code` the number, as `StopAtRateLimit` reads them.
     wait = _wait_of(error) if 429 in (getattr(error, "code", None), getattr(error, "status_code", None)) else None
-    after = wait or (UNSERVED_NEXT if code == UNSERVED else None)
+    said_so = squash(f"{code}: {message}" if code else message)
+    # Copilot's code is the error's own, or in its message where LiteLLM's mapping made the code 400.
+    after = wait or (UNSERVED_NEXT if UNSERVED in said_so else None)
     room = REASON_MAX_CHARS - (len(after) + 1 if after else 0)  # the next step is kept whole, inside the cap
-    line = cut_at(squash(f"{code}: {message}" if code else message), room)
+    line = cut_at(said_so, room)
     return f"{line} {after}" if after else line
 
 

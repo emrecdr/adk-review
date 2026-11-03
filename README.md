@@ -1026,8 +1026,9 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   a cycle of 4,000 took 9.3 s where it takes 0.09, litellm's 2,685 files 5.0 s where they take 0.69, and a path is
   indexed by no more of its tail than an import can name, where 100 files 1,000 folders deep took 20 s.
 - **What the guidelines read is capped.** Each file's diff is cut at `diff_cap`, and the block of diffs in all: the
-  files read whole take its room first, then the cut ones, each shown in path order, and a file past the block's cap is
-  left out whole, the block's end tells the guidelines how many, and the report names each under "not read", a hole.
+  files read whole take its room first, then the cut ones, each shown in path order, and a deleted file last, since it
+  is never a hole; a file past the block's cap is left out whole, the block's end tells the guidelines how many, and
+  the report names each the change keeps under "not read", a hole.
   With no cap, `--all` over 4,826 files gave each guideline and each verifier 14.9 MB. `--path` narrows a review to fit,
   and a file left out names the `--path` of the planned run that reads it, below. Read by review on a branch of 58
   files, nine test files were left out with no folder named, where the branch's `tests` alone fit; and a folder guessed

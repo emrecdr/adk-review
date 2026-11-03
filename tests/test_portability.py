@@ -464,14 +464,14 @@ def test_a_live_script_measures_one_guideline_alone_where_it_is_named(monkeypatc
     assert refused.value.code == 2 and "not allowed with argument" in capsys.readouterr().err
 
 
-def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(tmp_path) -> None:
+def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(labelled_repo) -> None:
     """Matching findings to known facts is reliable where scoring usefulness is not. Each branch holds one defect at
     the lines its label names, or none; a run names a defect when a guideline's finding stands on those lines, and a
     clean branch's finding at major or above is a false one. The live runs are the owner's to ask for."""
     import labelled_set as labelled
 
     assert len(labelled.LONG) > labelled.CAP, "the long file's defect past the cap its reviews run under"
-    made = labelled.branches(tmp_path / "repo")
+    repo, made = labelled_repo
     assert list(made) == list(labelled.BRANCHES)
     markers = {
         "sql-from-input": "SELECT",
@@ -486,13 +486,10 @@ def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(t
     }
     for name, marker in markers.items():
         path, lines = labelled.BRANCHES[name][1]
-        argv = ["git", "-C", str(tmp_path / "repo"), "show", f"{made[name]}:{path}"]
-        text = subprocess.run(argv, capture_output=True, encoding="utf-8", check=True).stdout.split("\n")
+        text = _git_in(repo, "show", f"{made[name]}:{path}").split("\n")
         assert next(n for n, line in enumerate(text, 1) if marker in line) in lines, name
     for name, needed in (("forgives-debt", "shown = 0"), ("guarded-above", "if not charges and not refunds:")):
-        shown, plain = (
-            gathered(tmp_path / "repo", made[name], guidelines=g)["src/payments/settle.py"] for g in (True, False)
-        )
+        shown, plain = (gathered(repo, made[name], guidelines=g)["src/payments/settle.py"] for g in (True, False))
         assert needed in shown["diff"] and needed not in plain["diff"], f"{name}: only the function around it shows"
 
     def report(*findings: tuple[str, str, int, str]) -> dict:
@@ -523,22 +520,18 @@ def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(t
     assert row == "| repeated-io | its defect named | 3 of 3 | guideline.efficiency x3, guideline.tests x1 |", row
 
 
-def test_the_labelled_sets_dropped_guard_is_a_defect_on_deleted_lines_alone(tmp_path) -> None:
+def test_the_labelled_sets_dropped_guard_is_a_defect_on_deleted_lines_alone(labelled_repo) -> None:
     """Read by review: a guideline told to report a defect only in code the branch holds might pass over a guard the
     change deleted, and no labelled branch held that shape. Here the change deletes the guard and adds nothing, so a
     live run counts whether a guideline still names what the branch lost, at the lines around the deletion."""
     import labelled_set as labelled
 
-    name, repo = "drops-the-guard", tmp_path / "repo"
-    made = labelled.branches(repo)
+    name, (repo, made) = "drops-the-guard", labelled_repo
     path, lines = labelled.BRANCHES[name][1]
 
-    def git(*args: str) -> str:
-        return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, encoding="utf-8", check=True).stdout
-
-    head = git("show", f"{made[name]}:{path}").splitlines()
+    head = _git_in(repo, "show", f"{made[name]}:{path}").splitlines()
     assert "amount_cents <= 0" not in "\n".join(head) and head[lines.start - 1].startswith("def charge("), head
-    diff = [line for line in git("diff", "main", made[name], "--", path).splitlines() if line[:1] in "+-"]
+    diff = [line for line in _git_in(repo, "diff", "main", made[name], "--", path).splitlines() if line[:1] in "+-"]
     assert [line for line in diff if not line.startswith(("---", "+++"))] == [
         "-    if amount_cents <= 0:",
         '-        raise ValueError("amount must be positive")',
@@ -546,7 +539,7 @@ def test_the_labelled_sets_dropped_guard_is_a_defect_on_deleted_lines_alone(tmp_
 
 
 def test_the_labelled_sets_rename_with_its_callers_is_clean_and_names_the_old_name_on_deleted_lines_alone(
-    tmp_path,
+    labelled_repo,
 ) -> None:
     """Read by review on a branch that renamed a function and removed a field with every use of each: guidelines asked
     for a change the head already held, the old names being in the diff's deleted lines. The labelled set holds that
@@ -554,17 +547,13 @@ def test_the_labelled_sets_rename_with_its_callers_is_clean_and_names_the_old_na
     function, and the diff names it only on lines it deletes."""
     import labelled_set as labelled
 
-    name, repo = "clean-rename-with-callers", tmp_path / "repo"
-    made = labelled.branches(repo)
+    name, (repo, made) = "clean-rename-with-callers", labelled_repo
     assert name in made and labelled.BRANCHES[name][1] is None, "a clean change: nothing to find"
 
-    def git(*args: str) -> str:
-        return subprocess.run(["git", "-C", str(repo), *args], capture_output=True, encoding="utf-8", check=True).stdout
-
     for path in ("src/payments/charge.py", "tests/test_charge.py"):
-        text = git("show", f"{made[name]}:{path}")
+        text = _git_in(repo, "show", f"{made[name]}:{path}")
         assert "format_money" in text and "format_amount" not in text, path
-    diff = git("diff", "main", made[name]).splitlines()
+    diff = _git_in(repo, "diff", "main", made[name]).splitlines()
     assert any(line.startswith("-") and "format_amount" in line for line in diff), "the old name, deleted"
     assert not any(line.startswith("+") and "format_amount" in line for line in diff), "and added nowhere"
 

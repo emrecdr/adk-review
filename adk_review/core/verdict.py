@@ -40,6 +40,9 @@ class Sourced:
     finding: Finding
     #: The first and last line the diff places it on: a rule's one line, a guideline's quote where grounding found it.
     lines: Lines = None
+    #: Whether its quote holds a line the change deleted, as the diff's own `-` marks it: read by review, a line told by
+    #: the `-` its text starts with made a Markdown bullet the branch holds read as deleted.
+    deleted: bool = False
 
 
 @dataclass
@@ -208,7 +211,7 @@ def drop_ungrounded(
     review: Review,
     quotable: dict[str, list[list[tuple[int, str]]]],
     framing: Mapping[str, Sequence[str]],
-) -> tuple[list[tuple[Finding, Lines]], list[Finding]]:
+) -> tuple[list[tuple[Finding, Lines, bool]], list[Finding]]:
     """Split findings into those that quote their own file's diff — whole lines, in order, as the guideline saw them,
     whatever whitespace joined them — and the rest, each kept one with the lines the diff places it on. `quotable` is
     each changed file's hunks, their lines numbered, and `framing` the lines each was framed in as the guidelines were
@@ -228,7 +231,7 @@ def drop_ungrounded(
     quoted plain and inside their fence under their `@@` header were two
     fingerprints, and `--previous` named one finding resolved and new at once.
     """
-    kept: list[tuple[Finding, Lines]] = []
+    kept: list[tuple[Finding, Lines, bool]] = []
     dropped: list[Finding] = []
     for finding in review.findings:
         path = _meant(finding.file, quotable)
@@ -238,11 +241,11 @@ def drop_ungrounded(
             # past its kept blocker.
             dropped.append(finding.model_copy(update={"file": cut_at(finding.file, REASON_MAX_CHARS)}))
             continue
-        lines, stood = placed
+        lines, stood, deleted = placed
         update = {"file": path, "line": lines[0] if lines else None}
         if stood is not None:  # where the redaction joined lines, the model's quote is all there is
             update["evidence"] = scrub(stood)[0]
-        kept.append((finding.model_copy(update=update), lines))
+        kept.append((finding.model_copy(update=update), lines, deleted))
     return kept, dropped
 
 
@@ -256,11 +259,11 @@ def _meant(path: str, quotable: dict[str, list[list[tuple[int, str]]]]) -> str:
 
 def _placed(
     finding: Finding, hunks: list[list[tuple[int, str]]], around: Sequence[str]
-) -> tuple[Lines, str | None] | None:
+) -> tuple[Lines, str | None, bool] | None:
     """The first and last line of `finding`'s quote in its own file's diff, where it is whole lines of one hunk, in
-    order, as the guideline saw them, and those lines as the file reads them; `(None, None)` where the redaction joined
-    lines, so no line is named rather than a wrong one, and no text but the quote; None where the diff does not bear
-    the quote out.
+    order, as the guideline saw them, those lines as the file reads them, and whether the diff marks one deleted;
+    `(None, None, False)` where the redaction joined lines, so no line is named rather than a wrong one, and no text but
+    the quote; None where the diff does not bear the quote out.
 
     Each hunk is read four ways: as git prints it, as the new file reads it (its context and added lines), as the old
     file read it (its context and removed lines), and with each replaced line beside what replaced it. Measured
@@ -269,7 +272,7 @@ def _placed(
     before, the last line of one hunk joined to the first of the next, twenty lines apart, grounded as one span, and a
     finding on the lines between folded into it."""
     quotes = _quotes(finding.evidence, around)
-    placed: list[tuple[tuple[int, int], str]] = []
+    placed: list[tuple[tuple[int, int], str, bool]] = []
     joined = False
     for hunk in hunks:
         # As git prints it, as the new file reads, as the old file read, and each replaced line beside its new one.
@@ -292,21 +295,18 @@ def _placed(
                 # A deleted line keeps its `-`, as every diff prints one: read by review, the marker cut from a quote
                 # of a replaced line printed it as the code the head holds, and 15 of 43 findings on a branch that
                 # removed a field asked for what the head already had.
-                text = "\n".join(raw if raw[:1] == "-" else raw[1:] for _number, raw in view[since : until + 1])
-                placed.append(((first, last), text))
+                stood = view[since : until + 1]
+                text = "\n".join(raw if raw[:1] == "-" else raw[1:] for _number, raw in stood)
+                placed.append(((first, last), text, any(raw[:1] == "-" for _number, raw in stood)))
     if not placed:
-        return (None, None) if joined else None
+        return (None, None, False) if joined else None
     # A short quote can stand in several places: measured by review, `return None` at lines 2 and 22, a guideline naming
     # 22 was placed at 2. The diff decides where a quote can stand; the guideline's line only picks among those places,
     # and where it does not, as where it named none, a place the head holds goes before a deleted one, then the first:
     # read by review, a moved line was placed on its deleted copy and read as gone from the branch.
     return min(
         placed,
-        key=lambda place: (
-            abs(place[0][0] - finding.line) if finding.line else 0,
-            any(line[:1] == "-" for line in place[1].split("\n")),
-            place,
-        ),
+        key=lambda place: (abs(place[0][0] - finding.line) if finding.line else 0, place[2], place),
     )
 
 

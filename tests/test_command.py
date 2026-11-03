@@ -28,6 +28,7 @@ from conftest import (
     _branch_off_empty,
     _committed,
     _git_in,
+    _long,
     as_json,
     catalog,
     confirms,
@@ -271,6 +272,12 @@ class TestWhatAReviewCovers:
         assert run_review(cli, demo_repo) == 2
         said = capsys.readouterr().err
         assert "Review it in 4 parts" in said and "stopped: review it in parts" in said, said
+        # Read by review: a bare Enter, stripped, read as the end of the input and stopped the review; and `--quiet`,
+        # which silences a review that passes, skipped the question, though a review with files unread never passes.
+        monkeypatch.setattr(sys, "stdin", _Terminal("\nn\n"))
+        assert run_review(cli, demo_repo, "--quiet") == 2
+        said = capsys.readouterr().err
+        assert said.count("go on anyway") == 2 and "stopped: review it in parts" in said, said
         monkeypatch.setattr(sys, "stdin", io.StringIO(""))  # a pipeline: nothing to ask
         assert run_review(cli, demo_repo) == 3, "with guidelines on, what they never read is a hole"
         assert "go on anyway" not in capsys.readouterr().err
@@ -727,6 +734,9 @@ class TestThePreviousReportAndTheHandoff:
         assert cli._safe_name("feature/refactor-config-loading") == "feature-refactor-config-loading"
         assert cli._safe_name("bugfix/JIRA-98765-null-check") == "bugfix-jira-98765-null-check"
         assert cli._safe_name("a" * 39 + "-tail") == "a" * 39, "a cut ends on no `-`"
+        # Read by review: `fix_` made `fix___`, and a split at the `__` between the name's parts read it wrongly.
+        assert cli._safe_name("fix_") == "fix" and cli._safe_name("_wip") == "wip"
+        assert cli._safe_name("a" * 39 + "_tail") == "a" * 39, "nor on `_`"
         assert cli._safe_name("feat x$y`z") == "feat-x-y-z" and cli._safe_name("../..") == "branch"
         assert cli._safe_name("feature__x") == "feature_x", "only the parts are joined by `__`"
         # Read by review: a hand-off's check names the head in full, and `refs-heads-` took the cut's characters.
@@ -1845,17 +1855,6 @@ class TestWhatTheCommandTells:
         assert cli._waiting(progress.running()) == "working"
 
 
-def _long(said: list) -> list[tuple[str, str]]:
-    """Each sentence of `said`, `(where, text)` pairs, past ASD-STE100's 20 words or with a `;` joining two."""
-    return [
-        (where, sentence)
-        for where, text in said
-        if text is not None
-        for sentence in re.split(r"(?<=[.!?])\s+", text)
-        if len(sentence.split()) > 20 or ";" in sentence
-    ]
-
-
 def _printed(node, names: dict[str, str] | None = None) -> str | None:
     """A sentence `_say` prints, from its own literals, each value it formats read as one word, but a name `names`
     holds a literal for, read as that literal; None where another module made the sentence, an exception's or a
@@ -2446,18 +2445,21 @@ class TestWhatTheReportPrints:
         from adk_review.core.verdict import DELETED_QUOTED, Outcome, Sourced
         from adk_review.deliver.report import render_comment, render_handoff
 
-        def kept(evidence: str) -> Outcome:
+        def kept(evidence: str, deleted: bool = False) -> Outcome:
             found = Finding(file="c.py", line=9, severity="major", title="t", evidence=evidence, suggestion="s")
-            return Outcome(kept=[Sourced("guideline.correctness", found, (9, 10))])
+            return Outcome(kept=[Sourced("guideline.correctness", found, (9, 10), deleted=deleted)])
 
         pre = {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40}
         evidence = {"preflight": pre, "whole": False, "scope": []}
-        replaced = kept('-    "CORRELATION_ID": self.correlation_id,\n    "TRACE_ID": self.trace_id,')
+        replaced = kept('-    "CORRELATION_ID": self.correlation_id,\n    "TRACE_ID": self.trace_id,', deleted=True)
+        # Read by review: a Markdown bullet the branch holds starts with `-` of its own, and was said to be deleted.
+        bullet = kept("- Always run make deploy first")
         for render in (render_comment, render_handoff):
             said = render(evidence, replaced, verdict="APPROVED", fail_on="blocker")
             assert said.index(DELETED_QUOTED) < said.index('-    "CORRELATION_ID"'), said
-            plain = render(evidence, kept('    "TRACE_ID": self.trace_id,'), verdict="APPROVED", fail_on="blocker")
-            assert DELETED_QUOTED not in plain, plain
+            for held in (kept('    "TRACE_ID": self.trace_id,'), bullet):
+                plain = render(evidence, held, verdict="APPROVED", fail_on="blocker")
+                assert DELETED_QUOTED not in plain, plain
         assert _long([("report", DELETED_QUOTED)]) == []
 
     def test_the_reports_prose_names_no_one_and_links_no_issue(self) -> None:
