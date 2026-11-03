@@ -143,6 +143,10 @@ def defined_by_databricks(file: ChangedFile, found: Diagnostic) -> bool:
 #: Ruff's codes for a string given to a name that says password or token: assigned or compared, passed as an
 #: argument, or a parameter's default. Ruff weighs the name alone, and the value as `named-secrets` does.
 NAMED_PASSWORD = frozenset({"S105", "S106", "S107"})
+#: A string ruff names a password is passed over only where it is shorter than this, or holds a space, and no
+#: credential check takes it. Read by review: `named-secrets` asks a digit of a name other than a password's, so a
+#: secret of letters alone, `client_secret = "AbCdEfGhIjKlMnOp"`, was passed over and no rule named it.
+PLAIN_UNDER_CHARS = 8
 
 
 def strings_by_line(file: ChangedFile) -> dict[int, list[str]]:
@@ -156,13 +160,19 @@ def strings_by_line(file: ChangedFile) -> dict[int, list[str]]:
 
 
 def no_credential(found: Diagnostic, strings: Callable[[], Mapping[int, Sequence[str]]]) -> bool:
-    """Whether `found` is S105, S106 or S107 where every string on its line, given to the name ruff quotes, is no
-    credential, as `named-secrets` weighs one; a line where no string was read keeps its finding. Read by review: ruff
-    made `token = "("`, `"<eos>"` and `"Bearer "` each major, where `named-secrets` found none of them."""
+    """Whether `found` is S105, S106 or S107 where every string on its line, given to the name ruff quotes, is plain:
+    short or spaced, and no credential, as `named-secrets` weighs one; a line where no string was read keeps its
+    finding. Read by review: ruff made `token = "("`, `"<eos>"` and `"Bearer "` each major, where `named-secrets`
+    found none of them."""
     quoted = found.message.split('"')
     if found.code not in NAMED_PASSWORD or len(quoted) < 3 or not (given := strings().get(found.line)):
         return False
-    return not any(is_credential(quoted[1], value, quoted=True, written=True) for value in given)
+
+    def plain(value: str) -> bool:
+        short = len(value.strip()) < PLAIN_UNDER_CHARS or any(ch.isspace() for ch in value.strip())
+        return short and not is_credential(quoted[1], value, quoted=True, written=True)
+
+    return all(plain(value) for value in given)
 
 
 class Lint(FileRule):

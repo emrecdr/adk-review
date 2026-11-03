@@ -381,6 +381,10 @@ def to_verify(guidelines: list[Sourced], rules: list[Sourced], tidies: frozenset
         str, list[tuple[tuple[int, bool], str, Lines]]
     ] = {}  # file -> each rule finding's precedence, quote, lines
     for rule in rules:
+        if (
+            rule.old
+        ):  # set apart before the fold, so it folds nothing: read by review, its text kept one from a verifier
+            continue
         seen = as_seen(rule.finding.evidence)
         said.setdefault(rule.finding.file, []).append((_precedence(rule, tidies), seen, rule.lines))
     asked: list[Sourced] = []

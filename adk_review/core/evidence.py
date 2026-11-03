@@ -107,6 +107,7 @@ class Failure(TypedDict):
     status: Literal["error"]
     error_message: str  # one sentence, the command's exit 2
     rescope: NotRequired[bool]  # nothing to compare with the base: the command names the flags that rescope it
+    narrowed: NotRequired[bool]  # nothing under the scope: the command names --path and --path-exclude
 
 
 class Evidence(Change):
@@ -124,6 +125,7 @@ class Evidence(Change):
     whole: bool  # under --all: every file at the head is the change, diffed against the empty tree
     scope: list[str]  # the folders --path named, as git spells them; [] for the whole change
     exclude: NotRequired[list[str]]  # the folders and files --path-exclude named, as git spells them
+    unmatched: NotRequired[list[str]]  # each of them that names no changed file: misspelt, or of another case
     #: Where the guidelines cannot read the change in one run, the runs that can, each the `--path` values one names;
     #: [] where it fits.
     parts: NotRequired[list[list[str]]]

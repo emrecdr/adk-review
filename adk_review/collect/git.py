@@ -1080,7 +1080,7 @@ def gather(
     # Each modified Python file's text at the base, read here once as the head's is, for a tool's finding to be set
     # against: asked by the owner, what a change causes is kept apart from what was already in the files it touched.
     # None where git cannot give it, and a tool then reads every finding on an untouched line as there before.
-    olds = {f.get("old", f["path"]) for f in files if f["status"] != "A" and is_python_text(f["path"], None)}
+    olds = {f.get("old", f["path"]) for f in files if f["status"] != "A" and is_python_text(f["path"], f["text"])}
     try:
         base_texts: dict[str, str] | None = base_files(resolved, olds) if olds else {}
     except GitError:
@@ -1104,6 +1104,8 @@ def gather(
         "whole": base is None,
         "scope": list(scope),
         "exclude": list(exclude),
+        # Each exclusion that names no changed file, for the report to say: a misspelt one leaves everything in.
+        "unmatched": [name for name in exclude if all(in_scope(entry["path"], (), [name]) for entry in listed)],
         "base_texts": base_texts,
         "parts": parts,
         "left_out": left_out,

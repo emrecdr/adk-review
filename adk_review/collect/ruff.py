@@ -107,31 +107,42 @@ def _known(
     found: dict[str, list[Diagnostic]],
     linted: Callable[[dict[str, str]], dict[str, list[Diagnostic]]],
 ) -> dict[str, list[Diagnostic]]:
-    """`found` with each diagnostic of a modified file the base held too marked `known`: the same code on a line of the
-    same text, each base one matched once. Where the base cannot be read or linted, every one is known, as each on a
-    line the change did not add was read before: a failure here never hides a finding, nor adds one. Asked by the
-    owner: what a change causes is kept apart from what was already in the files it touched."""
-    modified = {
-        f["path"]: f.get("old", f["path"]) for f in evidence["files"] if f.get("status") != "A" and f["path"] in found
-    }
+    """`found` with each diagnostic on a line the change did not add set against the base: `known` where the base held
+    it too, the same code and words on a line of the same text, each base one matched once, and not where the change
+    made it. A line the change added is its own, whatever the base held, and only a file with a diagnostic elsewhere is
+    linted at the base. Where the base was not read or could not be linted, `known` stays None, and `listed` counts
+    those diagnostics with the change, at the bar, as before: "did not look" never reads as "not caused by this change".
+    Read by review: ruff's words tell a shell call that "seems safe" from one an edit below its first line made unsafe.
+    Asked by the owner: what a change causes is kept apart from what was already in the files it touched."""
     held = evidence.get("base_texts") or {}  # read by the collector, as the head's texts are: no git here
-    if not modified:
+    added = {f["path"]: f.get("added_at", frozenset()) for f in evidence["files"]}
+    wanted = {
+        f["path"]: base
+        for f in evidence["files"]
+        if f.get("status") != "A"
+        and (base := f.get("old", f["path"])) in held
+        and any(item.line not in added[f["path"]] for item in found.get(f["path"], ()))
+    }
+    if not wanted:
         return found
     try:
-        base = linted({path: held[old] for path, old in modified.items() if old in held})
+        before = linted({path: held[base] for path, base in wanted.items()})
     except (OSError, ValueError, KeyError, IndexError, TypeError, _FloodError, subprocess.SubprocessError):
-        base, held = {}, {}
+        return found  # not compared: each `known` stays None
+
+    def key(item: Diagnostic) -> tuple[str, str, str]:
+        return item.code, squash(item.source), item.message
+
     marked = dict(found)
-    for path, old in modified.items():
-        if old not in held:  # no base read: as before, what lies on an untouched line was there already
-            marked[path] = [replace(item, known=True) for item in found[path]]
-            continue
-        before = Counter((item.code, squash(item.source)) for item in base.get(path, ()))
+    for path in wanted:
+        left = Counter(key(item) for item in before.get(path, ()))
         marked[path] = []
         for item in found[path]:
-            known = before[(item.code, squash(item.source))] > 0
-            before[(item.code, squash(item.source))] -= known
-            marked[path].append(replace(item, known=known) if known else item)
+            if item.line not in added[path]:
+                known = left[key(item)] > 0
+                left[key(item)] -= known
+                item = replace(item, known=known)
+            marked[path].append(item)
     return marked
 
 

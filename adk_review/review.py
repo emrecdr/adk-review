@@ -786,7 +786,14 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
             f". Name the branch to review with --head, or its base with --base. Or review every file at {head!r} with "
             "--all, not --base"
         )
-        _say(evidence["error_message"] + (rescope if evidence.get("rescope") and not args.staged else ""))
+        # Read by review: a scope that left nothing named no next step.
+        if args.path_exclude:
+            narrowed = ". Name another folder with --path, or drop --path-exclude"
+        else:
+            narrowed = ". Name another folder with --path, or drop it to review the whole change"
+        if evidence.get("rescope") and not args.staged:
+            evidence["error_message"] += rescope
+        _say(evidence["error_message"] + (narrowed if evidence.get("narrowed") else ""))
         return EXIT_USAGE
     if say is not None:
         say(f"read {len(evidence['files'])} file(s), {len(evidence.get('ignored', ()))} ignored")

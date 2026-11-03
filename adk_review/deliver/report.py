@@ -289,8 +289,8 @@ def render_handoff(
         lines += hole or [NOTHING_TO_FIX]
     else:
         lines += [*([""] if hole else []), *hole]
-    fixes = bool(outcome.kept or outcome.old)  # by the Boy Scout rule, what was already there is fixed too
-    lines += _check_again(evidence, outcome, fail_on, added, degraded=degraded, fixes=fixes)
+    to_commit = bool(outcome.kept or outcome.old)  # by the Boy Scout rule, what was already there is fixed too
+    lines += _check_again(evidence, outcome, fail_on, added, degraded=degraded, fixes=to_commit)
     return inert("\n".join(lines)) + "\n"
 
 
@@ -415,9 +415,6 @@ _COMMENT_ROOM = 1_000
 #: The other readings of one point's lines a comment names, the rest counted: read by review, 300 folded on one point
 #: made it larger than the comment's room, and it was left out with every point after it.
 ALSO_SHOWN = 5
-#: How a comment for the branch's author opens, by the verdict: a thank-you, then what the review decided. An approval
-#: names its bar: read by review, majors, "fix before merge" on the scale, sat under "Worth a look" below a line that
-#: said the review found "nothing that blocks it", and the `blocker` bar it meant went unnamed.
 #: Where what was already in the files the change touched is listed, apart from what the change caused: asked by the
 #: owner, never mixed with it, and never at the bar.
 OLD_HEADING = "Already in the files you touched"
@@ -425,6 +422,10 @@ OLD_NOTE = (
     "Not caused by this change. By the Boy Scout rule, we expect you to fix them too. They do not block the merge."
 )
 OLD_FOR_AGENT = "Not caused by this change. By the Boy Scout rule, fix them too, after any fix above."
+#: How a comment for the branch's author opens, by the verdict: what the review decided, as a review's output, with no
+#: thanks, which the owner read as artificial. An approval names its bar: read by review, majors, "fix before merge" on
+#: the scale, sat under "Worth a look" below a line that said the review found "nothing that blocks it", and the
+#: `blocker` bar it meant went unnamed.
 COMMENT_OPENS = {
     "APPROVED": "The review found nothing of `{bar}` severity or above, the level that blocks a merge here.",
     "REQUEST_CHANGES": "Fix each point under Must fix before it merges.",
@@ -911,7 +912,10 @@ def header(evidence: Evidence, *, model: str, profile: str, off: Sequence[str], 
     left = f"{evidence['outside']} {kind} outside it, not reviewed"
     exclude = evidence.get("exclude", ())
     covered = ", ".join(scope) or "the whole change"
-    covered += f", less {', '.join(exclude)}" if exclude else ""
+    # Read by review: a misspelt or wrongly cased exclusion left everything in, and the header named it as left out.
+    unmatched = set(evidence.get("unmatched", ()))
+    nothing = " (no changed file lies there: check its spelling and case)"
+    covered += f", less {', '.join(x + nothing * (x in unmatched) for x in exclude)}" if exclude else ""
     return [
         f"- repository   {pre['repo']}",
         f"- branch       {_as_resolved(pre['head'], pre.get('head_ref', ''))} @ {pre['head_sha'][:9]}",
@@ -1170,7 +1174,7 @@ def render(
         *header(evidence, model=model, profile=profile, off=off, unread=outcome.unread),
         "",
         # The project's measures before its blast radius: under --all the radius names every file, a long way down.
-        *_health(health, outcome, previous_health, evidence["scope"]),
+        *_health(health, outcome, previous_health, evidence["scope"], evidence.get("exclude", ())),
         *_blast(evidence["blast"]),
         "## Checks",  # each check a section of its own, under its own heading, whatever it found
         "",
@@ -1310,7 +1314,13 @@ def _severities(counts: Mapping[str, int], joiner: str = " · ") -> str:
     return joiner.join(said) or "none"
 
 
-def _health(health: Health | None, outcome: Outcome, previous: Mapping | None, scope: Sequence[str] = ()) -> list[str]:
+def _health(
+    health: Health | None,
+    outcome: Outcome,
+    previous: Mapping | None,
+    scope: Sequence[str] = (),
+    exclude: Sequence[str] = (),
+) -> list[str]:
     """A whole project's measures, under the verdict's header: numbers, never a grade, and none of them read by the
     verdict; beside each complexity share and each rule's count in source, what a previous review's JSON said."""
     if health is None:
@@ -1329,8 +1339,8 @@ def _health(health: Health | None, outcome: Outcome, previous: Mapping | None, s
     said = [
         "## Health",
         "",
-        f"Measured by code alone over every file at the head{_under(scope)}, and none of it read by the verdict: "
-        "maintainability graded, security and correctness counted.",
+        f"Measured by code alone over every file at the head{_under(scope, exclude)}, and none of it read by the "
+        "verdict: maintainability graded, security and correctness counted.",
         "",
         f"- read whole   {health.read:,} of {health.files:,} files",
         f"- source       {files:,} Python file(s), {lines:,} lines; tests {tests:,} file(s), {test_lines:,} lines",
@@ -1357,9 +1367,10 @@ def _health(health: Health | None, outcome: Outcome, previous: Mapping | None, s
     return [*said, ""]
 
 
-def _under(scope: Sequence[str]) -> str:
-    """` under `src/``, the folders a review was kept to, or nothing for the whole head."""
-    return f" under {_spans(scope)}" if scope else ""
+def _under(scope: Sequence[str], exclude: Sequence[str] = ()) -> str:
+    """` under `src/``, the folders a review was kept to, then `, less `tests``, those `--path-exclude` left out, or
+    nothing for the whole head. Read by review: an exclusion left out of Health read as every file measured."""
+    return (f" under {_spans(scope)}" if scope else "") + (f", less {_spans(exclude)}" if exclude else "")
 
 
 def _graded(health: Health, previous: Mapping | None) -> str:

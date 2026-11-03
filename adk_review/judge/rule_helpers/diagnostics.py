@@ -51,11 +51,12 @@ def listed(
     leave_out: Collection[str] = (),
     passes_over: Callable[[Diagnostic], bool] | None = None,
 ) -> list[Hit]:
-    """Each of ruff's diagnostics on `file`, at the severity `rate` gives it, as findings: those on lines the change
-    added one by one, at most `PER_FILE` of them, the most severe first; the rest counted, one finding each for the
-    lines the change did not add and for the ones past the cap, so the verdict reads the same. `fixes` is the rule's
-    own table of sentences, read where ruff offers no fix. A diagnostic whose code is in `leave_out`, or that
-    `passes_over` names, is neither listed nor counted. None for a file that is not Python: ruff reads Python, and
+    """Each of ruff's diagnostics on `file`, at the severity `rate` gives it, as findings: those the change caused one
+    by one, on its own lines or on one it did not touch, at most `PER_FILE` of them, the most severe first, and those
+    past the cap counted in one finding. What the base held too is counted in one old finding, apart and never at the
+    bar; what lies on an untouched line and was not set against the base, in one finding at the bar, as before. `fixes`
+    is the rule's own table of sentences, read where ruff offers no fix. A diagnostic whose code is in `leave_out`, or
+    that `passes_over` names, is neither listed nor counted. None for a file that is not Python: ruff reads Python, and
     another file's text is never asked for, so one not read whole is no rule's hole."""
     if not is_python(file.path, lambda: file.line(1)):
         return []
@@ -65,17 +66,19 @@ def listed(
         if found.code not in leave_out and not (passes_over and passes_over(found))
     ]
     tail: list[Hit] = []
-    # What ruff reports on lines the change did not add is counted, one finding a file at the most severe of them,
-    # so the verdict reads the same. Measured over this repository's 22 commits: 2,101 of lint's 2,435 findings,
-    # 86.3%, sat on lines the commit did not add, and listed one by one they buried the change's own.
-    # Only what the base held too was already there, and is old: listed apart, never at the bar. A finding the change
-    # made on a line it did not touch, an old line's name left undefined by an import it deleted, is its own.
-    aside = [(found, severity) for found, severity in rated if found.line not in file.added and found.known]
-    if aside:  # asked by the owner: "on lines the change did not add" read as a defect of the change
-        one = len(aside) == 1
-        title = f"{len(aside)} ruff finding{'' if one else 's'} already in this file, on {'a line' if one else 'lines'}"
-        tail.append(_counted(file.path, aside, f"{title} this change did not touch", why=BEFORE_THIS_CHANGE, old=True))
-        rated = [(found, severity) for found, severity in rated if found.line in file.added or not found.known]
+    # What ruff reports on lines the change did not add is counted, one finding a file at the most severe of them.
+    # Measured over this repository's 22 commits: 2,101 of lint's 2,435 findings, 86.3%, sat on lines the commit did
+    # not add, and listed one by one they buried the change's own. Only what the base held too was already there, and
+    # is old: apart, never at the bar. One the change made on a line it did not touch, an old line's name left
+    # undefined by an import it deleted, is its own; one not set against the base is counted at the bar, as before.
+    untouched = [(found, severity) for found, severity in rated if found.line not in file.added]
+    for known, why in ((True, BEFORE_THIS_CHANGE), (None, NOT_COMPARED)):
+        if counted := [(found, severity) for found, severity in untouched if found.known is known]:
+            one = len(counted) == 1
+            what = f"{len(counted)} ruff finding{'' if one else 's'}{' already in this file,' * bool(known)}"
+            title = f"{what} on {'a line' if one else 'lines'} this change did not touch"
+            tail.append(_counted(file.path, counted, title, why=why, old=bool(known)))
+    rated = [(found, severity) for found, severity in rated if found.line in file.added or found.known is False]
     if len(rated) > PER_FILE:
         ranked = sorted(range(len(rated)), key=lambda at: -RANK[rated[at][1]])  # stable: by line
         shown = set(ranked[:PER_FILE])
@@ -111,6 +114,8 @@ def _slug(diag: Diagnostic) -> str | None:
 _RULE_CODE = re.compile(r"[A-Z]+[0-9]+")
 
 
+#: Why a roll-up of ruff's findings on untouched lines counts at the bar: with no base read, the review cannot tell.
+NOT_COMPARED = "The review could not set these lines against the base, so this change may have caused them."
 #: Why a roll-up of ruff's findings on lines the change did not touch is there: the change did not make them, and, asked
 #: by the owner, the Boy Scout rule expects them fixed all the same, though they never block a merge.
 BEFORE_THIS_CHANGE = (
@@ -134,7 +139,8 @@ def _on_lines(numbers: list[int]) -> str:
 
 def _counted(path: str, rated: list[tuple[Diagnostic, Severity]], title: str, why: str = "", old: bool = False) -> Hit:
     """`rated` as one finding at the file: how many of each code, with ruff's name for it, at the most severe of them,
-    so no tier is lost and the verdict reads the same; and the command that shows them as the review ran ruff. Read by
+    so no tier is lost, and `old` where the base held them all, which keeps it from the bar; and the command that shows
+    them as the review ran ruff. Read by
     review: a bare `ruff check` read the project's own config and honoured its noqa, and said "All checks passed!" over
     a counted S105. The file is the finding's own and never in the command: a path is the branch's text, and a shell
     runs what double quotes hold, `$(…)` among it."""

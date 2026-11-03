@@ -596,6 +596,9 @@ class TestTheHealthOfAWholeProject:
         many = Health(12, 12, (12, 12), (0, 0), (12, 0), health.bands, tuple(f"f{n}.py" for n in range(12)), ())
         said = "\n".join(_health(many, Outcome(), None, ("src",)))
         assert "`f9.py` and 2 more" in said and "every file at the head under `src`" in said
+        # Read by review: under `--all --path-exclude`, Health said it measured every file, the excluded ones too.
+        said = "\n".join(_health(many, Outcome(), None, ("src",), ("src/legacy",)))
+        assert "every file at the head under `src`, less `src/legacy`" in said, said
 
     def test_maintainability_is_graded_by_sigs_rating_only_where_most_of_the_source_parsed(self) -> None:
         """SIG's published rating of a complexity risk profile: the most each grade allows of the source's function

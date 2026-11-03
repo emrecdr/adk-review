@@ -981,6 +981,17 @@ class TestWhatTheLanesRead:
         marked = [line for line in said if line.startswith("- (deleted) ")]
         assert marked == [next(line for line in said if "old step" in line)], said
 
+    def test_chat_never_says_no_findings_of_a_check_that_found_some_already_in_the_file(self) -> None:
+        """Read by review: a check whose findings were all already in the file read "- no findings" beneath them, and
+        chat's verdict agent read the two lines as one contradicting the other."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.judge.agents import for_the_verdict
+
+        found = Finding(file="a.py", line=None, severity="major", title="lint: F401", evidence="F401", suggestion="s")
+        said = for_the_verdict(Outcome(old=[Sourced("rule.lint", found, old=True)]), ["rule.lint"], "APPROVED")
+        assert "already in the file" in said and "no findings" not in said, said
+
     def test_every_guideline_and_every_verifier_is_told_what_a_deleted_line_is(self, monkeypatch) -> None:
         """Read by review on a branch that removed a field: 15 of 43 findings quoted lines the change deleted, as the
         code to fix, and asked for what the branch already held. The instruction named no marker of the diff, and only

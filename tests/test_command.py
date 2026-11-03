@@ -30,10 +30,12 @@ from conftest import (
     _git_in,
     _long,
     as_json,
+    branched,
     catalog,
     confirms,
     load_agent,
     profiles_of,
+    reviewed,
     run_review,
     run_turn,
     sourced,
@@ -65,7 +67,9 @@ class TestWhatAReviewCovers:
         assert "- scope        src/payments/config.py: 3 changed file(s) outside it, not reviewed\n" in out, out
         assert "- changed      1 file(s): `src/payments/config.py`\n" in out
         assert run_review(*rules_only, "--path", "./docs/") == 2
-        assert "nothing 'feature/payments' changes lies under docs: no change to review" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "nothing 'feature/payments' changes lies under docs: no change to review" in err, err
+        assert "Name another folder with --path, or drop it to review the whole change" in err, "the next step"
         assert run_review(*rules_only, "--path", "../elsewhere") == 2
         assert "--path '../elsewhere' must name a folder inside the repository" in capsys.readouterr().err
 
@@ -90,10 +94,15 @@ class TestWhatAReviewCovers:
         assert run_review(*rules_only, "--path", "src", "--path-exclude", "src/payments/") == 2, "outweighs the scope"
         err = capsys.readouterr().err
         assert "nothing 'feature/payments' changes lies under src outside src/payments: no change to review" in err, err
+        assert "Name another folder with --path, or drop --path-exclude" in err, "read by review: no next step"
         assert run_review(*rules_only, "--path-exclude", ".") == 2
         assert "--path-exclude '.' names the whole repository" in capsys.readouterr().err
         assert run_review(*rules_only, "--path-exclude", "../elsewhere") == 2
         assert "--path-exclude '../elsewhere' must name a folder inside the repository" in capsys.readouterr().err
+        # Read by review: a misspelt or wrongly cased exclusion left everything in, and the report said "less" it.
+        run_review(*rules_only, "--path-exclude", "src/payments/Config.py")
+        out = capsys.readouterr().out
+        assert "less src/payments/Config.py (no changed file lies there: check its spelling and case)" in out, out
 
     def test_what_was_already_in_a_touched_file_is_apart_and_never_fails_the_review(
         self, cli, tmp_path: Path, capsys
@@ -130,6 +139,56 @@ class TestWhatAReviewCovers:
             agent = handoff.read_text(encoding="utf-8").split("## Already in the files you touched")[1]
             assert "S602" in agent and "at the bar" not in agent.split("## Check your work")[0], agent
             assert "Nothing to fix" not in agent and "--check rule.lint" in agent, agent
+
+    def test_a_finding_the_change_made_on_a_line_it_did_not_touch_is_its_own(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: ruff places a call's finding on its first line, so a change to an argument below it left that
+        line as the base held it, and the finding read as old. Ruff's own words tell them apart: a shell call on a
+        literal "seems safe", one on what a person typed is "identified"."""
+        call = (
+            "import subprocess\n\n\ndef run():\n    return subprocess.run(\n        {},\n        shell=True,\n    )\n"
+        )
+        repo = branched(tmp_path, {"app.py": call.format('"ls"')}, {"app.py": call.format("input()")})
+        code, data = reviewed(cli, repo, "--fail-on", "major")
+        capsys.readouterr()
+        assert code == 1 and any("S602" in f["title"] for f in data["findings"]), data
+        assert not any("S602" in str(f["evidence"]) for f in data["old_findings"]), data["old_findings"]
+
+    def test_a_script_with_no_suffix_is_set_against_its_base_too(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: a script that names Python on its first line, with no `.py`, was linted but never read at
+        the base, so a name the change left undefined read as already there."""
+        script = "#!/usr/bin/env python3\nimport sys\n\n\nprint(sys.argv)\n"
+        repo = branched(tmp_path, {"tool": script}, {"tool": script.replace("import sys\n", "x = 1\n")})
+        code, data = reviewed(cli, repo, "--fail-on", "major")
+        capsys.readouterr()
+        assert code == 1 and any("F821" in f["title"] for f in data["findings"]), data
+
+    def test_an_added_line_like_an_old_one_leaves_the_old_one_old(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: the base's finding went to the first head line of the same text, one the change added, and
+        the untouched line it belonged to read as the change's own."""
+        body = "():\n    try:\n        pass\n    except Exception:\n        pass\n"
+        repo = branched(tmp_path, {"app.py": "def f" + body}, {"app.py": "def g" + body + "\n\ndef f" + body})
+        _code, data = reviewed(cli, repo)
+        capsys.readouterr()
+        assert [f["line"] for f in data["findings"] if "S110" in f["title"]] == [4], data["findings"]
+        assert any("S110" in str(f["evidence"]) for f in data["old_findings"]), data["old_findings"]
+
+    def test_where_the_base_cannot_be_read_what_lies_on_untouched_lines_still_counts(
+        self, cli, tmp_path: Path, capsys, monkeypatch
+    ) -> None:
+        """Read by review: with no base to set them against, every finding on a line the change did not touch was filed
+        as old, and none could fail the review, where before they were counted at the bar. Not compared, they are
+        counted as before: "did not look" never reads as "not caused by this change"."""
+        from adk_review.collect import git
+
+        def unread(*_args, **_kwargs):
+            raise git.GitError("the base could not be read")
+
+        monkeypatch.setattr(git, "base_files", unread)
+        script = "import sys\n\n\nprint(sys.argv)\n"
+        repo = branched(tmp_path, {"app.py": script}, {"app.py": script.replace("import sys", "x = 1")})
+        code, data = reviewed(cli, repo, "--fail-on", "major")
+        capsys.readouterr()
+        assert code == 1 and data["old_findings"] == [], data
 
     def test_a_head_that_adds_nothing_names_the_flags_that_review_something(self, cli, demo_repo, capsys) -> None:
         # Measured: a first review of a repository checked out on main, `--base main`, ended at the sentence alone.

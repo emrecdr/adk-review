@@ -24,6 +24,7 @@ from conftest import (
     _link_on_branch,
     _link_staged,
     _with_profiles,
+    branched,
     catalog,
     gathered,
     in_tags,
@@ -668,6 +669,10 @@ class TestTheLintRule:
         defect = Sourced("guideline.correctness", Finding(**said, title="skips the last"), (9, 9))
         assert to_verify([defect], [tidy], frozenset({"rule.simplify"})) == [defect]
         assert to_verify([defect], [tidy]) == [], "with no tidy named, the rule's reading keeps its lines"
+        # Read by review: what was already in the file is set apart before the fold, so it folds nothing, and a
+        # guideline's finding beside it is asked of a verifier.
+        old = Sourced("rule.lint", Finding(**{**said, "severity": "major"}, title="F401"), None, old=True)
+        assert to_verify([defect], [old]) == [defect]
 
     def test_without_ruff_the_lint_rule_is_a_named_hole_and_the_run_degrades(
         self, demo_repo: Path, cli, monkeypatch, capsys
@@ -720,6 +725,21 @@ class TestTheLintRule:
         unread = next(f for f in evidence["files"] if f["path"].endswith(".py"))
         unread["text"], unread["unread_text"] = None, "was not read whole"
         assert lint_findings(evidence) == f"rule lint could not look: {unread['path']} was not read whole"
+
+    def test_the_base_is_linted_only_where_a_finding_lies_on_a_line_the_change_did_not_touch(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by review: ruff ran twice for each rule that names it, on every commit, the base each time. Only a
+        finding on a line the change did not touch is set against the base, so a change whose findings all lie on
+        its own lines lints the head alone."""
+        from adk_review.collect import git, ruff
+
+        repo = branched(tmp_path, {"app.py": "x = 1\n"}, {"app.py": "x = 1\nimport os\n"})
+        evidence = git.collect_evidence(str(repo), "main", "change", scan=["*.py"])
+        run, calls = ruff._run, []
+        monkeypatch.setattr(ruff, "_run", lambda *args, **kwargs: calls.append(args[1]) or run(*args, **kwargs))
+        assert {f.line for f in lint_findings(evidence)} == {2}, "an unused import, and one below the top"
+        assert len(calls) == 1, calls
 
     def test_lint_keeps_its_findings_beside_an_unread_file_it_never_lints(self, demo_repo: Path) -> None:
         """Ruff reads Python files, so an unread lock file is no hole of lint's, and every finding stands. The rule
@@ -894,15 +914,20 @@ class TestTheLintRule:
 
     def test_lint_counts_what_sits_on_lines_the_change_did_not_add(self) -> None:
         """Measured over this repository's 22 commits: 86.3% of lint's findings sat on lines the commit did not add,
-        and on one commit 96.5%. Those are counted, one finding a file at the most severe of them, so the verdict
-        reads the same; the change's own lines are listed, each its own finding."""
+        and on one commit 96.5%. Those are counted, one finding a file at the most severe of them; the change's own
+        lines are listed, each its own finding. Where the base held them too they are old, apart and never at the bar;
+        where no base was read, they are counted with the change, as before."""
         text = "import os\nimport sys\nx = eval('1')\n"
         entry = {"path": "m.py", "status": "M", "text": text, "unread_text": None, "added": [(3, "x = eval('1')")]}
+        entry["added_at"] = frozenset({3})
         counted = lint_findings({"files": [entry], "tree": None})
         assert [f.line for f in counted if f.line is not None] == [3]
-        # Already in the file, and no base to tell otherwise: apart from the change's own findings, never at the bar.
-        assert not [f for f in counted if f.line is None], "the old ones are no finding of the change"
-        (aside,) = lint_findings({"files": [entry], "tree": None}, old=True)
+        (unsure,) = [f for f in counted if f.line is None]  # no base to set them against: they may be the change's
+        assert unsure.title == "lint: 2 ruff findings on lines this change did not touch", unsure.title
+        assert "could not set these lines against the base" in unsure.why, unsure.why
+        held = {"files": [entry], "tree": None, "base_texts": {"m.py": "import os\nimport sys\n"}}
+        assert [f.line for f in lint_findings(held)] == [3], "the base held both imports: apart from the change's own"
+        (aside,) = lint_findings(held, old=True)
         assert (
             aside.title == "lint: 2 ruff findings already in this file, on lines this change did not touch"
             and aside.evidence == "F401 (unused-import) x2 on lines 1 and 2"
@@ -995,6 +1020,9 @@ class TestTheLintRule:
         real = ['PASSWORD = "Summer2024!x"\n', 'if password == "Xk9mQ2vL8pR4":\n    pass\n']
         real += ['token: str = "Xk9mQ2vL8pR4wZ7t"\n', 'call(passwd="Xk9mQ2vL8pR4")\n']
         real += ['def f(password="Xk9mQ2vL8pR4"):\n    pass\n']
+        # Read by review: `is_credential` asks a digit of a name other than a password's, so a secret of letters alone
+        # was passed over, and no rule named it.
+        real += ['client_secret = "AbCdEfGhIjKlMnOpQrStUvWx"\n', 'SECRET_KEY = "mysupersecretvalue"\n']
 
         def codes(text: str) -> list[str]:
             found = lint_findings({"files": [_entry("src/app.py", text)], "tree": None})

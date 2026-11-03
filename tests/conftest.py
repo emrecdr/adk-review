@@ -25,7 +25,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from collections.abc import AsyncGenerator, Iterator
+from collections.abc import AsyncGenerator, Iterator, Mapping
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -387,6 +387,31 @@ def _committed(repo: Path, name: str, text: str | bytes = "x = 1\n", message: st
     _git_in(repo, "add", "-A")
     _git_in(repo, "commit", "-qm", message or name)
     return _git_in(repo, "rev-parse", "HEAD")
+
+
+def branched(tmp_path: Path, before: Mapping[str, str], after: Mapping[str, str]) -> Path:
+    """A repository whose `main` holds `before`'s files and whose branch `change` writes `after`'s over them, a commit
+    each, LF ends: what a change caused, set against what its base already held."""
+    repo = tmp_path / "branched"
+    repo.mkdir()
+    _git_in(repo, "init", "-q", "-b", "main")
+    for files, message in ((before, "base"), (after, "change")):
+        if message == "change":
+            _git_in(repo, "checkout", "-q", "-b", "change")
+        for name, text in files.items():
+            (repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (repo / name).write_text(text, encoding="utf-8", newline="\n")
+        _git_in(repo, "add", "-A")
+        _git_in(repo, "commit", "-qm", message)
+    return repo
+
+
+def reviewed(module, repo: Path, *extra: str) -> tuple[int, dict]:
+    """The command over `branched`'s change against `main`, rules alone: its exit code and its JSON report."""
+    report = repo.parent / f"{repo.name}-report.json"
+    argv = [str(repo), "--head", "change", "--base", "main", "--profile", "default-rules", "--json", str(report)]
+    code = module.main([*argv, *extra])
+    return code, json.loads(report.read_text(encoding="utf-8"))
 
 
 def _link_staged(repo: Path, path: str, target: str) -> None:
