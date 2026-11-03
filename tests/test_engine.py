@@ -353,6 +353,22 @@ class TestRetriesOnBothArms:
         for none in ({}, {"x-ratelimit-reset": str(int(time.time()) - 60)}, {"retry-after": "soon"}, *hostile):
             assert "Try again" not in limited(none), none
 
+    def test_a_retry_after_date_a_system_cannot_place_names_no_wait_and_raises_nothing(self, monkeypatch) -> None:
+        """Read by review: Python raises `OSError` where `timestamp()` places a date with no zone before 1970 on
+        Windows, and it escaped the error's own callback, so a 429 read as a crash."""
+        import litellm
+
+        from adk_review.judge import plugins
+
+        class Before1970:
+            def timestamp(self) -> float:
+                raise OSError(22, "Invalid argument")
+
+        monkeypatch.setattr(plugins, "parsedate_to_datetime", lambda _said: Before1970())
+        error = litellm.RateLimitError("Sorry, you've exceeded your rate limit.", "github_copilot", "gpt-4.1")
+        error.litellm_response_headers = {"retry-after": "Mon, 01 Jan 1900 00:00:00 -0000"}
+        assert "Try again" not in plugins.describe(error)
+
     def test_a_run_past_its_deadline_is_named_and_degrades(self, demo_repo: Path, cli, monkeypatch, capsys):
         """Measured before: no run had a deadline of its own, and on the Copilot arm one guideline call could take its
         180 s seven times over. A run past the deadline is the run's failure, each guideline named with it."""

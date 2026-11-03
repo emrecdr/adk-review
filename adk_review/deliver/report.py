@@ -978,7 +978,7 @@ def told_in_parts(
             *(f"    {sentence}" for sentence in also),
         ]
     given = [
-        "Give each run any other flag this review had, but no --path.",
+        "Give each run any other flag this review had, but no --path, --profile or --check.",
         "Give each its own --json, --comment or --handoff file.",
     ]
     return [inert(line) for line in [*lines, "", *given]]

@@ -255,17 +255,6 @@ def shown_to_guidelines(
             continue
         view, cut = capped(diff, diff_cap)
         shown_any.append((file, diff, cut, len(framed(file["path"], view)[0])))
-    # The files read whole take the room first, then the cut ones, each in path order: measured by review, a long file
-    # cut at the cap took the room of small files after it, read whole before the cap rose, and left them out whole.
-    # A deleted file goes last and is never counted as left out, since it is never a hole: read by review, one took the
-    # room of a file the change added, which was then a hole, and alone it asked whether to go on.
-    fitted: set[int] = set()
-    first = sorted(range(len(shown_any)), key=lambda at: (shown_any[at][0]["status"] == "D", shown_any[at][2]))
-    for at in first:  # stable: path order within each
-        if (size := shown_any[at][3]) <= room:
-            fitted.add(at)
-            room -= size + 2  # and the blank line joining it to the next
-    not_shown = len(shown_any) - len(fitted)
     # The files a run of their own would read: none deleted, and none no run can read, a binary file, a submodule or a
     # Git LFS pointer. Read by review, a run of deleted files alone, or of a binary file, cost a review's calls for no
     # hole it could mend, and alone asked whether to go on.
@@ -274,13 +263,24 @@ def shown_to_guidelines(
         for at, (file, diff, _cut, _size) in enumerate(shown_any)
         if file["status"] != "D" and not unread(file, diff, cut=False, fits=True, cap=diff_cap)
     }
+    # Those take the room first, the files read whole before the cut ones, each in path order: measured by review, a
+    # long file cut at the cap took the room of small files after it, read whole before the cap rose, and left them out
+    # whole; and a deleted or binary file first in path order took the room of a file the change added.
+    fitted: set[int] = set()
+    first = sorted(range(len(shown_any)), key=lambda at: (at not in readable, shown_any[at][2]))
+    for at in first:  # stable: path order within each
+        if (size := shown_any[at][3]) <= room:
+            fitted.add(at)
+            room -= size + 2  # and the blank line joining it to the next
+    not_shown = len(shown_any) - len(fitted)
     left_out = len(readable - fitted)
     sizes = {shown_any[at][0]["path"]: shown_any[at][3] for at in sorted(readable)}
     parts = in_parts(sizes, scope, BLOCK_CAP_CHARS) if left_out else []
     units = {unit for run in parts for unit in run}
     for at, (file, diff, cut, _size) in enumerate(shown_any):
         # The guidelines' limits alone: the rules read every added line.
-        folder = None if at in fitted else _planned(file["path"], units)
+        # No run's `--path` for a file its own run would cut still: read by review, the hint promised what it could not.
+        folder = None if at in fitted or cut else _planned(file["path"], units)
         file.update(unread=unread(file, diff, cut, at in fitted, diff_cap, folder), cut=cut or at not in fitted)
         if at in fitted:  # a file no guideline read, none may quote; its view made again, none kept for the rest
             view, _cut = capped(diff, diff_cap)

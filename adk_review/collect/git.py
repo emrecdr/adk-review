@@ -25,6 +25,7 @@ import uuid
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
+from types import MappingProxyType
 from typing import Any, NoReturn
 
 from ..core.blast import Radius
@@ -598,10 +599,13 @@ def diff_of(resolved: dict, path: str, old: str = "", *, functions: bool = False
     return unguessed(readable(diff))
 
 
-def _off_disk(resolved: dict) -> dict[str, str]:
-    """What keeps a review of commits' diff off the files on disk, for `NO_INDEX`'s reason: no index, so git reads every
-    blob; nothing under `--staged`, whose index is what it reads."""
-    return {} if resolved.get("staged") else {"GIT_INDEX_FILE": NO_INDEX}
+#: The environment that keeps a diff of commits off the files on disk, for `NO_INDEX`'s reason.
+OFF_DISK = MappingProxyType({"GIT_INDEX_FILE": NO_INDEX})
+
+
+def _off_disk(resolved: dict) -> Mapping[str, str]:
+    """`OFF_DISK` for a review of commits; nothing under `--staged`, whose index is what it reads."""
+    return {} if resolved.get("staged") else OFF_DISK
 
 
 def whole_diffs(resolved: dict, entries: list[dict[str, str]], scope: Sequence[str]) -> list[str]:
@@ -1062,7 +1066,8 @@ def gather(
     if guidelines and (outside := len(listed) - len(entries)):
         # Named to the guidelines, as a file past the cap is: a test outside is no test missing. Read by review, the
         # parts of a change split its source from its tests, and `tests` could only call the source untested.
-        note = f"[… {outside} more changed file(s) outside the folders reviewed: not shown here]"
+        what = "file(s) of the project" if base is None else "changed file(s)"  # under --all, every file is listed
+        note = f"[… {outside} more {what} outside the folders reviewed: not shown here]"
         block = f"{block}\n\n{note}" if block else note
     listing = head_listing(resolved)
     # A link of a kind `scan` leaves out is read by the credential rules as its own path, as its diff shows it and a

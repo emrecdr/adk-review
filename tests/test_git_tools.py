@@ -156,7 +156,8 @@ class TestNoOnesSettings:
         fake = ("-c", "filter.fake.clean=git hash-object --stdin", "-c", "filter.fake.smudge=cat")  # theirs alone
         _git_in(repo, "init", "-q", "-b", BASE)
         (repo / ".git" / "info").mkdir(exist_ok=True)
-        (repo / ".git" / "info" / "attributes").write_text("* -text\ndata.py filter=fake\n", encoding="utf-8")
+        info = repo / ".git" / "info" / "attributes"
+        info.write_text("* -text\ndata.py filter=fake\n", encoding="utf-8", newline="\n")
         (repo / "data.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
         _git_in(repo, *fake, "add", ".")
         _git_in(repo, *fake, "commit", "-qm", "base")
@@ -1774,6 +1775,23 @@ class TestWhatTheGuidelinesAreShown:
         scoped = git.collect_evidence(str(demo_repo), BASE, HEAD, scope=("src/payments/refund.py",))
         assert scoped["outside"] == 3 and "outside the folders" not in whole["diff"], whole["diff"][-200:]
         assert scoped["diff"].endswith("[… 3 more changed file(s) outside the folders reviewed: not shown here]")
+        # Read by review: under --all every file is listed, and none of those outside the folders changed.
+        project = git.collect_evidence(str(demo_repo), None, HEAD, scope=("src/payments/refund.py",))
+        assert "file(s) of the project outside the folders reviewed" in project["diff"], project["diff"][-200:]
+
+    def test_a_file_its_own_run_would_cut_names_no_run_that_reads_it(self, monkeypatch) -> None:
+        """Read by review: a file both cut at the diff cap and left out of the block was told to be reviewed in a
+        smaller run with `--path`, where that run cut it all the same."""
+        from adk_review.collect import change, diff
+
+        small, long = self._diff("a/x.py", "x = 1"), self._diff("b/y.py", *(f"y_{n} = {n}" for n in range(80)))
+        entries = [{"path": "a/x.py", "status": "A"}, {"path": "b/y.py", "status": "A"}]
+        cut_view, _cut = diff.capped(long, 300)
+        room = len(diff.framed("b/y.py", cut_view)[0])  # `b/y.py` as cut fits a run alone, not beside `a/x.py`
+        monkeypatch.setattr(change, "BLOCK_CAP_CHARS", room)
+        files, _block, _excluded, left_out, parts = change.shown_to_guidelines(entries, [small, long], 300, ())
+        assert left_out == 1 and ["b"] in parts, parts
+        assert files[1]["cut"] and "smaller run" not in files[1]["unread"], files[1]["unread"]
 
     def test_a_file_no_run_can_read_is_never_counted_as_left_out(self, monkeypatch) -> None:
         """Read by review: a binary file the block had no room for was counted as left out, so a plan of runs was made
@@ -1786,6 +1804,12 @@ class TestWhatTheGuidelinesAreShown:
         monkeypatch.setattr(change, "BLOCK_CAP_CHARS", len(diff.framed("a.py", text)[0]))  # room for `a.py` alone
         files, _block, _excluded, left_out, parts = change.shown_to_guidelines(entries, [text, binary], 2_000, ())
         assert left_out == 0 and parts == [] and files[1]["unread"] == change.BINARY_UNREAD, (left_out, files[1])
+        # Read by review: first in path order, the binary file took the room, and the readable one was left out.
+        entries = [{"path": "a.bin", "status": "A"}, {"path": "b.py", "status": "A"}]
+        text = self._diff("b.py", *(f"x_{n} = {n}" for n in range(20)))  # larger than the binary file's framing
+        monkeypatch.setattr(change, "BLOCK_CAP_CHARS", len(diff.framed("b.py", text)[0]))  # room for `b.py` alone
+        files, block, _excluded, left_out, parts = change.shown_to_guidelines(entries, [binary, text], 2_000, ())
+        assert left_out == 0 and parts == [] and "### b.py" in block and files[1]["unread"] == "", block
 
     def test_a_deleted_file_takes_the_room_last_and_is_never_counted_as_left_out(self, monkeypatch) -> None:
         """Read by review: a deleted file is never a hole, what it removes reviewed when it came in, yet the block gave

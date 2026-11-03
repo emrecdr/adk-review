@@ -107,7 +107,7 @@ def _waits(headers: Mapping[str, str], now: float) -> list[float]:
     with contextlib.suppress(ValueError):
         waits.append(float(after))
     if after and not waits:
-        with contextlib.suppress(TypeError, ValueError, OverflowError):
+        with contextlib.suppress(TypeError, ValueError, OverflowError, OSError):  # Windows: a date before 1970
             waits.append(parsedate_to_datetime(after).timestamp() - now)
     for key in ("x-ratelimit-reset", "x-ratelimit-user-reset"):
         with contextlib.suppress(ValueError):

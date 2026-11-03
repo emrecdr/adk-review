@@ -13,7 +13,7 @@ from .change import lfs_pointer
 from .diff import file_added, readable
 
 # git.py's own verbs: this module was its push half, split off for its weight, and reads git as it does.
-from .git import _PLAIN, NO_INDEX, OBJECT_ID, GitError, _empty_tree, _git, _git_raw, _sha, _text
+from .git import _PLAIN, OBJECT_ID, OFF_DISK, GitError, _empty_tree, _git, _git_raw, _sha, _text
 
 
 def push_scope(repo: str, remote: str | None, head: str, held: str | None) -> tuple[str, list[str]] | None:
@@ -106,9 +106,8 @@ def _added_by(repo: str, commits: Sequence[str], attributes: str) -> dict[str, l
     found: dict[str, list[dict]] = {}
     stdin = "".join(f"{commit}\n" for commit in commits).encode()
     # Under no index, as a review of commits diffs: git read a checked-out file for its blob where conversion was off.
-    away = {"GIT_INDEX_FILE": NO_INDEX}
     patch = _git_raw(
-        repo, attributes, "diff-tree", "--stdin", "-r", "-p", "--root", *_WHOLE, stdin=stdin, away=away
+        repo, attributes, "diff-tree", "--stdin", "-r", "-p", "--root", *_WHOLE, stdin=stdin, away=OFF_DISK
     ).stdout
     parts = _A_COMMIT.split(patch)  # what came before the first commit's line, then each commit and its patch
     for commit, body in zip(parts[1::2], parts[2::2], strict=True):
