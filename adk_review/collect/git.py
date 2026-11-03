@@ -1043,6 +1043,7 @@ def gather(
     skip: Sequence[str] = (),
     scan: Sequence[str] = (),
     third_party: Sequence[str] = (),
+    exclude: Sequence[str] = (),
 ) -> Evidence | Failure:
     """The evidence `collect_evidence` describes, for a scope `preflight` resolved: what the chat's checks node gathers
     for the commits the intake confirmed, never resolving their names again — measured, a head given as a sha resolved
@@ -1052,7 +1053,7 @@ def gather(
     base, head = resolved["base"] or None, resolved["head"]
     try:
         listed = list_changed(resolved)
-        entries = [entry for entry in listed if in_scope(entry["path"], scope)]
+        entries = [entry for entry in listed if in_scope(entry["path"], scope, exclude)]
         own, others, ignored = _split(entries, scan, third_party)
         files, block, excluded, left_out, parts = _read_change(
             resolved, own, scope, guidelines=guidelines, diff_cap=diff_cap, skip=skip
@@ -1062,7 +1063,7 @@ def gather(
     except GitError as exc:  # the change half read is not the change: named, never reviewed as it stands
         return {"status": "error", "error_message": str(exc)}
     if not files and not ignored:  # measured: a branch already merged, or a base equal to its head, approved nothing
-        return no_change(head, base, scope if listed else ())
+        return no_change(head, base, scope if listed else (), exclude if listed else ())
     # Only beside a file shown: read by review, the note alone made a block of no file, and each guideline ran, billed.
     if guidelines and block and (outside := len(listed) - len(entries)):
         # Named to the guidelines, as a file past the cap is: a test outside is no test missing. Read by review, the
@@ -1094,6 +1095,7 @@ def gather(
         "tree": tree,
         "whole": base is None,
         "scope": list(scope),
+        "exclude": list(exclude),
         "parts": parts,
         "left_out": left_out,
         "skipped": excluded,

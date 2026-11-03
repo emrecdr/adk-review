@@ -69,6 +69,32 @@ class TestWhatAReviewCovers:
         assert run_review(*rules_only, "--path", "../elsewhere") == 2
         assert "--path '../elsewhere' must name a folder inside the repository" in capsys.readouterr().err
 
+    def test_a_path_excluded_is_left_out_of_every_check_and_named(self, cli, demo_repo, capsys, tmp_path: Path) -> None:
+        """Asked by the owner: a way to leave a folder, or a file, out of a review, as `--path` keeps one in. It is the
+        mirror of `--path`: no rule or guideline reads what it names, the report says so, an exclusion outweighs a
+        scope, and one that would leave nothing to review is a usage error, as `.` is."""
+        rules_only = (cli, demo_repo, "--profile", "rules-only")
+        report = tmp_path / "r.json"
+        # `config.py` holds the planted keys: left out, its blockers go, and what remains is the rest's own.
+        assert run_review(*rules_only, "--path-exclude", "src/payments/config.py", "--json", str(report)) != 3
+        out = capsys.readouterr().out
+        assert "- scope        the whole change, less src/payments/config.py: 1 changed file(s) outside it" in out, out
+        data = json.loads(report.read_text(encoding="utf-8"))
+        assert data["reviewed"]["exclude"] == ["src/payments/config.py"], data["reviewed"]
+        assert not any(f["file"] == "src/payments/config.py" for f in data["findings"]), "no check read it"
+        # The command that checks the fixes leaves it out again, or it would read the file the review left out.
+        handoff = tmp_path / "h.md"
+        run_review(*rules_only, "--path-exclude", "src/payments/config.py", "--handoff", str(handoff))
+        capsys.readouterr()
+        assert "--path-exclude=src/payments/config.py" in handoff.read_text(encoding="utf-8").replace('"', "")
+        assert run_review(*rules_only, "--path", "src", "--path-exclude", "src/payments/") == 2, "outweighs the scope"
+        err = capsys.readouterr().err
+        assert "nothing 'feature/payments' changes lies under src outside src/payments: no change to review" in err, err
+        assert run_review(*rules_only, "--path-exclude", ".") == 2
+        assert "--path-exclude '.' names the whole repository" in capsys.readouterr().err
+        assert run_review(*rules_only, "--path-exclude", "../elsewhere") == 2
+        assert "--path-exclude '../elsewhere' must name a folder inside the repository" in capsys.readouterr().err
+
     def test_a_head_that_adds_nothing_names_the_flags_that_review_something(self, cli, demo_repo, capsys) -> None:
         # Measured: a first review of a repository checked out on main, `--base main`, ended at the sentence alone.
         assert cli.main([str(demo_repo), "--head", "main", "--base", "main", "--profile", "rules-only"]) == 2
@@ -278,6 +304,10 @@ class TestWhatAReviewCovers:
         assert rest == [runs[0].split(" --check ")[0] + " --profile default-rules"], rest
         assert "this review's rules over the whole change" in out and "but no --path" in out, out
         assert "A --max-tokens ceiling holds for each run alone." in out, "read by review: eight parts, eight ceilings"
+        # Each part, and the rules' run, leaves out what the review left out: a part's folder can hold it.
+        assert run_review(cli, demo_repo, "--dry-run", "--path-exclude", "src/payments/refund.py") == 0
+        left = [line for line in capsys.readouterr().out.replace('"', "").splitlines() if "adk-review " in line]
+        assert left and all("--path-exclude=src/payments/refund.py" in line for line in left), left
         assert run_review(cli, demo_repo, "--dry-run", "--path", "src/payments") == 0
         said = capsys.readouterr().out.replace('"', "")
         scoped = [line.strip() for line in said.splitlines() if "--profile default-rules" in line]

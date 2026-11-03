@@ -227,9 +227,14 @@ def _fold(path: str) -> str:
     return unicodedata.normalize("NFD", unicodedata.normalize("NFD", path).casefold())
 
 
-def in_scope(path: str, scope: Sequence[str]) -> bool:
-    """Whether a changed file is one of `scope`'s, or lies under one of its folders; no scope holds every file."""
-    return not scope or any(path == folder or path.startswith(f"{folder}/") for folder in scope)
+def in_scope(path: str, scope: Sequence[str], exclude: Sequence[str] = ()) -> bool:
+    """Whether a changed file is one of `scope`'s, or lies under one of its folders, and none of `exclude`'s: no scope
+    holds every file, and an exclusion outweighs a scope, as `--path-exclude` does `--path`."""
+
+    def under(folders: Sequence[str]) -> bool:
+        return any(path == folder or path.startswith(f"{folder}/") for folder in folders)
+
+    return (not scope or under(scope)) and not under(exclude)
 
 
 def in_review(path: str, scan: Sequence[str], third_party: Sequence[str]) -> bool:

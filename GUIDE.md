@@ -49,6 +49,7 @@ machine's own store.
 | `--all` | Review every file at the head, not what it changes. A shallow clone serves. |
 | `--staged` | Review what is staged — the index, as the next commit would hold it — against `HEAD`. Nothing is written. A change not staged is neither reviewed nor named; an untracked file is named, never a hole. Takes no `--head`, `--base` or `--all`. |
 | `--path` | Review only what lies under this folder, or this file, of the repository; the rest of the change is counted in the report. Repeat it for more than one. |
+| `--path-exclude` | Leave this folder, or this file, of the repository out of the review: no rule or guideline reads it, and the report counts it. It outweighs `--path`. Repeat it for more than one; each is a name, never a glob. To leave out a pattern, `--third-party GLOB` keeps it from every check. |
 | `--profile` | The checks to run, as the config's `[profiles]` names them. Default: `default`. Not with `--check`. |
 | `--check` | Run one check alone, this once: `rule.<name>`, `guideline.<name>`, or a group, `rules` or `guidelines`. Repeat it for more than one. Not with `--profile`. |
 | `--fail-on` | Exit 1 at or above this severity: `minor`, `major` or `blocker`. Default: the config's `fail_on`. |
@@ -310,7 +311,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | `exit_code` | The command's exit code. |
 | `fail_on` | The bar. |
 | `findings_at_fail_on` | How many kept findings sit at or above the bar. |
-| `reviewed` | The repository, the head and its sha, the base, its sha and the merge base (null under `--all`), the scope, the files the skip list left to the rules, the files the review ignored, by `scan` and `third_party`, the untracked files under `--staged` (null otherwise), and the changed files. |
+| `reviewed` | The repository, the head and its sha, the base, its sha and the merge base (null under `--all`), the scope, what `--path-exclude` left out, the files the skip list left to the rules, the files the review ignored, by `scan` and `third_party`, the untracked files under `--staged` (null otherwise), and the changed files. |
 | `model` | The model and arm that ran, or null where no guideline ran. |
 | `profile` | The profile, or the `--check` list. |
 | `off` | Every check the profile left off. |

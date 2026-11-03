@@ -452,7 +452,7 @@ def render_comment(
     )
     lines = [head, "", COMMENT_OPENS[verdict].format(bar=fail_on)]
     if previous is not None:
-        lines.append(_since_last(outcome, verdict, previous, checks, evidence.get("scope", [])))
+        lines.append(_since_last(outcome, verdict, previous, checks, evidence["scope"], evidence.get("exclude", ())))
     if majors := sum(group[0].finding.severity == "major" for group in worth):
         found = "did find" if verdict == "APPROVED" else "also found"
         lines.append(MAJORS_BELOW_BAR.format(found=found, n=majors, s="" if majors == 1 else "s"))
@@ -511,14 +511,19 @@ def _size(lines: Sequence[str]) -> int:
 
 
 def _since_last(
-    outcome: Outcome, verdict: str, previous: Mapping[str, dict], checks: Sequence[str], scope: Sequence[str]
+    outcome: Outcome,
+    verdict: str,
+    previous: Mapping[str, dict],
+    checks: Sequence[str],
+    scope: Sequence[str],
+    exclude: Sequence[str] = (),
 ) -> str:
     """How the change moved since the review `--previous` names, as its author reads it: the points fixed, new and
     still open, the fixed ones uncounted, and said so, where this review could not look at all. Read by review: the text
     report said it and the comment did not, so a second round read as the first."""
     identities = _identified(outcome.kept)
     new = sum(_since(identity, previous) == "new" for identity in identities)
-    fixed = _resolved(outcome, identities, verdict, previous, checks, scope)
+    fixed = _resolved(outcome, identities, verdict, previous, checks, scope, exclude)
     done = "" if fixed is None else f"{len(fixed)} fixed, "
     said = f"Since the last review: {done}{new} new, {len(identities) - new} still open."
     return said + (
@@ -612,7 +617,11 @@ def _check_again(
     # there, named the branch checked out, and a branch named took a commit no check of the review's had read.
     head = [] if staged else [("--head", (branch or "HEAD") if fixes else pre["head_sha"])]
     pinned = [("--staged",)] if staged else [("--all",)] if evidence["whole"] else [("--base", pre["merge_base"])]
-    given = [*((f"--path={path}",) for path in evidence["scope"]), *((glob,) for glob in added)]
+    given = [
+        *((f"--path={path}",) for path in evidence["scope"]),
+        *((f"--path-exclude={path}",) for path in evidence.get("exclude", ())),
+        *((glob,) for glob in added),
+    ]
     # With each check that could not look or could not prove a finding at the bar, so a rerun names it again where it
     # still cannot: read by review, a run of only the checks that found something said the fixes held, the hole never
     # looked at again.
@@ -884,13 +893,16 @@ def header(evidence: Evidence, *, model: str, profile: str, off: Sequence[str], 
         ]
         listed, kind = "changed", "changed file(s)"
     left = f"{evidence['outside']} {kind} outside it, not reviewed"
+    exclude = evidence.get("exclude", ())
+    covered = ", ".join(scope) or "the whole change"
+    covered += f", less {', '.join(exclude)}" if exclude else ""
     return [
         f"- repository   {pre['repo']}",
         f"- branch       {_as_resolved(pre['head'], pre.get('head_ref', ''))} @ {pre['head_sha'][:9]}",
         *against,
         *([f"- model        {model}"] if model else []),
         f"- profile      {profile}" + (f" (off: {', '.join(off)})" if off else ""),
-        *([f"- scope        {prose(', '.join(scope))}: {left}"] if scope else []),
+        *([f"- scope        {prose(covered)}: {left}"] if scope or exclude else []),
         f"- {listed:<12} {len(files)} file(s): {_spans([f['path'] for f in files])}",
         *(f"- not read     {code_span(one_line(path))}: {why}" for path, why in unread.items()),
         *(
@@ -964,10 +976,14 @@ def told_in_parts(
     ]
     for run in parts:
         units = [*head, *pinned, *guidelines, *((glob,) for glob in added), *((f"--path={value}",) for value in run)]
+        units += [(f"--path-exclude={path}",) for path in evidence.get("exclude", ())]
         shown, also = _shown(units)
         lines += [f"    {command} {shown}", *(f"    {sentence}" for sentence in also)]
     if rules:  # `rules`: the flags of this review's rules alone, `--profile NAME` or each `--check ID`
-        scope = ((f"--path={folder}",) for folder in evidence["scope"])
+        scope = [
+            *((f"--path={folder}",) for folder in evidence["scope"]),
+            *((f"--path-exclude={path}",) for path in evidence.get("exclude", ())),
+        ]
         shown, also = _shown([*head, *pinned, *rules, *((g,) for g in added), *scope])
         lines += [
             "",
@@ -1079,6 +1095,7 @@ def _resolved(
     previous: Mapping[str, dict] | None,
     checks: Sequence[str],
     scope: Sequence[str],
+    exclude: Sequence[str] = (),
 ) -> list[dict] | None:
     """A previous review's findings this one, its kept findings' `identities` and those folded into them, no longer
     finds, among those it looked for — a check that ran, a file in its scope: None with no previous review, and where
@@ -1091,7 +1108,9 @@ def _resolved(
     return [
         found
         for identity, found in previous.items()
-        if identity not in found_now and found.get("check") in checks and in_scope(str(found.get("file", "")), scope)
+        if identity not in found_now
+        and found.get("check") in checks
+        and in_scope(str(found.get("file", "")), scope, exclude)
     ]
 
 
@@ -1142,7 +1161,7 @@ def render(
     # Read against a previous review alone: with none, no finding is fingerprinted.
     identities = _identified(outcome.kept) if previous is not None else [""] * len(outcome.kept)
     lines += _sections(checks, outcome, identities, previous)
-    resolved = _resolved(outcome, identities, verdict, previous, checks, evidence["scope"])
+    resolved = _resolved(outcome, identities, verdict, previous, checks, evidence["scope"], evidence.get("exclude", ()))
     if previous is not None and resolved is None:
         lines.append("- resolved since the previous review: none counted, since this review could not look at all")
     elif resolved is not None:
@@ -1504,6 +1523,7 @@ def as_data(
             "base_sha": None if whole else pre["base_sha"],
             "merge_base": None if whole else pre["merge_base"],
             "scope": [safe_line(folder) for folder in evidence["scope"]],
+            "exclude": [safe_line(path) for path in evidence.get("exclude", ())],
             "skipped": {safe_line(path): glob for path, glob in evidence.get("skipped", {}).items()},
             "ignored": [safe_line(path) for path in evidence.get("ignored", ())],
             "untracked": None if (away := evidence.get("untracked")) is None else [safe_line(name) for name in away],
@@ -1522,7 +1542,9 @@ def as_data(
         ],
         # The previous review's findings no longer found, as it wrote them; None with no previous review, or where
         # this one has a hole, which resolves nothing.
-        "resolved": _resolved(outcome, identities, verdict, previous, checks, evidence["scope"]),
+        "resolved": _resolved(
+            outcome, identities, verdict, previous, checks, evidence["scope"], evidence.get("exclude", ())
+        ),
         "could_not_look": {source: safe_line(why, REASON_MAX_CHARS) for source, why in outcome.errors.items()},
         "not_read": {safe_line(path): safe_line(why, REASON_MAX_CHARS) for path, why in outcome.unread.items()},
         "folded": [{**_found(item, added), "into": into.source} for item, into in outcome.folded],

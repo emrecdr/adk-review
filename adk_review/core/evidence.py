@@ -122,6 +122,7 @@ class Evidence(Change):
     callers: NotRequired[str]  # each call into a function the change touched, from a file it left alone, with its lines
     whole: bool  # under --all: every file at the head is the change, diffed against the empty tree
     scope: list[str]  # the folders --path named, as git spells them; [] for the whole change
+    exclude: NotRequired[list[str]]  # the folders and files --path-exclude named, as git spells them
     #: Where the guidelines cannot read the change in one run, the runs that can, each the `--path` values one names;
     #: [] where it fits.
     parts: NotRequired[list[list[str]]]

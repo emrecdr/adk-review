@@ -306,6 +306,13 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         help="review only this folder of the repository. Repeat it for more folders",
     )
     parser.add_argument(
+        "--path-exclude",
+        action="append",
+        default=[],
+        metavar="DIR",
+        help="leave this folder or file of the repository out of the review. Repeat it for more than one",
+    )
+    parser.add_argument(
         "--fail-on",
         choices=list(RANK),
         default=review["fail_on"],
@@ -485,17 +492,26 @@ def version() -> str:
         return "unknown"
 
 
-def scope_of(folders: Sequence[str]) -> tuple[str, ...]:
+def scope_of(folders: Sequence[str], flag: str = "--path") -> tuple[str, ...]:
     """Each --path as git spells a folder: `/` between names, no `./`, no trailing `/`; `.` is the whole repository.
     One that starts at a root or a drive, or climbs out with `..`, is refused: git names nothing there."""
     scope = []
     for folder in folders:
         path = PurePosixPath(folder.replace("\\", "/"))
         if ".." in path.parts or PureWindowsPath(folder).anchor:  # a root or a drive, `/` or `\` alike
-            raise ValueError(f"--path {folder!r} must name a folder inside the repository")
+            raise ValueError(f"{flag} {folder!r} must name a folder inside the repository")
         if path.parts:
             scope.append(path.as_posix())
     return tuple(scope)
+
+
+def exclude_of(folders: Sequence[str]) -> tuple[str, ...]:
+    """Each --path-exclude as `scope_of` spells a folder, a file too; the whole repository refused, which would leave
+    nothing to review, where `scope_of` reads `.` as every file."""
+    for folder in folders:
+        if not PurePosixPath(folder.replace("\\", "/")).parts:
+            raise ValueError(f"--path-exclude {folder!r} names the whole repository. Name a folder or a file in it")
+    return scope_of(folders, "--path-exclude")
 
 
 def target(repo: str, base: str | None, head: str | None, whole: bool) -> tuple[str | None, str]:
@@ -653,6 +669,7 @@ def _review(argv: list[str] | None = None) -> int:
         args.rules_alone = _rules_alone(found, config["profiles"], chosen)
         args.guidelines_alone = tuple(("--check", guideline.check_id) for guideline in chosen.guidelines)
         scope = scope_of(args.path)
+        args.path_exclude = exclude_of(args.path_exclude)  # as git spells each, which the cache key reads too
         _mode_alone(args)
         explanation = explained(found, config["profiles"], args.explain) if args.explain else None
         previous = read_previous(args.previous) if args.previous else (None, None)
@@ -759,6 +776,7 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
             skip=args.skip,
             scan=args.scan,
             third_party=args.third_party,
+            exclude=args.path_exclude,
         )
     if evidence["status"] != "success":
         # Measured: a first review of a repository checked out on main ended at "adds nothing" with no way on, and so

@@ -5,13 +5,13 @@ description: Run this repository's reviewer on a git repository and branch and r
 
 # Review a branch
 
-The reviewer is a command: `adk-review [repo] [--head B] [--base main | --all | --staged]
-[--path DIR] [--fail-on …] [--verify | --no-verify] [--profile NAME | --check ID] [--json FILE] [--dry-run]
-[--list-checks]`; every flag, with what it does, is in `GUIDE.md`, which a test holds to the command
-itself. With no `repo` it asks a terminal for one and refuses in a pipeline: it assumes no repository, the demo
-`scripts/make_demo_repo.py` builds in the temp folder included. `--dry-run`
-resolves what a run would cover — revisions, files, profile, model, readiness — and runs nothing: the cheapest way to
-catch the wrong branch; `--list-checks` shows every check with its kind, its profiles and its file.
+The reviewer is a command: `adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--path-exclude
+DIR] [--fail-on …] [--verify | --no-verify] [--profile NAME | --check ID] [--json FILE] [--dry-run] [--list-checks]`;
+every flag, with what it does, is in `GUIDE.md`, which a test holds to the command itself. With no `repo` it asks a
+terminal for one and refuses in a pipeline: it assumes no repository, the demo `scripts/make_demo_repo.py` builds in the
+temp folder included. `--dry-run` resolves what a run would cover — revisions, files, profile, model, readiness — and
+runs nothing: the cheapest way to catch the wrong branch; `--list-checks` shows every check with its kind, its profiles
+and its file.
 
 1. Without a model, which needs no key and is safe anywhere:
    `uv run python -m adk_review.review <repo> --head <branch> --base main --profile default-rules`. The default's rules

@@ -168,6 +168,7 @@ uv run adk-review <repo> --base main --profile simplify         # as Claude Code
 uv run adk-review <repo> --base main --profile code-review      # as its /code-review: bugs, then the cleanup, five
 uv run adk-review <repo> --all --path src --profile code-review # one folder of the whole codebase, reviewed so
 uv run adk-review <repo> --base main --path <folder>            # one folder of the change, the rest counted
+uv run adk-review <repo> --base main --path-exclude tests       # the change but one folder, left out of every check
 uv run adk-review <repo> --all --profile rules-only             # every file at the head, not a change
 uv run adk-review <repo> --staged --profile default-rules       # what is staged, against HEAD
 uv run adk-review <repo> --base main --check rule.secrets       # one check alone, this once

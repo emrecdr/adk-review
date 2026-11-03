@@ -36,7 +36,7 @@ uv run pyrefly check                                  # types: the package and s
 
 uv run python scripts/make_demo_repo.py          # build <tmp>/adk-demo-repo: main + feature/payments with 4 planted defects
 uv run python scripts/make_demo_repo.py --fix    # commit the two fixes on feature/payments
-uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--handoff [FILE]] [--comment [FILE]] [--cache DIR] [--previous FILE] [--progress | --quiet] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
+uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--path-exclude DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--handoff [FILE]] [--comment [FILE]] [--cache DIR] [--previous FILE] [--progress | --quiet] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
 uv run adk-review <demo repo> --head feature/payments --base main --profile demo   # every rule, the demo's own among them, no model call, no key
 uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # what a review would cover and run, nothing run
 uv run adk-review-login                          # one-time GitHub device-flow login for the Copilot arm
@@ -143,9 +143,10 @@ or the groups `rules` and `guidelines`, `default` the basics — and the review 
 is exit 2. With no `--profile`, `default` runs, and a check runs only where a profile names it, or alone with `--check
 ID`. `--profile` is the only choice, and nothing is read from the repository under review, `.gitignore` included: git
 keeps ignored files out of commits (under `--staged` git reads it only to name the untracked files the report lists).
-What a review covers: `--path DIR` a folder of the change, the rest counted in the report; `--all` every file at the
-head, diffed against git's empty tree; `--head` defaults to the branch checked out; with neither `--base` nor `--all` a
-terminal asks, and a pipeline reviews the change against `main`, or `master`, or else the branch `origin/HEAD` names.
+What a review covers: `--path DIR` a folder of the change, the rest counted in the report; `--path-exclude DIR` a folder
+or file left out of every check, counted too, outweighing `--path`; `--all` every file at the head, diffed against git's
+empty tree; `--head` defaults to the branch checked out; with neither `--base` nor `--all` a terminal asks, and a
+pipeline reviews the change against `main`, or `master`, or else the branch `origin/HEAD` names.
 
 Evidence is gathered in Python first, the rules run as one `FunctionNode` before the guidelines in both shapes
 (`judge/checks.py`, every rule through `run_rule`), or straight from the driver through the same `run_rules` where no

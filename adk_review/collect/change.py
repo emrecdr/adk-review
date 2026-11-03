@@ -433,13 +433,16 @@ def radius(tree: Tree | None, files: list[Entry], *, read: bool, asked: bool) ->
     return Blast((), (), 0, asked=False)
 
 
-def no_change(head: str, base: str | None, scope: Sequence[str]) -> Failure:
-    """Why there is nothing to review: the head holds no file, adds nothing to the base, or nothing under the scope.
-    Only a head that adds nothing is marked `rescope`: most often it is the base itself, a branch checked out on
-    `main`."""
-    if scope:
+def no_change(head: str, base: str | None, scope: Sequence[str], exclude: Sequence[str] = ()) -> Failure:
+    """Why there is nothing to review: the head holds no file, adds nothing to the base, or nothing under the scope
+    and outside what `--path-exclude` names. Only a head that adds nothing is marked `rescope`: most often it is the
+    base itself, a branch checked out on `main`."""
+    if scope or exclude:
         what = f"no file at {head!r}" if base is None else f"nothing {head!r} changes"
-        return {"status": "error", "error_message": f"{what} lies under {', '.join(scope)}: no change to review"}
+        where = " ".join(
+            [*([f"under {', '.join(scope)}"] if scope else []), *([f"outside {', '.join(exclude)}"] if exclude else [])]
+        )
+        return {"status": "error", "error_message": f"{what} lies {where}: no change to review"}
     if base is None:
         return {"status": "error", "error_message": f"{head!r} holds no file: nothing to review"}
     why = f"{head!r} adds nothing to {base!r}: no change to review"
