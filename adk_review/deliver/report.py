@@ -931,10 +931,13 @@ def _untracked(names: Sequence[str] | None) -> list[str]:
     return [f"- untracked    {_spans(names, SHOWN)}: not in the next commit, so not reviewed"]
 
 
-def told_in_parts(evidence: Evidence, profile: str, added: Sequence[str] = (), rules: Sequence[str] = ()) -> list[str]:
+def told_in_parts(
+    evidence: Evidence, profile: str, added: Sequence[str] = (), rules: Sequence[tuple[str, str]] = ()
+) -> list[str]:
     """Where the guidelines cannot read the change in one run: how many files they would leave unread, and each run
     that reads them all as a command to copy, built from this review's repository, branches, checks and globs as
-    `_check_again` builds its own; [] where the change fits. Asked by the owner: a branch of 58 files spent a whole
+    `_check_again` builds its own, then one run of the review's `rules` alone over the whole change, which reads the
+    files no part reads; [] where the change fits. Asked by the owner: a branch of 58 files spent a whole
     review's calls, and left nine unread. Read by review: the count was read back from a sentence's wording, and one
     name no shell keeps as one word left each run its paths alone."""
     if not (left := evidence.get("left_out", 0)):
@@ -961,7 +964,7 @@ def told_in_parts(evidence: Evidence, profile: str, added: Sequence[str] = (), r
         shown, also = _shown(units)
         lines += [f"    {command} {shown}", *(f"    {sentence}" for sentence in also)]
     if rules:  # `rules`: the flags of this review's rules alone, `--profile NAME` or each `--check ID`
-        shown, also = _shown([*head, *pinned, *zip(rules[::2], rules[1::2], strict=True), *((g,) for g in added)])
+        shown, also = _shown([*head, *pinned, *rules, *((g,) for g in added)])
         lines += [
             "",
             "Then run this review's rules over the whole change, with no model call. They read the files no part"

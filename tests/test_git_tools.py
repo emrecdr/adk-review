@@ -147,6 +147,29 @@ class TestNoOnesSettings:
         _files, shown = _listed_and_shown(repo, "change", "data.py")
         assert f"+{blob}" in shown.splitlines() and "on disk alone" not in shown, shown
 
+    def test_the_history_a_push_sends_is_read_as_its_commits_hold_it(self, tmp_path: Path) -> None:
+        """Read by review: the pre-push hook's read of each commit's patch ran under the person's own index, and where
+        the repository's `.git/info/attributes` turns conversion off, git read a checked-out file in place of its blob,
+        as a branch's diff was read before. It reads no index either."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        fake = ("-c", "filter.fake.clean=git hash-object --stdin", "-c", "filter.fake.smudge=cat")  # theirs alone
+        _git_in(repo, "init", "-q", "-b", BASE)
+        (repo / ".git" / "info").mkdir(exist_ok=True)
+        (repo / ".git" / "info" / "attributes").write_text("* -text\ndata.py filter=fake\n", encoding="utf-8")
+        (repo / "data.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
+        _git_in(repo, *fake, "add", ".")
+        _git_in(repo, *fake, "commit", "-qm", "base")
+        (repo / "data.py").write_text('token = "on disk alone"\n', encoding="utf-8", newline="\n")
+        _git_in(repo, *fake, "commit", "-qam", "head")
+        old = time.time() - 60  # git trusts a file's stat data once it is older than its index
+        os.utime(repo / "data.py", (old, old))
+        _git_in(repo, *fake, "update-index", "--refresh")
+        history = importlib.import_module("adk_review.collect.history")
+        head, blob = _git_in(repo, "rev-parse", "HEAD"), _git_in(repo, "show", "HEAD:data.py")
+        added = history._added_by(str(repo), [head], f"--attr-source={history._empty_tree(str(repo))}")
+        assert "on disk alone" not in str(added) and blob in str(added), added
+
     def test_a_variable_naming_another_repositorys_refs_is_never_inherited(
         self, tmp_path: Path, demo_repo: Path, monkeypatch
     ) -> None:

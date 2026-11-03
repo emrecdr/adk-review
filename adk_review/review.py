@@ -92,7 +92,7 @@ try:
     from .core.findings import RANK
     from .core.guidelines import Guideline
     from .core.health import Health, measured
-    from .core.profiles import DEFAULT
+    from .core.profiles import DEFAULT, expanded
     from .core.text import short_ref
     from .core.verdict import (
         EXIT_CLEAN,
@@ -683,16 +683,17 @@ def _added(parser: argparse.ArgumentParser, args: argparse.Namespace) -> tuple[s
     )
 
 
-def _rules_alone(found: Catalog, profiles: dict, chosen: Selection) -> tuple[str, ...]:
+def _rules_alone(found: Catalog, profiles: dict, chosen: Selection) -> tuple[tuple[str, str], ...]:
     """The flags that run this review's rules and no guideline: a profile that runs them alone, where one does, as
     `default-rules` does `default`'s, else each by `--check`; none where it runs no rule. Read by review: the parts of a
     change too large for one run read no file the skip list or `scan` leaves out, which one review's rules read."""
-    ruled = sorted(rule.check_id for rule in chosen.rules)
-    for name in profiles if ruled else ():
-        other = select(found, profiles, name)
-        if not other.guidelines and sorted(rule.check_id for rule in other.rules) == ruled:
-            return ("--profile", name)
-    return tuple(word for check in ruled for word in ("--check", check))
+    if not (ruled := {rule.check_id for rule in chosen.rules}):
+        return ()
+    # Each profile's ids: one that equals the rules holds no guideline.
+    runs = expanded(profiles, found.ids(), found.groups())
+    if name := next((name for name, ids in runs.items() if set(ids) == ruled), None):
+        return (("--profile", name),)
+    return tuple(("--check", check) for check in sorted(ruled))
 
 
 def _mode_alone(args: argparse.Namespace) -> None:

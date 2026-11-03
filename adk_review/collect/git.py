@@ -88,13 +88,6 @@ _GLOB = re.compile(r"[*?[\\]")
 #: blob, where no conversion would apply; written with CRLF over blobs of LF, as Windows does, every line of it
 #: differed. Measured on a branch of 35 modified files: all 35, one of them 248 lines removed and 243 added where it
 #: changed 6 and 1. `input` writes no CRLF, and makes git read the blob, as the person's `true` does.
-#: An index no file holds, in a folder no one makes, which a review of commits diffs under: git reads a checked-out
-#: file in place of its blob where the index calls it up to date and no conversion it knows would apply, and a filter
-#: defined in a person's own config, Git LFS's or git-crypt's, is one the review leaves out. Read by review: a token on
-#: disk alone, never in the commit, was reported with that branch checked out and not with another. A missing index git
-#: reads as empty. `--staged` reads the person's own index, and git can still read such a file there: measured, neither
-#: an empty work tree nor a missing one kept `diff-index --cached` off it.
-NO_INDEX = os.path.join(tempfile.gettempdir(), f"adk-review-no-index-{uuid.uuid4().hex}", "index")
 _SETTLED = {
     "core.precomposeUnicode": "false",
     "diff.suppressBlankEmpty": "false",
@@ -102,6 +95,13 @@ _SETTLED = {
     "core.fsmonitor": "false",
     "core.autocrlf": "input",
 }
+#: An index no file holds, in a folder no one makes, which a review of commits diffs under: git reads a checked-out
+#: file in place of its blob where the index calls it up to date and no conversion it knows would apply, and a filter
+#: defined in a person's own config, Git LFS's or git-crypt's, is one the review leaves out. Read by review: a token on
+#: disk alone, never in the commit, was reported with that branch checked out and not with another. A missing index git
+#: reads as empty. `--staged` reads the person's own index, and git can still read such a file there: measured, neither
+#: an empty work tree nor a missing one kept `diff-index --cached` off it.
+NO_INDEX = os.path.join(tempfile.gettempdir(), f"adk-review-no-index-{uuid.uuid4().hex}", "index")
 
 
 def _environment(
@@ -540,17 +540,12 @@ def list_changed(resolved: dict) -> list[dict[str, str]]:
     file's at the head, `120000` a link's, known from the change itself, where a link moved whole shows no mode in its
     diff and the head's tree may not be listed; a rename also carries its `old` path, `-M` finding renames whatever
     the reviewer's `diff.renames` says."""
-    away = _off_disk(resolved)  # `-M` reads each file to measure a rename, as the diff does
     if resolved.get("staged"):  # the index against the base: what the next commit would change
-        _, out = _git(
-            resolved["repo"], "diff-index", "--cached", "-r", "--raw", "-z", "-M", resolved["merge_base"], away=away
-        )
+        compared = ("diff-index", "--cached", "-r", "--raw", "-z", "-M", resolved["merge_base"])
     else:
-        _, out = _git(
-            resolved["repo"],
-            *("diff-tree", "-r", "--raw", "-z", "-M", resolved["merge_base"], resolved["head_sha"]),
-            away=away,
-        )
+        compared = ("diff-tree", "-r", "--raw", "-z", "-M", resolved["merge_base"], resolved["head_sha"])
+    # `-M` reads each file to measure a rename, as a diff does.
+    _, out = _git(resolved["repo"], *compared, away=_off_disk(resolved))
     parts = iter(p for p in out.split("\0") if p)
     files: list[dict[str, str]] = []
     for field in parts:
