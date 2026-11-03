@@ -91,7 +91,8 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   entries, read-only verbs only, as an argv list with a timeout, inside `_environment(repo)`, in the C locale so git's
   messages read as written, which also starts no file-system monitor the repository names; nothing ever writes into the
   repository under review, not even a fetch: a branch it does not hold is named with the `git fetch` for the person to
-  run. A failed git call raises `GitError`, never an empty answer. `_sha` alone reads git's exit 128 as no commit, a
+  run. A review of commits diffs under an index no file holds (`NO_INDEX`), so git reads each blob, never a checked-out
+  file. A failed git call raises `GitError`, never an empty answer. `_sha` alone reads git's exit 128 as no commit, a
   revision git cannot follow, and only where git says nothing: an `error:` or `fatal:` line at exit 1 or 128 is a
   `GitError`, a corrupt object never a missing name.
 - The reviewer posts nothing to a pull request: `--comment [FILE]` writes a comment for the branch's author, by default
