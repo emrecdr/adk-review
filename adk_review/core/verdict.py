@@ -213,7 +213,8 @@ def drop_ungrounded(
     framing: Mapping[str, Sequence[str]],
 ) -> tuple[list[tuple[Finding, Lines, bool]], list[Finding]]:
     """Split findings into those that quote their own file's diff — whole lines, in order, as the guideline saw them,
-    whatever whitespace joined them — and the rest, each kept one with the lines the diff places it on. `quotable` is
+    whatever whitespace joined them — and the rest, each kept one with the lines the diff places it on and whether its
+    quote holds a line the change deleted. `quotable` is
     each changed file's hunks, their lines numbered, and `framing` the lines each was framed in as the guidelines were
     shown it, both from `collect_evidence`.
 
@@ -261,9 +262,9 @@ def _placed(
     finding: Finding, hunks: list[list[tuple[int, str]]], around: Sequence[str]
 ) -> tuple[Lines, str | None, bool] | None:
     """The first and last line of `finding`'s quote in its own file's diff, where it is whole lines of one hunk, in
-    order, as the guideline saw them, those lines as the file reads them, and whether the diff marks one deleted;
-    `(None, None, False)` where the redaction joined lines, so no line is named rather than a wrong one, and no text but
-    the quote; None where the diff does not bear the quote out.
+    order, as the guideline saw them, those lines as the file reads them, a deleted one with its `-`, and whether one
+    is; `(None, None, False)` where the redaction joined lines, so no line is named rather than a wrong one, and no text
+    but the quote; None where the diff does not bear the quote out.
 
     Each hunk is read four ways: as git prints it, as the new file reads it (its context and added lines), as the old
     file read it (its context and removed lines), and with each replaced line beside what replaced it. Measured

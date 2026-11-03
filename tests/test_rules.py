@@ -949,7 +949,9 @@ class TestTheLintRule:
         a byte order mark before it aside, and only those three: any other name it leaves undefined is still a bug, and
         so are those three elsewhere. Databricks reads the mark on the first line alone, so a comment above it makes
         the file a plain module, where the three are undefined."""
+        # Read by review: Databricks documents six such names, and `displayHTML`, `sql` and `udf` were still undefined.
         body = "df = spark.read.table('t')\ndbutils.widgets.get('x')\ndisplay(df)\nprint(undefined_here)\n"
+        body += "displayHTML('<b>x</b>')\nsql('select 1')\nudf(len)\n"
         notebook = "# Databricks notebook source\n" + body
         named = {
             path: sorted(f.title.split("`")[1] for f in lint_findings({"files": [_entry(path, text)], "tree": None}))
@@ -962,7 +964,7 @@ class TestTheLintRule:
             )
         }
         assert named["src/bin/job.py"] == named["src/bin/bom.py"] == ["undefined_here"]
-        every = ["dbutils", "display", "spark", "undefined_here"]
+        every = ["dbutils", "display", "displayHTML", "spark", "sql", "udf", "undefined_here"]
         assert named["src/service.py"] == named["src/late.py"] == named["src/bin/header.py"] == every
 
     def test_a_call_without_a_shell_or_by_a_short_name_is_minor_and_a_shell_call_major(self) -> None:

@@ -948,7 +948,20 @@ class TestWhatTheLanesRead:
         from adk_review.judge import graph
 
         verdict = graph._verdict().instruction
-        assert DELETED_QUOTED in verdict and "say that the change deleted it" in verdict, verdict
+        assert DELETED_QUOTED not in verdict and "say that the change deleted it" in verdict, verdict
+        # Read by review: told that every quoted line starting with `-` was deleted, it could say a Markdown bullet the
+        # branch holds was gone, and a quote on one line hid the mark. Each finding is marked from the diff instead.
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.judge.agents import for_the_verdict
+
+        def kept(evidence: str, deleted: bool) -> Sourced:
+            found = Finding(file="a.md", line=2, severity="major", title="t", evidence=evidence, suggestion="s")
+            return Sourced("guideline.security", found, (2, 2), deleted=deleted)
+
+        outcome = Outcome(kept=[kept("-old step\nnew step", True), kept("- run the tests", False)])
+        said = for_the_verdict(outcome, ["guideline.security"], "REQUEST_CHANGES").splitlines()
+        assert [line for line in said if "(deleted)" in line] == [next(line for line in said if "old step" in line)]
 
     def test_every_guideline_and_every_verifier_is_told_what_a_deleted_line_is(self, monkeypatch) -> None:
         """Read by review on a branch that removed a field: 15 of 43 findings quoted lines the change deleted, as the

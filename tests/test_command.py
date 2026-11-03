@@ -267,17 +267,22 @@ class TestWhatAReviewCovers:
         runs = [line.strip() for line in out.splitlines() if line.strip().startswith("adk-review ")]
         assert len(runs) == 4 and all("--head feature/payments --base main" in run for run in runs), runs
         assert runs[0].endswith("--path=src/payments/charge.py"), runs
+        assert not any("--diff-cap" in run for run in runs), "the config's cap goes unsaid"
+        # Read by review: the plan is made at this run's cap, and a run copied without it read past the block again.
+        assert run_review(cli, demo_repo, "--dry-run", "--diff-cap", "5000") == 0
+        capped = [line.strip() for line in capsys.readouterr().out.splitlines() if "adk-review " in line]
+        assert capped and all("--diff-cap=5000" in run for run in capped), capped
         monkeypatch.setattr(sys.stderr, "isatty", lambda: True)
         monkeypatch.setattr(sys, "stdin", _Terminal("n\n"))
         assert run_review(cli, demo_repo) == 2
         said = capsys.readouterr().err
-        assert "Review it in 4 parts" in said and "stopped: review it in parts" in said, said
+        assert "Review it in 4 parts" in said and "stopped before any model call" in said, said
         # Read by review: a bare Enter, stripped, read as the end of the input and stopped the review; and `--quiet`,
         # which silences a review that passes, skipped the question, though a review with files unread never passes.
         monkeypatch.setattr(sys, "stdin", _Terminal("\nn\n"))
         assert run_review(cli, demo_repo, "--quiet") == 2
         said = capsys.readouterr().err
-        assert said.count("go on anyway") == 2 and "stopped: review it in parts" in said, said
+        assert said.count("go on anyway") == 2 and "stopped before any model call" in said, said
         monkeypatch.setattr(sys, "stdin", io.StringIO(""))  # a pipeline: nothing to ask
         assert run_review(cli, demo_repo) == 3, "with guidelines on, what they never read is a hole"
         assert "go on anyway" not in capsys.readouterr().err

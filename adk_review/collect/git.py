@@ -33,10 +33,10 @@ from ..core.text import lines_of
 from .change import (
     BINARY_UNREAD,
     POINTER_UNREAD,
-    _pastable,
     callers_of,
     lfs_pointer,
     no_change,
+    pastable,
     pointer_text,
     radius,
     shown_to_guidelines,
@@ -301,8 +301,6 @@ class _UnrelatedError(_ScopeError):
     rescope the review: the flags are the command's, and chat's tool, which takes none, answers without the mark."""
 
 
-#: A name a command printed for a person to paste keeps as itself in a POSIX shell, cmd and PowerShell alike. A branch's
-#: name is its author's, and `;`, `$` and a backtick are legal in one.
 def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn:
     """Refuse `name`, which names nothing in the repository, with the way to it: its remote copy where a fetch brought
     one, else the fetch that brings one. Asked by the owner: a branch on the remote read as no branch at all. The review
@@ -326,7 +324,7 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     copies = [] if held else [f"{r}/{name}" for r in remotes if _resolves(root, f"refs/remotes/{r}/{name}")]
     if copies:
         remote = copies[0].removesuffix(f"/{name}")
-        if len(copies) == 1 and not suffix and _pastable(name, remote):
+        if len(copies) == 1 and not suffix and pastable(name, remote):
             raise _ScopeError(
                 f"{said}. Its remote copy {copies[0]!r} does. Fetch it fresh there: git fetch {remote} {name}. "
                 f"Then pass {flag} {copies[0]}"
@@ -344,7 +342,7 @@ def _missing(root: str, repo: str, label: str, flag: str, name: str) -> NoReturn
     # held it.
     if owner := next((r for r in sorted(remotes, key=len, reverse=True) if name.startswith(f"{r}/")), None):
         name, remotes = name.removeprefix(f"{owner}/"), [owner]
-    if len(remotes) == 1 and _pastable(name, remotes[0]):
+    if len(remotes) == 1 and pastable(name, remotes[0]):
         raise _ScopeError(
             f"{said}, nor as a remote branch fetched there. Fetch it there: git fetch {remotes[0]} {name}. "
             f"Then pass {flag} {remotes[0]}/{name}"

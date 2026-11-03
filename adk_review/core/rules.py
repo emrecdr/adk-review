@@ -395,13 +395,14 @@ def _raised_at(rule: AnyRule, exc: BaseException) -> str:
     except (TypeError, OSError):
         source = None
     # Case-folded, as Windows and macOS read two spellings of one file alike, and a cached test file can hold one.
-    line = raised_line(exc, lambda name: bool(source) and _folded(name) == _folded(source))
+    own = _folded(source) if source else None
+    line = raised_line(exc, lambda name: _folded(name) == own)
     return f" ({PurePath(source).name} line {line})" if line and source else ""
 
 
-def _folded(path: str | None) -> str:
+def _folded(path: str) -> str:
     """`path` as a comparison of two spellings of one file reads it: in `/` form and case-folded."""
-    return PurePath(path or "").as_posix().casefold()
+    return PurePath(path).as_posix().casefold()
 
 
 def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:

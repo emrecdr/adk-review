@@ -174,9 +174,9 @@ that no branch can silence them: a finding there can be one the project's own ru
 `noqa` with a reason, already accepts. Read the line before you ask for a change. Their findings on lines the change
 did not add are counted in one finding a file. It names each code with ruff's name for it, and the command that
 shows them as the review saw them. In a Databricks notebook, a file
-whose first line is `# Databricks notebook source`, `lint` does not call `spark`, `dbutils` or `display` undefined:
-Databricks defines the three in every notebook it runs. Any other undefined name there, and those three in any other
-file, are still reported. `types` runs
+whose first line is `# Databricks notebook source`, `lint` does not call `spark`, `dbutils`, `display`, `displayHTML`,
+`sql` or `udf` undefined: Databricks defines the six in every notebook it runs. Any other undefined name there, and
+those six in any other file, are still reported. `types` runs
 pyrefly on each changed Python file alone, a name it imports from beyond itself read as `Any`, and keeps what it finds
 on the lines the change added: a call missing an argument or given too many by position, a major, and a missing
 attribute, a value of the wrong type passed or returned, or one an operation cannot take, added, compared, indexed or
@@ -387,7 +387,8 @@ adk-review <repo> --head <branch> --base develop --path tests --comment
 
 The review plans the parts itself, before any model call, from what each file takes of the diffs the guidelines read:
 a folder whole where it fits, else its folders and files one level down. `--dry-run` prints each run as a command to
-copy, with this review's repository, branches, profile or checks and globs; give each any other flag the review had.
+copy, with this review's repository, branches, profile or checks, globs and a `--diff-cap` it was given, since the
+plan is made at that cap; give each any other flag the review had.
 A review prints the same before its first model call. At a terminal it asks whether to go on, and a stop is exit 2;
 a pipeline goes on, and the files it cannot read are a hole, exit 3.
 

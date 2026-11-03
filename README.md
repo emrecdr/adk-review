@@ -912,9 +912,10 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   ruff. What a code means, its severity and its fix, is the rule's: an `assert` is major in library code, where
   `python -O` strips it, and left out of a test, where it is how pytest checks, its S101 and `assert False`'s B011
   dropped before anything is counted. In a Databricks notebook, a file whose first line is `# Databricks notebook
-  source`, F821 on `spark`, `dbutils` or `display` is dropped the same way, since Databricks defines the three: read by
-  review on a branch of 20 notebooks, they were 192 of lint's findings and nearly all its majors, where the project's
-  own ruff reported none. Without ruff, or with one that fails, the rule did not look and says so, exit 3.
+  source`, F821 on a name Databricks defines in every notebook, `spark`, `dbutils` or `display` among the six, is
+  dropped the same way: read by review on a branch of 20 notebooks, they were 192 of lint's findings and nearly all its
+  majors, where the project's own ruff reported none. Without ruff, or with one that fails, the rule did not look and
+  says so, exit 3.
   Its answer is read a finding at a time, as ruff writes one a line, each kept as no more than the rule reads, and past
   500,000 findings what it named is a hole: measured by review, three files of unary minus chains made ruff write 589 MB
   of JSON each, read whole in 90 s and 4.5 GB. `types` reads the same copies through pyrefly, each file alone, under a
@@ -934,21 +935,21 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   measured on Copilot, the guidelines named a wrong line for 4 of 5 findings. A finding at the bar whose quote the diff
   does not bear out is a hole, since a real blocker dropped would approve, and so is one a verifier refuted: the
   verifier reads the branch's own text, which could tell it a real blocker does not hold. A quote carrying the framing
-  its file was shown in — the heading, the fence, git's header lines and each hunk's `@@`, git's
-  `\ No newline at end of file`, the cap's cut — grounds as the lines inside it: measured live on Gemini, the injection
-  on the labelled set's `sql-from-input` came quoted inside its fence, and the blocker was dropped, the review a hole;
-  with the framing looked past, two runs more, three of five blocker quotes carried a fence or git's header and both
-  runs kept the blocker. The collector records each file's framing beside its lines as it renders them, so only that
-  file's own is looked past: measured by review with a list of such lines kept by hand instead, a file with no final
-  newline and a file cut at the cap, each quoted whole, were dropped. Measured live with the framing recorded, on both
-  arms, no quote was dropped: Gemini quoted `sql-from-input`'s blocker under git's whole header, down to the hunk's `@@`
-  and the function git named there, and four quotes on the planted branch inside fences, and each was kept. A kept
-  finding's evidence is then the lines its quote stands on, as the file reads them, a line the change deleted with its
-  `-`, which the comment, the hand-off and chat's verdict explain: the report, the JSON, the hand-off,
-  the verifier and the fingerprint read the diff's own text, never a model's framing of it; measured by review, the same
-  two lines quoted plain and inside their fence had two fingerprints, so `--previous` named one finding resolved and new
-  at once. A quote is placed from no line whose rest of the hunk is too short to hold it, and within 20,000 lines read
-  on: measured by review, a hunk of 2,000 repeated lines quoted whole took 4.9 s a finding, read on from every line, a
+  its file was shown in — the heading, the fence, git's header lines and each hunk's `@@`, git's `\ No newline at end of
+  file`, the cap's cut — grounds as the lines inside it: measured live on Gemini, the injection on the labelled set's
+  `sql-from-input` came quoted inside its fence, and the blocker was dropped, the review a hole; with the framing looked
+  past, two runs more, three of five blocker quotes carried a fence or git's header and both runs kept the blocker. The
+  collector records each file's framing beside its lines as it renders them, so only that file's own is looked past:
+  measured by review with a list of such lines kept by hand instead, a file with no final newline and a file cut at the
+  cap, each quoted whole, were dropped. Measured live with the framing recorded, on both arms, no quote was dropped:
+  Gemini quoted `sql-from-input`'s blocker under git's whole header, down to the hunk's `@@` and the function git named
+  there, and four quotes on the planted branch inside fences, and each was kept. A kept finding's evidence is then the
+  lines its quote stands on, as the file reads them, a line the change deleted with its `-`, recorded from the diff's
+  own marks, which the comment, the hand-off and chat's verdict explain: the report, the JSON, the hand-off, the
+  verifier and the fingerprint read the diff's own text, never a model's framing of it; measured by review, the same two
+  lines quoted plain and inside their fence had two fingerprints, so `--previous` named one finding resolved and new at
+  once. A quote is placed from no line whose rest of the hunk is too short to hold it, and within 20,000 lines read on:
+  measured by review, a hunk of 2,000 repeated lines quoted whole took 4.9 s a finding, read on from every line, a
   branch's lines a model was steered to quote stalling the review. What was measured not to help: told to quote whole
   lines and, for a missing test, the lines that lack one, Copilot's guidelines quoted whole files under their `@@`
   headers, and 14 of 27 findings were dropped where 5 of 21 had been; that sentence was taken out.
@@ -1027,22 +1028,21 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   indexed by no more of its tail than an import can name, where 100 files 1,000 folders deep took 20 s.
 - **What the guidelines read is capped.** Each file's diff is cut at `diff_cap`, and the block of diffs in all: the
   files read whole take its room first, then the cut ones, each shown in path order, and a deleted file last, since it
-  is never a hole; a file past the block's cap is left out whole, the block's end tells the guidelines how many, and
-  the report names each the change keeps under "not read", a hole.
-  With no cap, `--all` over 4,826 files gave each guideline and each verifier 14.9 MB. `--path` narrows a review to fit,
-  and a file left out names the `--path` of the planned run that reads it, below. Read by review on a branch of 58
-  files, nine test files were left out with no folder named, where the branch's `tests` alone fit; and a folder guessed
-  from the paths alone was past the block again, where the plan named runs that fit. Where the block
-  leaves any file out, `in_parts` plans the runs that read the change from what each file takes of the block, a folder
-  whole where it fits, else one level down, filled in path order; a dry run prints them as commands, and a review
-  prints them before its first model call and, at a terminal, asks whether to go on, a stop being exit 2. Asked by the
-  owner: the review knew before any call that it could not approve, and spent a whole review's calls on it.
-  With no guideline on, a cut is no hole: the cap is the guidelines' limit, and the rules read every added line.
-  Measured live on Copilot at 4,000 characters a file: a 7,529-character file's planted shell call went unread and so
-  did 3 of a 17-file change's files, each a hole; at 16,000 each was read, the call named in both runs, for a fifth more
-  tokens. Raised to 90,000 after a real project's long source file ended its review as not read: over this repository's
-  220 commits, 1.2% of the source files' diffs and 4.0% of the tests' passed 16,000, and at 90,000 none of the source's
-  and 2 of 379 tests'.
+  is never a hole; a file past the block's cap is left out whole, the block's end tells the guidelines how many, and the
+  report names each the change keeps under "not read", a hole. With no cap, `--all` over 4,826 files gave each guideline
+  and each verifier 14.9 MB. `--path` narrows a review to fit, and a file left out names the `--path` of the planned run
+  that reads it, below. Read by review on a branch of 58 files, nine test files were left out with no folder named,
+  where the branch's `tests` alone fit; and a folder guessed from the paths alone was past the block again, where the
+  plan named runs that fit. Where the block leaves any file out, `in_parts` plans the runs that read the change from
+  what each file takes of the block, a folder whole where it fits, else one level down, each in the first run with room;
+  a dry run prints them as commands, and a review prints them before its first model call and, at a terminal, asks
+  whether to go on, a stop being exit 2. Asked by the owner: the review knew before any call that it could not approve,
+  and spent a whole review's calls on it. With no guideline on, a cut is no hole: the cap is the guidelines' limit, and
+  the rules read every added line. Measured live on Copilot at 4,000 characters a file: a 7,529-character file's planted
+  shell call went unread and so did 3 of a 17-file change's files, each a hole; at 16,000 each was read, the call named
+  in both runs, for a fifth more tokens. Raised to 90,000 after a real project's long source file ended its review as
+  not read: over this repository's 220 commits, 1.2% of the source files' diffs and 4.0% of the tests' passed 16,000,
+  and at 90,000 none of the source's and 2 of 379 tests'.
 - **A Python hunk is read within its function.** Where a guideline reads a Python file the change modifies, git widens
   each hunk to the function or class around it, `--function-context` with Python's own boundary set as
   `diff.default.xfuncname` through `GIT_CONFIG_COUNT`, as the settings fixed for every call are, so the repository's own

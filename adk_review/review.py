@@ -644,6 +644,8 @@ def _review(argv: list[str] | None = None) -> int:
         parser = build_parser(config["review"])
         args = parser.parse_args(argv)
         args.added = _added(parser, args)
+        # A cap given, which the plan of runs is made at: read by review, a run copied without it went past the block.
+        args.capped = (f"--diff-cap={args.diff_cap}",) if args.diff_cap != parser.get_default("diff_cap") else ()
         found = catalog()
         # One run's `--check` list is held to what a profile is, and named in the report as the flag.
         chosen = select(found, config["profiles"], args.profile, args.check)
@@ -758,7 +760,7 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
     # arm that is not ready names no model either: `why` says why.
     shown = {"model": model, "profile": chosen.name, "off": chosen.off, "checks": chosen.ids()}
     # The runs that read a change the guidelines cannot read in one, which the dry run prints and a review asks about.
-    told = told_in_parts(evidence, chosen.name, args.added) if guidelines else []
+    told = told_in_parts(evidence, chosen.name, (*args.added, *args.capped)) if guidelines else []
     if args.dry_run:
         unread = not_read(evidence["files"], guidelines)
         print(
@@ -775,7 +777,7 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
         return EXIT_CLEAN
     # Under `--quiet` too, which silences a review that passes: one with files unread never does.
     if not _goes_on(told):
-        _say("stopped: review it in parts, one run each, as listed above")
+        _say("stopped before any model call: review it as the lines above say")
         return EXIT_USAGE
     return _decided(args, chosen, evidence, shown, previous, say)
 

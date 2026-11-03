@@ -65,10 +65,10 @@ SEVERITY: dict[str, Severity] = {
 #: Measured: every test assert was a major S101, 762 of them in this repository's tests, 99% of its majors; rated minor
 #: they still filled each report.
 IN_TESTS: frozenset[str] = frozenset({"S101", "B011"})
-#: The names Databricks defines in every notebook it runs, which ruff, reading the notebook as a module, calls undefined
-#: (F821). Read by review on a branch of 20 notebooks: 192 of lint's findings named these three, nearly all of its 86
-#: majors, where the project's own ruff reported none.
-NOTEBOOK_NAMES = frozenset({"spark", "dbutils", "display"})
+#: The names Databricks defines in every notebook it runs, as its documentation lists them, which ruff, reading the
+#: notebook as a module, calls undefined (F821). Read by review on a branch of 20 notebooks: 192 of lint's findings
+#: named `spark`, `dbutils` and `display`, nearly all of its 86 majors, where the project's own ruff reported none.
+NOTEBOOK_NAMES = frozenset({"spark", "dbutils", "display", "displayHTML", "sql", "udf"})
 #: The first line Databricks writes in a notebook kept as a `.py` source file.
 NOTEBOOK_MARK = "# Databricks notebook source"
 #: The fix a finding names when ruff offers none: ruff says what is wrong, not what to do. Keyed as `SEVERITY` is:

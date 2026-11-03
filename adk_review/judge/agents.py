@@ -169,13 +169,16 @@ def for_the_verdict(outcome: Outcome, checks: Sequence[str], verdict: str, ignor
     for check in checks:
         hole = outcome.errors.get(check)
         lines.append(f"## {check}" + (f" — could not look: {squash(hole)}" if hole else ""))
-        kept = [item.finding for item in outcome.kept if item.source == check]
+        kept = [item for item in outcome.kept if item.source == check]
         dropped = [item.finding for item in outcome.dropped if item.source == check]
         # Read by review: a check whose findings each folded into another's read "- no findings" here.
         folded = [(item.finding, into.source) for item, into in outcome.folded if item.source == check]
-        for f in kept:
+        for item in kept:
+            # Marked from the diff, as grounding read it: a quote on one line hides a deleted line's `-`, and a Markdown
+            # bullet the branch holds starts with one of its own.
+            f, gone = item.finding, " (deleted)" if item.deleted else ""
             quote = cut_at(squash(f.evidence), EVIDENCE_MAX_CHARS)
-            lines.append(f"- {f.severity} {_where(f)}: {squash(f.title)} — {quote}")
+            lines.append(f"- {f.severity} {_where(f)}: {squash(f.title)}{gone} — {quote}")
         lines += [
             f"- dropped, the diff does not bear its quote out: {f.severity} {_where(f)}: {squash(f.title)}"
             for f in dropped

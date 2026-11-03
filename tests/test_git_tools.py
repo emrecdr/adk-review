@@ -1734,6 +1734,25 @@ class TestWhatTheGuidelinesAreShown:
         assert left_out == 0 and parts == [], (left_out, parts)
         assert "[… 1 more file(s) not shown: past" in block, "the deleted file is still named as not shown"
 
+    def test_no_planned_run_reads_only_files_the_change_deleted(self, monkeypatch) -> None:
+        """Read by review: the plan counted deleted files too, and planned runs that read nothing but them, each a
+        review's calls for no hole. The runs read what the change keeps; a deleted file beside them goes last."""
+        from adk_review.collect import change, diff
+
+        def gone(path: str) -> str:
+            head = f"diff --git a/{path} b/{path}\ndeleted file mode 100644\n--- a/{path}\n+++ /dev/null\n"
+            return head + "@@ -1,3 +0,0 @@\n" + "".join(f"-x_{n} = {n}\n" for n in range(3))
+
+        kept = {path: self._diff(path, *(f"y_{n} = {n}" for n in range(3))) for path in ("src/a.py", "src/b.py")}
+        deleted = {path: gone(path) for path in ("gone/c.py", "gone/d.py")}
+        entries = [{"path": p, "status": "A"} for p in kept] + [{"path": p, "status": "D"} for p in deleted]
+        room = max(len(diff.framed(path, text)[0]) for path, text in {**kept, **deleted}.items())
+        monkeypatch.setattr(change, "BLOCK_CAP_CHARS", room)  # room for one file a run
+        _files, _block, _excluded, left_out, parts = change.shown_to_guidelines(
+            entries, [*kept.values(), *deleted.values()], 2_000, ()
+        )
+        assert left_out == 1 and parts == [["src/a.py"], ["src/b.py"]], parts
+
     def test_a_file_past_the_block_names_the_folder_that_reviews_it_in_a_smaller_run(self, monkeypatch) -> None:
         """Read by review on a branch of 58 files: nine test files past the block were each named with "--path
         narrows a review", and the person had to find which folder. The branch's `tests` alone fit. Each file left out
@@ -1767,8 +1786,8 @@ class TestWhatTheGuidelinesAreShown:
     def test_a_change_too_large_for_one_run_is_planned_as_runs_that_each_fit(self) -> None:
         """Asked by the owner, after a branch of 58 files left nine unread: the review knows before any model call
         that the guidelines cannot read it all, so it plans the runs that can, each the `--path` values one run
-        names. A folder goes whole where it fits, else its folders and files one level down; runs are filled in
-        path order. A change that fits needs no plan."""
+        names. A folder goes whole where it fits, else its folders and files one level down; each, in path order,
+        goes to the first run with room for it. A change that fits needs no plan."""
         from adk_review.collect.change import in_parts
 
         assert in_parts({"src/a.py": 100, "tests/b.py": 100}, (), 250) == [], "it fits: one run"
@@ -1778,8 +1797,10 @@ class TestWhatTheGuidelinesAreShown:
         assert in_parts({"a.py": 200, "src/b.py": 200}, (), 250) == [["a.py"], ["src"]], "a file at the top"
         sizes = {"src/one/a.py": 150, "src/one/b.py": 150, "src/two.py": 50}  # each costs 2 more, the line between
         planned = in_parts(sizes, (), 250)
-        assert planned == [["src/one/a.py"], ["src/one/b.py", "src/two.py"]], planned
+        assert planned == [["src/one/a.py", "src/two.py"], ["src/one/b.py"]], planned
         assert sorted(path for run in planned for path in run) == sorted(sizes), "every file in one run alone"
+        # Measured over a project's history: filling only the last run planned 83 runs where 69 held the same files.
+        assert in_parts({"a.py": 150, "b.py": 200, "c.py": 90}, (), 250) == [["a.py", "c.py"], ["b.py"]], "not 3"
 
     def test_with_no_guideline_no_file_is_capped_or_shown_and_what_no_one_reads_is_still_named(self) -> None:
         """Measured: the view cost 2.3 s of a 10.5 s `default-rules` review of 2,683 files, the pre-push hook's
