@@ -1290,6 +1290,17 @@ class TestThePreviousReportAndTheHandoff:
         assert "It did find" not in said and "correctness: t5 (minor)" in said, said
         handoff = render_handoff(evidence, outcome, verdict="APPROVED", fail_on="blocker")
         assert "## Possibly already done" in handoff and "correctness: t2" in handoff.split("## Possibly", 1)[1]
+        # Read by review: a rule's finding folded under a flagged lead went apart with it, told to change nothing. A
+        # point goes apart only where every reading of its lines is flagged.
+        rule = Sourced(
+            "rule.lint",
+            Finding(file="a.py", line=2, severity="minor", title="lint: F841", evidence="-x", suggestion="s"),
+            (2, 2),
+        )
+        mixed = Outcome(kept=[at(2, "major", True)], folded=[(rule, at(2, "major", True))])
+        mixed.folded = [(rule, mixed.kept[0])]
+        said = render_comment(evidence, mixed, verdict="APPROVED", fail_on="blocker")
+        assert "### Possibly already done" not in said and "### Major findings" in said, said
 
     def test_an_approving_hand_off_counts_the_major_issues_below_its_bar_too(self) -> None:
         """Asked by the owner: the hand-off says what the comment says, so an agent fixes the majors first."""

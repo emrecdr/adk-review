@@ -949,14 +949,13 @@ class TestWhatTheBranchAlreadyHolds:
             "evidence": "def make(logger, model_code):",
             "code": "",
         }
-        fake_provider.answers_when(THE_GUIDELINES, {"findings": [misread, restores, long]})
+        fake_provider.answers_when(THE_GUIDELINES, {"findings": [misread, long]})
         report, comment = tmp_path / "r.json", tmp_path / "c.md"
         argv = [str(repo), "--head", "change", "--base", "main", "--check", "guideline.correctness"]
         assert cli.main([*argv, "--json", str(report), "--comment", str(comment)]) == 0
         out = capsys.readouterr().out
         data = json.loads(report.read_text(encoding="utf-8"))
-        # The restoring finding quotes the same lines, so it folds under the flagged one; the unit tests show it is
-        # never flagged itself.
+        # A restoring finding is never flagged: the unit tests show it, apart, since on the same lines it would fold.
         held = {f["title"][:12]: f["already_held"] for f in data["findings"]}
         assert held == {"make passes ": True, "x" * 12: False}, held
         assert "possibly already done: its suggested code is already in the branch" in out, out

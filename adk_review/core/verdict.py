@@ -205,24 +205,33 @@ def _quotes(evidence: str, around: Sequence[str]) -> set[str]:
     for markers in (True, False):
         lines = seen_lines(evidence, markers)
         shown = set(seen_lines("\n".join(around), markers))
-        inside = [line for line in lines if line not in shown]
-        while inside and _OWN_FENCE.fullmatch(inside[0]):
-            del inside[0]
-        while inside and _OWN_FENCE.fullmatch(inside[-1]):
-            del inside[-1]
+        inside = without_fences([line for line in lines if line not in shown])
         for quote in ("".join(lines), "".join(inside)):
             quotes |= {quote, _FENCE_RUN_IN.sub("", quote)}
     return quotes - {""}
+
+
+def without_fences(lines: Sequence[str]) -> list[str]:
+    """`lines` without a fence of the model's own at either end, backticks or tildes: grounding's reading of a quote,
+    the flag's and the comment's of suggested code, from one place. Read by review: three copies drifted, and one read
+    `~~~` as code."""
+    start, end = 0, len(lines)
+    while start < end and _OWN_FENCE.fullmatch(lines[start].strip()):
+        start += 1
+    while end > start and _OWN_FENCE.fullmatch(lines[end - 1].strip()):
+        end -= 1
+    return list(lines[start:end])
 
 
 def drop_ungrounded(
     review: Review,
     quotable: dict[str, list[list[tuple[int, str]]]],
     framing: Mapping[str, Sequence[str]],
-) -> tuple[list[tuple[Finding, Lines, bool]], list[Finding]]:
+) -> tuple[list[tuple[Finding, Lines, bool, bool]], list[Finding]]:
     """Split findings into those that quote their own file's diff — whole lines, in order, as the guideline saw them,
-    whatever whitespace joined them — and the rest, each kept one with the lines the diff places it on and whether its
-    quote holds a line the change deleted. `quotable` is
+    whatever whitespace joined them — and the rest, each kept one with the lines the diff places it on, whether its
+    quote holds a line the change deleted, and whether its suggested code is what replaced them (`already_done`, read
+    in the hunk the quote was placed in). `quotable` is
     each changed file's hunks, their lines numbered, and `framing` the lines each was framed in as the guidelines were
     shown it, both from `collect_evidence`.
 
@@ -240,7 +249,7 @@ def drop_ungrounded(
     quoted plain and inside their fence under their `@@` header were two
     fingerprints, and `--previous` named one finding resolved and new at once.
     """
-    kept: list[tuple[Finding, Lines, bool]] = []
+    kept: list[tuple[Finding, Lines, bool, bool]] = []
     dropped: list[Finding] = []
     for finding in review.findings:
         path = _meant(finding.file, quotable)
@@ -250,36 +259,33 @@ def drop_ungrounded(
             # past its kept blocker.
             dropped.append(finding.model_copy(update={"file": cut_at(finding.file, REASON_MAX_CHARS)}))
             continue
-        lines, stood, deleted = placed
+        lines, stood, deleted, hunk = placed
         update = {"file": path, "line": lines[0] if lines else None}
         if stood is not None:  # where the redaction joined lines, the model's quote is all there is
             update["evidence"] = scrub(stood)[0]
-        kept.append((finding.model_copy(update=update), lines, deleted))
+        grounded = finding.model_copy(update=update)
+        done = hunk is not None and already_done(grounded, deleted, quotable[path][hunk])
+        kept.append((grounded, lines, deleted, done))
     return kept, dropped
 
 
-def already_done(
-    finding: Finding, lines: Lines, deleted: bool, hunks: list[list[tuple[int, str]]], around: Sequence[str] = ()
-) -> bool:
+def already_done(finding: Finding, deleted: bool, hunk: list[tuple[int, str]]) -> bool:
     """Whether a grounded finding may ask for no change: its quote holds lines the change deleted, and the code it
-    suggests is what replaced them, as the branch holds it. A flag, never a removal: read by review twice, code that
-    removed such findings removed real bugs too, a block moved out of its `with` read as already done. In the hunk
-    grounding chose alone; line by line, the indent kept within the code; and over the spot of one quoted deleted block,
-    the lines that replaced it or, where none did, the lines either side of the gap. Read by review on a branch that
-    removed a parameter at every use: six majors read the deleted lines as held code and suggested the code the branch
-    already had. Read by review again: a first rule, the code anywhere in the hunk with every space gone, removed real
-    bugs, a write moved out of its `with`, a check deleted from one branch and kept in another, and one standing in
-    another hunk."""
-    if not (deleted and lines and any(ch.isalnum() for ch in finding.code)):
-        return False
-    hunk = next((hunk for hunk in hunks if (_placed(finding, [hunk], around) or (None,))[0] == lines), None)
-    if hunk is None:
+    suggests is what replaced them, as the branch holds them. Read in `hunk`, the one grounding placed the quote in;
+    line by line, the indent kept within the code; and over the spot of a quoted deleted block, the lines that replaced
+    it or, where none did, the lines either side of the gap. Read by review on a branch that removed a parameter at
+    every use: six majors read the deleted lines as held code and suggested the code the branch already had. A flag,
+    never a removal: read by review three times, code that removed such findings removed real bugs too."""
+    if not (deleted and any(ch.isalnum() for ch in finding.code)):
         return False
     raws = [raw for _number, raw in hunk]
-    quoted = {"".join(line[1:].split()) for line in finding.evidence.splitlines() if line.startswith("-")}
+    # Each deleted line as grounding reads it, a secret redacted: read by review, a raw line holding a key never
+    # matched its quote, which grounding had redacted.
+    quoted = set(seen_lines("\n".join(line for line in finding.evidence.splitlines() if line.startswith("-"))))
     held = [at for at, raw in enumerate(raws) if raw[:1] in "+ " and raw[1:].strip()]  # the branch's lines, no blank
+    if not (spots := _spots(raws, quoted, held)):
+        return False
     wanted = [line.rstrip() for line in textwrap.dedent(_unfenced(finding.code)).splitlines() if line.strip()]
-    spots = _spots(raws, quoted, held)
     for start in range(len(held) - len(wanted) + 1):
         run = held[start : start + len(wanted)]
         seen = [line.rstrip() for line in textwrap.dedent("\n".join(raws[at][1:] for at in run)).splitlines()]
@@ -289,13 +295,8 @@ def already_done(
 
 
 def _unfenced(code: str) -> str:
-    """`code` without a fence of the model's own at either end, as grounding reads one: backticks or tildes."""
-    lines = code.splitlines()
-    while lines and _OWN_FENCE.fullmatch(lines[0].strip()):
-        lines = lines[1:]
-    while lines and _OWN_FENCE.fullmatch(lines[-1].strip()):
-        lines = lines[:-1]
-    return "\n".join(lines)
+    """`code` without a fence of the model's own at either end."""
+    return "\n".join(without_fences(code.splitlines()))
 
 
 def _spots(raws: Sequence[str], quoted: set[str], held: Sequence[int]) -> list[set[int]]:
@@ -305,7 +306,7 @@ def _spots(raws: Sequence[str], quoted: set[str], held: Sequence[int]) -> list[s
     spots: list[set[int]] = []
     at = 0
     while at < len(raws):
-        if not (raws[at][:1] == "-" and "".join(raws[at][1:].split()) in quoted):
+        if not (raws[at][:1] == "-" and "".join(seen_lines(raws[at])) in quoted):
             at += 1
             continue
         end = at
@@ -335,11 +336,11 @@ def _meant(path: str, quotable: dict[str, list[list[tuple[int, str]]]]) -> str:
 
 def _placed(
     finding: Finding, hunks: list[list[tuple[int, str]]], around: Sequence[str]
-) -> tuple[Lines, str | None, bool] | None:
+) -> tuple[Lines, str | None, bool, int | None] | None:
     """The first and last line of `finding`'s quote in its own file's diff, where it is whole lines of one hunk, in
-    order, as the guideline saw them, those lines as the file reads them, a deleted one with its `-`, and whether one
-    is; `(None, None, False)` where the redaction joined lines, so no line is named rather than a wrong one, and no text
-    but the quote; None where the diff does not bear the quote out.
+    order, as the guideline saw them, those lines as the file reads them, a deleted one with its `-`, whether one is,
+    and which hunk it stands in; `(None, None, False, None)` where the redaction joined lines, so no line is named
+    rather than a wrong one, and no text but the quote; None where the diff does not bear the quote out.
 
     Each hunk is read four ways: as git prints it, as the new file reads it (its context and added lines), as the old
     file read it (its context and removed lines), and with each replaced line beside what replaced it. Measured
@@ -348,9 +349,9 @@ def _placed(
     before, the last line of one hunk joined to the first of the next, twenty lines apart, grounded as one span, and a
     finding on the lines between folded into it."""
     quotes = _quotes(finding.evidence, around)
-    placed: list[tuple[tuple[int, int], str, bool]] = []
+    placed: list[tuple[tuple[int, int], str, bool, int]] = []
     joined = False
-    for hunk in hunks:
+    for index, hunk in enumerate(hunks):
         # As git prints it, as the new file reads, as the old file read, and each replaced line beside its new one.
         views = [[(number, raw) for number, raw in hunk if raw[:1] in kept] for kept in ("+- ", "+ ", "- ")]
         paired = _paired(hunk)
@@ -373,9 +374,9 @@ def _placed(
                 # removed a field asked for what the head already had.
                 stood = view[since : until + 1]
                 text = "\n".join(raw if raw[:1] == "-" else raw[1:] for _number, raw in stood)
-                placed.append(((first, last), text, any(raw[:1] == "-" for _number, raw in stood)))
+                placed.append(((first, last), text, any(raw[:1] == "-" for _number, raw in stood), index))
     if not placed:
-        return (None, None, False) if joined else None
+        return (None, None, False, None) if joined else None
     # A short quote can stand in several places: measured by review, `return None` at lines 2 and 22, a guideline naming
     # 22 was placed at 2. The diff decides where a quote can stand; the guideline's line only picks among those places,
     # and where it does not, as where it named none, a place the head holds goes before a deleted one, then the first:

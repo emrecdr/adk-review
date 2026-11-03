@@ -25,7 +25,7 @@ from ..core.evidence import Entry, entry
 from ..core.findings import Checked, Review
 from ..core.profiles import state_key
 from ..core.rules import AnyRule
-from ..core.verdict import Outcome, Sourced, already_done, decide, drop_ungrounded, fold, from_rules, not_read
+from ..core.verdict import Outcome, Sourced, decide, drop_ungrounded, fold, from_rules, not_read
 from .agents import FINDINGS, IGNORED, QUOTABLE, for_the_verdict, read_back, unjudged
 from .checks import NAME as CHECKS
 from .config import RUN_DEADLINE_S
@@ -104,11 +104,7 @@ def read_guidelines(run: Run, files: list[Entry], guidelines: Sequence[str], hol
             outcome.errors[check] = answer
             continue
         kept, dropped = drop_ungrounded(answer, quotable, framing)
-        # One whose suggested code the branch already holds is flagged, never removed: read by review twice, code that
-        # removed such findings removed real bugs too.
-        for f, lines, deleted in kept:
-            done = already_done(f, lines, deleted, quotable.get(f.file, []), framing.get(f.file, ()))
-            outcome.kept.append(Sourced(check, f, lines, deleted, done=done))
+        outcome.kept += [Sourced(check, f, lines, deleted, done=done) for f, lines, deleted, done in kept]
         outcome.dropped += [Sourced(check, f) for f in dropped]
     return outcome
 

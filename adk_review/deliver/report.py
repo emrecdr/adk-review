@@ -23,7 +23,7 @@ from ..core.paths import in_scope
 from ..core.profiles import guideline_id, rule_id
 from ..core.secrets import scrub
 from ..core.text import EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, short_ref, squash
-from ..core.verdict import DELETED_QUOTED, Outcome, Sourced, at_bar
+from ..core.verdict import DELETED_QUOTED, Outcome, Sourced, at_bar, without_fences
 
 #: What a terminal runs or reorders, and what a reader cannot see: escape sequences, C0 and C1 controls (U+009B is
 #: `ESC [` in one character), every format character — the marks that turn the text after them around (U+202E and its
@@ -245,9 +245,7 @@ def render_handoff(
     identity = dict(zip(map(id, outcome.kept), _identified(outcome.kept), strict=True))
     identity |= {id(item): fingerprint(item) for item in outcome.old}
     identity |= {id(folded): fingerprint(folded) for folded, _into in outcome.folded}
-    fixes, tidy = _lanes(outcome, tidies)
-    apart = [group for group in [*fixes, *tidy] if group[0].done]  # may be done already: checked, never fixed blind
-    fixes, tidy = [group for group in fixes if not group[0].done], [group for group in tidy if not group[0].done]
+    fixes, tidy, apart = _lanes(outcome, tidies)
     majors = sum(group[0].finding.severity == "major" and not at_or_above("major", fail_on) for group in fixes)
     approved = verdict == "APPROVED"
     told = HANDOFF_MAJORS.format(
@@ -273,19 +271,22 @@ def render_handoff(
         *([DELETED_QUOTED] if _quotes_a_deleted_line(outcome) else []),
         "",
     ]
-    if fixes and tidy:
-        lines += ["## Fix", ""]
-    lines += _items(fixes, 1, identity, tidies, fail_on)
-    if tidy:
-        lines += [*([""] if fixes else []), "## Tidy", "", *TIDY_KEEPS, ""]
-        lines += _items(tidy, len(fixes) + 1, identity, frozenset(), fail_on)
-    if apart:  # asked by the owner: a notice, never a fix to make
-        lines += [*([""] if fixes or tidy else []), "## Possibly already done", "", ALREADY_NOTE, ALREADY_FOR_AGENT, ""]
-        lines += _items(apart, len(fixes) + len(tidy) + 1, identity, frozenset(), fail_on)
-    if outcome.old:  # asked by the owner: never mixed with what the change caused
-        lines += [*([""] if fixes or tidy or apart else []), f"## {OLD_HEADING}", "", OLD_FOR_AGENT, ""]
-        number = len(fixes) + len(tidy) + len(apart) + 1
-        lines += _items([[item] for item in outcome.old], number, identity, frozenset(), None)
+    # Each section a heading and what it tells the agent, its points numbered on from the last: what was already in
+    # the files, asked by the owner, apart and never at the bar.
+    sections = [
+        ("Fix" if tidy else "", [], fixes, tidies, fail_on),
+        ("Tidy", TIDY_KEEPS, tidy, frozenset(), fail_on),
+        (APART_HEADING, [ALREADY_NOTE, ALREADY_FOR_AGENT], apart, frozenset(), fail_on),
+        (OLD_HEADING, [OLD_FOR_AGENT], [[item] for item in outcome.old], frozenset(), None),
+    ]
+    number = 1
+    for heading, told, groups, held, bar in sections:
+        if not groups:
+            continue
+        if heading:
+            lines += [*([""] if number > 1 else []), f"## {heading}", "", *told, *([""] if told else [])]
+        lines += _items(groups, number, identity, held, bar)
+        number += len(groups)
     # Never "nothing to fix" where the review could not check everything, as its report's next steps, and what it did
     # not check named: read by review, a finding at the bar left unproven ended there, and a hole of another kind said
     # it first, with nothing for an agent to check by hand.
@@ -317,7 +318,9 @@ def _unchecked(outcome: Outcome, fail_on: str) -> list[str]:
     return unchecked + [f"- {code_span(one_line(path))}: {_reason(why)}" for path, why in outcome.unread.items()]
 
 
-def _lanes(outcome: Outcome, tidies: frozenset[str]) -> tuple[list[list[Sourced]], list[list[Sourced]]]:
+def _lanes(
+    outcome: Outcome, tidies: frozenset[str]
+) -> tuple[list[list[Sourced]], list[list[Sourced]], list[list[Sourced]]]:
     """The hand-off's items, each a lead and the other readings of its lines, in two lanes, each most severe first.
     An item holding a defect, a finding no cleanup check made, is a fix led by its most severe defect, the first on a
     tie; a tidy in it stays, to be held back, where a defect there is at major or above, and is otherwise an item of its
@@ -340,9 +343,14 @@ def _lanes(outcome: Outcome, tidies: frozenset[str]) -> tuple[list[list[Sourced]
         else:
             fixes.append([lead, *others])
             tidy += [[item] for item in cleanups]
-    for lane in (fixes, tidy):
+    # What may be done already goes apart, a notice and never a fix: only where every reading of its lines is so, since
+    # read by review, a rule's finding folded under a flagged lead was told to change nothing.
+    apart = [group for group in [*fixes, *tidy] if all(item.done for item in group)]
+    fixes = [group for group in fixes if group not in apart]
+    tidy = [group for group in tidy if group not in apart]
+    for lane in (fixes, tidy, apart):
         lane.sort(key=lambda group: -RANK[group[0].finding.severity])  # stable: the fold's order on a tie
-    return fixes, tidy
+    return fixes, tidy, apart
 
 
 def _quotes_a_deleted_line(outcome: Outcome) -> bool:
@@ -445,6 +453,7 @@ COMMENT_OPENS = {
 }
 #: What a comment and a hand-off say over the points whose suggested code the branch already holds: asked by the owner,
 #: a notice, never a major issue to fix.
+APART_HEADING = "Possibly already done"
 ALREADY_NOTE = "Each suggests code the branch already holds. Check whether the change already did it."
 ALREADY_FOR_AGENT = "Change nothing the branch already does."
 #: What a comment says under its tidy-ups' heading.
@@ -484,10 +493,7 @@ def render_comment(
     first line names what ran, as the report's header does, so an approval from the rules alone never reads as one a
     model read too."""
     pre = evidence["preflight"]
-    fixes, tidy = _lanes(outcome, tidies)
-    # What may be done already is listed apart, never among the points to fix, and never counted as a major issue.
-    apart = [group for group in [*fixes, *tidy] if group[0].done]
-    fixes, tidy = [group for group in fixes if not group[0].done], [group for group in tidy if not group[0].done]
+    fixes, tidy, apart = _lanes(outcome, tidies)
     worth = [group for group in fixes if not at_or_above(group[0].finding.severity, fail_on)]
     head = f"**Review of {code_span(one_line(pre['head']))} at `{pre['head_sha'][:12]}`**" + _ran(
         profile, model, checks
@@ -507,32 +513,31 @@ def render_comment(
     # Asked by the owner: first what the change caused, then what was already in the files it touched, each a section
     # a severity, the most severe first; one at the bar is marked so. Before, majors and minors below the bar sat
     # under one "Worth a look", and a major read as a nit.
-    severities = sorted(RANK, key=RANK.__getitem__, reverse=True)
-    caused = [
-        (
-            f"{severity.capitalize()} findings{MUST_FIX * at_or_above(severity, fail_on)}",
-            [group for group in fixes if group[0].finding.severity == severity],
-            "",
-        )
-        for severity in severities
-    ]
+    caused = _by_severity(fixes, fail_on)
     # Read by review: a tidy at the bar sat under Optional tidy-ups, a section the opener's mark never reached.
     blocking = any(at_or_above(group[0].finding.severity, fail_on) for group in tidy)
     caused.append((f"Tidy-ups{MUST_FIX}" if blocking else "Optional tidy-ups", tidy, TIDY_NOTE))
-    caused.append(("Possibly already done", apart, ALREADY_NOTE))
-    old = [
-        (f"{severity.capitalize()} findings", [[item] for item in outcome.old if item.finding.severity == severity], "")
-        for severity in severities
-    ]
-    for group, note, sections in (("Caused by this change", "", caused), (OLD_HEADING, OLD_NOTE, old)):
-        opened = False
-        for heading, groups, said in sections:
-            if not groups:
-                continue
-            top = ["", f"## {group}", *(["", note] if note else [])] if not opened else []
+    caused.append((APART_HEADING, apart, ALREADY_NOTE))
+    old = _by_severity([[item] for item in outcome.old], None)
+    for title, note, sections in (("Caused by this change", "", caused), (OLD_HEADING, OLD_NOTE, old)):
+        shown = [(heading, groups, said) for heading, groups, said in sections if groups]
+        for at, (heading, groups, said) in enumerate(shown):
+            top = ["", f"## {title}", *(["", note] if note else [])] if at == 0 else []
             lanes.append(([*top, "", f"### {heading}", *(["", said] if said else []), ""], _commented(groups, tidies)))
-            opened = True
     return inert("\n".join(_within(lines, lanes, _unchecked(outcome, fail_on)))) + "\n"
+
+
+def _by_severity(groups: list[list[Sourced]], fail_on: str | None) -> list[tuple[str, list[list[Sourced]], str]]:
+    """A comment's sections for `groups`, one a severity, the most severe first, each at the `fail_on` bar marked must
+    fix: no bar, as for what was already in the files, marks none."""
+    return [
+        (
+            f"{severity.capitalize()} findings{MUST_FIX * bool(fail_on and at_or_above(severity, fail_on))}",
+            [group for group in groups if group[0].finding.severity == severity],
+            "",
+        )
+        for severity in sorted(RANK, key=RANK.__getitem__, reverse=True)
+    ]
 
 
 def _within(lines: list[str], lanes: list[tuple[list[str], list[list[str]]]], holes: list[str]) -> list[str]:
@@ -885,11 +890,7 @@ def _code_lines(f: Finding, label: str, indent: str) -> list[str]:
     """A blocker's or a major's corrected code as a fenced block under `label`, a credential hidden, a fence a model
     wrapped it in, as a chat answer does, unwrapped; nothing where it gave none. Each fence line goes at either end:
     read by review, code cut at its cap kept its opening fence, and a `~~~` fence kept both."""
-    lines = f.code.strip("\n").splitlines()
-    if lines and lines[0].lstrip().startswith(("```", "~~~")):
-        lines = lines[1:]
-    if lines and lines[-1].strip().startswith(("```", "~~~")):
-        lines = lines[:-1]
+    lines = without_fences(f.code.strip("\n").splitlines())
     if not _serious(f) or not "".join(lines).strip():
         return []
     return [f"{indent}- {label}:", *_fenced(scrub("\n".join(lines))[0], f"{indent}  ")]
