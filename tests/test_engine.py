@@ -36,6 +36,7 @@ from conftest import (
 )
 
 from adk_review.core.profiles import rule_id, state_key
+from adk_review.core.text import TITLE_MAX_CHARS, cut_at
 
 #: The heading only a verifier's instruction carries: a rule on it reaches the verifiers and no guideline.
 THE_VERIFIER = "## The finding"
@@ -945,13 +946,22 @@ class TestWhatTheBranchAlreadyHolds:
             "code": "return build(\n    logger=logger,\n    correlation_id=correlation_id,\n"
             "    model_code=model_code,\n)",
         }
-        fake_provider.answers_when(THE_GUIDELINES, {"findings": [misread, restores]})
+        # Read by review: the check's name went on after the model's title was cut, past the cap every title keeps.
+        long = {
+            **restores,
+            "title": "x" * (TITLE_MAX_CHARS + 50),
+            "evidence": "def make(logger, model_code):",
+            "code": "",
+        }
+        fake_provider.answers_when(THE_GUIDELINES, {"findings": [misread, restores, long]})
         report, comment = tmp_path / "r.json", tmp_path / "c.md"
         argv = [str(repo), "--head", "change", "--base", "main", "--check", "guideline.correctness"]
         assert cli.main([*argv, "--json", str(report), "--comment", str(comment)]) == 0
         out = capsys.readouterr().out
         data = json.loads(report.read_text(encoding="utf-8"))
-        assert [f["title"] for f in data["findings"]] == ["correctness: the call no longer passes correlation_id"]
+        titles = [f["title"] for f in data["findings"]]
+        assert titles[0] == "correctness: the call no longer passes correlation_id", titles
+        assert titles[1].startswith("correctness: xxx") and titles[1] == cut_at(titles[1], TITLE_MAX_CHARS), titles
         assert [f["title"] for f in data["already_held"]] == ["correctness: make passes the removed correlation_id"]
         assert data["already_held_at_fail_on"] == 0, data
         assert "findings removed, the branch already holds their suggested code: 1" in out, out

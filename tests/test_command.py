@@ -1225,6 +1225,18 @@ class TestThePreviousReportAndTheHandoff:
         said = render_comment(everything, Outcome(), verdict="APPROVED", fail_on="blocker")
         assert "- Against: nothing: every file at the head" in said, said
 
+    def test_a_finding_the_review_removed_is_never_read_as_resolved(self) -> None:
+        """Read by review: a finding the review removed, its suggested code already in the branch, was no fingerprint
+        found now, so `--previous` named it resolved, as if a commit had fixed it. A guideline still found it."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import _resolved, fingerprint
+
+        found = Finding(file="a.py", line=2, severity="major", title="t", evidence="-x = 1", suggestion="s", code="y")
+        item = Sourced("guideline.correctness", found, (2, 2), deleted=True)
+        previous = {fingerprint(item): {"check": "guideline.correctness", "file": "a.py", "title": "t"}}
+        assert _resolved(Outcome(done=[item]), [], "APPROVED", previous, ["guideline.correctness"], []) == []
+
     def test_an_approving_hand_off_counts_the_major_issues_below_its_bar_too(self) -> None:
         """Asked by the owner: the hand-off says what the comment says, so an agent fixes the majors first."""
         from adk_review.core.findings import Finding

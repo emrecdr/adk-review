@@ -993,6 +993,10 @@ class TestWhatTheLanesRead:
         found = Finding(file="a.py", line=None, severity="major", title="lint: F401", evidence="F401", suggestion="s")
         said = for_the_verdict(Outcome(old=[Sourced("rule.lint", found, old=True)]), ["rule.lint"], "APPROVED")
         assert "already in the file" in said and "no findings" not in said, said
+        # And one the review removed, its suggested code already in the branch, is named as removed, never as nothing.
+        said = for_the_verdict(Outcome(done=[Sourced("guideline.correctness", found)]), ["guideline.correctness"], "X")
+        assert "- removed, the branch already holds its suggested code: major" in said, said
+        assert "no findings" not in said, said
 
     def test_every_guideline_and_every_verifier_is_told_what_a_deleted_line_is(self, monkeypatch) -> None:
         """Read by review on a branch that removed a field: 15 of 43 findings quoted lines the change deleted, as the

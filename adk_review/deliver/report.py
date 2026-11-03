@@ -1210,8 +1210,10 @@ def _resolved(
     new one on its lines, which the same comment listed."""
     if previous is None or verdict == "DEGRADED":
         return None
-    # A finding already in a touched file is still found: listed apart, it is never fixed by being so.
-    found_now = {*identities, *(fingerprint(item) for item in [*(f for f, _ in outcome.folded), *outcome.old])}
+    # A finding already in a touched file is still found: listed apart, it is never fixed by being so. Nor is one the
+    # review removed, its suggested code already in the branch: a guideline still found it.
+    held = [*(f for f, _ in outcome.folded), *outcome.old, *outcome.done]
+    found_now = {*identities, *(fingerprint(item) for item in held)}
     return [
         found
         for identity, found in previous.items()
