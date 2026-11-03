@@ -949,15 +949,23 @@ class TestWhatTheBranchAlreadyHolds:
             "evidence": "def make(logger, model_code):",
             "code": "",
         }
-        fake_provider.answers_when(THE_GUIDELINES, {"findings": [misread, long]})
+        # Asked by the owner on a real review: a minor quoting a deleted line alone, asking to remove it, no code.
+        gone = {
+            "file": "app.py",
+            "severity": "minor",
+            "title": "unused correlation_id argument",
+            "evidence": "-        correlation_id=correlation_id,",
+            "suggestion": "Remove the unused argument.",
+        }
+        fake_provider.answers_when(THE_GUIDELINES, {"findings": [misread, long, gone]})
         report, comment = tmp_path / "r.json", tmp_path / "c.md"
         argv = [str(repo), "--head", "change", "--base", "main", "--check", "guideline.correctness"]
         assert cli.main([*argv, "--json", str(report), "--comment", str(comment)]) == 0
         out = capsys.readouterr().out
         data = json.loads(report.read_text(encoding="utf-8"))
         # A restoring finding is never flagged: the unit tests show it, apart, since on the same lines it would fold.
-        held = {f["title"][:12]: f["already_held"] for f in data["findings"]}
-        assert held == {"make passes ": True, "x" * 12: False}, held
+        held = {f["title"][:12]: f["already_held"] for f in data["findings"] + data["folded"]}
+        assert held == {"make passes ": True, "x" * 12: False, "unused corre": True}, held
         assert "possibly already done: it asks for what the branch already does" in out, out
         said = comment.read_text(encoding="utf-8")
         apart = said.split("### Possibly already done", 1)[1]
