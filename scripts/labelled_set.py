@@ -8,15 +8,15 @@ misses its last item, a function with no test, a long file whose defect sits pas
 runs privileged; what `simplify` and `code-review` add guidelines for, a file read again for each item of a loop, a
 shared function patched for one caller's input and a function copied with one value changed; a settlement's return
 changed to the balance its statement clamps nine lines above, which forgives a debt its docstring says is carried; a
-guard deleted from a charge, the defect on lines the change deleted alone; and four clean changes, a document, a rename,
-a function renamed with its caller whose old name only the diff's deleted lines hold, and a division a guard twelve
-lines above makes safe. The settlement's two show a guideline their cause only within the function around the hunk,
-git's three lines of context leave it out. Each
-is reviewed K times, under `--profile` where one is named, each guideline `--check` names alone where one is, and the
-default profile otherwise. A labelled branch scores the runs in which a guideline named a finding on the defect's lines;
-a clean branch scores the runs a guideline made a finding at major or above, a false one; each says which guidelines
-did. Injection attempts are `scripts/injection_suite.py`'s. Each review calls the model: run it only when a live
-measurement is wanted; `--build-only` builds the branches and calls nothing.
+guard deleted from a charge, the defect on lines the change deleted alone; and six clean changes, a document, a rename,
+a function renamed with its caller whose old name only the diff's deleted lines hold, a division a guard twelve lines
+above makes safe, an unused parameter removed at every use, and a config's paths moved to a new volume. The settlement's
+two show a guideline their cause only within the function around the hunk, git's three lines of context leave it out.
+Each is reviewed K times, under `--profile` where one is named, each guideline `--check` names alone where one is, and
+the default profile otherwise. A labelled branch scores the runs in which a guideline named a finding on the defect's
+lines; a clean branch scores the runs a guideline made a finding at major or above, a false one; each says which
+guidelines did. Injection attempts are `scripts/injection_suite.py`'s. Each review calls the model: run it only when a
+live measurement is wanted; `--build-only` builds the branches and calls nothing.
 """
 
 from __future__ import annotations
@@ -64,7 +64,50 @@ def settle(balance_cents: int, charges: list[int], refunds: list[int]) -> int:
     log.info("statement: %d cents owed, %d cents today", shown, net)
     return balance_cents + net
 '''
-ON_MAIN = {"src/payments/settle.py": SETTLE}
+#: A validator a field is passed through and never read, and a landing zone's paths: what two clean branches change, as
+#: a reviewed branch did. Read by review on it: removing a parameter at every use drew findings that read its deleted
+#: lines as held code, and moving a path to a new volume drew majors that were advice to check access.
+VALIDATOR = '''"""Checking a charge before it is sent."""
+
+from .charge import Charge
+
+
+class Validator:
+    def __init__(self, limit_cents: int, correlation_id: str = "") -> None:
+        self._limit_cents = limit_cents
+        self._correlation_id = correlation_id
+
+    def check(self, charge: Charge) -> bool:
+        return 0 < charge.amount_cents <= self._limit_cents
+
+
+class StrictValidator(Validator):
+    def __init__(self, limit_cents: int, correlation_id: str = "") -> None:
+        super().__init__(
+            limit_cents,
+            correlation_id=correlation_id,
+        )
+
+    def check(self, charge: Charge) -> bool:
+        return super().check(charge) and charge.currency == "EUR"
+
+
+def make_validator(limit_cents: int, strict: bool, correlation_id: str = "") -> Validator:
+    kind = StrictValidator if strict else Validator
+    return kind(
+        limit_cents,
+        correlation_id=correlation_id,
+    )
+'''
+LANDING = """streams:
+  charges_data:
+    stream_category: landing_zone
+    location: /Volumes/payments_$ENV/inbound/landing_zone/charges/data/
+  charges_trigger:
+    stream_category: landing_zone
+    location: /Volumes/payments_$ENV/inbound/landing_zone/charges/trigger/
+"""
+ON_MAIN = {"src/payments/settle.py": SETTLE, "src/payments/validator.py": VALIDATOR, "config/landing.yaml": LANDING}
 #: Each branch: the files it writes over the demo's `main`, and its label — the file and the lines of its one
 #: defect, or None for a clean change. A guideline names the defect when a finding of its stands on those lines.
 BRANCHES: dict[str, tuple[dict[str, str], tuple[str, range] | None]] = {
@@ -193,6 +236,21 @@ def usd_total(amounts: list[tuple[int, str]]) -> int:
             "src/payments/charge.py": CHARGE.replace("format_amount", "format_money"),
             "tests/test_charge.py": TESTS.replace("format_amount", "format_money"),
         },
+        None,
+    ),
+    # Read by review on a branch that removed an unused parameter at every use: majors and minors quoted the deleted
+    # lines as code the branch still held, and asked to remove what was gone.
+    "clean-removed-field": (
+        {"src/payments/validator.py": VALIDATOR.replace(', correlation_id: str = ""', "")
+         .replace("        self._correlation_id = correlation_id\n", "")
+         .replace("            correlation_id=correlation_id,\n", "")
+         .replace("        correlation_id=correlation_id,\n", "")},
+        None,
+    ),
+    # Read by review on the same branch: paths moved to a new volume drew majors asking to check the volume's access,
+    # which no line shows.
+    "clean-config-path": (
+        {"config/landing.yaml": LANDING.replace("inbound/landing_zone/charges/", "charges/landing_zone_vol/")},
         None,
     ),
     "guarded-above": (
