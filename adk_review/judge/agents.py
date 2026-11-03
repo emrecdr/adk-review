@@ -187,6 +187,10 @@ def for_the_verdict(outcome: Outcome, checks: Sequence[str], verdict: str, ignor
             f"- folded into `{into}`'s finding on the same lines: {f.severity} {_where(f)}: {squash(f.title)}"
             for f, into in folded
         ]
+        lines += [
+            f"- already in the file, not caused by the change: {f.severity} {_where(f)}: {squash(f.title)}"
+            for f in (item.finding for item in outcome.old if item.source == check)
+        ]
         if not (kept or dropped or folded or hole):
             lines.append("- no findings")
     lines += [f"## not read: {squash(path)} — {squash(why)}" for path, why in outcome.unread.items()]

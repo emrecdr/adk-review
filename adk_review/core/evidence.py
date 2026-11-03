@@ -98,6 +98,7 @@ class Change(TypedDict):
     files: list[Entry]  # each changed file, in path order
     tree: "Tree | None"  # the head as the tree rules read it; None where it could not be listed, or once let go
     unscanned: NotRequired[list[Entry]]  # the project's own files `scan` leaves out, for the credential rules alone
+    base_texts: NotRequired[dict[str, str] | None]  # each modified Python file's base text, by its base path
 
 
 class Failure(TypedDict):

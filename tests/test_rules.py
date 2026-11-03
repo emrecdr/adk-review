@@ -35,16 +35,17 @@ from conftest import (
 from adk_review.core.profiles import rule_id
 
 
-def lint_findings(evidence: dict, select: tuple[str, ...] | None = None) -> list | str:
-    """What the lint rule finds over `evidence`, run as the checks node runs every rule: its findings, or, as a
-    string, why it could not look. `select` stands in for the rule's own codes, for a test that wants ruff to fail."""
+def lint_findings(evidence: dict, select: tuple[str, ...] | None = None, *, old: bool = False) -> list | str:
+    """What the lint rule finds over `evidence`, run as the checks node runs every rule: its findings, or with `old`
+    what was already in the files, or, as a string, why it could not look. `select` stands in for the rule's own
+    codes, for a test that wants ruff to fail."""
     from adk_review.judge.checks import run_rules
     from adk_review.judge.rules.lint import Lint
 
     chosen = {"tool_settings": {**Lint.tool_settings, "select": tuple(select or ())}}
     rule = Lint() if select is None else type("Lint", (Lint,), chosen)()
     answer = run_rules(evidence, [rule])[rule_id("lint")]
-    return answer.could_not_look or answer.findings
+    return answer.could_not_look or (answer.old if old else answer.findings)
 
 
 class TestTheSecretShapes:
@@ -899,7 +900,9 @@ class TestTheLintRule:
         entry = {"path": "m.py", "status": "M", "text": text, "unread_text": None, "added": [(3, "x = eval('1')")]}
         counted = lint_findings({"files": [entry], "tree": None})
         assert [f.line for f in counted if f.line is not None] == [3]
-        (aside,) = [f for f in counted if f.line is None]
+        # Already in the file, and no base to tell otherwise: apart from the change's own findings, never at the bar.
+        assert not [f for f in counted if f.line is None], "the old ones are no finding of the change"
+        (aside,) = lint_findings({"files": [entry], "tree": None}, old=True)
         assert (
             aside.title == "lint: 2 ruff findings already in this file, on lines this change did not touch"
             and aside.evidence == "F401 (unused-import) x2 on lines 1 and 2"
@@ -907,8 +910,11 @@ class TestTheLintRule:
             == "Run `ruff check --isolated --ignore-noqa --select F401` on the file to see each one."
         ), "read by review: a bare `ruff check` reads the project's config and noqa, and showed none of them"
         # Asked by the owner: "1 of ruff's findings on lines the change did not add" read as a defect of the change,
-        # and named no line. It says the lines were there before, and where they are.
-        before = "These lines were in the file before this change. A fix is welcome, but this change did not add them."
+        # and named no line. It says the lines were there before, and where they are; and, asked by the owner, that by
+        # the Boy Scout rule they are expected fixed.
+        before = (
+            "This change did not add these lines. By the Boy Scout rule, we expect you to fix them while you are here."
+        )
         assert aside.why == before, aside.why
 
     def test_a_roll_up_names_the_lines_of_each_code_and_counts_the_rest(self) -> None:

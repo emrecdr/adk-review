@@ -664,7 +664,7 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   shared mechanism, each a change to weigh.
 - `--comment [FILE]` writes the review as a comment for the branch's author, to paste into the pull request by hand,
   whatever the verdict: what must change before it merges, what is worth a look, an approved change's included, the
-  tidy-ups, and what the review could not check. Its first line names what ran: the profile, how many rules and
+  tidy-ups, what the review could not check, and, last and apart, what was already in the files the change touched. Its first line names what ran: the profile, how many rules and
   guidelines, and the model, or no model, so an approval from the rules alone never reads as a model's. An approval
   names its bar, and every comment counts the major issues below it: asked by the owner, a major read as nothing
   much. A blocker or a major says why it matters, a rule's `why` or ruff's page for its code, and shows the

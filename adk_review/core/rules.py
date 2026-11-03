@@ -55,6 +55,8 @@ class Hit:
     severity: Severity | None = None
     fix: str | None = None
     why: str | None = None
+    #: Whether it was already in the file before the change, not caused by it: listed apart, never at the bar.
+    old: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -70,6 +72,8 @@ class Diagnostic:
     fix: str | None = None
     applicability: str | None = None
     url: str | None = None
+    #: Whether the base held it too: the same code on a line of the same text, so the change did not cause it.
+    known: bool = False
 
 
 class AnyRule(ABC):
@@ -419,7 +423,7 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
         except UnreadError as exc:
             hits, could_not_look = exc.found, f"rule {rule.id} could not look: {exc}"
         read = EVIDENCE_MAX_CHARS + CREDENTIAL_REACH
-        findings = [
+        made = [
             Finding(
                 file=hit.path,
                 line=hit.line,
@@ -434,9 +438,11 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
             )
             for hit in hits
         ]
+        findings = [f for f, hit in zip(made, hits, strict=True) if not hit.old]
+        old = [f for f, hit in zip(made, hits, strict=True) if hit.old]
     except (Exception, SystemExit) as exc:  # noqa: BLE001 -- the project's code: a failure, an exit too, is named
         return Checked(could_not_look=f"rule {rule.id} raised {type(exc).__name__}: {exc}{_raised_at(rule, exc)}")
-    return Checked(findings=findings, could_not_look=could_not_look)
+    return Checked(findings=findings, could_not_look=could_not_look, old=old)
 
 
 class UnreadError(LookupError):

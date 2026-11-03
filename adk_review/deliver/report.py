@@ -243,6 +243,7 @@ def render_handoff(
     `added` holds the globs the review was given beyond the config's, each as `--flag=glob`, which the check repeats."""
     pre = evidence["preflight"]
     identity = dict(zip(map(id, outcome.kept), _identified(outcome.kept), strict=True))
+    identity |= {id(item): fingerprint(item) for item in outcome.old}
     identity |= {id(folded): fingerprint(folded) for folded, _into in outcome.folded}
     fixes, tidy = _lanes(outcome, tidies)
     majors = sum(group[0].finding.severity == "major" and not at_or_above("major", fail_on) for group in fixes)
@@ -273,6 +274,9 @@ def render_handoff(
     if tidy:
         lines += [*([""] if fixes else []), "## Tidy", "", *TIDY_KEEPS, ""]
         lines += _items(tidy, len(fixes) + 1, identity, frozenset(), fail_on)
+    if outcome.old:  # asked by the owner: never mixed with what the change caused
+        lines += [*([""] if fixes or tidy else []), f"## {OLD_HEADING}", "", OLD_FOR_AGENT, ""]
+        lines += _items([[item] for item in outcome.old], len(fixes) + len(tidy) + 1, identity, frozenset(), None)
     # Never "nothing to fix" where the review could not check everything, as its report's next steps, and what it did
     # not check named: read by review, a finding at the bar left unproven ended there, and a hole of another kind said
     # it first, with nothing for an agent to check by hand.
@@ -281,11 +285,12 @@ def render_handoff(
         hole = [f"{UNCHECKED}. What it did not check may hold more to fix."]
         if listed := _unchecked(outcome, fail_on):
             hole += ["", *listed]
-    if not outcome.kept:
+    if not outcome.kept and not outcome.old:
         lines += hole or [NOTHING_TO_FIX]
     else:
         lines += [*([""] if hole else []), *hole]
-    lines += _check_again(evidence, outcome, fail_on, added, degraded=degraded, fixes=bool(outcome.kept))
+    fixes = bool(outcome.kept or outcome.old)  # by the Boy Scout rule, what was already there is fixed too
+    lines += _check_again(evidence, outcome, fail_on, added, degraded=degraded, fixes=fixes)
     return inert("\n".join(lines)) + "\n"
 
 
@@ -338,10 +343,15 @@ def _quotes_a_deleted_line(outcome: Outcome) -> bool:
 
 
 def _items(
-    groups: Sequence[list[Sourced]], start: int, identity: Mapping[int, str], held: frozenset[str], fail_on: str
+    groups: Sequence[list[Sourced]],
+    start: int,
+    identity: Mapping[int, str],
+    held: frozenset[str],
+    fail_on: str | None,
 ) -> list[str]:
     """Each hand-off item, numbered from `start`: its lead's place, quote and instruction, then each other reading of
-    the same lines, one whose check is in `held` held back, as `_lanes` leaves a tidy under a fix only to be."""
+    the same lines, one whose check is in `held` held back, as `_lanes` leaves a tidy under a fix only to be. With no
+    `fail_on`, as for what was already in the files, no item is marked at the bar: none of them can fail the review."""
     lines = []
     for number, (lead, *also) in enumerate(groups, start):
         f = lead.finding
@@ -357,7 +367,7 @@ def _items(
 
 
 def _folded_under(
-    folded: Sequence[Sourced], fail_on: str, identity: Mapping[int, str], held: frozenset[str]
+    folded: Sequence[Sourced], fail_on: str | None, identity: Mapping[int, str], held: frozenset[str]
 ) -> list[str]:
     """A line for each finding folded into a handoff item: another reading of the same lines, by another check or the
     same one, which can be a second defect — an injection whose quote spans a key's line folds into the key's finding.
@@ -382,9 +392,9 @@ def _folded_under(
     return lines
 
 
-def _bar(f: Finding, fail_on: str) -> str:
-    """The mark of a handoff finding that fails the build on its own."""
-    return " — at the bar" if at_or_above(f.severity, fail_on) else ""
+def _bar(f: Finding, fail_on: str | None) -> str:
+    """The mark of a handoff finding that fails the build on its own; none with no bar."""
+    return " — at the bar" if fail_on and at_or_above(f.severity, fail_on) else ""
 
 
 def _to_fix(item: Sourced, identity: str, indent: str) -> list[str]:
@@ -408,13 +418,17 @@ ALSO_SHOWN = 5
 #: How a comment for the branch's author opens, by the verdict: a thank-you, then what the review decided. An approval
 #: names its bar: read by review, majors, "fix before merge" on the scale, sat under "Worth a look" below a line that
 #: said the review found "nothing that blocks it", and the `blocker` bar it meant went unnamed.
+#: Where what was already in the files the change touched is listed, apart from what the change caused: asked by the
+#: owner, never mixed with it, and never at the bar.
+OLD_HEADING = "Already in the files you touched"
+OLD_NOTE = (
+    "Not caused by this change. By the Boy Scout rule, we expect you to fix them too. They do not block the merge."
+)
+OLD_FOR_AGENT = "Not caused by this change. By the Boy Scout rule, fix them too, after any fix above."
 COMMENT_OPENS = {
-    "APPROVED": (
-        "Thanks for this change. The review found nothing of `{bar}` severity or above, the level that blocks a "
-        "merge here."
-    ),
-    "REQUEST_CHANGES": "Thanks for this change. Please fix each point under Must fix before it merges.",
-    "DEGRADED": "Thanks for this change. The review could not check all of it, so it approves nothing yet.",
+    "APPROVED": "The review found nothing of `{bar}` severity or above, the level that blocks a merge here.",
+    "REQUEST_CHANGES": "Fix each point under Must fix before it merges.",
+    "DEGRADED": "The review could not check all of it, so it approves nothing yet.",
 }
 #: What an approval adds where majors sat below its bar: asked by the owner, a major is important, and an opener that
 #: named the bar alone read as nothing much to fix.
@@ -465,6 +479,7 @@ def render_comment(
         ("Must fix before it merges", must, ""),
         ("Worth a look", worth, ""),
         ("Optional tidy-ups", tidy, "These change how the code reads, never what it does."),
+        (OLD_HEADING, [[item] for item in outcome.old], OLD_NOTE),
     ):
         if groups:
             lanes.append((["", f"### {heading}", "", *([note, ""] if note else [])], _commented(groups, tidies)))
@@ -626,6 +641,7 @@ def _check_again(
     # still cannot: read by review, a run of only the checks that found something said the fixes held, the hole never
     # looked at again.
     found = {item.source for item in [*outcome.kept, *(f for f, _ in outcome.folded), *outcome.unproven(fail_on)]}
+    found |= {item.source for item in outcome.old}  # fixed too, by the Boy Scout rule: the rerun shows what is left
     found |= set(outcome.errors)
     if not found:  # nothing kept and no hole a check left: nothing to run again, but a file no check read
         # Read by review: a hole of unread files alone ended at its list, with no step and no meaning for exit 3.
@@ -1104,7 +1120,8 @@ def _resolved(
     new one on its lines, which the same comment listed."""
     if previous is None or verdict == "DEGRADED":
         return None
-    found_now = {*identities, *(fingerprint(item) for item, _into in outcome.folded)}
+    # A finding already in a touched file is still found: listed apart, it is never fixed by being so.
+    found_now = {*identities, *(fingerprint(item) for item in [*(f for f, _ in outcome.folded), *outcome.old])}
     return [
         found
         for identity, found in previous.items()
@@ -1185,9 +1202,12 @@ def render(
         f"- duplicates across rules and guidelines folded into one finding: {len(outcome.folded)}",
         f"- secrets redacted before any model call: {outcome.redacted}",
         _spent(usage),
-        *_next_steps(outcome, verdict, fail_on, staged=bool(evidence["preflight"].get("staged"))),
-        "",
     ]
+    if outcome.old:  # asked by the owner: never mixed with what the change caused, and after the checks' counts
+        lines += ["", f"## {OLD_HEADING}", "", OLD_NOTE, ""]
+        for item in outcome.old:
+            lines += [*_listed(item.finding), f"  - fix: {prose(item.finding.suggestion)}"]
+    lines += [*_next_steps(outcome, verdict, fail_on, staged=bool(evidence["preflight"].get("staged"))), ""]
     return inert("\n".join(lines))  # once over the whole: no two fields side by side spell one
 
 
@@ -1540,6 +1560,8 @@ def as_data(
             {**_found(item, added, identity), "since_previous": _since(identity, previous)}
             for item, identity in zip(outcome.kept, identities, strict=True)
         ],
+        # Asked by the owner: what was already in the files the change touched, apart, and never at the bar.
+        "old_findings": [_found(item, added) for item in outcome.old],
         # The previous review's findings no longer found, as it wrote them; None with no previous review, or where
         # this one has a hole, which resolves nothing.
         "resolved": _resolved(

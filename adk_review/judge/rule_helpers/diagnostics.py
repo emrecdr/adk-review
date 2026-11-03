@@ -68,12 +68,14 @@ def listed(
     # What ruff reports on lines the change did not add is counted, one finding a file at the most severe of them,
     # so the verdict reads the same. Measured over this repository's 22 commits: 2,101 of lint's 2,435 findings,
     # 86.3%, sat on lines the commit did not add, and listed one by one they buried the change's own.
-    aside = [(found, severity) for found, severity in rated if found.line not in file.added]
+    # Only what the base held too was already there, and is old: listed apart, never at the bar. A finding the change
+    # made on a line it did not touch, an old line's name left undefined by an import it deleted, is its own.
+    aside = [(found, severity) for found, severity in rated if found.line not in file.added and found.known]
     if aside:  # asked by the owner: "on lines the change did not add" read as a defect of the change
         one = len(aside) == 1
         title = f"{len(aside)} ruff finding{'' if one else 's'} already in this file, on {'a line' if one else 'lines'}"
-        tail.append(_counted(file.path, aside, f"{title} this change did not touch", why=BEFORE_THIS_CHANGE))
-        rated = [(found, severity) for found, severity in rated if found.line in file.added]
+        tail.append(_counted(file.path, aside, f"{title} this change did not touch", why=BEFORE_THIS_CHANGE, old=True))
+        rated = [(found, severity) for found, severity in rated if found.line in file.added or not found.known]
     if len(rated) > PER_FILE:
         ranked = sorted(range(len(rated)), key=lambda at: -RANK[rated[at][1]])  # stable: by line
         shown = set(ranked[:PER_FILE])
@@ -109,9 +111,10 @@ def _slug(diag: Diagnostic) -> str | None:
 _RULE_CODE = re.compile(r"[A-Z]+[0-9]+")
 
 
-#: Why a roll-up of ruff's findings on lines the change did not touch is there: the change did not make them.
+#: Why a roll-up of ruff's findings on lines the change did not touch is there: the change did not make them, and, asked
+#: by the owner, the Boy Scout rule expects them fixed all the same, though they never block a merge.
 BEFORE_THIS_CHANGE = (
-    "These lines were in the file before this change. A fix is welcome, but this change did not add them."
+    "This change did not add these lines. By the Boy Scout rule, we expect you to fix them while you are here."
 )
 #: How many lines a roll-up names for one code before it counts the rest.
 LINES_NAMED = 5
@@ -129,7 +132,7 @@ def _on_lines(numbers: list[int]) -> str:
     return f"on lines {', '.join(named[:-1])} and {named[-1]}"
 
 
-def _counted(path: str, rated: list[tuple[Diagnostic, Severity]], title: str, why: str = "") -> Hit:
+def _counted(path: str, rated: list[tuple[Diagnostic, Severity]], title: str, why: str = "", old: bool = False) -> Hit:
     """`rated` as one finding at the file: how many of each code, with ruff's name for it, at the most severe of them,
     so no tier is lost and the verdict reads the same; and the command that shows them as the review ran ruff. Read by
     review: a bare `ruff check` read the project's own config and honoured its noqa, and said "All checks passed!" over
@@ -152,4 +155,5 @@ def _counted(path: str, rated: list[tuple[Diagnostic, Severity]], title: str, wh
         severity=max((severity for _found, severity in rated), key=RANK.__getitem__),
         fix=f"Run `{command}` on the file to see each one.",
         why=why,
+        old=old,
     )

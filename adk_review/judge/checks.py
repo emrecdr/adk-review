@@ -104,6 +104,7 @@ def _release(evidence: Evidence) -> None:
     gone, and no finding of a real review stood on an added line. Runs after a failure too, over whatever shape the
     evidence had."""
     evidence["tree"] = None
+    evidence["base_texts"] = None
     for entry in (*evidence.get("files", ()), *evidence.get("unscanned", ())):  # `added_at` stays, for the report
         entry["text"] = entry["added"] = entry["diff"] = entry["shown"] = None
 

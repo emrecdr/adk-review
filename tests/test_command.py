@@ -95,6 +95,42 @@ class TestWhatAReviewCovers:
         assert run_review(*rules_only, "--path-exclude", "../elsewhere") == 2
         assert "--path-exclude '../elsewhere' must name a folder inside the repository" in capsys.readouterr().err
 
+    def test_what_was_already_in_a_touched_file_is_apart_and_never_fails_the_review(
+        self, cli, tmp_path: Path, capsys
+    ) -> None:
+        """Asked by the owner: what a change causes, on its own lines or as a side effect, is never mixed with what was
+        already in the files it touched. A linter finding on a line the change did not touch is old where the base had
+        it too, and new where the change made it: an import the change deleted leaves an old line's name undefined.
+        What was already there is listed apart, and never fails the review."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", "main")
+        base = "import os\nimport subprocess\nimport sys\n\n\n"
+        base += "def run(cmd):\n    return subprocess.run(cmd, shell=True)\n"
+        _committed(repo, "app.py", base + "\n\nprint(sys.argv)\n", "base")
+        _git_in(repo, "checkout", "-q", "-b", "side-effect")
+        _committed(repo, "app.py", base.replace("import sys\n", "") + "\n\nprint(sys.argv)\n", "drop an import")
+        _git_in(repo, "checkout", "-q", "-b", "harmless", "main")
+        _committed(repo, "app.py", base + "\n\nprint(sys.argv)\nDONE = True\n", "a line")
+        for head, code in (("side-effect", 1), ("harmless", 0)):
+            comment, report, handoff = (tmp_path / f"{head}{suffix}" for suffix in (".md", ".json", "-handoff.md"))
+            argv = [str(repo), "--head", head, "--base", "main", "--profile", "default-rules", "--fail-on", "major"]
+            written = ["--comment", str(comment), "--json", str(report), "--handoff", str(handoff)]
+            assert cli.main([*argv, *written]) == code, head
+            capsys.readouterr()
+            said, data = comment.read_text(encoding="utf-8"), json.loads(report.read_text(encoding="utf-8"))
+            old, now = said.split("### Already in the files you touched")[1], said.split("### Already in the files")[0]
+            assert "S602" in old and "F401" in old and "S602" not in now, said
+            assert [f["title"] for f in data["old_findings"]], data
+            assert not any("S602" in str(f.get("evidence", "")) for f in data["findings"]), data["findings"]
+            caused = "F821" in now
+            assert caused == (head == "side-effect"), said
+            # By the Boy Scout rule, a coding agent fixes them too, and checks its work: never "nothing to fix", and
+            # never "at the bar", which none of them can reach.
+            agent = handoff.read_text(encoding="utf-8").split("## Already in the files you touched")[1]
+            assert "S602" in agent and "at the bar" not in agent.split("## Check your work")[0], agent
+            assert "Nothing to fix" not in agent and "--check rule.lint" in agent, agent
+
     def test_a_head_that_adds_nothing_names_the_flags_that_review_something(self, cli, demo_repo, capsys) -> None:
         # Measured: a first review of a repository checked out on main, `--base main`, ended at the sentence alone.
         assert cli.main([str(demo_repo), "--head", "main", "--base", "main", "--profile", "rules-only"]) == 2

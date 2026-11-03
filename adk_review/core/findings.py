@@ -80,3 +80,5 @@ class Checked(BaseModel):
 
     findings: list[Finding] = Field(default_factory=list)
     could_not_look: str | None = None
+    #: What was already in the file before the change, not caused by it: never decides the verdict.
+    old: list[Finding] = Field(default_factory=list)

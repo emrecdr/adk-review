@@ -43,6 +43,8 @@ class Sourced:
     #: Whether its quote holds a line the change deleted, as the diff's own `-` marks it: read by review, a line told by
     #: the `-` its text starts with made a Markdown bullet the branch holds read as deleted.
     deleted: bool = False
+    #: Whether it was already in the file before the change, not caused by it: kept apart in `Outcome.old`.
+    old: bool = False
 
 
 @dataclass
@@ -51,6 +53,8 @@ class Outcome:
 
     kept: list[Sourced] = field(default_factory=list)
     dropped: list[Sourced] = field(default_factory=list)
+    #: What was already in the files the change touched, not caused by it: listed apart, never at the bar.
+    old: list[Sourced] = field(default_factory=list)
     errors: dict[str, str] = field(default_factory=dict)  # source -> why that rule or guideline could not look
     unread: dict[str, str] = field(default_factory=dict)  # path -> why no check that ran read it whole
     folded: list[tuple[Sourced, Sourced]] = field(default_factory=list)  # a finding, and the one it folded into
@@ -355,6 +359,7 @@ def from_rules(answers: Mapping[str, Checked]) -> tuple[list[Sourced], dict[str,
         for check, answer in answers.items()
         for f in answer.findings
     ]
+    found += [Sourced(check, f, old=True) for check, answer in answers.items() for f in answer.old]
     return found, {check: answer.could_not_look for check, answer in answers.items() if answer.could_not_look}
 
 
@@ -478,6 +483,9 @@ def fold(outcome: Outcome, rules: list[Sourced], order: Sequence[str], tidies: f
     `tidies`, which changes how code reads and never what it does, gives way on a tie to a defect: measured on the
     order alone, under `full` `complexity` came before `correctness`, and the report and the JSON named how lines read
     with what they do wrong folded under it."""
+    # What was already in a touched file goes apart, before any fold: asked by the owner, never mixed with the change's.
+    outcome.old += [item for item in rules if item.old]
+    rules = [item for item in rules if not item.old]
     kept = sorted(rules + outcome.kept, key=lambda item: order.index(item.source))  # stable: each check's own order
     outcome.kept, outcome.folded = dedupe(kept, tidies)
 

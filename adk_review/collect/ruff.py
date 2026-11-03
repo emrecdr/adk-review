@@ -17,8 +17,10 @@ import subprocess
 import sysconfig
 import tempfile
 import threading
-from collections.abc import Generator, Iterable, Sequence
+from collections import Counter
+from collections.abc import Callable, Generator, Iterable, Sequence
 from contextlib import closing
+from dataclasses import replace
 from pathlib import Path, PurePath, PurePosixPath
 from typing import NamedTuple
 
@@ -83,7 +85,11 @@ def diagnose(
     if not texts:
         return {}
     try:
-        return _run(ruff, texts, select, ignore, line_length)
+        return _known(
+            evidence,
+            _run(ruff, texts, select, ignore, line_length),
+            lambda base: _run(ruff, base, select, ignore, line_length),
+        )
     except OSError as exc:  # a disk that refuses the write: full, or read-only
         return f"a changed file could not be written to lint ({exc.strerror})"
     except _FloodError:
@@ -94,6 +100,39 @@ def diagnose(
         return f"ruff exited {exc.returncode}: {squash(exc.stderr) or 'no reason given'}"
     except subprocess.TimeoutExpired:
         return f"ruff did not answer within {RUFF_TIMEOUT_S} s"
+
+
+def _known(
+    evidence: Change,
+    found: dict[str, list[Diagnostic]],
+    linted: Callable[[dict[str, str]], dict[str, list[Diagnostic]]],
+) -> dict[str, list[Diagnostic]]:
+    """`found` with each diagnostic of a modified file the base held too marked `known`: the same code on a line of the
+    same text, each base one matched once. Where the base cannot be read or linted, every one is known, as each on a
+    line the change did not add was read before: a failure here never hides a finding, nor adds one. Asked by the
+    owner: what a change causes is kept apart from what was already in the files it touched."""
+    modified = {
+        f["path"]: f.get("old", f["path"]) for f in evidence["files"] if f.get("status") != "A" and f["path"] in found
+    }
+    held = evidence.get("base_texts") or {}  # read by the collector, as the head's texts are: no git here
+    if not modified:
+        return found
+    try:
+        base = linted({path: held[old] for path, old in modified.items() if old in held})
+    except (OSError, ValueError, KeyError, IndexError, TypeError, _FloodError, subprocess.SubprocessError):
+        base, held = {}, {}
+    marked = dict(found)
+    for path, old in modified.items():
+        if old not in held:  # no base read: as before, what lies on an untouched line was there already
+            marked[path] = [replace(item, known=True) for item in found[path]]
+            continue
+        before = Counter((item.code, squash(item.source)) for item in base.get(path, ()))
+        marked[path] = []
+        for item in found[path]:
+            known = before[(item.code, squash(item.source))] > 0
+            before[(item.code, squash(item.source))] -= known
+            marked[path].append(replace(item, known=known) if known else item)
+    return marked
 
 
 def _run(

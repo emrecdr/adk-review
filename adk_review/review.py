@@ -209,7 +209,7 @@ def _try(paths: Sequence[str], chosen: Selection, fail_on: str) -> int:
     answers = run_rules({"files": entries, "tree": tree}, chosen.rules)
     print(render_tried(paths, answers, [g.check_id for g in chosen.guidelines]))
     found, holes = from_rules(answers)
-    return decide(Outcome(kept=found, errors=holes), fail_on)[1]
+    return decide(Outcome(kept=[item for item in found if not item.old], errors=holes), fail_on)[1]
 
 
 def _on_disk(paths: Sequence[str]) -> tuple[dict[str, str], list[tuple[str, str]]]:

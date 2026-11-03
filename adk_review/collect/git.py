@@ -31,7 +31,7 @@ from typing import Any, NoReturn
 from ..core.blast import Radius
 from ..core.evidence import LINK_UNREAD, Entry, Evidence, Failure, unreleased
 from ..core.paths import Links, UnfollowedError, in_review, in_scope, matches
-from ..core.rules import PYTHON_SUFFIXES, Tree
+from ..core.rules import PYTHON_SUFFIXES, Tree, is_python_text
 from ..core.text import lines_of
 from .change import (
     BINARY_UNREAD,
@@ -1077,6 +1077,14 @@ def gather(
     # change. Read by review, four rounds running: followed, it was a hole wherever its file could not be read, and each
     # way round that let a key through.
     read_texts(resolved, files, listing, excluded)
+    # Each modified Python file's text at the base, read here once as the head's is, for a tool's finding to be set
+    # against: asked by the owner, what a change causes is kept apart from what was already in the files it touched.
+    # None where git cannot give it, and a tool then reads every finding on an untouched line as there before.
+    olds = {f.get("old", f["path"]) for f in files if f["status"] != "A" and is_python_text(f["path"], None)}
+    try:
+        base_texts: dict[str, str] | None = base_files(resolved, olds) if olds else {}
+    except GitError:
+        base_texts = None
     # The head read whole, every Python file parsed, only for what reads it: a tree rule that needs it for this change,
     # which it tells from the changed files' texts, read first, or the radius a guideline is shown, which measures
     # changed Python files alone. The changed files' own texts are read either way, for the file rules.
@@ -1096,6 +1104,7 @@ def gather(
         "whole": base is None,
         "scope": list(scope),
         "exclude": list(exclude),
+        "base_texts": base_texts,
         "parts": parts,
         "left_out": left_out,
         "skipped": excluded,
