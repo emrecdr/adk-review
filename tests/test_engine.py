@@ -290,6 +290,42 @@ class TestRetriesOnBothArms:
         sorry = r"429: Sorry, you've exceeded your rate limit for utility models\."
         assert re.fullmatch(sorry + r" Try again after 30 min, at \d\d:\d\d\.", said), said
 
+    @pytest.mark.asyncio
+    async def test_a_model_copilot_does_not_serve_says_to_name_another(self, monkeypatch, tmp_path: Path) -> None:
+        """Measured live on Copilot: `gemini-3.8-flash`, which GitHub's pricing lists, was refused for the seat with
+        `model_not_supported`, each guideline a hole, and the report said only to check each by hand. GitHub has
+        deprecated `gpt-4.1`, the arm's default, so a review meets this the day Copilot stops serving it. Only the
+        network is replaced, below LiteLLM."""
+        import httpx
+        import litellm
+        from google.adk.models.llm_request import LlmRequest
+        from google.genai import types
+
+        from adk_review.judge.config import build_model, request_config
+        from adk_review.judge.plugins import describe
+
+        key = {"token": "a key", "expires_at": time.time() + 3600, "endpoints": {"api": "https://copilot.invalid"}}
+        (tmp_path / "api-key.json").write_text(json.dumps(key), encoding="utf-8")
+        _cached_copilot_token(monkeypatch, tmp_path)
+        monkeypatch.setenv("REVIEW_PROVIDER", "copilot")
+        monkeypatch.setenv("REVIEW_MODEL", "gemini-3.8-flash")
+
+        async def send(_client, request, *_args, **_kwargs):
+            refused = {"message": "The requested model is not supported.", "code": "model_not_supported"}
+            body = {"error": {**refused, "param": "model", "type": "invalid_request_error"}}
+            return httpx.Response(400, json=body, request=request)
+
+        monkeypatch.setattr(httpx.AsyncClient, "send", send)
+        model = build_model()
+        request = LlmRequest(model=model.model, contents=[types.UserContent("hi")], config=request_config())
+        with pytest.raises(litellm.BadRequestError) as raised:
+            async for _ in model.generate_content_async(request):
+                pass
+        assert describe(raised.value) == (
+            "model_not_supported: The requested model is not supported. "
+            "Name a model your Copilot seat serves, in REVIEW_MODEL or the variable that chose this one."
+        )
+
     def test_a_rate_limit_names_its_wait_from_either_header_and_nothing_without_one(self) -> None:
         """`retry-after` in seconds or as an HTTP date, or GitHub's `x-ratelimit-reset`, the second it clears; a time
         already past, or none, adds nothing, never a wait the provider did not name."""

@@ -55,7 +55,8 @@ def describe(error: Exception) -> str:
     quota … Please retry in 19s"; LiteLLM's errors carry `.status_code` and a
     `.message` that wraps the provider's own; `config.said` reads both, the one
     place that knows a provider's format. One line, cut at `REASON_MAX_CHARS`,
-    the cut named. A rate limit says when to try again, where the provider names it.
+    the cut named. A rate limit says when to try again, where the provider names it, and a model Copilot does not
+    serve says to name another.
     """
     code = getattr(error, "code", None) or getattr(error, "status_code", None)
     message = said(error)
@@ -63,9 +64,17 @@ def describe(error: Exception) -> str:
         message = f"no answer within the call's deadline, {REQUEST_TIMEOUT_S:.0f} s"
     # LiteLLM's `code` is the text "429" and its `status_code` the number, as `StopAtRateLimit` reads them.
     wait = _wait_of(error) if 429 in (getattr(error, "code", None), getattr(error, "status_code", None)) else None
-    room = REASON_MAX_CHARS - (len(wait) + 1 if wait else 0)  # the wait is kept whole, inside the cap
+    after = wait or (UNSERVED_NEXT if code == UNSERVED else None)
+    room = REASON_MAX_CHARS - (len(after) + 1 if after else 0)  # the next step is kept whole, inside the cap
     line = cut_at(squash(f"{code}: {message}" if code else message), room)
-    return f"{line} {wait}" if wait else line
+    return f"{line} {after}" if after else line
+
+
+#: Copilot's code for a model it does not serve the seat, and what to do. Measured live: `gemini-3.8-flash`, which
+#: GitHub's pricing lists, was refused so, and the report said only to check each guideline by hand. GitHub has
+#: deprecated `gpt-4.1`, the arm's default: a review meets this the day Copilot stops serving it.
+UNSERVED = "model_not_supported"
+UNSERVED_NEXT = "Name a model your Copilot seat serves, in REVIEW_MODEL or the variable that chose this one."
 
 
 #: The longest wait a rate limit's header is read as naming, a week, the longest limit GitHub's documents name. Past it,

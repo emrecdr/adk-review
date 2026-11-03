@@ -259,7 +259,7 @@ What a Copilot review can say, and what to do:
   checkout).
 - `REVIEW_MODEL=… cannot judge at temperature 0`, exit 2: name another model.
 - `model_not_supported`, under the guideline it stopped, exit 3: the plan or the organisation's Copilot policy leaves
-  that model off; name one it serves.
+  that model off, and the report says to name one it serves, in `REVIEW_MODEL` or the variable that chose it.
 - A 401 from Copilot, exit 3: the token was revoked or the seat lost Copilot; run `adk-review-login --force`.
 - A 429, exit 3: Copilot's per-user rate limit, which GitHub does not publish; wait, or set `REVIEW_FALLBACK_MODEL`.
   Where Copilot names when it clears, the report says when to try again. No
