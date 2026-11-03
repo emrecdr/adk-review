@@ -950,35 +950,37 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   verifier reads the branch's own text, which could tell it a real blocker does not hold. A finding whose quote holds a
   deleted line, and whose suggested code is what replaced it, may ask for no change: it is flagged (`already_done`, a
   finding's `done`) and listed apart, under Possibly already done, never removed, and decided on as any finding is; a
-  point goes apart only where every finding on its lines is flagged, so a rule's finding folded under a flagged one
-  stays a point to fix. Read by review on a branch that removed a parameter at every use: six majors read the deleted
-  lines as code the branch still held, and each suggested the code it already had. It is read in the hunk grounding
-  chose alone, line by line with the code's own indent kept, and over the spot of a quoted deleted block: the lines that
-  replaced it or, where none did, the lines either side of the gap. Read by review twice: code that removed such
-  findings removed real bugs too, a write or a block moved out of its `with`, a check deleted from one branch and kept
-  in another, one in another hunk; the model's own code was indented a space off the file's. So it is a flag, a notice
-  for a person, as the owner asked, and a wrong one costs a moment's reading. A finding that restores what the change
-  deleted suggests lines the branch lacks, and is not flagged. A comment's or a hand-off's point names a guideline's
-  check, as a rule's title already does (`_titled`), so its reader can tell which guideline wrote what; the data keeps
-  the model's own title, since the report, the JSON and chat name the check already. A quote carrying the framing its
-  file was shown in — the heading, the fence, git's header lines and each hunk's `@@`, git's `\ No newline at end of
-  file`, the cap's cut — grounds as the lines inside it: measured live on Gemini, the injection on the labelled set's
-  `sql-from-input` came quoted inside its fence, and the blocker was dropped, the review a hole; with the framing looked
-  past, two runs more, three of five blocker quotes carried a fence or git's header and both runs kept the blocker. The
-  collector records each file's framing beside its lines as it renders them, so only that file's own is looked past:
-  measured by review with a list of such lines kept by hand instead, a file with no final newline and a file cut at the
-  cap, each quoted whole, were dropped. Measured live with the framing recorded, on both arms, no quote was dropped:
-  Gemini quoted `sql-from-input`'s blocker under git's whole header, down to the hunk's `@@` and the function git named
-  there, and four quotes on the planted branch inside fences, and each was kept. A kept finding's evidence is then the
-  lines its quote stands on, as the file reads them, a line the change deleted with its `-`, recorded from the diff's
-  own marks, which the comment, the hand-off and chat's verdict explain: the report, the JSON, the hand-off, the
-  verifier and the fingerprint read the diff's own text, never a model's framing of it; measured by review, the same two
-  lines quoted plain and inside their fence had two fingerprints, so `--previous` named one finding resolved and new at
-  once. A quote is placed from no line whose rest of the hunk is too short to hold it, and within 20,000 lines read on:
-  measured by review, a hunk of 2,000 repeated lines quoted whole took 4.9 s a finding, read on from every line, a
-  branch's lines a model was steered to quote stalling the review. What was measured not to help: told to quote whole
-  lines and, for a missing test, the lines that lack one, Copilot's guidelines quoted whole files under their `@@`
-  headers, and 14 of 27 findings were dropped where 5 of 21 had been; that sentence was taken out.
+  point goes apart only where every finding on its lines is flagged and it sits below the bar, so a rule's finding
+  folded under a flagged one, and one the review fails on, stays a point to fix. Only a deleted block the quote itself
+  holds counts, read by its line numbers: git numbers a deleted line with the line before it. Read by review on a branch
+  that removed a parameter at every use: six majors read the deleted lines as code the branch still held, and each
+  suggested the code it already had. It is read in the hunk grounding chose alone, line by line with the code's own
+  indent kept, and over the spot of a quoted deleted block: the lines that replaced it or, where none did, the lines
+  either side of the gap. Read by review twice: code that removed such findings removed real bugs too, a write or a
+  block moved out of its `with`, a check deleted from one branch and kept in another, one in another hunk; the model's
+  own code was indented a space off the file's. So it is a flag, a notice for a person, as the owner asked, and a wrong
+  one costs a moment's reading. A finding that restores what the change deleted suggests lines the branch lacks, and is
+  not flagged. A comment's or a hand-off's point names a guideline's check, as a rule's title already does (`_titled`),
+  so its reader can tell which guideline wrote what; the data keeps the model's own title, since the report, the JSON
+  and chat name the check already. A quote carrying the framing its file was shown in — the heading, the fence, git's
+  header lines and each hunk's `@@`, git's `\ No newline at end of file`, the cap's cut — grounds as the lines inside
+  it: measured live on Gemini, the injection on the labelled set's `sql-from-input` came quoted inside its fence, and
+  the blocker was dropped, the review a hole; with the framing looked past, two runs more, three of five blocker quotes
+  carried a fence or git's header and both runs kept the blocker. The collector records each file's framing beside its
+  lines as it renders them, so only that file's own is looked past: measured by review with a list of such lines kept by
+  hand instead, a file with no final newline and a file cut at the cap, each quoted whole, were dropped. Measured live
+  with the framing recorded, on both arms, no quote was dropped: Gemini quoted `sql-from-input`'s blocker under git's
+  whole header, down to the hunk's `@@` and the function git named there, and four quotes on the planted branch inside
+  fences, and each was kept. A kept finding's evidence is then the lines its quote stands on, as the file reads them, a
+  line the change deleted with its `-`, recorded from the diff's own marks, which the comment, the hand-off and chat's
+  verdict explain: the report, the JSON, the hand-off, the verifier and the fingerprint read the diff's own text, never
+  a model's framing of it; measured by review, the same two lines quoted plain and inside their fence had two
+  fingerprints, so `--previous` named one finding resolved and new at once. A quote is placed from no line whose rest of
+  the hunk is too short to hold it, and within 20,000 lines read on: measured by review, a hunk of 2,000 repeated lines
+  quoted whole took 4.9 s a finding, read on from every line, a branch's lines a model was steered to quote stalling the
+  review. What was measured not to help: told to quote whole lines and, for a missing test, the lines that lack one,
+  Copilot's guidelines quoted whole files under their `@@` headers, and 14 of 27 findings were dropped where 5 of 21 had
+  been; that sentence was taken out.
 - **One finding per span of lines.** Rules and guidelines can all find one line; the report carries it once: the most
   severe reading first, whole; on a tie a defect before a cleanup's finding, then the first check — the rules, then the
   guidelines, each in the order the profile names them, which is the report's order too — and any finding one kept

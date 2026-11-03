@@ -1154,6 +1154,12 @@ class TestThePreviousReportAndTheHandoff:
             evidence, tidy, verdict="REQUEST_CHANGES", fail_on="minor", tidies=frozenset({"rule.simplify"})
         )
         assert headings(said) == [f"### Tidy-ups{must}"], said
+        # Read by review: a tidy at the bar came after the minors below it, and the size cap cut it first.
+        both = Outcome(kept=[Sourced("rule.simplify", at(4, "major").finding, (4, 4)), at(9, "minor")])
+        said = render_comment(
+            evidence, both, verdict="REQUEST_CHANGES", fail_on="major", tidies=frozenset({"rule.simplify"})
+        )
+        assert headings(said) == [f"### Tidy-ups{must}", "### Minor findings"], said
         said = render_comment(evidence, Outcome(kept=[at(5, "major")]), **approved)
         assert "It did find 1 major issue, under Major findings, caused by this change." in said, said
         said = render_comment(evidence, Outcome(kept=[at(12, "minor")]), **approved)
@@ -1301,6 +1307,28 @@ class TestThePreviousReportAndTheHandoff:
         mixed.folded = [(rule, mixed.kept[0])]
         said = render_comment(evidence, mixed, verdict="APPROVED", fail_on="blocker")
         assert "### Possibly already done" not in said and "### Major findings" in said, said
+        # Read by review: one at the bar failed the review from an unmarked section, the agent told to change nothing.
+        # It stays a point to fix, marked; only one below the bar goes apart.
+        blocking = Outcome(kept=[at(2, "major", True)])
+        said = render_comment(evidence, blocking, verdict="REQUEST_CHANGES", fail_on="major")
+        assert "### Major findings — must fix before it merges" in said and "Possibly already done" not in said, said
+        assert "Possibly already done" not in render_handoff(
+            evidence, blocking, verdict="REQUEST_CHANGES", fail_on="major"
+        )
+        # Read by review: apart, a tidy folded under a flagged major had a fix's instruction, where Fix holds it back.
+        tid = Sourced(
+            "guideline.complexity",
+            Finding(file="a.py", line=2, severity="minor", title="tid", evidence="-x", suggestion="s"),
+            (2, 2),
+            deleted=True,
+            done=True,
+        )
+        lead = at(2, "major", True)
+        tidied = Outcome(kept=[lead], folded=[(tid, lead)])
+        handoff = render_handoff(
+            evidence, tidied, verdict="APPROVED", fail_on="blocker", tidies=frozenset({"guideline.complexity"})
+        )
+        assert "held back, a tidy of these lines: complexity: tid" in handoff.split("## Possibly", 1)[1], handoff
 
     def test_an_approving_hand_off_counts_the_major_issues_below_its_bar_too(self) -> None:
         """Asked by the owner: the hand-off says what the comment says, so an agent fixes the majors first."""

@@ -958,6 +958,10 @@ class TestWhatIsAlreadyDone:
         assert not self.removed(
             [save, " def load(db):\n     db.commit()\n     return 2"], "-    db.commit()", "db.commit()"
         )
+        # Read by review: the same deleted text elsewhere in the hunk, replaced there, made a spot for this quote.
+        save = " def save(db):\n     db.add(1)\n-    db.commit()\n     return 1\n def load(db):\n     with db:\n"
+        save += "-    db.commit()\n+        db.commit()"
+        assert not self.removed([save], "     db.add(1)\n-    db.commit()", "db.commit()"), "another site's spot"
         guard = " def pay(user, amount):\n-    check_auth(user)\n     charge(user, amount)\n+    check_auth(user)"
         assert not self.removed([guard], "-    check_auth(user)", "check_auth(user)"), "a guard moved after its call"
         split = "-    compute(\n-        a,\n-        b,\n-    )\n+    compute(a, b)"
@@ -1049,9 +1053,11 @@ class TestWhatTheLanesRead:
         said = for_the_verdict(Outcome(old=[Sourced("rule.lint", found, old=True)]), ["rule.lint"], "APPROVED")
         assert "already in the file" in said and "no findings" not in said, said
         # And one whose suggested code the branch already holds is marked so, as the comment lists it apart.
-        flagged = Outcome(kept=[Sourced("guideline.correctness", found, done=True)])
+        # A flagged finding always quotes a deleted line: read by review, the flag before `(deleted)` hid that mark,
+        # which chat's verdict reads at the line's opening.
+        flagged = Outcome(kept=[Sourced("guideline.correctness", found, deleted=True, done=True)])
         said = for_the_verdict(flagged, ["guideline.correctness"], "X")
-        assert "- (possibly already done) major a.py: lint: F401" in said, said
+        assert "- (deleted) (possibly already done) major a.py: lint: F401" in said, said
 
     def test_every_guideline_and_every_verifier_is_told_what_a_deleted_line_is(self, monkeypatch) -> None:
         """Read by review on a branch that removed a field: 15 of 43 findings quoted lines the change deleted, as the

@@ -245,7 +245,7 @@ def render_handoff(
     identity = dict(zip(map(id, outcome.kept), _identified(outcome.kept), strict=True))
     identity |= {id(item): fingerprint(item) for item in outcome.old}
     identity |= {id(folded): fingerprint(folded) for folded, _into in outcome.folded}
-    fixes, tidy, apart = _lanes(outcome, tidies)
+    fixes, tidy, apart = _lanes(outcome, tidies, fail_on)
     majors = sum(group[0].finding.severity == "major" and not at_or_above("major", fail_on) for group in fixes)
     approved = verdict == "APPROVED"
     told = HANDOFF_MAJORS.format(
@@ -276,7 +276,7 @@ def render_handoff(
     sections = [
         ("Fix" if tidy else "", [], fixes, tidies, fail_on),
         ("Tidy", TIDY_KEEPS, tidy, frozenset(), fail_on),
-        (APART_HEADING, [ALREADY_NOTE, ALREADY_FOR_AGENT], apart, frozenset(), fail_on),
+        (APART_HEADING, [ALREADY_NOTE, ALREADY_FOR_AGENT], apart, tidies, fail_on),
         (OLD_HEADING, [OLD_FOR_AGENT], [[item] for item in outcome.old], frozenset(), None),
     ]
     number = 1
@@ -319,7 +319,7 @@ def _unchecked(outcome: Outcome, fail_on: str) -> list[str]:
 
 
 def _lanes(
-    outcome: Outcome, tidies: frozenset[str]
+    outcome: Outcome, tidies: frozenset[str], fail_on: str
 ) -> tuple[list[list[Sourced]], list[list[Sourced]], list[list[Sourced]]]:
     """The hand-off's items, each a lead and the other readings of its lines, in two lanes, each most severe first.
     An item holding a defect, a finding no cleanup check made, is a fix led by its most severe defect, the first on a
@@ -344,8 +344,13 @@ def _lanes(
             fixes.append([lead, *others])
             tidy += [[item] for item in cleanups]
     # What may be done already goes apart, a notice and never a fix: only where every reading of its lines is so, since
-    # read by review, a rule's finding folded under a flagged lead was told to change nothing.
-    apart = [group for group in [*fixes, *tidy] if all(item.done for item in group)]
+    # read by review, a rule's finding folded under a flagged lead was told to change nothing; and only below the bar,
+    # since one at it fails the review all the same, and read by review it sat in an unmarked section.
+    apart = [
+        group
+        for group in [*fixes, *tidy]
+        if all(item.done for item in group) and not at_or_above(group[0].finding.severity, fail_on)
+    ]
     fixes = [group for group in fixes if group not in apart]
     tidy = [group for group in tidy if group not in apart]
     for lane in (fixes, tidy, apart):
@@ -493,7 +498,7 @@ def render_comment(
     first line names what ran, as the report's header does, so an approval from the rules alone never reads as one a
     model read too."""
     pre = evidence["preflight"]
-    fixes, tidy, apart = _lanes(outcome, tidies)
+    fixes, tidy, apart = _lanes(outcome, tidies, fail_on)
     worth = [group for group in fixes if not at_or_above(group[0].finding.severity, fail_on)]
     head = f"**Review of {code_span(one_line(pre['head']))} at `{pre['head_sha'][:12]}`**" + _ran(
         profile, model, checks
@@ -513,11 +518,19 @@ def render_comment(
     # Asked by the owner: first what the change caused, then what was already in the files it touched, each a section
     # a severity, the most severe first; one at the bar is marked so. Before, majors and minors below the bar sat
     # under one "Worth a look", and a major read as a nit.
-    caused = _by_severity(fixes, fail_on)
-    # Read by review: a tidy at the bar sat under Optional tidy-ups, a section the opener's mark never reached.
-    blocking = any(at_or_above(group[0].finding.severity, fail_on) for group in tidy)
-    caused.append((f"Tidy-ups{MUST_FIX}" if blocking else "Optional tidy-ups", tidy, TIDY_NOTE))
-    caused.append((APART_HEADING, apart, ALREADY_NOTE))
+    # A tidy at the bar is a point to fix, beside the others at it: read by review, it sat under Optional tidy-ups after
+    # the minors below the bar, unmarked, and the comment's size cap cut it first.
+    severities = _by_severity(fixes, fail_on)
+    at_bar = sum(at_or_above(severity, fail_on) for severity in RANK)
+    blocking = [group for group in tidy if at_or_above(group[0].finding.severity, fail_on)]
+    optional = [group for group in tidy if group not in blocking]
+    caused = [
+        *severities[:at_bar],
+        (f"Tidy-ups{MUST_FIX}", blocking, TIDY_NOTE),
+        *severities[at_bar:],
+        ("Optional tidy-ups", optional, TIDY_NOTE),
+        (APART_HEADING, apart, ALREADY_NOTE),
+    ]
     old = _by_severity([[item] for item in outcome.old], None)
     for title, note, sections in (("Caused by this change", "", caused), (OLD_HEADING, OLD_NOTE, old)):
         shown = [(heading, groups, said) for heading, groups, said in sections if groups]

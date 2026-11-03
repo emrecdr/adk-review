@@ -942,7 +942,7 @@ class TestWhatTheBranchAlreadyHolds:
             "code": "return build(\n    logger=logger,\n    correlation_id=correlation_id,\n"
             "    model_code=model_code,\n)",
         }
-        # Read by review: the check's name went on after the model's title was cut, past the cap every title keeps.
+        # A title at the cap, kept as the model wrote it; the comment's point names its check beside it.
         long = {
             **restores,
             "title": "x" * (TITLE_MAX_CHARS + 50),

@@ -177,9 +177,11 @@ def for_the_verdict(outcome: Outcome, checks: Sequence[str], verdict: str, ignor
             # Marked from the diff, as grounding read it: a quote on one line hides a deleted line's `-`, and a Markdown
             # bullet the branch holds starts with one of its own.
             f, gone = item.finding, "(deleted) " if item.deleted else ""  # before the severity, where no model writes
-            held = "(possibly already done) " if item.done else ""  # its suggested code already in the branch
+            # Its suggested code already in the branch; after `(deleted)`, which a flagged quote always holds, and which
+            # chat's verdict reads at the line's opening.
+            held = "(possibly already done) " if item.done else ""
             quote = cut_at(squash(f.evidence), EVIDENCE_MAX_CHARS)
-            lines.append(f"- {held}{gone}{f.severity} {_where(f)}: {squash(f.title)} — {quote}")
+            lines.append(f"- {gone}{held}{f.severity} {_where(f)}: {squash(f.title)} — {quote}")
         lines += [
             f"- dropped, the diff does not bear its quote out: {f.severity} {_where(f)}: {squash(f.title)}"
             for f in dropped

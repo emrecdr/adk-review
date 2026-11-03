@@ -6,6 +6,7 @@ what was removed and why. Nothing here calls a model or a process.
 
 from __future__ import annotations
 
+import bisect
 import re
 import textwrap
 import unicodedata
@@ -264,32 +265,37 @@ def drop_ungrounded(
         if stood is not None:  # where the redaction joined lines, the model's quote is all there is
             update["evidence"] = scrub(stood)[0]
         grounded = finding.model_copy(update=update)
-        done = hunk is not None and already_done(grounded, deleted, quotable[path][hunk])
+        done = hunk is not None and already_done(grounded, lines, deleted, quotable[path][hunk])
         kept.append((grounded, lines, deleted, done))
     return kept, dropped
 
 
-def already_done(finding: Finding, deleted: bool, hunk: list[tuple[int, str]]) -> bool:
+def already_done(finding: Finding, lines: Lines, deleted: bool, hunk: list[tuple[int, str]]) -> bool:
     """Whether a grounded finding may ask for no change: its quote holds lines the change deleted, and the code it
-    suggests is what replaced them, as the branch holds them. Read in `hunk`, the one grounding placed the quote in;
-    line by line, the indent kept within the code; and over the spot of a quoted deleted block, the lines that replaced
-    it or, where none did, the lines either side of the gap. Read by review on a branch that removed a parameter at
-    every use: six majors read the deleted lines as held code and suggested the code the branch already had. A flag,
-    never a removal: read by review three times, code that removed such findings removed real bugs too."""
-    if not (deleted and any(ch.isalnum() for ch in finding.code)):
+    suggests is what replaced them, as the branch holds them. Read in `hunk`, the one grounding placed the quote in, at
+    its `lines`; line by line, the indent kept within the code; and over the spot of a deleted block the quote itself
+    holds, the lines that replaced it or, where none did, the lines either side of the gap. Read by review: the same
+    deleted text elsewhere in the hunk, replaced there, flagged a real bug. Read by review on a branch that removed a
+    parameter at every use: six majors read the deleted lines as held code and suggested the code the branch already
+    had. A flag, never a removal: read by review three times, code that removed such findings removed real bugs too."""
+    if not (deleted and lines and any(ch.isalnum() for ch in finding.code)):
         return False
     raws = [raw for _number, raw in hunk]
+    # The quote's own lines: git numbers a deleted line with the line before it, so its span holds its deletions.
+    inside = {at for at, (number, _raw) in enumerate(hunk) if lines[0] <= number <= lines[1]}
     # Each deleted line as grounding reads it, a secret redacted: read by review, a raw line holding a key never
     # matched its quote, which grounding had redacted.
     quoted = set(seen_lines("\n".join(line for line in finding.evidence.splitlines() if line.startswith("-"))))
     held = [at for at, raw in enumerate(raws) if raw[:1] in "+ " and raw[1:].strip()]  # the branch's lines, no blank
-    if not (spots := _spots(raws, quoted, held)):
+    if not (spots := _spots(raws, quoted, held, inside)):
         return False
     wanted = [line.rstrip() for line in textwrap.dedent(_unfenced(finding.code)).splitlines() if line.strip()]
     for start in range(len(held) - len(wanted) + 1):
         run = held[start : start + len(wanted)]
+        if not any(spot <= set(run) for spot in spots):  # only a run over a spot can be the fix: never dedented
+            continue
         seen = [line.rstrip() for line in textwrap.dedent("\n".join(raws[at][1:] for at in run)).splitlines()]
-        if seen == wanted and any(spot <= set(run) for spot in spots):
+        if seen == wanted:
             return True
     return False
 
@@ -299,14 +305,16 @@ def _unfenced(code: str) -> str:
     return "\n".join(without_fences(code.splitlines()))
 
 
-def _spots(raws: Sequence[str], quoted: set[str], held: Sequence[int]) -> list[set[int]]:
+def _spots(raws: Sequence[str], quoted: set[str], held: Sequence[int], inside: set[int]) -> list[set[int]]:
     """Where each quoted block of deleted lines stands on the branch's side of the hunk: the added lines right after
     it, which replaced it, or, where none did, the branch's lines either side of the gap; none where the gap has no
-    line on one side, so a deletion at a hunk's edge is never read as replaced."""
+    line on one side, so a deletion at a hunk's edge is never read as replaced. Only a block that starts `inside` the
+    quote counts. `held` is in hunk order, so the lines either side are found by bisection."""
+    kept = set(held)
     spots: list[set[int]] = []
     at = 0
     while at < len(raws):
-        if not (raws[at][:1] == "-" and "".join(seen_lines(raws[at])) in quoted):
+        if not (at in inside and raws[at][:1] == "-" and "".join(seen_lines(raws[at])) in quoted):
             at += 1
             continue
         end = at
@@ -316,12 +324,11 @@ def _spots(raws: Sequence[str], quoted: set[str], held: Sequence[int]) -> list[s
         while added < len(raws) and raws[added][:1] == "+":
             added += 1
         if added > end:
-            spots.append({line for line in range(end, added) if line in held})
+            spots.append({line for line in range(end, added) if line in kept})
         else:
-            before = [line for line in held if line < at]
-            after = [line for line in held if line >= end]
-            if before and after:
-                spots.append({before[-1], after[0]})
+            gap = bisect.bisect_left(held, at)  # the first held line after the deleted block's start
+            if 0 < gap < len(held):
+                spots.append({held[gap - 1], held[gap]})
         at = added
     return [spot for spot in spots if spot]
 
