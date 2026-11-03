@@ -687,7 +687,7 @@ class TestTheLintRule:
         out = capsys.readouterr().out
         assert "## Verdict: DEGRADED" in out and "### rule.lint — FAILED: ruff is not on PATH" in out
         assert "secrets: a hard-coded credential (src/payments/config.py:4)" in out, "the other rule still reports"
-        assert "### guideline.security\n- **major** shell=True" in out, "the guidelines still judge"
+        assert "### guideline.security\n- **major** security: shell=True" in out, "the guidelines still judge"
 
     def test_a_rule_past_its_timeout_did_not_look_and_says_so(self, demo_repo: Path, monkeypatch) -> None:
         """Measured before: `TimeoutExpired` from ruff rose out of the command as a traceback. Now it is the rule's
@@ -877,7 +877,7 @@ class TestTheLintRule:
         assert "secrets: a hard-coded credential (src/payments/config.py:5)" in out
         # Every guideline's canned finding quotes the line S602 reported, at S602's severity: a tie, so the rule's
         # reading, the first, keeps it whole.
-        guideline = "shell=True with request-controlled input"
+        guideline = "security: shell=True with request-controlled input"  # named by its check, as a rule's is
         assert (
             "- **major** lint: S602" in out
             and f"  - also on these lines: `guideline.security`: {guideline}" in out

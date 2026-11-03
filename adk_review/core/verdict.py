@@ -61,12 +61,15 @@ class Outcome:
     redacted: int = 0
     verified: bool = False  # `--verify` ran
     refuted: list[tuple[Sourced, str]] = field(default_factory=list)  # dropped on the verifier's say-so, with why
+    #: Removed: a guideline's finding whose suggested code the branch already holds, so it asks for no change.
+    done: list[Sourced] = field(default_factory=list)
     unverified: list[tuple[Sourced, str]] = field(default_factory=list)  # the verifier could not judge; kept, with why
 
     def unproven(self, fail_on: str) -> list[Sourced]:
-        """The findings at the bar set aside unproven, their quote not borne out or a verifier refuting them: a hole
-        `decide` names, and a hand-off and a comment list, read from one place."""
-        unproven = [*self.dropped, *(item for item, _why in self.refuted)]
+        """The findings at the bar set aside unproven, their quote not borne out, a verifier refuting them, or code
+        reading their fix as already made: a hole `decide` names, and a hand-off and a comment list, read from one
+        place. Code that removes a finding can be wrong, so one at the bar waits for a person."""
+        unproven = [*self.dropped, *(item for item, _why in self.refuted), *self.done]
         return [item for item in unproven if at_or_above(item.finding.severity, fail_on)]
 
     def folded_into(self) -> dict[int, list[Sourced]]:
@@ -252,6 +255,25 @@ def drop_ungrounded(
             update["evidence"] = scrub(stood)[0]
         kept.append((finding.model_copy(update=update), lines, deleted))
     return kept, dropped
+
+
+def already_done(
+    finding: Finding, deleted: bool, hunks: list[list[tuple[int, str]]], around: Sequence[str] = ()
+) -> bool:
+    """Whether a grounded finding asks for code the branch already holds: its quote holds a line the change deleted,
+    and the code it suggests stands whole, in the hunk the quote sits in, as the branch reads that hunk. Read by review
+    on a branch that removed a parameter at every use: six majors quoted the deleted lines as code the branch still
+    held, and each suggested the code the branch already had. A finding that restores what the change deleted
+    suggests lines the branch lacks, and stays."""
+    if not (deleted and any(ch.isalnum() for ch in finding.code)):
+        return False
+    for hunk in hunks:
+        if _placed(finding, [hunk], around) is None:
+            continue
+        held = seen_lines("\n".join(raw for _number, raw in hunk if raw[:1] in "+ "))
+        if any(next(_whole_lines(code, held), None) is not None for code in _quotes(finding.code, ())):
+            return True
+    return False
 
 
 def _meant(path: str, quotable: dict[str, list[list[tuple[int, str]]]]) -> str:

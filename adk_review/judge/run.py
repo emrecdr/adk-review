@@ -23,9 +23,9 @@ from google.genai import types
 
 from ..core.evidence import Entry, entry
 from ..core.findings import Checked, Review
-from ..core.profiles import state_key
+from ..core.profiles import guideline_id, state_key
 from ..core.rules import AnyRule
-from ..core.verdict import Outcome, Sourced, decide, drop_ungrounded, fold, from_rules, not_read
+from ..core.verdict import Outcome, Sourced, already_done, decide, drop_ungrounded, fold, from_rules, not_read
 from .agents import FINDINGS, IGNORED, QUOTABLE, for_the_verdict, read_back, unjudged
 from .checks import NAME as CHECKS
 from .config import RUN_DEADLINE_S
@@ -103,8 +103,21 @@ def read_guidelines(run: Run, files: list[Entry], guidelines: Sequence[str], hol
         if isinstance(answer, str):
             outcome.errors[check] = answer
             continue
-        kept, dropped = drop_ungrounded(answer, quotable, framing)
-        outcome.kept += [Sourced(check, f, lines, deleted) for f, lines, deleted in kept]
+        # Each finding names its check, as a rule's does: read by review, a comment named none, and its reader could not
+        # tell which guideline wrote what. The fingerprint reads no title, so `--previous` still matches.
+        named = answer.model_copy(
+            update={
+                "findings": [
+                    f.model_copy(update={"title": f"{check.removeprefix(guideline_id(''))}: {f.title}"})
+                    for f in answer.findings
+                ]
+            }
+        )
+        kept, dropped = drop_ungrounded(named, quotable, framing)
+        for f, lines, deleted in kept:
+            item = Sourced(check, f, lines, deleted)
+            done = already_done(f, deleted, quotable.get(f.file, []), framing.get(f.file, ()))
+            (outcome.done if done else outcome.kept).append(item)
         outcome.dropped += [Sourced(check, f) for f in dropped]
     return outcome
 

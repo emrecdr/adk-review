@@ -1179,6 +1179,52 @@ class TestThePreviousReportAndTheHandoff:
             "## Not checked",
         ], said
 
+    def test_a_point_numbered_ten_or_more_keeps_its_lines_inside_it(self) -> None:
+        """Read by review on GitHub's own renderer: under `10. `, four characters wide, a point's lines indented by
+        three spaces fell out of it into a list of their own, and the numbers began again. Each point's lines are
+        indented by its own number's width, in the comment and the hand-off alike."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import render_comment, render_handoff
+
+        def at(n: int) -> Sourced:
+            found = Finding(file=f"m{n}.py", line=n, severity="minor", title=f"t{n}", evidence="+f(", suggestion="s")
+            return Sourced("rule.lint", found, (n, n))
+
+        outcome = Outcome(kept=[at(n) for n in range(1, 12)])
+        pre = {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40}
+        evidence = {"preflight": pre, "whole": False, "scope": []}
+        for said in (
+            render_comment(evidence, outcome, verdict="APPROVED", fail_on="blocker"),
+            render_handoff(evidence, outcome, verdict="APPROVED", fail_on="blocker"),
+        ):
+            lines = said.splitlines()
+            nine, ten = (next(i for i, line in enumerate(lines) if line.startswith(f"{n}. ")) for n in (9, 10))
+            assert lines[nine + 1].startswith("   - ") and lines[ten + 1].startswith("    - "), said
+
+    def test_a_comment_and_a_hand_off_open_with_the_repository_the_base_and_the_scope(self) -> None:
+        """Asked by the owner: a comment named the branch and its commit alone, so its reader could not tell what it
+        was held against, in which repository, nor which folders it read or left out. The repository goes by its
+        folder's name: the comment is pasted where others read it, and a full path names the reviewer's home."""
+        from adk_review.core.verdict import Outcome
+        from adk_review.deliver.report import render_comment, render_handoff
+
+        pre = {"repo": "/home/someone/work/raas-batch", "head": "feature/x", "base": "develop", "head_sha": "8" * 40}
+        pre["merge_base"] = "1" * 40
+        evidence = {"preflight": pre, "whole": False, "scope": ["src"], "exclude": ["tests"], "outside": 40}
+        for said in (
+            render_comment(evidence, Outcome(), verdict="APPROVED", fail_on="blocker"),
+            render_handoff(evidence, Outcome(), verdict="APPROVED", fail_on="blocker"),
+        ):
+            assert "- Repository: `raas-batch`" in said and "/home/someone" not in said, said
+            assert "- Against: `develop`, merge base `111111111111`" in said, said
+            assert "- Scope: `src`, less `tests`: 40 changed file(s) outside it, not reviewed" in said, said
+        whole = {**evidence, "scope": [], "exclude": [], "outside": 0}
+        assert "- Scope: the whole change" in render_comment(whole, Outcome(), verdict="APPROVED", fail_on="blocker")
+        everything = {**whole, "whole": True}
+        said = render_comment(everything, Outcome(), verdict="APPROVED", fail_on="blocker")
+        assert "- Against: nothing: every file at the head" in said, said
+
     def test_an_approving_hand_off_counts_the_major_issues_below_its_bar_too(self) -> None:
         """Asked by the owner: the hand-off says what the comment says, so an agent fixes the majors first."""
         from adk_review.core.findings import Finding
@@ -1195,10 +1241,10 @@ class TestThePreviousReportAndTheHandoff:
         evidence = {"preflight": pre, "whole": False, "scope": []}
         majors = Outcome(kept=[at(5, "major"), at(9, "major"), at(12, "minor")])
         said = render_handoff(evidence, majors, verdict="APPROVED", fail_on="blocker")
-        opening = said.split("\n\n", 2)[1]
+        opening = said.split("\n\n", 3)[2]
         assert "It did find 2 major issues below the `blocker` bar. Fix those first." in opening, opening
         minors = render_handoff(evidence, Outcome(kept=[at(12, "minor")]), verdict="APPROVED", fail_on="blocker")
-        assert "major" not in minors.split("\n\n", 2)[1], minors
+        assert "major" not in minors.split("\n\n", 3)[2], minors
 
     def test_a_review_that_asks_for_changes_counts_its_majors_below_the_bar_too(self) -> None:
         """Read by review, after the owner asked that majors be named: a review that asked for changes named only Must
@@ -1220,7 +1266,7 @@ class TestThePreviousReportAndTheHandoff:
         said = render_comment(evidence, both, verdict="REQUEST_CHANGES", fail_on="blocker")
         assert "It also found 1 major issue, under Major findings." in said.split("### ")[0], said
         said = render_handoff(evidence, both, verdict="REQUEST_CHANGES", fail_on="blocker")
-        opening = said.split("\n\n", 2)[1]
+        opening = said.split("\n\n", 3)[2]
         assert "It also found 1 major issue below the `blocker` bar. Fix those after the ones at the bar." in opening
         held = Outcome(kept=[at(5, "major")])
         for render in (render_comment, render_handoff):

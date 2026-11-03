@@ -25,6 +25,7 @@ from conftest import (
     _committed,
     _entry,
     _git_in,
+    branched,
     catalog,
     load_agent,
     load_command,
@@ -828,7 +829,10 @@ class TestTheSecondOpinion:
         assert code == 3, out  # a blocker refuted is no approval: a person reads it, as a blocker dropped
         refuted = len(GUIDELINE_NAMES)
         assert f"findings refuted by the verifier: {refuted}\n  - {refuted} at or above `--fail-on blocker`" in out
-        assert "- `guideline.security`: shell=True with request-controlled input — the lines do not show it" in out
+        assert (
+            "- `guideline.security`: security: shell=True with request-controlled input — the lines do not show it"
+            in out
+        )
         assert "`guideline.security`" in out.split("### no findings from ", 1)[1], "it looked, and found nothing"
         # The rules' findings are facts: never asked, so never refuted, and a rule's reading of the line stands
         # whatever the verifier said of a guideline's.
@@ -870,7 +874,9 @@ class TestTheSecondOpinion:
             assert f"`verifier_{number}`: 1 call(s)" in out, "one verifier per guideline finding, each in the ledger"
         # Measured before: the count was read before the verifiers ran, and their calls hid the keys unnamed.
         assert f"- secrets redacted before any model call: {2 * 2 * len(GUIDELINE_NAMES)}" in out, "2 keys, 6 calls"
-        assert "### guideline.security\n- **blocker** shell=True" in out and "- **major** lint: S602" not in out
+        assert (
+            "### guideline.security\n- **blocker** security: shell=True" in out and "- **major** lint: S602" not in out
+        )
         assert "  - also on these lines: `rule.lint`: lint: S602" in out, "ruff's reading, under the finding it repeats"
         counted = "### rule.lint\n- folded: 2 on lines another finding already holds, each listed under that finding"
         assert counted in out, "S105 and S602, each counted in its own section"
@@ -900,13 +906,60 @@ class TestTheSecondOpinion:
         out = capsys.readouterr().out
         assert f"could not judge, kept: {len(GUIDELINE_NAMES)}" in out
         assert (
-            "- `guideline.security`: shell=True with request-controlled input — RuntimeError: provider said: 429 quota"
-            in out
+            "- `guideline.security`: security: shell=True with request-controlled input"
+            " — RuntimeError: provider said: 429 quota" in out
         )
         guidelines = verifiers = len(GUIDELINE_NAMES)
         assert f"{guidelines} model call(s) completed of {guidelines + verifiers} attempted" in out, (
             "a call that failed is attempted, not completed"
         )
+
+
+class TestWhatTheBranchAlreadyHolds:
+    def test_a_finding_whose_suggested_code_the_branch_already_holds_is_removed_and_named(
+        self, cli, fake_provider, tmp_path: Path, capsys
+    ) -> None:
+        """Read by review on a branch that removed a parameter at every use: six majors quoted a deleted line, read it
+        as code the branch still holds, and suggested the code the branch already held. Such a finding asks for no
+        change: it is removed and named, and one at the bar still holds the approval back, as a dropped one does. A
+        finding that restores what the change deleted asks for a change, and stays. Each guideline's finding names
+        its check, as a rule's does."""
+        call = "def make(logger, model_code):\n    return build(\n        logger=logger,\n"
+        call += "{}        model_code=model_code,\n    )\n"
+        before = {"app.py": call.format("        correlation_id=correlation_id,\n")}
+        repo = branched(tmp_path, before, {"app.py": call.format("")})
+        quote = "-        correlation_id=correlation_id,\n        model_code=model_code,\n    )"
+        misread = {
+            "file": "app.py",
+            "severity": "major",
+            "title": "make passes the removed correlation_id",
+            "evidence": quote,
+            "why": "An unexpected argument raises a TypeError.",
+            "suggestion": "Remove correlation_id from the call.",
+            "code": "return build(\n    logger=logger,\n    model_code=model_code,\n)",
+        }
+        restores = {
+            **misread,
+            "severity": "minor",
+            "title": "the call no longer passes correlation_id",
+            "code": "return build(\n    logger=logger,\n    correlation_id=correlation_id,\n"
+            "    model_code=model_code,\n)",
+        }
+        fake_provider.answers_when(THE_GUIDELINES, {"findings": [misread, restores]})
+        report, comment = tmp_path / "r.json", tmp_path / "c.md"
+        argv = [str(repo), "--head", "change", "--base", "main", "--check", "guideline.correctness"]
+        assert cli.main([*argv, "--json", str(report), "--comment", str(comment)]) == 0
+        out = capsys.readouterr().out
+        data = json.loads(report.read_text(encoding="utf-8"))
+        assert [f["title"] for f in data["findings"]] == ["correctness: the call no longer passes correlation_id"]
+        assert [f["title"] for f in data["already_held"]] == ["correctness: make passes the removed correlation_id"]
+        assert data["already_held_at_fail_on"] == 0, data
+        assert "findings removed, the branch already holds their suggested code: 1" in out, out
+        assert "make passes the removed" not in comment.read_text(encoding="utf-8"), "never a point to fix"
+        # At the bar it holds the approval back until a person reads it: code removed it, and code can be wrong.
+        assert cli.main([*argv, "--fail-on", "major", "--json", str(report)]) == 3
+        capsys.readouterr()
+        assert json.loads(report.read_text(encoding="utf-8"))["already_held_at_fail_on"] == 1
 
 
 class TestTheFences:

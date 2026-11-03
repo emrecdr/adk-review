@@ -12,7 +12,7 @@ import shlex
 import textwrap
 from collections import Counter
 from collections.abc import Iterable, Mapping, Sequence
-from pathlib import Path
+from pathlib import Path, PurePath
 from typing import Any
 
 from ..core.blast import Blast, describe
@@ -255,9 +255,12 @@ def render_handoff(
         bar=fail_on,
         when="first" if approved else "after the ones at the bar",
     )
+    where = reviewed_where(evidence)
     lines = [
         f"# Findings to fix: {what(evidence)}",
         "",
+        *where,
+        *([""] if where else []),
         f"The review of `{pre['head_sha'][:12]}` ended {verdict}. Fix each finding below where it stands, and change",
         "nothing else. Each one holds when a review of the fixed commit no longer reports its fingerprint.",
         *([told] if majors else []),
@@ -356,13 +359,16 @@ def _items(
     for number, (lead, *also) in enumerate(groups, start):
         f = lead.finding
         label = _quote_label(f).lower()
-        lines += [
-            f"{number}. {prose(f.title)} ({_where(f)}), {f.severity}{_bar(f, fail_on)}",
-            *(_quoted_lines(f, label) if _serious(f) else [f"   - {label}: {_quoted(f)}"]),
-            *_why(f, "   - why"),
-            *_to_fix(lead, identity[id(lead)], "   "),
-            *_folded_under(also, fail_on, identity, held),
-        ]
+        lines += _nested(
+            number,
+            [
+                f"{number}. {prose(f.title)} ({_where(f)}), {f.severity}{_bar(f, fail_on)}",
+                *(_quoted_lines(f, label) if _serious(f) else [f"   - {label}: {_quoted(f)}"]),
+                *_why(f, "   - why"),
+                *_to_fix(lead, identity[id(lead)], "   "),
+                *_folded_under(also, fail_on, identity, held),
+            ],
+        )
     return lines
 
 
@@ -470,7 +476,8 @@ def render_comment(
     head = f"**Review of {code_span(one_line(pre['head']))} at `{pre['head_sha'][:12]}`**" + _ran(
         profile, model, checks
     )
-    lines = [head, "", COMMENT_OPENS[verdict].format(bar=fail_on)]
+    where = reviewed_where(evidence)
+    lines = [head, "", *where, *([""] if where else []), COMMENT_OPENS[verdict].format(bar=fail_on)]
     if previous is not None:
         lines.append(_since_last(outcome, verdict, previous, checks, evidence["scope"], evidence.get("exclude", ())))
     if majors := sum(group[0].finding.severity == "major" for group in worth):
@@ -607,8 +614,16 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
             lines += _also_shown(item.finding, shown)
         if len(others) > ALSO_SHOWN:
             lines.append(f"   - Also on these lines: {len(others) - ALSO_SHOWN:,} more, which the report lists")
-        points.append(lines)
+        points.append(_nested(number, lines))
     return points
+
+
+def _nested(number: int, lines: list[str]) -> list[str]:
+    """A numbered point's `lines`, each after the first moved right past the point's own number: they are written
+    under a three-wide `1. `, and read by review on GitHub's renderer, under `10. ` they fell out of the point into a
+    list of their own, and the numbers began again. A blank line, in a fenced block, stays blank."""
+    more = " " * (len(f"{number}. ") - 3)
+    return [lines[0], *(more + line if line else line for line in lines[1:])]
 
 
 def _also_shown(f: Finding, shown: set[str]) -> list[str]:
@@ -910,6 +925,30 @@ def _where(f: Finding) -> str:
     `docs/a](b).md` was shown as `docs/a] (b).md`, a file that does not exist for an agent to open."""
     flat = one_line(_place(f))
     return flat if _unopened(flat) == flat else code_span(flat)
+
+
+def reviewed_where(evidence: Evidence) -> list[str]:
+    """The lines a comment and a hand-off open with: the repository by its folder's name, what the change was held
+    against, and the scope, what `--path` kept and `--path-exclude` left out. Asked by the owner: a comment named the
+    branch and its commit alone. The folder's name, never its path: a comment is pasted where others read it, and a
+    full path names the reviewer's home."""
+    pre = evidence["preflight"]
+    lines = [f"- Repository: {code_span(one_line(PurePath(pre['repo']).name))}"] if pre.get("repo") else []
+    if evidence.get("whole"):
+        lines.append("- Against: nothing: every file at the head")
+    elif pre.get("base") and pre.get("merge_base"):
+        lines.append(f"- Against: {code_span(one_line(pre['base']))}, merge base `{pre['merge_base'][:12]}`")
+    if "scope" in evidence:
+        scope, exclude = evidence["scope"], evidence.get("exclude", ())
+        unmatched = set(evidence.get("unmatched", ()))
+        nothing = " (no changed file lies there: check its spelling and case)"
+        covered = ", ".join(code_span(one_line(folder)) for folder in scope) or "the whole change"
+        if exclude:
+            covered += ", less " + ", ".join(code_span(one_line(x)) + nothing * (x in unmatched) for x in exclude)
+        if outside := evidence.get("outside", 0):
+            covered += f": {outside} changed file(s) outside it, not reviewed"
+        lines.append(f"- Scope: {covered}")
+    return lines
 
 
 def what(evidence: Evidence) -> str:
@@ -1241,6 +1280,11 @@ def render(
     # Named with the quote, so a reader can tell a guideline that invented one from one that merely paraphrased: in a
     # code span, as the guideline wrote it, never as prose, which breaks a tag's `<`.
     lines += _named((item, f"quoted {_quoted(item.finding, 120)}") for item in outcome.dropped)
+    if outcome.done:  # read by review: a guideline read deleted lines as held code, and asked for what the branch had
+        lines.append(f"- findings removed, the branch already holds their suggested code: {len(outcome.done)}")
+        if severe := at_bar(outcome.done, fail_on):
+            lines.append(f"  - {severe} at or above `--fail-on {fail_on}`: not approved until a person reads them")
+        lines += _named((item, f"quoted {_quoted(item.finding, 120)}") for item in outcome.done)
     if outcome.verified:
         lines += [
             f"- findings refuted by the verifier: {len(outcome.refuted)}",
@@ -1630,6 +1674,8 @@ def as_data(
         "folded": [{**_found(item, added), "into": into.source} for item, into in outcome.folded],
         "dropped": [_found(item, added) for item in outcome.dropped],
         "dropped_at_fail_on": at_bar(outcome.dropped, fail_on),
+        "already_held": [_found(item, added) for item in outcome.done],
+        "already_held_at_fail_on": at_bar(outcome.done, fail_on),
         "verified": outcome.verified,
         "refuted": _reasoned(outcome.refuted, added),
         "refuted_at_fail_on": at_bar([item for item, _why in outcome.refuted], fail_on),
