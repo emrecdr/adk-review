@@ -914,20 +914,22 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   `__init__.py` where the branch's is one — and named to ruff one by one: a `.venv/` the branch changed is linted,
   `x.py` beside `X.py/y.py` collides on no disk, and a `nul.py` or `a:b.py`, which Windows cannot hold, is linted like
   any other. Ruff lints what the collector read and no more: a file not read whole is the hole of each rule that reads
-  ruff. What a code means, its severity and its fix, is the rule's: an `assert` is major in library code, where
-  `python -O` strips it, and left out of a test, where it is how pytest checks, its S101 and `assert False`'s B011
-  dropped before anything is counted. In a Databricks notebook, a file whose first line is `# Databricks notebook
-  source`, F821 on a name Databricks defines in every notebook, `spark`, `dbutils` or `display` among the six, is
-  dropped the same way: read by review on a branch of 20 notebooks, they were 192 of lint's findings and nearly all its
-  majors, where the project's own ruff reported none. Without ruff, or with one that fails, the rule did not look and
-  says so, exit 3.
-  Its answer is read a finding at a time, as ruff writes one a line, each kept as no more than the rule reads, and past
-  500,000 findings what it named is a hole: measured by review, three files of unary minus chains made ruff write 589 MB
-  of JSON each, read whole in 90 s and 4.5 GB. `types` reads the same copies through pyrefly, each file alone, under a
-  configuration of the reviewer's: the `default` preset, no installed package and no interpreter asked, so a name a file
-  imports from beyond itself reads as `Any`, and no ignore comment honoured, as ruff runs `--ignore-noqa`. Measured over
-  four libraries' source and 60 planted edits, each file alone found 27 of 30 type defects on their own lines, as the
-  whole package did, at 0.1 s a file where the package took up to 5 s.
+  ruff. What a code means, its severity and its fix, is the rule's: an `assert` is major in library code, where `python
+  -O` strips it, and left out of a test, where it is how pytest checks, its S101 and `assert False`'s B011 dropped
+  before anything is counted. In a Databricks notebook, a file whose first line is `# Databricks notebook source`, F821
+  on a name Databricks defines in every notebook, `spark`, `dbutils` or `display` among the six, is dropped the same
+  way: read by review on a branch of 20 notebooks, they were 192 of lint's findings and nearly all its majors, where the
+  project's own ruff reported none. Ruff's S105, S106 and S107 weigh a name alone, so one whose string `is_credential`
+  rejects is passed over, the check `named-secrets` makes: measured, `token = "("` and `"Bearer "` were majors, and the
+  forms `named-secrets` misses, a comparison and a value with a type, stay found. Without ruff, or with one that fails,
+  the rule did not look and says so, exit 3. Its answer is read a finding at a time, as ruff writes one a line, each
+  kept as no more than the rule reads, and past 500,000 findings what it named is a hole: measured by review, three
+  files of unary minus chains made ruff write 589 MB of JSON each, read whole in 90 s and 4.5 GB. `types` reads the same
+  copies through pyrefly, each file alone, under a configuration of the reviewer's: the `default` preset, no installed
+  package and no interpreter asked, so a name a file imports from beyond itself reads as `Any`, and no ignore comment
+  honoured, as ruff runs `--ignore-noqa`. Measured over four libraries' source and 60 planted edits, each file alone
+  found 27 of 30 type defects on their own lines, as the whole package did, at 0.1 s a file where the package took up to
+  5 s.
 - **Grounding.** A guideline's finding must quote, verbatim, whole lines of its own file's diff, within one hunk, as the
   guideline saw them: secrets redacted, diff markers gone, whitespace not counted. Where a quote's line breaks were
   lost, its lines begin and end where the file's do, a diff marker or a fence run into them or not: measured live on
