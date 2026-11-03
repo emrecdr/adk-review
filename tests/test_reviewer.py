@@ -1079,6 +1079,15 @@ class TestWhatTheLanesRead:
             instruction = build_guideline(guideline).instruction
             assert DIFF_MARKS in instruction, guideline.check_id
             assert "Report a defect only in code the branch holds." in instruction, guideline.check_id
+            # Measured live on Copilot, gpt-4.1, three runs a side: a parameter removed at every use drew four false
+            # majors in two of three runs, none after these, and the dropped guard was still named in three of three.
+            for told in (
+                "A line that starts with `-` is gone: never report a defect in it, or ask to remove it.",
+                "Quote one only to name a check or guard the branch lost.",
+                "Advice to check what you cannot see, such as a path's permissions, is no finding.",
+                "as the lines should read, with no `-` or `+` marks,",
+            ):
+                assert told in instruction, (guideline.check_id, told)
         # Read by review: told only that the branch no longer holds a deleted line, a verifier could refute a finding
         # on a guard the change deleted as code the branch does not hold.
         assert f"{DIFF_MARKS} A deleted line can show what the branch lost." in build_verifier(0).instruction

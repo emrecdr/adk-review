@@ -1019,19 +1019,25 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   ends its run, so each run starts with nothing reserved: the verifiers' calls are checked only against tokens still
   in flight. The refused guideline is named, everything found is reported, exit 3: the ceiling ends the spending,
   never the report.
-- **The second opinion never removes silently.** `--verify` is the one place a model can remove a finding, so the
-  reason is in the report, and a verifier that fails leaves the finding in place, named with why. It runs before the
-  fold, on the guidelines' findings alone: a rule's findings are facts and are never asked about, nor is a
-  guideline's finding that only says again what a rule found, no more severely, which the fold folds into the rule's
-  as it would without `--verify`. Measured live on Copilot before that: 2 of 5 verifier calls judged a guideline's
-  reading of a key the secrets rule had found. It is the guidelines' shape again, one agent per finding under the
-  same plugins, so the redaction, the ledger and the ceiling cover each call. Measured live on Copilot (gpt-4.1) over
-  the labelled set's `clean-rename-with-callers`, a function renamed with its caller, under `full`: the marker and the
-  instruction's `-` and `+` sentences ended the guidelines' asks for the rename already made, yet a guideline still
-  said the rename broke callers in 1 of 3 reviews and in 2 of 5 with an added sentence against it, which was dropped;
-  with `--verify` the verifier refuted that major in both reviews where it appeared (3 reviews, none kept), and kept
-  the planted SQL injection's blocker in 2 of 2, for about a quarter more tokens. Recall of three planted defects
-  under `code-review`, two reviews each, was the same before and after, 6 of 6.
+- **The second opinion never removes silently.** `--verify` is the one place a model can remove a finding, so the reason
+  is in the report, and a verifier that fails leaves the finding in place, named with why. It runs before the fold, on
+  the guidelines' findings alone: a rule's findings are facts and are never asked about, nor is a guideline's finding
+  that only says again what a rule found, no more severely, which the fold folds into the rule's as it would without
+  `--verify`. Measured live on Copilot before that: 2 of 5 verifier calls judged a guideline's reading of a key the
+  secrets rule had found. It is the guidelines' shape again, one agent per finding under the same plugins, so the
+  redaction, the ledger and the ceiling cover each call. Measured live on Copilot (gpt-4.1) over the labelled set's
+  `clean-rename-with-callers`, a function renamed with its caller, under `full`: the marker and the instruction's `-`
+  and `+` sentences ended the guidelines' asks for the rename already made, yet a guideline still said the rename broke
+  callers in 1 of 3 reviews and in 2 of 5 with an added sentence against it, which was dropped; with `--verify` the
+  verifier refuted that major in both reviews where it appeared (3 reviews, none kept), and kept the planted SQL
+  injection's blocker in 2 of 2, for about a quarter more tokens. Recall of three planted defects under `code-review`,
+  two reviews each, was the same before and after, 6 of 6. Read by review on a branch that removed a parameter at every
+  use, a guideline still asked to remove deleted lines, so the instruction now says a `-` line is gone, never a defect
+  nor a thing to remove, quoted only to name a check the branch lost; that advice to check what no line shows is no
+  finding; and that corrected code carries no `-` or `+`. Measured live on Copilot (gpt-4.1), three runs a side,
+  `altitude` and `security` alone: the labelled set's `clean-removed-field` drew four false majors in two of three runs
+  before and none after, `clean-config-path` none either side, and `drops-the-guard` was named a blocker in three of
+  three both sides.
 - **The blast radius says where to read.** What at the head depends on each changed Python file, directly or through
   another, tests counted apart: read from git in one batch and parsed with Python's own `ast`, never run. The guidelines
   read it beside the diff, told to weigh a change to shared behaviour by how far it reaches, as context and never as
