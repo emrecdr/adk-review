@@ -385,11 +385,14 @@ adk-review <repo> --head <branch> --base develop --path src --comment
 adk-review <repo> --head <branch> --base develop --path tests --comment
 ```
 
-The review plans the parts itself, before any model call, from what each file takes of the diffs the guidelines read:
-a folder whole where it fits, else its folders and files one level down. `--dry-run` prints each run as a command to
-copy, with this review's repository, branches, profile or checks, globs and a `--diff-cap` it was given, since the
-plan is made at that cap; give each any other flag the review had. Then it prints one run of the review's rules over
-the whole change, with no model call: the rules read files no part reads, a skip-listed lockfile or a README.
+The review plans the parts itself, before any model call, from what each file takes of the diffs the guidelines read: a
+folder whole where it fits, else its folders and files one level down. `--dry-run` prints each run as a command to copy:
+this review's guidelines alone, with its repository, branches, globs and a `--diff-cap` it was given, since the plan is
+made at that cap. Then it prints one run of the review's rules over the whole change, in the review's own `--path`, with
+no model call: the rules read files no part reads, a skip-listed lockfile or a README, and each rule's finding is
+reported once. Give each run any other flag the review had, but no `--path`, and give each its own `--json`, `--comment`
+or `--handoff` file. Each part's guidelines are told how many changed files lie outside its folders, so a test there is
+no test missing.
 A review prints the same before its first model call. At a terminal it asks whether to go on, and a stop is exit 2;
 a pipeline goes on, and the files it cannot read are a hole, exit 3.
 

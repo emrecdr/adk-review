@@ -651,6 +651,7 @@ def _review(argv: list[str] | None = None) -> int:
         # One run's `--check` list is held to what a profile is, and named in the report as the flag.
         chosen = select(found, config["profiles"], args.profile, args.check)
         args.rules_alone = _rules_alone(found, config["profiles"], chosen)
+        args.guidelines_alone = tuple(("--check", guideline.check_id) for guideline in chosen.guidelines)
         scope = scope_of(args.path)
         _mode_alone(args)
         explanation = explained(found, config["profiles"], args.explain) if args.explain else None
@@ -775,7 +776,8 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
     # arm that is not ready names no model either: `why` says why.
     shown = {"model": model, "profile": chosen.name, "off": chosen.off, "checks": chosen.ids()}
     # The runs that read a change the guidelines cannot read in one, which the dry run prints and a review asks about.
-    told = told_in_parts(evidence, chosen.name, (*args.added, *args.capped), args.rules_alone) if guidelines else []
+    given = (*args.added, *args.capped)
+    told = told_in_parts(evidence, args.guidelines_alone, given, args.rules_alone) if guidelines else []
     if args.dry_run:
         unread = not_read(evidence["files"], guidelines)
         print(

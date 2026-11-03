@@ -266,10 +266,16 @@ def shown_to_guidelines(
             fitted.add(at)
             room -= size + 2  # and the blank line joining it to the next
     not_shown = len(shown_any) - len(fitted)
-    left_out = sum(at not in fitted and file["status"] != "D" for at, (file, *_rest) in enumerate(shown_any))
-    # The runs read what the change keeps: a deleted file beside them goes last, and a run of deleted files alone, as
-    # read by review, cost a review's calls for no hole.
-    sizes = {file["path"]: size for file, _diff, _cut, size in shown_any if file["status"] != "D"}
+    # The files a run of their own would read: none deleted, and none no run can read, a binary file, a submodule or a
+    # Git LFS pointer. Read by review, a run of deleted files alone, or of a binary file, cost a review's calls for no
+    # hole it could mend, and alone asked whether to go on.
+    readable = {
+        at
+        for at, (file, diff, _cut, _size) in enumerate(shown_any)
+        if file["status"] != "D" and not unread(file, diff, cut=False, fits=True, cap=diff_cap)
+    }
+    left_out = len(readable - fitted)
+    sizes = {shown_any[at][0]["path"]: shown_any[at][3] for at in sorted(readable)}
     parts = in_parts(sizes, scope, BLOCK_CAP_CHARS) if left_out else []
     units = {unit for run in parts for unit in run}
     for at, (file, diff, cut, _size) in enumerate(shown_any):

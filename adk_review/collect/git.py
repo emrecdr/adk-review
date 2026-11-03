@@ -1059,6 +1059,11 @@ def gather(
         return {"status": "error", "error_message": str(exc)}
     if not files and not ignored:  # measured: a branch already merged, or a base equal to its head, approved nothing
         return no_change(head, base, scope if listed else ())
+    if guidelines and (outside := len(listed) - len(entries)):
+        # Named to the guidelines, as a file past the cap is: a test outside is no test missing. Read by review, the
+        # parts of a change split its source from its tests, and `tests` could only call the source untested.
+        note = f"[… {outside} more changed file(s) outside the folders reviewed: not shown here]"
+        block = f"{block}\n\n{note}" if block else note
     listing = head_listing(resolved)
     # A link of a kind `scan` leaves out is read by the credential rules as its own path, as its diff shows it and a
     # secret scanner reads a link's blob: a key in the file it names is found where the review reads that file's own

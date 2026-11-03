@@ -664,6 +664,21 @@ class TestWhatGroundingKeeps:
         assert not dropped and [f.evidence for f, _at, _deleted in kept] == [lines] * len(quotes)
         assert len({fingerprint(rule.Sourced("guideline.security", f, at)) for f, at, _deleted in kept}) == 1
 
+    def test_a_moved_lines_finding_keeps_one_fingerprint_whichever_copy_it_stands_on(self) -> None:
+        """Read by review: a moved line's quote stands on its deleted copy or the head's, as the guideline's line picks,
+        and with the deleted line's `-` kept the two had two fingerprints, so `--previous` named one finding resolved
+        and new at once. A quote that holds a deleted line is identified without that mark, as before it was kept."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Sourced
+        from adk_review.deliver.report import fingerprint
+
+        def at(evidence: str, deleted: bool) -> str:
+            found = Finding(file="a.py", line=3, severity="major", title="t", evidence=evidence, suggestion="s")
+            return fingerprint(Sourced("guideline.correctness", found, (3, 3), deleted=deleted))
+
+        assert at("-foo()", True) == at("foo()", False), "one finding, whichever copy"
+        assert at("- run the tests", False) != at("run the tests", False), "a bullet's own dash is the line's"
+
     def test_a_quote_that_renames_a_redactions_placeholder_still_grounds(self) -> None:
         """Measured live on Gemini: shown `[REDACTED:aws_secret_access_key]`, a guideline quoted the planted key's two
         lines with `[REDACTED:secret_access_key]`, and the finding dropped, the review a hole. The label is the

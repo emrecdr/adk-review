@@ -1762,6 +1762,31 @@ class TestWhatTheGuidelinesAreShown:
         sizes = {"a/x.py": 50, "a/b/y.py": 50, "a/b/z.py": 50}
         assert in_parts(sizes, ("a/b", "a"), 120) == in_parts(sizes, ("a", "a/b"), 120) == [["a/b"], ["a/x.py"]]
 
+    def test_the_guidelines_are_told_how_many_changed_files_lie_outside_the_folders_reviewed(
+        self, demo_repo: Path
+    ) -> None:
+        """Read by review: the parts of a change too large for one run split its source from its tests, and a part's
+        guidelines were never told that changed files lay outside its folders, so `tests` could only call the source
+        untested. The block says how many, as it says of a file past its cap: a test outside is no test missing."""
+        from adk_review.collect import git
+
+        whole = git.collect_evidence(str(demo_repo), BASE, HEAD)
+        scoped = git.collect_evidence(str(demo_repo), BASE, HEAD, scope=("src/payments/refund.py",))
+        assert scoped["outside"] == 3 and "outside the folders" not in whole["diff"], whole["diff"][-200:]
+        assert scoped["diff"].endswith("[… 3 more changed file(s) outside the folders reviewed: not shown here]")
+
+    def test_a_file_no_run_can_read_is_never_counted_as_left_out(self, monkeypatch) -> None:
+        """Read by review: a binary file the block had no room for was counted as left out, so a plan of runs was made
+        and a terminal asked, for a file every run names as binary, a hole either way."""
+        from adk_review.collect import change, diff
+
+        text = self._diff("a.py", "x = 1")
+        binary = "diff --git a/b.bin b/b.bin\nnew file mode 100644\nBinary files /dev/null and b/b.bin differ\n"
+        entries = [{"path": "a.py", "status": "A"}, {"path": "b.bin", "status": "A"}]
+        monkeypatch.setattr(change, "BLOCK_CAP_CHARS", len(diff.framed("a.py", text)[0]))  # room for `a.py` alone
+        files, _block, _excluded, left_out, parts = change.shown_to_guidelines(entries, [text, binary], 2_000, ())
+        assert left_out == 0 and parts == [] and files[1]["unread"] == change.BINARY_UNREAD, (left_out, files[1])
+
     def test_a_deleted_file_takes_the_room_last_and_is_never_counted_as_left_out(self, monkeypatch) -> None:
         """Read by review: a deleted file is never a hole, what it removes reviewed when it came in, yet the block gave
         it the room before a file the change added, which was then a hole, and counted it as left out, so the review

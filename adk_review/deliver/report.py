@@ -932,14 +932,19 @@ def _untracked(names: Sequence[str] | None) -> list[str]:
 
 
 def told_in_parts(
-    evidence: Evidence, profile: str, added: Sequence[str] = (), rules: Sequence[tuple[str, str]] = ()
+    evidence: Evidence,
+    guidelines: Sequence[tuple[str, str]],
+    added: Sequence[str] = (),
+    rules: Sequence[tuple[str, str]] = (),
 ) -> list[str]:
     """Where the guidelines cannot read the change in one run: how many files they would leave unread, and each run
-    that reads them all as a command to copy, built from this review's repository, branches, checks and globs as
-    `_check_again` builds its own, then one run of the review's `rules` alone over the whole change, which reads the
-    files no part reads; [] where the change fits. Asked by the owner: a branch of 58 files spent a whole
-    review's calls, and left nine unread. Read by review: the count was read back from a sentence's wording, and one
-    name no shell keeps as one word left each run its paths alone."""
+    that reads them all as a command to copy, the review's `guidelines` alone, built from this review's repository,
+    branches and globs as `_check_again` builds its own; then one run of its `rules` alone over the whole change, in
+    the review's own scope, which reads the files no part reads; [] where the change fits. Each is a pair of flags,
+    `--profile NAME` or `--check ID`. Asked by the owner: a branch of 58 files spent a whole review's calls, and left
+    nine unread. Read by review: the count and the checks were read back from a sentence's wording; one name no shell
+    keeps as one word left each run its paths alone; and parts that ran the rules too reported each rule's finding
+    twice."""
     if not (left := evidence.get("left_out", 0)):
         return []
     if not (parts := evidence.get("parts") or ()):  # one file's diff past the block alone, under a raised --diff-cap
@@ -951,8 +956,6 @@ def told_in_parts(
     pre = evidence["preflight"]
     head = [] if pre.get("staged") else [("--head", pre["head"])]
     pinned = [("--staged",)] if pre.get("staged") else [("--all",)] if evidence["whole"] else [("--base", pre["base"])]
-    named = profile.removeprefix("--check ").split() if profile.startswith("--check ") else []
-    checks = [("--check", check) for check in named] or [("--profile", profile)]
     command = _pasted(["adk-review", pre["repo"]]) or "adk-review <the repository>"
     lines = [
         f"Too large for the guidelines in one run: {left} file(s) would go unread. Review it in {len(parts)} parts, "
@@ -960,11 +963,12 @@ def told_in_parts(
         "",
     ]
     for run in parts:
-        units = [*head, *pinned, *checks, *((glob,) for glob in added), *((f"--path={value}",) for value in run)]
+        units = [*head, *pinned, *guidelines, *((glob,) for glob in added), *((f"--path={value}",) for value in run)]
         shown, also = _shown(units)
         lines += [f"    {command} {shown}", *(f"    {sentence}" for sentence in also)]
     if rules:  # `rules`: the flags of this review's rules alone, `--profile NAME` or each `--check ID`
-        shown, also = _shown([*head, *pinned, *rules, *((g,) for g in added)])
+        scope = ((f"--path={folder}",) for folder in evidence["scope"])
+        shown, also = _shown([*head, *pinned, *rules, *((g,) for g in added), *scope])
         lines += [
             "",
             "Then run this review's rules over the whole change, with no model call. They read the files no part"
@@ -973,7 +977,11 @@ def told_in_parts(
             f"    {command} {shown}",
             *(f"    {sentence}" for sentence in also),
         ]
-    return [inert(line) for line in [*lines, "", "Give each run any other flag this review had."]]
+    given = [
+        "Give each run any other flag this review had, but no --path.",
+        "Give each its own --json, --comment or --handoff file.",
+    ]
+    return [inert(line) for line in [*lines, "", *given]]
 
 
 def render_dry_run(
@@ -1413,7 +1421,10 @@ def fingerprint(item: Sourced, occurrence: int = 0) -> str:
     — for a guideline's finding the lines its quote stands on, which grounding put there, however the model framed
     them — and which of the findings sharing all three it is, in the order the review lists them. Never its line,
     which a line added above it would move, as SonarQube, GitHub and Semgrep key theirs on content."""
-    quote = "".join(scrub(item.finding.evidence)[0].split())
+    evidence = item.finding.evidence
+    if item.deleted:  # a deleted line's `-` aside: read by review, a moved line had two identities, one for each copy
+        evidence = "\n".join(line.removeprefix("-") for line in evidence.splitlines())
+    quote = "".join(scrub(evidence)[0].split())
     said = "\0".join((item.source, item.finding.file, quote, str(occurrence)))
     return hashlib.sha256(said.encode("utf-8", "surrogatepass")).hexdigest()[:16]
 

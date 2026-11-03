@@ -269,9 +269,15 @@ class TestWhatAReviewCovers:
         assert len(runs) == 4 and all("--head feature/payments --base main" in run for run in runs), runs
         assert runs[0].endswith("--path=src/payments/charge.py"), runs
         # Read by review: no part read a file the skip list or `scan` leaves out, nor a deleted path under no part's
-        # folder, which one review's rules read. The rules then run over the whole change, with no model call.
-        assert rest == [runs[0].split(" --profile ")[0] + " --profile default-rules"], rest
-        assert "this review's rules over the whole change" in out, out
+        # folder, which one review's rules read. The rules then run over the whole change, with no model call, and the
+        # parts run the guidelines alone, so no rule's finding is reported twice.
+        guided = " --check guideline.security --check guideline.tests --check guideline.complexity "
+        assert all(guided in run and "--profile" not in run for run in runs), runs
+        assert rest == [runs[0].split(" --check ")[0] + " --profile default-rules"], rest
+        assert "this review's rules over the whole change" in out and "but no --path" in out, out
+        assert run_review(cli, demo_repo, "--dry-run", "--path", "src/payments") == 0
+        scoped = [line.strip() for line in capsys.readouterr().out.splitlines() if "--profile default-rules" in line]
+        assert scoped and scoped[0].endswith("--path=src/payments"), "the review's own scope, not the whole branch"
         assert not any("--diff-cap" in run for run in runs), "the config's cap goes unsaid"
         # Read by review: the plan is made at this run's cap, and a run copied without it read past the block again.
         assert run_review(cli, demo_repo, "--dry-run", "--diff-cap", "5000") == 0
