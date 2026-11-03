@@ -24,42 +24,14 @@ from __future__ import annotations
 import re
 
 from ..rule_helpers import (
-    SECRET_WORDS,
     Rule,
-    is_placeholder,
+    is_credential,
     named_at,
     named_values,
     vendor_shape,
     without_examples,
 )
 
-#: The endings of a name that is about a secret, never one: where it lives, what kind it is, how it is named or
-#: checked. Measured: 177 of 714 lines flagged in 2.1 million lines of published library code, none of them a
-#: credential, carried one of these — `token_url`, `secret_name`, `password_field`, `TOKEN_TYPE`.
-ABOUT = (
-    "_arn", "_endpoint", "_env", "_expiry", "_field", "_file", "_format", "_header", "_help", "_id", "_kind",
-    "_label", "_length", "_limit", "_name", "_path", "_prefix", "_ref", "_regex", "_seconds", "_type", "_uri", "_url",
-)  # fmt: skip
-#: A name whose value a person chooses: a password, which may be any words. A token, a key or a secret a machine makes.
-_CHOSEN = re.compile(r"(?i)passw(?:or)?d|pwd")
-#: A value's words, `apiKey`, `api_key` and `API-KEY` alike: runs of capitals, of letters, of digits.
-_WORDS = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
-#: A word a name says secret with, among a value's words joined by `_`: a value that holds one names a secret.
-_SECRET_WORD = re.compile(r"(?:^|_)(?:" + SECRET_WORDS + r")(?:_|$)")
-#: What sets a value's words apart, as a label's are: `my_secret_key`, `Show password`.
-_SEPARATOR = re.compile(r"[\s_.\-/]")
-#: Code where a literal would stand: a chain of attributes, `raw_credential.oauth2.client_secret`, or a name passed on
-#: as an argument, `aws_session_token=s3_aws_session_token,`; unquoted alone, as a quoted value is a literal.
-_CODE = re.compile(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)+[,)\]]*|[A-Za-z_]\w*[,)\]]+")
-#: A number, a price per token or a count: no credential a machine makes. One way to split a run of digits: measured
-#: by review, `\d+\.?\d*` had two and tried each on a failed match, 20,000 digits and a letter taking 6.9 s.
-_NUMBER = re.compile(r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?")
-#: Marks of code, which no key's alphabet holds — base64's, hex's, a UUID's, Django's symbols: what a minified bundle
-#: spans between two of its strings, `+(0,S.parse)(e))}finally{m(!1)}`.
-_CODE_MARK = re.compile(r"[{};]")
-#: The scheme an authorization header names before its token, `Bearer `: the token after it, one run to the value's
-#: end, is what is weighed. Before prose, `"Token is invalid"`, the word is a label's.
-_SCHEME = re.compile(r"(?i)\A(?:bearer|basic|token)\s+(?=\S+$)")
 #: An environment's file, which a folder named `test` holds as config, never as a test's fixture: `.env`, `db.env`,
 #: `.env.test`. Read by review: any file in such a folder was a test's, and a password in `deploy/test/db.env` passed.
 _ENV_FILE = re.compile(r"(?:^|/)(?:[^/]*\.env|\.env(?:\.[^/]*)?|\.envrc)$")
@@ -78,8 +50,6 @@ _TEST_NAME = re.compile(
     r"(?:^|/)(?:test_\w*\.pyi?|conftest\.py)$|_test\.(?:pyi?|go|rb|exs|dart|rs)$|\.(?:test|spec)\.[cm]?[jt]sx?$"
     r"|_spec\.rb$"
 )
-#: The shortest credential a machine makes: shorter is a documentation's example, `sk-1234`.
-MADE_MIN_CHARS = 8
 #: The widest line a person writes: wider is generated, a minified bundle or data, where a name says nothing of who
 #: chose its value, so every value there is weighed as a machine's.
 WRITTEN_MAX_CHARS = 1_000
@@ -140,25 +110,4 @@ class NamedSecrets(Rule):
         if vendor_shape(text) is not None:
             return False
         written = len(line) <= WRITTEN_MAX_CHARS
-        return any(_credential(name, value, quoted, written) for name, value, quoted in named_values(text))
-
-
-def _credential(name: str, value: str, quoted: bool, written: bool) -> bool:
-    """Whether `value`, given to `name`, can be the credential the name says: never a name about one, a placeholder,
-    code, or a label that names a secret and holds none; a password a person wrote, whatever its words; else what a
-    machine makes, one run of eight characters or more, a digit among them, no number and no mark of code."""
-    if name.lower().endswith(ABOUT) or is_placeholder(value) or (not quoted and _CODE.fullmatch(value)):
-        return False
-    made = _SCHEME.sub("", value)
-    digit = any(char.isdigit() for char in made)
-    if _SECRET_WORD.search("_".join(_WORDS.findall(made)).lower()) and (not digit or _SEPARATOR.search(made)):
-        return False  # `"OPENAI_API_KEY"`, `"my_secret_key"`, `"Show password"`: a label, where `"password123"` is not
-    if written and _CHOSEN.search(name):
-        return True
-    return (
-        digit
-        and len(made) >= MADE_MIN_CHARS
-        and not any(char.isspace() for char in made)
-        and not _NUMBER.fullmatch(made)
-        and not _CODE_MARK.search(made)
-    )
+        return any(is_credential(name, value, quoted, written) for name, value, quoted in named_values(text))

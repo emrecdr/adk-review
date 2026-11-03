@@ -967,6 +967,24 @@ class TestTheLintRule:
         every = ["dbutils", "display", "displayHTML", "spark", "sql", "udf", "undefined_here"]
         assert named["src/service.py"] == named["src/late.py"] == named["src/bin/header.py"] == every
 
+    def test_a_password_code_on_a_value_that_is_no_credential_is_passed_over(self) -> None:
+        """Read by review: ruff's S105, S106 and S107 weigh the name alone, so `token = "("`, `"<eos>"` and `"Bearer "`
+        were each a major finding, where `named-secrets`, which weighs the value, found none. A string no credential
+        check takes is passed over; one that can be a credential is still a finding, in the forms `named-secrets`
+        misses too: a comparison and a value with a type."""
+        false = ['token = "("\n', 'token = "<eos>"\n', 'token = "Bearer "\n', 'token_type = "Bearer"\n']
+        false += ['token = "hello"\n', 'call(token="hello")\n', 'def f(token="Bearer "):\n    pass\n']
+        real = ['PASSWORD = "Summer2024!x"\n', 'if password == "Xk9mQ2vL8pR4":\n    pass\n']
+        real += ['token: str = "Xk9mQ2vL8pR4wZ7t"\n', 'call(passwd="Xk9mQ2vL8pR4")\n']
+        real += ['def f(password="Xk9mQ2vL8pR4"):\n    pass\n']
+
+        def codes(text: str) -> list[str]:
+            found = lint_findings({"files": [_entry("src/app.py", text)], "tree": None})
+            return [f.title.removeprefix("lint: ").split()[0] for f in found if f.title.startswith("lint: S10")]
+
+        assert [text for text in false if codes(text)] == [], "no credential, no finding"
+        assert [text for text in real if not codes(text)] == [], "a credential is still found"
+
     def test_a_call_without_a_shell_or_by_a_short_name_is_minor_and_a_shell_call_major(self) -> None:
         """S603 names every `subprocess` call whose arguments are not a literal list, and S607 every program named
         without its full path: neither reads what feeds the call, so each is hardening, minor, where a call through a
@@ -2668,7 +2686,7 @@ class TestTheShippedRules:
         minute: a branch could stall every review with one line. One way to split it reads the same numbers at once."""
         import time
 
-        from adk_review.judge.rules.named_secrets import _NUMBER
+        from adk_review.core.secrets import _NUMBER
 
         started = time.perf_counter()
         assert _NUMBER.fullmatch("1" * 20_000 + "x") is None

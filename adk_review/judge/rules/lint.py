@@ -11,9 +11,23 @@ a file at the most severe of them, since ruff reads whole files and listed one b
 
 from __future__ import annotations
 
+import ast
+import functools
+from collections.abc import Callable, Mapping, Sequence
 from types import MappingProxyType
 
-from ..rule_helpers import ChangedFile, Diagnostic, FileRule, Hit, Severity, is_test, listed, tier
+from ..rule_helpers import (
+    ChangedFile,
+    Diagnostic,
+    FileRule,
+    Hit,
+    Severity,
+    is_credential,
+    is_test,
+    listed,
+    nodes_in,
+    tier,
+)
 
 #: ruff's codes, run --isolated: errors, pyflakes, warnings, bugbear and bandit, then what a reviewer asks for and no
 #: other check here makes, at ruff's own thresholds: complexity (C901: 10; PLR0911, PLR0912, PLR0913, PLR0915: 6
@@ -126,6 +140,31 @@ def defined_by_databricks(file: ChangedFile, found: Diagnostic) -> bool:
     return found.code == "F821" and len(named) > 1 and named[1] in NOTEBOOK_NAMES and is_databricks_notebook(file)
 
 
+#: Ruff's codes for a string given to a name that says password or token: assigned or compared, passed as an
+#: argument, or a parameter's default. Ruff weighs the name alone, and the value as `named-secrets` does.
+NAMED_PASSWORD = frozenset({"S105", "S106", "S107"})
+
+
+def strings_by_line(file: ChangedFile) -> dict[int, list[str]]:
+    """Each string literal of `file`, by the line it starts on, where ruff places its finding; none where it does not
+    parse."""
+    found: dict[int, list[str]] = {}
+    for node in nodes_in(file.module, ast.Constant) or ():
+        if isinstance(node.value, str):
+            found.setdefault(node.lineno, []).append(node.value)
+    return found
+
+
+def no_credential(found: Diagnostic, strings: Callable[[], Mapping[int, Sequence[str]]]) -> bool:
+    """Whether `found` is S105, S106 or S107 where every string on its line, given to the name ruff quotes, is no
+    credential, as `named-secrets` weighs one; a line where no string was read keeps its finding. Read by review: ruff
+    made `token = "("`, `"<eos>"` and `"Bearer "` each major, where `named-secrets` found none of them."""
+    quoted = found.message.split('"')
+    if found.code not in NAMED_PASSWORD or len(quoted) < 3 or not (given := strings().get(found.line)):
+        return False
+    return not any(is_credential(quoted[1], value, quoted=True, written=True) for value in given)
+
+
 class Lint(FileRule):
     """A finding ruff can make is one no guideline need spend a model's attention on, and one no model can miss."""
 
@@ -140,10 +179,13 @@ class Lint(FileRule):
 
     def check(self, file: ChangedFile) -> list[Hit]:
         leave_out = IN_TESTS if is_test(file.path) else ()
+        # The file's strings, read once and only where ruff named a password's code: `listed` reads a file's
+        # diagnostics only once it knows the file is Python, and a file not read whole is no hole of this.
+        strings = functools.cache(lambda: strings_by_line(file))
         return listed(
             file,
             lambda found: severity_of(found.code),
             FIX,
             leave_out=leave_out,
-            passes_over=lambda found: defined_by_databricks(file, found),
+            passes_over=lambda found: defined_by_databricks(file, found) or no_credential(found, strings),
         )
