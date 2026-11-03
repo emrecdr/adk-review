@@ -124,6 +124,7 @@ try:
     from .judge.catalog import (
         CONFIG,
         REVIEW,
+        Catalog,
         Selection,
         catalog,
         explained,
@@ -649,6 +650,7 @@ def _review(argv: list[str] | None = None) -> int:
         found = catalog()
         # One run's `--check` list is held to what a profile is, and named in the report as the flag.
         chosen = select(found, config["profiles"], args.profile, args.check)
+        args.rules_alone = _rules_alone(found, config["profiles"], chosen)
         scope = scope_of(args.path)
         _mode_alone(args)
         explanation = explained(found, config["profiles"], args.explain) if args.explain else None
@@ -679,6 +681,18 @@ def _added(parser: argparse.ArgumentParser, args: argparse.Namespace) -> tuple[s
         for dest, flag in (("skip", "--skip"), ("scan", "--scan"), ("third_party", "--third-party"))
         for glob in getattr(args, dest)[len(parser.get_default(dest)) :]
     )
+
+
+def _rules_alone(found: Catalog, profiles: dict, chosen: Selection) -> tuple[str, ...]:
+    """The flags that run this review's rules and no guideline: a profile that runs them alone, where one does, as
+    `default-rules` does `default`'s, else each by `--check`; none where it runs no rule. Read by review: the parts of a
+    change too large for one run read no file the skip list or `scan` leaves out, which one review's rules read."""
+    ruled = sorted(rule.check_id for rule in chosen.rules)
+    for name in profiles if ruled else ():
+        other = select(found, profiles, name)
+        if not other.guidelines and sorted(rule.check_id for rule in other.rules) == ruled:
+            return ("--profile", name)
+    return tuple(word for check in ruled for word in ("--check", check))
 
 
 def _mode_alone(args: argparse.Namespace) -> None:
@@ -760,7 +774,7 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
     # arm that is not ready names no model either: `why` says why.
     shown = {"model": model, "profile": chosen.name, "off": chosen.off, "checks": chosen.ids()}
     # The runs that read a change the guidelines cannot read in one, which the dry run prints and a review asks about.
-    told = told_in_parts(evidence, chosen.name, (*args.added, *args.capped)) if guidelines else []
+    told = told_in_parts(evidence, chosen.name, (*args.added, *args.capped), args.rules_alone) if guidelines else []
     if args.dry_run:
         unread = not_read(evidence["files"], guidelines)
         print(

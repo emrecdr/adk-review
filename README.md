@@ -885,10 +885,12 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   `core.autocrlf` is `input` too: with the person's config left out it read off, and `diff-tree` diffed a checked-out
   file its index called up to date in place of its blob, where no conversion applies, so a checkout Windows wrote with
   CRLF over blobs of LF read as changed in every line (35 of 35 modified files on one branch, one of them 248 lines
-  removed and 243 added where it changed 6 and 1); `input` writes no CRLF and makes git read the blob. A filter from
-  the person's own config, Git LFS's or git-crypt's, is left out the same way, and no setting stops that reading: a
-  review of commits diffs under an index no file holds, `NO_INDEX`, so git reads every blob. Read by review, a token on
-  disk alone, never in the commit, was reported with that branch checked out and not with another.
+  removed and 243 added where it changed 6 and 1); `input` writes no CRLF and makes git read the blob. A filter from the
+  person's own config, Git LFS's or git-crypt's, is left out the same way, and no setting stops that reading: a review
+  of commits diffs under an index no file holds, `NO_INDEX`, so git reads every blob. Read by review, a token on disk
+  alone, never in the commit, was reported with that branch checked out and not with another. `--staged` reads the
+  person's own index, and there git can still read such a file from disk: neither an empty work tree nor a missing one
+  kept `diff-index --cached` off it.
 - **Secrets are found by code.** Every model call is redacted, so no guideline ever sees a key: measured on Copilot with
   the redaction on, no guideline reported the planted one. A key must be found by code, from the diff itself, before any
   model runs: `secrets` reads the added lines of each file's whole diff, past any cap, and `named-secrets` weighs a
@@ -1056,11 +1058,11 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   quoted, so a finding may stand on an unchanged line of a function the change touched, and `on_added_line` says so.
   Measured over this repository's last 31 commits, the Python diffs grew 1.7 times and one file of 191 went past the
   diff cap, 16,000 then: a file the widening pushes past 16,000 characters, `WIDEN_CAP_CHARS`, or past the diff cap is
-  read as git prints it, and so is every widened file where the block, counted as the block counts, leaves a file out,
-  so the context never costs a file its reading. Measured by review, a total of the raw diffs, a skip-listed lockfile's
-  among them and the framing uncounted, had read whole changes as git prints them that the widened block held. An added
-  or a deleted file, whole already, a skip-listed one, any other file, and every diff the rules alone read, are git's
-  own, and the added lines are the same either way.
+  read as git prints it, and so is every widened file where the block, counted as the block counts, leaves out a file
+  the change keeps, so the context never costs a file its reading. Measured by review, a total of the raw diffs, a
+  skip-listed lockfile's among them and the framing uncounted, had read whole changes as git prints them that the
+  widened block held. An added or a deleted file, whole already, a skip-listed one, any other file, and every diff the
+  rules alone read, are git's own, and the added lines are the same either way.
 - **Fences carry a nonce.** A sentence at the top of an instruction is no boundary: what follows it is the branch's own
   text. Measured with a reviewer of the same shape on Copilot, a docstring declaring an override silenced most of its
   reviewing agents, each answering no findings. Each untrusted section a guideline, a verifier or chat's verdict reads

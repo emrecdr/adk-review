@@ -931,7 +931,7 @@ def _untracked(names: Sequence[str] | None) -> list[str]:
     return [f"- untracked    {_spans(names, SHOWN)}: not in the next commit, so not reviewed"]
 
 
-def told_in_parts(evidence: Evidence, profile: str, added: Sequence[str] = ()) -> list[str]:
+def told_in_parts(evidence: Evidence, profile: str, added: Sequence[str] = (), rules: Sequence[str] = ()) -> list[str]:
     """Where the guidelines cannot read the change in one run: how many files they would leave unread, and each run
     that reads them all as a command to copy, built from this review's repository, branches, checks and globs as
     `_check_again` builds its own; [] where the change fits. Asked by the owner: a branch of 58 files spent a whole
@@ -960,6 +960,16 @@ def told_in_parts(evidence: Evidence, profile: str, added: Sequence[str] = ()) -
         units = [*head, *pinned, *checks, *((glob,) for glob in added), *((f"--path={value}",) for value in run)]
         shown, also = _shown(units)
         lines += [f"    {command} {shown}", *(f"    {sentence}" for sentence in also)]
+    if rules:  # `rules`: the flags of this review's rules alone, `--profile NAME` or each `--check ID`
+        shown, also = _shown([*head, *pinned, *zip(rules[::2], rules[1::2], strict=True), *((g,) for g in added)])
+        lines += [
+            "",
+            "Then run this review's rules over the whole change, with no model call. They read the files no part"
+            " reads:",
+            "",
+            f"    {command} {shown}",
+            *(f"    {sentence}" for sentence in also),
+        ]
     return [inert(line) for line in [*lines, "", "Give each run any other flag this review had."]]
 
 

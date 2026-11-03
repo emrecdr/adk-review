@@ -88,10 +88,12 @@ _GLOB = re.compile(r"[*?[\\]")
 #: blob, where no conversion would apply; written with CRLF over blobs of LF, as Windows does, every line of it
 #: differed. Measured on a branch of 35 modified files: all 35, one of them 248 lines removed and 243 added where it
 #: changed 6 and 1. `input` writes no CRLF, and makes git read the blob, as the person's `true` does.
-#: An index no file holds, which a review of commits diffs under: git reads a checked-out file in place of its blob
-#: where the index calls it up to date and no conversion it knows would apply, and a filter defined in a person's own
-#: config, Git LFS's or git-crypt's, is one the review leaves out. Read by review: a token on disk alone, never in the
-#: commit, was reported with that branch checked out and not with another. A missing index git reads as empty.
+#: An index no file holds, in a folder no one makes, which a review of commits diffs under: git reads a checked-out
+#: file in place of its blob where the index calls it up to date and no conversion it knows would apply, and a filter
+#: defined in a person's own config, Git LFS's or git-crypt's, is one the review leaves out. Read by review: a token on
+#: disk alone, never in the commit, was reported with that branch checked out and not with another. A missing index git
+#: reads as empty. `--staged` reads the person's own index, and git can still read such a file there: measured, neither
+#: an empty work tree nor a missing one kept `diff-index --cached` off it.
 NO_INDEX = os.path.join(tempfile.gettempdir(), f"adk-review-no-index-{uuid.uuid4().hex}", "index")
 _SETTLED = {
     "core.precomposeUnicode": "false",
@@ -102,7 +104,9 @@ _SETTLED = {
 }
 
 
-def _environment(repo: str, settings: Mapping[str, str] | None = None, index: str | None = None) -> dict[str, str]:
+def _environment(
+    repo: str, settings: Mapping[str, str] | None = None, away: Mapping[str, str] | None = None
+) -> dict[str, str]:
     """git's environment for a review: the caller's with every `GIT_*` variable left out, as git's own test suite
     leaves them out, and then only what a review needs: no config but the repository's own and what is fixed here,
     no attributes but the repository's, nothing fetched (a partial clone would fetch what it lacks, into the
@@ -123,8 +127,7 @@ def _environment(repo: str, settings: Mapping[str, str] | None = None, index: st
     env = {name: value for name, value in os.environ.items() if not name.startswith("GIT_")}
     if inherited := os.environ.get("GIT_INDEX_FILE"):
         env["GIT_INDEX_FILE"] = os.path.abspath(inherited)
-    if index:  # the call's own: `NO_INDEX`, for a review of commits
-        env["GIT_INDEX_FILE"] = index
+    env |= away or {}  # the call's own, `_off_disk`'s: no file on disk read in place of a blob
     env |= {"LC_ALL": "C", "LANGUAGE": ""}
     env |= {"GIT_NO_LAZY_FETCH": "1", "GIT_NO_REPLACE_OBJECTS": "1", "GIT_GRAFT_FILE": os.devnull}
     env |= {"GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": os.devnull, "GIT_ATTR_NOSYSTEM": "1"}
@@ -178,7 +181,7 @@ def _git(
     strip: bool = True,
     ok: tuple[int, ...] = (0,),
     settings: Mapping[str, str] | None = None,
-    index: str | None = None,
+    away: Mapping[str, str] | None = None,
 ) -> tuple[int, str]:
     """One read-only git command: an argv list, no shell, a timeout, no fetch, stdout captured, decoded as UTF-8.
 
@@ -187,9 +190,9 @@ def _git(
     code, and a failure read as an empty answer would read as nothing there. `ok` names the codes a caller
     reads as an answer: 1 is `rev-parse`'s for a ref that does not exist. `strip` is off for a file's content,
     where the line numbers must survive, and for a folder's path, whose name may end in a space. `settings` are the
-    call's own, set as the fixed ones are, through `_environment`, and so is `index`, the index it reads.
+    call's own, set as the fixed ones are, through `_environment`, and so is `away`, `_off_disk`'s for a diff.
     """
-    done = _git_raw(repo, *args, ok=ok, settings=settings, index=index)
+    done = _git_raw(repo, *args, ok=ok, settings=settings, away=away)
     return done.returncode, _text(done.stdout, strip)
 
 
@@ -206,13 +209,13 @@ def _git_raw(
     stdin: bytes | None = None,
     ok: tuple[int, ...] = (0,),
     settings: Mapping[str, str] | None = None,
-    index: str | None = None,
+    away: Mapping[str, str] | None = None,
 ) -> subprocess.CompletedProcess[bytes]:
     """`_git`'s call with its answer left as bytes, what a batch read counts its sizes in."""
     if (git := on_path("git")) == "git":  # not on PATH: Git for Windows can be installed for Git Bash alone
         raise GitError(f"git {_verb(args)} could not start: install git with its folder on PATH")
     try:
-        done = _run([git, "-C", repo, *args], _environment(repo, settings, index), stdin)
+        done = _run([git, "-C", repo, *args], _environment(repo, settings, away), stdin)
     except subprocess.TimeoutExpired:
         raise GitError(f"git {_verb(args)} did not answer within {GIT_TIMEOUT_S} s") from None
     except OSError as exc:  # found, and still could not start: no permission to run it, say
@@ -537,11 +540,16 @@ def list_changed(resolved: dict) -> list[dict[str, str]]:
     file's at the head, `120000` a link's, known from the change itself, where a link moved whole shows no mode in its
     diff and the head's tree may not be listed; a rename also carries its `old` path, `-M` finding renames whatever
     the reviewer's `diff.renames` says."""
+    away = _off_disk(resolved)  # `-M` reads each file to measure a rename, as the diff does
     if resolved.get("staged"):  # the index against the base: what the next commit would change
-        _, out = _git(resolved["repo"], "diff-index", "--cached", "-r", "--raw", "-z", "-M", resolved["merge_base"])
+        _, out = _git(
+            resolved["repo"], "diff-index", "--cached", "-r", "--raw", "-z", "-M", resolved["merge_base"], away=away
+        )
     else:
         _, out = _git(
-            resolved["repo"], "diff-tree", "-r", "--raw", "-z", "-M", resolved["merge_base"], resolved["head_sha"]
+            resolved["repo"],
+            *("diff-tree", "-r", "--raw", "-z", "-M", resolved["merge_base"], resolved["head_sha"]),
+            away=away,
         )
     parts = iter(p for p in out.split("\0") if p)
     files: list[dict[str, str]] = []
@@ -586,14 +594,19 @@ def diff_of(resolved: dict, path: str, old: str = "", *, functions: bool = False
     paths = _literally(old, path)
     settings = {"diff.default.xfuncname": PYTHON_FUNCTION} if functions else None
     shown = (*_PLAIN, "--function-context") if functions else _PLAIN
-    attrs = f"--attr-source={base}"
+    attrs, away = f"--attr-source={base}", _off_disk(resolved)
     if resolved.get("staged"):  # the index's text, against the base, as the next commit would hold it
-        _, diff = _git(repo, attrs, "diff-index", "--cached", "-p", *shown, base, "--", *paths, settings=settings)
+        compared = ("diff-index", "--cached", "-p", *shown, base)
     else:
-        _, diff = _git(
-            repo, attrs, "diff-tree", "-r", "-p", *shown, base, head, "--", *paths, settings=settings, index=NO_INDEX
-        )
+        compared = ("diff-tree", "-r", "-p", *shown, base, head)
+    _, diff = _git(repo, attrs, *compared, "--", *paths, settings=settings, away=away)
     return unguessed(readable(diff))
+
+
+def _off_disk(resolved: dict) -> dict[str, str]:
+    """What keeps a review of commits' diff off the files on disk, for `NO_INDEX`'s reason: no index, so git reads every
+    blob; nothing under `--staged`, whose index is what it reads."""
+    return {} if resolved.get("staged") else {"GIT_INDEX_FILE": NO_INDEX}
 
 
 def whole_diffs(resolved: dict, entries: list[dict[str, str]], scope: Sequence[str]) -> list[str]:
@@ -603,13 +616,14 @@ def whole_diffs(resolved: dict, entries: list[dict[str, str]], scope: Sequence[s
     Measured over 4,826 files: 9.4 s a call a file, eight at a time; 0.86 s in one."""
     repo, base, head = resolved["repo"], resolved["merge_base"], resolved["head_sha"]
     specs = ("--", *(f":(top,literal){folder}" for folder in scope))
-    _, names = _git(repo, "diff-tree", "-r", "-z", "--name-only", "-M", base, head, *specs, strip=False)
+    away = _off_disk(resolved)
+    _, names = _git(repo, "diff-tree", "-r", "-z", "--name-only", "-M", base, head, *specs, strip=False, away=away)
     paths = names.split("\0")[:-1]
     # Split as bytes, each part decoded alone: one str of the whole patch is as wide as its widest character.
     args = (f"--attr-source={base}", "diff-tree", "-r", "-p", *_PLAIN, base, head, *specs)
     # Every line of an added file opens with `+`, so a line opening with `diff --git ` is a file's header: a literal
     # split, where a pattern tested every line's start (measured: 45 ms against 5 on a 15 MB patch).
-    pieces = _git_raw(repo, *args, index=NO_INDEX).stdout.split(b"\ndiff --git ")  # the whole, freed once split
+    pieces = _git_raw(repo, *args, away=away).stdout.split(b"\ndiff --git ")  # the whole, freed once split
     first = [pieces[0]] if pieces[0].startswith(b"diff --git ") else []
     parts = first + [b"diff --git " + piece for piece in pieces[1:]]
     asked = {entry["path"] for entry in entries}
@@ -1088,13 +1102,13 @@ def _read_change(
     resolved: dict, entries: list[dict], scope: Sequence[str], *, guidelines: bool, diff_cap: int, skip: Sequence[str]
 ) -> tuple[list[Entry], str, dict[str, str], int, list[list[str]]]:
     """Each entry's diff, as the rules read it, and the block the guidelines read, as `shown_to_guidelines` builds it.
-    Where a guideline reads the change, each Python hunk `widens` names is read within the function or class around
-    it, as Claude Code's review reads the enclosing function of each hunk: git's three lines showed an edit deep in a
-    method without its `def`, its arguments or its other branches. The context never costs a file its reading, as the
-    block counts it: a file widening pushes past `diff_cap`, or past `WIDEN_CAP_CHARS`, is read again as git prints
-    it, and so is every widened file where the block leaves a file out. Measured over this repository's last 31
-    commits, the widened Python diffs were 1.7 times git's and one file of 191 went past the cap; measured by review,
-    a total of the raw diffs, a skip-listed lockfile's among them and the framing uncounted, read whole changes as git
+    Where a guideline reads the change, each Python hunk `widens` names is read within the function or class around it,
+    as Claude Code's review reads the enclosing function of each hunk: git's three lines showed an edit deep in a method
+    without its `def`, its arguments or its other branches. The context never costs a file its reading, as the block
+    counts it: a file widening pushes past `diff_cap`, or past `WIDEN_CAP_CHARS`, is read again as git prints it, and so
+    is every widened file where the block leaves out a file the change keeps. Measured over this repository's last 31
+    commits, the widened Python diffs were 1.7 times git's and one file of 191 went past the cap; measured by review, a
+    total of the raw diffs, a skip-listed lockfile's among them and the framing uncounted, read whole changes as git
     prints them that the widened block held. The added lines, all the rules read, are the same either way."""
     wide = [at for at, entry in enumerate(entries) if guidelines and widens(entry, skip)]
     diffs = _diffs(resolved, entries, scope, frozenset(wide))

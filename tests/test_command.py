@@ -264,9 +264,14 @@ class TestWhatAReviewCovers:
         assert run_review(cli, demo_repo, "--dry-run") == 0
         out = capsys.readouterr().out
         assert "Too large for the guidelines in one run: 3 file(s) would go unread. Review it in 4 parts" in out, out
-        runs = [line.strip() for line in out.splitlines() if line.strip().startswith("adk-review ")]
+        commands = [line.strip() for line in out.splitlines() if line.strip().startswith("adk-review ")]
+        runs, rest = [c for c in commands if "--path=" in c], [c for c in commands if "--path=" not in c]
         assert len(runs) == 4 and all("--head feature/payments --base main" in run for run in runs), runs
         assert runs[0].endswith("--path=src/payments/charge.py"), runs
+        # Read by review: no part read a file the skip list or `scan` leaves out, nor a deleted path under no part's
+        # folder, which one review's rules read. The rules then run over the whole change, with no model call.
+        assert rest == [runs[0].split(" --profile ")[0] + " --profile default-rules"], rest
+        assert "this review's rules over the whole change" in out, out
         assert not any("--diff-cap" in run for run in runs), "the config's cap goes unsaid"
         # Read by review: the plan is made at this run's cap, and a run copied without it read past the block again.
         assert run_review(cli, demo_repo, "--dry-run", "--diff-cap", "5000") == 0

@@ -388,7 +388,8 @@ adk-review <repo> --head <branch> --base develop --path tests --comment
 The review plans the parts itself, before any model call, from what each file takes of the diffs the guidelines read:
 a folder whole where it fits, else its folders and files one level down. `--dry-run` prints each run as a command to
 copy, with this review's repository, branches, profile or checks, globs and a `--diff-cap` it was given, since the
-plan is made at that cap; give each any other flag the review had.
+plan is made at that cap; give each any other flag the review had. Then it prints one run of the review's rules over
+the whole change, with no model call: the rules read files no part reads, a skip-listed lockfile or a README.
 A review prints the same before its first model call. At a terminal it asks whether to go on, and a stop is exit 2;
 a pipeline goes on, and the files it cannot read are a hole, exit 3.
 
@@ -475,10 +476,13 @@ What the hook cannot see, or stops on:
 - A file under a folder `[review] third_party` names is read in no commit: a credential there passes. A file `scan`
   leaves out is read there by the credential rules alone, and a binary one is no hole.
 - A file no rule can read — a binary one, a submodule, a Git LFS pointer, whose content is stored elsewhere — is a hole
-  and stops the push, unless `[review] skip` in `config.toml` names it, as the shipped list names images and fonts
-  ("Configuration" above): then the report names it as skipped, and it stops nothing. A text file past the size limits
-  above, a lock file say, is read as far as its diff shows it, which is all `reviewer-instructions` reads; a Python file
-  past them is a hole for `lint`, `pitfalls` and `encoding-declaration`, which read a file whole, and stops the push.
+  and stops the push, unless `[review] skip` in `config.toml` names it. A review of commits reads each file as its
+  commit holds it, a Git LFS file as its pointer, whatever is checked out. Under `--staged`, git can read a file a
+  filter of your own config rewrites, Git LFS's or git-crypt's, from disk. Name it in the skip list, as the shipped list
+  names images and fonts ("Configuration" above): then the report names it as skipped, and it stops nothing. A text file
+  past the size limits above, a lock file say, is read as far as its diff shows it, which is all `reviewer-instructions`
+  reads; a Python file past them is a hole for `lint`, `pitfalls` and `encoding-declaration`, which read a file whole,
+  and stops the push.
 - A symbolic link is read as the file it runs, followed a part at a time as a system follows it, through links to
   folders and links to links. A path out of the repository is read as coming back in, at every depth the repository
   could lie at: through the checkout's own folder, by whatever name a clone gave it, or into a copy deployed from the
