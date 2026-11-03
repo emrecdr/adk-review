@@ -428,12 +428,16 @@ OLD_FOR_AGENT = "Not caused by this change. By the Boy Scout rule, fix them too,
 #: `blocker` bar it meant went unnamed.
 COMMENT_OPENS = {
     "APPROVED": "The review found nothing of `{bar}` severity or above, the level that blocks a merge here.",
-    "REQUEST_CHANGES": "Fix each point under Must fix before it merges.",
+    "REQUEST_CHANGES": "Fix each point under a section marked must fix before it merges.",
     "DEGRADED": "The review could not check all of it, so it approves nothing yet.",
 }
+#: What a comment says under its tidy-ups' heading.
+TIDY_NOTE = "These change how the code reads, never what it does."
+#: What a comment's section heading adds where its severity is at the `--fail-on` bar, so the review fails on it.
+MUST_FIX = " — must fix before it merges"
 #: What an approval adds where majors sat below its bar: asked by the owner, a major is important, and an opener that
 #: named the bar alone read as nothing much to fix.
-MAJORS_BELOW_BAR = "It {found} {n} major issue{s}, under Worth a look. A major should be fixed before it merges."
+MAJORS_BELOW_BAR = "It {found} {n} major issue{s}, under Major findings. A major should be fixed before it merges."
 #: The same count in a hand-off, which lists every finding most severe first: on an approval the majors lead it, else
 #: they follow what the bar holds. Read by review: a review that asked for changes counted none.
 HANDOFF_MAJORS = "It {found} {n} major issue{s} below the `{bar}` bar. Fix those {when}."
@@ -451,16 +455,17 @@ def render_comment(
     checks: Sequence[str] = (),
     previous: Mapping[str, dict] | None = None,
 ) -> str:
-    """`--comment FILE`: the review as a constructive comment for the branch's author, whatever its verdict — what must
-    change before it merges, what is worth a look, an approved change's included, the tidy-ups it leaves to them, and
-    what the review could not check — each place and quote in a code span, under the text report's safety rules. Asked
-    by the owner, who reviews others' branches and pastes each comment into the pull request by hand: the reviewer posts
-    nothing and prints no command that would. A finding is grouped with the others on its lines as the hand-off groups
-    it, and a tidy waiting under a defect is left out until the defect is fixed. Its first line names what ran, as the
-    report's header does, so an approval from the rules alone never reads as one a model read too."""
+    """`--comment FILE`: the review as a constructive comment for the branch's author, whatever its verdict — first what
+    the change caused, a section a severity, the most severe first, each at the bar marked must fix before it merges, an
+    approved change's included, and the tidy-ups it leaves to them; then, apart, what was already in the files it
+    touched, by severity too; and what the review could not check — each place and quote in a code span, under the text
+    report's safety rules. Asked by the owner, who reviews others' branches and pastes each comment into the pull
+    request by hand: the reviewer posts nothing and prints no command that would. A finding is grouped with the others
+    on its lines as the hand-off groups it, and a tidy waiting under a defect is left out until the defect is fixed. Its
+    first line names what ran, as the report's header does, so an approval from the rules alone never reads as one a
+    model read too."""
     pre = evidence["preflight"]
     fixes, tidy = _lanes(outcome, tidies)
-    must = [group for group in fixes if at_or_above(group[0].finding.severity, fail_on)]
     worth = [group for group in fixes if not at_or_above(group[0].finding.severity, fail_on)]
     head = f"**Review of {code_span(one_line(pre['head']))} at `{pre['head_sha'][:12]}`**" + _ran(
         profile, model, checks
@@ -476,14 +481,31 @@ def render_comment(
     if _quotes_a_deleted_line(outcome):
         lines.append(DELETED_QUOTED)
     lanes: list[tuple[list[str], list[list[str]]]] = []  # each section's heading, and its points
-    for heading, groups, note in (
-        ("Must fix before it merges", must, ""),
-        ("Worth a look", worth, ""),
-        ("Optional tidy-ups", tidy, "These change how the code reads, never what it does."),
-        (OLD_HEADING, [[item] for item in outcome.old], OLD_NOTE),
-    ):
-        if groups:
-            lanes.append((["", f"### {heading}", "", *([note, ""] if note else [])], _commented(groups, tidies)))
+    # Asked by the owner: first what the change caused, then what was already in the files it touched, each a section
+    # a severity, the most severe first; one at the bar is marked so. Before, majors and minors below the bar sat
+    # under one "Worth a look", and a major read as a nit.
+    severities = sorted(RANK, key=RANK.__getitem__, reverse=True)
+    caused = [
+        (
+            f"{severity.capitalize()} findings{MUST_FIX * at_or_above(severity, fail_on)}",
+            [group for group in fixes if group[0].finding.severity == severity],
+            "",
+        )
+        for severity in severities
+    ]
+    caused.append(("Optional tidy-ups", tidy, TIDY_NOTE))
+    old = [
+        (f"{severity.capitalize()} findings", [[item] for item in outcome.old if item.finding.severity == severity], "")
+        for severity in severities
+    ]
+    for group, note, sections in (("Caused by this change", "", caused), (OLD_HEADING, OLD_NOTE, old)):
+        opened = False
+        for heading, groups, said in sections:
+            if not groups:
+                continue
+            top = ["", f"## {group}", *(["", note] if note else [])] if not opened else []
+            lanes.append(([*top, "", f"### {heading}", *(["", said] if said else []), ""], _commented(groups, tidies)))
+            opened = True
     return inert("\n".join(_within(lines, lanes, _unchecked(outcome, fail_on)))) + "\n"
 
 
@@ -493,7 +515,7 @@ def _within(lines: list[str], lanes: list[tuple[list[str], list[list[str]]]], ho
     if holes:
         shown, more, _room = _fit([[line] for line in holes], COMMENT_MAX_CHARS // 2)
         listed = [*(line for (line,) in shown), *([f"- and {more:,} more, which the report lists"] if more else [])]
-        holes = ["", "### Not checked", "", "The review could not check these. Check them by hand.", "", *listed]
+        holes = ["", "## Not checked", "", "The review could not check these. Check them by hand.", "", *listed]
     room, made, left = COMMENT_MAX_CHARS - _COMMENT_ROOM - _size(lines) - _size(holes), list(lines), 0
     for heading, points in lanes:
         shown, more, room = _fit(points, room - _size(heading), stop=bool(left))

@@ -128,7 +128,7 @@ class TestWhatAReviewCovers:
             assert cli.main([*argv, *written]) == code, head
             capsys.readouterr()
             said, data = comment.read_text(encoding="utf-8"), json.loads(report.read_text(encoding="utf-8"))
-            old, now = said.split("### Already in the files you touched")[1], said.split("### Already in the files")[0]
+            old, now = said.split("## Already in the files you touched")[1], said.split("## Already in the files")[0]
             assert "S602" in old and "F401" in old and "S602" not in now, said
             assert [f["title"] for f in data["old_findings"]], data
             assert not any("S602" in str(f.get("evidence", "")) for f in data["findings"]), data["findings"]
@@ -966,20 +966,20 @@ class TestThePreviousReportAndTheHandoff:
         assert run_review(cli, demo_repo, "--profile", "default-rules", "--comment", str(comment)) == 1
         written = comment.read_text(encoding="utf-8")
         assert written.startswith("**Review of `feature/payments` at `"), written
-        must = written.split("### Must fix before it merges\n", 1)[1].split("\n###", 1)[0]
+        must = written.split("### Blocker findings — must fix before it merges\n", 1)[1].split("\n###", 1)[0]
         assert "`src/payments/config.py:4`" in must and "(blocker)" in must and "Suggested change:" in must
         assert "REDACTED" in must and "AKIA" not in written
-        assert "### Worth a look" in written and "S602" in written
+        assert "### Major findings" in written and "S602" in written
         assert not any(line.lstrip().startswith(("gh ", "az ", "git ")) for line in written.splitlines()), written
 
         assert run_review(cli, demo_repo, "--check", "rule.lint", "--comment", str(comment)) == 0
         written = comment.read_text(encoding="utf-8")
-        assert "the level that blocks a merge here" in written and "### Must fix" not in written, written
-        assert "### Worth a look" in written and "S602" in written, "an approved change gets its points to improve"
+        assert "the level that blocks a merge here" in written and "must fix before" not in written, written
+        assert "### Major findings" in written and "S602" in written, "an approved change gets its points to improve"
 
         assert run_review(cli, demo_repo, "--diff-cap", "100", "--comment", str(comment)) == 3
         written = comment.read_text(encoding="utf-8")
-        assert "### Not checked" in written and "`src/payments/charge.py`" in written.split("### Not checked", 1)[1]
+        assert "## Not checked" in written and "`src/payments/charge.py`" in written.split("## Not checked", 1)[1]
 
     def test_a_comment_names_what_ran_so_an_approval_by_rules_alone_reads_as_one(
         self, cli, demo_repo: Path, tmp_path: Path
@@ -1110,7 +1110,7 @@ class TestThePreviousReportAndTheHandoff:
         outcome = Outcome(kept=[Sourced("rule.callers", call, (5, 5))])
         said = render_comment(evidence, outcome, verdict="APPROVED", fail_on="blocker")
         assert "found nothing of `blocker` severity or above, the level that blocks a merge here." in said, said
-        assert "### Worth a look" in said
+        assert "### Major findings" in said
         said = render_comment(evidence, Outcome(), verdict="APPROVED", fail_on="minor")
         assert "found nothing of `minor` severity or above" in said, said
 
@@ -1130,11 +1130,54 @@ class TestThePreviousReportAndTheHandoff:
         evidence = {"preflight": {"head": "h", "head_sha": "0" * 40}}
         approved = {"verdict": "APPROVED", "fail_on": "blocker"}
         said = render_comment(evidence, Outcome(kept=[at(5, "major"), at(9, "major"), at(12, "minor")]), **approved)
-        assert "It did find 2 major issues, under Worth a look. A major should be fixed before it merges." in said
+        assert "It did find 2 major issues, under Major findings. A major should be fixed before it merges." in said
+
+        # Asked by the owner: the sections follow the severity, where majors and minors below the bar sat under one
+        # "Worth a look". The most severe come first, and each at the bar says it must be fixed before it merges.
+        def headings(said: str) -> list[str]:
+            return [line for line in said.splitlines() if line.startswith("### ")]
+
+        assert headings(said) == ["### Major findings", "### Minor findings"], said
+        every = Outcome(kept=[at(3, "blocker"), at(5, "major"), at(12, "minor")])
+        said = render_comment(evidence, every, verdict="REQUEST_CHANGES", fail_on="major")
+        must = " — must fix before it merges"
+        assert headings(said) == [f"### Blocker findings{must}", f"### Major findings{must}", "### Minor findings"], (
+            said
+        )
+        assert "Fix each point under a section marked must fix before it merges." in said, said
         said = render_comment(evidence, Outcome(kept=[at(5, "major")]), **approved)
-        assert "It did find 1 major issue, under Worth a look." in said, said
+        assert "It did find 1 major issue, under Major findings." in said, said
         said = render_comment(evidence, Outcome(kept=[at(12, "minor")]), **approved)
         assert "major" not in said.split("### ")[0] and "The points below would still improve it." in said, said
+
+    def test_a_comment_shows_what_the_change_caused_then_what_was_already_there_each_by_severity(self) -> None:
+        """Asked by the owner: first what the change caused, then what was already in the files it touched, each
+        grouped by importance, the most severe first; and what no check read in a group of its own, after both."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced, fold
+        from adk_review.deliver.report import render_comment
+
+        def at(line: int, severity: str, old: bool = False) -> Sourced:
+            found = Finding(
+                file="w.py", line=line, severity=severity, title=f"t{line}", evidence=f"+f({line})", suggestion="s"
+            )
+            return Sourced("rule.lint", found, (line, line), old=old)
+
+        evidence = {"preflight": {"head": "h", "head_sha": "0" * 40}}
+        outcome = Outcome(unread={"big.py": "past the cap"})
+        fold(outcome, [at(3, "minor"), at(5, "major"), at(7, "minor", True), at(9, "major", True)], ["rule.lint"])
+        assert [item.finding.severity for item in outcome.old] == ["major", "minor"], "the most severe first"
+        said = render_comment(evidence, outcome, verdict="DEGRADED", fail_on="blocker")
+        headings = [line for line in said.splitlines() if line.startswith(("## ", "### "))]
+        assert headings == [
+            "## Caused by this change",
+            "### Major findings",
+            "### Minor findings",
+            "## Already in the files you touched",
+            "### Major findings",
+            "### Minor findings",
+            "## Not checked",
+        ], said
 
     def test_an_approving_hand_off_counts_the_major_issues_below_its_bar_too(self) -> None:
         """Asked by the owner: the hand-off says what the comment says, so an agent fixes the majors first."""
@@ -1159,7 +1202,8 @@ class TestThePreviousReportAndTheHandoff:
 
     def test_a_review_that_asks_for_changes_counts_its_majors_below_the_bar_too(self) -> None:
         """Read by review, after the owner asked that majors be named: a review that asked for changes named only Must
-        fix, the majors under Worth a look uncounted. A major at the bar is in Must fix, and counted there alone."""
+        fix, the majors below the bar uncounted. A major at the bar is in a section marked must fix, and counted there
+        alone."""
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Outcome, Sourced
         from adk_review.deliver.report import render_comment, render_handoff
@@ -1174,7 +1218,7 @@ class TestThePreviousReportAndTheHandoff:
         evidence = {"preflight": pre, "whole": False, "scope": []}
         both = Outcome(kept=[at(3, "blocker"), at(5, "major")])
         said = render_comment(evidence, both, verdict="REQUEST_CHANGES", fail_on="blocker")
-        assert "It also found 1 major issue, under Worth a look." in said.split("### ")[0], said
+        assert "It also found 1 major issue, under Major findings." in said.split("### ")[0], said
         said = render_handoff(evidence, both, verdict="REQUEST_CHANGES", fail_on="blocker")
         opening = said.split("\n\n", 2)[1]
         assert "It also found 1 major issue below the `blocker` bar. Fix those after the ones at the bar." in opening
@@ -2547,10 +2591,10 @@ class TestWhatTheReportPrints:
         pre = {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40}
         evidence = {"preflight": pre, "whole": False, "scope": []}
         comment = render_comment(evidence, outcome, verdict="APPROVED", fail_on="blocker")
-        point = comment.split("1. ", 1)[1].split("\n2. ", 1)[0]
+        point = comment.split("### Major findings", 1)[1].split("### Minor findings", 1)[0]
         assert "   - Why it matters: Every call shares one list, so items from one caller reach the next." in point
         assert "   - Suggested code:\n     ```\n     def add(item, into=None):\n" in point, point
-        assert "Why it matters" not in comment.split("\n2. ", 1)[1], "a minor stays one line each"
+        assert "Why it matters" not in comment.split("### Minor findings", 1)[1], "a minor stays one line each"
         handoff = render_handoff(evidence, outcome, verdict="APPROVED", fail_on="blocker")
         item = handoff.split("\n1. ", 1)[1].split("\n2. ", 1)[0]
         assert "   - quoted:\n     ```\n     +def add(item, into=[]):\n     +    into.append(item)\n" in item, item

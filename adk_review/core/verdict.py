@@ -488,7 +488,10 @@ def fold(outcome: Outcome, rules: list[Sourced], order: Sequence[str], tidies: f
     order alone, under `full` `complexity` came before `correctness`, and the report and the JSON named how lines read
     with what they do wrong folded under it."""
     # What was already in a touched file goes apart, before any fold: asked by the owner, never mixed with the change's.
-    outcome.old += [item for item in rules if item.old]
+    # The most severe first, as each report groups them: asked by the owner, grouped by importance as the change's are.
+    outcome.old = sorted(
+        [*outcome.old, *(item for item in rules if item.old)], key=lambda item: -RANK[item.finding.severity]
+    )
     rules = [item for item in rules if not item.old]
     kept = sorted(rules + outcome.kept, key=lambda item: order.index(item.source))  # stable: each check's own order
     outcome.kept, outcome.folded = dedupe(kept, tidies)
