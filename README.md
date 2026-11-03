@@ -1045,16 +1045,18 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   fit; and a folder guessed from the paths alone was past the block again, where the plan named runs that fit. Where the
   block leaves any file out, `in_parts` plans the runs that read the change from what each file takes of the block, a
   folder whole where it fits, else one level down, each in the first run with room; a dry run prints them as commands,
-  and a review prints them before its first model call and, at a terminal, asks whether to go on, a stop being exit 2.
-  Each part runs the review's guidelines alone, and one run of its rules reads the whole change in the review's own
-  scope, so a rule's finding is reported once and no skip-listed lockfile goes unread; a part's guidelines are told how
-  many changed files lie outside its folders, so a test there is no test missing. Asked by the owner: the review knew
-  before any call that it could not approve, and spent a whole review's calls on it. With no guideline on, a cut is no
-  hole: the cap is the guidelines' limit, and the rules read every added line. Measured live on Copilot at 4,000
-  characters a file: a 7,529-character file's planted shell call went unread and so did 3 of a 17-file change's files,
-  each a hole; at 16,000 each was read, the call named in both runs, for a fifth more tokens. Raised to 90,000 after a
-  real project's long source file ended its review as not read: over this repository's 220 commits, 1.2% of the source
-  files' diffs and 4.0% of the tests' passed 16,000, and at 90,000 none of the source's and 2 of 379 tests'.
+  each part named in the fewer flags, its own folders as `--path` or what it leaves out as `--path-exclude`
+  (`_part_named`: asked by the owner, a part of every folder but `tests` was a `--path` for each), and a review prints
+  them before its first model call and, at a terminal, asks whether to go on, a stop being exit 2. Each part runs the
+  review's guidelines alone, and one run of its rules reads the whole change in the review's own scope, so a rule's
+  finding is reported once and no skip-listed lockfile goes unread; a part's guidelines are told how many changed files
+  lie outside its folders, so a test there is no test missing. Asked by the owner: the review knew before any call that
+  it could not approve, and spent a whole review's calls on it. With no guideline on, a cut is no hole: the cap is the
+  guidelines' limit, and the rules read every added line. Measured live on Copilot at 4,000 characters a file: a
+  7,529-character file's planted shell call went unread and so did 3 of a 17-file change's files, each a hole; at 16,000
+  each was read, the call named in both runs, for a fifth more tokens. Raised to 90,000 after a real project's long
+  source file ended its review as not read: over this repository's 220 commits, 1.2% of the source files' diffs and 4.0%
+  of the tests' passed 16,000, and at 90,000 none of the source's and 2 of 379 tests'.
 - **A Python hunk is read within its function.** Where a guideline reads a Python file the change modifies, git widens
   each hunk to the function or class around it, `--function-context` with Python's own boundary set as
   `diff.default.xfuncname` through `GIT_CONFIG_COUNT`, as the settings fixed for every call are, so the repository's own

@@ -994,8 +994,9 @@ def told_in_parts(
         "one run each:",
         "",
     ]
-    for run in parts:
-        units = [*head, *pinned, *guidelines, *((glob,) for glob in added), *((f"--path={value}",) for value in run)]
+    for at in range(len(parts)):
+        named = _part_named(evidence, parts, at)
+        units = [*head, *pinned, *guidelines, *((glob,) for glob in added), *((flag,) for flag in named)]
         units += [(f"--path-exclude={path}",) for path in evidence.get("exclude", ())]
         shown, also = _shown(units)
         lines += [f"    {command} {shown}", *(f"    {sentence}" for sentence in also)]
@@ -1014,11 +1015,35 @@ def told_in_parts(
             *(f"    {sentence}" for sentence in also),
         ]
     given = [
-        "Give each run any other flag this review had, but no --path, --profile or --check.",
+        "Give each run any other flag this review had, but no --path, --path-exclude, --profile or --check.",
         "Give each its own --json, --comment or --handoff file.",
         "A --max-tokens ceiling holds for each run alone.",
     ]
     return [inert(line) for line in [*lines, "", *given]]
+
+
+def _part_named(evidence: Evidence, parts: Sequence[Sequence[str]], at: int) -> list[str]:
+    """The flags that keep run `at` of `parts` to its own files, in the fewer of two forms, its own folders on a tie:
+    each of them as `--path`, or the review's scope as `--path` and, as `--path-exclude`, the other parts' folders and
+    each changed file no part names, a deleted one, so the run reads exactly its own; but not a file the skip list
+    names, which each run skips again. A scope folder that is another part's whole is left out of both. Asked by the
+    owner: a part of every folder but `tests` was a `--path` for each of them, where `--path-exclude=tests` says the
+    same."""
+    own = [f"--path={value}" for value in parts[at]]
+    named = [value for run in parts for value in run]
+    others = [value for other, run in enumerate(parts) if other != at for value in run]
+    scope = evidence["scope"]
+    skipped = evidence.get("skipped", {})
+    unnamed = [
+        f["path"]
+        for f in evidence["files"]
+        if f["path"] not in skipped and not any(in_scope(f["path"], [value]) for value in named)
+    ]
+    left = [
+        *(f"--path={folder}" for folder in scope if folder not in others),
+        *(f"--path-exclude={value}" for value in [*others, *unnamed] if value not in scope),
+    ]
+    return left if len(left) < len(own) else own
 
 
 def render_dry_run(

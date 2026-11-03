@@ -371,6 +371,48 @@ class TestWhatAReviewCovers:
             section.startswith("## Blast radius\n<<< blast radius ") and "\n[… cut at 40 characters]\n>>> " in section
         )
 
+    def test_a_part_that_holds_most_of_the_change_is_named_by_what_it_leaves_out(self) -> None:
+        """Asked by the owner: a part of every folder but `tests` was a `--path` for each of them. Each part is named in
+        the fewer flags: its own folders, or what it leaves out, the other parts and each changed file no part names,
+        a deleted one among them, so it reads exactly its own files; a skipped lock file is skipped again. On a tie,
+        its own folders."""
+        from adk_review.deliver.report import told_in_parts
+
+        parts = [["docs", "scripts", "src/a", "src/b"], ["tests"]]
+        paths = ["docs/x.md", "old/gone.py", "scripts/run.py", "src/a/m.py", "src/b/n.py", "tests/test_m.py", "uv.lock"]
+        evidence = {
+            "preflight": {"repo": "/repo", "head": "change", "base": "main"},
+            "whole": False,
+            "scope": [],
+            "exclude": [],
+            "files": [{"path": path} for path in paths],
+            "left_out": 1,
+            "parts": parts,
+            "skipped": {"uv.lock": "uv.lock"},
+        }
+        guideline = [("--check", "guideline.security")]
+
+        def runs(evidence: dict) -> list[str]:
+            said = told_in_parts(evidence, guideline)
+            return [line.strip().replace('"', "") for line in said if line.strip().startswith("adk-review ")]
+
+        most, tests = runs(evidence)
+        assert most.endswith("--path-exclude=tests --path-exclude=old/gone.py") and "--path=" not in most, most
+        assert tests.endswith("--path=tests") and "--path-exclude" not in tests, tests
+        # Within the review's own scope, beside what it left out, which each run keeps; a scope folder that is another
+        # part whole is left out of both lists, where `--path=tests --path-exclude=tests` would say nothing.
+        inside = ["src/a/m.py", "src/b/n.py", "src/d/o.py", "tests/test_m.py"]
+        scoped = {**evidence, "scope": ["src", "tests"], "exclude": ["src/c"], "files": [{"path": p} for p in inside]}
+        scoped["parts"] = [["src/a", "src/b", "src/d"], ["tests"]]
+        within, tests = runs(scoped)
+        assert within.endswith("--path=src --path-exclude=src/c") and "tests" not in within, within
+        assert tests.endswith("--path=tests --path-exclude=src/c"), tests
+        # A tie keeps the part's own folders: they name exactly what it reads.
+        tied = {**evidence, "files": [{"path": p} for p in ["docs/x.md", "scripts/run.py", "src/a/m.py", "uv.lock"]]}
+        tied["parts"], tied["skipped"] = [["docs", "scripts"], ["src"]], {}
+        assert runs(tied)[0].endswith("--path=docs --path=scripts"), runs(tied)
+        assert "but no --path, --path-exclude, --profile or --check" in " ".join(told_in_parts(evidence, guideline))
+
     def test_a_change_too_large_for_one_run_is_told_in_parts_before_any_model_call(
         self, demo_repo: Path, cli, monkeypatch, capsys
     ) -> None:

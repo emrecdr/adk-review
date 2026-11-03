@@ -388,12 +388,14 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 A file past a guideline's cap is named under "not read", and the review ends in exit 3: a hole, never "nothing
 found". `--path` narrows a review to fit. A file past all the diffs the guidelines read names the `--path` of the
 planned run that reads it, one that fits. A branch too large for one run is reviewed in parts, each with its own
-verdict: its dry run prints them, ready to copy, the guidelines a folder at a time, then the rules over the whole change.
-Under the default profile they read so:
+verdict: its dry run prints them, ready to copy, the guidelines a part at a time, then the rules over the whole change.
+Each part is named in the fewer flags: its own folders as `--path`, or what it leaves out as `--path-exclude`, the other
+parts and any changed file no part names, a skipped one aside. On a tie it keeps `--path`. Under the default profile
+they read so:
 
 ```
 adk-review <repo> --head <branch> --base develop --dry-run
-adk-review <repo> --head <branch> --base develop --check guideline.security --check guideline.tests --check guideline.complexity --path=src --comment
+adk-review <repo> --head <branch> --base develop --check guideline.security --check guideline.tests --check guideline.complexity --path-exclude=tests --comment
 adk-review <repo> --head <branch> --base develop --check guideline.security --check guideline.tests --check guideline.complexity --path=tests --comment
 adk-review <repo> --head <branch> --base develop --profile default-rules --comment
 ```
