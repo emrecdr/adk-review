@@ -1045,7 +1045,12 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   finding; and that corrected code carries no `-` or `+`. Measured live on Copilot (gpt-4.1), three runs a side,
   `altitude` and `security` alone: the labelled set's `clean-removed-field` drew four false majors in two of three runs
   before and none after, `clean-config-path` none either side, and `drops-the-guard` was named a blocker in three of
-  three both sides.
+  three both sides. Saying that rule again after the diff, in the reminder both a guideline and a verifier read last,
+  as OpenAI's guide for gpt-4.1 advises, was measured and not adopted: five runs a side on Copilot, `complexity`'s
+  false minors on `clean-removed-field`, each a deleted line quoted beside its replacement with a request to remove
+  it, were 4, 5, 5, 5, 4 before and 0, 3, 5, 3, 4 after, inside the spread between runs, `altitude` drew a false major
+  in one of five runs after and none before, and the planted defects of `sql-from-input` and `drops-the-guard` were
+  named in five of five either side.
 - **The blast radius says where to read.** What at the head depends on each changed Python file, directly or through
   another, tests counted apart: read from git in one batch and parsed with Python's own `ast`, never run. The guidelines
   read it beside the diff, told to weigh a change to shared behaviour by how far it reaches, as context and never as

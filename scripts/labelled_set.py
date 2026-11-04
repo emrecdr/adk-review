@@ -315,11 +315,12 @@ def invented(data: dict) -> tuple[Counter[str], Counter[str]]:
 
 def false_findings(runs: Mapping[str, list[tuple[Counter[str], Counter[str]] | None]]) -> list[str]:
     """Each clean branch's false findings, a line a guideline: how many each run made, and how many of them were flagged
-    possibly already done, `-` for a run with no report. Run to run they vary: measured live on the owner's branch, 10
+    possibly already done, `-` for a run with no report; a branch none made one on is one line of zeros, so it never
+    reads as unmeasured. Run to run they vary: measured live on the owner's branch, 10
     and then 21 on the same commit, so a change is judged against that spread."""
     lines = ["| branch | guideline | false findings, each run | of them flagged, each run |", "|---|---|---|---|"]
     for name, each in runs.items():
-        for check in sorted({check for run in each if run for check in run[0]}):
+        for check in sorted({check for run in each if run for check in run[0]}) or ["every guideline"]:
             made, flagged = (", ".join("-" if run is None else str(run[at][check]) for run in each) for at in (0, 1))
             lines.append(f"| {name} | {check} | {made} | {flagged} |")
     return lines
