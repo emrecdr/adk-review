@@ -175,6 +175,25 @@ class TestWhatAReviewCovers:
         assert [f["line"] for f in data["findings"] if "S110" in f["title"]] == [4], data["findings"]
         assert any("S110" in str(f["evidence"]) for f in data["old_findings"]), data["old_findings"]
 
+    def test_a_count_the_change_lowered_is_old_and_one_it_raised_is_its_own(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review on the owner's branch: a parameter removed from a function of seven turned ruff's
+        "(7 > 5)" into "(6 > 5)", on the `def` line the change left alone, and the finding read as the change's own.
+        Ruff's words carry the count: one the base held at that count or above is old; one the change raised is new."""
+        params = ["a", "b", "c", "d", "e", "f", "g"]
+
+        def signature(names: list[str]) -> str:
+            return "def build(\n" + "".join(f"    {name}: int,\n" for name in names) + ") -> None:\n    pass\n"
+
+        for after, old in ((params[:-1], True), ([*params, "h"], False)):
+            (tmp_path / str(old)).mkdir()
+            repo = branched(tmp_path / str(old), {"app.py": signature(params)}, {"app.py": signature(after)})
+            _code, data = reviewed(cli, repo)
+            capsys.readouterr()
+            apart, now = data["old_findings"], data["findings"]
+            listed, other = (apart, now) if old else (now, apart)
+            assert any("PLR0913" in str(f) for f in listed), (old, now, apart)
+            assert not any("PLR0913" in str(f) for f in other), (old, now, apart)
+
     def test_where_the_base_cannot_be_read_what_lies_on_untouched_lines_still_counts(
         self, cli, tmp_path: Path, capsys, monkeypatch
     ) -> None:

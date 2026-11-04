@@ -17,7 +17,6 @@ import subprocess
 import sysconfig
 import tempfile
 import threading
-from collections import Counter
 from collections.abc import Callable, Generator, Iterable, Sequence
 from contextlib import closing
 from dataclasses import replace
@@ -41,6 +40,9 @@ class _FloodError(Exception):
 
 #: What breaks a row where ruff and pyrefly count one: a lone `\r` too, which git reads as within a line.
 _ROW_BREAK = re.compile(r"\r\n?|\n")
+#: How ruff ends the words of a count over its limit, the count first: "Too many arguments (6 > 5)", and C901's,
+#: PLR0911's, PLR0912's and PLR0915's alike.
+_COUNT = re.compile(r"\((\d+) > (\d+)\)$")
 
 
 class Rows(NamedTuple):
@@ -108,12 +110,13 @@ def _known(
     linted: Callable[[dict[str, str]], dict[str, list[Diagnostic]]],
 ) -> dict[str, list[Diagnostic]]:
     """`found` with each diagnostic on a line the change did not add set against the base: `known` where the base held
-    it too, the same code and words on a line of the same text, each base one matched once, and not where the change
-    made it. A line the change added is its own, whatever the base held, and only a file with a diagnostic elsewhere is
-    linted at the base. Where the base was not read or could not be linted, `known` stays None, and `listed` counts
-    those diagnostics with the change, at the bar, as before: "did not look" never reads as "not caused by this change".
-    Read by review: ruff's words tell a shell call that "seems safe" from one an edit below its first line made unsafe.
-    Asked by the owner: what a change causes is kept apart from what was already in the files it touched."""
+    it too, the same code and words on a line of the same text, a count in them no higher, each base one matched once,
+    and not where the change made it. A line the change added is its own, whatever the base held, and only a file with
+    a diagnostic elsewhere is linted at the base. Where the base was not read or could not be linted, `known` stays
+    None, and `listed` counts those diagnostics with the change, at the bar, as before: "did not look" never reads as
+    "not caused by this change". Read by review: ruff's words tell a shell call that "seems safe" from one an edit below
+    its first line made unsafe. Asked by the owner: what a change causes is kept apart from what was already in the
+    files it touched."""
     held = evidence.get("base_texts") or {}  # read by the collector, as the head's texts are: no git here
     added = {f["path"]: f.get("added_at", frozenset()) for f in evidence["files"]}
     wanted = {
@@ -130,18 +133,28 @@ def _known(
     except (OSError, ValueError, KeyError, IndexError, TypeError, _FloodError, subprocess.SubprocessError):
         return found  # not compared: each `known` stays None
 
+    # A count is read apart from the words around it: read by review, a parameter removed from a function of seven
+    # turned "(7 > 5)" into "(6 > 5)" on the `def` line the change left alone, and the finding read as the change's.
     def key(item: Diagnostic) -> tuple[str, str, str]:
-        return item.code, squash(item.source), item.message
+        return item.code, squash(item.source), _COUNT.sub(r"(> \2)", item.message)
+
+    def count(item: Diagnostic) -> int:
+        return int(said[1]) if (said := _COUNT.search(item.message)) else 0
 
     marked = dict(found)
     for path in wanted:
-        left = Counter(key(item) for item in before.get(path, ()))
+        left: dict[tuple[str, str, str], list[int]] = {}
+        for item in before.get(path, ()):
+            left.setdefault(key(item), []).append(count(item))
         marked[path] = []
         for item in found[path]:
             if item.line not in added[path]:
-                known = left[key(item)] > 0
-                left[key(item)] -= known
-                item = replace(item, known=known)
+                # Old where the base held it at this count or above, each base one matched once: a count the change
+                # raised is its own.
+                fits = [held for held in left.get(key(item), []) if held >= count(item)]
+                if fits:
+                    left[key(item)].remove(min(fits))
+                item = replace(item, known=bool(fits))
             marked[path].append(item)
     return marked
 
