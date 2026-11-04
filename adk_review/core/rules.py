@@ -73,8 +73,8 @@ class Diagnostic:
     applicability: str | None = None
     url: str | None = None
     #: Whether the base held it too: True where it did, the same code and words on a line of the same text, a count
-    #: no higher, so the change did not cause it; False where the change made it; None where it was not set against
-    #: the base.
+    #: no higher where the file holds it once, so the change did not cause it; False where the change made it; None
+    #: where it was not set against the base.
     known: bool | None = None
 
 

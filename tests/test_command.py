@@ -194,6 +194,31 @@ class TestWhatAReviewCovers:
             assert any("PLR0913" in str(f) for f in listed), (old, now, apart)
             assert not any("PLR0913" in str(f) for f in other), (old, now, apart)
 
+    def test_two_like_def_lines_keep_their_counts_their_own(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: two classes' `def __init__(` lines read the same, and matched on any count no lower, the
+        change's raise of the one took the other's base count and read as old, and the other, untouched, as the
+        change's own. A count is weighed only where the file holds that finding once each side."""
+        params = ["a", "b", "c", "d", "e", "f", "g"]
+
+        def init(names: list[str]) -> str:
+            return (
+                "    def __init__(\n        self,\n"
+                + "".join(f"        {n}: int,\n" for n in names)
+                + "    ) -> None:\n"
+            )
+
+        two = "class A:\n{}        pass\n\n\nclass B:\n{}        pass\n"
+        many = [*params, "h", "i"]
+        repo = branched(
+            tmp_path, {"app.py": two.format(init(params), init(many))},
+            {"app.py": two.format(init([*params, "x"]), init(many))},
+        )  # fmt: skip
+        _code, data = reviewed(cli, repo)
+        capsys.readouterr()
+        raised = [f["line"] for f in data["findings"] if "PLR0913" in f["title"]]
+        assert raised == [2], (data["findings"], data["old_findings"])
+        assert any("PLR0913" in str(f) and "line 17" in str(f) for f in data["old_findings"]), data["old_findings"]
+
     def test_where_the_base_cannot_be_read_what_lies_on_untouched_lines_still_counts(
         self, cli, tmp_path: Path, capsys, monkeypatch
     ) -> None:
@@ -1303,7 +1328,7 @@ class TestThePreviousReportAndTheHandoff:
         refuted = Outcome(refuted=[(item, "no")], verified=True)
         assert _resolved(refuted, [], "APPROVED", previous, ["guideline.correctness"], []) == []
 
-    def test_a_point_listed_apart_is_two_lines_in_the_comment_and_whole_in_the_handoff(self) -> None:
+    def test_a_point_listed_apart_is_its_headline_and_change_in_the_comment_and_whole_in_the_handoff(self) -> None:
         """Asked by the owner: 16 points that asked for what the branch already did filled 255 lines of a comment with
         their quotes, reasons and code. In the comment each is its place, check, title and severity, and its change;
         the hand-off, the report and the JSON keep it whole."""
@@ -1324,6 +1349,13 @@ class TestThePreviousReportAndTheHandoff:
         assert apart[1:] == ["", "1. `a.py:2`: correctness: t2 (major)", "   - Suggested change: s"], said
         handoff = render_handoff(evidence, outcome, verdict="APPROVED", fail_on="blocker")
         assert "y = 2" in handoff.split("## Possibly already done", 1)[1], handoff
+        # Read by review: a second reading of the same lines went unsaid; it is counted, as a point's past five are.
+        other = Sourced("guideline.altitude", found.model_copy(update={"title": "t3"}), (2, 3), deleted=True, done=True)
+        said = render_comment(
+            evidence, Outcome(kept=[item], folded=[(other, item)]), verdict="APPROVED", fail_on="blocker"
+        )
+        apart = said.split("### Possibly already done", 1)[1].strip().splitlines()
+        assert apart[-1] == "   - Also on these lines: 1 more, which the report lists", said
 
     def test_a_point_whose_suggested_code_the_branch_holds_is_listed_apart_and_never_counted_as_major(self) -> None:
         """Asked by the owner: a finding asking for code the branch already holds is a notice, not a major issue.

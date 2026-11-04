@@ -300,28 +300,28 @@ def scored(name: str, data: dict) -> bool:
     return bool(named_by(name, data))
 
 
-def invented(data: dict) -> tuple[Counter[str], Counter[str]]:
+def invented(data: dict) -> tuple[Counter[str], Counter[str]] | None:
     """Every finding a guideline made in one run's JSON report, kept or folded, at any severity, by guideline, and
-    those of them flagged possibly already done. Read on a clean branch, each is a false one: read by review, the
-    owner's comments held false minors, which a count of false majors alone never saw."""
-    made: Counter[str] = Counter()
-    flagged: Counter[str] = Counter()
-    for f in (*data["findings"], *data["folded"]):
-        if f["check"].startswith(GUIDELINE):
-            made[f["check"]] += 1
-            flagged[f["check"]] += bool(f.get("already_held"))
-    return made, +flagged
+    those of them flagged possibly already done; None where a guideline could not look, since its nothing would read
+    as none invented. Read on a clean branch, each is a false one: read by review, the owner's comments held false
+    minors, which a count of false majors alone never saw."""
+    if any(check.startswith(GUIDELINE) for check in data.get("could_not_look") or {}):
+        return None
+    theirs = [f for f in (*data["findings"], *data["folded"]) if f["check"].startswith(GUIDELINE)]
+    return Counter(f["check"] for f in theirs), Counter(f["check"] for f in theirs if f.get("already_held"))
 
 
 def false_findings(runs: Mapping[str, list[tuple[Counter[str], Counter[str]] | None]]) -> list[str]:
     """Each clean branch's false findings, a line a guideline: how many each run made, and how many of them were flagged
-    possibly already done, `-` for a run with no report; a branch none made one on is one line of zeros, so it never
-    reads as unmeasured. Run to run they vary: measured live on the owner's branch, 10
+    possibly already done, `-` for a run with no report or one a guideline could not look in; a branch none made one on
+    is one line of zeros, so it never reads as unmeasured. Run to run they vary: measured live on the owner's branch, 10
     and then 21 on the same commit, so a change is judged against that spread."""
     lines = ["| branch | guideline | false findings, each run | of them flagged, each run |", "|---|---|---|---|"]
     for name, each in runs.items():
+        # A `Counter` answers 0 for a name it never counted, so "every guideline" reads as zeros.
         for check in sorted({check for run in each if run for check in run[0]}) or ["every guideline"]:
-            made, flagged = (", ".join("-" if run is None else str(run[at][check]) for run in each) for at in (0, 1))
+            made = ", ".join("-" if run is None else str(run[0][check]) for run in each)
+            flagged = ", ".join("-" if run is None else str(run[1][check]) for run in each)
             lines.append(f"| {name} | {check} | {made} | {flagged} |")
     return lines
 

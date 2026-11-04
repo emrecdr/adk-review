@@ -672,23 +672,24 @@ the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lis
   folder's name, what the change was held against and the scope (`reviewed_where`), and the hand-off opens with them
   too. A finding below the bar that asks for what the branch already does, code it holds or the removal of a line it
   removed, is listed apart, under Possibly already done, where every finding on its lines is so, in two lines, its
-  place, title and severity and its change (`_briefed`): asked by the owner, 16 such points filled 255 lines of a
-  comment, and the report and the hand-off keep each whole. One at the bar stays a point to fix, and a tidy at the bar
-  is listed with the points at it. An approval names its bar, and every comment counts the major issues below it: asked
-  by the owner, a major read as nothing much. A blocker or a major says why it matters, a rule's `why` or ruff's page
-  for its code, and shows the corrected code a guideline gave. Each place sits in a code span, and each quote in one, or
-  in a fenced block that keeps its lines where it spans several, and the whole holds at most 60,000 characters, under
-  the 65,536 GitHub takes in a comment, the most severe points first and the rest counted. The reviewer posts nothing
-  and prints no command that would: asked by the owner, who reviews others' branches and pastes each comment by hand.
-  With no file named, it is `comment-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md` in the current folder, its
-  prefix the flag's own name as the hand-off's is, every name lower case, each branch's name without `refs/heads/`,
-  `refs/remotes/` or `refs/tags/`, made safe for a file name and cut at 40 characters, the commit the 12 characters of
-  the one reviewed that the comment's first line prints, `HEAD`'s under `--staged`, and the run names it by its full
-  path, the last of the files written, unless `--quiet` silences a review that passes. Read by review, 20 characters
-  left the company's repositories one letter each apart (`acme-batch-wrapper-s`), and the time is to the second, since a
-  review served from `--cache`, one with no guideline, and two started in one minute end within it, and a name made by
-  the minute let the second replace the first. Asked by the owner, the commit tells two rounds of review on one branch
-  apart, and comes last so one branch's files list by time.
+  place, title and severity and its change, other readings of its lines counted (`_briefed`): asked by the owner, 16
+  such points filled 255 lines of a comment, and the report and the hand-off keep each whole. One at the bar stays a
+  point to fix, and a tidy at the bar is listed with the points at it. An approval names its bar, and every comment
+  counts the major issues below it: asked by the owner, a major read as nothing much. A blocker or a major says why it
+  matters, a rule's `why` or ruff's page for its code, and shows the corrected code a guideline gave. Each place sits in
+  a code span, and each quote in one, or in a fenced block that keeps its lines where it spans several, and the whole
+  holds at most 60,000 characters, under the 65,536 GitHub takes in a comment, the most severe points first and the rest
+  counted. The reviewer posts nothing and prints no command that would: asked by the owner, who reviews others' branches
+  and pastes each comment by hand. With no file named, it is
+  `comment-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md` in the current folder, its prefix the flag's own name
+  as the hand-off's is, every name lower case, each branch's name without `refs/heads/`, `refs/remotes/` or
+  `refs/tags/`, made safe for a file name and cut at 40 characters, the commit the 12 characters of the one reviewed
+  that the comment's first line prints, `HEAD`'s under `--staged`, and the run names it by its full path, the last of
+  the files written, unless `--quiet` silences a review that passes. Read by review, 20 characters left the company's
+  repositories one letter each apart (`acme-batch-wrapper-s`), and the time is to the second, since a review served from
+  `--cache`, one with no guideline, and two started in one minute end within it, and a name made by the minute let the
+  second replace the first. Asked by the owner, the commit tells two rounds of review on one branch apart, and comes
+  last so one branch's files list by time.
 - `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint: its
   check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line, so a
   finding keeps it when lines move. It lists what is no longer found, among what this review looked for, a check that

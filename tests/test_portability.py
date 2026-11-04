@@ -532,11 +532,13 @@ def test_the_labelled_set_counts_a_clean_branchs_false_findings_at_every_severit
     run = {
         "findings": [finding("guideline.altitude", "minor", held=True), finding("rule.lint", "minor")],
         "folded": [finding("guideline.altitude", "minor")],
+        "could_not_look": {"rule.lint": "a rule's hole is no guideline's"},
     }
-    made, flagged = labelled.invented(run)
-    assert (made, flagged) == (Counter({"guideline.altitude": 2}), Counter({"guideline.altitude": 1}))
+    assert labelled.invented(run) == (Counter({"guideline.altitude": 2}), Counter({"guideline.altitude": 1}))
     rows = labelled.false_findings({"clean-removed-field": [labelled.invented(run), (Counter(), Counter()), None]})
     assert rows[-1] == "| clean-removed-field | guideline.altitude | 2, 0, - | 1, 0, - |", rows
+    # Read by review: a guideline that could not look counted as one that invented nothing.
+    assert labelled.invented({**run, "could_not_look": {"guideline.complexity": "it failed"}}) is None
     none = labelled.false_findings({"clean-docs": [(Counter(), Counter())] * 2})[-1]
     assert none == "| clean-docs | every guideline | 0, 0 | 0, 0 |", "a branch with none is still measured"
 

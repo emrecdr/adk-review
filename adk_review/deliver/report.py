@@ -636,15 +636,18 @@ def _ran(profile: str, model: str, checks: Sequence[str]) -> str:
 
 def _briefed(groups: Sequence[list[Sourced]]) -> list[list[str]]:
     """Each group of a comment's Possibly already done, numbered, in two lines: its lead's place, title and severity,
-    and its change. Asked by the owner: read by review, 16 points that asked for what the branch already did filled 255
-    lines of a comment with quotes, reasons and code. The report, the JSON and the hand-off keep each whole."""
+    and its change, and how many other readings its lines hold. Asked by the owner: read by review, 16 points that
+    asked for what the branch already did filled 255 lines of a comment with quotes, reasons and code. The report, the
+    JSON and the hand-off keep each whole."""
     points = []
-    for number, (lead, *_also) in enumerate(groups, 1):
+    for number, (lead, *also) in enumerate(groups, 1):
         f = lead.finding
         lines = [
             f"{number}. {_spot(f)}: {_titled(lead)} ({f.severity})",
             f"   - Suggested change: {prose(f.suggestion)}",
         ]
+        if also:
+            lines.append(f"   - Also on these lines: {len(also):,} more, which the report lists")
         points.append(_nested(number, lines))
     return points
 

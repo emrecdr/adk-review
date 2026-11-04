@@ -129,16 +129,16 @@ rule reads only the files `scan` names unless it sets `reads_every_kind = True`,
 leaks from a README as from code. A rule or a guideline whose findings change how code reads and never what it does sets
 `cleanup = True`, as `simplify` and `complexity` do: the hand-off lists them under `## Tidy`, apart from the fixes, and
 holds one back on lines a defect at major or above names. Ruff's findings the base held too, the same code and words on
-a line of the same text, a count in them no higher, on lines the change did not touch, are old (`Hit.old`,
-`Checked.old`, `Outcome.old`): listed last under "Already in the files you touched", fixed too by the Boy Scout rule,
-and never read by the verdict; the collector reads each modified Python file's base text for it (`base_texts`), and a
-file not set against it keeps `Diagnostic.known` None, its untouched findings counted at the bar, as before. A rule may
-carry `bad` and `good` examples (those that read an outside tool carry none), which the catalog holds it to at every
-start with its own source, a rule failing either being exit 2, and a `(path, text)` example names a file the shipped
-`scan` reads (`tests/test_catalog.py`); `try_rule`, `lines_hit` and `self_check` try a rule with no repository,
-`--list-checks` lists every check with its kind, its profiles and its file, `--check ID` runs one check alone. Each
-check has one id, `rule.<name>` or `guideline.<name>` (`core/profiles.py`), in the config, on the command line and as
-its own report section; inside ADK it is `state_key`'s identifier, `rule_<name>`.
+a line of the same text, a count no higher where the file holds it once, on lines the change did not touch, are old
+(`Hit.old`, `Checked.old`, `Outcome.old`): listed last under "Already in the files you touched", fixed too by the Boy
+Scout rule, and never read by the verdict; the collector reads each modified Python file's base text for it
+(`base_texts`), and a file not set against it keeps `Diagnostic.known` None, its untouched findings counted at the bar,
+as before. A rule may carry `bad` and `good` examples (those that read an outside tool carry none), which the catalog
+holds it to at every start with its own source, a rule failing either being exit 2, and a `(path, text)` example names a
+file the shipped `scan` reads (`tests/test_catalog.py`); `try_rule`, `lines_hit` and `self_check` try a rule with no
+repository, `--list-checks` lists every check with its kind, its profiles and its file, `--check ID` runs one check
+alone. Each check has one id, `rule.<name>` or `guideline.<name>` (`core/profiles.py`), in the config, on the command
+line and as its own report section; inside ADK it is `state_key`'s identifier, `rule_<name>`.
 
 The one config file, `config.toml` beside `review.py`, holds the profiles under `[profiles]` — named lists of check ids
 or the groups `rules` and `guidelines`, `default` the basics — and the review policy (`[review]` `fail_on`,
