@@ -520,6 +520,25 @@ def test_the_labelled_set_builds_one_known_defect_a_branch_and_scores_each_run(l
     assert row == "| repeated-io | its defect named | 3 of 3 | guideline.efficiency x3, guideline.tests x1 |", row
 
 
+def test_the_labelled_set_counts_a_clean_branchs_false_findings_at_every_severity_each_run() -> None:
+    """Read by review: the owner's comments held false minors, which a count of false majors alone never saw. On a
+    clean branch every guideline finding, kept or folded, is counted by guideline and run, those flagged possibly
+    already done apart, so a change is judged against the spread between runs; a run with no report counts nothing."""
+    import labelled_set as labelled
+
+    def finding(check: str, severity: str, held: bool = False) -> dict:
+        return {"check": check, "file": "a.py", "line": 1, "lines": [1, 1], "severity": severity, "already_held": held}
+
+    run = {
+        "findings": [finding("guideline.altitude", "minor", held=True), finding("rule.lint", "minor")],
+        "folded": [finding("guideline.altitude", "minor")],
+    }
+    made, flagged = labelled.invented(run)
+    assert (made, flagged) == (Counter({"guideline.altitude": 2}), Counter({"guideline.altitude": 1}))
+    rows = labelled.false_findings({"clean-removed-field": [labelled.invented(run), (Counter(), Counter()), None]})
+    assert rows[-1] == "| clean-removed-field | guideline.altitude | 2, 0, - | 1, 0, - |", rows
+
+
 def test_the_labelled_sets_dropped_guard_is_a_defect_on_deleted_lines_alone(labelled_repo) -> None:
     """Read by review: a guideline told to report a defect only in code the branch holds might pass over a guard the
     change deleted, and no labelled branch held that shape. Here the change deletes the guard and adds nothing, so a

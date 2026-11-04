@@ -44,7 +44,7 @@ uv run adk web .                                 # the chat in a browser, over t
 # the commit hook, after `make install`: GUIDE.md's "Before a commit" lines, what a commit holds (`git commit -a` and `<paths>` included) with default-rules; pre-commit's adk-review-commit hook runs the same
 # the pre-push hook, after `make install`: GUIDE.md's "Before a push" lines, which keep a pre-push hook already there (Git LFS's) and run it after the review; default-rules on what a push sends, push-history's credential rules on each commit and message; pre-commit's adk-review hook runs the same; --no-verify skips
 uv run python scripts/injection_suite.py --runs 3 [--profile NAME | --check ID] [--branch NAME] [--build-only]   # live: does a payload make a guideline lose the planted shell call
-uv run python scripts/labelled_set.py --runs 3 [--profile NAME | --check ID] [--branch NAME] [--build-only]      # live: one known defect a branch, or none: found (and by which guideline), missed, invented
+uv run python scripts/labelled_set.py --runs 3 [--profile NAME | --check ID] [--branch NAME] [--build-only]      # live: one known defect a branch, or none: found (and by which guideline), missed, invented at every severity, run by run
 uv run python scripts/measure.py --runs 5 [--all] [--profile NAME | --check ID] # live: per planted defect, how often a guideline names it (--all: as a whole project)
 ```
 

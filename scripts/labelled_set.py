@@ -15,8 +15,10 @@ two show a guideline their cause only within the function around the hunk, git's
 Each is reviewed K times, under `--profile` where one is named, each guideline `--check` names alone where one is, and
 the default profile otherwise. A labelled branch scores the runs in which a guideline named a finding on the defect's
 lines; a clean branch scores the runs a guideline made a finding at major or above, a false one; each says which
-guidelines did. Injection attempts are `scripts/injection_suite.py`'s. Each review calls the model: run it only when a
-live measurement is wanted; `--build-only` builds the branches and calls nothing.
+guidelines did. A second table counts each clean branch's false findings at every severity, by guideline and run, and
+those of them flagged possibly already done, since false minors are what a reader of a comment sees most. Injection
+attempts are `scripts/injection_suite.py`'s. Each review calls the model: run it only when a live measurement is
+wanted; `--build-only` builds the branches and calls nothing.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from make_demo_repo import BASE_REF, CHARGE, TESTS, _git, branch, build, commit
-from measure import ROOT, judged, options, picked, reviewed, tally
+from measure import GUIDELINE, ROOT, judged, options, picked, reviewed, tally
 
 #: The characters of a file's diff a guideline reads, as the shipped config sets them: each review here runs the
 #: command as it ships.
@@ -298,6 +300,31 @@ def scored(name: str, data: dict) -> bool:
     return bool(named_by(name, data))
 
 
+def invented(data: dict) -> tuple[Counter[str], Counter[str]]:
+    """Every finding a guideline made in one run's JSON report, kept or folded, at any severity, by guideline, and
+    those of them flagged possibly already done. Read on a clean branch, each is a false one: read by review, the
+    owner's comments held false minors, which a count of false majors alone never saw."""
+    made: Counter[str] = Counter()
+    flagged: Counter[str] = Counter()
+    for f in (*data["findings"], *data["folded"]):
+        if f["check"].startswith(GUIDELINE):
+            made[f["check"]] += 1
+            flagged[f["check"]] += bool(f.get("already_held"))
+    return made, +flagged
+
+
+def false_findings(runs: Mapping[str, list[tuple[Counter[str], Counter[str]] | None]]) -> list[str]:
+    """Each clean branch's false findings, a line a guideline: how many each run made, and how many of them were flagged
+    possibly already done, `-` for a run with no report. Run to run they vary: measured live on the owner's branch, 10
+    and then 21 on the same commit, so a change is judged against that spread."""
+    lines = ["| branch | guideline | false findings, each run | of them flagged, each run |", "|---|---|---|---|"]
+    for name, each in runs.items():
+        for check in sorted({check for run in each if run for check in run[0]}):
+            made, flagged = (", ".join("-" if run is None else str(run[at][check]) for run in each) for at in (0, 1))
+            lines.append(f"| {name} | {check} | {made} | {flagged} |")
+    return lines
+
+
 def table(results: dict[str, list[bool]], by: Mapping[str, Counter[str]]) -> list[str]:
     """Each branch's line: a defect named in N of K runs, or a clean change given a false finding in N of K, and by
     which guidelines in how many."""
@@ -318,11 +345,16 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     results: dict[str, list[bool]] = {}
     by: dict[str, Counter[str]] = {}
+    false: dict[str, list[tuple[Counter[str], Counter[str]] | None]] = {}
     for name, review in reviewed(repo, picked(parser, made, args.branch), args):
         named = named_by(name, review.data) if review.data else set()
         results.setdefault(name, []).append(bool(named))
         by.setdefault(name, Counter()).update(named)
+        if BRANCHES[name][1] is None:
+            false.setdefault(name, []).append(invented(review.data) if review.data else None)
     print("\n".join(table(results, by)))
+    if false:
+        print("\n" + "\n".join(false_findings(false)))
     return 0
 
 
