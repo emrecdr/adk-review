@@ -1303,6 +1303,28 @@ class TestThePreviousReportAndTheHandoff:
         refuted = Outcome(refuted=[(item, "no")], verified=True)
         assert _resolved(refuted, [], "APPROVED", previous, ["guideline.correctness"], []) == []
 
+    def test_a_point_listed_apart_is_two_lines_in_the_comment_and_whole_in_the_handoff(self) -> None:
+        """Asked by the owner: 16 points that asked for what the branch already did filled 255 lines of a comment with
+        their quotes, reasons and code. In the comment each is its place, check, title and severity, and its change;
+        the hand-off, the report and the JSON keep it whole."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import render_comment, render_handoff
+
+        found = Finding(
+            file="a.py", line=2, severity="major", title="t2", evidence="-x = 1\ny = 2", why="w", suggestion="s",
+            code="y = 2",
+        )  # fmt: skip
+        item = Sourced("guideline.correctness", found, (2, 3), deleted=True, done=True)
+        pre = {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40}
+        evidence = {"preflight": pre, "whole": False, "scope": []}
+        outcome = Outcome(kept=[item])
+        said = render_comment(evidence, outcome, verdict="APPROVED", fail_on="blocker")
+        apart = said.split("### Possibly already done", 1)[1].strip().splitlines()
+        assert apart[1:] == ["", "1. `a.py:2`: correctness: t2 (major)", "   - Suggested change: s"], said
+        handoff = render_handoff(evidence, outcome, verdict="APPROVED", fail_on="blocker")
+        assert "y = 2" in handoff.split("## Possibly already done", 1)[1], handoff
+
     def test_a_point_whose_suggested_code_the_branch_holds_is_listed_apart_and_never_counted_as_major(self) -> None:
         """Asked by the owner: a finding asking for code the branch already holds is a notice, not a major issue.
         It is listed apart, under Possibly already done, never removed: read by review twice, code that removed such

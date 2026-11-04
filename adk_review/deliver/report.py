@@ -539,7 +539,8 @@ def render_comment(
         shown = [(heading, groups, said) for heading, groups, said in sections if groups]
         for at, (heading, groups, said) in enumerate(shown):
             top = ["", f"## {title}", *(["", note] if note else [])] if at == 0 else []
-            lanes.append(([*top, "", f"### {heading}", *(["", said] if said else []), ""], _commented(groups, tidies)))
+            points = _briefed(groups) if heading == APART_HEADING else _commented(groups, tidies)
+            lanes.append(([*top, "", f"### {heading}", *(["", said] if said else []), ""], points))
     return inert("\n".join(_within(lines, lanes, _unchecked(outcome, fail_on)))) + "\n"
 
 
@@ -631,6 +632,21 @@ def _ran(profile: str, model: str, checks: Sequence[str]) -> str:
         + (", and ".join(ran) if model else ", ".join([*ran, "no model"]))
         + "."
     )
+
+
+def _briefed(groups: Sequence[list[Sourced]]) -> list[list[str]]:
+    """Each group of a comment's Possibly already done, numbered, in two lines: its lead's place, title and severity,
+    and its change. Asked by the owner: read by review, 16 points that asked for what the branch already did filled 255
+    lines of a comment with quotes, reasons and code. The report, the JSON and the hand-off keep each whole."""
+    points = []
+    for number, (lead, *_also) in enumerate(groups, 1):
+        f = lead.finding
+        lines = [
+            f"{number}. {_spot(f)}: {_titled(lead)} ({f.severity})",
+            f"   - Suggested change: {prose(f.suggestion)}",
+        ]
+        points.append(_nested(number, lines))
+    return points
 
 
 def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[list[str]]:
