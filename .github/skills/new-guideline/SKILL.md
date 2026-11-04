@@ -28,4 +28,6 @@ the catalog finds the file, and the fan-out, its state key, the chat verdict's s
 5. Run the whole suite, the lint and the type check. Measure the guideline live only when asked —
    `uv run python scripts/measure.py --runs 5` calls a provider, and `scripts/labelled_set.py --check guideline.<name>`
    measures the guideline alone, on the branches `--branch` names and the clean ones, so each defect it is credited with
-   is its own; `--profile NAME` measures it among a profile's others, naming which guideline found each defect.
+   is its own; `--profile NAME` measures it among a profile's others, naming which guideline found each defect. A
+   second table counts each guideline's false findings on each clean branch at every severity, run by run, those
+   flagged possibly already done apart: weigh a change against the spread between runs, never one run.
