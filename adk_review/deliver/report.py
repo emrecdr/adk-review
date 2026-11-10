@@ -1649,12 +1649,21 @@ def safe_value(value: Any) -> Any:
     return value
 
 
+#: Each code a tool's roll-up counts, as `judge/rule_helpers/diagnostics.py` writes one: `F401 (unused-import) x2 on
+#: lines 3 and 9`, or pyrefly's `bad-argument-type x3`.
+_ROLLED = re.compile(r"(?:^|, )(\S+)(?: \([^)]*\))? x\d+")
+
+
 def fingerprint(item: Sourced, occurrence: int = 0) -> str:
     """A finding's identity across runs: its check, its file, its evidence with every space gone and secrets redacted
     — for a guideline's finding the lines its quote stands on, which grounding put there, however the model framed
     them — and which of the findings sharing all three it is, in the order the review lists them. Never its line,
-    which a line added above it would move, as SonarQube, GitHub and Semgrep key theirs on content."""
+    which a line added above it would move, as SonarQube, GitHub and Semgrep key theirs on content; so a tool's
+    roll-up is its codes alone. Read by review: its evidence names its lines and counts, and a line added above them
+    made `--previous` count one finding fixed and one new where nothing had changed."""
     evidence = item.finding.evidence
+    if _quote_label(item.finding) == "Linter rules":
+        evidence = ",".join(sorted(set(_ROLLED.findall(evidence)))) or evidence
     if item.deleted:  # a deleted line's `-` aside: read by review, a moved line had two identities, one for each copy
         evidence = "\n".join(line.removeprefix("-") for line in evidence.splitlines())
     quote = "".join(scrub(evidence)[0].split())

@@ -1923,6 +1923,32 @@ class TestTheJsonReport:
         found = json.loads(data.read_text(encoding="utf-8"))["findings"]
         assert found and all(f["file"] == "README.md" and f["on_added_line"] for f in found), found
 
+    def test_a_roll_up_keeps_its_fingerprint_when_its_lines_and_counts_move(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: a tool's roll-up names its lines, since the owner asked where its findings are, and a line
+        added above them gave it another fingerprint. Where the roll-up counts at the bar, `--previous` then said one
+        fixed and one new of a finding nothing had changed. It is known by its codes alone."""
+        base = "import os\n\n\ndef build(a, b, c, d, e, f):\n    pass\n\n\ndef other(a, b, c, d, e, f):\n    pass\n"
+        after = {
+            "below": base + "\nDONE = True\n",
+            "above": "# a note\n" + base,
+            "one fixed": base.replace("def other(a, b, c, d, e, f)", "def other(a)"),
+        }
+        found = {}
+        for name, text in after.items():
+            (tmp_path / name).mkdir()
+            _code, data = reviewed(cli, branched(tmp_path / name, {"app.py": base}, {"app.py": text}))
+            capsys.readouterr()
+            (old,) = data["old_findings"]
+            found[name] = (old["fingerprint"], old["evidence"])
+        assert len({evidence for _print, evidence in found.values()}) == 3, found
+        assert len({fingerprint for fingerprint, _evidence in found.values()}) == 1, found
+        # Another code is another finding: the unused import fixed leaves the roll-up of the rest.
+        (tmp_path / "a code gone").mkdir()
+        repo = branched(tmp_path / "a code gone", {"app.py": base}, {"app.py": base.replace("import os\n", "")})
+        _code, data = reviewed(cli, repo)
+        capsys.readouterr()
+        assert data["old_findings"][0]["fingerprint"] not in {fingerprint for fingerprint, _evidence in found.values()}
+
     def test_a_finding_keeps_its_fingerprint_when_its_lines_move(self) -> None:
         """A finding's identity across runs, for a pipeline that tracks findings: built from its check, its file and
         its evidence, spaces and secrets aside, never its line, which a line added above it moves. Two findings sharing
