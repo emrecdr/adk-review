@@ -147,9 +147,10 @@ is exit 2. With no `--profile`, `default` runs, and a check runs only where a pr
 ID`. `--profile` is the only choice, and nothing is read from the repository under review, `.gitignore` included: git
 keeps ignored files out of commits (under `--staged` git reads it only to name the untracked files the report lists).
 What a review covers: `--path DIR` a folder of the change, the rest counted in the report; `--path-exclude DIR` a folder
-or file left out of every check, counted too, outweighing `--path`; `--all` every file at the head, diffed against git's
-empty tree; `--head` defaults to the branch checked out; with neither `--base` nor `--all` a terminal asks, and a
-pipeline reviews the change against `main`, or `master`, or else the branch `origin/HEAD` names.
+or file whose changes no check reads, counted too, outweighing `--path` (a tree rule still names a line there that the
+change breaks); `--all` every file at the head, diffed against git's empty tree; `--head` defaults to the branch checked
+out; with neither `--base` nor `--all` a terminal asks, and a pipeline reviews the change against `main`, or `master`,
+or else the branch `origin/HEAD` names.
 
 Evidence is gathered in Python first, the rules run as one `FunctionNode` before the guidelines in both shapes
 (`judge/checks.py`, every rule through `run_rule`), or straight from the driver through the same `run_rules` where no
