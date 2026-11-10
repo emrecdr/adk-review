@@ -614,7 +614,11 @@ def whole_diffs(resolved: dict, entries: list[dict[str, str]], scope: Sequence[s
     """Under `--all`, each entry's diff as `diff_of` reads it, from one call split at each `diff --git` opening a line.
 
     Every file is added, so each has one such header, and no line of a file can open one: each is marked `+`.
-    Measured over 4,826 files: 9.4 s a call a file, eight at a time; 0.86 s in one."""
+    Measured over 4,826 files: 9.4 s a call a file, eight at a time; 0.86 s in one. No file asked is no call:
+    measured by review, the files outside `scan` are read so too, and where there was none git printed the whole patch
+    again, 0.2 s on 3,021 files."""
+    if not entries:
+        return []
     repo, base, head = resolved["repo"], resolved["merge_base"], resolved["head_sha"]
     specs = ("--", *(f":(top,literal){folder}" for folder in scope))
     away = _off_disk(resolved)
