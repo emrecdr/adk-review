@@ -13,7 +13,7 @@ from collections.abc import Callable, Collection, Mapping, Sequence
 
 from ..core.blast import PASSED_ON, Blast, blast_radius
 from ..core.evidence import Entry, Failure, entry
-from ..core.paths import in_scope, matches
+from ..core.paths import in_scope, matches, no_such_path
 from ..core.rules import Tree, UnreadError, is_python_text
 from ..core.text import lines_of, squash
 from .diff import BINARY, LINK_MODE, SUBMODULE, added_lines, capped, framed, headers, hunk_lines, quotable
@@ -433,15 +433,22 @@ def radius(tree: Tree | None, files: list[Entry], *, read: bool, asked: bool) ->
     return Blast((), (), 0, asked=False)
 
 
-def no_change(head: str, base: str | None, scope: Sequence[str], exclude: Sequence[str] = ()) -> Failure:
+def no_change(
+    head: str, base: str | None, scope: Sequence[str], exclude: Sequence[str] = (), unmatched: Collection[str] = ()
+) -> Failure:
     """Why there is nothing to review: the head holds no file, adds nothing to the base, or nothing under the scope
     and outside what `--path-exclude` names. A head that adds nothing is marked `rescope`: most often it is the base
     itself, a branch checked out on `main`. A scope that leaves nothing is marked `narrowed`, for the command to name
-    its flags: chat takes none."""
+    its flags: chat takes none. A name of `unmatched`, which the head holds no path under, says so as the report does:
+    read by review, one misspelt `--path` read as a branch that changed nothing there."""
     if scope or exclude:
+
+        def named(paths: Sequence[str]) -> str:
+            return ", ".join(path + (no_such_path(path) if path in unmatched else "") for path in paths)
+
         what = f"no file at {head!r}" if base is None else f"nothing {head!r} changes"
         where = " ".join(
-            [*([f"under {', '.join(scope)}"] if scope else []), *([f"outside {', '.join(exclude)}"] if exclude else [])]
+            [*([f"under {named(scope)}"] if scope else []), *([f"outside {named(exclude)}"] if exclude else [])]
         )
         return {"status": "error", "error_message": f"{what} lies {where}: no change to review", "narrowed": True}
     if base is None:

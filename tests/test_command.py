@@ -68,7 +68,9 @@ class TestWhatAReviewCovers:
         assert "- changed      1 file(s): `src/payments/config.py`\n" in out
         assert run_review(*rules_only, "--path", "./docs/") == 2
         err = capsys.readouterr().err
-        assert "nothing 'feature/payments' changes lies under docs: no change to review" in err, err
+        # The demo holds no `docs`: a name the head holds no path under says so, as the report's scope line does.
+        assert "nothing 'feature/payments' changes lies under docs (no such path: " in err, err
+        assert "lies under docs (no such path: check its spelling and case): no change to review" in err, err
         assert "Name another folder with --path, or drop it to review the whole change" in err, "the next step"
         assert run_review(*rules_only, "--path", "../elsewhere") == 2
         assert "--path '../elsewhere' must name a folder inside the repository" in capsys.readouterr().err
@@ -124,6 +126,27 @@ class TestWhatAReviewCovers:
         reviewed(cli, repo, "--path", "nosuch", "--path", "src")
         out = capsys.readouterr().out
         assert "- scope        only nosuch (no such path: check its spelling and case) and src." in out, out
+
+    def test_a_lone_misspelt_path_is_told_to_check_its_spelling(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: one `--path` of a wrong case ended at "nothing 'change' changes lies under Src", which reads
+        as a branch that changed nothing there, where two names, one of them misspelt, did name its spelling. The most
+        common slip had no hint. A folder the head holds and the change did not touch is told as it is, still."""
+        files = {"src/app.py": "A = 1\n", "tests/test_app.py": "B = 1\n"}
+        repo = branched(tmp_path, files, {"src/app.py": "A = 2\n"})
+        against_main = [str(repo), "--head", "change", "--base", "main", "--profile", "default-rules"]
+        assert cli.main([*against_main, "--path", "Src"]) == 2
+        err = capsys.readouterr().err
+        assert "lies under Src (no such path: check its spelling and case): no change to review" in err, err
+        assert "Name another folder with --path, or drop it to review the whole change" in err, "the next step stays"
+        assert cli.main([*against_main, "--path", "src,tests"]) == 2
+        err = capsys.readouterr().err
+        assert "lies under src,tests (no such path: give each folder its own flag): no change to review" in err, err
+        assert cli.main([*against_main, "--path", "tests"]) == 2
+        err = capsys.readouterr().err
+        assert "nothing 'change' changes lies under tests: no change to review" in err, "a real folder is none"
+        assert cli.main([str(repo), "--head", "change", "--all", "--profile", "default-rules", "--path", "Src"]) == 2
+        err = capsys.readouterr().err
+        assert "no file at 'change' lies under Src (no such path: check its spelling and case)" in err, err
 
     def test_what_was_already_in_a_touched_file_is_apart_and_never_fails_the_review(
         self, cli, tmp_path: Path, capsys

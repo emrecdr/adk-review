@@ -1082,7 +1082,11 @@ def gather(
     except GitError as exc:  # the change half read is not the change: named, never reviewed as it stands
         return {"status": "error", "error_message": str(exc)}
     if not files and not ignored:  # measured: a branch already merged, or a base equal to its head, approved nothing
-        return no_change(head, base, scope if listed else (), exclude if listed else ())
+        # Read by review: one misspelt `--path` read as a branch that changed nothing there. The head is listed on this
+        # way out alone, to tell such a name from a folder the change did not touch.
+        named = (*scope, *exclude) if listed else ()
+        unmatched = _unmatched(named, [entry["path"] for entry in listed], head_listing(resolved)) if named else []
+        return no_change(head, base, scope if listed else (), exclude if listed else (), unmatched)
     # Only beside a file shown: read by review, the note alone made a block of no file, and each guideline ran, billed.
     if guidelines and block and (outside := len(listed) - len(entries)):
         # Named to the guidelines, as a file past the cap is: a test outside is no test missing. Read by review, the

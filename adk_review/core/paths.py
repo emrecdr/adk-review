@@ -237,6 +237,14 @@ def in_scope(path: str, scope: Sequence[str], exclude: Sequence[str] = ()) -> bo
     return (not scope or under(scope)) and not under(exclude)
 
 
+def no_such_path(name: str) -> str:
+    """What follows a `--path` or `--path-exclude` the head holds no path under, in the report's scope line and in the
+    error of a scope that left nothing: a name with a comma is a list in one flag, any other a misspelt one or one of
+    another case. Spelled here once, since the collector and the report both say it."""
+    fix = "give each folder its own flag" if "," in name else "check its spelling and case"
+    return f" (no such path: {fix})"
+
+
 def in_review(path: str, scan: Sequence[str], third_party: Sequence[str]) -> bool:
     """Whether a review reads `path`: one `scan` names, Python's or a config's, every file where it names none, and
     one with no suffix, which may be a script that runs Python, as only its first line tells; and none under a folder

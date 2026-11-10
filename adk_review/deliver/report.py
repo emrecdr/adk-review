@@ -19,7 +19,7 @@ from ..core.blast import Blast, describe
 from ..core.evidence import Evidence
 from ..core.findings import RANK, Checked, Finding, at_or_above
 from ..core.health import Health, found_by_rule, grade
-from ..core.paths import in_scope
+from ..core.paths import in_scope, no_such_path
 from ..core.profiles import guideline_id, rule_id
 from ..core.secrets import scrub
 from ..core.text import EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, short_ref, squash
@@ -1043,8 +1043,7 @@ def _covered(evidence: Evidence, name: Callable[[str], str]) -> tuple[str, str]:
     unmatched = set(evidence.get("unmatched", ()))
 
     def said(path: str) -> str:
-        fix = "give each folder its own flag" if "," in path else "check its spelling and case"
-        return name(path) + (f" (no such path: {fix})" if path in unmatched else "")
+        return name(path) + (no_such_path(path) if path in unmatched else "")
 
     noun = "file" if evidence.get("whole") else "changed file"
     covered = f"only {_and([said(folder) for folder in scope])}" if scope else f"every {noun}"
