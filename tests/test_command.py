@@ -161,6 +161,21 @@ class TestWhatAReviewCovers:
             assert "S602" in agent and "at the bar" not in agent.split("## Check your work")[0], agent
             assert "Nothing to fix" not in agent and "--check rule.lint" in agent, agent
 
+    def test_a_review_whose_findings_were_all_there_before_never_says_nothing_to_fix(
+        self, cli, tmp_path: Path, capsys
+    ) -> None:
+        """Read by review: under findings the report expects fixed too, its next step read "Nothing to fix: no finding
+        was kept", and named neither `--comment` nor `--handoff`, which both carry them."""
+        base = "import os\n\n\ndef build(a, b, c, d, e, f):\n    pass\n"
+        repo = branched(tmp_path, {"app.py": base}, {"app.py": base + "\nDONE = True\n"})
+        code, data = reviewed(cli, repo)
+        out = capsys.readouterr().out
+        assert code == 0 and data["old_findings"] and not data["findings"], data
+        steps = out.split("## Next steps", 1)[1]
+        assert "Nothing to fix" not in steps, steps
+        assert "- Fix the findings already in the files you touched too. They do not block the merge." in steps, steps
+        assert "`adk-review --comment` writes them as a comment" in steps, steps
+
     def test_a_finding_the_change_made_on_a_line_it_did_not_touch_is_its_own(self, cli, tmp_path: Path, capsys) -> None:
         """Read by review: ruff places a call's finding on its first line, so a change to an argument below it left that
         line as the base held it, and the finding read as old. Ruff's own words tell them apart: a shell call on a

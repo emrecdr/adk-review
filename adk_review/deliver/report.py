@@ -1421,7 +1421,10 @@ def _next_steps(outcome: Outcome, verdict: str, fail_on: str, *, staged: bool) -
         )
     if below:
         steps.append(f"{below} finding{'s' * (below != 1)} below the bar {'is' if below == 1 else 'are'} worth a look.")
-    if outcome.kept:
+    if outcome.old:
+        # Read by review: with these alone, the step read "Nothing to fix" under findings the report expects fixed.
+        steps.append("Fix the findings already in the files you touched too. They do not block the merge.")
+    if outcome.kept or outcome.old:
         steps.append(
             "`adk-review --comment` writes them as a comment to paste by hand, `--handoff` for a coding agent."
         )
