@@ -747,6 +747,19 @@ def base_files(resolved: dict, paths: Collection[str]) -> dict[str, str]:
     }
 
 
+def _unmatched(
+    names: Sequence[str], changed: Sequence[str], listing: list[tuple[str, str, str, str, str]] | None
+) -> list[str]:
+    """Each `--path` and `--path-exclude` that names no path, for the report to say: a misspelt one, or one of another
+    case, reviews or leaves out nothing. One the head holds and the change did not touch is none: read by review, a
+    pipeline names the same exclusions for every change, and each such folder read as misspelt. None where the head
+    was not listed, which cannot tell the two apart."""
+    if listing is None:
+        return []
+    paths = [*changed, *(path for *_meta, path in listing)]
+    return [name for name in dict.fromkeys(names) if all(in_scope(path, (), [name]) for path in paths)]
+
+
 def head_listing(resolved: dict) -> list[tuple[str, str, str, str, str]] | None:
     """The head's tree as `ls-tree -l` lists it, or None where git could not list it: never an empty list, which would
     read as a head that holds nothing. Taken once a review, for the tree and the changed files' texts both."""
@@ -1106,8 +1119,7 @@ def gather(
         "whole": base is None,
         "scope": list(scope),
         "exclude": list(exclude),
-        # Each exclusion that names no changed file, for the report to say: a misspelt one leaves everything in.
-        "unmatched": [name for name in exclude if all(in_scope(entry["path"], (), [name]) for entry in listed)],
+        "unmatched": _unmatched((*scope, *exclude), [entry["path"] for entry in listed], listing),
         "base_texts": base_texts,
         "parts": parts,
         "left_out": left_out,

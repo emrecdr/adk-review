@@ -493,8 +493,8 @@ def version() -> str:
 
 
 def scope_of(folders: Sequence[str], flag: str = "--path") -> tuple[str, ...]:
-    """Each --path as git spells a folder: `/` between names, no `./`, no trailing `/`; `.` is the whole repository.
-    One that starts at a root or a drive, or climbs out with `..`, is refused: git names nothing there."""
+    """Each --path as git spells a folder, once: `/` between names, no `./`, no trailing `/`; `.` is the whole
+    repository. One that starts at a root or a drive, or climbs out with `..`, is refused: git names nothing there."""
     scope = []
     for folder in folders:
         path = PurePosixPath(folder.replace("\\", "/"))
@@ -502,7 +502,7 @@ def scope_of(folders: Sequence[str], flag: str = "--path") -> tuple[str, ...]:
             raise ValueError(f"{flag} {folder!r} must name a folder inside the repository")
         if path.parts:
             scope.append(path.as_posix())
-    return tuple(scope)
+    return tuple(dict.fromkeys(scope))  # a folder named twice is one: read by review, the report said it twice
 
 
 def exclude_of(folders: Sequence[str]) -> tuple[str, ...]:

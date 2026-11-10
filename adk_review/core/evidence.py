@@ -125,7 +125,7 @@ class Evidence(Change):
     whole: bool  # under --all: every file at the head is the change, diffed against the empty tree
     scope: list[str]  # the folders --path named, as git spells them; [] for the whole change
     exclude: NotRequired[list[str]]  # the folders and files --path-exclude named, as git spells them
-    unmatched: NotRequired[list[str]]  # each of them that names no changed file: misspelt, or of another case
+    unmatched: NotRequired[list[str]]  # each of both that names no path the head or the change holds: misspelt
     #: Where the guidelines cannot read the change in one run, the runs that can, each the `--path` values one names;
     #: [] where it fits.
     parts: NotRequired[list[list[str]]]

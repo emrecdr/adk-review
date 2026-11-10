@@ -1020,14 +1020,19 @@ def _covered(evidence: Evidence, name: Callable[[str], str]) -> tuple[str, str]:
     """What a review covers, its folders and what it left out, each spelled by `name`, and a sentence counting the
     files it left out, changed ones or, under `--all`, the head's: the report's header and the comment's scope line,
     read from one place. Asked by the owner: "the whole change, less tests, docs: 34 changed file(s) outside it" read
-    badly. A misspelt or wrongly cased exclusion, which left everything in, says so."""
+    badly. A name the head holds no path under, misspelt or of another case, says so, and one that holds a comma says
+    what a list in one flag needs: read by review, `tests,docs` left everything in and named its spelling alone."""
     scope, exclude = evidence.get("scope", ()), evidence.get("exclude", ())
     unmatched = set(evidence.get("unmatched", ()))
-    nothing = " (no changed file lies there: check its spelling and case)"
+
+    def said(path: str) -> str:
+        fix = "give each folder its own flag" if "," in path else "check its spelling and case"
+        return name(path) + (f" (no such path: {fix})" if path in unmatched else "")
+
     noun = "file" if evidence.get("whole") else "changed file"
-    covered = f"only {_and([name(folder) for folder in scope])}" if scope else f"every {noun}"
+    covered = f"only {_and([said(folder) for folder in scope])}" if scope else f"every {noun}"
     if exclude:
-        covered += ", except " + _and([name(path) + nothing * (path in unmatched) for path in exclude])
+        covered += ", except " + _and([said(path) for path in exclude])
     count = evidence.get("outside", 0)
     left = f"no {noun}" if not count else f"1 {noun}" if count == 1 else f"{count:,} {noun}s"
     return covered, f"The review left out {left}."
@@ -1541,9 +1546,10 @@ def _health(
 
 
 def _under(scope: Sequence[str], exclude: Sequence[str] = ()) -> str:
-    """` under `src/``, the folders a review was kept to, then `, less `tests``, those `--path-exclude` left out, or
-    nothing for the whole head. Read by review: an exclusion left out of Health read as every file measured."""
-    return (f" under {_spans(scope)}" if scope else "") + (f", less {_spans(exclude)}" if exclude else "")
+    """` under `src/``, the folders a review was kept to, then `, except `tests``, those `--path-exclude` left out, or
+    nothing for the whole head, in the header's own words. Read by review: an exclusion left out of Health read as
+    every file measured."""
+    return (f" under {_spans(scope)}" if scope else "") + (f", except {_spans(exclude)}" if exclude else "")
 
 
 def _graded(health: Health, previous: Mapping | None) -> str:

@@ -105,7 +105,25 @@ class TestWhatAReviewCovers:
         # Read by review: a misspelt or wrongly cased exclusion left everything in, and the report said "less" it.
         run_review(*rules_only, "--path-exclude", "src/payments/Config.py")
         out = capsys.readouterr().out
-        assert "except src/payments/Config.py (no changed file lies there: check its spelling and case)" in out, out
+        assert "except src/payments/Config.py (no such path: check its spelling and case)" in out, out
+
+    def test_a_folder_the_change_did_not_touch_is_no_misspelt_one(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: a pipeline names the same exclusions for every change, and each one this change did not
+        touch read as misspelt, "check its spelling and case", in the report and in the comment its author reads. Only
+        a name the head holds no path under is one: a wrong case, a list in one flag, which a person of other linters
+        writes, and a misspelt `--path` beside a good one, which drew no note. A folder named twice is said once."""
+        files = {"src/app.py": "A = 1\n", "tests/test_app.py": "B = 1\n", "docs/guide.md": "# Guide\n"}
+        repo = branched(tmp_path, files, {"src/app.py": "A = 2\n"})
+        left_out = ["tests", "docs", "tests/", "Tests", "tests,docs"]
+        reviewed(cli, repo, *(flag for name in left_out for flag in ("--path-exclude", name)))
+        out = capsys.readouterr().out
+        assert (
+            "- scope        every changed file, except tests, docs, Tests (no such path: check its spelling and case) "
+            "and tests,docs (no such path: give each folder its own flag). The review left out no changed file."
+        ) in out, out
+        reviewed(cli, repo, "--path", "nosuch", "--path", "src")
+        out = capsys.readouterr().out
+        assert "- scope        only nosuch (no such path: check its spelling and case) and src." in out, out
 
     def test_what_was_already_in_a_touched_file_is_apart_and_never_fails_the_review(
         self, cli, tmp_path: Path, capsys
