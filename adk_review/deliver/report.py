@@ -447,6 +447,8 @@ OLD_NOTE = (
     "Not caused by this change. By the Boy Scout rule, we expect you to fix them too. They do not block the merge."
 )
 OLD_FOR_AGENT = "Not caused by this change. By the Boy Scout rule, fix them too, after any fix above."
+#: How a comment's reader sees each of them, said once for the section: read by review, each point said it again.
+OLD_SEEN = "To see each one, run `ruff check --isolated --ignore-noqa --select CODE` on its file, with its code."
 #: How a comment for the branch's author opens, by the verdict: what the review decided, as a review's output, with no
 #: thanks, which the owner read as artificial. An approval names its bar: read by review, majors, "fix before merge" on
 #: the scale, sat under "Worth a look" below a line that said the review found "nothing that blocks it", and the
@@ -535,11 +537,14 @@ def render_comment(
         (APART_HEADING, apart, ALREADY_NOTE),
     ]
     old = _by_severity([[item] for item in outcome.old], None)
-    for title, note, sections in (("Caused by this change", "", caused), (OLD_HEADING, OLD_NOTE, old)):
+    for title, note, sections in (("Caused by this change", "", caused), (OLD_HEADING, f"{OLD_NOTE} {OLD_SEEN}", old)):
         shown = [(heading, groups, said) for heading, groups, said in sections if groups]
         for at, (heading, groups, said) in enumerate(shown):
             top = ["", f"## {title}", *(["", note] if note else [])] if at == 0 else []
-            points = _briefed(groups) if heading == APART_HEADING else _commented(groups, tidies)
+            if title == OLD_HEADING:
+                points = _already(groups)
+            else:
+                points = _briefed(groups) if heading == APART_HEADING else _commented(groups, tidies)
             lanes.append(([*top, "", f"### {heading}", *(["", said] if said else []), ""], points))
     return inert("\n".join(_within(lines, lanes, _unchecked(outcome, fail_on)))) + "\n"
 
@@ -632,6 +637,18 @@ def _ran(profile: str, model: str, checks: Sequence[str]) -> str:
         + (", and ".join(ran) if model else ", ".join([*ran, "no model"]))
         + "."
     )
+
+
+def _already(groups: Sequence[list[Sourced]]) -> list[list[str]]:
+    """Each finding already in the files, numbered, on one line: its file, the rule that counted it, each code with
+    its count and lines, and its severity. Read by review on the owner's comment: eight of them took 24 lines, each
+    saying again what the section's heading and note say and the command that shows it, which the note says once. The
+    report, the JSON and the hand-off keep each whole."""
+    points = []
+    for number, (item, *_) in enumerate(groups, 1):
+        f = item.finding
+        points.append([f"{number}. {_spot(f)}: {prose(f.title.partition(':')[0])}: {_quoted(f)} ({f.severity})"])
+    return points
 
 
 def _briefed(groups: Sequence[list[Sourced]]) -> list[list[str]]:

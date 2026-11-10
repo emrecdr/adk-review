@@ -1399,6 +1399,38 @@ class TestThePreviousReportAndTheHandoff:
         refuted = Outcome(refuted=[(item, "no")], verified=True)
         assert _resolved(refuted, [], "APPROVED", previous, ["guideline.correctness"], []) == []
 
+    def test_a_finding_already_in_a_file_is_one_line_of_the_comment(self) -> None:
+        """Read by review on the owner's comment: eight findings already in the files took 24 lines, each saying again
+        what its section's heading says and the command that shows it. Each is one line, its file, the rule, the codes
+        with their counts and lines, and its severity; the note says the command once; the hand-off keeps each whole."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import render_comment, render_handoff
+
+        found = Finding(
+            file="a.py", severity="major", why="This change did not add these lines.",
+            title="lint: 2 ruff findings already in this file, on lines this change did not touch",
+            evidence="S602 (subprocess-popen-with-shell-equals-true) x1 on line 9, F401 (unused-import) x1 on line 1",
+            suggestion="Run `ruff check --isolated --ignore-noqa --select F401,S602` on the file to see each one.",
+        )  # fmt: skip
+        pre = {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40}
+        evidence = {"preflight": pre, "whole": False, "scope": []}
+        outcome = Outcome(old=[Sourced("rule.lint", found, old=True)])
+        said = render_comment(evidence, outcome, verdict="APPROVED", fail_on="blocker")
+        section = said.split("## Already in the files you touched", 1)[1].strip().splitlines()
+        assert section == [
+            "Not caused by this change. By the Boy Scout rule, we expect you to fix them too. They do not block the "
+            "merge. To see each one, run `ruff check --isolated --ignore-noqa --select CODE` on its file, with its "
+            "code.",
+            "",
+            "### Major findings",
+            "",
+            "1. `a.py`: lint: `S602 (subprocess-popen-with-shell-equals-true) x1 on line 9, F401 (unused-import) x1 on "
+            "line 1` (major)",
+        ], said
+        handoff = render_handoff(evidence, outcome, verdict="APPROVED", fail_on="blocker")
+        assert "--select F401,S602" in handoff and "This change did not add these lines." in handoff, handoff
+
     def test_a_point_listed_apart_is_its_headline_and_change_in_the_comment_and_whole_in_the_handoff(self) -> None:
         """Asked by the owner: 16 points that asked for what the branch already did filled 255 lines of a comment with
         their quotes, reasons and code. In the comment each is its place, check, title and severity, and its change;
