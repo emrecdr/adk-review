@@ -72,7 +72,7 @@ machine's own store.
 | `--dry-run` | Say what a review would cover and run — the revisions, the files, the profile, the model and whether its arm is ready — and run nothing. |
 | `--list-checks` | List every check: its id, its kind, its severity, the profiles that run it, what it looks for and its file. |
 | `--explain` | Print one check whole: what it reads, its severity, for a rule whether it reads tests, whether its findings are a cleanup, its profiles, its file and, for a rule, its own examples. |
-| `--try` | Run the profile's rules, or `--check`'s, over files or folders on disk, each read as wholly added: how a rule's author sees a rule fire, with no repository and no model. Takes no repository. |
+| `--try` | Run the profile's rules, or `--check`'s, over files or folders on disk, each read as wholly added: how a rule's author sees a rule fire, with no repository and no model. A folder is read as a commit would hold it: no `.git`, no cache (`__pycache__`, or a folder a tool marks with `CACHEDIR.TAG`), and no folder of other projects' code that `third_party` or `--third-party` names, such as `.venv`, which is named once and never entered. A file named itself is always read. Takes no repository. |
 | `--version` | Print the reviewer's version. |
 | `--help` | Print every flag. |
 

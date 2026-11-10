@@ -2703,6 +2703,33 @@ class TestTheModesBesideAReview:
         assert cli.main(["--explain", "guideline.security"]) == 0 and "## Its role" in capsys.readouterr().out
         assert cli.main(["--explain", "rule.nope"]) == 2
 
+    def test_a_folder_tried_is_read_as_a_head_holds_it(self, cli, tmp_path: Path, capsys) -> None:
+        """Measured by review: `--try .` at this project's root read the 16,262 files of its `.venv`, took 130 seconds
+        and 3.7 GB, and named each `.pyc` on stderr, 95 of each 100 lines of its report another project's code. A
+        head holds no virtual environment and no cache: a folder of other projects' code is left out and named once,
+        a cache with no word, Python's own or one a tool tags, and a file named itself is read wherever it lies."""
+        project = tmp_path / "project"
+        theirs = project / ".venv" / "lib" / "site-packages" / "pkg"
+        for folder in (project / "src" / "__pycache__", theirs, project / "node_modules" / "left"):
+            folder.mkdir(parents=True)
+        (project / "src" / "app.py").write_text("print(x)\n", encoding="utf-8")
+        (project / "src" / "__pycache__" / "app.cpython-313.pyc").write_bytes(b"\x00\xff\x00")
+        (project / ".ruff_cache").mkdir()
+        (project / ".ruff_cache" / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55", "utf-8")
+        (project / ".ruff_cache" / "0.17.3").write_bytes(b"\x00\xff\x00")
+        (theirs / "bad.py").write_text("print(y)\n", encoding="utf-8")
+        (project / "node_modules" / "left" / "pad.py").write_text("print(z)\n", encoding="utf-8")
+        assert cli.main(["--try", str(project), "--check", "rule.no-print"]) == 0
+        tried = capsys.readouterr()
+        assert "(src/app.py:1)" in tried.out and "bad.py" not in tried.out and "pad.py" not in tried.out, tried.out
+        said = tried.err.splitlines()
+        assert said == [
+            "review: --try leaves out .venv: other projects' code",
+            "review: --try leaves out node_modules: other projects' code",
+        ], said
+        assert cli.main(["--try", str(theirs / "bad.py"), "--check", "rule.no-print"]) == 0
+        assert "(" + (theirs / "bad.py").as_posix() + ":1)" in capsys.readouterr().out, "a file named is read"
+
     def test_a_mode_besides_a_review_refuses_a_reviews_own_flags(self, cli, tmp_path: Path, capsys) -> None:
         """Measured: `--explain` beside `--json` cleared the file, then wrote nothing and exited 0. A mode besides a
         review — a dry run, the list, a try, an explanation — takes none of a review's own flags, and two modes are

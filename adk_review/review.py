@@ -92,6 +92,7 @@ try:
     from .core.findings import RANK
     from .core.guidelines import Guideline
     from .core.health import Health, measured
+    from .core.paths import matches
     from .core.profiles import DEFAULT, expanded
     from .core.text import short_ref
     from .core.verdict import (
@@ -195,11 +196,11 @@ REVIEW_ONLY = {
 }
 
 
-def _try(paths: Sequence[str], chosen: Selection, fail_on: str) -> int:
+def _try(paths: Sequence[str], chosen: Selection, fail_on: str, third_party: Sequence[str] = ()) -> int:
     """`--try PATH…`: the chosen rules over files on disk, each read as wholly added, the head these files alone, as
     a rule's own tests read it: one command where seeing a rule fire took four, and two more an edit. Exit 1 at the
     bar, 3 for a rule that could not look, decided as a review's is."""
-    files, skipped = _on_disk(paths)
+    files, skipped = _on_disk(paths, third_party)
     for path, why in skipped:
         _say(f"--try leaves out {path}: {why}")
     if not files:
@@ -212,10 +213,10 @@ def _try(paths: Sequence[str], chosen: Selection, fail_on: str) -> int:
     return decide(Outcome(kept=[item for item in found if not item.old], errors=holes), fail_on)[1]
 
 
-def _on_disk(paths: Sequence[str]) -> tuple[dict[str, str], list[tuple[str, str]]]:
+def _on_disk(paths: Sequence[str], third_party: Sequence[str] = ()) -> tuple[dict[str, str], list[tuple[str, str]]]:
     """Each file under `paths` and its text: a file by its path as given, a folder's files by their paths inside it,
     as a project's own head names them, `/`-separated, and never a `.git`. A file that is not UTF-8 text, or past
-    the size a review reads, is left out and named."""
+    the size a review reads, is left out and named, and so is a folder `third_party` names."""
     found: dict[str, str] = {}
     skipped: list[tuple[str, str]] = []
     for given in paths:
@@ -223,9 +224,7 @@ def _on_disk(paths: Sequence[str]) -> tuple[dict[str, str], list[tuple[str, str]
         if not root.exists():
             skipped.append((given, "no such file or folder"))
             continue
-        files = (
-            [root] if root.is_file() else sorted(p for p in root.rglob("*") if p.is_file() and ".git" not in p.parts)
-        )
+        files = [root] if root.is_file() else _under_folder(root, third_party, skipped)
         for file in files:
             name = file.as_posix() if file == root else file.relative_to(root).as_posix()
             if file.stat().st_size > MAX_FILE_BYTES:
@@ -492,6 +491,27 @@ def version() -> str:
         return "unknown"
 
 
+def _under_folder(root: Path, third_party: Sequence[str], skipped: list[tuple[str, str]]) -> list[Path]:
+    """The files under `root`, by path, as a head holds them: no `.git`, no cache, Python's own or one a tool marks
+    with `CACHEDIR.TAG` as ruff, pytest and uv do, and no folder `third_party` names, which is never entered and is
+    added to `skipped` once. Measured by review: `--try .` at a
+    project's root read the 16,262 files of its `.venv`, 130 seconds and 3.7 GB, where the walk that leaves such a
+    folder out took 2.4 seconds."""
+    files: list[Path] = []
+    for folder, names, held in os.walk(root):
+        inside = Path(folder).relative_to(root)
+        entered = []
+        for name in sorted(names):
+            path = (inside / name).as_posix()
+            if matches(f"{path}/_", *third_party):  # as a file inside it would be read
+                skipped.append((path, "other projects' code"))
+            elif name not in (".git", "__pycache__") and not (Path(folder) / name / "CACHEDIR.TAG").is_file():
+                entered.append(name)
+        names[:] = entered
+        files += [file for name in held if name != ".git" and (file := Path(folder) / name).is_file()]
+    return sorted(files)
+
+
 def scope_of(folders: Sequence[str], flag: str = "--path") -> tuple[str, ...]:
     """Each --path as git spells a folder, once: `/` between names, no `./`, no trailing `/`; `.` is the whole
     repository. One that starts at a root or a drive, or climbs out with `..`, is refused: git names nothing there."""
@@ -686,7 +706,7 @@ def _review(argv: list[str] | None = None) -> int:
         print(render_explained(explanation), end="")
         return EXIT_CLEAN
     if args.try_paths:
-        return _try(args.try_paths, chosen, args.fail_on)
+        return _try(args.try_paths, chosen, args.fail_on, args.third_party)
     return _reviewed(args, chosen, scope, previous)
 
 
