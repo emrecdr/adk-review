@@ -230,7 +230,7 @@ class TestWhatAReviewCovers:
     def test_two_like_def_lines_keep_their_counts_their_own(self, cli, tmp_path: Path, capsys) -> None:
         """Read by review: two classes' `def __init__(` lines read the same, and matched on any count no lower, the
         change's raise of the one took the other's base count and read as old, and the other, untouched, as the
-        change's own. A count is weighed only where the file holds that finding once each side."""
+        change's own. Each is set against the base's own line for it, so neither takes the other's count."""
         params = ["a", "b", "c", "d", "e", "f", "g"]
 
         def init(names: list[str]) -> str:
@@ -251,6 +251,44 @@ class TestWhatAReviewCovers:
         raised = [f["line"] for f in data["findings"] if "PLR0913" in f["title"]]
         assert raised == [2], (data["findings"], data["old_findings"])
         assert any("PLR0913" in str(f) and "line 17" in str(f) for f in data["old_findings"]), data["old_findings"]
+
+    def test_a_finding_is_set_against_the_bases_own_line_for_it(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review: set against any base line of the same text, a shell call the change made unsafe below its
+        first line was filed as already in the file, and approved at `--fail-on major`, where the change deleted a like
+        call elsewhere; and two like `def` lines whose counts the change both lowered read as the change's own. The
+        diff numbers each line the change kept in both files, so a finding is set against the base's own line for it."""
+        call = (
+            "def {0}(name):\n    note = '{0}'\n    return subprocess.run(\n        {1},\n        shell=True,\n    )\n"
+        )
+        top = "import subprocess\n\n\n"
+        before = top + call.format("first", "input()") + "\n\n" + call.format("second", '"ls"')
+        (tmp_path / "deleted").mkdir()
+        repo = branched(tmp_path / "deleted", {"app.py": before}, {"app.py": top + call.format("second", "input()")})
+        code, data = reviewed(cli, repo, "--fail-on", "major")
+        capsys.readouterr()
+        assert code == 1 and any("S602" in f["title"] for f in data["findings"]), (
+            data["findings"],
+            data["old_findings"],
+        )
+        assert not any("S602" in str(f["evidence"]) for f in data["old_findings"]), data["old_findings"]
+
+        def init(names: str) -> str:
+            return (
+                "    def __init__(\n        self,\n"
+                + "".join(f"        {n}: int,\n" for n in names)
+                + "    ) -> None:\n"
+            )
+
+        two = "class A:\n{}        pass\n\n\nclass B:\n{}        pass\n"
+        (tmp_path / "lowered").mkdir()
+        repo = branched(
+            tmp_path / "lowered", {"app.py": two.format(init("abcdefgh"), init("abcdefghi"))},
+            {"app.py": two.format(init("abcdefg"), init("abcdefgh"))},
+        )  # fmt: skip
+        _code, data = reviewed(cli, repo)
+        capsys.readouterr()
+        assert not any("PLR0913" in f["title"] for f in data["findings"]), data["findings"]
+        assert "PLR0913 (too-many-arguments) x2" in str(data["old_findings"]), data["old_findings"]
 
     def test_where_the_base_cannot_be_read_what_lies_on_untouched_lines_still_counts(
         self, cli, tmp_path: Path, capsys, monkeypatch

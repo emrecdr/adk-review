@@ -177,11 +177,11 @@ and is no credential as `named-secrets` weighs it: `token = "("` and `token = "B
 finding there can be one the project's own ruff configuration, or its author's `noqa` with a reason, already accepts.
 Read the line before you ask for a change. Ruff also lints each modified file as the base held it, and the review keeps
 two groups apart. What the change caused is reviewed: its own lines, and an untouched line it broke, as an old line's
-name left undefined by an import it deleted. What the base held too, the same code and ruff's same words on a line of
-the same text, a count in them no higher where the file holds that finding once, was already in the file: it is counted
+name left undefined by an import it deleted. What the base held too, the same code and ruff's same words on the same
+line, as the diff numbers each line the change kept, a count in them no higher, was already in the file: it is counted
 in one finding a file, listed last under "Already in the files you touched". A parameter removed from a function of
-seven leaves its "(6 > 5)" there, where its `def` line stands alone and the change left it; one added makes the count
-the change's own, as any edit to the line ruff names does. By the Boy Scout rule the review expects them fixed too, but
+seven leaves its "(6 > 5)" there, where the change left its `def` line alone; one added makes the count the change's
+own, as any edit to the line ruff names does. By the Boy Scout rule the review expects them fixed too, but
 they never fail it, whatever `--fail-on` says. That finding names each code with ruff's name for it and the lines it is
 on, and the command that shows them. Where the review could not set a file against its base, its findings on untouched
 lines are counted in one finding with the change, at the bar, since they may be the change's own. In a Databricks
@@ -328,7 +328,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | `summary` | How many kept findings sit at each severity. |
 | `health` | Under `--all`, the project's measures: files read whole, source and tests in files and lines, maintainability's grade (A to E, SIG's rating of the complexity profile, null with why where under ten or under 90% of the source files parsed), the source's function lines by McCabe complexity band, counted as ruff's C901 counts it, the source files that do not parse, the most complex functions, and each rule's findings in source and in tests by severity. Null for a review of a change. Security and correctness are counted, never graded; the verdict never reads any of it. |
 | `findings` | Each kept finding: its fingerprint, check, file, line, the lines the diff places it on, whether one of them is a line the change added (null for a finding with no line), severity, title, evidence and suggestion, and `already_held`: whether it asks for what the branch already does, its suggested code what replaced the deleted lines it quotes, or its change a removal of deleted lines alone, so the change may have done it already. Such a finding is kept and decided on as any is; below the bar, and only where every finding on its lines is so, it is listed apart in the comment and the hand-off. A guideline's finding's evidence is the lines of the diff its quote stands on, as the file reads them, a line the change deleted with its `-`. A fingerprint is built from the check, the file and the evidence, never the line, so a finding keeps it when lines move; a linter roll-up's is built from its rule codes alone, never its counts or the lines it names. With `--previous`, `since_previous` says `new` or `seen`. |
-| `old_findings` | Each finding already in the files the change touched and not caused by it: ruff's findings the base held too, the same code and ruff's same words on a line of the same text, a count in them no higher where the file holds that finding once, on lines the change did not touch. Listed apart, as in the comment and the hand-off, and never at the `--fail-on` bar. |
+| `old_findings` | Each finding already in the files the change touched and not caused by it: ruff's findings the base held too, the same code and ruff's same words on the same line, as the diff numbers each line the change kept, a count in them no higher, on lines the change did not touch. Listed apart, as in the comment and the hand-off, and never at the `--fail-on` bar. |
 | `resolved` | With `--previous`, the earlier findings no longer found, as that report wrote them; null without it, or where this review has a hole. |
 | `could_not_look` | Each check that failed or could not look, and why. |
 | `not_read` | Each changed file no check can read whole, or where a guideline runs one it was not shown whole, unless the skip list names it, and why. |

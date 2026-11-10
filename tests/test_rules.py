@@ -920,6 +920,7 @@ class TestTheLintRule:
         text = "import os\nimport sys\nx = eval('1')\n"
         entry = {"path": "m.py", "status": "M", "text": text, "unread_text": None, "added": [(3, "x = eval('1')")]}
         entry["added_at"] = frozenset({3})
+        entry["diff"] = "@@ -2,0 +3 @@\n+x = eval('1')\n"  # set against the base by the lines its diff numbers
         counted = lint_findings({"files": [entry], "tree": None})
         assert [f.line for f in counted if f.line is not None] == [3]
         (unsure,) = [f for f in counted if f.line is None]  # no base to set them against: they may be the change's

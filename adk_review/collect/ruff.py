@@ -17,16 +17,16 @@ import subprocess
 import sysconfig
 import tempfile
 import threading
-from collections import Counter
 from collections.abc import Callable, Generator, Iterable, Sequence
 from contextlib import closing
 from dataclasses import replace
 from pathlib import Path, PurePath, PurePosixPath
 from typing import NamedTuple
 
-from ..core.evidence import Change
+from ..core.evidence import Change, unreleased
 from ..core.rules import Diagnostic, is_python_text
 from ..core.text import lines_of, squash
+from .diff import base_line
 from .git import on_path
 
 RUFF_TIMEOUT_S = 60
@@ -111,15 +111,16 @@ def _known(
     linted: Callable[[dict[str, str]], dict[str, list[Diagnostic]]],
 ) -> dict[str, list[Diagnostic]]:
     """`found` with each diagnostic on a line the change did not add set against the base: `known` where the base held
-    it too, the same code and words on a line of the same text, each base one matched once, a count in them no higher
-    where the file holds that finding once each side (`_marked`), and not where the change made it. A line the change
-    added is its own, whatever the base held, and only a file with a diagnostic elsewhere is linted at the base. Where
-    the base was not read or could not be linted, `known` stays None, and `listed` counts those diagnostics with the
-    change, at the bar, as before: "did not look" never reads as "not caused by this change". Read by review: ruff's
-    words tell a shell call that "seems safe" from one an edit below its first line made unsafe. Asked by the owner:
-    what a change causes is kept apart from what was already in the files it touched."""
+    it too, the same code and words on its own line there, as the diff numbers both files, a count in them no higher,
+    and not where the change made it. A line the change added is its own, whatever the base held, and only a file with
+    a diagnostic elsewhere is linted at the base. Where the base was not read or could not be linted, `known` stays
+    None, and `listed` counts those diagnostics with the change, at the bar, as before: "did not look" never reads as
+    "not caused by this change". Read by review: ruff's words tell a shell call that "seems safe" from one an edit below
+    its first line made unsafe. Asked by the owner: what a change causes is kept apart from what was already in the
+    files it touched."""
     held = evidence.get("base_texts") or {}  # read by the collector, as the head's texts are: no git here
     added = {f["path"]: f.get("added_at", frozenset()) for f in evidence["files"]}
+    diffs = {f["path"]: f.get("diff") for f in evidence["files"]}
     wanted = {
         f["path"]: base
         for f in evidence["files"]
@@ -136,37 +137,37 @@ def _known(
 
     marked = dict(found)
     for path in wanted:
-        marked[path] = _marked(before.get(path, []), found[path], added[path])
+        marked[path] = _marked(before.get(path, []), found[path], added[path], base_line(unreleased(diffs[path])))
     return marked
 
 
-def _marked(before: list[Diagnostic], found: list[Diagnostic], added: frozenset[int]) -> list[Diagnostic]:
+def _marked(
+    before: list[Diagnostic], found: list[Diagnostic], added: frozenset[int], base_line: Callable[[int], int]
+) -> list[Diagnostic]:
     """One file's `found`, each on a line the change did not add marked `known` against the base's `before`: the same
-    code and words on a line of the same text, each base one matched once. A count in the words is weighed apart where
-    the file holds that finding once each side: there it is one construct, old where the base's count was no lower.
-    Read by review: a parameter removed from a function of seven turned "(7 > 5)" into "(6 > 5)" on the `def` line the
-    change left alone, and the finding read as the change's own. Weighed among several, two classes' like `def` lines
-    swapped their counts, so there the words must match whole, as before."""
+    code and words on the base's own line for it, each base one matched once, a count in the words no higher. Read by
+    review: a parameter removed from a function of seven turned "(7 > 5)" into "(6 > 5)" on the `def` line the change
+    left alone, and the finding read as the change's own. Set against any base line of the same text, as before, a
+    shell call the change made unsafe was filed as already there where it deleted a like call, and approved; and
+    counts were weighed only where a file held one such line."""
 
-    def key(item: Diagnostic) -> tuple[str, str, str]:
-        return item.code, squash(item.source), _COUNT.sub(r"(> \2)", item.message)
+    def words(item: Diagnostic) -> tuple[str, str]:
+        return item.code, _COUNT.sub(r"(> \2)", item.message)
 
     def count(item: Diagnostic) -> int:
         return int(said[1]) if (said := _COUNT.search(item.message)) else 0
 
-    base = [(key(item), count(item)) for item in before]
-    exact, once, alone = Counter(base), Counter(k for k, _n in base), dict(base)
-    head = Counter(key(item) for item in found if item.line not in added)
+    held: dict[tuple[int, str, str], list[int]] = {}
+    for item in before:
+        held.setdefault((item.line, *words(item)), []).append(count(item))
     marked = []
     for item in found:
         if item.line not in added:
-            k, n = key(item), count(item)
-            if once[k] == 1 == head[k]:
-                known = alone[k] >= n
-            else:
-                known = exact[k, n] > 0
-                exact[k, n] -= known
-            item = replace(item, known=known)
+            counts = held.get((base_line(item.line), *words(item)), [])
+            fits = [n for n in counts if n >= count(item)]
+            if fits:
+                counts.remove(min(fits))
+            item = replace(item, known=bool(fits))
         marked.append(item)
     return marked
 
