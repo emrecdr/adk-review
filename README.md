@@ -46,6 +46,15 @@ lock keeps: measured, without it the install took a LiteLLM three days old or le
 installs every dependency at the version the lock holds. Behind a company proxy, set `UV_SYSTEM_CERTS=true` for uv's own
 commands: uv trusts the roots it bundles, not the machine's, where the reviewer, once installed, trusts the machine's.
 
+Installed either way, the reviewer is a copy of the code as it was then: measured, a copy installed at one commit ran
+that commit's code after its checkout moved on, and `--version` names the release, never the commit. To update it:
+
+```bash
+git pull                                     # in the checkout: the new code
+make install                                 # again: the installed command is a copy, not the checkout
+uv tool install --reinstall --exclude-newer P3D git+https://github.com/emrecdr/adk-review    # or, with no checkout
+```
+
 ### 3. Review the demo
 
 ```bash

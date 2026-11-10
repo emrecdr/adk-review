@@ -39,6 +39,12 @@ from the shell alone, no `.env` being read outside the checkout, and its config 
 `uv sync` and `uv tool install`: uv trusts the roots it bundles, not the machine's, where the reviewer trusts the
 machine's own store.
 
+Installed either way, the reviewer is a copy of the code as it was then, and `--version` names the release, never
+the commit, so it does not tell an old copy from a new one. To update it, run `git pull` in the checkout and
+`make install` again, or with no checkout the same install with `--reinstall`:
+`uv tool install --reinstall --exclude-newer P3D git+https://github.com/emrecdr/adk-review`. Until then the command,
+and each hook that runs it, reviews with the old code, whatever the checkout holds.
+
 ## Flags
 
 | Flag | What it does |
