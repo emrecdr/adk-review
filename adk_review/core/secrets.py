@@ -476,16 +476,27 @@ _SCHEME = re.compile(r"(?i)\A(?:bearer|basic|token)\s+(?=\S+$)")
 MADE_MIN_CHARS = 8
 
 
+def holds_no_secret(name: str, value: str, quoted: bool) -> bool:
+    """Whether `value`, given to `name`, is ruled out as the credential the name says by what the two are, whatever
+    its characters: a name about one, `token_url`, a placeholder, code, or a label that names a secret and holds none.
+    Apart from `is_credential`, which also asks a digit of what a machine makes: a rule that names a secret of letters
+    alone tells the two answers apart."""
+    if name.lower().endswith(ABOUT) or is_placeholder(value) or (not quoted and _CODE.fullmatch(value)):
+        return True
+    made = _SCHEME.sub("", value)
+    digit = any(char.isdigit() for char in made)
+    # `"OPENAI_API_KEY"`, `"my_secret_key"`, `"Show password"`: a label, where `"password123"` is not
+    return bool(_SECRET_WORD.search("_".join(_WORDS.findall(made)).lower()) and (not digit or _SEPARATOR.search(made)))
+
+
 def is_credential(name: str, value: str, quoted: bool, written: bool) -> bool:
     """Whether `value`, given to `name`, can be the credential the name says: never a name about one, a placeholder,
     code, or a label that names a secret and holds none; a password a person wrote, whatever its words; else what a
     machine makes, one run of eight characters or more, a digit among them, no number and no mark of code."""
-    if name.lower().endswith(ABOUT) or is_placeholder(value) or (not quoted and _CODE.fullmatch(value)):
+    if holds_no_secret(name, value, quoted):
         return False
     made = _SCHEME.sub("", value)
     digit = any(char.isdigit() for char in made)
-    if _SECRET_WORD.search("_".join(_WORDS.findall(made)).lower()) and (not digit or _SEPARATOR.search(made)):
-        return False  # `"OPENAI_API_KEY"`, `"my_secret_key"`, `"Show password"`: a label, where `"password123"` is not
     if written and _CHOSEN.search(name):
         return True
     return (

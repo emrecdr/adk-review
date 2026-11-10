@@ -172,27 +172,29 @@ width in `LINE_LENGTH`, ruff's 88 when unset. It leaves `assert` out of a test f
 B011, since an assert is how pytest checks; in library code each is major, since `python -O` strips it. Ruff's S105,
 S106 and S107 weigh a name alone, so `lint` passes over one whose string is shorter than 8 characters or holds a space,
 and is no credential as `named-secrets` weighs it: `token = "("` and `token = "Bearer "` are no finding, `token: str =
-"Xk9mQ2vL8pR4"` and `client_secret = "AbCdEfGhIjKlMnOp"` are. The rules that run ruff, `lint`, `pitfalls` and
-`simplify`, read none of the project's ruff settings and honour no `noqa` comment, so that no branch can silence them: a
-finding there can be one the project's own ruff configuration, or its author's `noqa` with a reason, already accepts.
-Read the line before you ask for a change. Ruff also lints each modified file as the base held it, and the review keeps
-two groups apart. What the change caused is reviewed: its own lines, and an untouched line it broke, as an old line's
-name left undefined by an import it deleted. What the base held too, the same code and ruff's same words on the same
-line, as the diff numbers each line the change kept, a count in them no higher, was already in the file: it is counted
-in one finding a file, listed last under "Already in the files you touched". A parameter removed from a function of
-seven leaves its "(6 > 5)" there, where the change left its `def` line alone; one added makes the count the change's
-own, as any edit to the line ruff names does. By the Boy Scout rule the review expects them fixed too, but
-they never fail it, whatever `--fail-on` says. That finding names each code with ruff's name for it and the lines it is
-on, and the command that shows them. Where the review could not set a file against its base, its findings on untouched
-lines are counted in one finding with the change, at the bar, since they may be the change's own. In a Databricks
-notebook, a file whose first line is `# Databricks notebook source`, `lint` does not call `spark`, `dbutils`, `display`,
-`displayHTML`, `sql` or `udf` undefined: Databricks defines the six in every notebook it runs. Any other undefined name
-there, and those six in any other file, are still reported. `types` runs pyrefly on each changed Python file alone, a
-name it imports from beyond itself read as `Any`, and keeps what it finds on the lines the change added: a call missing
-an argument or given too many by position, a major, and a missing attribute, a value of the wrong type passed or
-returned, or one an operation cannot take, added, compared, indexed or iterated, a minor. No branch's ignore comment
-silences it, though `@no_type_check` on a function does. It is in no default profile: name it with `--check rule.types`,
-or run `rules-only` or `full`.
+"Xk9mQ2vL8pR4"` and `client_secret = "AbCdEfGhIjKlMnOp"` are. Where the name is about a credential, `token_type` or
+`token_url`, or the string is a placeholder or a label, the finding is minor, never passed over: `token_type =
+"authorization_code"` is a minor one, and a secret of letters alone, `password = "correcthorse"`, stays major. The rules
+that run ruff, `lint`, `pitfalls` and `simplify`, read none of the project's ruff settings and honour no `noqa` comment,
+so that no branch can silence them: a finding there can be one the project's own ruff configuration, or its author's
+`noqa` with a reason, already accepts. Read the line before you ask for a change. Ruff also lints each modified file as
+the base held it, and the review keeps two groups apart. What the change caused is reviewed: its own lines, and an
+untouched line it broke, as an old line's name left undefined by an import it deleted. What the base held too, the same
+code and ruff's same words on the same line, as the diff numbers each line the change kept, a count in them no higher,
+was already in the file: it is counted in one finding a file, listed last under "Already in the files you touched". A
+parameter removed from a function of seven leaves its "(6 > 5)" there, where the change left its `def` line alone; one
+added makes the count the change's own, as any edit to the line ruff names does. By the Boy Scout rule the review
+expects them fixed too, but they never fail it, whatever `--fail-on` says. That finding names each code with ruff's name
+for it and the lines it is on, and the command that shows them. Where the review could not set a file against its base,
+its findings on untouched lines are counted in one finding with the change, at the bar, since they may be the change's
+own. In a Databricks notebook, a file whose first line is `# Databricks notebook source`, `lint` does not call `spark`,
+`dbutils`, `display`, `displayHTML`, `sql` or `udf` undefined: Databricks defines the six in every notebook it runs. Any
+other undefined name there, and those six in any other file, are still reported. `types` runs pyrefly on each changed
+Python file alone, a name it imports from beyond itself read as `Any`, and keeps what it finds on the lines the change
+added: a call missing an argument or given too many by position, a major, and a missing attribute, a value of the wrong
+type passed or returned, or one an operation cannot take, added, compared, indexed or iterated, a minor. No branch's
+ignore comment silences it, though `@no_type_check` on a function does. It is in no default profile: name it with
+`--check rule.types`, or run `rules-only` or `full`.
 
 ## Configuration
 

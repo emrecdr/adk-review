@@ -932,9 +932,11 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   project's own ruff reported none. Ruff's S105, S106 and S107 weigh a name alone, so one whose string is short
   (`PLAIN_UNDER_CHARS`) or holds a space, and that `is_credential`, the check `named-secrets` makes, rejects, is passed
   over: measured, `token = "("` and `"Bearer "` were majors, and the forms `named-secrets` misses, a comparison, a value
-  with a type and a secret of letters alone, stay found. Without ruff, or with one that fails, the rule did not look and
-  says so, exit 3. Its answer is read a finding at a time, as ruff writes one a line, each
-  kept as no more than the rule reads, and past 500,000 findings what it named is a hole: measured by review, three
+  with a type and a secret of letters alone, stay found. One whose name is about a credential, or whose string is a
+  placeholder or a label (`holds_no_secret`), is minor and never passed over: measured over 14 libraries, 91 of 111
+  false majors were such, `token_type = "authorization_code"` and `token_url` among them. Without ruff, or with one that
+  fails, the rule did not look and says so, exit 3. Its answer is read a finding at a time, as ruff writes one a line,
+  each kept as no more than the rule reads, and past 500,000 findings what it named is a hole: measured by review, three
   files of unary minus chains made ruff write 589 MB of JSON each, read whole in 90 s and 4.5 GB. `types` reads the same
   copies through pyrefly, each file alone, under a configuration of the reviewer's: the `default` preset, no installed
   package and no interpreter asked, so a name a file imports from beyond itself reads as `Any`, and no ignore comment

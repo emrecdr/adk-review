@@ -1032,6 +1032,26 @@ class TestTheLintRule:
         assert [text for text in false if codes(text)] == [], "no credential, no finding"
         assert [text for text in real if not codes(text)] == [], "a credential is still found"
 
+    def test_a_password_code_on_what_its_name_or_its_value_rules_out_is_minor(self) -> None:
+        """Read by review: `token_type = "authorization_code"`, `token_url = "https://…"` and `token = "placeholder"`
+        were each a major finding, 91 of the 111 false ones measured in 14 libraries' code, since a string of eight
+        characters with no space kept its finding whatever it was. A name that is about a credential, a placeholder and
+        a label hold none, as `named-secrets` reads them: rated minor, never passed over, so nothing is lost. A secret
+        of letters alone, which only this rule names, stays major."""
+        lowered = ['token_type = "authorization_code"\n', 'token = "placeholder"\n', 'token_header = "X-Auth-Token"\n']
+        lowered += ['token_url = "https://login.example.com/oauth2/token"\n', 'call(token_endpoint="/oauth/token")\n']
+        kept = ['password = "correcthorse"\n', 'secret = "MYSECRETVALUE"\n', 'SECRET_KEY = "mysupersecretvalue"\n']
+        kept += ['client_secret = "AbCdEfGhIjKlMnOp"\n', 'grant_token = "client_credentials"\n']
+        kept += ['token_type = "authorization_code"; password = "correcthorse"\n']
+
+        def severities(text: str) -> list[str]:
+            found = lint_findings({"files": [_entry("src/app.py", text)], "tree": None})
+            return sorted({f.severity for f in found if f.title.startswith("lint: S10")})
+
+        assert [text for text in lowered if severities(text) != ["minor"]] == [], "still found, as a minor"
+        assert [text for text in kept[:-1] if severities(text) != ["major"]] == [], "letters alone: still a major"
+        assert severities(kept[-1]) == ["major", "minor"], "each name on a line is weighed alone"
+
     def test_a_call_without_a_shell_or_by_a_short_name_is_minor_and_a_shell_call_major(self) -> None:
         """S603 names every `subprocess` call whose arguments are not a literal list, and S607 every program named
         without its full path: neither reads what feeds the call, so each is hardening, minor, where a call through a

@@ -20,6 +20,7 @@ from ...core.paths import matches, matching
 from ...core.rules import ChangedFile, Diagnostic, FileRule, Hit, Rule, Tree, TreeRule, UnreadError, is_python
 from ...core.secrets import (
     SECRET_WORDS,
+    holds_no_secret,
     is_credential,
     is_placeholder,
     named_at,
@@ -57,6 +58,7 @@ __all__ = [
     "family",
     "fix_of",
     "functions_in",
+    "holds_no_secret",
     "imports_in",
     "is_credential",
     "is_placeholder",

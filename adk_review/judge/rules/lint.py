@@ -23,6 +23,7 @@ from ..rule_helpers import (
     FileRule,
     Hit,
     Severity,
+    holds_no_secret,
     is_credential,
     is_test,
     listed,
@@ -160,20 +161,38 @@ def strings_by_line(file: ChangedFile) -> dict[int, list[str]]:
     return found
 
 
+def _named(found: Diagnostic, strings: Callable[[], Mapping[int, Sequence[str]]]) -> tuple[str, Sequence[str]] | None:
+    """The name ruff quotes in an S105, S106 or S107 and each string on its line; None for another code, or where no
+    string was read, which keeps its finding as ruff made it."""
+    quoted = found.message.split('"')
+    if found.code not in NAMED_PASSWORD or len(quoted) < 3 or not (given := strings().get(found.line)):
+        return None
+    return quoted[1], given
+
+
 def no_credential(found: Diagnostic, strings: Callable[[], Mapping[int, Sequence[str]]]) -> bool:
     """Whether `found` is S105, S106 or S107 where every string on its line, given to the name ruff quotes, is plain:
     short or spaced, and no credential, as `named-secrets` weighs one; a line where no string was read keeps its
     finding. Read by review: ruff made `token = "("`, `"<eos>"` and `"Bearer "` each major, where `named-secrets`
     found none of them."""
-    quoted = found.message.split('"')
-    if found.code not in NAMED_PASSWORD or len(quoted) < 3 or not (given := strings().get(found.line)):
+    if (named := _named(found, strings)) is None:
         return False
 
     def plain(value: str) -> bool:
         short = len(value.strip()) < PLAIN_UNDER_CHARS or any(ch.isspace() for ch in value.strip())
-        return short and not is_credential(quoted[1], value, quoted=True, written=True)
+        return short and not is_credential(named[0], value, quoted=True, written=True)
 
-    return all(plain(value) for value in given)
+    return all(plain(value) for value in named[1])
+
+
+def names_no_secret(found: Diagnostic, strings: Callable[[], Mapping[int, Sequence[str]]]) -> bool:
+    """Whether `found` is S105, S106 or S107 where the name ruff quotes, or every string on its line, rules a
+    credential out: a name about one, a placeholder, a label. Rated minor, never passed over, so no finding is lost.
+    Read by review: a string of eight characters with no space kept its major whatever it was, `token_type =
+    "authorization_code"` and `token_url = "https://…"` among 91 of the 111 false majors measured in 14 libraries. A
+    secret of letters alone, which no other rule names, is none of these and stays major."""
+    named = _named(found, strings)
+    return named is not None and all(holds_no_secret(named[0], value, quoted=True) for value in named[1])
 
 
 class Lint(FileRule):
@@ -195,7 +214,7 @@ class Lint(FileRule):
         strings = functools.cache(lambda: strings_by_line(file))
         return listed(
             file,
-            lambda found: severity_of(found.code),
+            lambda found: "minor" if names_no_secret(found, strings) else severity_of(found.code),
             FIX,
             leave_out=leave_out,
             passes_over=lambda found: defined_by_databricks(file, found) or no_credential(found, strings),
