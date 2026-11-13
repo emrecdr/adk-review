@@ -951,6 +951,28 @@ class TestTheLintRule:
         assert _on_lines([9, 3, 12, 3]) == "on lines 3, 9 and 12", "in order, each once"
         assert _on_lines(list(range(1, 9))) == "on lines 1, 2, 3, 4, 5 and 3 more"
 
+    def test_a_roll_up_names_its_most_severe_code_first(self) -> None:
+        """Read by review of the plan's third wave, and reproduced: a roll-up listed its codes by count, so under
+        "Major findings" the comment said `F401 (unused-import) x4 …, S602 (…) x1 on line 9` (major). The minor code
+        led, and nothing said which code made the finding a major one. The most severe code leads, then the count, and
+        codes of one severity and one count stay in the order ruff gave them."""
+        from adk_review.judge.rule_helpers import Diagnostic
+        from adk_review.judge.rule_helpers.diagnostics import _counted
+
+        rated = [(Diagnostic(n, "import x", "F401", "m"), "minor") for n in (1, 2, 3, 4)]
+        rated += [(Diagnostic(9, "call(x, shell=True)", "S602", "m"), "major")]
+        rated += [(Diagnostic(n, "x == None", "E711", "m"), "minor") for n in (6, 7)]
+        rated += [(Diagnostic(8, "eval(x)", "S307", "m"), "major")]
+        hit = _counted("app.py", rated, "lint: 8 ruff findings already in this file")
+        assert hit.severity == "major"
+        assert hit.text == (
+            "S602 x1 on line 9, S307 x1 on line 8, F401 x4 on lines 1, 2, 3 and 4, E711 x2 on lines 6 and 7"
+        ), hit.text
+        # A code rated two ways, as `lint` rates S105 by its value, stands at its most severe.
+        mixed = [(Diagnostic(1, "a", "F401", "m"), "minor"), (Diagnostic(2, "b", "F401", "m"), "minor")]
+        mixed += [(Diagnostic(3, "t = 'x'", "S105", "m"), "minor"), (Diagnostic(4, "t = 'y'", "S105", "m"), "major")]
+        assert _counted("app.py", mixed, "lint: 4").text.startswith("S105 x2 on lines 3 and 4, F401 x2"), mixed
+
     def test_a_roll_ups_command_names_only_ruffs_codes_and_never_the_branchs_path(self) -> None:
         """Read by review: the command selected `invalid-syntax`, which ruff refuses, exit 2; and a path in double
         quotes ran what `$(…)` held in the shell of whoever pasted it. A parse error needs no selecting, and the file

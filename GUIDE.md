@@ -192,16 +192,16 @@ the file: it is counted in one finding a file, listed last under "Already in the
 from a function of seven leaves its "(6 > 5)" there, where the change left its `def` line alone; one added makes the
 count the change's own, as any edit to the line ruff names does. By the Boy Scout rule the review expects them fixed
 too, but they never fail it, whatever `--fail-on` says. That finding names each code with ruff's name for it and the
-lines it is on, and the command that shows them. Where the review could not set a file against its base, its findings on
-untouched lines are counted in one finding with the change, at the bar, since they may be the change's own. In a
-Databricks notebook, a file whose first line is `# Databricks notebook source`, `lint` does not call `spark`, `dbutils`,
-`display`, `displayHTML`, `sql` or `udf` undefined: Databricks defines the six in every notebook it runs. Any other
-undefined name there, and those six in any other file, are still reported. `types` runs pyrefly on each changed Python
-file alone, a name it imports from beyond itself read as `Any`, and keeps what it finds on the lines the change added: a
-call missing an argument or given too many by position, a major, and a missing attribute, a value of the wrong type
-passed or returned, or one an operation cannot take, added, compared, indexed or iterated, a minor. No branch's ignore
-comment silences it, though `@no_type_check` on a function does. It is in no default profile: name it with `--check
-rule.types`, or run `rules-only` or `full`.
+lines it is on, the most severe code first, and the command that shows them. Where the review could not set a file
+against its base, its findings on untouched lines are counted in one finding with the change, at the bar, since they may
+be the change's own. In a Databricks notebook, a file whose first line is `# Databricks notebook source`, `lint` does
+not call `spark`, `dbutils`, `display`, `displayHTML`, `sql` or `udf` undefined: Databricks defines the six in every
+notebook it runs. Any other undefined name there, and those six in any other file, are still reported. `types` runs
+pyrefly on each changed Python file alone, a name it imports from beyond itself read as `Any`, and keeps what it finds
+on the lines the change added: a call missing an argument or given too many by position, a major, and a missing
+attribute, a value of the wrong type passed or returned, or one an operation cannot take, added, compared, indexed or
+iterated, a minor. No branch's ignore comment silences it, though `@no_type_check` on a function does. It is in no
+default profile: name it with `--check rule.types`, or run `rules-only` or `full`.
 
 ## Configuration
 

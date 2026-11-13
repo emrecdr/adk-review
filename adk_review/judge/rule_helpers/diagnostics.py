@@ -143,13 +143,18 @@ def _counted(path: str, rated: list[tuple[Diagnostic, Severity]], title: str, wh
     them as the review ran ruff. Read by
     review: a bare `ruff check` read the project's own config and honoured its noqa, and said "All checks passed!" over
     a counted S105. The file is the finding's own and never in the command: a path is the branch's text, and a shell
-    runs what double quotes hold, `$(…)` among it."""
+    runs what double quotes hold, `$(…)` among it. The most severe code leads, then the count, a code rated two ways
+    at its most severe: read by review, listed by count alone, four unused imports led one unsafe shell call under
+    "Major findings", and nothing said which code made the finding a major one."""
     codes = Counter(found.code for found, _severity in rated)
     slugs = {found.code: _slug(found) for found, _severity in rated}
     lines = {code: [found.line for found, _severity in rated if found.code == code] for code in codes}
+    worst: dict[str, int] = {}
+    for found, severity in rated:
+        worst[found.code] = max(worst.get(found.code, RANK[severity]), RANK[severity])
     counted = ", ".join(
         f"{code}{f' ({slugs[code]})' if slugs[code] else ''} x{n} {_on_lines(lines[code])}"
-        for code, n in codes.most_common()
+        for code, n in sorted(codes.items(), key=lambda pair: (-worst[pair[0]], -pair[1]))  # stable: ruff's own order
     )
     selected = ",".join(sorted(code for code in codes if _RULE_CODE.fullmatch(code)))
     command = "ruff check --isolated --ignore-noqa" + (f" --select {selected}" if selected else "")
