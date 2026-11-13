@@ -2574,6 +2574,28 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         assert named("edited", broken | edited) == [("shop/plugin.py", 7)], "on a `def` the change edited"
         assert named("only", marked) == [], "no other file changed: nothing broke across files"
 
+    def test_a_method_marked_as_an_override_of_a_class_pyrefly_does_not_read_is_not_named_for_its_mark(
+        self, tmp_path: Path
+    ) -> None:
+        """Read by the check before the merge, and reproduced: the rule's pyrefly reads no installed package, so a
+        class from one reads as unknown, and of each method under it marked `@override` pyrefly says that no parent
+        class holds it. Named on an added line, as every override was for one commit, a new tool on an installed base
+        beside an edited helper was a major finding a method: measured over google-adk's own source written anew, 10
+        of the 15 overrides named said so. An override is named on an added line only where pyrefly names the parent
+        it does not fit: the mark alone, with no parent pyrefly reads, is no other file's doing."""
+        util = 'def helper() -> str:\n    return "x"\n'
+        tool = (
+            "from typing import override\n\nfrom thirdparty import BaseTool\n\nfrom shop.util import helper\n\n"
+            '__all__ = ["BaseTool", "helper", "override"]\n'
+        )
+        new = tool + "\n\nclass Mine(BaseTool):\n    @override\n    def run(self) -> str:\n        return helper()\n"
+        repo = self.branch(
+            tmp_path,
+            {"shop/util.py": util, "shop/tool.py": tool},
+            {"shop/util.py": util.replace('"x"', '"y"'), "shop/tool.py": new},
+        )
+        assert self.found(repo) == [], "a new tool on an installed base, beside a helper the change edited"
+
     def test_in_a_file_the_change_edited_a_wrong_line_that_moved_is_never_named_for_its_new_place(self) -> None:
         """Measured before the merge over 160 random edits of a package pyrefly finds 494 errors in: one edit moved a
         class among two that read alike, git printed the move as their `class` lines exchanged, and the wrong line it
@@ -2597,7 +2619,7 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
 
         def named(now: dict, before: dict, entries: list[dict], charged: bool = True) -> list[int]:
             added = {entry["path"]: entry["added_at"] for entry in entries}
-            new = radius._new(*radius._placed(now, before, entries), added, lambda _path, _kind: charged)
+            new = radius._new(*radius._placed(now, before, entries), added, lambda _path, _found: charged)
             return [found.line for found in new.get("shop/svc.py", [])]
 
         # Two classes exchanged in place: lines 4, 5, 9 and 10 edited, the wrong `return` kept on 6 and on 11.

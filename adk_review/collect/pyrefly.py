@@ -204,18 +204,22 @@ type Placed = tuple[str, str, str, int | None, int]
 
 
 def radius(
-    evidence: Evidence, ignored: Collection[str], added_kinds: Collection[str], tests: bool = True
+    evidence: Evidence,
+    ignored: Collection[str],
+    added_kinds: Collection[str],
+    tests: bool = True,
+    added_unless: Collection[str] = (),
 ) -> dict[str, list[Diagnostic]] | str:
     """Pyrefly over the head's tree and the base's, each laid out as it is so an import finds what it names: by path,
     each diagnostic new at the head, of a kind not `ignored`, in a file the change left alone or on a line of a changed
     file it kept, and on a line it added where its kind is one of `added_kinds`, a call's, an attribute's or an
-    override's, which the `types` rule, reading each changed file alone, cannot see across files. A test's file is in
-    neither run where `tests` is False: measured on ADK, half its bytes tests, a run took 0.96 s where it took 1.59.
-    Nothing under `--all` or `--try`, which have no base, where the change only adds files, nor where the head was not
-    read. Measured over ADK, 31 method edits: 24 named, none wrongly, 0.5 s a run; over this repository's last 195
-    commits, none wrongly, where 37 were before a test's file was left out, 34 of them in tests, and before a new
-    diagnostic was charged first to the lines the change added; and one true break, a value that may be None passed
-    where a string is taken, which the next commit fixed."""
+    override's, and pyrefly's words for it hold none of `added_unless`: what the `types` rule, reading each changed file
+    alone, cannot see across files. A test's file is in neither run where `tests` is False: measured on ADK, half its
+    bytes tests, a run took 0.96 s where it took 1.59. Nothing under `--all` or `--try`, which have no base, where the
+    change only adds files, nor where the head was not read. Measured over ADK, 31 method edits: 24 named, none wrongly,
+    0.5 s a run; over this repository's last 195 commits, none wrongly, where 37 were before a test's file was left out,
+    34 of them in tests, and before a new diagnostic was charged first to the lines the change added; and one true
+    break, a value that may be None passed where a string is taken, which the next commit fixed."""
     tree, resolved = evidence.get("tree"), evidence.get("preflight")
     altered = [
         f
@@ -255,7 +259,9 @@ def radius(
     lost = (gave_now | {renamed.get(path, path) for path in gave_before}) & head.keys()
     # Only a file the base's tree holds as git held it is numbered by its diff: one left as the head holds it is not.
     numbered = frozenset(renamed.values())
-    return _compared(evidence["files"], tree.imports, now, before, lost, frozenset(added_kinds), numbered)
+    return _compared(
+        evidence["files"], tree.imports, now, before, lost, frozenset(added_kinds), tuple(added_unless), numbered
+    )
 
 
 def _compared(
@@ -265,12 +271,14 @@ def _compared(
     before: Mapping[Found, Ranged],
     lost: Collection[str],
     added_kinds: Collection[str],
+    added_unless: Collection[str],
     numbered: Collection[str],
 ) -> dict[str, list[Diagnostic]] | str:
     """The head's run against the base's, by `_new`, each diagnostic placed first by `_placed`, but for each file
     pyrefly checked nothing in, too deeply nested, left out of both alike: where the change touched one or it reaches a
     file the change touched, the rule could not look there, as `types` says of one, and a file the change does not
-    reach is no hole of it. `numbered` names the changed files whose base text the base's tree holds."""
+    reach is no hole of it. One on a line the change added is named where its kind is one of `added_kinds` and its
+    words hold none of `added_unless`; `numbered` names the changed files whose base text the base's tree holds."""
     touched = {f["path"] for f in files} | {f["old"] for f in files if "old" in f}
 
     @functools.cache
@@ -302,7 +310,11 @@ def _compared(
     before = {key: found for key, found in before.items() if key[0] not in lost}
     added = {f["path"]: f["added_at"] for f in files}
     placed = _placed(now, before, [f for f in files if f["path"] in numbered])
-    return _new(*placed, added, lambda path, kind: kind in added_kinds and reaches(path))
+
+    def charged(path: str, one: Diagnostic) -> bool:
+        return one.code in added_kinds and reaches(path) and not any(said in one.message for said in added_unless)
+
+    return _new(*placed, added, charged)
 
 
 def _placed(
@@ -354,7 +366,7 @@ def _new(
     now: Mapping[Placed, Ranged],
     before: Mapping[Placed, Ranged],
     added: Mapping[str, Collection[int]],
-    charged: Callable[[str, str], bool],
+    charged: Callable[[str, Diagnostic], bool],
 ) -> dict[str, list[Diagnostic]]:
     """Each diagnostic at the head the base did not hold. One on a line the base holds too, a line the change kept or
     any line of a file it left alone, is the base's where the base held one of its kind on that line. Read by review:
@@ -366,7 +378,7 @@ def _new(
     its line is gone. Measured before the merge over 160 random edits of a package of 494 such errors: one moved a
     class among two that read alike, and the wrong line it carried was named on a kept line. What the base has left is
     charged first to the head's whose range meets a line the change added, where a moved line stands, then to its kept
-    ones, and each beyond it is new. One on an added line is named where `charged` says so of its file and kind, a
+    ones, and each beyond it is new. One on an added line is named where `charged` says so of its file and of it, a
     call's, an attribute's or an override's in a file that reaches another the change touched: read by review, a branch
     that renamed a method and edited the call to it in another file was approved by every rule; and named for any file,
     a defect within the one file `types` reads and grades was named at major, and a new file's beside an unrelated
@@ -390,7 +402,7 @@ def _new(
         kept = [diagnostic for diagnostic, lines in ordered if mine.isdisjoint(lines)]
         gone = moved[path, kind, text]
         fresh = max(0, len(on_added) - gone)  # the added lines' beyond what the base has left
-        named = on_added[:fresh] if fresh and charged(path, kind) else []
+        named = [one for one in on_added[:fresh] if charged(path, one)]
         named += kept[max(0, gone - len(on_added)) :]
         if named:
             found.setdefault(path, []).extend(named)
