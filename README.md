@@ -333,13 +333,14 @@ The rules shipped with the reviewer are written as a project writes its own:
   request's title or a branch's name, which GitHub writes into the code before it runs), `hidden-text` (tag characters,
   bidirectional controls, and text smuggled in variation selectors, invisible operators or Hangul fillers, in any file)
   and `steering-files` (a change to a file another tool or agent obeys: a coding agent's instructions or settings,
-  Copilot's and Gemini CLI's among them, an editor's settings and the tool servers an agent starts, a CI workflow, a
-  hook, a `.pth` file), and the tree rule `callers` (a call that no longer fits a function whose parameters the change
-  touched, bound as Python binds a call, a name a changed module no longer defines, and an import of a module the change
-  moved or removed, each in any file, one the change left alone among them), and the tree rule `radius-types` (what a
-  type checker says the change broke elsewhere: a method, an attribute, a parameter or a type, in a file the change left
-  alone or on a line of a changed file it kept, or on one it added where another file's change breaks it, a test's file
-  aside, read from pyrefly over the head's tree and the base's, each diagnostic the head holds and the base did not);
+  Copilot's and Gemini CLI's among them, an editor's settings and the tool servers an agent starts, a GitHub workflow or
+  an Azure pipeline, a hook, a `.pth` file), and the tree rule `callers` (a call that no longer fits a function whose
+  parameters the change touched, bound as Python binds a call, a name a changed module no longer defines, and an import
+  of a module the change moved or removed, each in any file, one the change left alone among them), and the tree rule
+  `radius-types` (what a type checker says the change broke elsewhere: a method, an attribute, a parameter or a type, in
+  a file the change left alone or on a line of a changed file it kept, or on one it added where another file's change
+  breaks it, a test's file aside, read from pyrefly over the head's tree and the base's, each diagnostic the head holds
+  and the base did not);
 - for Python beside `lint`, each reading ruff with codes no other rule names: `pitfalls` (code that does not do what it
   reads: a naive UTC datetime from `utcnow()`, a dataclass default evaluated once and shared, an exception built and
   never raised, a `subprocess.run` whose failure goes unseen, an `assert` that always passes) and `simplify` (a simpler

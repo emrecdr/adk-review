@@ -2988,6 +2988,23 @@ class TestTheShippedRules:
         hits = try_rule(SteeringFiles(), dict.fromkeys([*steering, "src/vscode_settings.py"], "x\n"))
         assert sorted(hit.path for hit in hits) == sorted(steering), [hit.path for hit in hits]
 
+    def test_steering_files_names_an_azure_pipeline_as_it_names_a_github_workflow(self) -> None:
+        """Read by review of this project's own change: a commit moved the uv its three pipelines install, the two
+        GitHub workflows were named and `azure-pipelines.yml` was not, which runs the same steps with its pipeline's
+        secrets. Azure's default file wherever it lies, one named after it, and a template under `.azure-pipelines/`
+        are named; a page or a module named like one is not."""
+        from adk_review.judge.rule_helpers import try_rule
+        from adk_review.judge.rules.steering_files import SteeringFiles
+
+        steering = [
+            "azure-pipelines.yml", "services/api/azure-pipelines.yaml", "azure-pipelines-release.yml",
+            ".azure-pipelines/templates/build.yml",
+        ]  # fmt: skip
+        others = ["docs/azure-pipelines.md", "src/azure_pipelines.py"]
+        hits = try_rule(SteeringFiles(), dict.fromkeys([*steering, *others], "x\n"))
+        assert sorted(hit.path for hit in hits) == sorted(steering), [hit.path for hit in hits]
+        assert {hit.text.split(" steers ")[1] for hit in hits} == {"what a CI job runs, with its secrets"}
+
     def test_a_lockfile_source_outside_its_registry_is_named_once(self) -> None:
         """Measured by review: with lockfiles left to the rules by the shipped skip list, no rule read where a lockfile
         fetches from, so a branch could point a package at a host of its own unseen. Each origin outside the

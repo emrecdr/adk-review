@@ -46,7 +46,8 @@ scan = [
     # what a coding agent or another tool obeys, each folder `rule.steering-files` names read whole
     "CLAUDE.md", "AGENTS.md", "GEMINI.md", ".cursorrules", ".windsurfrules", ".clinerules", "*.code-workspace",
     ".github/copilot-instructions.md", ".github/instructions/", ".github/agents/", ".github/prompts/",
-    ".github/skills/", ".github/chatmodes/", ".github/workflows/", ".claude/", ".gemini/", ".agents/", ".agent/",
+    ".github/skills/", ".github/chatmodes/", ".github/workflows/", ".azure-pipelines/", ".claude/", ".gemini/",
+    ".agents/", ".agent/",
     ".cursor/", ".clinerules/", ".windsurf/", ".kiro/", ".junie/", ".roo/", ".amazonq/", ".continue/",
     ".devcontainer/",
 ]
