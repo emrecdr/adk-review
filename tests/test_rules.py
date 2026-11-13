@@ -2467,6 +2467,61 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         indented = {"shop/repo.py": self.FETCH + "# same types\n", "shop/svc.py": inside}
         assert inside != self.TWICE and named("indented", self.TWICE, indented) == []
 
+    def test_an_error_on_a_def_is_placed_by_the_defs_own_line_whatever_lines_it_covers(self, tmp_path: Path) -> None:
+        """Read by a check before the merge, and reproduced: a diagnostic on a `def` covers its decorators' lines too,
+        and one over several lines of a changed file was placed by its text alone. So an override the base held wrong
+        under a decorator the change removed was placed at the head, on one line now, and not at the base, and was
+        named as the change's. Each diagnostic is placed by its own line, the `def`'s, on both sides alike."""
+        plugin = "class Plugin:\n    def run(self, x: int) -> None:\n        pass\n\n\n"
+        held = plugin + "class Mine(Plugin):\n    @staticmethod\n    def run(x: str) -> str:\n        return x\n"
+        bare = held.replace("    @staticmethod\n", "")
+        (tmp_path / "removed").mkdir()
+        repo = self.branch(tmp_path / "removed", {"shop/plugin.py": held}, {"shop/plugin.py": bare})
+        assert [said for _file, _line, _severity, said in self.found(repo) if "bad-override" in said] == []
+        (tmp_path / "added").mkdir()
+        repo = self.branch(tmp_path / "added", {"shop/plugin.py": bare}, {"shop/plugin.py": held})
+        assert self.found(repo) == [], "the override wrong before, under the decorator the change added"
+
+    def test_in_a_file_the_change_edited_a_wrong_line_that_moved_is_never_named_for_its_new_place(self) -> None:
+        """Measured before the merge over 160 random edits of a package pyrefly finds 494 errors in: one edit moved a
+        class among two that read alike, git printed the move as their `class` lines exchanged, and the wrong line it
+        carried, kept by that diff, was named as new on a line whose own at the base was right. A diff cannot tell a
+        block that moved from two edited in place. So in a file the change edited, what the base held and the head
+        holds on no line of its own is set against the head's by its text, an added line's first; only in a file the
+        change left alone, where no line moves, is a diagnostic the head no longer holds on its line gone."""
+        from adk_review.collect import pyrefly as radius
+        from adk_review.judge.rule_helpers import Diagnostic
+
+        text = "return self.repo.fetch(uid)"
+
+        def at(*lines: int, path: str = "shop/svc.py") -> dict:
+            found = {}
+            for order, line in enumerate(lines):
+                found[path, "bad-return", text, order] = (
+                    Diagnostic(line, text, "bad-return", "m"),
+                    range(line, line + 1),
+                )
+            return found
+
+        def named(now: dict, before: dict, entries: list[dict], charged: bool = True) -> list[int]:
+            added = {entry["path"]: entry["added_at"] for entry in entries}
+            new = radius._new(*radius._placed(now, before, entries), added, lambda _path, _kind: charged)
+            return [found.line for found in new.get("shop/svc.py", [])]
+
+        # Two classes exchanged in place: lines 4, 5, 9 and 10 edited, the wrong `return` kept on 6 and on 11.
+        swap = "@@ -4,2 +4,2 @@\n-class A:\n-    x: bytes\n+class B:\n+    x: int\n"
+        swap += "@@ -9,2 +9,2 @@\n-class B:\n-    x: int\n+class A:\n+    x: bytes"
+        edited = [{"path": "shop/svc.py", "status": "M", "diff": swap, "added_at": frozenset({4, 5, 9, 10})}]
+        assert named(at(11), at(6), edited) == [], "moved with its class, as far as a diff can tell"
+        assert named(at(11), at(6), []) == [11], "in a file the change left alone no line moves: gone from 6, new on 11"
+        assert named(at(6, 11), at(6), edited) == [11], "the base's own line first: one more is the other's"
+        # A wrong line the change removed and added again, and one it broke on a kept line: the kept one is the new.
+        both = "@@ -4,1 +4,1 @@\n-class A:\n+class B:\n@@ -6,1 +5,0 @@\n-    return self.repo.fetch(uid)\n"
+        both += "@@ -14,0 +14,1 @@\n+    return self.repo.fetch(uid)"
+        moved = [{"path": "shop/svc.py", "status": "M", "diff": both, "added_at": frozenset({4, 14})}]
+        assert named(at(11, 14), at(6), moved) == [11], "the removed line's went to the added one"
+        assert named(at(14), at(6), moved) == [], "moved alone: there before"
+
     def test_a_view_without_tests_another_rule_made_first_still_carries_the_diagnostics(self, tmp_path: Path) -> None:
         """Read by review: a tree rule that reads no tests, the demo's among them, made the tree's view without tests
         before this rule ran, and the copy that carries pyrefly's diagnostics kept that view, which held none: under

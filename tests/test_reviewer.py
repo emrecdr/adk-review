@@ -770,22 +770,6 @@ class TestWhatGroundingKeeps:
         assert quotable("@@ -5,2 +4,0 @@\n-a = 1") == [[(4, "-a = 1")]]
         assert quotable("@@ -5,2 +5,3 @@\n a\n-b\n+c\n+d") == [[(5, " a"), (5, "-b"), (6, "+c"), (7, "+d")]]
 
-    def test_each_line_of_the_base_is_one_the_change_kept_or_one_it_removed(self) -> None:
-        """A line the change kept has the base's own number, and a line it removed its own too: between them they are
-        every line of the base, each once, whether git prints one hunk or one a change. `radius-types` sets a kept
-        line's diagnostic against the first, and only an added line's against the second."""
-        from adk_review.collect.diff import base_line, removed_lines
-
-        # base: a b c d e f; head: a c X d E1 E2 f
-        one = "@@ -1,6 +1,7 @@\n a\n-b\n c\n+X\n d\n-e\n+E1\n+E2\n f"
-        each = "@@ -2 +1,0 @@\n-b\n@@ -3,0 +3 @@\n+X\n@@ -5 +5,2 @@\n-e\n+E1\n+E2"
-        for diff in (one, each):
-            assert removed_lines(diff) == {2, 5}, diff
-            kept = [base_line(diff)(line) for line in (1, 2, 4, 7)]  # a, c, d and f at the head
-            assert kept == [1, 3, 4, 6] and sorted([*kept, *removed_lines(diff)]) == [1, 2, 3, 4, 5, 6], diff
-        assert removed_lines("@@ -1,2 +0,0 @@\n-x = 1\n-y = 2") == {1, 2}, "a deleted file's every line"
-        assert removed_lines("@@ -0,0 +1,2 @@\n+x = 1\n+y = 2") == set(), "a new file removes none"
-
     def test_a_quote_grounds_as_the_new_or_the_old_file_reads_and_never_across_two_hunks(self) -> None:
         """Measured before, each hunk read only as git prints it, all its hunks one run: a correct quote of the new
         code, from a context line into a new one across a replaced line, was dropped, and as a blocker the run

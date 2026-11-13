@@ -28,7 +28,7 @@ from ..core.blast import PASSED_ON, is_test
 from ..core.evidence import Change, Entry, Evidence, unreleased
 from ..core.rules import Diagnostic, UnreadError, is_python_text
 from ..core.text import squash
-from .diff import base_line, removed_lines
+from .diff import base_line
 from .git import GitError, base_files, on_path
 from .ruff import Rows, laid_out, rows_of
 
@@ -198,8 +198,8 @@ type Found = tuple[str, str, str, int]
 #: A diagnostic and the lines its range covers, as git numbers them.
 type Ranged = tuple[Diagnostic, range]
 #: A diagnostic as the radius tells one from another across the base and the head: its file, its kind, its line's text
-#: and, where the change kept its line, the base's number for that line, which `_placed` reads off the diff; None for
-#: a line the change added or removed, which its text alone places.
+#: and the base's number for its line, which `_placed` reads off the diff for a line the change kept; None for a line
+#: of the head the change added, which its text alone places.
 type Placed = tuple[str, str, str, int | None, int]
 
 
@@ -308,38 +308,29 @@ def _compared(
 def _placed(
     now: Mapping[Found, Ranged], before: Mapping[Found, Ranged], numbered: list[Entry]
 ) -> tuple[dict[Placed, Ranged], dict[Placed, Ranged]]:
-    """Each run's diagnostics, each with the base's number for its line where the change kept that line, so the two
-    runs name a kept line alike: a line's own number in a file both trees hold alike, one the change left alone; and in
-    a `numbered` one, a changed file the base's tree holds as git held it, the number its diff gives a line it shows on
-    neither side. None for a line the change added or removed, and for a diagnostic over several lines of such a file,
-    which a line added inside it would place at the head and not at the base: its text places it, as before. A file's
-    diff is read once, and only where a run names the file."""
+    """Each run's diagnostics with the base's number for the line each stands on, so the two runs name a line alike:
+    the base's by their own line; the head's by their own too in a file both trees hold alike, one the change left
+    alone, and in a `numbered` one, a changed file the base's tree holds as git held it, by the number its diff gives a
+    line the change kept, None on a line it added. A diagnostic is placed by its own line alone, whatever lines it
+    covers, a `def`'s decorators among them: a kept line of the head is one line of the base and no other, so the two
+    sides agree. Read by a check before the merge: placed only where it covered one line, an override the base held
+    wrong under a decorator the change removed was placed at the head and not at the base, and named as the change's.
+    A file's diff is read once, and only where the head's run names the file."""
     entries = {f["path"]: f for f in numbered}
 
     @functools.cache
-    def numbers(path: str) -> tuple[Collection[int], Callable[[int], int], Collection[int]]:
-        """The lines of `path` the change added, the base's number for one it kept, and the base's lines it removed."""
-        diff = unreleased(entries[path]["diff"])
-        return entries[path]["added_at"], base_line(diff), removed_lines(diff)
+    def to_base(path: str) -> Callable[[int], int]:
+        return base_line(unreleased(entries[path]["diff"]))
 
-    def at(path: str, ranged: Ranged, head: bool) -> int | None:
-        found, covered = ranged
+    def at(path: str, found: Diagnostic) -> int | None:
         if path not in entries:
             return found.line
-        if len(covered) != 1:
-            return None
-        added, to_base, removed = numbers(path)
-        if head:
-            return None if found.line in added else to_base(found.line)
-        return None if found.line in removed else found.line
+        return None if found.line in entries[path]["added_at"] else to_base(path)(found.line)
 
-    def placed(found: Mapping[Found, Ranged], head: bool) -> dict[Placed, Ranged]:
-        return {
-            (path, kind, text, at(path, ranged, head), order): ranged
-            for (path, kind, text, order), ranged in found.items()
-        }
-
-    return placed(now, True), placed(before, False)
+    return (
+        {(path, kind, text, at(path, ranged[0]), order): ranged for (path, kind, text, order), ranged in now.items()},
+        {(path, kind, text, ranged[0].line, order): ranged for (path, kind, text, order), ranged in before.items()},
+    )
 
 
 def _base(
@@ -365,33 +356,41 @@ def _new(
     added: Mapping[str, Collection[int]],
     charged: Callable[[str, str], bool],
 ) -> dict[str, list[Diagnostic]]:
-    """Each diagnostic at the head the base did not hold, by its file, kind and line's text, and by the base's number
-    for its line where the change kept it, counted. Read by review: by the text alone, where the base held one wrong
-    line and the change broke another of the same text above it, the one wrong before was named; and where the base's
-    went right as the other broke, the count was even and nothing was. A line the change added or removed has no such
-    number: where the head holds its key more often than the base did, the surplus is charged first to the diagnostics
-    whose range meets a line the change added, and only what is left to a line it kept. Measured over this repository's
-    history: a class the change added above two whose `def` lines read as its own had one of theirs named, where its
-    own was the new one. One on an added line is named where `charged` says so of its file and kind, a call's or an
-    attribute's in a file that reaches another the change touched: read by review, a branch that renamed a method and
-    edited the call to it in another file was approved by every rule; and named for any file, a defect within the one
-    file `types` reads and grades was named at major, and a new file's beside an unrelated change."""
-    seen = Counter(key[:4] for key in before)
-    grouped: defaultdict[tuple[str, str, str, int | None], list[Ranged]] = defaultdict(list)
+    """Each diagnostic at the head the base did not hold. One on a line the base holds too, a line the change kept or
+    any line of a file it left alone, is the base's where the base held one of its kind on that line. Read by review:
+    set against any base line of the same text, counted, the one wrong before was named where the change broke another
+    of its text above it; and where the base's went right as the other broke, the count was even and nothing was. What
+    that leaves at the head is set, by its text, against what it leaves at the base in a file the change edited, and
+    only there: a wrong line may have moved, to a line the change added or, as a diff prints a block moved among its
+    like, to one it kept, where in a file the change left alone no line moves, and what the head no longer holds on
+    its line is gone. Measured before the merge over 160 random edits of a package of 494 such errors: one moved a
+    class among two that read alike, and the wrong line it carried was named on a kept line. What the base has left is
+    charged first to the head's whose range meets a line the change added, where a moved line stands, then to its kept
+    ones, and each beyond it is new. One on an added line is named where `charged` says so of its file and kind, a
+    call's or an attribute's in a file that reaches another the change touched: read by review, a branch that renamed
+    a method and edited the call to it in another file was approved by every rule; and named for any file, a defect
+    within the one file `types` reads and grades was named at major, and a new file's beside an unrelated change."""
+    held = Counter(key[:4] for key in before)
+    left: defaultdict[tuple[str, str, str], list[Ranged]] = defaultdict(list)
     for key, ranged in now.items():
-        grouped[key[:4]].append(ranged)
+        if key[3] is not None and held[key[:4]]:
+            held[key[:4]] -= 1  # the base held it on this line: there before
+        else:
+            left[key[:3]].append(ranged)
+    moved: Counter[tuple[str, str, str]] = Counter()
+    for (path, kind, text, _line), count in held.items():
+        if path in added:  # a file the change edited
+            moved[path, kind, text] += count
     found: dict[str, list[Diagnostic]] = {}
-    for key, items in sorted(grouped.items(), key=lambda group: (*group[0][:3], group[0][3] or 0)):
-        new, path, kind = len(items) - seen[key], key[0], key[1]
-        if new <= 0:
-            continue
+    for (path, kind, text), items in sorted(left.items()):
         mine = set(added.get(path, ()))
         ordered = sorted(items, key=lambda ranged: ranged[0].line)
         on_added = [diagnostic for diagnostic, lines in ordered if not mine.isdisjoint(lines)]
         kept = [diagnostic for diagnostic, lines in ordered if mine.isdisjoint(lines)]
-        surplus = len(kept) - seen[key]  # the new ones the added lines do not hold
-        named = on_added[:new] if on_added and charged(path, kind) else []
-        named += kept[-surplus:] if surplus > 0 else []
+        gone = moved[path, kind, text]
+        fresh = max(0, len(on_added) - gone)  # the added lines' beyond what the base has left
+        named = on_added[:fresh] if fresh and charged(path, kind) else []
+        named += kept[max(0, gone - len(on_added)) :]
         if named:
             found.setdefault(path, []).extend(named)
     return {path: sorted(items, key=lambda diagnostic: diagnostic.line) for path, items in found.items()}
