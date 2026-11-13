@@ -539,7 +539,7 @@ each in a module named after what it reads (`lines.py`, `syntax.py`, `diagnostic
 | `functions_in(code)`, `imports_in(code)`, `nodes_in(code, *kinds)`, `name_of(node)` | Every function; every imported name with its line; every node of a kind; a name as written, dotted |
 | `defined(module)`, `classes(module)`, `parameters(module, function)` | What a module defines; its classes and their parents; a function's parameters |
 | `try_rule`, `lines_hit`, `self_check`, `self_test` | A rule tried on files, on a text, on its own source, on its own examples |
-| `listed(file, rate, fixes, leave_out, passes_over)`, `tier(table, code)`, `family(code)`, `fix_of(table, code, offered, label)`, `PER_FILE` | A ruff-backed rule's findings on one file, each diagnostic at the severity `rate` gives it, none for a file that is not Python: a code in `leave_out` dropped first, then what the change caused listed, on its own lines or on one it did not touch, at most `PER_FILE`, and the rest counted; what the base held too on an untouched line counted in one old finding, apart and never at the bar, and one not set against the base in one finding at the bar; a code's entry in a rule's table by the longest key in its family; ruff's own fix with its label, but not a display-only one where the table names the code itself, else the table's sentence |
+| `listed(file, rate, fixes, leave_out, passes_over, own)`, `tier(table, code)`, `family(code)`, `fix_of(table, code, offered, label)`, `PER_FILE` | A ruff-backed rule's findings on one file, each diagnostic at the severity `rate` gives it, none for a file that is not Python: a code in `leave_out` dropped first, then what the change caused listed, on its own lines or on one it did not touch, at most `PER_FILE`, and the rest counted; what the base held too on an untouched line counted in one old finding, apart and never at the bar, and one not set against the base in one finding at the bar; one `own` names listed as the change's, on a line it did not touch and whatever the base held, as `lint` says of a password's code that covers an added line; a code's entry in a rule's table by the longest key in its family; ruff's own fix with its label, but not a display-only one where the table names the code itself, else the table's sentence |
 
 Three limits stay. A line helper reads one line alone, so a line inside a docstring reads as code; a rule that must
 tell them apart reads the file. Names are read as written: after `from requests import get`, `get(url)` is not
@@ -944,16 +944,18 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   over: measured, `token = "("` and `"Bearer "` were majors, and the forms `named-secrets` misses, a comparison, a value
   with a type and a secret of letters alone, stay found. One whose name is about a credential, or whose string is a
   placeholder or a label (`holds_no_secret`), is minor and never passed over: measured over 14 libraries, 91 of 111
-  false majors were such, `token_type = "authorization_code"` and `token_url` among them. Without ruff, with one that
-  fails, or with one that says a code the rule selects has no effect, as a ruff older than the one `pyproject.toml` pins
-  does, the rule did not look and says so, exit 3. Its answer is read a finding at a time, as ruff writes one a line,
-  each kept as no more than the rule reads, and past 500,000 findings what it named is a hole: measured by review, three
-  files of unary minus chains made ruff write 589 MB of JSON each, read whole in 90 s and 4.5 GB. `types` reads the same
-  copies through pyrefly, each file alone, under a configuration of the reviewer's: the `default` preset, no installed
-  package and no interpreter asked, so a name a file imports from beyond itself reads as `Any`, and no ignore comment
-  honoured, as ruff runs `--ignore-noqa`. Measured over four libraries' source and 60 planted edits, each file alone
-  found 27 of 30 type defects on their own lines, as the whole package did, at 0.1 s a file where the package took up to
-  5 s.
+  false majors were such, `token_type = "authorization_code"` and `token_url` among them. One of the three that covers a
+  line the change added, by `Diagnostic.last`, is the change's own whatever the base held (`written_by_the_change`):
+  read by review, a secret written below the line ruff names was filed as already in the file. Without ruff, with one
+  that fails, or with one that says a code the rule selects has no effect, as a ruff older than the one `pyproject.toml`
+  pins does, the rule did not look and says so, exit 3. Its answer is read a finding at a time, as ruff writes one a
+  line, each kept as no more than the rule reads, and past 500,000 findings what it named is a hole: measured by review,
+  three files of unary minus chains made ruff write 589 MB of JSON each, read whole in 90 s and 4.5 GB. `types` reads
+  the same copies through pyrefly, each file alone, under a configuration of the reviewer's: the `default` preset, no
+  installed package and no interpreter asked, so a name a file imports from beyond itself reads as `Any`, and no ignore
+  comment honoured, as ruff runs `--ignore-noqa`. Measured over four libraries' source and 60 planted edits, each file
+  alone found 27 of 30 type defects on their own lines, as the whole package did, at 0.1 s a file where the package took
+  up to 5 s.
 - **Grounding.** A guideline's finding must quote, verbatim, whole lines of its own file's diff, within one hunk, as the
   guideline saw them: secrets redacted, diff markers gone, whitespace not counted. Where a quote's line breaks were
   lost, its lines begin and end where the file's do, a diff marker or a fence run into them or not: measured live on

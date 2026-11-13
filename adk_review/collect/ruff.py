@@ -287,6 +287,10 @@ def _parsed(answer: Iterable[str], sources: dict[str, Rows]) -> dict[str, list[D
         offered = hit.get("fix") or {}
         fix, label = offered.get("message"), offered.get("applicability")
         url = hit.get("url")
+        # Ruff names where a finding ends, not its last character: one that ends at a row's first column ends with the
+        # row above.
+        end = hit.get("end_location") or hit["location"]
+        last = end["row"] - 1 if end["row"] > hit["location"]["row"] and end.get("column") == 1 else end["row"]
         said = Diagnostic(
             row,
             line,
@@ -296,6 +300,7 @@ def _parsed(answer: Iterable[str], sources: dict[str, Rows]) -> dict[str, list[D
             label and once(label),
             url and once(url),
             column=hit["location"].get("column"),
+            last=sources[path].place(last)[0],
         )
         found.setdefault(path, []).append(said)
     return found

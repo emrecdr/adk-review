@@ -212,6 +212,35 @@ class TestWhatAReviewCovers:
         assert code == 1 and any("S602" in f["title"] for f in data["findings"]), data
         assert not any("S602" in str(f["evidence"]) for f in data["old_findings"]), data["old_findings"]
 
+    def test_a_string_the_change_wrote_below_the_line_ruff_names_is_its_own(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review of the plan's fourth wave, and reproduced: ruff's words for S105, S106 and S107 hold the name
+        alone, where `lint` weighs the string too. So a secret the change wrote on a line below the one ruff names, a
+        value after its keyword, one in brackets, the second part of a string in two, left ruff's finding as the base
+        held it: filed as already in the file and approved at `--fail-on major`, where `lint` had passed over the
+        string the base held there. One of these codes that covers a line the change added is the change's own; one
+        whose lines the change left alone stays old."""
+        secret, top = '"Xk9mQ2vL8pR4wZ7t"', "from lib import connect\n\n"
+        shapes = {
+            "after.py": top + "connect(\n    token=\n    {},\n)\n",
+            "bracketed.py": top + "connect(\n    token=(\n        {}\n    ),\n)\n",
+            "in_two.py": 'api_token = (\n    "Bearer "\n    {}\n)\n',
+        }
+        plain = {"after.py": '"Bearer "', "bracketed.py": '"Bearer "', "in_two.py": '"x"'}
+        alone = top + "connect(\n    password=\n    " + secret + ",\n)\nDONE = {}\n"
+        repo = branched(
+            tmp_path,
+            {**{name: text.format(plain[name]) for name, text in shapes.items()}, "alone.py": alone.format(False)},
+            {**{name: text.format(secret) for name, text in shapes.items()}, "alone.py": alone.format(True)},
+        )
+        code, data = reviewed(cli, repo, "--fail-on", "major")
+        capsys.readouterr()
+        named, old = ("lint: S105", "lint: S106"), data["old_findings"]
+        own = sorted((f["file"], f["severity"]) for f in data["findings"] if f["title"].startswith(named))
+        assert code == 1 and own == [(name, "major") for name in sorted(shapes)], (data["findings"], old)
+        assert [(f["file"], f["evidence"]) for f in old] == [
+            ("alone.py", "S106 (hardcoded-password-func-arg) x1 on line 4")
+        ], old
+
     def test_a_script_with_no_suffix_is_set_against_its_base_too(self, cli, tmp_path: Path, capsys) -> None:
         """Read by review: a script that names Python on its first line, with no `.py`, was linted but never read at
         the base, so a name the change left undefined read as already there."""

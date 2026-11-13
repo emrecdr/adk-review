@@ -79,6 +79,9 @@ class Diagnostic:
     #: Where on its line ruff places it, counted from 1 in characters: the code the finding stands on, a string or the
     #: keyword it is given to. None where a tool names none.
     column: int | None = None
+    #: The last line ruff says it covers, past `line` for a string over several lines or a keyword whose value stands
+    #: below it. None where a tool names none.
+    last: int | None = None
 
 
 class AnyRule(ABC):

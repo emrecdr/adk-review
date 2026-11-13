@@ -212,6 +212,15 @@ def names_no_secret(found: Diagnostic, strings: Callable[[], Mapping[Place, Sequ
     return named is not None and all(holds_no_secret(named[0], value, quoted=True) for value in named[1])
 
 
+def written_by_the_change(file: ChangedFile, found: Diagnostic) -> bool:
+    """Whether `found` is S105, S106 or S107 and covers a line the change added: the change's own then, whatever the
+    base held under that name. Ruff's words for these codes hold the name alone, and the rule weighs the string, so
+    the base's finding does not answer for the head's. Read by review, and reproduced: a secret written on a line below
+    the one ruff names, a value after its keyword, one in brackets, the second part of a string in two, was filed as
+    already in the file, and approved at `--fail-on major`, where the rule had passed over the string the base held."""
+    return found.code in NAMED_PASSWORD and not file.added.isdisjoint(range(found.line, (found.last or found.line) + 1))
+
+
 class Lint(FileRule):
     """A finding ruff can make is one no guideline need spend a model's attention on, and one no model can miss."""
 
@@ -235,4 +244,5 @@ class Lint(FileRule):
             FIX,
             leave_out=leave_out,
             passes_over=lambda found: defined_by_databricks(file, found) or no_credential(found, strings),
+            own=lambda found: written_by_the_change(file, found),
         )
