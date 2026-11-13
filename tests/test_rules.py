@@ -2524,6 +2524,37 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         repo = self.branch(tmp_path / "added", {"shop/plugin.py": bare}, {"shop/plugin.py": held})
         assert self.found(repo) == [], "the override wrong before, under the decorator the change added"
 
+    def test_an_override_another_files_change_broke_is_named_on_a_line_the_change_added_too(
+        self, tmp_path: Path
+    ) -> None:
+        """Read by review of the plan's fourth wave, and reproduced: a base class's method changed what it returns in
+        one file, and its override in another was named where that file was left alone, and by no rule where the same
+        change added a decorator above the override's `def`, whose error covers the decorator's line, or edited the
+        `def` itself: `types` reads the file alone, its base class `Any`. An override is named on an added line as a
+        call is, in a file that reaches another the change touched. A decorator added where no other file changed
+        breaks nothing across files, and names nothing."""
+        plugin = "class Plugin:\n    def run(self, x: int) -> str:\n        return str(x)\n"
+        mine = (
+            "from typing import override\n\nfrom shop.base import Plugin\n\n\n"
+            "class Mine(Plugin):\n    def run(self, x: int) -> str:\n        return str(x)\n\n\n"
+            '__all__ = ["Mine", "override"]\n'
+        )
+        broken = {"shop/base.py": plugin.replace("-> str:\n        return str(x)", "-> int:\n        return x")}
+        marked = {"shop/plugin.py": mine.replace("    def run", "    @override\n    def run")}
+        edited = {"shop/plugin.py": mine.replace("x: int) -> str", "x: int, y: int = 0) -> str")}
+        inside = {"shop/plugin.py": mine.replace("return str(x)", "return str(x + 0)")}
+
+        def named(name: str, changes: dict[str, str]) -> list[tuple[str, int]]:
+            (tmp_path / name).mkdir()
+            repo = self.branch(tmp_path / name, {"shop/base.py": plugin, "shop/plugin.py": mine}, changes)
+            return [(file, line) for file, line, _severity, said in self.found(repo) if "bad-override" in said]
+
+        assert named("alone", broken) == [("shop/plugin.py", 7)], "in a file the change left alone, as before"
+        assert named("inside", broken | inside) == [("shop/plugin.py", 7)], "on a line it kept, as before"
+        assert named("marked", broken | marked) == [("shop/plugin.py", 8)], "under a decorator the change added"
+        assert named("edited", broken | edited) == [("shop/plugin.py", 7)], "on a `def` the change edited"
+        assert named("only", marked) == [], "no other file changed: nothing broke across files"
+
     def test_in_a_file_the_change_edited_a_wrong_line_that_moved_is_never_named_for_its_new_place(self) -> None:
         """Measured before the merge over 160 random edits of a package pyrefly finds 494 errors in: one edit moved a
         class among two that read alike, git printed the move as their `class` lines exchanged, and the wrong line it

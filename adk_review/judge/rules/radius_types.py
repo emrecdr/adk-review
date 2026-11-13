@@ -12,8 +12,12 @@ from types import MappingProxyType
 
 from ..rule_helpers import PER_FILE, Diagnostic, Entry, Hit, Tree, TreeRule, is_test
 
-#: The kinds named on a line the change added: what a call, an attribute or a value breaks across files, which `types`
-#: cannot see, reading each changed file alone. A definition's kind, `bad-override` among them, is the change's own.
+#: The kinds named on a line the change added: what a call, an attribute, a value or an override breaks across files,
+#: which `types` cannot see, reading each changed file alone, a base class from another file `Any`. Read by review, and
+#: reproduced: `bad-override` was left out as the change's own, and an override another file's change broke was named
+#: by no rule where the change added a decorator above its `def`, whose error covers that line, or edited the `def`.
+#: Measured, as the rule runs pyrefly, in working code: 0.34, 0.06 and 0.07 such errors a thousand lines of httpx,
+#: pydantic and google-adk, where the ten kinds before it make 0.79, 3.58 and 0.47.
 ON_ADDED_LINES = (
     "missing-attribute",
     "missing-argument",
@@ -25,6 +29,7 @@ ON_ADDED_LINES = (
     "bad-assignment",
     "not-iterable",
     "unsupported-operation",
+    "bad-override",
 )
 
 
@@ -34,11 +39,11 @@ class RadiusTypes(TreeRule):
     ignore comment honoured. A diagnostic is the change's where the head holds it and the base did not, told apart by
     its file and kind and the base's own line for it, as the diff numbers a line the change kept; and, in a file the
     change edited, where a line may have moved, by the line's text for what that leaves. One on a line the change
-    added is named where it is a call's or an attribute's, which `types`, reading the file alone, cannot see across
-    files, and a test's file is not read. Measured over ADK, 31 method edits: 24 named, at 59 call sites and 4 kept
-    lines of the edited file, none wrongly; over this repository's last 195 commits, none wrongly, and one true break
-    named, a value that may be None passed where a string is taken, which the next commit fixed; and on litellm, a
-    parameter added first in `get_secret` shifted 11 calls' arguments that `callers` reads as fitting. Known limits:
+    added is named where it is a call's, an attribute's or an override's, which `types`, reading the file alone, cannot
+    see across files, and a test's file is not read. Measured over ADK, 31 method edits: 24 named, at 59 call sites and
+    4 kept lines of the edited file, none wrongly; over this repository's last 195 commits, none wrongly, and one true
+    break named, a value that may be None passed where a string is taken, which the next commit fixed; and on litellm,
+    a parameter added first in `get_secret` shifted 11 calls' arguments that `callers` reads as fitting. Known limits:
     code without types reads as `Any`, and a use of it is not checked; a name an installed package holds reads as `Any`
     too; a tree the head's read did not hold whole is a floor; code loaded by name, `importlib` or `getattr`, is
     invisible to it; and in a file the change edited, an error that left one line as another of the same text broke

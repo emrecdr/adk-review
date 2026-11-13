@@ -208,14 +208,14 @@ def radius(
 ) -> dict[str, list[Diagnostic]] | str:
     """Pyrefly over the head's tree and the base's, each laid out as it is so an import finds what it names: by path,
     each diagnostic new at the head, of a kind not `ignored`, in a file the change left alone or on a line of a changed
-    file it kept, and on a line it added where its kind is one of `added_kinds`, a call's or an attribute's, which the
-    `types` rule, reading each changed file alone, cannot see across files. A test's file is in neither run where
-    `tests` is False: measured on ADK, half its bytes tests, a run took 0.96 s where it took 1.59. Nothing under `--all`
-    or `--try`, which have no base, where the change only adds files, nor where the head was not read. Measured over
-    ADK, 31 method edits: 24 named, none wrongly, 0.5 s a run; over this repository's last 195 commits, none wrongly,
-    where 37 were before a test's file was left out, 34 of them in tests, and before a new diagnostic was charged first
-    to the lines the change added; and one true break, a value that may be None passed where a string is taken, which
-    the next commit fixed."""
+    file it kept, and on a line it added where its kind is one of `added_kinds`, a call's, an attribute's or an
+    override's, which the `types` rule, reading each changed file alone, cannot see across files. A test's file is in
+    neither run where `tests` is False: measured on ADK, half its bytes tests, a run took 0.96 s where it took 1.59.
+    Nothing under `--all` or `--try`, which have no base, where the change only adds files, nor where the head was not
+    read. Measured over ADK, 31 method edits: 24 named, none wrongly, 0.5 s a run; over this repository's last 195
+    commits, none wrongly, where 37 were before a test's file was left out, 34 of them in tests, and before a new
+    diagnostic was charged first to the lines the change added; and one true break, a value that may be None passed
+    where a string is taken, which the next commit fixed."""
     tree, resolved = evidence.get("tree"), evidence.get("preflight")
     altered = [
         f
@@ -367,9 +367,10 @@ def _new(
     class among two that read alike, and the wrong line it carried was named on a kept line. What the base has left is
     charged first to the head's whose range meets a line the change added, where a moved line stands, then to its kept
     ones, and each beyond it is new. One on an added line is named where `charged` says so of its file and kind, a
-    call's or an attribute's in a file that reaches another the change touched: read by review, a branch that renamed
-    a method and edited the call to it in another file was approved by every rule; and named for any file, a defect
-    within the one file `types` reads and grades was named at major, and a new file's beside an unrelated change."""
+    call's, an attribute's or an override's in a file that reaches another the change touched: read by review, a branch
+    that renamed a method and edited the call to it in another file was approved by every rule; and named for any file,
+    a defect within the one file `types` reads and grades was named at major, and a new file's beside an unrelated
+    change."""
     held = Counter(key[:4] for key in before)
     left: defaultdict[tuple[str, str, str], list[Ranged]] = defaultdict(list)
     for key, ranged in now.items():
