@@ -406,8 +406,11 @@ _BLANK = "[REDACTED]"
 
 
 def is_placeholder(value: str) -> bool:
-    """Whether `value` only stands for a secret, `"changeme"` or `"****"`, and holds none."""
-    return _PLACEHOLDER.fullmatch(value.strip()) is not None
+    """Whether `value` only stands for a secret, `"changeme"` or `"****"`, and holds none; a blank holds none either.
+    Read by review: blanks are a run of one character too, and stripped first they left the pattern nothing to match,
+    so `passwd = " "`, written where a server takes no empty password, read as a password a person wrote."""
+    stripped = value.strip()
+    return not stripped or _PLACEHOLDER.fullmatch(stripped) is not None
 
 
 def without_examples(text: str) -> str:

@@ -1096,6 +1096,25 @@ class TestTheLintRule:
         assert [text for text in false if codes(text)] == [], "no credential, no finding"
         assert [text for text in real if not codes(text)] == [], "a credential is still found"
 
+    def test_a_blank_string_under_a_passwords_name_is_no_finding(self) -> None:
+        """Read by review of the plan's fourth wave, and reproduced: `passwd = " "`, which google-auth writes so that a
+        server does not fail where no password is given, was a major finding, where `passwd = "a"` was none. A run of
+        one character is a placeholder, and blanks, stripped first, left nothing to be a run of, so the string read as
+        a password a person wrote. A blank holds no secret: assigned, compared, passed or a default. A password of
+        words with a space between them is still one."""
+        from adk_review.judge.rule_helpers import is_placeholder
+
+        blank = ['passwd = " "\n', 'pwd = "   "\n', 'db_password = "\\t"\n', 'call(password=" ")\n']
+        blank += ['def f(password=" "):\n    pass\n', 'if passwd == " ":\n    pass\n']
+
+        def codes(text: str) -> list[str]:
+            found = lint_findings({"files": [_entry("src/app.py", text)], "tree": None})
+            return [f.title.removeprefix("lint: ").split()[0] for f in found if f.title.startswith("lint: S10")]
+
+        assert [text for text in blank if codes(text)] == [], "a blank is no password"
+        assert codes('passwd = "open sesame"\n') == ["S105"], "words a person wrote are still a password"
+        assert all(is_placeholder(value) for value in ("", " ", "   ", "\t")), "it holds nothing"
+
     def test_a_password_code_on_what_its_name_or_its_value_rules_out_is_minor(self) -> None:
         """Read by review: `token_type = "authorization_code"`, `token_url = "https://…"` and `token = "placeholder"`
         were each a major finding, 91 of the 111 false ones measured in 14 libraries' code, since a string of eight

@@ -178,22 +178,22 @@ width in `LINE_LENGTH`, ruff's 88 when unset. It leaves `assert` out of a test f
 B011, since an assert is how pytest checks; in library code each is major, since `python -O` strips it. Ruff's S105,
 S106 and S107 weigh a name alone, so `lint` weighs the string given to the name, and no other on its line. It passes
 over one whose string is shorter than 8 characters or holds a space, and is no credential as `named-secrets` weighs it:
-`token = "("` and `token = "Bearer "` are no finding, `token: str = "Xk9mQ2vL8pR4"` and `client_secret =
-"AbCdEfGhIjKlMnOp"` are. Where the name is about a credential, `token_type` or `token_url`, or the string is a
-placeholder or a label, the finding is minor, never passed over: `token_type = "authorization_code"` is a minor one, and
-a secret of letters alone, `password = "correcthorse"`, stays major. Under a name ruff does not weigh, `api_key =
-"letmeinplease"`, no rule names a secret of letters alone. The rules that run ruff, `lint`, `pitfalls` and `simplify`,
-read none of the project's ruff settings and honour no `noqa` comment, so that no branch can silence them: a finding
-there can be one the project's own ruff configuration, or its author's `noqa` with a reason, already accepts. Read the
-line before you ask for a change. Ruff also lints each modified file as the base held it, and the review keeps two
-groups apart. What the change caused is reviewed: its own lines, and an untouched line it broke, as an old line's name
-left undefined by an import it deleted. What the base held too, the same code and ruff's same words on the same line, as
-the diff numbers each line the change kept, a count in them no higher, was already in the file: it is counted in one
-finding a file, listed last under "Already in the files you touched". A parameter removed from a function of seven
-leaves its "(6 > 5)" there, where the change left its `def` line alone; one added makes the count the change's own, as
-any edit to the line ruff names does. So does an edit to any line an S105, S106 or S107 covers, a string below its name
-among them: ruff's words for these hold the name alone, and `lint` weighs the string too. By the Boy Scout rule the
-review expects them fixed too, but they never fail it, whatever `--fail-on` says. That finding names each code with
+`token = "("`, `token = "Bearer "` and a blank, `passwd = " "`, are no finding, `token: str = "Xk9mQ2vL8pR4"` and
+`client_secret = "AbCdEfGhIjKlMnOp"` are. Where the name is about a credential, `token_type` or `token_url`, or the
+string is a placeholder or a label, the finding is minor, never passed over: `token_type = "authorization_code"` is a
+minor one, and a secret of letters alone, `password = "correcthorse"`, stays major. Under a name ruff does not weigh,
+`api_key = "letmeinplease"`, no rule names a secret of letters alone. The rules that run ruff, `lint`, `pitfalls` and
+`simplify`, read none of the project's ruff settings and honour no `noqa` comment, so that no branch can silence them: a
+finding there can be one the project's own ruff configuration, or its author's `noqa` with a reason, already accepts.
+Read the line before you ask for a change. Ruff also lints each modified file as the base held it, and the review keeps
+two groups apart. What the change caused is reviewed: its own lines, and an untouched line it broke, as an old line's
+name left undefined by an import it deleted. What the base held too, the same code and ruff's same words on the same
+line, as the diff numbers each line the change kept, a count in them no higher, was already in the file: it is counted
+in one finding a file, listed last under "Already in the files you touched". A parameter removed from a function of
+seven leaves its "(6 > 5)" there, where the change left its `def` line alone; one added makes the count the change's
+own, as any edit to the line ruff names does. So does an edit to any line an S105, S106 or S107 covers, a string below
+its name among them: ruff's words for these hold the name alone, and `lint` weighs the string too. By the Boy Scout rule
+the review expects them fixed too, but they never fail it, whatever `--fail-on` says. That finding names each code with
 ruff's name for it and the lines it is on, the most severe code first, and the command that shows them. Where the review
 could not set a file against its base, its findings on untouched lines are counted in one finding with the change, at
 the bar, since they may be the change's own. In a Databricks notebook, a file whose first line is
