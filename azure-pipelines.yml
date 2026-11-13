@@ -30,7 +30,7 @@ jobs:
         displayName: a Python for pip
         inputs:
           versionSpec: "3.x"
-      - script: python -m pip install uv==0.13.6 # pinned, as the GitHub workflows pin it
+      - script: python -m pip install uv==0.13.7 # pinned, as the GitHub workflows pin it
         displayName: install uv
       - script: git --version
       - script: uv sync --locked
