@@ -2405,6 +2405,44 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         repo = self.branch(tmp_path, {"shop/plugin.py": kept}, {"shop/plugin.py": grown})
         assert self.found(repo) == []
 
+    FETCH = "class Repo:\n    def fetch(self, uid: int) -> int:\n        return uid\n"
+    #: Two methods whose `return` reads the same, on lines 9 and 17: the second returns the wrong type at the base.
+    TWICE = (
+        "from shop.repo import Repo\n\n\n"
+        "class First:\n    def __init__(self) -> None:\n        self.repo = Repo()\n\n"
+        "    def get(self, uid: int) -> int:\n        return self.repo.fetch(uid)\n\n\n"
+        "class Second:\n    def __init__(self) -> None:\n        self.repo = Repo()\n\n"
+        "    def get(self, uid: int) -> bytes:\n        return self.repo.fetch(uid)\n"
+    )
+
+    def test_a_kept_line_is_set_against_the_bases_own_line_never_another_of_its_text(self, tmp_path: Path) -> None:
+        """Read by review of the plan's third wave, and reproduced: the head's diagnostics were set against the base's
+        by file, kind and line's text, counted. Where the base held one wrong `return` and the change broke another of
+        the same text above it, the one wrong before was named and the new one not; and where the base's went right as
+        the other broke, the count was even and the review approved. A line the change kept is set against the base's
+        own line for it, as the diff numbers it; only a line it added is set against one it removed, by its text."""
+        text = self.FETCH.replace("-> int", "-> str").replace("return uid", "return str(uid)")
+
+        def named(name: str, base: str, changes: dict[str, str]) -> list[tuple[str, int]]:
+            (tmp_path / name).mkdir()
+            repo = self.branch(tmp_path / name, {"shop/repo.py": self.FETCH, "shop/svc.py": base}, changes)
+            return [(file, line) for file, line, _severity, _said in self.found(repo)]
+
+        broken = {"shop/repo.py": text}
+        assert named("above", self.TWICE, broken) == [("shop/svc.py", 9)], "the line it broke, never the one wrong"
+        # The second went right as the first broke: one diagnostic of that text before, and one after.
+        assert named("even", self.TWICE.replace("-> bytes", "-> str"), broken) == [("shop/svc.py", 9)]
+        # In a file the change also edited, a line added above moves both: the base's own line is the diff's.
+        lower = {**broken, "shop/svc.py": "# the two readers\n" + self.TWICE}
+        assert named("shifted", self.TWICE, lower) == [("shop/svc.py", 10)], "set against line 17 of the base, its own"
+        # A wrong line the change indented, removed and added again, is the base's still: set against it by its text.
+        inside = self.TWICE.replace(
+            "bytes:\n        return self.repo.fetch(uid)\n",
+            'bytes:\n        if uid:\n            return self.repo.fetch(uid)\n        return b""\n',
+        )
+        indented = {"shop/repo.py": self.FETCH + "# same types\n", "shop/svc.py": inside}
+        assert inside != self.TWICE and named("indented", self.TWICE, indented) == []
+
     def test_a_view_without_tests_another_rule_made_first_still_carries_the_diagnostics(self, tmp_path: Path) -> None:
         """Read by review: a tree rule that reads no tests, the demo's among them, made the tree's view without tests
         before this rule ran, and the copy that carries pyrefly's diagnostics kept that view, which held none: under

@@ -472,7 +472,7 @@ none of their history. Those rules read the whole head only where the change alt
 was there before, removes a name a module defined, or moves or removes a module, for `rule.callers`, which holds every
 call to the function and every file that still takes the name or imports the module, and wherever the change modifies,
 moves or removes a Python file other than a test, for `rule.radius-types`, which runs pyrefly over the head and the
-base, and reads as there before a type error on a kept line where the base held a like one on a line of the same text:
+base, and sets a type error on a line the change kept against the base's own line for it, as the diff numbers that line:
 measured, a push's review took 0.6 s more on this repository; on ADK's 815 files, 0.9 s more where `rule.callers` read
 the head anyway and 1.8 s where it did not; on litellm's 2,776, 2.4 s and 4.9 s; otherwise they read the changed files
 alone. A merge grows from more than one: the change is reviewed against each, and passes when one review passes, since a

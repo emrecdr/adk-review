@@ -32,14 +32,15 @@ class RadiusTypes(TreeRule):
     """Pyrefly runs over the head's Python files laid out as the head holds them, and over the same files as the base
     held them, each changed one as git holds it there, with the reviewer's configuration: no installed package, no
     ignore comment honoured. A diagnostic is the change's where the head holds it and the base did not, told apart by
-    its file, kind and line's text; one on a line the change added is named where it is a call's or an attribute's,
-    which `types`, reading the file alone, cannot see across files, and a test's file is not read. Measured over ADK, 31
-    method edits: 24 named, at 59 call sites and 4 kept lines of the edited file, none wrongly; over this repository's
-    last 195 commits, none wrongly, and one true break named, a value that may be None passed where a string is taken,
-    which the next commit fixed; and on litellm, a parameter added first in `get_secret` shifted 11 calls' arguments
-    that `callers` reads as fitting. Known limits: code without types reads as `Any`, and a use of it is not checked; a
-    name an installed package holds reads as `Any` too; a tree the head's read did not hold whole is a floor; and code
-    loaded by name, `importlib` or `getattr`, is invisible to it."""
+    its file and kind and, on a line the change kept, the base's own line for it, as the diff numbers it; on a line it
+    added or removed, by the line's text. One on a line the change added is named where it is a call's or an
+    attribute's, which `types`, reading the file alone, cannot see across files, and a test's file is not read.
+    Measured over ADK, 31 method edits: 24 named, at 59 call sites and 4 kept lines of the edited file, none wrongly;
+    over this repository's last 195 commits, none wrongly, and one true break named, a value that may be None passed
+    where a string is taken, which the next commit fixed; and on litellm, a parameter added first in `get_secret`
+    shifted 11 calls' arguments that `callers` reads as fitting. Known limits: code without types reads as `Any`, and a
+    use of it is not checked; a name an installed package holds reads as `Any` too; a tree the head's read did not hold
+    whole is a floor; and code loaded by name, `importlib` or `getattr`, is invisible to it."""
 
     id = "radius-types"
     severity = "major"

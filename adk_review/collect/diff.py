@@ -9,7 +9,7 @@ where git says a file is binary or a submodule.
 from __future__ import annotations
 
 import re
-from bisect import bisect_left
+from bisect import bisect_left, bisect_right
 from collections.abc import Callable, Iterator
 
 from ..core.text import backticks, cut_at, squash
@@ -136,6 +136,15 @@ def base_line(diff: str) -> Callable[[int], int]:
     marks = [(number, raw[:1]) for number, raw in hunk_lines(diff)]
     added, removed = ([number for number, mark in marks if mark == sign] for sign in "+-")
     return lambda line: line - bisect_left(added, line) + bisect_left(removed, line)
+
+
+def removed_lines(diff: str) -> set[int]:
+    """The base's number of each line the change removed: the new line before it, less each line added down to that
+    one, and each line removed before it more, and one. With `base_line` over the lines kept, every line of the base,
+    each once."""
+    marks = [(number, raw[:1]) for number, raw in hunk_lines(diff)]
+    added, carried = ([number for number, mark in marks if mark == sign] for sign in "+-")
+    return {number - bisect_right(added, number) + at + 1 for at, number in enumerate(carried)}
 
 
 def quotable(diff: str) -> list[list[tuple[int, str]]]:
