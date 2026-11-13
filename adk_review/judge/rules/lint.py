@@ -151,30 +151,47 @@ NAMED_PASSWORD = frozenset({"S105", "S106", "S107"})
 PLAIN_UNDER_CHARS = 8
 
 
-def strings_by_line(file: ChangedFile) -> dict[int, list[str]]:
-    """Each string literal of `file`, by the line it starts on, where ruff places its finding; none where it does not
-    parse."""
-    found: dict[int, list[str]] = {}
-    for node in nodes_in(file.module, ast.Constant) or ():
-        if isinstance(node.value, str):
-            found.setdefault(node.lineno, []).append(node.value)
+#: Where a string of a file is looked up: the line it starts on, or a place on that line, the line and a column
+#: counted from 1 in characters, as ruff gives a finding's.
+type Place = int | tuple[int, int]
+
+
+def strings_by_place(file: ChangedFile) -> dict[Place, list[str]]:
+    """Each string literal of `file` by where ruff places a finding on it: the place it starts at, and for one given to
+    a keyword the place the keyword starts at, where ruff puts an argument's finding; and by the line it starts on, for
+    a finding whose place holds none. Nothing where the file does not parse. Read by review: by the line alone, the
+    address in `connect("https://…", token="Bearer ")` was weighed as the token's, and a value on the line after its
+    keyword was not found. Ruff counts a column in characters, where Python counts a line's bytes."""
+    found: dict[Place, list[str]] = {}
+
+    def column(node: ast.Constant | ast.keyword) -> int:
+        line = file.line(node.lineno)
+        before = node.col_offset if line.isascii() else len(line.encode()[: node.col_offset].decode(errors="ignore"))
+        return before + 1
+
+    for node in nodes_in(file.module, ast.Constant, ast.keyword) or ():
+        given = node.value if isinstance(node, ast.keyword) else node
+        if isinstance(given, ast.Constant) and isinstance(given.value, str):
+            found.setdefault((node.lineno, column(node)), []).append(given.value)
+            if node is given:
+                found.setdefault(node.lineno, []).append(given.value)
     return found
 
 
-def _named(found: Diagnostic, strings: Callable[[], Mapping[int, Sequence[str]]]) -> tuple[str, Sequence[str]] | None:
-    """The name ruff quotes in an S105, S106 or S107 and each string on its line; None for another code, or where no
-    string was read, which keeps its finding as ruff made it."""
+def _named(found: Diagnostic, strings: Callable[[], Mapping[Place, Sequence[str]]]) -> tuple[str, Sequence[str]] | None:
+    """The name ruff quotes in an S105, S106 or S107 and the string given to it, the one its place holds, else each
+    string on its line; None for another code, or where no string was read, which keeps its finding as ruff made it."""
     quoted = found.message.split('"')
-    if found.code not in NAMED_PASSWORD or len(quoted) < 3 or not (given := strings().get(found.line)):
+    if found.code not in NAMED_PASSWORD or len(quoted) < 3:
         return None
-    return quoted[1], given
+    given = strings().get((found.line, found.column or 0)) or strings().get(found.line)
+    return (quoted[1], given) if given else None
 
 
-def no_credential(found: Diagnostic, strings: Callable[[], Mapping[int, Sequence[str]]]) -> bool:
-    """Whether `found` is S105, S106 or S107 where every string on its line, given to the name ruff quotes, is plain:
-    short or spaced, and no credential, as `named-secrets` weighs one; a line where no string was read keeps its
-    finding. Read by review: ruff made `token = "("`, `"<eos>"` and `"Bearer "` each major, where `named-secrets`
-    found none of them."""
+def no_credential(found: Diagnostic, strings: Callable[[], Mapping[Place, Sequence[str]]]) -> bool:
+    """Whether `found` is S105, S106 or S107 where the string given to the name ruff quotes is plain: short or spaced,
+    and no credential, as `named-secrets` weighs one; where no string was read, it keeps its finding. Read by review:
+    ruff made `token = "("`, `"<eos>"` and `"Bearer "` each major, where `named-secrets` found none of them."""
     if (named := _named(found, strings)) is None:
         return False
 
@@ -185,8 +202,8 @@ def no_credential(found: Diagnostic, strings: Callable[[], Mapping[int, Sequence
     return all(plain(value) for value in named[1])
 
 
-def names_no_secret(found: Diagnostic, strings: Callable[[], Mapping[int, Sequence[str]]]) -> bool:
-    """Whether `found` is S105, S106 or S107 where the name ruff quotes, or every string on its line, rules a
+def names_no_secret(found: Diagnostic, strings: Callable[[], Mapping[Place, Sequence[str]]]) -> bool:
+    """Whether `found` is S105, S106 or S107 where the name ruff quotes, or the string given to it, rules a
     credential out: a name about one, a placeholder, a label. Rated minor, never passed over, so no finding is lost.
     Read by review: a string of eight characters with no space kept its major whatever it was, `token_type =
     "authorization_code"` and `token_url = "https://…"` among 91 of the 111 false majors measured in 14 libraries. A
@@ -211,7 +228,7 @@ class Lint(FileRule):
         leave_out = IN_TESTS if is_test(file.path) else ()
         # The file's strings, read once and only where ruff named a password's code: `listed` reads a file's
         # diagnostics only once it knows the file is Python, and a file not read whole is no hole of this.
-        strings = functools.cache(lambda: strings_by_line(file))
+        strings = functools.cache(lambda: strings_by_place(file))
         return listed(
             file,
             lambda found: "minor" if names_no_secret(found, strings) else severity_of(found.code),

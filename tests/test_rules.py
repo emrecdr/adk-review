@@ -1074,6 +1074,30 @@ class TestTheLintRule:
         assert [text for text in kept[:-1] if severities(text) != ["major"]] == [], "letters alone: still a major"
         assert severities(kept[-1]) == ["major", "minor"], "each name on a line is weighed alone"
 
+    def test_a_password_code_weighs_the_string_given_to_its_name_and_no_other_on_its_line(self) -> None:
+        """Read by review of the plan's third wave, and reproduced: every string on a finding's line was weighed, so
+        `connect("https://api.acme.io/v1", token="Bearer ")` was a major finding for its address, and a comparison for
+        the key or the message beside it, where each alone on its line is none. Measured over the installed packages,
+        370 such findings: 5 of the 93 majors, and the place ruff gives a finding held its string, or the keyword it is
+        given to, in all 370. That string is weighed, and every string on the line only where none stands there. A
+        value on the line after its keyword is read too: with no string on the keyword's line, it kept its major."""
+        url = '"https://api.acme.io/v1"'
+        none = [f'connect({url}, token="Bearer ")\n', 'ok = kwargs["continuation_token"] == "tok_1"\n']
+        none += ['check(user.token == "Bearer ", "InvalidUserAuthTokenError")\n']
+        none += ['connect(\n    token=\n    "Bearer ",\n)\n']
+        none += ['naïve = connect("ééééééééé", token="Bearer ")\n']  # ruff counts a column in characters, not bytes
+        minor = [f'connect({url}, token="placeholder")\n']
+        major = ['connect("x", token="AbCdEfGhIjKlMnOp")\n', f'connect({url}, password="Xk9mQ2vL8pR4")\n']
+        major += ['check(user.token == "Xk9mQ2vL8pR4wZ7t", "no")\n']
+
+        def severities(text: str) -> list[str]:
+            found = lint_findings({"files": [_entry("src/app.py", text)], "tree": None})
+            return sorted({f.severity for f in found if f.title.startswith(("lint: S105", "lint: S106", "lint: S107"))})
+
+        assert [text for text in none if severities(text)] == [], "no credential given to the name, no finding"
+        assert [text for text in minor if severities(text) != ["minor"]] == [], "a placeholder is still a minor"
+        assert [text for text in major if severities(text) != ["major"]] == [], "a credential is still a major"
+
     def test_a_call_without_a_shell_or_by_a_short_name_is_minor_and_a_shell_call_major(self) -> None:
         """S603 names every `subprocess` call whose arguments are not a literal list, and S607 every program named
         without its full path: neither reads what feeds the call, so each is hardening, minor, where a call through a

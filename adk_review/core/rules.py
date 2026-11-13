@@ -76,6 +76,9 @@ class Diagnostic:
     #: higher, so the change did not cause it; False where the change made it; None where it was not set against the
     #: base.
     known: bool | None = None
+    #: Where on its line ruff places it, counted from 1 in characters: the code the finding stands on, a string or the
+    #: keyword it is given to. None where a tool names none.
+    column: int | None = None
 
 
 class AnyRule(ABC):

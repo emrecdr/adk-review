@@ -273,7 +273,14 @@ def _parsed(answer: Iterable[str], sources: dict[str, Rows]) -> dict[str, list[D
         fix, label = offered.get("message"), offered.get("applicability")
         url = hit.get("url")
         said = Diagnostic(
-            row, line, once(code), once(hit["message"]), fix and once(fix), label and once(label), url and once(url)
+            row,
+            line,
+            once(code),
+            once(hit["message"]),
+            fix and once(fix),
+            label and once(label),
+            url and once(url),
+            column=hit["location"].get("column"),
         )
         found.setdefault(path, []).append(said)
     return found
