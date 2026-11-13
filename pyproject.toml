@@ -7,7 +7,7 @@ dependencies = [
     # Pinned: a bump lands only measured live on both arms, the demo's review recorded and compared with the last one.
     # No extra: of its packages the reviewer imports only litellm, a dependency of its own below, since it serves
     # Copilot and Gemini only.
-    "google-adk==2.13.0",
+    "google-adk==2.14.0",
     # The Copilot arm, pinned at the lock's own version for an install that reads no lock: `uv tool install`, pip and
     # pre-commit resolve afresh, and ADK with no extra asks for no litellm. Measured: `uv tool install .` took a release
     # three days old or less, as LiteLLM 1.82.7 and 1.82.8 were when they shipped a credential stealer.
