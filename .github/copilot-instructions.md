@@ -67,9 +67,11 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   of a before-and-after comparison from its own copy of the tree, since a review imports the checkout.
 - `[tool.uv]` in `pyproject.toml` takes a release only three days after it is published (`exclude-newer`), so a
   dependency released since does not resolve yet; the comment there says why the span stays. Dependabot
-  (`.github/dependabot.yml`) proposes each week's updates after the same three days, and no package skips the wait.
+  (`.github/dependabot.yml`) proposes each week's updates after the same three days, and no package skips the wait; it
+  proposes the packages `pyproject.toml` names, and the lock's other packages move with `uv lock --upgrade`, by hand.
   Its `ignore` holds LiteLLM below the releases made after a compromised one, and the comment there says when to lift
-  it: bump LiteLLM by hand no further either.
+  it: bump LiteLLM by hand no further either. `pyproject.toml` pins ruff and pyrefly at the lock's versions, as it pins
+  LiteLLM, so every install runs the two the suite ran with: a pin and the lock move together.
 
 ## Rules the tests enforce
 

@@ -863,6 +863,48 @@ class TestTheLintRule:
         assert "ruff failed" in out and "NOPE999" in out, "its first line and its last, the cause"
         assert out.endswith(", so the rule did not look"), out
 
+    def test_a_code_ruff_does_not_run_is_a_hole_and_never_no_finding(self) -> None:
+        """Read by review, and measured: ruff 0.16.0 held `RUF071` in preview, so it answered the code with a warning
+        on stderr, exit 0 and no finding, and `pitfalls` read that as nothing found. A code ruff says has no effect is
+        a rule that did not look. The code tried is one the installed ruff itself says it holds in preview."""
+        import shutil
+        import subprocess
+
+        from adk_review.collect import ruff
+
+        binary = ruff.beside() or shutil.which("ruff")
+        assert binary is not None
+        listed = subprocess.run(
+            [binary, "rule", "--all", "--output-format", "json"], capture_output=True, encoding="utf-8", check=True
+        )
+        held_back = [rule["code"] for rule in json.loads(listed.stdout) if rule["preview"]]
+        if not held_back:
+            pytest.skip("this ruff holds no rule in preview, so it has no code to refuse")
+        said = ruff.diagnose({"files": [{"path": "m.py", "text": "x = 1\n"}]}, ("F401", held_back[0]), ())
+        assert isinstance(said, str) and held_back[0] in said and "has no effect" in said, said
+        assert said.startswith("this ruff runs no check for a code the rule selects"), said
+        assert said.endswith("`uv run` runs the project's own"), "the next step, as where ruff is not found"
+
+    def test_every_code_a_rule_selects_runs_on_the_ruff_installed(self) -> None:
+        """The ruff the lock pins is the one each install runs, `pyproject.toml` naming the same version, so this is
+        the test a ruff update fails where it moves a code the rules select back to preview, or drops it."""
+        from adk_review.collect import ruff
+        from adk_review.core.rules import FileRule
+
+        read = {"files": [{"path": "m.py", "text": "x = 1\n"}]}
+        answers = {
+            rule.id: ruff.diagnose(
+                read,
+                rule.tool_settings["select"],
+                rule.tool_settings["ignore"],
+                rule.tool_settings["line_length"],
+            )
+            for rule in catalog().rules
+            if isinstance(rule, FileRule) and rule.tool == "ruff"
+        }
+        assert set(answers) == {"lint", "pitfalls", "simplify"}, answers
+        assert all(isinstance(answer, dict) for answer in answers.values()), answers
+
     #: How a check's section counts a finding of its own listed under another's, on the same lines.
     COUNT = "- folded: 1 on lines another finding already holds, each listed under that finding"
 

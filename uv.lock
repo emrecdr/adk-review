@@ -33,9 +33,9 @@ dev = [
 requires-dist = [
     { name = "google-adk", specifier = "==2.13.0" },
     { name = "litellm", specifier = "==1.106.2" },
-    { name = "pyrefly", specifier = ">=1.4.0" },
+    { name = "pyrefly", specifier = "==1.4.1" },
     { name = "python-dotenv", specifier = ">=1.0" },
-    { name = "ruff", specifier = ">=0.12.8" },
+    { name = "ruff", specifier = "==0.17.4" },
     { name = "truststore", specifier = ">=0.10" },
 ]
 

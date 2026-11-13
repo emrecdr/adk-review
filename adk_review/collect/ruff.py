@@ -39,6 +39,15 @@ class _FloodError(Exception):
     """Ruff named more findings than `RUFF_FINDINGS_MAX`."""
 
 
+class _UntakenError(Exception):
+    """Ruff ran, and said a code it was given has no effect: what it said."""
+
+
+#: How ruff says, on stderr and at exit 0, that it runs no check for a code it was given: one its release holds in
+#: preview. Measured by review: ruff 0.16.0 answered `RUF071` so, and no finding read as none found.
+_UNTAKEN = re.compile(r"Selection .* has no effect")
+
+
 #: What breaks a row where ruff and pyrefly count one: a lone `\r` too, which git reads as within a line.
 _ROW_BREAK = re.compile(r"\r\n?|\n")
 #: How ruff ends the words of a count over its limit, the count first: "Too many arguments (6 > 5)", and C901's,
@@ -97,6 +106,8 @@ def diagnose(
         return f"a changed file could not be written to lint ({exc.strerror})"
     except _FloodError:
         return f"ruff named more than {RUFF_FINDINGS_MAX:,} findings, and those past them were not read"
+    except _UntakenError as exc:  # another ruff than the reviewer's own, which `pyproject.toml` pins
+        return f"this ruff runs no check for a code the rule selects ({exc}). `uv run` runs the project's own"
     except (ValueError, KeyError, IndexError, TypeError) as exc:  # an answer of another shape than ruff's JSON
         return f"ruff's answer could not be read ({type(exc).__name__})"
     except subprocess.CalledProcessError as exc:  # ruff's cause sits on no fixed line, so all it said goes, flat
@@ -219,10 +230,11 @@ def laid_out(folder: str, texts: dict[str, str]) -> tuple[list[str], dict[str, R
 
 def _ruff(argv: list[str], cwd: str) -> Generator[str]:
     """The one place ruff runs, as `git._run` is git's: each line it writes on stdout as it comes, then
-    `CalledProcessError` for an exit that is not 0, or `TimeoutExpired`, a watch stopping it at `RUFF_TIMEOUT_S`. What
-    it says on stderr goes to a file, so no pipe it fills can stop it. The caller's environment with every `RUFF_*`
-    variable left out, as git's runs without `GIT_*`: measured, `RUFF_OUTPUT_FILE`, set for another step of a
-    pipeline, sent the report to that file, and stdout read empty."""
+    `CalledProcessError` for an exit that is not 0, `_UntakenError` where it says at exit 0 that a code it was given
+    has no effect, or `TimeoutExpired`, a watch stopping it at `RUFF_TIMEOUT_S`. What it says on stderr goes to a
+    file, so no pipe it fills can stop it. The caller's environment with every `RUFF_*` variable left out, as git's
+    runs without `GIT_*`: measured, `RUFF_OUTPUT_FILE`, set for another step of a pipeline, sent the report to that
+    file, and stdout read empty."""
     env = {name: value for name, value in os.environ.items() if not name.startswith("RUFF_")}
     with (
         tempfile.TemporaryFile() as said,
@@ -242,9 +254,12 @@ def _ruff(argv: list[str], cwd: str) -> Generator[str]:
         code = running.wait()
         if late.is_set():
             raise subprocess.TimeoutExpired(argv, RUFF_TIMEOUT_S)
+        said.seek(0)
+        words = said.read().decode("utf-8", "replace")
         if code:
-            said.seek(0)
-            raise subprocess.CalledProcessError(code, argv, stderr=said.read().decode("utf-8", "replace"))
+            raise subprocess.CalledProcessError(code, argv, stderr=words)
+        if _UNTAKEN.search(words):
+            raise _UntakenError(squash(words))
 
 
 def _parsed(answer: Iterable[str], sources: dict[str, Rows]) -> dict[str, list[Diagnostic]]:

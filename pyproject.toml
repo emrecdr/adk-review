@@ -17,9 +17,11 @@ dependencies = [
     # Python trusts too. judge/config.py injects it before any client is built, and so does the login.
     "truststore>=0.10",
     # The lint rule runs ruff, and the types rule pyrefly; installed with the reviewer, each is found beside the
-    # interpreter.
-    "ruff>=0.12.8",
-    "pyrefly>=1.4.0",
+    # interpreter. Pinned at the lock's own versions, as litellm is, so every install runs the two the suite ran with.
+    # Read by review, with a floor here: an install that reads no lock took a ruff a day old; ruff 0.15 refused a code
+    # `pitfalls` selects, exit 2; and ruff 0.16, which held that code in preview, ran without it and said so to no one.
+    "ruff==0.17.4",
+    "pyrefly==1.4.1",
 ]
 
 # `adk-review`: the command, installed where it is needed — `uv tool install <this repository>` — and run from any

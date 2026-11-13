@@ -2835,7 +2835,7 @@ class TestTheModesBesideAReview:
         (project / "src" / "__pycache__" / "app.cpython-313.pyc").write_bytes(b"\x00\xff\x00")
         (project / ".ruff_cache").mkdir()
         (project / ".ruff_cache" / "CACHEDIR.TAG").write_text("Signature: 8a477f597d28d172789f06886806bc55", "utf-8")
-        (project / ".ruff_cache" / "0.17.3").write_bytes(b"\x00\xff\x00")
+        (project / ".ruff_cache" / "0.0.0").write_bytes(b"\x00\xff\x00")  # named by ruff's version
         (theirs / "bad.py").write_text("print(y)\n", encoding="utf-8")
         (project / "node_modules" / "left" / "pad.py").write_text("print(z)\n", encoding="utf-8")
         assert cli.main(["--try", str(project), "--check", "rule.no-print"]) == 0
