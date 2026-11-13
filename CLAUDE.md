@@ -281,7 +281,9 @@ Conventions:
   `.env` that is not UTF-8 is a sentence and exit 2 (1 from the login), and `.github/workflows/ci.yml` and
   `azure-pipelines.yml` run lint, the type check and the suite on Windows, Linux and macOS. Every action a workflow uses
   is pinned by its full commit SHA, the same commit in every workflow and the README's sample, and uv by one exact
-  version in every pipeline and the README's, since `required-version` reads as a floor (`tests/test_copilot.py`).
+  version in every pipeline and the README's, since `required-version` reads as a floor (`tests/test_copilot.py`), and
+  by none newer than the pinned `setup-uv` holds a checksum for (its `known-checksums.json`, which no offline test
+  reads): it checks a newer uv only against a checksum the download's own host serves.
 
 ## Tests
 
