@@ -1135,6 +1135,34 @@ class TestTheLintRule:
         assert [text for text in kept[:-1] if severities(text) != ["major"]] == [], "letters alone: still a major"
         assert severities(kept[-1]) == ["major", "minor"], "each name on a line is weighed alone"
 
+    def test_a_name_that_says_how_a_secret_is_used_or_counted_holds_none(self) -> None:
+        """Read by review of the plan's fourth wave, and measured again: of the 26 major findings of these codes outside
+        tests in the libraries this project installs, 10 stood under a name about a secret that ended in none of the
+        endings read before, its method, scope, cost, source, profile, version, action or marker, as
+        `token_endpoint_auth_method = "private_key_jwt"` does. Each is rated minor, never passed over. `named-secrets`
+        reads the same endings, and stopped a review at a secret's version, a date, and at a token's scope."""
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.named_secrets import NamedSecrets
+
+        lowered = ['token_endpoint_auth_method = "private_key_jwt"\n', 'TOKEN_COST = "gen_ai.usage.cost"\n']
+        lowered += ['AZURE_STORAGE_TOKEN_SCOPE = "https://storage.azure.com/.default"\n']
+        lowered += ['route(token_count_source="anthropic_count_tokens")\n', 'token_exchange_profile = "entra_obo"\n']
+        lowered += ['_REALTIME_TOKEN_VERSION = "realtime_v1"\n', '_TOKEN_COUNTING_ACTION = "countTokens"\n']
+        lowered += ['PASS_THROUGH_ENDPOINT_MARKER = "__litellm_pass_through_endpoint__"\n']
+        kept = ['version_token = "AbCdEfGhIjKlMnOp"\n', 'scope_secret = "MYSECRETVALUE"\n']
+        stopped = ['SECRET_VERSION = "2024-01-15"\n', 'aws_secret_profile = "prod-account-2"\n']
+        stopped += ['TOKEN_SCOPE = "api://0a1b2c3d-1111-2222-3333-444455556666/.default"\n']
+        stopped += ['password_hash_method = "pbkdf2:sha256:600000"\n', 'secret_source = "azure-keyvault-prod01"\n']
+
+        def severities(text: str) -> list[str]:
+            found = lint_findings({"files": [_entry("src/app.py", text)], "tree": None})
+            return sorted({f.severity for f in found if f.title.startswith("lint: S10")})
+
+        assert [text for text in lowered if severities(text) != ["minor"]] == [], "about a secret: found, as a minor"
+        assert [text for text in kept if severities(text) != ["major"]] == [], "the word inside a name is no ending"
+        assert [text for text in stopped if lines_hit(NamedSecrets(), "src/app.py", text)] == [], "and no blocker"
+        assert lines_hit(NamedSecrets(), "src/app.py", 'version_token = "Xk9mQ2vL8pR4wZ7t"\n') == [1], "a token is one"
+
     def test_a_password_code_weighs_the_string_given_to_its_name_and_no_other_on_its_line(self) -> None:
         """Read by review of the plan's third wave, and reproduced: every string on a finding's line was weighed, so
         `connect("https://api.acme.io/v1", token="Bearer ")` was a major finding for its address, and a comparison for

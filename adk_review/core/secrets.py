@@ -448,12 +448,17 @@ def _example(password: str, host: str) -> bool:
     return _LOCAL_HOST.fullmatch(host) is not None and is_placeholder(password)
 
 
-#: The endings of a name that is about a secret, never one: where it lives, what kind it is, how it is named or
-#: checked. Measured: 177 of 714 lines flagged in 2.1 million lines of published library code, none of them a
-#: credential, carried one of these — `token_url`, `secret_name`, `password_field`, `TOKEN_TYPE`.
+#: The endings of a name that is about a secret, never one: where it lives, what kind it is, how it is named, used,
+#: counted or checked. Measured: 177 of 714 lines flagged in 2.1 million lines of published library code, none of them
+#: a credential, carried one of these — `token_url`, `secret_name`, `password_field`, `TOKEN_TYPE`. Eight joined them,
+#: `_action`, `_cost`, `_marker`, `_method`, `_profile`, `_scope`, `_source` and `_version`, read by review and
+#: measured over the 2.4 million lines this project installs: 10 of the 26 major findings `lint` made of a password's
+#: code outside tests stood under one, `token_endpoint_auth_method`, `TOKEN_COST`, `token_count_source`, and of the
+#: 19,076 lines of any kind that hold one, `named-secrets` answers for each as before.
 ABOUT = (
-    "_arn", "_endpoint", "_env", "_expiry", "_field", "_file", "_format", "_header", "_help", "_id", "_kind",
-    "_label", "_length", "_limit", "_name", "_path", "_prefix", "_ref", "_regex", "_seconds", "_type", "_uri", "_url",
+    "_action", "_arn", "_cost", "_endpoint", "_env", "_expiry", "_field", "_file", "_format", "_header", "_help",
+    "_id", "_kind", "_label", "_length", "_limit", "_marker", "_method", "_name", "_path", "_prefix", "_profile",
+    "_ref", "_regex", "_scope", "_seconds", "_source", "_type", "_uri", "_url", "_version",
 )  # fmt: skip
 #: A name whose value a person chooses: a password, which may be any words. A token, a key or a secret a machine makes.
 _CHOSEN = re.compile(r"(?i)passw(?:or)?d|pwd")
