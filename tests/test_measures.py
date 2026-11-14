@@ -447,6 +447,31 @@ class TestTheBlastRadius:
             "the added call is in the diff"
         )
 
+    def test_a_call_the_change_edited_below_its_first_line_is_in_the_diff_and_not_shown(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by review of the plan's fourth wave, and reproduced: a call was read by its first line alone, so one
+        over several lines whose argument the change edited was shown as a caller the change left alone, and took a
+        place among the calls shown from a caller no diff shows, which was counted as one more, not shown."""
+        from adk_review.collect import change
+        from adk_review.collect.git import collect_evidence
+
+        first = "from shop.users import find_user\n\n\ndef first():\n    return find_user(\n        1,\n    )\n"
+        repo = tmp_path / "shop"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "shop/__init__.py", "")
+        _committed(repo, "shop/users.py", self.USERS)
+        _committed(repo, "shop/first.py", first)
+        _committed(repo, "shop/greet.py", self.GREET)
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "shop/users.py", self.USERS.replace("return USERS[uid]", "return USERS.get(uid)"))
+        _committed(repo, "shop/first.py", first.replace("        1,\n", "        2,\n"))
+        monkeypatch.setattr(change, "CALLS_SHOWN", 1)
+        callers = collect_evidence(str(repo), BASE, "change")["callers"]
+        assert callers.startswith("- `shop/greet.py` calls `find_user()` from `shop/users.py`:\n"), callers
+        assert "shop/first.py" not in callers and "more call" not in callers, "the edited call is in the diff"
+
     def passed_on(self, tmp_path: Path, package: str) -> Path:
         """A repository whose `shop/__init__.py` is `package` and whose `shop/greet.py` imports `find_user` from the
         package, the branch `change` rewriting `shop/users.py`, where the function is."""

@@ -1071,8 +1071,8 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
 - **The blast radius says where to read.** What at the head depends on each changed Python file, directly or through
   another, tests counted apart: read from git in one batch and parsed with Python's own `ast`, never run. The guidelines
   read it beside the diff, told to weigh a change to shared behaviour by how far it reaches, as context and never as
-  evidence: a finding that quotes it is dropped. Beside it they read each call into a function the change touched, from
-  a line the change did not add, with three lines each way and three calls a function at most, a call from each file
+  evidence: a finding that quotes it is dropped. Beside it they read each call into a function the change touched, one
+  it did not add or edit, with three lines each way and three calls a function at most, a call from each file
   before a second: a side effect no diff shows, which a finding reports on the changed lines. Measured live over five
   planted side effects, each a behaviour change a caller relied on: both arms raised each one with or without the calls,
   but without them as a guess that callers may break, and with them naming the caller and what it relied on; neither

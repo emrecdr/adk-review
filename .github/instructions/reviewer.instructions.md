@@ -80,7 +80,7 @@ applyTo: "adk_review/**"
   written, no index refreshed and no lock taken. An untracked file is named, never reviewed and never a hole; a file
   changed but not staged is not listed, since `diff-files` ran a clean filter the repository's own config named.
 - The blast radius (`core/blast.py`) is parsed once from the head commit and shared with the tree rules; the guidelines
-  see it, and beside it each call into a function the change touched from a line it did not add (`callers_of`, fenced,
+  see it, and beside it each call into a function the change touched that it did not add or edit (`callers_of`, fenced,
   capped at `CALLERS_CAP_CHARS`), the report shows it under the verdict, the verdict never reads it. Where the head was
   not read whole, every count the report prints is a floor and says so; the tree is dropped from the evidence before the
   model calls. The head is read whole only when a tree rule needs it for the change (`needs_head`) or a guideline runs;

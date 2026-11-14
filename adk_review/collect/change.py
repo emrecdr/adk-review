@@ -301,8 +301,8 @@ CALL_CONTEXT = 3
 
 
 def callers_of(tree: Tree | None, files: list[Entry]) -> str:
-    """Each call at the head into a module-level function whose lines the change added or removed, from a line the
-    change did not add, with the lines around it: what a guideline weighs a change of behaviour against, where no diff
+    """Each call at the head into a module-level function whose lines the change added or removed, on no line the
+    change added, with the lines around it: what a guideline weighs a change of behaviour against, where no diff
     shows it, in a file the change left alone or elsewhere in its own. Asked by the owner, and measured live on both
     arms over five branches, each a behaviour change an unchanged caller relied on: the correctness guideline raised
     each with or without the calls, without them as a guess that callers may break, with them naming the caller and
@@ -339,9 +339,11 @@ def _touched(tree: Tree, files: list[Entry]) -> set[tuple[str, str]]:
 def _sites(
     tree: Tree, touched: set[tuple[str, str]], added: Mapping[str, frozenset[int]]
 ) -> defaultdict[tuple[str, str], list[tuple[str, int]]]:
-    """Each call into a touched function, by the function, from a line the change did not add: through an import, or
+    """Each call into a touched function, by the function, none of whose lines the change added: through an import, or
     by its own name in its own module. Measured over ADK: a private helper's every call was in its own module, outside
-    the lines the diff shows."""
+    the lines the diff shows. Read by review, and reproduced: read by its first line alone, a call over several lines
+    whose argument the change edited was shown as left alone, and took a place among the calls shown from a caller no
+    diff shows."""
     sites: defaultdict[tuple[str, str], list[tuple[str, int]]] = defaultdict(list)
     bound = _bound(tree)
     for path, module in tree.modules():
@@ -353,7 +355,11 @@ def _sites(
                 spelled[name] = target
         new = added.get(path, frozenset())
         for node in ast.walk(module) if spelled else ():
-            if isinstance(node, ast.Call) and node.lineno not in new and (target := spelled.get(_dotted(node.func))):
+            if (
+                isinstance(node, ast.Call)
+                and (target := spelled.get(_dotted(node.func)))
+                and new.isdisjoint(range(node.lineno, (node.end_lineno or node.lineno) + 1))
+            ):
                 sites[target].append((path, node.lineno))
     return sites
 
