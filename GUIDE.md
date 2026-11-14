@@ -84,7 +84,8 @@ and each hook that runs it, reviews with the old code, whatever the checkout hol
 
 `--dry-run`, `--list-checks`, `--try` and `--explain` each stop before a review would start. They exclude one
 another, and each refuses a review's own flags — `--json`, `--handoff`, `--comment`, `--cache`, `--previous`,
-`--record`, `--trace` and `--debug-log` — with exit 2.
+`--record`, `--trace` and `--debug-log` — with exit 2. `--try` reads the files it is given, so it also refuses each
+flag that names what a review reads: `--path`, `--path-exclude`, `--base`, `--head`, `--all` and `--staged`.
 
 ## Exit codes
 

@@ -2892,6 +2892,20 @@ class TestTheModesBesideAReview:
             cli.main(["--list-checks", "--explain", "rule.secrets"])
         assert refused.value.code == 2
 
+    def test_a_try_refuses_each_flag_that_names_what_a_review_reads(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review, and reproduced: `--try` took `--path-exclude`, `--path`, `--staged`, `--all`, `--base` and
+        `--head`, used none of them, and read the very file one of them named to leave out, exit 0. It reads the files
+        it is given, so each is a usage error that names the flag to drop."""
+        tried = tmp_path / "app.py"
+        tried.write_text("print(1)\n", encoding="utf-8")
+        named = (["--path-exclude", "app.py"], ["--path", "src"], ["--base", "main"], ["--head", "feature"])
+        for flag in (*named, ["--staged"], ["--all"]):
+            assert cli.main(["--try", str(tried), "--check", "rule.no-print", *flag]) == 2, flag
+            said = capsys.readouterr()
+            assert f"Drop {flag[0]}" in said.err and "app.py:1" not in said.out, (flag, said)
+        assert cli.main(["--try", str(tried), "--check", "rule.no-print", "--third-party", "vendored"]) == 0
+        assert "app.py:1" in capsys.readouterr().out, "a flag it reads is taken"
+
 
 class TestAStoppedReview:
     """A review a job stops, by SIGTERM or Ctrl-C, ends as one sentence and the shell's own code."""

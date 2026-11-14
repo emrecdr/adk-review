@@ -194,6 +194,15 @@ REVIEW_ONLY = {
     "trace": "--trace",
     "debug_log": "--debug-log",
 }
+#: What names the change a review reads, by dest: a dry run plans with each, and `--try` reads the files it is given.
+OF_A_CHANGE = {
+    "path": "--path",
+    "path_exclude": "--path-exclude",
+    "base": "--base",
+    "head": "--head",
+    "all": "--all",
+    "staged": "--staged",
+}
 
 
 def _try(paths: Sequence[str], chosen: Selection, fail_on: str, third_party: Sequence[str] = ()) -> int:
@@ -736,14 +745,20 @@ def _rules_alone(found: Catalog, profiles: dict, chosen: Selection) -> tuple[tup
 
 def _mode_alone(args: argparse.Namespace) -> None:
     """A mode besides a review reads none of a review's own flags: measured, `--explain` beside `--json` cleared the
-    file, then wrote nothing and exited 0. `--try` reads files on disk, and takes no repository either."""
+    file, then wrote nothing and exited 0. `--try` reads files on disk, and takes no repository either, nor a flag that
+    names what a review reads: read by review, and reproduced, it took `--path-exclude`, used none of it, and read the
+    file it named to leave out, exit 0."""
     stops = next((flag for dest, flag in MODES.items() if getattr(args, dest)), None)
     if stops is None:
         return
     if given := [flag for dest, flag in REVIEW_ONLY.items() if getattr(args, dest)]:
         raise ValueError(f"{given[0]} is a review's, and {stops} runs no review. Drop one of them")
-    if stops == "--try" and args.repo is not None:
+    if stops != "--try":
+        return
+    if args.repo is not None:
         raise ValueError("--try reads files on disk. Drop the repository")
+    if named := next((flag for dest, flag in OF_A_CHANGE.items() if getattr(args, dest)), None):
+        raise ValueError(f"{named} names what a review reads, and --try reads the files it is given. Drop {named}")
 
 
 def _compared(args: argparse.Namespace) -> tuple[str, str | None, str]:
