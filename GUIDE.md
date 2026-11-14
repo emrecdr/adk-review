@@ -222,10 +222,10 @@ shipped `skip` names images and fonts, in either case, which no rule or model re
 hole, lockfiles, which the rules read whole and no guideline judges, and protoc's generated modules (`*_pb2.py`,
 `*_pb2.pyi`, `*_pb2_grpc.py`, `*_pb2_grpc.pyi`), which say not to edit them. `rule.lockfile-sources` reads where npm's,
 Yarn's, pnpm's, bun's, uv's, Poetry's, PDM's, Pipenv's, Cargo's, Bundler's, Dart's, Mix's and CocoaPods' lockfiles fetch
-from, and for uv's it also takes the company's own Nexus (`p-nexus-3.development.nl.eu.abnamro.com`, port 8443, over
-TLS) as a known registry, so a change to `uv.lock` raises no finding for it, where another port, plain HTTP and any
-other host still do; the other lockfiles the list names are read by the credential rules alone: `go.sum`,
-`gradle.lockfile` and NuGet's
+from, and names a source outside the package manager's public registry. A registry of your own, a company's Nexus say,
+is yours to name in `REVIEW_REGISTRIES`, below, never in a file of the reviewer: a lockfile that fetches from it then
+raises no finding, where another port, plain HTTP and any other host still do. The other lockfiles the list names are
+read by the credential rules alone: `go.sum`, `gradle.lockfile` and NuGet's
 `packages.lock.json` name no source, Swift's `Package.resolved`, Nix's `flake.lock` and Composer's `composer.lock` name
 a URL for every package, and Deno's `deno.lock` imports from URLs by design. A keystore can carry a credential, and
 `scan` names it, so it stays a hole until the list names it too; an archive or a document is no file `scan` names, and
@@ -246,8 +246,8 @@ approved, in chat as by the command. A file the change moves out of an ignored o
 review read it where it lay. Nor does a review read the environment it runs in: only the repository's own commits. Code
 a branch puts in an ignored file goes unreviewed too, but for its credentials.
 
-The model is set in the environment, or in the `.env` at the root of the reviewer's checkout; a variable set in the
-shell wins over the file:
+The model, and a registry of your own, are set in the environment, or in the `.env` at the root of the reviewer's
+checkout; a variable set in the shell wins over the file:
 
 | Variable | What it sets |
 |---|---|
@@ -256,6 +256,7 @@ shell wins over the file:
 | `REVIEW_VERIFIER_MODEL` | The model `--verify` asks. Blank: `REVIEW_MODEL`. |
 | `REVIEW_<ID>_MODEL` | One guideline's model, by its id: `REVIEW_SECURITY_MODEL`. Blank: the guideline file's `models` for the arm, else `REVIEW_MODEL`. |
 | `REVIEW_FALLBACK_MODEL` | A second model behind every role's first, tried on a 429, a 5xx or a timeout, never behind a role whose own model it is. Blank: none. |
+| `REVIEW_REGISTRIES` | Your own package registries, a company's Nexus or Artifactory say: each an address over TLS, a comma between two, as `https://nexus.example.com:8443/`. `rule.lockfile-sources` takes a source under one as known, in every lockfile it reads, by its scheme, host and port. An installed command, a hook among them, reads it from the shell. Blank: none. A value that is no such address is exit 2. |
 | `GOOGLE_API_KEY` | The Gemini arm's key. |
 | `GOOGLE_GENAI_USE_ENTERPRISE` | `true` sends the Gemini arm through Vertex AI. |
 | `GOOGLE_CLOUD_PROJECT` | Vertex AI's project, signed in with Application Default Credentials (`gcloud auth application-default login`); no `GOOGLE_API_KEY` is needed, a key being Vertex AI's express mode. Blank: the project the credentials name, gcloud's own or a service account's, as on Cloud Run or GKE. |

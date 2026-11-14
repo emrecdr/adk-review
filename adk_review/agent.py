@@ -13,12 +13,13 @@ misspelled in the shell was a traceback at import, exit 1, in place of
 from .core.profiles import DEFAULT
 from .judge.catalog import CONFIG, catalog, load_config, select
 from .judge.graph import build_app, gathering
+from .judge.settings import registries
 
 # Chat runs the `default` profile and holds findings to `[review] fail_on`, as a review given no --profile and no
-# --fail-on does: in chat no flag chooses another.
+# --fail-on does: in chat no flag chooses another. The operator's own registries are read as the command reads them.
 config = load_config(CONFIG)
 policy = config["review"]
-checks = select(catalog(), config["profiles"], DEFAULT)
+checks = select(catalog(registries()), config["profiles"], DEFAULT)
 app = build_app(
     chat=True,
     checks=checks,

@@ -8,11 +8,15 @@ took 0.42 s against 0.18 s without, 0.2 s of it this import; the login started i
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 
 from ..core.guidelines import Models
 
 DEFAULTS = {"gemini": "gemini-2.5-flash", "copilot": "gpt-4.1"}
+#: An address a registry is given as: over TLS, a host, its port where it has one, and a path under it. No user's
+#: name, which a lookalike host hides behind, no query and no space.
+_REGISTRY = re.compile(r"https://[A-Za-z0-9._-]+(?::\d+)?(?:/[^\s?#@]*)?")
 
 
 def provider() -> str:
@@ -54,6 +58,22 @@ def model_name(role: str = "", preset: Models | None = None) -> str:
 def fallback_name() -> str:
     """The model `REVIEW_FALLBACK_MODEL` names, to stand behind every role's model; blank means none."""
     return os.environ.get("REVIEW_FALLBACK_MODEL", "").strip()
+
+
+def registries() -> tuple[str, ...]:
+    """The operator's own package registries, `REVIEW_REGISTRIES`: addresses over TLS, a comma between two, each known
+    to `lockfile-sources` for every lockfile it reads, by its scheme, host and port and the path under it. Set in the
+    shell or the central `.env`, never in a file of the repository: read by review, a company's host stood in the
+    rule's own source, in a public repository. `ValueError` for one that is no such address: a registry misspelt is
+    said, never one more or one fewer taken in silence."""
+    given = [one.strip() for one in os.environ.get("REVIEW_REGISTRIES", "").split(",")]
+    for one in filter(None, given):
+        if not _REGISTRY.fullmatch(one):
+            raise ValueError(
+                f"REVIEW_REGISTRIES names {one!r}, which is no https address. Give each as https://host:port/, with a "
+                "comma between two"
+            )
+    return tuple(filter(None, given))
 
 
 def copilot_token() -> Path:

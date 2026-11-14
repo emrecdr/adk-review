@@ -3,27 +3,26 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
 from ..rule_helpers import ChangedFile, FileRule, matches
 
 #: Each lockfile read, by name, and where its package manager fetches from by default, as the starts of the URLs it
 #: writes there; hex, bun and CocoaPods' CDN write none for a package from the registry. A source an added line names
-#: outside them is one a person reads before it is fetched; a team's own mirror joins its lockfile's tuple here. The
-#: skip list's other lockfiles are read by the credential rules alone: `go.sum`, `gradle.lockfile` and NuGet's
-#: `packages.lock.json` name no source, Swift's `Package.resolved`, Nix's `flake.lock` and Composer's `composer.lock`
-#: name a URL for every package with no one registry to hold it to, and Deno's `deno.lock`, whose imports are URLs by
-#: design, is not read until a real one is measured. uv's tuple holds the company's own Nexus, by scheme, host and port:
-#: its projects declare it as their default index, and every change to a lock drew a finding for it.
+#: outside them is one a person reads before it is fetched. Public registries alone: a team's own registry or mirror is
+#: the operator's setting, `REVIEW_REGISTRIES`, which the rule is given as `own_registries`, and never a line here,
+#: since this file is published with the reviewer. Read by review: a company's projects declare its registry as their
+#: default index, every change to a lock drew a finding for it, and its host was written into this list, in a public
+#: repository. The skip list's other lockfiles are read by the credential rules alone: `go.sum`, `gradle.lockfile` and
+#: NuGet's `packages.lock.json` name no source, Swift's `Package.resolved`, Nix's `flake.lock` and Composer's
+#: `composer.lock` name a URL for every package with no one registry to hold it to, and Deno's `deno.lock`, whose
+#: imports are URLs by design, is not read until a real one is measured.
 REGISTRIES = {
     "package-lock.json": ("https://registry.npmjs.org/",),
     "npm-shrinkwrap.json": ("https://registry.npmjs.org/",),
     "yarn.lock": ("https://registry.yarnpkg.com/", "https://registry.npmjs.org/"),
     "pnpm-lock.yaml": ("https://registry.npmjs.org/",),
-    "uv.lock": (
-        "https://pypi.org/simple",
-        "https://files.pythonhosted.org/",
-        "https://p-nexus-3.development.nl.eu.abnamro.com:8443/",
-    ),
+    "uv.lock": ("https://pypi.org/simple", "https://files.pythonhosted.org/"),
     "poetry.lock": ("https://pypi.org/", "https://files.pythonhosted.org/"),
     "pdm.lock": ("https://pypi.org/", "https://files.pythonhosted.org/"),
     "Pipfile.lock": ("https://pypi.org/simple", "https://pypi.python.org/simple"),
@@ -42,6 +41,10 @@ SOURCE = re.compile(
 #: Where a source fetches from: its scheme and its host, without a user or a password a URL can carry, read to the
 #: last `@` before the host, as redaction reads one: a password may hold an `@`, and its tail is no host.
 ORIGIN = re.compile(r"((?:\w+\+)?\w+)://(?:[^/\s]*@)?([^/:?#\s]+)")
+#: How Cargo says it reads a registry, written before its address: `registry+` an index kept in git, `sparse+` one over
+#: HTTP. Taken off before a source is set against a registry of the operator's own, which is given as an address.
+#: Never `git+`: a git source is no registry's, whoever hosts it.
+READ_AS_A_REGISTRY = ("registry+", "sparse+")
 
 
 class LockfileSources(FileRule):
@@ -108,12 +111,19 @@ class LockfileSources(FileRule):
             if line.lstrip().startswith("#"):
                 continue
             for source in SOURCE.findall(line):
-                if any(_within(source, start) for start in registry):
+                if any(_within(source, start) for start in registry) or _of_the_operators(source, self.own_registries):
                     continue
                 origin = ORIGIN.match(source)
                 where = f"{origin[1]}://{origin[2]}" if origin else source
                 found.setdefault(where, (number, f"{file.path} fetches from {where}, outside its public registry"))
         return list(found.values())
+
+
+def _of_the_operators(source: str, own: Sequence[str]) -> bool:
+    """Whether `source` lies under a registry the operator named as their own, for any lockfile, however Cargo says
+    it reads one. Over TLS alone, and by its port: the setting takes no other address."""
+    address = next((source.removeprefix(how) for how in READ_AS_A_REGISTRY if source.startswith(how)), source)
+    return any(_within(address, start) for start in own)
 
 
 def _within(source: str, start: str) -> bool:

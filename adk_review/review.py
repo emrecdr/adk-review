@@ -692,7 +692,9 @@ def _review(argv: list[str] | None = None) -> int:
         args.added = _added(parser, args)
         # A cap given, which the plan of runs is made at: read by review, a run copied without it went past the block.
         args.capped = (f"--diff-cap={args.diff_cap}",) if args.diff_cap != parser.get_default("diff_cap") else ()
-        found = catalog()
+        from .judge.settings import registries  # read with the catalog, where a wrong one is a usage error
+
+        found = catalog(registries())
         # One run's `--check` list is held to what a profile is, and named in the report as the flag.
         chosen = select(found, config["profiles"], args.profile, args.check)
         args.rules_alone = _rules_alone(found, config["profiles"], chosen)
@@ -1177,7 +1179,7 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
     report as it was read, each model a call would go to, and each outside tool a rule runs. A missing input would
     serve a stale approval."""
     from .collect.tools import IDENTITIES
-    from .judge.settings import fallback_name
+    from .judge.settings import fallback_name, registries
 
     digest = hashlib.sha256()
     tools = sorted({rule.tool for rule in chosen.rules if rule.tool})
@@ -1205,6 +1207,9 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
         "ignored": evidence.get("ignored"),  # read by review: a staged change to a vendored file served a stale list
         "outside": evidence.get("outside"),  # read by review: one staged outside --path served a stale count
         "models": [model, fallback_name()],  # the verifier's among `model`'s roles under --verify
+        # The operator's own registries, which a rule reads and no flag names: read by review, a review kept before
+        # the setting was served after it, its finding for the registry with it.
+        "registries": registries(),
         # Each outside tool a rule that runs reads, as it would run: a newer ruff finds what an older one did not.
         "tools": {tool: IDENTITIES[tool]() for tool in tools},
         # As `read_previous` read it: read again here, a pipe gave nothing the second time and a FIFO never answered.

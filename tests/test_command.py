@@ -2595,6 +2595,32 @@ def test_every_error_the_package_raises_or_answers_is_short_and_one_command() ->
 class TestWhatAReviewKeeps:
     """What a review keeps beside its report: the cache, a recorded run, a debug log and a trace."""
 
+    def test_a_registry_of_the_operators_own_is_read_from_the_environment_and_from_no_kept_review(
+        self, cli, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        """Read by review: a company's registry stood in a rule's own source, in a public repository. It is the
+        operator's setting now, `REVIEW_REGISTRIES`, in the shell or the central `.env`: a lockfile that fetches from
+        one draws no finding, a review kept before the setting is not served after it, and a value that is no address
+        over TLS is a usage error that says how to give one, never a registry taken in silence."""
+        repo = _branch_off_empty(tmp_path / "repo", "feature")
+        _committed(repo, "uv.lock", 'wheels = [{ url = "https://nexus.example.com:8443/repository/pypi/pad.whl" }]\n')
+        argv = [str(repo), "--base", BASE, "--check", "rule.lockfile-sources", "--cache", str(tmp_path / "kept")]
+        assert cli.main(argv) == 0
+        assert "uv.lock fetches from https://nexus.example.com" in capsys.readouterr().out, "none is known yet"
+        monkeypatch.setenv("REVIEW_REGISTRIES", "https://pypi.example.org/simple, https://nexus.example.com:8443/")
+        assert cli.main(argv) == 0
+        said = capsys.readouterr()
+        assert "fetches from" not in said.out and "served from the cache" not in said.err, said
+        for given in (
+            "http://nexus.example.com:8443/",
+            "nexus.example.com",
+            "https://me@nexus.example.com/",
+            "https://",
+        ):
+            monkeypatch.setenv("REVIEW_REGISTRIES", given)
+            assert cli.main(argv) == 2, given
+            assert "REVIEW_REGISTRIES names" in capsys.readouterr().err, given
+
     def test_the_cache_key_reads_the_files_the_review_ignores(self, cli, tmp_path: Path, capsys) -> None:
         """Read by review: under --staged the index has no commit to name it, and a staged change to a vendored file
         changed no key. The cache served a report that left the file out of its ignored list."""

@@ -220,10 +220,14 @@ class Catalog:
         return {"rules": [rule.check_id for rule in self.rules], "guidelines": [g.check_id for g in self.guidelines]}
 
 
-def catalog() -> Catalog:
+def catalog(own_registries: Sequence[str] = ()) -> Catalog:
     """Every rule and every guideline, found in their two folders and nowhere else; `ValueError` for anything there
-    that is not one whole check named after its file."""
+    that is not one whole check named after its file. Each rule is given `own_registries`, the operator's own package
+    registries, its examples tried without one first: the entry point reads them from the environment, as
+    `judge/settings.py` spells it, since neither a check nor this module reads one."""
     rules = _found(RULES, KINDS, _rule_problem, _rule_disproved)
+    for rule in rules:
+        rule.own_registries = tuple(own_registries)
     return Catalog(rules, _found(GUIDELINES, Guideline, _guideline_problem))
 
 

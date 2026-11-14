@@ -120,6 +120,11 @@ class AnyRule(ABC):
     #: every rule but those that read a tool.
     tool: ClassVar[str | None] = None
     tool_settings: ClassVar[Mapping[str, object]] = MappingProxyType({})
+    #: The package registries the operator named as their own, for a rule that reads where a package is fetched from:
+    #: given where the catalog builds the rules, from `REVIEW_REGISTRIES`, since a rule reads no environment, and none
+    #: for a rule tried on its own. Never a rule's own constant: read by review, a company's host stood in one, in a
+    #: public repository.
+    own_registries: tuple[str, ...] = ()
 
     def reads(self, path: str) -> bool:
         """Whether the rule is handed what `path` holds: any file, for a rule that reads tests; else one no test."""

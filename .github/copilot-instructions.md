@@ -33,9 +33,11 @@ the recurring tasks in `.github/skills/`, each a slash command in VS Code's chat
 ## Secrets and configuration
 
 One `.env` at the root (gitignored, copied from `.env.example`) holds `REVIEW_PROVIDER`, `REVIEW_MODEL` and the keys;
-the shell wins over it at every entry point. A guideline may name its own model per arm in its file, `models =
-Models(copilot=…, gemini=…)`, which `REVIEW_<ID>_MODEL` overrides; `REVIEW_VERIFIER_MODEL` gives `--verify` its own.
-Never read, print or quote `.env`, a key, or the Copilot token or its folder (`~/.config/litellm/github_copilot`, or
+the shell wins over it at every entry point. A guideline may name its own model per arm in its file,
+`models = Models(copilot=…, gemini=…)`, which `REVIEW_<ID>_MODEL` overrides; `REVIEW_VERIFIER_MODEL` gives `--verify`
+its own. `REVIEW_REGISTRIES` names the operator's own package registries, which `lockfile-sources` takes as known: a
+company's host is that setting, never a line of a rule, a guide or a test, since the repository is public. Never read,
+print or quote `.env`, a key, or the Copilot token or its folder (`~/.config/litellm/github_copilot`, or
 `GITHUB_COPILOT_TOKEN_DIR`), and never run `adk-review-login`: it needs the person at a browser, and `--force` replaces
 their token. `adk_review/judge/config.py` injects `truststore` before any client is built, so certificates come from the
 operating system's store; keep that line where it is.

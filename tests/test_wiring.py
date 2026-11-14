@@ -44,6 +44,14 @@ def test_the_package_imports_nothing_at_its_root(monkeypatch) -> None:
     assert "adk_review.agent" not in sys.modules
 
 
+def test_chat_gives_its_rules_the_operators_own_registries_as_the_command_does(monkeypatch) -> None:
+    """A registry of the operator's own is a setting, `REVIEW_REGISTRIES`, which each entry point reads and hands the
+    catalog, since the catalog reads no environment: the command's, and the loader's, where chat's checks are built."""
+    monkeypatch.setenv("REVIEW_REGISTRIES", "https://nexus.example.com:8443/")
+    rules = {rule.id: rule for rule in load_agent(monkeypatch).checks.rules}
+    assert rules["lockfile-sources"].own_registries == ("https://nexus.example.com:8443/",)
+
+
 @pytest.mark.parametrize(
     ("provider", "expected"),
     [("gemini", str), ("copilot", LiteLlm), (None, LiteLlm), ("", LiteLlm), ("  ", LiteLlm)],

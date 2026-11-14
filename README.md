@@ -284,13 +284,14 @@ repository under review, and `--dry-run` names the file read.
 The model comes from the shell, or from the `.env` at the root of the checkout, which never wins over the shell:
 `REVIEW_PROVIDER` picks the arm, `copilot` when unset or `gemini`, and `REVIEW_MODEL` the model, blank for `gpt-4.1` or
 `gemini-2.5-flash`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` give `--verify` and every role's fallback a
-model of their own. `REVIEW_<ID>_MODEL` gives one guideline its own, over the `models` its file may name. Copilot is the
-arm this reviewer targets and the default; Gemini is first-class too. Readiness is asked before any call: Copilot's
-cached token, from the one-time `uv run adk-review-login`, or Gemini's `GOOGLE_API_KEY` or Vertex AI project, which
-google-genai itself answers, never a copy of its rules; on the Gemini arm a model that is not Gemini's, `gpt-*` or
-`claude-*`, is refused. Every certificate is verified through the operating system's own store, so a company proxy's
-root the machine trusts, the reviewer trusts too. "Configuration" in `GUIDE.md` lists each variable with its default,
-and `.env.example` shows each arm's block.
+model of their own. `REVIEW_<ID>_MODEL` gives one guideline its own, over the `models` its file may name.
+`REVIEW_REGISTRIES` names the operator's own package registries, addresses over TLS, which `lockfile-sources` takes as
+known: a company's host is a setting, never a line of this repository. Copilot is the arm this reviewer targets and the
+default; Gemini is first-class too. Readiness is asked before any call: Copilot's cached token, from the one-time
+`uv run adk-review-login`, or Gemini's `GOOGLE_API_KEY` or Vertex AI project, which google-genai itself answers, never a
+copy of its rules; on the Gemini arm a model that is not Gemini's, `gpt-*` or `claude-*`, is refused. Every certificate
+is verified through the operating system's own store, so a company proxy's root the machine trusts, the reviewer trusts
+too. "Configuration" in `GUIDE.md` lists each variable with its default, and `.env.example` shows each arm's block.
 
 ## Checks and profiles
 
@@ -327,7 +328,8 @@ The rules shipped with the reviewer are written as a project writes its own:
   file's name), `encoding-declaration` (a source encoding that turns plain text into other code: a hole, since no rule
   read the code Python would run), `lockfile-sources` (a lockfile fetching a package from outside its package manager's
   public registry, the one check of a lockfile's sources, since the shipped skip list leaves lockfiles to the rules; the
-  formats it reads, and why the rest are left to the credential rules, are its `REGISTRIES`), `pinned-actions` (a
+  formats it reads, and why the rest are left to the credential rules, are its `REGISTRIES`, public ones alone, and a
+  registry of the operator's own is the setting `REVIEW_REGISTRIES`, never a line of the rule), `pinned-actions` (a
   workflow or an action running another action at a tag, a branch or a short SHA, which can be moved to other code after
   review, not its full commit SHA), `script-injection` (a workflow's script expanding a value an outsider writes, a pull
   request's title or a branch's name, which GitHub writes into the code before it runs), `hidden-text` (tag characters,

@@ -3134,30 +3134,49 @@ class TestTheShippedRules:
         assert try_rule(rule, {"src/sources.py": mirror}) == [], "a lockfile alone is read"
         assert self_check(rule) == []
 
-    def test_the_companys_own_nexus_is_a_known_registry_of_uv_and_nothing_near_it_is(self) -> None:
+    def test_a_registry_of_the_operators_own_is_known_and_nothing_near_it_is(self) -> None:
         """Read by review on two projects' branches, every change to `uv.lock` drew a minor finding that it fetched
-        from the company's Nexus, which the projects declare as their default index in `pyproject.toml`; the same
-        wheel stood on a line the lock's rewrite moved. The Nexus joins uv's known registries, by its scheme, host
-        and port: another port, plain HTTP, a user's name before a lookalike host, and a host that only begins with
-        its name are each still a source a person reads."""
+        from the company's own registry, which the projects declare as their default index. Read by review again: the
+        rule's source then named that company's host, in a public repository. The rule's own list holds public
+        registries alone, and a registry of the operator's is given to it, from `REVIEW_REGISTRIES`: known by its
+        scheme, host and port, for every lockfile, as Cargo writes one too. Another port, plain HTTP, a user's name
+        before a lookalike host, a host that only begins with its name and a git source there are each still a source
+        a person reads."""
         from adk_review.judge.rule_helpers import try_rule
-        from adk_review.judge.rules.lockfile_sources import LockfileSources
+        from adk_review.judge.rules.lockfile_sources import ORIGIN, REGISTRIES, LockfileSources
 
-        nexus = "p-nexus-3.development.nl.eu.abnamro.com"
+        public = {"registry.npmjs.org", "registry.yarnpkg.com", "pypi.org", "files.pythonhosted.org", "pypi.python.org"}
+        public |= {"github.com", "index.crates.io", "rubygems.org", "pub.dev", "pub.dartlang.org", "repo.hex.pm"}
+        public |= {"cdn.cocoapods.org"}
+        hosts = {found[2] for starts in REGISTRIES.values() for start in starts if (found := ORIGIN.match(start))}
+        assert hosts - public == set(), "a company's own host is the operator's setting, never the rule's source"
+
+        nexus = "nexus.example.com"
         wheel = "/repository/python-group/packages/example-package/1.0.0/example_package-1.0.0.whl"
+        rule = LockfileSources()
 
-        def fetched(url: str) -> list[str]:
+        def fetched(url: str, lock: str = "uv.lock") -> list[str]:
             line = f'wheels = [{{ url = "{url}", hash = "sha256:ace4" }}]\n'
-            return [hit.title or "" for hit in try_rule(LockfileSources(), {"uv.lock": line})]
+            return [hit.title or "" for hit in try_rule(rule, {lock: line})]
 
-        assert fetched(f"https://{nexus}:8443{wheel}") == [], "the company's Nexus over TLS"
+        outside = "{} fetches from {}, outside its public registry".format
+        assert fetched(f"https://{nexus}:8443{wheel}") == [outside("uv.lock", f"https://{nexus}")], "none is given"
+        rule.own_registries = (f"https://{nexus}:8443/",)
+        assert fetched(f"https://{nexus}:8443{wheel}") == [], "the operator's own registry over TLS"
+        for lock, url in (
+            ("web/package-lock.json", f"https://{nexus}:8443/repository/npm/pad/-/pad-1.0.0.tgz"),
+            ("Cargo.lock", f"registry+https://{nexus}:8443/repository/crates/"),
+            ("Cargo.lock", f"sparse+https://{nexus}:8443/repository/crates/"),
+        ):
+            assert fetched(url, lock) == [], (lock, url)
         for url, origin in (
             (f"https://{nexus}:9999{wheel}", f"https://{nexus}"),
             (f"http://{nexus}:8443{wheel}", f"http://{nexus}"),
             (f"https://{nexus}:8443@evil.example{wheel}", "https://evil.example"),
             (f"https://{nexus}:8443.evil.example{wheel}", f"https://{nexus}"),
+            (f"git+https://{nexus}:8443/team/fork.git", f"git+https://{nexus}"),
         ):
-            assert fetched(url) == [f"uv.lock fetches from {origin}, outside its public registry"], url
+            assert fetched(url) == [outside("uv.lock", origin)], url
 
     def test_a_dart_elixir_bun_or_cocoapods_lockfile_is_read_as_its_package_manager_writes_it(self) -> None:
         """Lines from real lockfiles: harmonoid's pubspec.lock, elixir-ls's mix.lock, wow.export's and ens-contracts'
