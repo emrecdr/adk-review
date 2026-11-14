@@ -1394,14 +1394,14 @@ class TestThePreviousReportAndTheHandoff:
         from adk_review.core.verdict import Outcome
         from adk_review.deliver.report import render_comment, render_handoff
 
-        pre = {"repo": "/home/someone/work/raas-batch", "head": "feature/x", "base": "develop", "head_sha": "8" * 40}
+        pre = {"repo": "/home/someone/work/acme-batch", "head": "feature/x", "base": "develop", "head_sha": "8" * 40}
         pre["merge_base"] = "1" * 40
         evidence = {"preflight": pre, "whole": False, "scope": ["src"], "exclude": ["tests"], "outside": 40}
         for said in (
             render_comment(evidence, Outcome(), verdict="APPROVED", fail_on="blocker"),
             render_handoff(evidence, Outcome(), verdict="APPROVED", fail_on="blocker"),
         ):
-            assert "- Repository: `raas-batch`" in said and "/home/someone" not in said, said
+            assert "- Repository: `acme-batch`" in said and "/home/someone" not in said, said
             assert "- Against: `develop`, merge base `111111111111`" in said, said
             assert "- Scope: only `src`, except `tests`. The review left out 40 changed files." in said, said
         whole = {**evidence, "scope": [], "exclude": [], "outside": 0}
