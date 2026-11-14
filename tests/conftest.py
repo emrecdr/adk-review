@@ -774,8 +774,9 @@ def _held_on_windows(monkeypatch: pytest.MonkeyPatch, folder: Path, suffix: str)
     monkeypatch.setattr(os, "unlink", held)
 
 
-def _github_answers(monkeypatch: pytest.MonkeyPatch, reply: dict) -> None:
-    """GitHub's token endpoint, answering `reply` to each poll of the Copilot login: no network in the suite."""
+def _github_answers(monkeypatch: pytest.MonkeyPatch, reply: object) -> None:
+    """GitHub's token endpoint, answering `reply` to each poll of the Copilot login: no network in the suite. A dict
+    is the JSON object GitHub sends; an `httpx.Response` is handed over as it is, a page that is no JSON among them."""
     import httpx
 
     class Client:
@@ -788,7 +789,7 @@ def _github_answers(monkeypatch: pytest.MonkeyPatch, reply: dict) -> None:
             return False
 
         def post(self, *_args, **_kwargs):
-            return SimpleNamespace(json=lambda: reply)
+            return reply if isinstance(reply, httpx.Response) else SimpleNamespace(json=lambda: reply)
 
     monkeypatch.setattr(httpx, "Client", Client)  # the login imports httpx and resolves Client at the call
 

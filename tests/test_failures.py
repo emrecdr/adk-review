@@ -751,6 +751,29 @@ def test_the_copilot_login_waits_as_long_and_as_often_as_github_says(tmp_path, m
     assert "about 10 minutes" in capsys.readouterr().out
 
 
+def test_the_copilot_login_names_a_reply_that_is_no_json_and_never_raises(tmp_path, monkeypatch, capsys) -> None:
+    """Read by review of another tool's report, and reproduced: GitHub's page for an outage, as a proxy's, is HTML, and
+    the login read each poll's reply as JSON under a guard for a lost network alone, so one such page ended it in a
+    traceback, with any status. A sentence names the status and the next step now, for JSON that is no object too."""
+    import httpx
+    from litellm.llms.github_copilot import authenticator
+
+    from adk_review import login as copilot_login
+
+    _cached_copilot_token(monkeypatch, tmp_path, None)
+    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
+    monkeypatch.setattr(copilot_login.time, "sleep", lambda _s: None)
+    code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
+    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
+    pages = (httpx.Response(502, text="<html>Bad Gateway</html>"), httpx.Response(200, text="<html>Sign in</html>"))
+    for reply in (*pages, httpx.Response(200, text='["no", "object"]')):
+        _github_answers(monkeypatch, reply)
+        assert copilot_login.main([]) == 1, reply.text
+        err = capsys.readouterr().err
+        assert f"HTTP {reply.status_code}" in err and "Run this again" in err, err
+    assert not (tmp_path / "access-token").exists(), "nothing is cached"
+
+
 def test_the_copilot_login_reads_copilots_settings_from_the_central_env(tmp_path, monkeypatch, capsys) -> None:
     """The reviewer reads `.env`; an enterprise tenant names Copilot's endpoints there, so the login reads the same
     `GITHUB_COPILOT_*` settings, a variable already set in the shell winning, and nothing else of the file."""

@@ -58,6 +58,34 @@ def unreachable(exc: Exception) -> int:
     return 1
 
 
+def no_answer(status: int) -> int:
+    """GitHub's token address answered a poll with what is no JSON object: its own page for an outage, or a proxy's,
+    with any status. Read by review, and reproduced: the reply was read as JSON under a guard for a lost network
+    alone, and one such page ended the login in a traceback. The address is named where `.env` or the shell sets it,
+    an enterprise tenant's: a wrong one answers with a page too."""
+    print(f"[copilot] GitHub answered HTTP {status} with no JSON: an outage's page, or a proxy's", file=sys.stderr)
+    if os.getenv("GITHUB_COPILOT_ACCESS_TOKEN_URL"):
+        print("[copilot] GITHUB_COPILOT_ACCESS_TOKEN_URL names the address that answered. Check it", file=sys.stderr)
+    print("[copilot] no token was cached. Run this again", file=sys.stderr)
+    return 1
+
+
+def _polled(client: Any, url: str, headers: Mapping[str, str], body: Mapping[str, str]) -> dict[str, Any] | int:
+    """GitHub's answer to one poll, the JSON object it sends, or the exit code where there is none: the network went
+    away between two polls, or the reply is no JSON object."""
+    import httpx
+
+    try:
+        reply = client.post(url, headers=headers, json=body)
+    except httpx.HTTPError as exc:
+        return unreachable(exc)
+    try:
+        data = reply.json()
+    except ValueError:  # a page where GitHub's JSON would be
+        data = None
+    return data if isinstance(data, dict) else no_answer(reply.status_code)
+
+
 class _Parser(argparse.ArgumentParser):
     """argparse's, its every error ending with where to look next, as the review's own does. Its own copy: the login
     imports nothing of the reviewer's, so a reviewer that cannot load still lets a person log in."""
@@ -114,10 +142,9 @@ def main(argv: list[str]) -> int:
     with httpx.Client(timeout=30) as client:
         while time.monotonic() < deadline:
             time.sleep(interval)
-            try:
-                data = client.post(url, headers=auth._get_github_headers(), json=body).json()
-            except httpx.HTTPError as exc:  # the network went away between two polls
-                return unreachable(exc)
+            data = _polled(client, url, auth._get_github_headers(), body)
+            if isinstance(data, int):
+                return data
             if access_token := data.get("access_token"):
                 return _stored(auth, token, access_token)
             error = data.get("error")
