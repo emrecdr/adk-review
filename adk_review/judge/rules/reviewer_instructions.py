@@ -1,8 +1,9 @@
 """A project's own rule: a line that tries to instruct the reviewing model is a finding, never an order.
 
 A file rule, read as a model reads text. Each added line is NFKC-normalised, so a full-width letter is the letter;
-its tag characters are read as the ASCII they shadow, since a model reads them so; and it is stripped of every other
-format character, so a zero-width space or a soft hyphen inside a word hides nothing. Then it is read whole, joined
+its tag characters are read as the ASCII they shadow, since a model reads them so; and it is stripped of what no
+reader sees, every other format character, a control, a variation selector and the blanks Unicode files as letters or
+marks, so a zero-width space, a soft hyphen or a selector inside a word hides nothing. Then it is read whole, joined
 with the lines after it up to a blank one, each line's comment leaders and quotes dropped, since a directive wraps as
 any sentence does and no sentence spans a paragraph break. A changed file's name is read too: the guidelines
 read it twice, above its diff and in the blast radius. Measured offline against the one-line regex this replaced: a
@@ -53,15 +54,37 @@ JOINED_MAX_CHARS = 400
 #: sentence can be written in them.
 _TAGGED = re.compile("[\U000e0020-\U000e007e]+")
 _TAGS = {point: point - 0xE0000 for point in range(0xE0020, 0xE007F)}
+#: What shows nothing though Unicode files it as a mark, a letter or a symbol, by code point so this file holds none:
+#: the variation selectors, Mongolian's among them, the grapheme joiner, Khmer's inherent vowels and the Hangul
+#: fillers, each gone from a word as a format character is, and the blank Braille pattern, which stands as a space.
+#: The report hides each from its reader, and a test holds this table to the report's. Read by review of another
+#: tool's report, and reproduced: with format characters alone dropped, one selector inside `ignore` hid an order
+#: from this rule, and from `hidden-text`, which names a selector only in a run, since an emoji takes one.
+_BLANKS: dict[int, str | None] = {
+    **dict.fromkeys((*range(0xFE00, 0xFE10), *range(0xE0100, 0xE01F0), *range(0x180B, 0x1810))),
+    **dict.fromkeys((0x034F, 0x17B4, 0x17B5, 0x115F, 0x1160, 0x3164, 0xFFA0)),
+    0x2800: " ",
+}
+#: Unicode's categories for the rest of what no reader sees: a format character, and a control, which parts no word
+#: once white space has parted the line.
+_UNSEEN = ("Cf", "Cc")
+#: A control that parts no word, the one thing a line of ASCII can hold that no reader sees.
+_ASCII_CONTROL = re.compile(r"[\x00-\x08\x0e-\x1b\x7f]")
 
 
 def plain(line: str) -> str:
-    """The line as a model reads it: tag characters as the ASCII they shadow, NFKC-normalised, every other format
-    character gone, whitespace one space."""
-    if line.isascii():  # most lines: NFKC leaves ASCII as it is, and no ASCII character is a tag or a format one
+    """The line as a model reads it: tag characters as the ASCII they shadow, NFKC-normalised, whitespace one space,
+    and what no reader sees gone from each word: every other format character, a control, a variation selector and a
+    blank Unicode files as a letter or a mark."""
+    # Most lines: NFKC leaves ASCII as it is, and a line of ASCII that prints holds no control. One that holds a tab
+    # does not print, and is searched for a control that parts no word: measured, searching every line cost half
+    # again as much a line.
+    if line.isascii() and (line.isprintable() or not _ASCII_CONTROL.search(line)):
         return " ".join(line.split())
     text = unicodedata.normalize("NFKC", _TAGGED.sub(lambda run: f" {run.group().translate(_TAGS)} ", line))
-    return " ".join("".join(ch for ch in text if unicodedata.category(ch) != "Cf").split())
+    words = text.translate(_BLANKS).split()
+    seen = ("".join(ch for ch in word if unicodedata.category(ch) not in _UNSEEN) for word in words)
+    return " ".join(filter(None, seen))
 
 
 class ReviewerInstructions(FileRule):
