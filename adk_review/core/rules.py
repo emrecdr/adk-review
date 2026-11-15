@@ -492,6 +492,9 @@ class Tree:
         #: Each path the change moved or removed, with the path it moved to, None where it removed it: set by
         #: `changed_by`, for a tree rule about what still imports it.
         self.removed: Mapping[str, str | None] = MappingProxyType({})
+        #: Each file the change modified in place, with its diff as git printed it, for a tree rule about what the
+        #: file held before the change: set by `changed_by`. A file the change added or moved here is not among them.
+        self.modified: Mapping[str, str] = MappingProxyType({})
         #: The outside tool's diagnostics by path, for a tree rule that names one: set by `diagnosed`.
         self.diagnostics: Mapping[str, Sequence[Diagnostic]] = MappingProxyType({})
 
@@ -513,12 +516,15 @@ class Tree:
         return ("+" if line in self.added.get(path, ()) else " ") + lines[line - 1]
 
     def changed_by(self, files: Iterable[Entry]) -> Tree:
-        """The same head with the lines each changed file's change added, and the paths it moved or removed: a view,
-        nothing parsed again. The head's read takes the changed files first, so a rule about the change reads them
-        where the head is past its budget."""
+        """The same head with the lines each changed file's change added, the paths it moved or removed, and the diff
+        of each file it modified in place: a view, nothing parsed again. The head's read takes the changed files
+        first, so a rule about the change reads them where the head is past its budget."""
         files = list(files)
         view = copy.copy(self)
         view.added = MappingProxyType({item["path"]: item["added_at"] for item in files})
+        view.modified = MappingProxyType(
+            {item["path"]: diff for item in files if item["status"] == "M" and (diff := item["diff"]) is not None}
+        )
         view.removed = MappingProxyType(
             {
                 old: item["path"] if item["status"] == "R" else None

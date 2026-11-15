@@ -2372,6 +2372,122 @@ class TestTheCallersRule:
         assert "`pkg/service.py:1`" in out and "defines no `get_user`" in out, out
 
     @staticmethod
+    def modified(
+        before: dict[str, str],
+        files: dict[str, str],
+        removed: tuple[str, ...] = (),
+        moved: dict[str, str] | None = None,
+    ) -> list[tuple]:
+        """What the rule finds at the head `files` where the change modified in place each file `before` names, with
+        its text before the change, removed each path of `removed`, and moved each file `moved` names, unchanged, from
+        the path beside it: no other file is the change's."""
+        import difflib
+
+        from adk_review.collect.diff import added_lines
+        from adk_review.core.evidence import entry
+        from adk_review.core.rules import Tree
+        from adk_review.judge.rules.callers import Callers
+
+        entries = []
+        for path, was in before.items():
+            diff = "".join(difflib.unified_diff(was.splitlines(True), files[path].splitlines(True), "a", "b"))
+            entries.append(entry(path, "M", diff, added_lines(diff), text=files[path]))
+        entries += [entry(path, "D", None, []) for path in removed]
+        entries += [entry(new, "R", "", [], old=old, text=files[new]) for new, old in (moved or {}).items()]
+        tree = Tree(files, {path: text for path, text in files.items() if path.endswith(".py")})
+        return sorted((hit.path, hit.line, hit.title or hit.text) for hit in Callers().hits(entries, tree))
+
+    def test_a_name_a_module_never_defined_is_no_finding_of_a_change_that_left_the_line_alone(self) -> None:
+        """Seen while the rule was measured, and reproduced on a branch: the branch added one line to a package's
+        `__init__.py`, and `from tok import _tok`, a compiled extension no git tree holds, in a file it left alone, was
+        a major of the branch, and so was a break older than the change. The check asked only whether the module lacks
+        the name now, where the question that reads the head asks whether the change removed one, so the answer turned
+        on whether another rule had the head read."""
+        files = {
+            "tok/__init__.py": '__version__ = "1"\n',
+            "tok/core.py": "from tok import _tok\n",
+            "tok/cli.py": "import tok\n\nprint(tok._speed)\n",
+        }
+        assert self.modified({"tok/__init__.py": ""}, files) == [], "the module defined neither name before"
+        renamed = {**files, "tok/__init__.py": "def encode_all(text):\n    return text\n"}
+        renamed["tok/core.py"] = "from tok import _tok, encode\n"
+        said = "`tok/__init__.py` defines no `encode`, which this line takes from it"
+        assert self.modified({"tok/__init__.py": "def encode(text):\n    return text\n"}, renamed) == [
+            ("tok/core.py", 1, said)
+        ], "the name the change removed, and that name alone"
+
+    def test_a_line_the_change_added_answers_for_a_name_the_module_never_defined(self) -> None:
+        """A line is the change's own where the change added it, whatever the module held before: an import of a
+        misspelt name, added beside a change to the module, raises as one of a removed name does."""
+        files = {
+            "pkg/__init__.py": "",
+            "pkg/repo.py": "def get_user(uid):\n    return uid\n\n\ndef keep():\n    return 1\n",
+            "pkg/service.py": "from pkg.repo import get_user\nfrom pkg.repo import get_usr\n",
+        }
+        before = {
+            "pkg/repo.py": "def get_user(uid):\n    return uid\n",
+            "pkg/service.py": "from pkg.repo import get_user\n",
+        }
+        assert self.modified(before, files) == [
+            ("pkg/service.py", 2, "`pkg/repo.py` defines no `get_usr`, which this line takes from it")
+        ]
+
+    def test_a_line_of_a_file_the_change_moved_answers_as_one_it_added(self) -> None:
+        """A file the change moved reads each relative import from its new folder, so a line of it the change left as
+        it was takes from another module than before: `from . import helpers` named the folder it lay in, and names a
+        package that never held one. Read by review of the change that left a kept line alone, which passed it by."""
+        files = {
+            "pkg/__init__.py": "",
+            "pkg/a/__init__.py": "",
+            "pkg/a/helpers.py": "x = 1\n",
+            "pkg/b/__init__.py": "LIMIT = 1\n",
+            "pkg/b/util.py": "from . import helpers\n",
+        }
+        said = "`pkg/b/__init__.py` defines no `helpers`, which this line takes from it"
+        found = self.modified({"pkg/b/__init__.py": ""}, files, moved={"pkg/b/util.py": "pkg/a/util.py"})
+        assert found == [("pkg/b/util.py", 1, said)]
+
+    def test_a_name_the_module_may_have_held_before_the_change_is_still_named(self) -> None:
+        """Each way a module held a name no statement of it spells, which the change took away: a `*` import the
+        change removed, and beside a package's `__init__.py` a file or a folder Python imports by that name."""
+        files = {
+            "pkg/__init__.py": "LIMIT = 1\n",
+            "pkg/repo.py": "x = 1\n",
+            "pkg/uses.py": "from pkg.repo import get_user\nfrom pkg import _speed, pages\n",
+        }
+        before = {"pkg/__init__.py": "", "pkg/repo.py": "from pkg.old import *\n"}
+        said = "`{}` defines no `{}`, which this line takes from it".format
+        found = self.modified(before, files, removed=("pkg/_speed.so", "pkg/pages/index.html"))
+        assert found == [
+            ("pkg/uses.py", 1, said("pkg/repo.py", "get_user")),
+            ("pkg/uses.py", 2, said("pkg/__init__.py", "_speed")),
+            ("pkg/uses.py", 2, said("pkg/__init__.py", "pages")),
+        ]
+        assert self.modified(before, files) == found[:1], "with no file removed, the package held neither name"
+
+    def test_a_name_no_branch_removed_is_not_named_from_git_where_the_head_was_read(self, tmp_path: Path) -> None:
+        """End to end, from git's own diff, the head read whole as another rule or a guideline has it read: the branch
+        adds a line to a package's `__init__.py` and removes a function of another module, and the review names the
+        file that still takes the function, never the one that takes a name the package did not define before."""
+        from adk_review.collect.git import collect_evidence
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.callers import Callers
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "tok/__init__.py", "")
+        _committed(repo, "tok/core.py", "from tok import _tok\n")
+        _committed(repo, "tok/names.py", "def keep():\n    return 1\n\n\ndef get_user(uid):\n    return uid\n")
+        _committed(repo, "tok/service.py", "from tok.names import get_user\n\nget_user(3)\n")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "tok/__init__.py", '__version__ = "1"\n')
+        _committed(repo, "tok/names.py", "def keep():\n    return 1\n")
+        answer = run_rules(collect_evidence(str(repo), BASE, "change"), [Callers()])["rule.callers"]
+        assert answer.could_not_look is None, answer.could_not_look
+        assert [(found.file, found.line) for found in answer.findings] == [("tok/service.py", 1)], answer.findings
+
+    @staticmethod
     def moved(files: dict[str, str], old: str, new: str | None) -> list[tuple]:
         """What the rule finds where the change moved the module at `old` to `new`, or removed it where `new` is None,
         every other file of `files` added whole."""

@@ -118,9 +118,10 @@ diagnostics where it names the tool (`lint`, `pitfalls` and `simplify` name ruff
 `types` names pyrefly, whose adapters `collect/tools.py` holds, run by `collect/ruff.py` and `collect/pyrefly.py`); a
 `TreeRule`, `check(tree)` over the head's paths and parsed modules, naming a line where it knows one, with the lines the
 change added (`tree.added`), what each import binds (`tree.imports`), the paths the change moved or removed
-(`tree.removed`, `tree.imports_before`) and, where it names a tool, its diagnostics by path (`tree.diagnostics`:
-`radius-types` names `pyrefly-radius`, pyrefly over the head's tree and the base's, what is new in a file or on a line
-the change left alone, or on an added line another file's change breaks); the head is read whole only where a tree
+(`tree.removed`, `tree.imports_before`), the diff of each file it modified in place (`tree.modified`) and, where it
+names a tool, its diagnostics by path (`tree.diagnostics`: `radius-types` names `pyrefly-radius`, pyrefly over the
+head's tree and the base's, what is new in a file or on a line the change left alone, or on an added line another
+file's change breaks); the head is read whole only where a tree
 rule's `needs_head(files)` or a guideline asks, `callers` asking only where a function that was there before changed its
 parameters, or the change removed a name a module defined or moved or removed a module, and `radius-types` wherever the
 change modified, moved or removed a Python file other than a test. A guideline is a class naming its role, a thinking

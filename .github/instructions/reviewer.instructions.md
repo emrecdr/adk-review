@@ -41,8 +41,9 @@ applyTo: "adk_review/**"
   `(path, line, what)`, a named line quoted and `what` its title, over the head's paths and parsed modules
   (`tree.paths`, `tree.has`, `tree.module`, `tree.modules`, `tree.added` the lines the change added by file,
   `tree.imports(path)` what each import binds, `tree.removed` the paths the change moved or removed,
-  `tree.imports_before(path)` what each import bound while they were there, `tree.diagnostics` an outside tool's by path
-  for a tree rule that names its `tool`), and `needs_head(files)` False where the changed files alone show it has
+  `tree.imports_before(path)` what each import bound while they were there, `tree.modified` the diff of each file the
+  change modified in place, `tree.diagnostics` an outside tool's by path for a tree rule that names its `tool`), and
+  `needs_head(files)` False where the changed files alone show it has
   nothing to read at the head, where it then answers nothing. Any other shape is a sentence. The helpers come through
   the door: `is_test`, `matches`, `calls`, `comment_of`, `words`, `tokens`, `calls_in`, `argument`, `functions_in`,
   `imports_in`, `defined`, `classes`, `parameters` and the rest. A hit may be a `Hit` naming its own title, severity or

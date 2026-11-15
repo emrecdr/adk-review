@@ -7,7 +7,7 @@ from __future__ import annotations
 import ast
 import re
 from collections import Counter
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterable, Iterator, Sequence
 
 from ..rule_helpers import PASSED_ON, Entry, Hit, Tree, TreeRule, UnreadError, name_of, parse
 
@@ -61,13 +61,16 @@ class Callers(TreeRule):
     two files could answer. A name a changed module no longer defines is held the same way to each
     file that still takes it: a `from … import`, which raises `ImportError`, and a module's attribute, which raises
     `AttributeError`. Left alone there: an import a `try` guards, a name the file asks for by its string or sets
-    itself, a submodule, and a module that may hold a name no statement binds — a module `__getattr__`, a `*` import,
-    a write to its globals. An import of a module the change moved or removed, by its old path, raises
-    `ModuleNotFoundError` unless the head still holds a module there, a package of that name among them. Read as a
-    floor where the head was not read whole. The head is read only where the change touched the parameters of a name
-    that was there before, one a line the change removed names or one not all of whose lines it added, removed a name
-    a module defined, or moved or removed a module; with none, nothing is read, since a function the change adds
-    whole leaves no caller behind."""
+    itself, a submodule, a module that may hold a name no statement binds — a module `__getattr__`, a `*` import,
+    a write to its globals — and, on a line the change kept in a file it left where it was, a name the module did not
+    define before the change either, as its text rebuilt from the diff shows: a break older than the change, or a
+    name no statement shows, as a compiled extension's is. An import of a module the change moved or removed, by its
+    old path, raises `ModuleNotFoundError` unless the head still holds a module there, a package of that name among
+    them. Read as a floor where the head was not read whole. The head is read only where the change touched the
+    parameters of a name that was there before, one a line the change removed names or one not all of whose lines it
+    added, removed a name a module defined, or moved or removed a module; with none, nothing is read, since a
+    function the change adds whole leaves no caller behind. A line the change added that takes a name a changed
+    module never defined is named wherever the head is read, for one of these or for another check."""
 
     id = "callers"
     severity = "major"
@@ -148,18 +151,23 @@ class _Imports:
 
 
 class _Gone:
-    """What each changed module defines, read once a module, and each line of a file that takes from one a name it
-    no longer defines."""
+    """What each changed module defines, and what it defined before the change, each read once a module, and each
+    line of a file that takes from one a name it no longer defines."""
 
     def __init__(self, tree: Tree) -> None:
         self.tree = tree
         self.read: dict[str, set[str] | None] = {}
+        self.before: dict[str, set[str] | None] = {}
 
     def uses(self, path: str, module: ast.Module, bound: dict[str, tuple[str, str | None]]) -> list[Hit]:
         """Each line of the module at `path` that imports a module the change moved or removed, or takes a name a
         changed module no longer defines: an import no `try` around it guards, and an attribute read through the name
         an import bound to the module."""
         lost = self.lost(path, bound)
+        # The lines of this file that are the change's own: each it added, and every line of a file it added or moved
+        # here, which reads each relative import from its new folder.
+        added = self.tree.added.get(path, frozenset())
+        whole = path in self.tree.added and path not in self.tree.modified
         found = [
             _moved_hit(self.tree, path, alias.lineno, lost[local], self.tree.removed[lost[local]])
             for node, guarded in ([] if not lost else _imports(module))
@@ -174,7 +182,8 @@ class _Gone:
                 continue
             for alias in node.names:
                 file, attribute = taken.get(alias.asname or alias.name, ("", None))
-                if attribute == alias.name and not guarded and self.lacks(file, alias.name):
+                new = whole or alias.lineno in added
+                if attribute == alias.name and not guarded and self.gone(file, alias.name, new):
                     found.append(_gone_hit(self.tree, path, alias.lineno, file, alias.name))
         modules = {name: file for name, (file, attribute) in taken.items() if attribute is None}
         if not modules:
@@ -186,7 +195,8 @@ class _Gone:
             file, root = modules.get(owner), owner.split(".")[0]
             if file is None or not isinstance(node.ctx, ast.Load) or root in hidden or other[root]:
                 continue
-            if not {node.attr, f"{owner}.{node.attr}"} & spelled and self.lacks(file, node.attr):
+            new = whole or node.lineno in added
+            if not {node.attr, f"{owner}.{node.attr}"} & spelled and self.gone(file, node.attr, new):
                 found.append(_gone_hit(self.tree, path, node.lineno, file, node.attr))
         return found
 
@@ -213,12 +223,38 @@ class _Gone:
                 module = "not read"
             self.read[path] = None if isinstance(module, str) else _defines(module)
         names = self.read[path]
-        if names is None or name in names:
-            return False
-        if path == "__init__.py" or path.endswith("/__init__.py"):
-            sub = path.removesuffix("__init__.py") + name
-            return not any(item == sub or item.startswith((f"{sub}.", f"{sub}/")) for item in self.tree.paths)
-        return True
+        return names is not None and name not in names and not _beside(path, name, self.tree.paths)
+
+    def gone(self, path: str, name: str, new: bool) -> bool:
+        """Whether a line that takes `name` from the changed module at `path` takes what the change left it without:
+        the module lacks the name now, and the line is the change's own, `new`, or the module may have held the name
+        before the change. A line the change kept, in a file it left where it was, that takes a name the module lacked
+        before too was broken before the change, or takes a name no statement shows, as a compiled extension's is:
+        neither is the change's. Reproduced on a branch that added one line to a package's `__init__.py`, where a
+        major named such a line, and measured over a project's history: each release that set its version there."""
+        return self.lacks(path, name) and (new or self.held(path, name))
+
+    def held(self, path: str, name: str) -> bool:
+        """Whether the module at `path` may have held `name` before the change. No module was at the path of one the
+        change added or moved here, so a line takes from it only since the change: yes. For one the change modified
+        in place, yes where its text before, rebuilt from its diff, cannot be read, may hold a name no statement
+        binds, or binds `name`, and where the change moved or removed, beside a package's `__init__.py`, a file or a
+        folder Python imported by that name."""
+        if path not in self.before:
+            diff, text = self.tree.modified.get(path), self.tree.sources.get(path)
+            was = None if diff is None or text is None else parse(_before(text, diff))
+            self.before[path] = None if was is None else _defines(was)
+        names = self.before[path]
+        return names is None or name in names or _beside(path, name, self.tree.removed)
+
+
+def _beside(path: str, name: str, paths: Iterable[str]) -> bool:
+    """Whether `paths` hold, beside the package's `__init__.py` at `path`, a file or a folder Python would import by
+    `name`; never for a module that is no package's `__init__.py`."""
+    if path != "__init__.py" and not path.endswith("/__init__.py"):
+        return False
+    sub = path.removesuffix("__init__.py") + name
+    return any(item == sub or item.startswith((f"{sub}.", f"{sub}/")) for item in paths)
 
 
 def _gone_hit(tree: Tree, path: str, line: int, file: str, name: str) -> Hit:

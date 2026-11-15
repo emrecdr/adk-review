@@ -310,8 +310,9 @@ module — for what one line cannot show, as `reviewer_instructions.py` reads a 
 `TreeRule`'s `check(tree)` reads the head instead: every path, and each Python module parsed once with the blast radius,
 for what must exist, define a name, derive from a parent or take a parameter, and with `tree.added`, the lines the
 change added by file, and `tree.imports(path)`, what each import binds, with `tree.removed`, the paths the change moved
-or removed, and `tree.imports_before(path)`, what each import bound while they were there, for the calls, the names and
-the modules a change breaks. One that can tell from the changed files alone that it has nothing to read at the head says
+or removed, `tree.imports_before(path)`, what each import bound while they were there, and `tree.modified`, the diff of
+each file the change modified in place, for the calls, the names and the modules a change breaks. One that can tell
+from the changed files alone that it has nothing to read at the head says
 so in `needs_head(files)`, and is then handed nothing to read: `callers` needs the head only where a name that was there
 before changed its parameters, one a line the change removed names or one not all of whose lines it added, or where the
 change removed a name a module defined or moved or removed a module, and `radius-types` wherever the change modified,
@@ -491,7 +492,7 @@ class RequiredPaths(TreeRule):
    |---|---|---|
    | `Rule` | `path`, `line` | `True` where the line breaks the rule |
    | `FileRule` | `file.path`, `file.lines`, `file.line(n)`, `file.near(n)`, `file.added`, `file.changed`, `file.arrived(*globs)`, `file.new_lines(*globs)`, `file.module`, and `file.diagnostics` for a rule that names a `tool` | line numbers, the report quoting each line; `(line, what is wrong)` pairs, the line quoted and `what` its title, `None` for the file as a whole; or `Hit`s |
-   | `TreeRule` | `tree.paths`, `tree.has(path)`, a folder as `"tests/"`, `tree.module(path)`, `tree.modules()`, `tree.added`, `tree.imports(path)`, `tree.removed`, `tree.imports_before(path)` | `(path, what is wrong)` pairs, `(path, line, what)` triples, the line quoted and `what` its title, or `Hit`s |
+   | `TreeRule` | `tree.paths`, `tree.has(path)`, a folder as `"tests/"`, `tree.module(path)`, `tree.modules()`, `tree.added`, `tree.imports(path)`, `tree.removed`, `tree.imports_before(path)`, `tree.modified` | `(path, what is wrong)` pairs, `(path, line, what)` triples, the line quoted and `what` its title, or `Hit`s |
 
    `file.added` holds the numbers of the lines the change added, and `file.changed` every path the change touched, for a
    rule about the change as a whole: a manifest changed and its lock file not. `file.arrived(*globs)` is whether its
