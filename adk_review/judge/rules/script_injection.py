@@ -46,8 +46,11 @@ _SPACED = re.compile(r"\s*([.(])\s*")
 SCRIPT = re.compile(r"""^(\s*(?:-\s+)?)(["']?)(run|script)\2\s*:""")
 #: The key whose `run:` holds the shell and the folder a job's scripts run in, and no script.
 DEFAULTS = re.compile(r"""^\s*(["']?)defaults\1\s*:""")
-#: What a value quoted in a script ends with: a quote, or a template literal's backtick.
+#: What opens a string in a script, and closes it again: a quote, or a template literal's backtick.
 _QUOTES = ("'", '"', "`")
+#: A script that starts on its key's own line, up to its first character: the key, and the quote YAML itself may put
+#: around the whole script, which is none of JavaScript's.
+_OWN = re.compile(r"""^\s*(?:-\s+)?(["']?)(?:run|script)\1\s*:\s*["']?""")
 
 
 class ScriptInjection(FileRule):
@@ -55,11 +58,13 @@ class ScriptInjection(FileRule):
     `"; curl … | sh #` runs as code, with the job's token and secrets: the attack GitHub's guide to script injection
     names. A value passed through `env:` is data the script reads as a variable, and is not a finding, nor is one passed
     to an action under `with:`, which takes it as an argument, nor `toJSON` that `actions/github-script` reads outside
-    any quote, which JavaScript reads as a value. Each added line is read as the diff shows it, with the lines above it
-    that say which key holds it, so a workflow past the size limits is read as far as its diff shows it. Not read: an
-    expression written with brackets, `github['head_ref']`, or wrapped over two lines; a step written in YAML's flow
-    style, `- {run: …}`; a script reached through a YAML alias, `run: *script`; and a value passed through `env:` and
-    then written into the script as `${{ env.NAME }}`."""
+    any quote, which JavaScript reads as a value. Inside a string of the script `toJSON` is named, wherever on its line
+    the string opens: JSON's own quotes end a quoted string, and a template reads a backtick and `${` in the value.
+    Each added line is read as the diff shows it, with the lines above it that say which key holds it, so a workflow
+    past the size limits is read as far as its diff shows it. Not read: an expression written with brackets,
+    `github['head_ref']`, or wrapped over two lines; a step written in YAML's flow style, `- {run: …}`; a script
+    reached through a YAML alias, `run: *script`; a value passed through `env:` and then written into the script as
+    `${{ env.NAME }}`; and `toJSON` in a template that a line above its own opened."""
 
     id = "script-injection"
     severity = "major"
@@ -89,11 +94,39 @@ class ScriptInjection(FileRule):
             text = _SPACED.sub(r"\1", line)
             if not UNTRUSTED.search(text) or (key := _script_of(file, number, line, held)) is None:
                 continue
+            # How far the line is read, and the string it stands in there: read once, however many values it holds.
+            at, inside = (own.end() if (own := _OWN.match(text)) else 0), ""
             for named in UNTRUSTED.finditer(text):
-                if key == "run" or not named[1].lower().startswith("tojson") or text[: named.start()].endswith(_QUOTES):
-                    found.append((number, f"`{named[1]}` is written into the script before it runs"))
-                    break
+                # `toJSON` in a script is a JavaScript value, unless a string of the script holds it. Read by review
+                # of another tool's report: asked only whether a quote stood right before it, a word between the two,
+                # `Issue: `, let it pass.
+                if key != "run" and named[1].lower().startswith("tojson"):
+                    inside, at = _string_at(text, at, named.start(), inside), named.start()
+                    if inside not in _QUOTES:
+                        continue
+                found.append((number, f"`{named[1]}` is written into the script before it runs"))
+                break
         return found
+
+
+def _string_at(text: str, start: int, end: int, held: str) -> str:
+    """The string of a script's line that `end` stands in, by the quote that opened it: "" outside any, and "/" in a
+    comment, which runs to the line's end. Read on from `start`, where the line stood in `held`: a quote or a
+    template's backtick opens a string and the same one closes it, a backslash keeps the character after it from
+    doing either, and `//` outside a string opens a comment."""
+    at = start
+    while at < end and held != "/":
+        mark = text[at]
+        if mark == "\\":
+            at += 1  # the character after it is read by neither branch below
+        elif held:
+            held = "" if mark == held else held
+        elif mark in _QUOTES:
+            held = mark
+        elif text.startswith("//", at):
+            held = "/"
+        at += 1
+    return held
 
 
 def _script_of(file: ChangedFile, number: int, line: str, held: dict[int, str | None]) -> str | None:

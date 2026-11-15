@@ -3680,6 +3680,43 @@ class TestTheShippedRules:
         assert try_rule(rule, {"docs/ci.md": workflow}) == [], "a workflow or an action alone is read"
         assert self_check(rule) == []
 
+    def test_tojson_inside_a_string_of_the_script_is_named_wherever_the_string_opens(self) -> None:
+        """Read by review of another tool's report, and reproduced: `toJSON` was named where a quote stood right
+        before the expression, so one word between them, `` `Issue: ${{ toJSON(…) }}` ``, was enough to pass. JSON's
+        escaping keeps a value whole as a JavaScript value, never inside a string of the script: its own quotes end a
+        quoted one, and a template reads a backtick and `${` in it. The line is read once from its start: a quote or a
+        backtick opens a string and the same one closes it, a backslash keeps the next character from doing either,
+        and after `//` the rest is a comment. A value a string does not hold is left alone, as before."""
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.script_injection import ScriptInjection
+
+        rule, path = ScriptInjection(), ".github/workflows/notify.yml"
+        title = "${{ toJSON(github.event.issue.title) }}"
+        named = [
+            f"console.log(`{title}`);",
+            f"console.log(`Issue: {title}`);",
+            f'console.log("Issue: {title}");',
+            f"console.log('Issue: ' + 'said {title}');",
+            "const a = ${{ toJSON(github.event.issue) }}, b = `it is ${{ toJSON(github.event.comment) }}`;",
+        ]
+        left = [
+            f"const title = {title};",
+            f"core.info('Title:', {title});",
+            f'core.info("a \\" in it", {title});',
+            f"const t = {title}; // the issue's title: don't quote it",
+            f"// don't quote {title}",
+        ]
+        head = "jobs:\n  a:\n    steps:\n      - with:\n          script: |\n"
+        script = head + "".join(f"            {line}\n" for line in [*named, *left])
+        assert lines_hit(rule, path, script) == [6, 7, 8, 9, 10]
+        # On its key's own line a script reads the same, and a quote YAML itself puts around the whole script is none
+        # of JavaScript's.
+        own = "jobs:\n  a:\n    steps:\n      - with:\n"
+        own += f"          script: core.info('issue {title}')\n"
+        own += f'      - with:\n          script: "return {title}"\n'
+        own += f"      - with:\n          script: return {title}\n"
+        assert lines_hit(rule, path, own) == [5]
+
     def test_a_hostile_workflow_is_read_in_linear_time(self) -> None:
         """Measured by a review: one line of 80,000 characters of `${{ ` took 14.8 s, four times as long for each
         doubling, and 20,000 lines of one block, each holding a branch's name, 40 s, each walking past every line above
@@ -3694,6 +3731,8 @@ class TestTheShippedRules:
             "      - run: echo " + "${{ " * 50_000 + "\n",
             "      - run: |\n" + "          echo ${{ github.head_ref }}\n" * lines,
             "      - env:\n" + "".join(f"          T{n}: ${{{{ github.head_ref }}}}\n" for n in range(lines)),
+            # A script's line of values no string holds, each asked whether one does: read once, never once a value.
+            "      - with:\n          script: |\n            x = [" + "${{ toJSON(github.event) }}, " * lines + "]\n",
         ]
         for text in hostile:
             started = time.perf_counter()
