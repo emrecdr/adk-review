@@ -1451,6 +1451,49 @@ class TestThePreviousReportAndTheHandoff:
         refuted = Outcome(refuted=[(item, "no")], verified=True)
         assert _resolved(refuted, [], "APPROVED", previous, ["guideline.correctness"], []) == []
 
+    def test_one_of_two_findings_alike_that_changes_its_list_is_never_read_as_resolved(self) -> None:
+        """Read by review of another tool's report, and reproduced: two findings of one check, file and quote are told
+        apart by which of the two each is, counted among the kept ones alone. One of them folded under another finding
+        since the last review, refuted, or listed as already in the file, was counted from none again, as the first,
+        so the second's identity was found nowhere, and `--previous` said one was fixed. Each is counted on from the
+        kept ones, whichever of the two a list holds."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import _identified, _resolved
+
+        def twin() -> Sourced:
+            found = Finding(file="app.py", line=3, severity="minor", title="t", evidence="+print(x)", suggestion="s")
+            return Sourced("rule.no-print", found, (3, 3))
+
+        def fixed(outcome: Outcome) -> int:
+            found = _resolved(outcome, _identified(outcome.kept), "APPROVED", previous, ["rule.no-print"], [])
+            return len(found or [])
+
+        first, second, other = twin(), twin(), twin()
+        previous = {identity: {"check": "rule.no-print", "file": "app.py"} for identity in _identified([first, second])}
+        assert len(previous) == 2, "the last review told the two apart"
+        assert fixed(Outcome(kept=[first, second])) == 0
+        assert fixed(Outcome(kept=[first], folded=[(second, other)])) == 0
+        assert fixed(Outcome(kept=[first], refuted=[(second, "no")], verified=True)) == 0
+        assert fixed(Outcome(kept=[first], old=[second])) == 0
+        assert fixed(Outcome(kept=[second], folded=[(first, other)])) == 0, "whichever of the two is kept"
+        assert fixed(Outcome(kept=[first])) == 1, "one of the two is gone in truth"
+        assert fixed(Outcome(folded=[(first, other)])) == 1
+
+    def test_a_change_of_no_file_the_review_reads_lists_none(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review of another tool's report, and reproduced: with no file to list, the line still ended in a
+        colon and a space, `0 file(s): `, as if a name had been lost."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "app.py", "x = 1\n")
+        _committed(repo, "logo.svg", "<svg/>\n")
+        _git_in(repo, "checkout", "-q", "-b", "art")
+        _committed(repo, "logo.svg", "<svg></svg>\n")
+        assert cli.main([str(repo), "--head", "art", "--base", BASE, "--profile", "default-rules"]) == 0
+        out = capsys.readouterr().out
+        assert "- changed      0 file(s)\n" in out, out
+
     def test_a_finding_already_in_a_file_is_one_line_of_the_comment(self) -> None:
         """Read by review on the owner's comment: eight findings already in the files took 24 lines, each saying again
         what its section's heading says and the command that shows it. Each is one line, its file, the rule, the codes

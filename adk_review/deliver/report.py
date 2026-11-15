@@ -1087,7 +1087,8 @@ def header(evidence: Evidence, *, model: str, profile: str, off: Sequence[str], 
         *([f"- model        {model}"] if model else []),
         f"- profile      {profile}" + (f" (off: {', '.join(off)})" if off else ""),
         *([f"- scope        {prose(covered)}. {left}"] if scope or exclude else []),
-        f"- {listed:<12} {len(files)} file(s): {_spans([f['path'] for f in files])}",
+        # With no file to list, no colon: read by review, `0 file(s): ` read as a name lost.
+        f"- {listed:<12} {len(files)} file(s)" + (f": {_spans([f['path'] for f in files])}" if files else ""),
         *(f"- not read     {code_span(one_line(path))}: {why}" for path, why in unread.items()),
         *(
             f"- skipped      {code_span(one_line(path))}: left to the rules by the operator's {code_span(glob)}"
@@ -1314,9 +1315,11 @@ def _resolved(
     if previous is None or verdict == "DEGRADED":
         return None
     # A finding already in a touched file is still found: listed apart, it is never fixed by being so. Nor is one a
-    # verifier refuted: a guideline still found it.
+    # verifier refuted: a guideline still found it. Each is counted on from the kept ones, as one of two findings of
+    # one check, file and quote: read by review of another tool's report, counted from none again, the second of two
+    # alike that changed its list had the first's identity, and its own read as fixed.
     held = [*(f for f, _ in outcome.folded), *outcome.old, *(item for item, _why in outcome.refuted)]
-    found_now = {*identities, *(fingerprint(item) for item in held)}
+    found_now = {*identities, *_identified([*outcome.kept, *held])[len(outcome.kept) :]}
     return [
         found
         for identity, found in previous.items()
