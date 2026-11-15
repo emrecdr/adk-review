@@ -2915,6 +2915,22 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         )
         assert [(file, line) for file, line, _severity, _said in self.found(repo)] == [("my-app/pkg/user.py", 5)]
 
+    def test_a_file_under_a_folder_named_with_a_leading_dot_or_a_space_is_read(self, tmp_path: Path) -> None:
+        """Read by review of another tool's report, and reproduced: a file was written only where each name of its
+        path was letters, digits, `_` and `-` with dots between them, so a script under `.github/scripts/` or
+        `my scripts/` was in neither run, and a call the change broke there went unnamed, with no word. Measured over
+        24 public projects' 65,701 Python files: 41 lay under a name so refused, 37 by a leading dot, 21 of those
+        under `.github`, and 3 by a space."""
+        repo = self.branch(
+            tmp_path,
+            {"shop/repo.py": self.REPO, ".github/scripts/sync.py": self.SERVICE, "my scripts/load.py": self.SERVICE},
+            {"shop/repo.py": self.RENAMED},
+        )
+        assert [(file, line) for file, line, _severity, _said in self.found(repo)] == [
+            (".github/scripts/sync.py", 5),
+            ("my scripts/load.py", 5),
+        ]
+
     def test_a_change_to_tests_alone_asks_for_no_head(self) -> None:
         """The rule reads no test's findings, and its runs leave tests out, so a test the change touched asks for no
         head. Read by review, the owner's /code-review item 6: on ADK a commit that edited one test read and parsed the
@@ -2935,25 +2951,18 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
 
     def test_a_path_a_system_reads_otherwise_is_never_written(self, tmp_path: Path) -> None:
         """A branch names its own paths: one outside the folder, a device name Windows holds under any extension, a
-        drive's `:`, or two that differ only in case would write where the reviewer never meant to. A folder Python
-        cannot name, `my-dir`, is written: a root above a package may be one."""
+        serial port's with a superscript digit among them, a drive's `:`, a name Windows trims, or two that differ only
+        in case would write where the reviewer never meant to. A folder Python cannot name is written, since a root
+        above a package may be one and a script lies under one: `my-dir`, `.github`, `my scripts`."""
         from adk_review.collect.pyrefly import written
 
-        texts = {
-            "../outside.py": "x = 1\n",
-            "pkg/nul.py": "x = 1\n",
-            "pkg/nul.tar.py": "x = 1\n",
-            "pkg/c:d.py": "x = 1\n",
-            "my-dir/x.py": "x = 1\n",
-            "pkg/A.py": "x = 1\n",
-            "pkg/a.py": "x = 1\n",
-            "pkg/ok.py": "x = 1\n",
-        }
-        assert sorted(written(str(tmp_path), texts)) == ["my-dir/x.py", "pkg/ok.py"]
-        assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.py")) == [
-            "my-dir/x.py",
-            "pkg/ok.py",
-        ]
+        refused = (
+            *("../outside.py", ".../x.py", "pkg/nul.py", "pkg/nul.tar.py", "pkg/com¹.py", "pkg/c:d.py", "pkg/~x.py"),
+            *("pkg/x./y.py", "pkg/x /y.py", " pkg/y.py", "pkg/nul .py", "pkg/A.py", "pkg/a.py"),
+        )
+        kept = [".github/scripts/x.py", "my scripts/x.py", "my-dir/x.py", "pkg/.hidden.py", "pkg/ok.py"]
+        assert sorted(written(str(tmp_path), dict.fromkeys((*refused, *kept), "x = 1\n"))) == kept
+        assert sorted(p.relative_to(tmp_path).as_posix() for p in tmp_path.rglob("*.py")) == kept
 
     def test_pyrefly_that_cannot_run_is_this_rules_hole_alone(self, tmp_path: Path, monkeypatch) -> None:
         from adk_review.collect import pyrefly

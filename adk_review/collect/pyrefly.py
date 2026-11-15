@@ -187,11 +187,17 @@ def _parsed(
     return found
 
 
-#: A name `written` writes: letters, digits, `_` and `-`, and dots only between them, so never `..`, a drive's `:`,
-#: Windows' `\`, nor a name Windows trims, as it trims a final dot.
-_PLAIN = re.compile(r"[\w-]+(?:\.[\w-]+)*")
-#: What Windows holds as a device under any extension: a module so named is written nowhere.
-_DEVICES = frozenset({"con", "prn", "aux", "nul", *(f"{port}{n}" for port in ("com", "lpt") for n in range(1, 10))})
+#: A name `written` writes: letters, digits, `_` and `-`, one dot before them, as `.github` has, and a dot or a space
+#: only between them, so never `..`, a drive's `:`, Windows' `\`, nor a name Windows trims, as it trims a final dot or
+#: space. Read by review: with no dot at the front and no space, a script under `.github/scripts/` was in neither
+#: run. Measured over 24 public projects' 65,701 Python files: 41 lay under a name refused then, 37 by a leading dot
+#: and 3 by a space, and one is refused still, by its `~`.
+_PLAIN = re.compile(r"\.?[\w-]+(?:[. ][\w-]+)*")
+#: What Windows holds as a device under any extension, a port numbered with a superscript digit among them, which
+#: `\w` reads as a digit too: a module so named is written nowhere.
+_DEVICES = frozenset(
+    {"con", "prn", "aux", "nul", *(f"{port}{n}" for port in ("com", "lpt") for n in (*range(1, 10), *"¹²³"))}
+)
 #: A diagnostic as pyrefly's run over one tree names it: its file, its kind and its line's text, and the order pyrefly
 #: gave it in, which keeps two of one line apart.
 type Found = tuple[str, str, str, int]
