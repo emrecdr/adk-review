@@ -223,9 +223,12 @@ def _try(paths: Sequence[str], chosen: Selection, fail_on: str, third_party: Seq
 
 
 def _on_disk(paths: Sequence[str], third_party: Sequence[str] = ()) -> tuple[dict[str, str], list[tuple[str, str]]]:
-    """Each file under `paths` and its text: a file by its path as given, a folder's files by their paths inside it,
-    as a project's own head names them, `/`-separated, and never a `.git`. A file that is not UTF-8 text, or past
-    the size a review reads, is left out and named, and so is a folder `third_party` names."""
+    """Each file under `paths` and its text: a file by its path as given, and one folder's files by their paths inside
+    it, as a project's own head names them, `/`-separated, and never a `.git`. Given more than one path, a folder's
+    files go by their paths as given too, the folder's name first: read by review, each folder's files were named
+    from inside it, and of two that held an `app.py`, or two packages' `__init__.py`, one took the other's place with
+    no word. A file that is not UTF-8 text, or past the size a review reads, is left out and named, and so is a folder
+    `third_party` names."""
     found: dict[str, str] = {}
     skipped: list[tuple[str, str]] = []
     for given in paths:
@@ -235,7 +238,7 @@ def _on_disk(paths: Sequence[str], third_party: Sequence[str] = ()) -> tuple[dic
             continue
         files = [root] if root.is_file() else _under_folder(root, third_party, skipped)
         for file in files:
-            name = file.as_posix() if file == root else file.relative_to(root).as_posix()
+            name = file.as_posix() if file == root or len(paths) > 1 else file.relative_to(root).as_posix()
             if file.stat().st_size > MAX_FILE_BYTES:
                 skipped.append((name, f"over {MAX_FILE_BYTES:,} bytes"))
                 continue

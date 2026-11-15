@@ -515,8 +515,9 @@ class RequiredPaths(TreeRule):
    package prints does (`tests/test_command.py`).
 4. See it fire, with no repository, no model and no key:
    `uv run python -m adk_review.review --try src/ --check rule.no-todo` reads files on disk, each as wholly
-   added — a file at the path given, a folder's files at their paths inside it — and `--explain rule.no-todo` prints
-   the rule whole, its examples among it. Then try it on a branch:
+   added — a file at the path given, a folder's files at their paths inside it, or at their paths as given where more
+   than one path is named — and `--explain rule.no-todo` prints the rule whole, its examples among it. Then try it on
+   a branch:
    `uv run python -m adk_review.review <repo> --base main --check rule.no-todo`.
 5. Test what the examples do not say, in `tests/`, with the door's `try_rule(rule, {path: text})`,
    `lines_hit(rule, path, text)` and `self_check(rule)`: each reads the rule as a review does.

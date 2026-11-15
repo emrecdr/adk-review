@@ -2904,6 +2904,27 @@ class TestTheModesBesideAReview:
         assert cli.main(["--try", str(theirs / "bad.py"), "--check", "rule.no-print"]) == 0
         assert "(" + (theirs / "bad.py").as_posix() + ":1)" in capsys.readouterr().out, "a file named is read"
 
+    def test_two_folders_tried_together_each_keep_a_file_of_one_name(
+        self, cli, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        """Read by review of another tool's report, and reproduced: `--try one two` named each folder's files by their
+        paths inside it, so `two/app.py` took the place of `one/app.py`, whose finding went with it and no word said
+        so, as one of two packages' `__init__.py` goes. Given more than one path, each file goes by its path as
+        given, the names a project's head holds where the folders are named from its root."""
+        for folder, text in (("one", "print(1)\n"), ("two", "x = 1\n")):
+            (tmp_path / folder / "pkg").mkdir(parents=True)
+            (tmp_path / folder / "app.py").write_text(text, encoding="utf-8")
+            (tmp_path / folder / "pkg" / "__init__.py").write_text(text, encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        assert cli.main(["--try", "one", "two", "--check", "rule.no-print"]) == 0
+        tried = capsys.readouterr()
+        assert "(one/app.py:1)" in tried.out and "(one/pkg/__init__.py:1)" in tried.out, tried.out
+        assert "two/" not in tried.out and not tried.err, tried
+        assert cli.main(["--try", "one", str(tmp_path / "two" / "app.py"), "--check", "rule.no-print"]) == 0
+        assert "(one/app.py:1)" in capsys.readouterr().out, "a folder beside a file named"
+        assert cli.main(["--try", "one", "--check", "rule.no-print"]) == 0
+        assert "(app.py:1)" in capsys.readouterr().out, "one folder alone is the project's top, as before"
+
     def test_a_mode_besides_a_review_refuses_a_reviews_own_flags(self, cli, tmp_path: Path, capsys) -> None:
         """Measured: `--explain` beside `--json` cleared the file, then wrote nothing and exited 0. A mode besides a
         review — a dry run, the list, a try, an explanation — takes none of a review's own flags, and two modes are
