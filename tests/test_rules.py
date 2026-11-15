@@ -2123,15 +2123,15 @@ class TestTheCallersRule:
         `__new__` decides, and an import two files could answer."""
         files = {
             "lib.py": (
-                "import functools\n\n\n@functools.cache\ndef cached(a):\n    return a\n\n\n"
+                "from tools import retried\n\n\n@retried(times=3)\ndef wrapped(a):\n    return a\n\n\n"
                 "def plain(a):\n    return a\n\n\n"
                 "class Mode(Enum):\n    def __init__(self, a):\n        pass\n\n\n"
                 "class Made:\n    def __new__(cls, *args):\n        return object.__new__(cls)\n\n"
                 "    def __init__(self, a):\n        pass\n"
             ),
             "use.py": (
-                "from lib import Made, Mode, cached, plain\n\n"
-                "cached(1, 2)\nplain(*[1, 2])\nplain(**{'a': 1, 'b': 2})\nMode(1, 2)\nMade(1, 2)\nclient.plain(1, 2)\n"
+                "from lib import Made, Mode, plain, wrapped\n\n"
+                "wrapped(1, 2)\nplain(*[1, 2])\nplain(**{'a': 1, 'b': 2})\nMode(1, 2)\nMade(1, 2)\nclient.plain(1, 2)\n"
             ),
             "again.py": "from lib import plain\n\n\ndef plain(a, b):\n    return a\n\n\nplain(1, 2)\n",
             "x/twin.py": "def twin(a):\n    pass\n",
@@ -2139,6 +2139,47 @@ class TestTheCallersRule:
             "far.py": "from twin import twin\n\ntwin(1, 2)\n",
         }
         assert self.found(files) == []
+
+    def test_a_function_under_functools_cache_is_called_as_it_is_written(self) -> None:
+        """Read by review of another tool's report, and reproduced: every decorated function was left alone, and under
+        functools' `lru_cache` or `cache` no rule named a call the change broke, since a type checker reads their
+        wrapper as one that takes anything. Each passes every argument on as given, so a call that does not fit the
+        function raises `TypeError` under it too. Read through the module's own import of functools: the same
+        spelling from another module, a second decorator beside it and a name bound again are left alone. Measured over
+        the installed packages: 144 module-level functions stand under one of the two alone, 140 of them so
+        imported."""
+        from adk_review.judge.rule_helpers.testing import as_change
+        from adk_review.judge.rules.callers import Callers
+
+        lib = (
+            "import functools\nimport functools as ft\nfrom functools import cache, lru_cache as memo\n\n\n"
+            "@functools.cache\ndef a(x):\n    return x\n\n\n"
+            "@functools.lru_cache(maxsize=8)\ndef b(x):\n    return x\n\n\n"
+            "@cache\ndef c(x):\n    return x\n\n\n"
+            "@memo\ndef d(x):\n    return x\n\n\n"
+            "@ft.lru_cache\nasync def e(x):\n    return x\n"
+        )
+        use = "from lib import a, b, c, d, e\n\na(1, 2)\nb(y=1)\nc()\nd(1, 2)\ne(1, 2)\na(1)\na.cache_clear()\n"
+        found = self.found({"lib.py": lib, "use.py": use})
+        assert [(path, line) for path, line, _said in found] == [("use.py", line) for line in (3, 4, 5, 6, 7)], found
+        assert found[1][2] == "`b()` in `lib.py` takes no keyword `y`, and the call passes no `x`"
+        left_alone = {
+            "theirs.py": (
+                "from tools import cache, lru_cache\n\n\n@cache\ndef a(x):\n    return x\n\n\n"
+                "@lru_cache()\ndef b(x):\n    return x\n"
+            ),
+            "beside.py": "import functools\n\n\n@retried\n@functools.cache\ndef c(x):\n    return x\n",
+            "again.py": "import functools\n\nfunctools = stub\n\n\n@functools.cache\ndef d(x):\n    return x\n",
+            "twice.py": "from functools import cache\nfrom tools import cache\n\n\n@cache\ndef e(x):\n    return x\n",
+            "use.py": (
+                "from again import d\nfrom beside import c\nfrom theirs import a, b\nfrom twice import e\n\n"
+                "a(1, 2)\nb(1, 2)\nc(1, 2)\nd(1, 2)\ne(1, 2)\n"
+            ),
+        }
+        assert self.found(left_alone) == []
+        (item,), _tree = as_change({"lib.py": "import functools\n\n\n@functools.cache\ndef get(uid, role):\n    pass"})
+        changed = {**item, "status": "M", "added_at": frozenset({5}), "diff": ""}
+        assert Callers().needs_head([changed]), "its parameters changed under a decorator the change kept"
 
     def test_a_name_passed_on_through_a_file_no_one_read_is_followed_no_further(self) -> None:
         """A file the head's read left out stops the following of a name it passes on: a floor, as the rest of the

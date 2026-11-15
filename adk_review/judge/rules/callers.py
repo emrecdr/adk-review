@@ -16,6 +16,11 @@ from ..rule_helpers import PASSED_ON, Entry, Hit, Tree, TreeRule, UnreadError, n
 CALLED_BY_BASE = frozenset(
     {"Enum", "IntEnum", "StrEnum", "Flag", "IntFlag", "NamedTuple", "TypedDict", "Protocol", "Generic"}
 )
+#: functools' decorators that pass each argument on to the function as the call gave it, so a call that does not fit
+#: the function raises under one too, and whose wrapper a type checker reads as taking anything: read by review, a
+#: call the change broke under one was named by no rule. Measured over the installed packages: 144 module-level
+#: functions stand under one of the two alone, and none under one beside another decorator.
+CACHES = frozenset({"lru_cache", "cache"})
 #: What opens a scope of its own, whose names hide a module's from the code inside it.
 _SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda, ast.ClassDef)
 _COMPREHENSIONS = (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)
@@ -49,9 +54,11 @@ class Callers(TreeRule):
     its own module. A call is bound as Python binds it — the positional arguments it takes, each keyword, what it
     needs, what goes by position only — so a call named is one that raises `TypeError` when it runs. Pyrefly reads
     each changed file alone and the guidelines read the diff, so a caller the change left alone is read here or
-    nowhere. Left alone, since each may fit at run time: a decorated function or class, a call that unpacks `*args` or
-    `**kwargs`, a name a scope binds to something else, a method on an object, a class a metaclass or `__new__` makes,
-    and an import two files could answer. A name a changed module no longer defines is held the same way to each
+    nowhere. A function under functools' `lru_cache` or `cache` alone is held to its calls too: each passes every
+    argument on as given, and a type checker reads its wrapper as taking anything. Left alone, since each may fit at
+    run time: a function under any other decorator, a decorated class, a call that unpacks `*args` or `**kwargs`, a
+    name a scope binds to something else, a method on an object, a class a metaclass or `__new__` makes, and an import
+    two files could answer. A name a changed module no longer defines is held the same way to each
     file that still takes it: a `from … import`, which raises `ImportError`, and a module's attribute, which raises
     `AttributeError`. Left alone there: an import a `try` guards, a name the file asks for by its string or sets
     itself, a submodule, and a module that may hold a name no statement binds — a module `__getattr__`, a `*` import,
@@ -354,7 +361,7 @@ def _misfit_calls(
 
 def _changed(tree: Tree) -> Changed:
     """Each function whose parameters the change touched: a module-level function, or a class whose `__init__` is
-    its own, each undecorated and the one thing its name stands for in its module."""
+    its own, each as `_touched` takes it and the one thing its name stands for in its module."""
     changed: Changed = {}
     for path, added in tree.added.items():
         if added and not isinstance(module := tree.module(path), str):
@@ -367,19 +374,37 @@ def _changed(tree: Tree) -> Changed:
 
 def _touched(module: ast.Module, added: frozenset[int]) -> dict[str, tuple[Function_, ast.stmt]]:
     """By name, each module-level function, and each class's own `__init__`, whose parameters `added` touches, each
-    undecorated and the one thing its name stands for in the module, with the statement that defines the name: the
-    function, or its class."""
+    under no decorator but functools' caches and the one thing its name stands for in the module, with the statement
+    that defines the name: the function, or its class."""
     other, imported, _declared = _bound(module.body)
+    caches = _caches(module, other, imported)
     touched: dict[str, tuple[Function_, ast.stmt]] = {}
     for node in module.body:
         if other[getattr(node, "name", "")] != 1 or imported[getattr(node, "name", "")]:
             continue
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
-            if not node.decorator_list and _header(node) & added:
+            called_as_written = all(
+                name_of(mark.func if isinstance(mark, ast.Call) else mark) in caches for mark in node.decorator_list
+            )
+            if called_as_written and _header(node) & added:
                 touched[node.name] = (node, node)
         elif isinstance(node, ast.ClassDef) and (init := _own_init(node)) and _header(init) & added:
             touched[node.name] = (init, node)
     return touched
+
+
+def _caches(module: ast.Module, other: Counter[str], imported: Counter[str]) -> set[str]:
+    """Each way the module spells one of functools' `CACHES`: through the name its `import functools` binds, or by
+    the name its `from functools import` gives one, each an import at the module's top that binds a name nothing else
+    in the module binds. The same spelling from another module is none, since that decorator may take the call."""
+    spelled: set[str] = set()
+    for node in module.body:
+        if isinstance(node, ast.Import):
+            through = {alias.asname or alias.name for alias in node.names if alias.name == "functools"}
+            spelled |= {f"{name}.{cache}" for name in through for cache in CACHES}
+        elif isinstance(node, ast.ImportFrom) and node.module == "functools" and not node.level:
+            spelled |= {alias.asname or alias.name for alias in node.names if alias.name in CACHES}
+    return {name for name in spelled if imported[root := name.split(".")[0]] == 1 and not other[root]}
 
 
 def _span(node: ast.stmt) -> set[int]:
