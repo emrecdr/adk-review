@@ -130,7 +130,8 @@ class TestTheSecretShapes:
             f"CELERY_BROKER=rediss://:{pw}@cache.internal.acme.io:6380/1",
             f'DATABASE_URL = "postgresql://:{pw}@db.prod.acme.io/app"',
             f'REDIS = "redis://:{pw}@localhost:6379/0"',  # a made value opens a local server too, as after a user
-            'REDIS = "redis://:password@cache.prod.acme.io:6379"',  # a default credential at a real host
+            # A default credential at a real host, written in two pieces: whole, it is one this very rule names here.
+            'REDIS = "redis://:' + "password" + '@cache.prod.acme.io:6379"',
         ]
         left = [
             'URL = "http://example.org:8080/path"',  # a port, and no password
