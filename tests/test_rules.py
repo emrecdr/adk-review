@@ -3087,6 +3087,32 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         _git_in(repo, "commit", "-qm", "one removed")
         assert self.found(repo) == [], "the error in shop/a.py was there before"
 
+    def test_a_module_renamed_in_its_letters_case_alone_is_read_in_both_runs(self, tmp_path: Path) -> None:
+        """Read by review of another tool's report, and reproduced: names were counted over the two trees together, so
+        a module the change renamed in case alone, `Repo.py` to `repo.py`, clashed with itself, was written in neither
+        run, and a method renamed with it went unnamed where a file still called it, with no hole said. Renamed to
+        another name, the same change was named. A name is left out where it clashes inside a tree, the head's or the
+        base's, since one disk cannot hold both; a tree apiece holds a name the other spells in another case. Built by
+        git's own plumbing, as the test above is."""
+        repo = self.branch(tmp_path, {"shop/x.py": "y = 1\n"}, {})
+        _git_in(repo, "checkout", "-q", BASE)
+        service = self.SERVICE.replace("shop.repo", "shop.Repo")
+        for name, text in (("shop/Repo.py", self.REPO), ("shop/service.py", service)):
+            blob = _git_in(repo, "hash-object", "-w", "--stdin", stdin=text)
+            _git_in(repo, "update-index", "--add", "--cacheinfo", f"100644,{blob},{name}")
+        _git_in(repo, "commit", "-qm", "a module named with a capital")
+        _git_in(repo, "checkout", "-q", "-B", "change")
+        _git_in(repo, "rm", "-q", "--cached", "shop/Repo.py")
+        for name, text in (("shop/repo.py", self.RENAMED), ("shop/service.py", self.SERVICE)):
+            blob = _git_in(repo, "hash-object", "-w", "--stdin", stdin=text)
+            _git_in(repo, "update-index", "--add", "--cacheinfo", f"100644,{blob},{name}")
+        _git_in(repo, "commit", "-qm", "renamed in case alone, and a method with it")
+        found = self.found(repo)
+        assert [(file, line, severity) for file, line, severity, _evidence in found] == [
+            ("shop/service.py", 5, "major")
+        ], found
+        assert "get_user" in found[0][3] and "missing-attribute" in found[0][3], found
+
     def test_a_file_pyrefly_gave_up_on_that_the_change_reaches_is_a_hole(self, tmp_path: Path) -> None:
         """Read by review: pyrefly checks nothing in a file nested too deeply, and the radius read that as nothing
         found, where the per-file read `types` makes calls it a hole. Where the file imports one the change touched,

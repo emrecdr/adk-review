@@ -245,10 +245,15 @@ def radius(
         return f"git could not read the base's files ({exc})"
     head = {p: text for p, text in tree.sources.items() if p.endswith(".py") and (tests or not is_test(p))}
     base, renamed = _base(head, evidence["files"], held)
-    # Names that differ in case, in either tree, left out of both alike: read by review, a branch deleted `A.py` beside
-    # a kept `a.py`, neither was written for the base, the head's `a.py` was, and an error it held before read as new.
-    folded = Counter(path.casefold() for path in {*head, *base})
-    head, base = ({p: text for p, text in texts.items() if folded[p.casefold()] == 1} for texts in (head, base))
+    # Names that differ in case inside a tree, either one, left out of both alike: read by review, a branch deleted
+    # `A.py` beside a kept `a.py`, neither was written for the base, the head's `a.py` was, and an error it held before
+    # read as new. Counted a tree at a time, since each is written to a folder of its own: read by review of another
+    # tool's report, counted over both together, a module renamed in case alone clashed with itself and was in
+    # neither run, so a method renamed with it went unnamed where a file still called it.
+    clash = {
+        name for texts in (head, base) for name, count in Counter(p.casefold() for p in texts).items() if count > 1
+    }
+    head, base = ({p: text for p, text in texts.items() if p.casefold() not in clash} for texts in (head, base))
     try:
         # The two runs side by side: measured on ADK's 815 files, one after the other added 2.2 s to a push's review.
         # One set of roots for both runs, from both trees: found apart, a branch that added a package's first
