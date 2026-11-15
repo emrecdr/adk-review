@@ -67,17 +67,20 @@ class Callers(TreeRule):
     name a scope binds to something else, a method on an object, a class a metaclass or `__new__` makes, and an import
     two files could answer. A name a changed module no longer defines is held the same way to each
     file that still takes it: a `from … import`, which raises `ImportError`, and a module's attribute, which raises
-    `AttributeError`. Left alone there: an import a `try` guards, a name the file asks for by its string or sets
-    itself, a submodule, a module that may hold a name no statement binds — a module `__getattr__`, a `*` import,
-    a write to its globals — and, on a line the change kept in a file it left where it was, a name the module did not
-    define before the change either, as its text rebuilt from the diff shows: a break older than the change, or a
-    name no statement shows, as a compiled extension's is. An import of a module the change moved or removed, by its
+    `AttributeError`. A line the change added is held so to the name it takes from a module the change left alone
+    too, where that module is a file of its own. Left alone there: an import a `try` guards, a name the file asks
+    for by its string or sets itself, a submodule, a module that may hold a name no statement binds — a module
+    `__getattr__`, a `*` import, a write to its globals — and, on a line the change kept in a file it left where it
+    was, a name the module did not define before the change either, as its text rebuilt from the diff shows: a break
+    older than the change, or a name no statement shows, as a compiled extension's is; and a name a line the change
+    added takes from a package's `__init__.py` the change left alone, beside which a build can lay a module no git
+    tree holds, a compiled extension or a generated file. An import of a module the change moved or removed, by its
     old path, raises `ModuleNotFoundError` unless the head still holds a module there, a package of that name among
     them. Read as a floor where the head was not read whole. The head is read only where the change touched the
     parameters of a name that was there before, one a line the change removed names or one not all of whose lines it
     added, removed a name a module defined, or moved or removed a module; with none, nothing is read, since a
-    function the change adds whole leaves no caller behind. A line the change added that takes a name a changed
-    module never defined is named wherever the head is read, for one of these or for another check."""
+    function the change adds whole leaves no caller behind. A line the change added that takes a name its module
+    does not define is named wherever the head is read, for one of these or for another check."""
 
     id = "callers"
     severity = "major"
@@ -167,9 +170,9 @@ class _Gone:
         self.before: dict[str, set[str] | None] = {}
 
     def uses(self, path: str, module: ast.Module, bound: dict[str, tuple[str, str | None]]) -> list[Hit]:
-        """Each line of the module at `path` that imports a module the change moved or removed, or takes a name a
-        changed module no longer defines: an import no `try` around it guards, and an attribute read through the name
-        an import bound to the module."""
+        """Each line of the module at `path` that imports a module the change moved or removed, or takes a name its
+        module does not define, as `gone` reads one: an import no `try` around it guards, and an attribute read
+        through the name an import bound to the module."""
         lost = self.lost(path, bound)
         # The lines of this file that are the change's own: each it added, and every line of a file it added or moved
         # here, which reads each relative import from its new folder.
@@ -181,7 +184,15 @@ class _Gone:
             for alias in node.names
             if (local := alias.asname or alias.name) in lost and not guarded
         ]
-        taken = {name: target for name, target in bound.items() if target[0] in self.tree.added and name not in lost}
+        # A file the change holds a line of is held to each module of the project it takes from, since a line the
+        # change added answers for the name it takes wherever that module lies. Any other file is held to the modules
+        # the change touched alone, so the head's other files cost one look at their imports, as before.
+        mine = whole or bool(added)
+        taken = {
+            name: target
+            for name, target in bound.items()
+            if (mine or target[0] in self.tree.added) and name not in lost
+        }
         if not taken:
             return found
         for node, guarded in _imports(module):
@@ -221,8 +232,8 @@ class _Gone:
         return lost
 
     def lacks(self, path: str, name: str) -> bool:
-        """Whether the changed module at `path` defines no `name`, beside its `__init__.py` holds no file or folder
-        Python would import by that name, and binds every name it holds where a statement can be read."""
+        """Whether the module at `path` defines no `name`, beside its `__init__.py` holds no file or folder Python
+        would import by that name, and binds every name it holds where a statement can be read."""
         if path not in self.read:
             try:
                 module = self.tree.module(path)
@@ -233,13 +244,23 @@ class _Gone:
         return names is not None and name not in names and not _beside(path, name, self.tree.paths)
 
     def gone(self, path: str, name: str, new: bool) -> bool:
-        """Whether a line that takes `name` from the changed module at `path` takes what the change left it without:
-        the module lacks the name now, and the line is the change's own, `new`, or the module may have held the name
-        before the change. A line the change kept, in a file it left where it was, that takes a name the module lacked
-        before too was broken before the change, or takes a name no statement shows, as a compiled extension's is:
-        neither is the change's. Reproduced on a branch that added one line to a package's `__init__.py`, where a
-        major named such a line, and measured over a project's history: each release that set its version there."""
-        return self.lacks(path, name) and (new or self.held(path, name))
+        """Whether a line that takes `name` from the module at `path` takes what the change left it without: the
+        module lacks the name now, and the break is the change's. Of a module the change touched, it is where the line
+        is the change's own, `new`, or the module may have held the name before the change. A line the change kept, in
+        a file it left where it was, that takes a name the module lacked before too was broken before the change, or
+        takes a name no statement shows, as a compiled extension's is: neither is the change's. Reproduced on a branch
+        that added one line to a package's `__init__.py`, where a major named such a line, and measured over a
+        project's history: each release that set its version there. Of a module the change left alone, it is where
+        the line is `new` and the module a file of its own. Probed on a branch: an import of a misspelt name, added
+        to a file, was named by no rule unless the change touched the module too. A package's `__init__.py` is left
+        out there, since a build can lay a module beside it that no git tree holds: measured over seven projects'
+        heads read as written anew, the one false name of nine was a compiled extension taken from its package, and
+        the five that modules of their own lacked were each a true break."""
+        if path in self.tree.added:
+            return self.lacks(path, name) and (new or self.held(path, name))
+        # What costs nothing is asked first: measured over eight histories, 90,072 of the 92,643 names taken from a
+        # module the change left alone stood on a kept line, and none of those needs the module read.
+        return new and not _is_package(path) and self.lacks(path, name)
 
     def held(self, path: str, name: str) -> bool:
         """Whether the module at `path` may have held `name` before the change. No module was at the path of one the
@@ -258,10 +279,15 @@ class _Gone:
 def _beside(path: str, name: str, paths: Iterable[str]) -> bool:
     """Whether `paths` hold, beside the package's `__init__.py` at `path`, a file or a folder Python would import by
     `name`; never for a module that is no package's `__init__.py`."""
-    if path != "__init__.py" and not path.endswith("/__init__.py"):
+    if not _is_package(path):
         return False
     sub = path.removesuffix("__init__.py") + name
     return any(item == sub or item.startswith((f"{sub}.", f"{sub}/")) for item in paths)
+
+
+def _is_package(path: str) -> bool:
+    """Whether `path` is a package's `__init__.py`, which a module may lie beside, and not a module of its own."""
+    return path == "__init__.py" or path.endswith("/__init__.py")
 
 
 def _gone_hit(tree: Tree, path: str, line: int, file: str, name: str, why: str) -> Hit:

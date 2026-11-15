@@ -340,7 +340,8 @@ The rules shipped with the reviewer are written as a project writes its own:
   Copilot's and Gemini CLI's among them, an editor's settings and the tool servers an agent starts, a GitHub workflow or
   an Azure pipeline, a hook, a `.pth` file), and the tree rule `callers` (a call that no longer fits a function whose
   parameters the change touched, bound as Python binds a call, a name a changed module no longer defines, and an import
-  of a module the change moved or removed, each in any file, one the change left alone among them), and the tree rule
+  of a module the change moved or removed, each in any file, one the change left alone among them, and a name a line
+  the change added takes from a module that does not define it), and the tree rule
   `radius-types` (what a type checker says the change broke elsewhere: a method, an attribute, a parameter or a type, in
   a file the change left alone or on a line of a changed file it kept, or on one it added where another file's change
   breaks it, a test's file aside, read from pyrefly over the head's tree and the base's, each diagnostic the head holds
