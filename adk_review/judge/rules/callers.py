@@ -37,10 +37,17 @@ _IMPLICIT = frozenset(
 )
 #: What an `except` names where it keeps an import that fails from raising.
 _CATCHES_IMPORT = frozenset({"ImportError", "ModuleNotFoundError", "Exception", "BaseException"})
-#: A name the module no longer defines, its own fix beside the rule's, which is a call's.
-GONE_FIX = "Use the name the module defines now, or define the old name there again."
+#: A name the module does not define, its own fix beside the rule's, which is a call's: true of a name the change
+#: removed and of one a line the change added never found there.
+GONE_FIX = "Use a name the module defines, or define this name there."
 #: A module the change moved or removed, which a file still imports by its old path: its own fix.
 MOVED_FIX = "Import the module from its new path, or keep a module at the old one."
+#: Why each of those matters, by what Python raises at its line. Reproduced in the comment a reviewer pastes: the
+#: rule's one reason, a call's `TypeError` "in a file the change did not touch", was said of an import the change
+#: itself added.
+IMPORT_WHY = "The import fails when it runs: Python raises ImportError at that line."
+ATTRIBUTE_WHY = "The line fails when it runs: Python raises AttributeError at that line."
+MOVED_WHY = "The import fails when it runs: Python raises ModuleNotFoundError at that line."
 
 type Scope = ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda | ast.ClassDef
 type Function_ = ast.FunctionDef | ast.AsyncFunctionDef
@@ -77,7 +84,7 @@ class Callers(TreeRule):
     reads_tests = True  # a test that calls the function breaks with it
     title = "a call does not fit the function it calls"
     fix = "Change the call to fit the function, or keep the parameters its callers pass."
-    why = "The call fails when it runs: Python raises TypeError at that line, in a file the change did not touch."
+    why = "The call fails when it runs: Python raises TypeError at that line."
     bad = (
         {
             "pkg/repo.py": "def get_user(uid):\n    return uid\n",
@@ -184,7 +191,7 @@ class _Gone:
                 file, attribute = taken.get(alias.asname or alias.name, ("", None))
                 new = whole or alias.lineno in added
                 if attribute == alias.name and not guarded and self.gone(file, alias.name, new):
-                    found.append(_gone_hit(self.tree, path, alias.lineno, file, alias.name))
+                    found.append(_gone_hit(self.tree, path, alias.lineno, file, alias.name, IMPORT_WHY))
         modules = {name: file for name, (file, attribute) in taken.items() if attribute is None}
         if not modules:
             return found
@@ -197,7 +204,7 @@ class _Gone:
                 continue
             new = whole or node.lineno in added
             if not {node.attr, f"{owner}.{node.attr}"} & spelled and self.gone(file, node.attr, new):
-                found.append(_gone_hit(self.tree, path, node.lineno, file, node.attr))
+                found.append(_gone_hit(self.tree, path, node.lineno, file, node.attr, ATTRIBUTE_WHY))
         return found
 
     def lost(self, path: str, bound: dict[str, tuple[str, str | None]]) -> dict[str, str]:
@@ -257,11 +264,11 @@ def _beside(path: str, name: str, paths: Iterable[str]) -> bool:
     return any(item == sub or item.startswith((f"{sub}.", f"{sub}/")) for item in paths)
 
 
-def _gone_hit(tree: Tree, path: str, line: int, file: str, name: str) -> Hit:
-    """A line that takes `name` from the module at `file`, which no longer defines it: quoted, and named by what is
-    wrong, as every tree rule's hit is."""
+def _gone_hit(tree: Tree, path: str, line: int, file: str, name: str, why: str) -> Hit:
+    """A line that takes `name` from the module at `file`, which does not define it: quoted, and named by what is
+    wrong, as every tree rule's hit is, with `why`, what Python raises there."""
     said = f"`{file}` defines no `{name}`, which this line takes from it"
-    return Hit(path, line, tree.quoted(path, line) or said, said, fix=GONE_FIX)
+    return Hit(path, line, tree.quoted(path, line) or said, said, fix=GONE_FIX, why=why)
 
 
 def _moved_hit(tree: Tree, path: str, line: int, old: str, new: str | None) -> Hit:
@@ -271,7 +278,7 @@ def _moved_hit(tree: Tree, path: str, line: int, old: str, new: str | None) -> H
         if new
         else f"the change removed `{old}`, which this line imports"
     )
-    return Hit(path, line, tree.quoted(path, line) or said, said, fix=MOVED_FIX)
+    return Hit(path, line, tree.quoted(path, line) or said, said, fix=MOVED_FIX, why=MOVED_WHY)
 
 
 def _removes_a_name(item: Entry) -> bool:

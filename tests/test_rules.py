@@ -2292,6 +2292,37 @@ class TestTheCallersRule:
         del kept["pkg/fine.py"]  # which takes `fetch_user`, a name this module lacks
         assert self.found(kept, {"pkg/repo.py": None}) == [], "the name is there: nothing to name"
 
+    def test_each_kind_of_finding_says_what_python_raises_there_and_nothing_another_kind_makes_false(self) -> None:
+        """Reproduced in the comment a reviewer pastes: `+from pkg.repo import get_user, get_usr`, a line the branch
+        added, was said to be a call that raises `TypeError` "in a file the change did not touch", its fix to define
+        "the old name" again. One reason served three kinds of finding and was true of one of them. Each kind now says
+        what Python raises at its line, and no sentence says where the line lies or what the module held before."""
+        from adk_review.judge.rule_helpers.testing import as_change
+        from adk_review.judge.rules.callers import Callers
+
+        files = {
+            "pkg/__init__.py": "",
+            "pkg/repo.py": "def fetch_user(uid):\n    return uid\n",
+            "pkg/service.py": "from pkg.repo import get_user\n",
+            "pkg/worker.py": "from pkg import repo\n\nrepo.get_user(3)\nrepo.fetch_user(1, 2)\n",
+        }
+        hits = {(hit.path, hit.line): hit for hit in Callers().hits(*as_change(files))}
+        taken, read, called = hits["pkg/service.py", 1], hits["pkg/worker.py", 3], hits["pkg/worker.py", 4]
+        entries, tree = as_change({"pkg/__init__.py": "", "pkg/users.py": "x = 1\n", "pkg/api.py": "import pkg.repo\n"})
+        entries = [
+            {**item, "status": "R", "old": "pkg/repo.py"} if item["path"] == "pkg/users.py" else item
+            for item in entries
+        ]
+        (moved,) = Callers().hits(entries, tree)
+        raised = {"ImportError": taken, "AttributeError": read, "ModuleNotFoundError": moved}
+        for error, hit in raised.items():
+            assert hit.why and error in hit.why and "TypeError" not in hit.why, (error, hit.why)
+        assert called.why is None and "TypeError" in Callers.why, "a call's reason is the rule's own"
+        assert "touch" not in Callers.why, "a call in a file the change edited breaks as one in a file it left alone"
+        assert taken.fix == read.fix and not {"old", "again"} & set(taken.fix.split()), taken.fix
+        for sentence in [Callers.why, *(text for hit in (taken, read, moved) for text in (hit.why, hit.fix))]:
+            assert len(sentence.split()) <= 20 and ";" not in sentence, sentence  # ASD-STE100, as the rule's own are
+
     def test_a_missing_name_that_may_be_there_at_run_time_is_left_alone(self) -> None:
         """Each way a module can hold a name no statement of it binds, and each use a guard keeps from raising."""
         files = {
@@ -2557,13 +2588,9 @@ class TestTheCallersRule:
             "pkg/repo/__init__.py": "def get():\n    from . import helpers\n    return helpers\n",
         }
         said = "`pkg/repo/__init__.py` defines no `helpers`, which this line takes from it"
+        # The package never held the name, so the fix says nothing of an old one: it said to define it "again".
         assert self.moved(files, "pkg/repo.py", "pkg/repo/__init__.py") == [
-            (
-                "pkg/repo/__init__.py",
-                2,
-                said,
-                "Use the name the module defines now, or define the old name there again.",
-            )
+            ("pkg/repo/__init__.py", 2, said, "Use a name the module defines, or define this name there.")
         ]
 
     def test_the_head_is_read_where_the_change_moved_or_removed_a_python_file(self) -> None:
