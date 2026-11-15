@@ -202,7 +202,7 @@ class _Gone:
                 file, attribute = taken.get(alias.asname or alias.name, ("", None))
                 new = whole or alias.lineno in added
                 if attribute == alias.name and not guarded and self.gone(file, alias.name, new):
-                    found.append(_gone_hit(self.tree, path, alias.lineno, file, alias.name, IMPORT_WHY))
+                    found.append(_gone_hit(self.tree, path, alias, file))
         modules = {name: file for name, (file, attribute) in taken.items() if attribute is None}
         if not modules:
             return found
@@ -215,7 +215,7 @@ class _Gone:
                 continue
             new = whole or node.lineno in added
             if not {node.attr, f"{owner}.{node.attr}"} & spelled and self.gone(file, node.attr, new):
-                found.append(_gone_hit(self.tree, path, node.lineno, file, node.attr, ATTRIBUTE_WHY))
+                found.append(_gone_hit(self.tree, path, node, file))
         return found
 
     def lost(self, path: str, bound: dict[str, tuple[str, str | None]]) -> dict[str, str]:
@@ -290,11 +290,13 @@ def _is_package(path: str) -> bool:
     return path == "__init__.py" or path.endswith("/__init__.py")
 
 
-def _gone_hit(tree: Tree, path: str, line: int, file: str, name: str, why: str) -> Hit:
-    """A line that takes `name` from the module at `file`, which does not define it: quoted, and named by what is
-    wrong, as every tree rule's hit is, with `why`, what Python raises there."""
+def _gone_hit(tree: Tree, path: str, node: ast.alias | ast.Attribute, file: str) -> Hit:
+    """The line of `node`, which takes from the module at `file` a name it does not define: quoted, and named by what
+    is wrong, as every tree rule's hit is, with what Python raises there, read off the node itself, an import's name
+    or a read of the module's attribute, so no caller can give one kind the other's reason."""
+    name, why = (node.name, IMPORT_WHY) if isinstance(node, ast.alias) else (node.attr, ATTRIBUTE_WHY)
     said = f"`{file}` defines no `{name}`, which this line takes from it"
-    return Hit(path, line, tree.quoted(path, line) or said, said, fix=GONE_FIX, why=why)
+    return Hit(path, node.lineno, tree.quoted(path, node.lineno) or said, said, fix=GONE_FIX, why=why)
 
 
 def _moved_hit(tree: Tree, path: str, line: int, old: str, new: str | None) -> Hit:
