@@ -113,6 +113,43 @@ class TestTheSecretShapes:
         assert all(is_placeholder(v) for v in ("hf_...", "eyJhbGc…", "sk-1****cdef", "6xxxxxxx")), "cut or masked"
         assert not any(is_placeholder(v) for v in (pw, "correct horse battery", "a secret"))
 
+    def test_a_urls_password_with_no_user_before_it_is_found_and_hidden(self) -> None:
+        """Read by review of another tool's report, and reproduced: the URL's shape asked for a character of a user
+        before the colon, so `redis://:<password>@host`, the form Redis takes a password in with no user, was hidden
+        before no model call and named by no rule, where the same password after a user was both. A message queue's
+        and a database's URL read the same. What only shows the shape is left alone, as with a user: a template's or a
+        format's stand-in, a mask, and a password that names its own field at a host a machine names for itself."""
+        from adk_review.core.secrets import scrub
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.secrets import Secrets
+
+        pw = "Xk9mQ2vR7t"
+        found = [
+            f'REDIS_URL = "redis://:{pw}@redis.prod.acme.io:6379/0"',
+            f"broker_url: amqp://:{pw}@mq.prod.acme.io:5672/vhost",
+            f"CELERY_BROKER=rediss://:{pw}@cache.internal.acme.io:6380/1",
+            f'DATABASE_URL = "postgresql://:{pw}@db.prod.acme.io/app"',
+            f'REDIS = "redis://:{pw}@localhost:6379/0"',  # a made value opens a local server too, as after a user
+            'REDIS = "redis://:password@cache.prod.acme.io:6379"',  # a default credential at a real host
+        ]
+        left = [
+            'URL = "http://example.org:8080/path"',  # a port, and no password
+            'REDIS = "redis://:6379/0"',  # a port and no host
+            'REDIS = "redis://:@localhost:6379/0"',  # no password
+            "Redis connection URI (e.g. redis://:password@host:port/db).",
+            'REDIS = "redis://:password@localhost:6379/0"',
+            'REDIS_URL = "redis://:${REDIS_PASSWORD}@redis:6379/0"',
+            'url = f"redis://:{password}@{host}:6379/0"',
+            'url = "redis://:%s@cache:6379" % password',
+            'REDIS = "redis://:****@cache.prod.acme.io:6379"',
+        ]
+        text = "\n".join([*found, *left]) + "\n"
+        assert lines_hit(Secrets(), "settings.py", text) == list(range(1, len(found) + 1))
+        for line in found[:5]:
+            cleaned, count = scrub(line)
+            assert count == 1 and pw not in cleaned and "[REDACTED]@" in cleaned, cleaned
+        assert [scrub(line)[1] for line in left[:3]] == [0, 0, 0], "no password, nothing to hide"
+
     def test_each_vendors_shape_is_found_and_hidden_where_no_name_says_secret(self) -> None:
         """Measured by review: a key of each of these vendors, held by a name that says no secret, was found by no rule
         and reached the model unredacted. Each shape is the vendor's as gitleaks or trufflehog knows it, tried here on

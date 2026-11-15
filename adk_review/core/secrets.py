@@ -42,8 +42,10 @@ _KEY_LINE = (
 )
 #: A URL's scheme and user, and its password: up to the last `@` before the host, since a password may hold one,
 #: `P@ssw0rd`. Measured before, the password ended at its first `@`: the rule read `P` as a placeholder, and redaction
-#: sent the rest of the password to the model.
-_URL_LEAD = r"\b([a-z][a-z0-9+.-]{0,40}://[^\s:/@\"']+:)"
+#: sent the rest of the password to the model. The user may be none, as Redis takes a password, `redis://:secret@host`:
+#: read by review of another tool's report, with one character of a user asked for, that form was hidden before no
+#: model call and named by no rule.
+_URL_LEAD = r"\b([a-z][a-z0-9+.-]{0,40}://[^\s:/@\"']*:)"
 _URL_PASSWORD = r"[^\s/\"']+"
 #: AWS Bedrock's API key: a long-term one, base64 after its prefix, or a short-term one, a signed request in base64
 #: whose host, `bedrock.amazonaws.com`, opens it, its query hundreds of characters on. Measured: with none required
