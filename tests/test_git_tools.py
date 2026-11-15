@@ -1102,12 +1102,15 @@ class TestWhatALinkPointsAt:
         assert all(theme.follow(link) == f"src/icon{n}.png" for n, link in enumerate(icons))
 
     @staticmethod
-    def _random_tree(rng: random.Random, top: Path) -> tuple[set[str], dict[str, str]]:
+    def _random_tree(rng: random.Random, top: Path) -> tuple[list[str], dict[str, str]]:
         """A tree of real files and links at `top`, its files and each link's path with the path it names: half of
         them a route to something the tree holds, through detours a system walks its own way, out over the top and
-        back in through the checkout's own folder, `work`; the rest random parts. No empty folder, as git holds none."""
+        back in through the checkout's own folder, `work`; the rest random parts. No empty folder, as git holds none.
+        The files are sorted, so one seed makes the same trees in every process: measured, drawn from a set of
+        strings, whose order each process hashes anew, three runs made three sets of trees, and the one failure a
+        runner met could not be made again."""
         folders = rng.sample(["a", "b", "a/b", "a/c", "c"], k=rng.randint(1, 4))
-        files = {f"{rng.choice(['', *folders])}/{name}".lstrip("/") for name in rng.sample(["f.py", "g"], 2)}
+        files = sorted(f"{rng.choice(['', *folders])}/{name}".lstrip("/") for name in rng.sample(["f.py", "g"], 2))
         links: dict[str, str] = {}
         for at in range(rng.randint(2, 8)):
             folder = rng.choice(["", *folders])
@@ -1150,7 +1153,8 @@ class TestWhatALinkPointsAt:
                     found: str | None = head.follow(path)
                 except UnfollowedError as hole:
                     found = f"a hole: {hole}"
-                assert found == runs, (trial, path, links, files)
+                # A sentence, which pytest prints whole: it cut a tuple short, and the tree that failed was lost.
+                assert found == runs, f"trial {trial}, link {path}: links {links}, files {files}"
                 asked += 1
         assert asked > 1_000, asked
 
