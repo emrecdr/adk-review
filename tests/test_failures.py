@@ -1302,7 +1302,12 @@ def test_a_merge_of_what_the_remote_holds_stops_only_on_what_is_new_to_it(tmp_pa
     (work / "deck.p12").write_bytes(b"%PDF\x00" * 64)  # new in the merge itself, to every base
     _git_in(work, "add", "deck.p12")
     _git_in(work, "commit", "-qm", "merge, with a deck")
-    assert pushed() == 1 and "deck.p12" in capsys.readouterr().out
+    assert pushed() == 1
+    # Read by review: the report printed is one side's, and lists what the other side brings, which the remote holds;
+    # the hook says apart what every side's review found, the reasons it stops on.
+    said = capsys.readouterr().out
+    shared = said.partition("pre-push: what stops this merge, found against every side it grows from:")[2]
+    assert "deck.p12" in shared and "notes.p12" not in shared and "manual.p12" not in shared, said
 
 
 def test_a_push_to_this_repository_itself_sends_nothing_off_the_machine(tmp_path, monkeypatch, capsys) -> None:

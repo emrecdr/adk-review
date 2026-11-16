@@ -156,7 +156,27 @@ def reviewed(repository: str, pushed: str, bases: Sequence[str]) -> tuple[int, s
             return stopped
         stops.append(found)
     # Read by review: a reason the JSON cut stopped a merge at its first base, which another base's review passed.
-    return stopped if None in stops or frozenset.intersection(*stops) else None
+    if stopped is None or None in stops:
+        return stopped
+    if not (shared := frozenset.intersection(*stops)):
+        return None
+    return stopped[0], stopped[1] + _shared(shared)
+
+
+def _shared(stops: frozenset[tuple[str, ...]]) -> str:
+    """What every review of a merge found, the reasons it stops on, as the hook's own lines after the report: the
+    report is one side's, and lists what the other side brings too, which the remote holds already. Read by review:
+    a merge stopped on a token its resolution added, and the report named a teammate's file the remote held beside
+    it."""
+    places = []
+    for kind, *where in sorted(stops):
+        if kind == "finding":
+            check, file, line, title = where
+            places.append(f"{file}{'' if line == 'None' else ':' + line}: {title} ({check})")
+        else:  # a file not read, or a check that could not look at one
+            places.append(f"{where[0]}: not read" if kind == "not read" else f"{where[0]} could not look: {where[1]}")
+    head = "pre-push: what stops this merge, found against every side it grows from:\n"
+    return head + "".join(f"  {safe_line(place)}\n" for place in places)
 
 
 def _stops(report: dict) -> frozenset[tuple[str, ...]] | None:

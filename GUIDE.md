@@ -491,7 +491,8 @@ takes from a module that does not define it is named where a review reads the he
 not by this hook. A merge grows from more than one: the change is reviewed against each, and passes when one review
 passes, since a line the remote holds nowhere is new to every one of them; where every
 review stops, the push stops only on what all of them found, since what one side brings the remote holds already, or
-where one review's reasons were cut in its JSON or named none. A review interrupted, Ctrl-C's 130 or a job's 143, or one
+where one review's reasons were cut in its JSON or named none; what all of them found is listed after the report, which
+is one side's. A review interrupted, Ctrl-C's 130 or a job's 143, or one
 that wrote no report, stops the push at once, and an interrupted one ends the hook with its own code and one sentence.
 Then the rules `push-history` names, the credential rules `secrets` and `named-secrets`, read each of those commits as
 it was made, and what each says, a pushed tag's words too, those of each tag it was made of, and those of a signed tag a
