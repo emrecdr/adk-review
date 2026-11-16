@@ -99,7 +99,7 @@ FIX = {
     "F841": "Remove the unused variable, or use its value.",
     "F": "Correct what pyflakes reports. An undefined or redefined name is a bug.",
     "B": "Rewrite the pattern: bugbear names shapes known to misbehave.",
-    "S": "Use the safe form of the call. The security guideline weighs the rest.",
+    "S": "Use the safe form of the call, as ruff's page for the code shows.",
     "S101": "Raise an error instead of the assert: python -O removes every assert.",
     "S104": "Bind to the one interface the service needs, not to every interface.",
     "S105": "If it is a credential, read it from the environment or a secret store.",

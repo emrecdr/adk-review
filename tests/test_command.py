@@ -1676,7 +1676,7 @@ class TestThePreviousReportAndTheHandoff:
             )
             return Sourced(source, made, (15, 15))
 
-        family = "Use the safe form of the call. The security guideline weighs the rest."
+        family = "Use the safe form of the call, as ruff's page for the code shows."
         lead = found("rule.lint", "lint: S603 a subprocess call", family)
         same = found("rule.lint", "lint: S607 a partial executable path", family)
         own = found("rule.pitfalls", "pitfalls: PLW1510 no check", "Pass check=True, or read the return code.")
