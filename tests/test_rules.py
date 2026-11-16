@@ -151,6 +151,34 @@ class TestTheSecretShapes:
             assert count == 1 and pw not in cleaned and "[REDACTED]@" in cleaned, cleaned
         assert [scrub(line)[1] for line in left[:3]] == [0, 0, 0], "no password, nothing to hide"
 
+    def test_a_named_value_holding_the_other_quote_is_found_and_hidden(self) -> None:
+        """Read by review of another tool's report, and reproduced: a value in double quotes holding a single one,
+        `db_password = "P@ss'w0rd99!"`, was hidden before no model call and named by no rule, nor one in single quotes
+        holding a double. Such a value is now read to its own closing quote where it holds no white space: measured
+        over 3.31 million lines of the installed packages and eight projects, so read, the shape matches two lines
+        more, each a real value of a test, where a value that could hold white space too reached across the strings of
+        a line of code 17 times. A password of words that holds the other quote is still missed, a limit the rule
+        names."""
+        from adk_review.core.secrets import scrub
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.named_secrets import NamedSecrets
+
+        found = [
+            'db_password = "P@ss\'w0rd99!"',
+            '{"password": "abc\'Def9x2"}',
+            "api_key = 'k3y\"w1th\"q99'",
+        ]
+        left = [  # code that joins strings, each piece between quotes of its own
+            'log("password = \'" + secret + "\'")',
+            'x = \'TOKEN = "ghp_\' + "a1B2" * 9',
+            "token = 'T = \"' + made + '\"'",
+        ]
+        assert lines_hit(NamedSecrets(), "settings.py", "\n".join([*found, *left]) + "\n") == [1, 2, 3]
+        for line in found:
+            cleaned, count = scrub(line)
+            assert count == 1 and "[REDACTED]" in cleaned and "w0rd" not in cleaned and "Def9" not in cleaned, cleaned
+        assert [scrub(line)[1] for line in left] == [0, 0, 0], "code is passed to the model as written"
+
     def test_each_vendors_shape_is_found_and_hidden_where_no_name_says_secret(self) -> None:
         """Measured by review: a key of each of these vendors, held by a name that says no secret, was found by no rule
         and reached the model unredacted. Each shape is the vendor's as gitleaks or trufflehog knows it, tried here on

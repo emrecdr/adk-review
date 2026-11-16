@@ -228,11 +228,16 @@ _VENDOR = (
         "[REDACTED:private_key]",
     ),
 )
+#: A value in quotes: no quote of either kind, or no white space and no quote of its own kind, so `"P@ss'w0rd99!"` is
+#: one. Measured over 3.31 million lines of the installed packages and eight projects: a value that could also hold
+#: white space reached across the strings of a line of code 17 times, `'TOKEN = "ghp_' + ...`; with none, two lines
+#: more matched, each a real value of a test. A password of words holding the other quote is still missed.
+_QUOTED_VALUE = r"([^\"'\n]{6,}|(?:(?!\2)\S){6,})"
 #: A value a name alone says is secret, with no vendor's shape: what `named-secrets` weighs.
 _GENERIC = (
     (
         "generic_secret",  # a named value in quotes: code, JSON, YAML
-        re.compile(r"(?i)(" + _NAMED + r"[\"']?\s*[:=]\s*)([\"'])" + _STAND_IN + r"([^\"'\n]{6,})\2"),
+        re.compile(r"(?i)(" + _NAMED + r"[\"']?\s*[:=]\s*)([\"'])" + _STAND_IN + _QUOTED_VALUE + r"\2"),
         r"\1\2[REDACTED]\2",
     ),
     (
@@ -255,7 +260,7 @@ _GENERIC = (
 #: scrubbed where its hunk was not, the finding dropped.
 _OPEN_AT_THE_CUT = (
     "generic_secret",
-    re.compile(r"(?i)(" + _NAMED + r"[\"']?\s*[:=]\s*)([\"'])" + _STAND_IN + r"([^\"'\n]{6,})\Z"),
+    re.compile(r"(?i)(" + _NAMED + r"[\"']?\s*[:=]\s*)([\"'])" + _STAND_IN + _QUOTED_VALUE + r"\Z"),
     r"\1\2[REDACTED]",
 )
 #: Every shape, a vendor's first: what redaction scrubs, and what a cut never falls inside.
