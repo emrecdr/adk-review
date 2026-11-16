@@ -686,11 +686,11 @@ def _cleared(flag: str, given: str) -> None:
     report a pipeline could take for its own. Measured before: an earlier file outlived exit 2, and a link was written
     through."""
     path = Path(given).expanduser()
-    if not path.resolve().parent.is_dir():
+    if not (folder := path.resolve().parent).is_dir():
         raise ValueError(f"{flag} {given}: there is no such folder to write it in. Name a file in a folder that exists")
     if path.is_dir():
         raise ValueError(f"{flag} {path}: that is a folder. Name a file in it")
-    _writable(flag, path.resolve().parent)
+    _writable(flag, folder)
     try:
         path.unlink(missing_ok=True)
     except OSError as exc:
