@@ -2,11 +2,11 @@
 
 As ruff is (`collect/ruff.py`), each file, as the collector read it at the head, is written alone into a temporary
 directory under a name of the rule's own, and nothing runs from, or writes into, the repository under review. Pyrefly
-reads it there with the reviewer's configuration and never the repository's: the `default` preset, Python 3.13, no
-installed package and no interpreter asked, so a name a file imports from beyond itself reads as `Any`; and no ignore
-comment honoured, as ruff runs `--ignore-noqa`. Measured over four libraries' source and 60 planted edits: each file
-alone found 27 of 30 type defects on their own lines, as the whole package did, at 0.1 s a file where the package took
-up to 5 s. What the diagnostics mean, a kind kept and its severity, is the rule's, `types`.
+reads it there with the reviewer's configuration and never the repository's: the `default` preset, the Python the
+reviewer runs on, no installed package and no interpreter asked, so a name a file imports from beyond itself reads as
+`Any`; and no ignore comment honoured, as ruff runs `--ignore-noqa`. Measured over four libraries' source and 60 planted
+edits: each file alone found 27 of 30 type defects on their own lines, as the whole package did, at 0.1 s a file where
+the package took up to 5 s. What the diagnostics mean, a kind kept and its severity, is the rule's, `types`.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import sysconfig
 import tempfile
 import threading
@@ -38,12 +39,15 @@ PYREFLY_TIMEOUT_S = 60
 PYREFLY_ANSWER_MAX_BYTES = 64_000_000
 #: The reviewer's own configuration, written beside the copies: nothing of the repository's is read. With none,
 #: pyrefly falls back to its `basic` preset; and asked, an interpreter on PATH types a branch against the reviewer's own
-#: installed packages, where a reviewed project's are not.
-CONFIG = """\
+#: installed packages, where a reviewed project's are not. The code is read as the Python the reviewer runs on, as
+#: the checks that parse read it: read by a code review, and reproduced, as 3.13 on a reviewer run on 3.14 a call to
+#: `Path.copy`, new in 3.14, was a missing attribute. Measured over 1.2 million lines of google-adk, pydantic, httpx
+#: and litellm, and this repository, 3.14 against 3.13 changed no finding but the words of some.
+CONFIG = f"""\
 disable-search-path-heuristics = true
 site-packages-path = []
 skip-interpreter-query = true
-python-version = "3.13"
+python-version = "{sys.version_info.major}.{sys.version_info.minor}"
 preset = "default"
 enabled-ignores = []
 disable-project-excludes-heuristics = true

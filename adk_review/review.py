@@ -646,7 +646,10 @@ def _outputs_ready(args: argparse.Namespace) -> None:
     named: dict[str, str] = {}
     for flag, key in _OUTPUTS:
         given = getattr(args, key)
-        if not given or given in (COMMENT_NAME, HANDOFF_NAME):  # a name to come, made once branches are known
+        if not given:
+            continue
+        if given in (COMMENT_NAME, HANDOFF_NAME):  # a name to come, made once branches are known, where it runs
+            _writable(flag, Path.cwd())
             continue
         path = Path(given).expanduser()
         if (same := os.path.normcase(path.resolve())) in named:

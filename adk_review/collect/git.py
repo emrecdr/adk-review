@@ -226,6 +226,8 @@ def _git_raw(
         # git's advice (`hint: ...`) comes before the error at times, and is never the reason.
         lines = [line.strip() for line in said.splitlines() if line.strip() and not line.startswith("hint:")]
         why = lines[0] if lines else f"exit {done.returncode}"
+        if why.startswith("unknown option: --attr-source"):  # git before 2.41, which every diff of a review needs
+            why = "this git is older than 2.41. Install git 2.41 or later"
         raise GitError(f"git {_verb(args)} failed: {why}")
     return done
 
@@ -956,6 +958,22 @@ def _budgeted(blobs: Iterable[tuple[str, str, str]]) -> tuple[list[tuple[str, st
     return wanted, unread
 
 
+def _unread_why(size: str) -> str:
+    """Why a changed file's text was not read, by the size git gave its blob, and what to do. Read by an audit, and
+    reproduced: a generated module of 1.9 MB made every rule a hole, `was not read whole`, and stopped each commit
+    and push, naming neither the cap nor the flag that leaves the file out."""
+    if not size.isdigit():  # a partial clone lists a blob it lacks, which nothing fetches to size
+        return "was not read whole: this clone lacks its blob. Fetch it, then review again"
+    if int(size) > MAX_FILE_BYTES:
+        return (
+            f"was not read whole: it holds {int(size):,} bytes, over the {MAX_FILE_BYTES:,} a rule reads. Leave it out"
+            " with --path-exclude, or narrow the review with --path"
+        )
+    return (
+        f"was not read whole: the rules read {MAX_TREE_BYTES:,} bytes in all before it. Narrow the review with --path"
+    )
+
+
 def _texts(resolved: dict, blobs: Iterable[tuple[str, str, str]]) -> tuple[dict[str, str], list[str]]:
     """The text of each `(path, sha, size)` blob within the caps, by path, from one batch, each blob read once however
     many paths hold it; and the paths not read —
@@ -1019,7 +1037,7 @@ def read_texts(
         for entry in changed:
             entry["text"] = texts.get(entry["path"])
             if entry["text"] is None:
-                entry["unread_text"] = "was not read whole"
+                entry["unread_text"] = _unread_why(blobs[entry["path"]][1])
                 unread.append(entry)
             elif pointer_text(entry["text"]):  # read by review: one its diff showed no opening of was linted as Python
                 entry["text"] = None

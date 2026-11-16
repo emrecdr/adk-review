@@ -2244,6 +2244,29 @@ class TestTheJsonReport:
             shut.chmod(0o700)
         assert asked == [], "no model was asked"
 
+    def test_a_default_named_comment_or_hand_off_is_refused_before_any_model_call(
+        self, cli, demo_repo: Path, tmp_path: Path, asked, capsys, monkeypatch
+    ) -> None:
+        """Read by an audit, and reproduced: from a folder no file can be written in, `--comment` and `--handoff` with
+        no file named had every guideline answered, then wrote neither file, exit 3. Their folder, the one the command
+        runs in, is now checked before any model call, as a named file's is."""
+        shut = tmp_path / "shut"
+        shut.mkdir()
+        made = cli.tempfile.TemporaryFile
+
+        def refused(*args, dir=None, **kwargs):  # a folder no file can be written in, alike on each system
+            if dir is not None and Path(dir).resolve() == shut.resolve():
+                raise PermissionError(13, "Permission denied")
+            return made(*args, dir=dir, **kwargs)
+
+        monkeypatch.setattr(cli.tempfile, "TemporaryFile", refused)
+        monkeypatch.chdir(shut)
+        for flag in ("--comment", "--handoff"):
+            assert run_review(cli, demo_repo, flag) == 2, flag
+            said = capsys.readouterr().err
+            assert f"{flag} " in said and "Name another folder" in said, said
+        assert asked == [], "no model was asked"
+
     def test_the_engines_paths_read_a_tilde_as_the_home_folder(
         self, cli, demo_repo: Path, tmp_path: Path, monkeypatch
     ) -> None:

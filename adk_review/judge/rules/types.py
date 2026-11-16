@@ -9,8 +9,8 @@ comment honoured: these kinds made 0.53 false alarms a thousand lines, and every
 star import among them. A call's arguments are the surest, 11 errors in those lines, each read, so they are major; the
 rest minor. Not read, as known limits: a defect the change causes on a line it kept, a caller of a function whose
 signature it changed among them, which `radius-types` reads; code under a platform or a version pyrefly does not take,
-as Linux and Python 3.13, or under `if not TYPE_CHECKING:`; and a function a branch marks `@no_type_check`. And a call
-to an API newer than Python 3.13 reads as a missing attribute.
+as Linux and the Python the reviewer runs on, or under `if not TYPE_CHECKING:`; and a function a branch marks
+`@no_type_check`. And a call to an API that Python lacks, newer or removed, reads as a missing attribute.
 """
 
 from __future__ import annotations

@@ -54,8 +54,8 @@ class RadiusTypes(TreeRule):
     string is taken, which the next commit fixed; and on litellm, a parameter added first in `get_secret` shifted 11
     calls' arguments that `callers` reads as fitting. Known limits: code without types reads as `Any`, and a use of it
     is not checked; a name an installed package holds reads as `Any` too; a tree the head's read did not hold whole is
-    a floor; code loaded by name, `importlib` or `getattr`, is invisible to it; a call to an API newer than the Python
-    `collect/pyrefly.py` names reads as a missing attribute, as in `types`; a file is in neither run where its
+    a floor; code loaded by name, `importlib` or `getattr`, is invisible to it; a call to an API the Python the reviewer
+    runs on lacks, newer or removed, reads as a missing attribute, as in `types`; a file is in neither run where its
     path holds a name of other characters than letters, digits, `_`, `-`, a dot and a space, as one with a `~`, which
     one system may read otherwise than another; in a file the change edited, an error that left one line as another
     of the same text broke reads as that line moved; and a method marked `@override` whose parent's method another

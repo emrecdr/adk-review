@@ -1945,3 +1945,16 @@ def test_the_intakes_tools_run_git_off_the_loop(demo_repo: Path) -> None:
     assert inspect.iscoroutinefunction(model_tools.changed_files)
     assert asyncio.run(model_tools.inspect_repository(str(demo_repo), BASE, HEAD, context))["status"] == "success"
     assert asyncio.run(model_tools.changed_files(context))["count"] == 4
+
+
+def test_a_git_older_than_2_41_is_named_with_the_install_to_make(monkeypatch, tmp_path: Path) -> None:
+    """Read by an audit, and reproduced: git before 2.41 knows no `--attr-source`, which every diff of a review asks
+    for, and a review, a commit and a push each stopped on `unknown option: --attr-source=...`, naming no next step.
+    Debian 12 ships git 2.39. The error now says which git the review needs."""
+    from adk_review.collect import git
+
+    said = b"unknown option: --attr-source=4b825dc6\nusage: git [-v | --version] [-h | --help]\n"
+    monkeypatch.setattr(git, "_run", lambda *_args, **_kwargs: subprocess.CompletedProcess([], 129, b"", said))
+    with pytest.raises(git.GitError) as raised:
+        git._git_raw(str(tmp_path), "--attr-source=4b825dc6", "diff-tree", "-p")
+    assert str(raised.value) == "git diff-tree failed: this git is older than 2.41. Install git 2.41 or later"

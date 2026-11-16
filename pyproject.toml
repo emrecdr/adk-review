@@ -52,6 +52,9 @@ dev = [
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"
+# Each async fixture on its own loop, the default pytest-asyncio says it moves to: set, so the move changes nothing
+# and the suite warns of nothing. No fixture is async yet.
+asyncio_default_fixture_loop_scope = "function"
 # A test still running after five minutes prints every thread's stack and ends the run; the slowest takes seconds.
 # Measured: one full run stalled about half way, ten minutes and more, and never again in five; CI would have cancelled
 # it at its twenty-minute limit with nothing to read.
