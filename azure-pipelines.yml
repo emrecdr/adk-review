@@ -25,7 +25,7 @@ jobs:
     steps:
       # Read-only: the pipeline checks, and writes nothing back; the checkout keeps no token, the default.
       - checkout: self
-      # Any Python the agent has, for pip; uv reads .python-version and fetches 3.13 itself where the agent lacks it.
+      # Any Python the agent has, for pip; uv reads .python-version and fetches 3.14 itself where the agent lacks it.
       - task: UsePythonVersion@0
         displayName: a Python for pip
         inputs:

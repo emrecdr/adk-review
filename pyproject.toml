@@ -2,7 +2,7 @@
 name = "adk-review"
 version = "0.1.0"
 description = "A git-branch code reviewer for Python projects, on Google ADK: rules decided by code, guidelines judged by a model, on Copilot and on Gemini."
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     # Pinned: a bump lands only measured live on both arms, the demo's review recorded and compared with the last one.
     # No extra: of its packages the reviewer imports only litellm, a dependency of its own below, since it serves
@@ -75,7 +75,7 @@ required-version = ">=0.12"
 
 [tool.ruff]
 line-length = 120
-target-version = "py313"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "ARG", "ASYNC", "RUF", "BLE001", "S607", "SIM", "RET", "C4", "PIE", "PT", "C90", "PERF", "FURB"]

@@ -143,7 +143,7 @@ def parse(source: str) -> ast.Module | None:
     """The module's syntax tree, or None for one the parser refuses: a syntax error, a null byte, nesting too deep."""
     try:
         return ast.parse(source)
-    except (SyntaxError, ValueError, RecursionError, MemoryError):
+    except SyntaxError, ValueError, RecursionError, MemoryError:
         return None
 
 

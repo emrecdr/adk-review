@@ -12,7 +12,9 @@ too.
 from collections.abc import Sequence
 from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
-if TYPE_CHECKING:  # named in quotes below: `rules.py` reads `Entry` back, and a cycle at import would follow
+# For the type checker alone: `rules.py` reads `Entry` back, so an import here would make a cycle. Python 3.14 reads an
+# annotation only when asked, so the names below need no quotes.
+if TYPE_CHECKING:
     from .blast import Blast
     from .rules import Diagnostic, Tree
 
@@ -44,7 +46,7 @@ class Entry(TypedDict):
     shown: NotRequired[
         dict[int, str] | None
     ]  # the lines its diff shows, by number, where its text was not read; None once let go
-    diagnostics: NotRequired["Sequence[Diagnostic]"]  # an outside tool's, on the copy a rule naming the tool reads
+    diagnostics: NotRequired[Sequence[Diagnostic]]  # an outside tool's, on the copy a rule naming the tool reads
 
 
 #: Why a symbolic link the review reads is a hole, until the file it names is read as text.
@@ -96,7 +98,7 @@ class Change(TypedDict):
     """What the rules read of the evidence: each changed file and the head's tree, as `--try` hands them its own."""
 
     files: list[Entry]  # each changed file, in path order
-    tree: "Tree | None"  # the head as the tree rules read it; None where it could not be listed, or once let go
+    tree: Tree | None  # the head as the tree rules read it; None where it could not be listed, or once let go
     unscanned: NotRequired[list[Entry]]  # the project's own files `scan` leaves out, for the credential rules alone
     base_texts: NotRequired[dict[str, str] | None]  # each modified Python file's base text, by its base path
 
@@ -120,7 +122,7 @@ class Evidence(Change):
     diff: (
         str  # the block the guidelines read: a `### <path>` heading and a fenced diff per file, capped, each cut named
     )
-    blast: "Blast"  # what at the head depends on each changed file, read beside the block, never inside it
+    blast: Blast  # what at the head depends on each changed file, read beside the block, never inside it
     callers: NotRequired[str]  # each call into a function the change touched, from a file it left alone, with its lines
     whole: bool  # under --all: every file at the head is the change, diffed against the empty tree
     scope: list[str]  # the folders --path named, as git spells them; [] for the whole change

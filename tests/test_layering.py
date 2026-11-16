@@ -278,9 +278,10 @@ def test_every_key_the_evidence_carries_is_spelled_once_in_core(demo_repo: Path)
 
     evidence = collect_evidence(str(demo_repo), BASE, HEAD)
     assert evidence["status"] == "success", evidence
-    assert set(evidence) == set(Evidence.__annotations__) - {"error_message"}
+    # A TypedDict knows its keys when it is made; its annotations name types imported for the type checker alone.
+    assert set(evidence) == (Evidence.__required_keys__ | Evidence.__optional_keys__) - {"error_message"}
     run_rules(evidence, catalog().rules)  # the lint rule sets `diagnostics` on the copies it reads; none on these
-    spelled, required = set(Entry.__annotations__), Entry.__required_keys__
+    spelled, required = Entry.__required_keys__ | Entry.__optional_keys__, Entry.__required_keys__
     for entry in evidence["files"]:
         assert required <= set(entry) <= spelled, (entry["path"], set(entry) ^ spelled)
 

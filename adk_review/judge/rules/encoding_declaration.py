@@ -32,7 +32,7 @@ def rewrites(codec: str) -> bool:
     probe, fails on it, or is unknown here."""
     try:
         return PROBE.decode(codecs.lookup(codec).name) != PROBE.decode("ascii")
-    except (LookupError, UnicodeDecodeError, ValueError):
+    except LookupError, UnicodeDecodeError, ValueError:
         return True
 
 

@@ -9,7 +9,7 @@ limits to the code.
 
 ## First run
 
-`README.md`'s Quick start walks these from a clone, step by step. They need uv 0.12 or later, which installs Python 3.13
+`README.md`'s Quick start walks these from a clone, step by step. They need uv 0.12 or later, which installs Python 3.14
 itself, and git 2.41 or later on `PATH`, with the fix for CVE-2024-32465 (2.41.1, 2.42.2, 2.43.4, 2.44.1, 2.45 and
 later, or a distribution's build that carries it): without it, git ignores `GIT_NO_LAZY_FETCH`, and a review of a
 partial clone could fetch into it.
@@ -473,8 +473,8 @@ sends nothing.
 A repository that uses pre-commit names the hook `adk-review` from this repository's `.pre-commit-hooks.yaml`
 instead, at a pinned commit, with pre-commit's pre-push hook installed (`pre-commit install --hook-type pre-push`); it
 runs the same command, and takes no `args:`, which stop every push. pre-commit installs the reviewer with the Python
-pre-commit itself runs on, and the reviewer needs 3.13 or newer: with an older one the install fails, and so does the
-push. That config names another beside the hook's id, `language_version: python3.13`.
+pre-commit itself runs on, and the reviewer needs 3.14 or newer: with an older one the install fails, and so does the
+push. That config names another beside the hook's id, `language_version: python3.14`.
 
 For each ref a push sends, the hook asks git which commits the remote does not hold yet and reviews them as one change
 with `default-rules`, against the commit they grow from on the remote's side, or with `--all` where the remote holds

@@ -409,7 +409,7 @@ def _raised_at(rule: AnyRule, exc: BaseException) -> str:
     author is told which line to read. Measured before: "raised ZeroDivisionError: division by zero" and no more."""
     try:
         source = inspect.getsourcefile(type(rule))
-    except (TypeError, OSError):
+    except TypeError, OSError:
         source = None
     # Case-folded, as Windows and macOS read two spellings of one file alike, and a cached test file can hold one.
     own = _folded(source) if source else None

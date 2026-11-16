@@ -244,7 +244,7 @@ def _on_disk(paths: Sequence[str], third_party: Sequence[str] = ()) -> tuple[dic
                 continue
             try:
                 found[name] = file.read_text(encoding="utf-8")
-            except (OSError, UnicodeDecodeError):
+            except OSError, UnicodeDecodeError:
                 skipped.append((name, "not UTF-8 text"))
     return found, skipped
 
@@ -499,7 +499,7 @@ def version() -> str:
         pass
     try:
         return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
-    except (OSError, KeyError, tomllib.TOMLDecodeError):
+    except OSError, KeyError, tomllib.TOMLDecodeError:
         return "unknown"
 
 
@@ -1285,7 +1285,7 @@ def _from_cache(path: Path) -> dict | None:
     """A kept review, or None: nothing kept, or a file that is not one, which is reviewed afresh, never trusted."""
     try:
         hit = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError, RecursionError):  # RecursionError: nested past what `json.loads` reads
+    except OSError, ValueError, RecursionError:  # RecursionError: nested past what `json.loads` reads
         return None
     shape = {"report": str, "handoff": str, "comment": str, "data": dict, "code": int}
     fits = isinstance(hit, dict) and all(isinstance(hit.get(key), kind) for key, kind in shape.items())

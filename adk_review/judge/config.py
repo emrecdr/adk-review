@@ -95,7 +95,7 @@ def _copilot_api() -> str:
     issued = copilot_dir() / os.environ.get("GITHUB_COPILOT_API_KEY_FILE", "api-key.json")
     try:
         endpoint = json.loads(issued.read_text(encoding="utf-8"))["endpoints"]["api"]
-    except (OSError, ValueError, KeyError, TypeError):  # none issued yet, or of another shape: LiteLLM reads on too
+    except OSError, ValueError, KeyError, TypeError:  # none issued yet, or of another shape: LiteLLM reads on too
         endpoint = ""
     return str(endpoint or os.environ.get("GITHUB_COPILOT_API_BASE", "")).strip()
 
@@ -342,7 +342,7 @@ def said(error: Exception) -> str:
         return message
     try:
         body = json.loads(wrapped[1])["error"]
-    except (ValueError, KeyError, TypeError):
+    except ValueError, KeyError, TypeError:
         return wrapped[1]
     if not isinstance(body, dict) or not body.get("message"):
         return wrapped[1]

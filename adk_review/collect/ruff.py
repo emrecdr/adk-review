@@ -143,7 +143,7 @@ def _known(
         return found
     try:
         before = linted({path: held[base] for path, base in wanted.items()})
-    except (OSError, ValueError, KeyError, IndexError, TypeError, _FloodError, subprocess.SubprocessError):
+    except OSError, ValueError, KeyError, IndexError, TypeError, _FloodError, subprocess.SubprocessError:
         return found  # not compared: each `known` stays None
 
     marked = dict(found)

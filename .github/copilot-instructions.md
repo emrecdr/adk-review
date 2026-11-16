@@ -1,7 +1,7 @@
 # Copilot instructions for this repository
 
 This repository is `adk-review`, a git-branch code reviewer for Python projects, on Google ADK (`google-adk==2.14.1`,
-Python 3.13, `uv`). It is grouped by the steps of a review — `core`, `collect`, `judge`, `deliver` — and every check is
+Python 3.14, `uv`). It is grouped by the steps of a review — `core`, `collect`, `judge`, `deliver` — and every check is
 one file: a rule, decided by code, in `adk_review/judge/rules/`, importing one door, `adk_review/judge/rule_helpers/`,
 and held to its own examples; a guideline, judged by a model, in `adk_review/judge/guidelines/`; each named after its
 file and chosen by profile in `adk_review/config.toml`. Around them: the rules as one node before the guidelines,
@@ -130,7 +130,7 @@ the fixtures, the naming, async — is in `.github/instructions/tests.instructio
 
 ## Style
 
-Ruff, line length 120, Python 3.13. Comments and docstrings are plain prose that says why, and what the package prints
+Ruff, line length 120, Python 3.14. Comments and docstrings are plain prose that says why, and what the package prints
 follows ASD-STE100; commit subjects are plain-prose sentences stating what changed and what was learned. A pull request
 comes with lint, the type check and the suite green on the three platforms CI runs (`.github/workflows/ci.yml`,
 `azure-pipelines.yml`), and a workflow action is pinned by its commit SHA, the same in every workflow and the README's
