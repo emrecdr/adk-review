@@ -182,16 +182,16 @@ over one whose string is shorter than 8 characters or holds a space, and is no c
 `token = "("`, `token = "Bearer "` and a blank, `passwd = " "`, are no finding, `token: str = "Xk9mQ2vL8pR4"` and
 `client_secret = "AbCdEfGhIjKlMnOp"` are. Where the name is about a credential, `token_type` or `token_url`, or the
 string is a placeholder or a label, the finding is minor, never passed over: `token_type = "authorization_code"` is a
-minor one, and a secret of letters alone, `password = "correcthorse"`, stays major. Under a name ruff does not weigh,
-`api_key = "letmeinplease"`, no rule names a secret of letters alone. The rules that run ruff, `lint`, `pitfalls` and
-`simplify`, read none of the project's ruff settings and honour no `noqa` comment, so that no branch can silence them: a
-finding there can be one the project's own ruff configuration, or its author's `noqa` with a reason, already accepts.
-Read the line before you ask for a change. Ruff also lints each modified file as the base held it, and the review keeps
-two groups apart. What the change caused is reviewed: its own lines, and an untouched line it broke, as an old line's
-name left undefined by an import it deleted. What the base held too, the same code and ruff's same words on the same
-line, as the diff numbers each line the change kept, a count in them no higher, was already in the file: it is counted
-in one finding a file, listed last under "Already in the files you touched". A parameter removed from a function of
-seven leaves its "(6 > 5)" there, where the change left its `def` line alone; one added makes the count the change's
+minor one, and `"correcthorse"`, a secret of letters alone given to `password`, stays major. Under a name ruff does not
+weigh, `api_key = "letmeinplease"`, no rule names a secret of letters alone. The rules that run ruff, `lint`, `pitfalls`
+and `simplify`, read none of the project's ruff settings and honour no `noqa` comment, so that no branch can silence
+them: a finding there can be one the project's own ruff configuration, or its author's `noqa` with a reason, already
+accepts. Read the line before you ask for a change. Ruff also lints each modified file as the base held it, and the
+review keeps two groups apart. What the change caused is reviewed: its own lines, and an untouched line it broke, as an
+old line's name left undefined by an import it deleted. What the base held too, the same code and ruff's same words on
+the same line, as the diff numbers each line the change kept, a count in them no higher, was already in the file: it is
+counted in one finding a file, listed last under "Already in the files you touched". A parameter removed from a function
+of seven leaves its "(6 > 5)" there, where the change left its `def` line alone; one added makes the count the change's
 own, as any edit to the line ruff names does. So does an edit to any line an S105, S106 or S107 covers, a string below
 its name among them: ruff's words for these hold the name alone, and `lint` weighs the string too. By the Boy Scout rule
 the review expects them fixed too, but they never fail it, whatever `--fail-on` says. That finding names each code with
@@ -519,6 +519,9 @@ What the hook cannot see, or stops on:
   `pushurl` naming a server apart from the one fetched, no fetch could, so the push does not stop, and what the fetched
   server holds counts as held on the other. Pushed to a URL rather than a remote's name, no branch of it is known here,
   and a new ref is reviewed as a whole project.
+- A fork's branch grown from its upstream's newer commits sends those commits to the fork too, and a credential in them
+  stops the push, though no rebase of yours can change them: sync the fork with its upstream on the server, run
+  `git fetch`, and push again, as the hook's own words say.
 - A file under a folder `[review] third_party` names is read in no commit: a credential there passes. A file `scan`
   leaves out is read there by the credential rules alone, and a binary one is no hole.
 - A file no rule can read — a binary one, a submodule, a Git LFS pointer, whose content is stored elsewhere — is a hole
@@ -548,8 +551,9 @@ What the hook cannot see, or stops on:
 ## Before a commit
 
 `adk-review-commit`, installed beside `adk-review`, is a git pre-commit hook: what a commit holds, reviewed with
-`default-rules`, no model and no key, before git writes it, so a key never enters even this clone's history. To install
-the commit hook, run these lines in the repository to guard, in any shell git brings (Git Bash on Windows):
+`default-rules`, no model and no key, before git writes it, so a key in a file never enters even this clone's history;
+one in the commit's message does, since git writes the message after the hook runs, and only the push hook reads it. To
+install the commit hook, run these lines in the repository to guard, in any shell git brings (Git Bash on Windows):
 
     hooks="$(git rev-parse --path-format=absolute --git-path hooks)"
     mkdir -p "$hooks"
@@ -567,7 +571,9 @@ They write the hook where the pre-push hook's lines write theirs, and keep a pre
 `pre-commit.before-adk-review`, run first, so what it stages is reviewed too; one that fails stops the commit before the
 review runs. The review reads the index git hands its hook, as `--staged` reads it, against `HEAD`, or the empty tree
 before a first commit: `git commit -a` and `git commit <paths>` stage into an index of their own, and the review reads
-that one. A commit that adds nothing to review, a message-only `--amend`, passes; any other exit but 0 stops the commit
+that one. A merge committed after a conflict is reviewed against `HEAD` alone, so what the other branch brings is read
+as its own, a credential a teammate pushed among it; the push hook weighs a merge against each side, and passes that
+one. A commit that adds nothing to review, a message-only `--amend`, passes; any other exit but 0 stops the commit
 and prints why, a file no rule can read among them. Ctrl-C or a job's SIGTERM, in the review or before it, ends the hook
 as it ends the command: one sentence, and 130 or 143. `git commit --no-verify` skips it, as it skips any hook. It costs
 what a push's review costs, at each commit. A repository that uses pre-commit names the hook `adk-review-commit` from
