@@ -13,7 +13,7 @@ LOCKED := $(shell uv run python -c "import os, tempfile; print(os.path.join(temp
 help:
 	@echo "make sync                                    - install (uv)"
 	@echo "make install                                 - adk-review, adk-review-push, adk-review-commit and adk-review-login on PATH, every dependency at the lock's version"
-	@echo "make web                                     - adk web .  (the chat, in a browser)"
+	@echo "make web                                     - adk web .  (the chat, in a browser, sessions in memory)"
 	@echo "make demo                                    - build the demo repository and review its branch with the demo profile: no model, exit 1 is the point"
 	@echo "make demo-repo                               - build the throwaway repository with its planted defects"
 	@echo "make demo-fix                                - commit the two fixes on the demo branch, then make review: exit 0"
@@ -29,8 +29,10 @@ install:
 	uv export --frozen --no-hashes --no-dev --no-emit-project --quiet --output-file "$(LOCKED)"
 	uv tool install --reinstall --constraints "$(LOCKED)" .
 
+# Sessions in memory: by default ADK keeps each in .adk/session.db, which holds the diffs chat reviewed, a
+# credential among them unredacted, the redaction being the model's alone. Read by an audit, and reproduced.
 web:
-	uv run adk web .
+	uv run adk web --no_use_local_storage .
 
 demo:
 	uv run python scripts/make_demo_repo.py "$(DEMO)"

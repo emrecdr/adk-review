@@ -203,8 +203,10 @@ Installed as a command, from this checkout with `make install` or from its addre
 being read outside the checkout, and its config from beside itself: a team that wants another policy changes
 `config.toml` in its checkout and installs from there, `--editable` so a change applies at once, or passes flags.
 
-Chat runs the same checks: `uv run adk web .` at the root of the checkout, pick `adk_review`, and say what to review,
-the repository's absolute path and its branches: "review /home/me/shop, branch feature/payments against main". An intake
+Chat runs the same checks: `uv run adk web --no_use_local_storage .` (`make web`) at the root of the checkout, pick
+`adk_review`, and say what to review, the repository's absolute path and its branches: "review /home/me/shop, branch
+feature/payments against main". Its sessions stay in memory: ADK's default file, `.adk/session.db`, would keep each
+diff chat reviewed, a credential among them unredacted. An intake
 agent confirms the repository and the commits through read-only tools and asks for what is missing, told the repository
 its conversation already confirmed; the checks node gathers the evidence the command would for those commits, runs the
 rules and writes the change the guidelines read, the command's own block under the same cap and skip list; the

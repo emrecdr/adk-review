@@ -24,6 +24,7 @@ from typing import Any
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 
+from ..collect.change import no_change
 from ..collect.git import GitError, list_changed, preflight, same_folder
 from .agents import REPOSITORY, SCOPE
 
@@ -55,6 +56,10 @@ async def inspect_repository(repo: str, base: str, head: str, tool_context: Tool
     resolved = await asyncio.to_thread(preflight, repo, base, head)
     # A failed preflight clears the scope: nothing later may read a repository this call did not confirm. Its answer
     # is the shape this docstring names: a mark for the command's flags is no word of chat's.
+    if resolved["status"] == "success" and resolved["commits_ahead"] == 0:
+        # Read by an audit, and reproduced: `main` against `main` was reviewed, DEGRADED, after a model call, where
+        # the command answers the same scope "no change to review" before any.
+        resolved = no_change(head, base, ())
     if resolved["status"] != "success":
         tool_context.state[SCOPE] = None
         return {"status": "error", "error_message": resolved["error_message"]}

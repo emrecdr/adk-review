@@ -2980,6 +2980,24 @@ class TestTheModesBesideAReview:
     """`--try` and `--explain` beside the dry run: each stops before a review would start, and refuses a review's own
     flags."""
 
+    def test_a_file_try_cannot_open_is_left_out_with_its_reason(self, cli, tmp_path: Path, capsys, monkeypatch) -> None:
+        """Read by an audit, and reproduced: `--try` said a file it had no permission to read was not UTF-8 text. A
+        file it cannot open is left out with the system's reason."""
+        project = tmp_path / "project"
+        project.mkdir()
+        for name in ("shut.py", "open.py"):
+            (project / name).write_text("x = 1\n", encoding="utf-8")
+        read = Path.read_text
+
+        def refused(self, *args, **kwargs):  # a file no one may read, alike on each system
+            if self.name == "shut.py":
+                raise PermissionError(13, "Permission denied")
+            return read(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", refused)
+        cli.main(["--try", str(project), "--check", "rule.no-print"])
+        assert "--try leaves out shut.py: not read: Permission denied" in capsys.readouterr().err
+
     def test_a_rule_is_tried_on_files_on_disk_and_explained_by_its_own_examples(
         self, cli, tmp_path: Path, capsys
     ) -> None:

@@ -521,6 +521,14 @@ def preflight_staged(repo: str) -> dict:
         # What names the index as a commit names its tree: each entry `ls-files -s` lists, its mode, blob and path.
         # Read by review: named by a constant, a change staged outside the diffs reviewed served a stale verdict.
         _, listed = _git(root, "ls-files", "-s", "-z", strip=False)
+        # An entry of a stage but 0 is a conflict not yet resolved: its rules would read one side's blob, and none of
+        # the resolution. Read by an audit, and reproduced: `--staged` mid-merge approved such a file as read.
+        entries = [entry.split("\t", 1) for entry in listed.split("\0") if "\t" in entry]
+        if conflicted := sorted({path for meta, path in entries if not meta.endswith(" 0")}):
+            more = f" and {len(conflicted) - 1} more" if len(conflicted) > 1 else ""
+            raise _ScopeError(
+                f"the index holds a conflict in {conflicted[0]}{more}. Resolve it, git add it, then review again"
+            )
     except (GitError, _ScopeError) as exc:
         return {"status": "error", "error_message": str(exc)}
     return {

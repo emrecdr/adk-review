@@ -274,6 +274,17 @@ class TestInspectRepository:
         out = asyncio.run(model_tools.inspect_repository(str(demo_repo), "main", "feature/does-not-exist", *context))
         assert out["status"] == "error" and "feature/does-not-exist" in out["error_message"], out
 
+    def test_a_branch_that_adds_nothing_is_no_scope_and_says_so(self, demo_repo: Path) -> None:
+        """Read by an audit, and reproduced: chat confirmed `main` against `main`, and its review said DEGRADED, every
+        check unable to look, after a model call, where the command answers the same scope with "no change to
+        review", exit 2, and no call. The tool now answers it so, and confirms no scope."""
+        model_tools = importlib.import_module("adk_review.judge.tools")
+        scope = importlib.import_module("adk_review.judge.agents").SCOPE
+        context = tool_context()
+        out = asyncio.run(model_tools.inspect_repository(str(demo_repo), "main", "main", context))
+        assert out == {"status": "error", "error_message": "'main' adds nothing to 'main': no change to review"}
+        assert context.state[scope] is None
+
     def test_a_directory_that_is_not_a_repository_is_named(self, tmp_path: Path) -> None:
         model_tools = importlib.import_module("adk_review.judge.tools")
         context = (tool_context(),)
@@ -1958,3 +1969,23 @@ def test_a_git_older_than_2_41_is_named_with_the_install_to_make(monkeypatch, tm
     with pytest.raises(git.GitError) as raised:
         git._git_raw(str(tmp_path), "--attr-source=4b825dc6", "diff-tree", "-p")
     assert str(raised.value) == "git diff-tree failed: this git is older than 2.41. Install git 2.41 or later"
+
+
+def test_a_staged_review_of_an_index_holding_a_conflict_is_refused(tmp_path: Path) -> None:
+    """Read by an audit, and reproduced: during a merge that stopped on a conflict, `--staged` approved, exit 0, its
+    file listed as read, though the rules read one side's blob and none of the person's resolution. An index holding
+    a conflict is now refused, with what to do."""
+    from adk_review.collect.git import preflight_staged
+
+    repo = _branch_off_empty(tmp_path / "repo", "ours")
+    _committed(repo, "a.py", "x = 1\n", "ours")
+    _git_in(repo, "checkout", "-q", "-b", "theirs", BASE)
+    _committed(repo, "a.py", "x = 2\n", "theirs")
+    _git_in(repo, "checkout", "-q", "ours")
+    with pytest.raises(subprocess.CalledProcessError):
+        _git_in(repo, "merge", "-q", "theirs")
+    scope = preflight_staged(str(repo))
+    assert scope == {
+        "status": "error",
+        "error_message": "the index holds a conflict in a.py. Resolve it, git add it, then review again",
+    }

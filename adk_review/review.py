@@ -244,8 +244,10 @@ def _on_disk(paths: Sequence[str], third_party: Sequence[str] = ()) -> tuple[dic
                 continue
             try:
                 found[name] = file.read_text(encoding="utf-8")
-            except OSError, UnicodeDecodeError:
+            except UnicodeDecodeError:
                 skipped.append((name, "not UTF-8 text"))
+            except OSError as exc:  # read by an audit: a file it may not read was called not UTF-8
+                skipped.append((name, f"not read: {exc.strerror or exc}"))
     return found, skipped
 
 
