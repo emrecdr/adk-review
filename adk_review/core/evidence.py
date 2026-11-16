@@ -13,7 +13,8 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Literal, NotRequired, TypedDict
 
 # For the type checker alone: `rules.py` reads `Entry` back, so an import here would make a cycle. Python 3.14 reads an
-# annotation only when asked, so the names below need no quotes.
+# annotation only when asked, so the names below need no quotes. Read a type's keys from `__required_keys__` and
+# `__optional_keys__`: `__annotations__` evaluates these names, and fails.
 if TYPE_CHECKING:
     from .blast import Blast
     from .rules import Diagnostic, Tree

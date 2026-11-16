@@ -1,7 +1,9 @@
 """What a change breaks where no diff shows it, as pyrefly reads the head's tree against the base's: a method, an
 attribute, a parameter or a type the change altered, in a file it left alone or on a line of a changed file it kept.
 `types` reads each changed file alone, a name it imports read as `Any`, and `callers` reads no types, so a call through
-an object, `repo.get_user(3)`, is read here or nowhere.
+an object, `repo.get_user(3)`, is read here or nowhere. A known limit, as `types` has it: pyrefly reads the code as
+Python 3.13, so a call the change added to an API newer than 3.13 reads as a missing attribute, a major where its
+file reaches another the change touched.
 """
 
 from __future__ import annotations
