@@ -552,8 +552,8 @@ What the hook cannot see, or stops on:
 
 `adk-review-commit`, installed beside `adk-review`, is a git pre-commit hook: what a commit holds, reviewed with
 `default-rules`, no model and no key, before git writes it, so a key in a file never enters even this clone's history;
-one in the commit's message does, since git writes the message after the hook runs, and only the push hook reads it. To
-install the commit hook, run these lines in the repository to guard, in any shell git brings (Git Bash on Windows):
+one in the commit's message does, since git writes the message after the hook runs, and only the push hook reads it.
+To install the commit hook, run these lines in the repository to guard, in any shell git brings (Git Bash on Windows):
 
     hooks="$(git rev-parse --path-format=absolute --git-path hooks)"
     mkdir -p "$hooks"
