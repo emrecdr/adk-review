@@ -197,7 +197,7 @@ def in_history(repository: str, remote: str | None, head: str, held: str | None,
     unless the operator's skip list names it, as a review of the change names one."""
     config = load_config(CONFIG)
     rules = history_rules(config)  # first: a profile that cannot read a commit is refused before git runs
-    said = [(tag, message, []) for tag, message in tag_messages(repository, head)]  # a tag's words are in no commit
+    said = [(f"tag {name}", message, []) for name, message in tag_messages(repository, head)]  # in no commit
     merged = merged_tags(repository, remote, head, held, read)
     return [
         place
@@ -352,8 +352,9 @@ def _passes(repository: str, remote: str | None, head: str, held: str | None, do
         for place in found:
             _say(place, lead="  ")
         _say(
-            "rewrite the commits or the tag that hold it with git rebase -i. Rotate any credential that left this "
-            "machine. Push with --no-verify to skip the review"
+            "rewrite the commits that hold it with git rebase -i, or a tag with git tag -f. Rotate any credential "
+            "that left this machine. If another remote holds these commits, sync this remote with it, then git fetch. "
+            "Push with --no-verify to skip the review"
         )
     return not found
 

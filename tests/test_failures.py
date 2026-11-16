@@ -897,7 +897,7 @@ def test_what_a_push_sends_is_read_from_git(tmp_path) -> None:
     assert {commit for commit, _, _ in sent(repo, None, removed, added)} == {removed}, "a range a person named"
     git("tag", "-a", "v1", "-m", "release notes", joined)
     git("tag", "light", joined)
-    assert tag_messages(repo, "v1") == [(git("rev-parse", "v1"), "release notes")]
+    assert tag_messages(repo, "v1") == [("v1", "release notes")], "a tag by the name a person gave it"
     assert tag_messages(repo, "light") == tag_messages(repo, joined) == [], "only a tag object says anything"
 
 
@@ -1149,13 +1149,16 @@ def test_the_pre_push_hook_reads_each_commit_a_push_sends_for_credentials(tmp_pa
     assert pushed("undone") == 1, "the change is clean; its history is not"
     said = capsys.readouterr().out
     assert f"{added[:9]}, t.py:1: a hard-coded credential (rule.secrets)" in said and "git rebase -i" in said
+    # Read by review: a fork's branch grown from its upstream's newer commits sends those too, which no rebase of the
+    # person's can change, and the advice named none but --no-verify.
+    assert "If another remote holds these commits, sync this remote with it, then git fetch" in said
     _git_in(work, "checkout", "-q", "-b", "said", "main")
     told = _committed(work, "s.py", "x = 3\n", f"deploy with {token}")
     assert pushed("said") == 1 and f"{told[:9]}, its message, line 1" in capsys.readouterr().out
     _git_in(work, "tag", "-a", "v1", "-m", f"notes\n\n{token}", first)
-    tag = _git_in(work, "rev-parse", "v1")
     assert pushed("v1", name="refs/tags/v1") == 1, "a tag's words are in no commit"
-    assert f"{tag[:9]}, its message, line 3" in capsys.readouterr().out
+    said = capsys.readouterr().out  # read by review: named by its object's id, which no log shows, and rebase -i alone
+    assert "tag v1, its message, line 3" in said and "or a tag with git tag -f" in said, said
 
     # A teammate's token reaches `main` from a clone with no hook, and is merged on: the push sends none of it.
     _git_in(work, "checkout", "-q", "-b", "feature", "main")
@@ -1251,10 +1254,9 @@ def test_what_a_tag_of_a_tag_and_a_merged_signed_tag_say_is_read(tmp_path, monke
         return push.main(["origin", str(remote)])
 
     _git_in(work, "tag", "-a", "v1.0-rc1", "-m", f"rc1: deploy with {token}", first)
-    inner = _git_in(work, "rev-parse", "v1.0-rc1")
     _git_in(work, "tag", "-a", "v1.0", "v1.0-rc1", "-m", "release 1.0")
     assert pushed("v1.0", None, "refs/tags/v1.0") == 1
-    assert f"{inner[:9]}, its message, line 1" in capsys.readouterr().out
+    assert "tag v1.0-rc1, its message, line 1" in capsys.readouterr().out, "the inner tag, by its own name"
 
     _git_in(work, "checkout", "-q", "-b", "side")
     side = _committed(work, "s.py", "x = 2\n", "a side")

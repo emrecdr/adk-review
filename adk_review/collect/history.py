@@ -126,18 +126,19 @@ TAG_CHAIN = 64
 
 
 def tag_messages(repo: str, ref: str) -> list[tuple[str, str]]:
-    """What the annotated tag `ref` names says, as `(tag, message)`, and each tag it was made of after it, a push of a
-    tag of a tag sending both; none where `ref` names no tag: a branch, a commit or a light tag. What a pushed tag says
-    no commit holds. Read by review: only the outer tag's message was read, and the inner one's token reached the
-    remote. `GitError` where git cannot answer, or past `TAG_CHAIN` tags."""
+    """What the annotated tag `ref` names says, as `(name, message)`, the name its own header gives it, and each tag it
+    was made of after it, a push of a tag of a tag sending both; none where `ref` names no tag: a branch, a commit or a
+    light tag. What a pushed tag says no commit holds. Read by review: only the outer tag's message was read, and the
+    inner one's token reached the remote; and a tag was named by its object's id, which no log shows. `GitError` where
+    git cannot answer, or past `TAG_CHAIN` tags."""
     said: list[tuple[str, str]] = []
     named = _sha(repo, ref, "tag")
     while named is not None:
         if len(said) == TAG_CHAIN:
             raise GitError(f"{ref} is a chain of more than {TAG_CHAIN} tags")
         head, _, message = _git(repo, "cat-file", "tag", named, strip=False)[1].partition("\n\n")
-        said.append((named, message.rstrip("\n")))
         fields = dict(line.split(" ", 1) for line in head.split("\n") if " " in line)
+        said.append((fields.get("tag") or named, message.rstrip("\n")))
         named = fields.get("object") if fields.get("type") == "tag" else None
     return said
 
