@@ -442,6 +442,12 @@ shows it. That costs memory about 25 times the file's size. Measured: a branch a
 and 2.9 GB before the review ended in exit 3. The pre-push hook read the commit again: 3.3 s and 2.2 GB at its peak.
 GitHub refuses a file over 100 MB. `--path` narrows a review by hand around a large file.
 
+The checks that read code as a syntax tree read it with the Python the reviewer runs on: `callers`, `private-patch`,
+`tests-offline`, the import graph `radius-types` and the blast radius follow, and the health section. They leave out
+a file that Python does not parse. A real syntax error is still named, by `lint`, as `invalid-syntax`, a major. But
+ruff's parser knows a newer Python's syntax, so a file written for one, as a `lazy import` is for 3.15 on a reviewer
+run on 3.14, is read by `lint` and the guidelines alone: no check that parses names it, and no hole says so.
+
 ## Before a push
 
 `adk-review-push`, installed beside `adk-review`, is a git pre-push hook. To install it, run these lines in the
