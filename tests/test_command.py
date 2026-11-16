@@ -2235,7 +2235,7 @@ class TestTheJsonReport:
         ):
             assert run_review(cli, demo_repo, flag, str(given)) == 2, (flag, given)
             assert flag in capsys.readouterr().err
-        if os.name != "nt":  # Windows reads a folder's mode as no bar to a new file in it
+        if os.name != "nt" and os.geteuid() != 0:  # Windows, and root, read a folder's mode as no bar to a new file
             shut = tmp_path / "shut"
             shut.mkdir(mode=0o500)
             for flag, given in (("--record", shut / "answers"), ("--json", shut / "review.json")):
