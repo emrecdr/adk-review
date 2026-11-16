@@ -2217,6 +2217,65 @@ class TestTheJsonReport:
             assert kept.read_text(encoding="utf-8") == "keep", "what the link named is untouched"
             assert link.stat().st_mode & 0o077 == 0, "the operator's alone"
 
+    def test_a_path_the_engine_writes_is_refused_before_any_model_call(
+        self, cli, demo_repo: Path, tmp_path: Path, asked, capsys, monkeypatch
+    ) -> None:
+        """Measured by review: `--record` in a folder no file can be made in had each guideline answered and then
+        failed, exit 3, its spend said to be none and the folder's full path in the comment; `--debug-log` in a
+        missing folder lost the log with no word, and `--trace` there ended in sqlite's own error, exit 3. Each path
+        is now checked before any model call, as `--json`'s is, `~` read as the home folder."""
+        missing = tmp_path / "no-such-folder"
+        a_file = tmp_path / "a-file"
+        a_file.write_text("x", encoding="utf-8")
+        for flag, given in (
+            ("--debug-log", missing / "debug.yaml"),
+            ("--debug-log", tmp_path),
+            ("--trace", missing / "trace.db"),
+            ("--record", a_file),
+        ):
+            assert run_review(cli, demo_repo, flag, str(given)) == 2, (flag, given)
+            assert flag in capsys.readouterr().err
+        if os.name != "nt":  # Windows reads a folder's mode as no bar to a new file in it
+            shut = tmp_path / "shut"
+            shut.mkdir(mode=0o500)
+            for flag, given in (("--record", shut / "answers"), ("--json", shut / "review.json")):
+                assert run_review(cli, demo_repo, flag, str(given)) == 2, (flag, given)
+                assert "Name another folder" in capsys.readouterr().err
+            shut.chmod(0o700)
+        assert asked == [], "no model was asked"
+        home = tmp_path / "home"
+        (home / "logs").mkdir(parents=True)
+        monkeypatch.setenv("HOME", str(home))
+        monkeypatch.setenv("USERPROFILE", str(home))
+        run_review(cli, demo_repo, "--debug-log", "~/logs/debug.yaml")
+        assert (home / "logs" / "debug.yaml").is_file(), "the log is where the person named it"
+
+    def test_a_previous_review_named_as_the_json_file_outlives_a_run_that_decides_nothing(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ) -> None:
+        """Measured by review: `--previous last.json --json last.json` read the earlier report, then removed it as a
+        stale one before the review, so a run that ended in exit 2 lost the only copy. It is kept until the review
+        is decided, and then replaced."""
+        last = tmp_path / "last.json"
+        run_review(cli, demo_repo, "--profile", "rules-only", "--json", str(last))
+        written = last.read_text(encoding="utf-8")
+        flags = ("--previous", str(last), "--json", str(last))
+        assert cli.main([str(demo_repo), "--base", BASE, "--head", BASE, *flags]) == 2
+        assert last.read_text(encoding="utf-8") == written, "the earlier report is kept"
+        run_review(cli, demo_repo, "--profile", "rules-only", *flags)
+        assert json.loads(last.read_text(encoding="utf-8"))["resolved"] == [], (
+            "replaced by the review it was set against"
+        )
+        capsys.readouterr()
+
+    def test_two_outputs_that_name_one_file_are_refused(self, cli, demo_repo: Path, tmp_path: Path, capsys) -> None:
+        """Measured by review: `--json F --comment F` said it wrote both to F, and F held the comment alone."""
+        one = tmp_path / "one.md"
+        assert run_review(cli, demo_repo, "--json", str(one), "--comment", str(one)) == 2
+        assert "--json and --comment name one file" in capsys.readouterr().err
+        assert run_review(cli, demo_repo, "--handoff", str(one), "--debug-log", str(tmp_path / "." / "one.md")) == 2
+        assert not one.exists()
+
     def test_a_name_in_bytes_that_are_no_utf_8_is_written_as_its_escape_and_a_failed_write_leaves_nothing(
         self, cli, tmp_path: Path
     ) -> None:
@@ -2494,7 +2553,9 @@ class TestWhatTheCommandTells:
         said = capsys.readouterr()
         assert "## Verdict: APPROVED" in said.out and "wrote the hand-off to" in said.err, said
         assert "wrote the code review comments to" in said.err and (tmp_path / "c.md").is_file(), said.err
-        assert said.err.rstrip().endswith("No space left on device"), "the why last, the run's last line"
+        assert said.err.rstrip().endswith("No space left on device. Name a file on a disk you can write"), (
+            "the why and what to do on the run's last line"
+        )
 
     def test_quiet_and_progress_cannot_run_together(self, cli, tmp_path: Path, capsys) -> None:
         with pytest.raises(SystemExit) as stopped:
