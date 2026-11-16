@@ -552,7 +552,8 @@ each in a module named after what it reads (`lines.py`, `syntax.py`, `diagnostic
 
 Three limits stay. A line helper reads one line alone, so a line inside a docstring reads as code; a rule that must
 tell them apart reads the file. Names are read as written: after `from requests import get`, `get(url)` is not
-`requests.get`. A Python file that does not parse gives the syntax readers nothing, and lint names it.
+`requests.get`. A Python file that does not parse gives the syntax readers nothing, and lint names it, unless it is
+written for a newer Python, as `GUIDE.md`'s Limits says.
 
 What a rule may do, and may not:
 

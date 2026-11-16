@@ -18,7 +18,8 @@ updates:
         exclude-patterns: ["google-adk", "litellm"]
     ignore:
       # LiteLLM 1.107.0 shipped a credential stealer, and LiteLLM has not yet said its release accounts are safe
-      # again: ADK caps it below 1.106.3 for the same reason. Lift this once LiteLLM says they are.
+      # again: ADK caps it below 1.106.3 for the same reason. Lift this once LiteLLM says they are, then look again at
+      # `requires-python`'s bound below 3.15 in pyproject.toml, which this LiteLLM sets.
       - dependency-name: "litellm"
         versions: [">=1.106.3"]
   - package-ecosystem: "github-actions"

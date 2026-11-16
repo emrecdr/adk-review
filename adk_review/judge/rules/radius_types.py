@@ -1,9 +1,7 @@
 """What a change breaks where no diff shows it, as pyrefly reads the head's tree against the base's: a method, an
 attribute, a parameter or a type the change altered, in a file it left alone or on a line of a changed file it kept.
 `types` reads each changed file alone, a name it imports read as `Any`, and `callers` reads no types, so a call through
-an object, `repo.get_user(3)`, is read here or nowhere. A known limit, as `types` has it: pyrefly reads the code as
-Python 3.13, so a call the change added to an API newer than 3.13 reads as a missing attribute, a major where its
-file reaches another the change touched.
+an object, `repo.get_user(3)`, is read here or nowhere.
 """
 
 from __future__ import annotations
@@ -56,7 +54,8 @@ class RadiusTypes(TreeRule):
     string is taken, which the next commit fixed; and on litellm, a parameter added first in `get_secret` shifted 11
     calls' arguments that `callers` reads as fitting. Known limits: code without types reads as `Any`, and a use of it
     is not checked; a name an installed package holds reads as `Any` too; a tree the head's read did not hold whole is
-    a floor; code loaded by name, `importlib` or `getattr`, is invisible to it; a file is in neither run where its
+    a floor; code loaded by name, `importlib` or `getattr`, is invisible to it; a call to an API newer than the Python
+    `collect/pyrefly.py` names reads as a missing attribute, as in `types`; a file is in neither run where its
     path holds a name of other characters than letters, digits, `_`, `-`, a dot and a space, as one with a `~`, which
     one system may read otherwise than another; in a file the change edited, an error that left one line as another
     of the same text broke reads as that line moved; and a method marked `@override` whose parent's method another

@@ -1273,7 +1273,7 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
         # What of the head's tree went unread: read by review, a blob a partial clone fetched since served a stale
         # verdict, read with the tree as a floor.
         "tree": [evidence["blast"].skipped, list(evidence["blast"].unparsed), evidence["blast"].listed],
-        "python": platform.python_version(),  # the parser the tree is read with: 3.14 reads what 3.13 refuses
+        "python": platform.python_version(),  # the parser the tree is read with: 3.15 reads what 3.14 refuses
         "version": version(),  # the JSON names it
         "diffs": diffs.hexdigest(),
     }

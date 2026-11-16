@@ -13,9 +13,7 @@ limits to the code.
 itself, and git 2.41 or later on `PATH`, with the fix for CVE-2024-32465 (2.41.1, 2.42.2, 2.43.4, 2.44.1, 2.45 and
 later, or a distribution's build that carries it): without it, git ignores `GIT_NO_LAZY_FETCH`, and a review of a
 partial clone could fetch into it.
-On macOS one package ADK needs, watchdog 6, has no wheel for Python 3.14, so the install builds it from source with
-a C compiler: Xcode's Command Line Tools, which Apple's git and Homebrew need too. Where they are missing, run
-`xcode-select --install`.
+On macOS they need Xcode's Command Line Tools too, `xcode-select --install`: `README.md`'s step 1 says why.
 
 ```bash
 uv sync --locked                             # once: the reviewer, its Python and its locked dependencies
@@ -484,8 +482,8 @@ sends nothing.
 A repository that uses pre-commit names the hook `adk-review` from this repository's `.pre-commit-hooks.yaml`
 instead, at a pinned commit, with pre-commit's pre-push hook installed (`pre-commit install --hook-type pre-push`); it
 runs the same command, and takes no `args:`, which stop every push. pre-commit installs the reviewer with the Python
-pre-commit itself runs on, and the reviewer needs 3.14: with an older or a newer one the install fails, and so does the
-push. That config names it beside the hook's id, `language_version: python3.14`.
+pre-commit itself runs on where that is 3.14, else with the `python3.14` on `PATH`, as the hook names it,
+`language_version: python3.14`: the reviewer needs 3.14. With none, the install fails, and so does the push.
 
 For each ref a push sends, the hook asks git which commits the remote does not hold yet and reviews them as one change
 with `default-rules`, against the commit they grow from on the remote's side, or with `--all` where the remote holds

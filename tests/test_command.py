@@ -2796,7 +2796,7 @@ class TestWhatAReviewKeeps:
     ) -> None:
         """Read by review, one at a time: the key read `--previous` again, which a pipe then gave as nothing and a
         FIFO never answered; it named no ref, though the report prints each; no blob a partial clone fetched since; no
-        interpreter, though Python 3.14 parses what 3.13 refuses; and no version, though the JSON prints it."""
+        interpreter, though Python 3.15 parses what 3.14 refuses; and no version, though the JSON prints it."""
         import argparse
         from types import SimpleNamespace
 
@@ -2822,7 +2822,7 @@ class TestWhatAReviewKeeps:
         monkeypatch.setattr(cli, "version", lambda: "9.9.9")
         assert cli._cached_at(args, chosen, evidence, "m", previous) != key
         monkeypatch.undo()
-        monkeypatch.setattr(cli.platform, "python_version", lambda: "3.14.0")
+        monkeypatch.setattr(cli.platform, "python_version", lambda: "3.15.0")
         assert cli._cached_at(args, chosen, evidence, "m", previous) != key
 
     def test_a_previous_reports_health_is_bounded_as_its_findings_are(

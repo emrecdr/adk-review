@@ -4,7 +4,8 @@ version = "0.1.0"
 description = "A git-branch code reviewer for Python projects, on Google ADK: rules decided by code, guidelines judged by a model, on Copilot and on Gemini."
 # Below 3.15 too: the LiteLLM release held below names Python below 3.15, and its fastuuid has no wheel for 3.15, so
 # an install there builds it with Rust. Measured: with no upper bound, `uv tool install` took the newest Python the
-# machine had, 3.15, where Homebrew's was. Lift the bound with the LiteLLM hold.
+# machine had, 3.15, where Homebrew's was. Lift the bound with the LiteLLM hold in .github/dependabot.yml, then read
+# again GUIDE.md's limit on a newer Python's syntax.
 requires-python = ">=3.14,<3.15"
 dependencies = [
     # Pinned: a bump lands only measured live on both arms, the demo's review recorded and compared with the last one.
