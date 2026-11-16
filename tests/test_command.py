@@ -2218,12 +2218,12 @@ class TestTheJsonReport:
             assert link.stat().st_mode & 0o077 == 0, "the operator's alone"
 
     def test_a_path_the_engine_writes_is_refused_before_any_model_call(
-        self, cli, demo_repo: Path, tmp_path: Path, asked, capsys, monkeypatch
+        self, cli, demo_repo: Path, tmp_path: Path, asked, capsys
     ) -> None:
         """Measured by review: `--record` in a folder no file can be made in had each guideline answered and then
         failed, exit 3, its spend said to be none and the folder's full path in the comment; `--debug-log` in a
         missing folder lost the log with no word, and `--trace` there ended in sqlite's own error, exit 3. Each path
-        is now checked before any model call, as `--json`'s is, `~` read as the home folder."""
+        is now checked before any model call, as `--json`'s is."""
         missing = tmp_path / "no-such-folder"
         a_file = tmp_path / "a-file"
         a_file.write_text("x", encoding="utf-8")
@@ -2243,6 +2243,12 @@ class TestTheJsonReport:
                 assert "Name another folder" in capsys.readouterr().err
             shut.chmod(0o700)
         assert asked == [], "no model was asked"
+
+    def test_the_engines_paths_read_a_tilde_as_the_home_folder(
+        self, cli, demo_repo: Path, tmp_path: Path, monkeypatch
+    ) -> None:
+        """ADK's debug log and sqlite's trace take a path as written, and a shell that expands no `~`, PowerShell's
+        or one after `=`, passed it on: the folder `~` was looked for where the command ran."""
         home = tmp_path / "home"
         (home / "logs").mkdir(parents=True)
         monkeypatch.setenv("HOME", str(home))
