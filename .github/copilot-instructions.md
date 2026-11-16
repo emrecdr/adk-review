@@ -1,6 +1,6 @@
 # Copilot instructions for this repository
 
-This repository is `adk-review`, a git-branch code reviewer for Python projects, on Google ADK (`google-adk==2.13.0`,
+This repository is `adk-review`, a git-branch code reviewer for Python projects, on Google ADK (`google-adk==2.14.1`,
 Python 3.13, `uv`). It is grouped by the steps of a review — `core`, `collect`, `judge`, `deliver` — and every check is
 one file: a rule, decided by code, in `adk_review/judge/rules/`, importing one door, `adk_review/judge/rule_helpers/`,
 and held to its own examples; a guideline, judged by a model, in `adk_review/judge/guidelines/`; each named after its
