@@ -74,6 +74,11 @@ class TestWhatAReviewCovers:
         assert "Name another folder with --path, or drop it to review the whole change" in err, "the next step"
         assert run_review(*rules_only, "--path", "../elsewhere") == 2
         assert "--path '../elsewhere' must name a folder inside the repository" in capsys.readouterr().err
+        # Read by an audit: a path from a root inside the repository was told it lay outside it, with no next step.
+        assert run_review(*rules_only, "--path", str(demo_repo / "src")) == 2
+        assert "starts at a root or a drive. Name the folder from the repository's top, as src/app" in (
+            capsys.readouterr().err
+        )
 
     def test_a_path_excluded_is_left_out_of_every_check_and_named(self, cli, demo_repo, capsys, tmp_path: Path) -> None:
         """Asked by the owner: a way to leave a folder, or a file, out of a review, as `--path` keeps one in. It is the
@@ -1843,6 +1848,18 @@ class TestThePreviousReportAndTheHandoff:
         assert "--check rule." in rules and "--check guideline." not in rules, rules
         assert again.split()[:2] == ["--head", f"refs/heads/{HEAD}"] and "--check guideline.security" in again, again
         assert "adk-review" not in again and "calls the model and spends its quota" in section, section
+
+    def test_a_handoffs_repository_on_windows_is_written_with_forward_slashes(self) -> None:
+        """Read by an audit: on Windows the rerun command named the repository with backslashes, which cmd and
+        PowerShell keep and Git Bash, the shell a coding agent runs there, drops, `C:Usersmeproj`. Forward slashes
+        read alike in all three, and a path that ends in a backslash prints a command again."""
+        from adk_review.deliver.report import _pasted, _shell_path
+
+        line = _pasted(["adk-review", _shell_path("C:\\Users\\me\\a b", windows=True)], windows=True)
+        assert line == 'adk-review "C:/Users/me/a b"'
+        assert shlex.split(line) == ["adk-review", "C:/Users/me/a b"], "a POSIX shell, Git Bash's, reads it the same"
+        assert _pasted(["adk-review", _shell_path("C:\\a b\\", windows=True)], windows=True) == 'adk-review "C:/a b"'
+        assert _shell_path("/home/me/proj", windows=False) == "/home/me/proj"
 
     def test_a_handoff_prints_no_command_a_shell_would_read_otherwise(self) -> None:
         """A branch's name is its author's, and `;`, `$` and a backtick are legal in one: pasted, the command runs

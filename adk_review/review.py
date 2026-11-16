@@ -532,7 +532,12 @@ def scope_of(folders: Sequence[str], flag: str = "--path") -> tuple[str, ...]:
     scope = []
     for folder in folders:
         path = PurePosixPath(folder.replace("\\", "/"))
-        if ".." in path.parts or PureWindowsPath(folder).anchor:  # a root or a drive, `/` or `\` alike
+        if PureWindowsPath(folder).anchor:  # a root or a drive, `/` or `\` alike: read by an audit, one inside the
+            # repository was told it lay outside, and named no next step
+            raise ValueError(
+                f"{flag} {folder!r} starts at a root or a drive. Name the folder from the repository's top, as src/app"
+            )
+        if ".." in path.parts:
             raise ValueError(f"{flag} {folder!r} must name a folder inside the repository")
         if path.parts:
             scope.append(path.as_posix())

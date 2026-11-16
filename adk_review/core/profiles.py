@@ -73,7 +73,8 @@ def expand(ids: object, known: Sequence[str], groups: Mapping[str, Sequence[str]
     """The check ids a list names — each an id among `known`, or a group's name standing for its ids — spelled out
     once each in the order given. `what` is the list as a sentence refusing it names it: a profile, or the `--check`
     flag; refused when it is no list, names something unknown, or turns nothing on."""
-    if not isinstance(ids, list):
+    # Read by an audit, and reproduced: a list holding a list or a number was a TypeError, exit 3, on every command.
+    if not isinstance(ids, list) or not all(isinstance(check, str) for check in ids):
         raise ValueError(f"{what} must be a list of check ids")
     if strangers := [check for check in ids if check not in known and check not in groups]:
         raise ValueError(

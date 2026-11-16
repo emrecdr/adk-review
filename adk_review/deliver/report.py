@@ -12,7 +12,7 @@ import shlex
 import textwrap
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
-from pathlib import Path, PurePath
+from pathlib import Path, PurePath, PureWindowsPath
 from typing import Any
 
 from ..core.blast import Blast, describe
@@ -785,7 +785,7 @@ def _check_again(
             "",
         ]
         shown, left = _shown([*head, *pinned, *given, ("--fail-on", fail_on), *(("--check", check) for check in rules)])
-        if (command := _pasted(["adk-review", pre["repo"]])) and not left:
+        if (command := _pasted(["adk-review", _shell_path(pre["repo"])])) and not left:
             lines.append(f"    {command} {shown}")
         else:
             lines += [
@@ -843,6 +843,12 @@ def _pasted(argv: Sequence[str], windows: bool = os.name == "nt") -> str | None:
     # Read by review: a token, and a variation selector no one sees, were printed where the prose beside hid them.
     safe = line.isprintable() and inert(_unhidden(line)) == line
     return line if None not in words and safe else None
+
+
+def _shell_path(path: str, windows: bool = os.name == "nt") -> str:
+    """A path as each shell of its system reads it: on Windows with forward slashes, which cmd and PowerShell keep and
+    Git Bash, the shell a coding agent runs there, reads as written, where it drops a backslash. Read by an audit."""
+    return PureWindowsPath(path).as_posix() if windows else path
 
 
 def _windows_word(arg: str) -> str | None:
@@ -1153,7 +1159,7 @@ def told_in_parts(
     pre = evidence["preflight"]
     head = [] if pre.get("staged") else [("--head", pre["head"])]
     pinned = [("--staged",)] if pre.get("staged") else [("--all",)] if evidence["whole"] else [("--base", pre["base"])]
-    command = _pasted(["adk-review", pre["repo"]]) or "adk-review <the repository>"
+    command = _pasted(["adk-review", _shell_path(pre["repo"])]) or "adk-review <the repository>"
     lines = [
         f"Too large for the guidelines in one run: {left} file(s) would go unread. Review it in {len(parts)} parts, "
         "one run each:",

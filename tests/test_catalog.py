@@ -605,6 +605,9 @@ class TestTheProfiles:
             ({"p": "rule.secrets"}, "p", "'p' must be a list"),
             ({"p": {"rules": ["rule.secrets"]}}, "p", "'p' must be a list"),
             ({"p": 3}, "p", "'p' must be a list"),
+            # Read by an audit, and reproduced: a list of lists, or a number in the list, was a TypeError, exit 3.
+            ({"p": [["rule.secrets"]]}, "p", "'p' must be a list of check ids"),
+            ({"p": ["rule.secrets", 1]}, "p", "'p' must be a list of check ids"),
             # A check runs only where a profile names it, so the file must say what a review runs by default.
             ({"p": ["rule.secrets"]}, "p", "has no `default`"),
             ({}, "default", "has no `default`"),
