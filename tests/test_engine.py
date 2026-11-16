@@ -587,18 +587,15 @@ class TestAGuidelinesOwnModel:
 
     def test_the_most_specific_choice_names_a_guidelines_model(self, monkeypatch) -> None:
         from adk_review.core.guidelines import Models
-        from adk_review.judge.settings import model_name, model_var
+        from adk_review.judge.settings import model_name, model_pick
 
         monkeypatch.setenv("REVIEW_PROVIDER", "gemini")
         monkeypatch.setenv("REVIEW_MODEL", "everyone")
         monkeypatch.delenv("REVIEW_SECURITY_MODEL", raising=False)
         preset = Models(gemini="preset", copilot="claude-x")
-        assert (model_var("security", preset), model_name("security", preset)) == (
-            "guideline.security models.gemini",
-            "preset",
-        )
+        assert model_pick("security", preset) == ("guideline.security models.gemini", "preset")
         monkeypatch.setenv("REVIEW_SECURITY_MODEL", "own")
-        assert (model_var("security", preset), model_name("security", preset)) == ("REVIEW_SECURITY_MODEL", "own")
+        assert model_pick("security", preset) == ("REVIEW_SECURITY_MODEL", "own")
         monkeypatch.delenv("REVIEW_SECURITY_MODEL")
         assert model_name("security", Models(copilot="claude-x")) == "everyone", "an arm the file leaves out"
         monkeypatch.setenv("REVIEW_MY_CHECK_MODEL", "hyphen")

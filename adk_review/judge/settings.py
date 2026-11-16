@@ -45,11 +45,6 @@ def model_pick(role: str = "", preset: Models | None = None) -> tuple[str, str]:
     return "REVIEW_MODEL", os.environ.get("REVIEW_MODEL", "").strip() or DEFAULTS[arm]
 
 
-def model_var(role: str = "", preset: Models | None = None) -> str:
-    """What names a role's model: its variable, or a guideline's file."""
-    return model_pick(role, preset)[0]
-
-
 def model_name(role: str = "", preset: Models | None = None) -> str:
     """The model a role runs on. The model is chosen per agent, so a role may run on a stricter or a cheaper one."""
     return model_pick(role, preset)[1]
