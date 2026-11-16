@@ -640,8 +640,9 @@ def _outputs_ready(args: argparse.Namespace) -> None:
     """Every file and folder the run writes made ready before any model call, two flags naming one file refused, and
     `~` read as the home folder in the engine's paths, which ADK and sqlite take as written. Measured by review:
     `--record` where no file could be made had each guideline answered and then failed, exit 3; `--debug-log` in a
-    missing folder lost the log with no word; `--json F --comment F` said it wrote both; and `--previous F --json F`
-    removed the only copy of F before a run that ended in exit 2."""
+    missing folder lost the log with no word; and `--json F --comment F` said it wrote both. `--previous F --json F` is
+    read and then cleared as any earlier report is: kept once so that exit 2 lost no baseline, it had a pipeline, which
+    reads whatever JSON it finds, annotate the last run's findings as this one's."""
     named: dict[str, str] = {}
     for flag, key in _OUTPUTS:
         given = getattr(args, key)
@@ -651,7 +652,7 @@ def _outputs_ready(args: argparse.Namespace) -> None:
         if (same := os.path.normcase(path.resolve())) in named:
             raise ValueError(f"{named[same]} and {flag} name one file. Name another file for one of them")
         named[same] = flag
-        _cleared(flag, given, keep=flag == "--json" and bool(args.previous) and _same(path, args.previous))
+        _cleared(flag, given)
         if key in ("debug_log", "trace"):
             setattr(args, key, str(path))
     if args.record:
@@ -666,14 +667,6 @@ def _outputs_ready(args: argparse.Namespace) -> None:
         args.record = str(folder)
 
 
-def _same(path: Path, other: str) -> bool:
-    """Whether `path` is the file `other` names, through a link or a letter's case a disk does not tell apart."""
-    try:
-        return os.path.samefile(path, Path(other).expanduser())
-    except OSError:  # one of them is not there yet
-        return False
-
-
 def _writable(flag: str, folder: Path) -> None:
     """A file made in `folder` and removed at once: the one test each system answers alike, since Windows reads a
     folder's own mode as no bar to a file in it."""
@@ -686,20 +679,18 @@ def _writable(flag: str, folder: Path) -> None:
         ) from None
 
 
-def _cleared(flag: str, given: str, *, keep: bool = False) -> None:
+def _cleared(flag: str, given: str) -> None:
     """`--json FILE`, `--handoff [FILE]`, `--comment [FILE]`, `--debug-log FILE` or `--trace FILE` made ready before
     the review: a missing folder, one no file can be written in, or a folder in its place refused, and an earlier
     file of that name removed, a link itself and never what it points to, so a run that ends in exit 2 leaves no
-    report a pipeline could take for its own, unless `keep`, the previous review the run reads. Measured before: an
-    earlier file outlived exit 2, and a link was written through."""
+    report a pipeline could take for its own. Measured before: an earlier file outlived exit 2, and a link was written
+    through."""
     path = Path(given).expanduser()
     if not path.resolve().parent.is_dir():
         raise ValueError(f"{flag} {given}: there is no such folder to write it in. Name a file in a folder that exists")
     if path.is_dir():
         raise ValueError(f"{flag} {path}: that is a folder. Name a file in it")
     _writable(flag, path.resolve().parent)
-    if keep:
-        return
     try:
         path.unlink(missing_ok=True)
     except OSError as exc:

@@ -2256,18 +2256,19 @@ class TestTheJsonReport:
         run_review(cli, demo_repo, "--debug-log", "~/logs/debug.yaml")
         assert (home / "logs" / "debug.yaml").is_file(), "the log is where the person named it"
 
-    def test_a_previous_review_named_as_the_json_file_outlives_a_run_that_decides_nothing(
+    def test_a_previous_review_named_as_the_json_file_is_read_and_still_leaves_no_report_on_exit_2(
         self, cli, demo_repo: Path, tmp_path: Path, capsys
     ) -> None:
-        """Measured by review: `--previous last.json --json last.json` read the earlier report, then removed it as a
-        stale one before the review, so a run that ended in exit 2 lost the only copy. It is kept until the review
-        is decided, and then replaced."""
+        """`--previous last.json --json last.json` reads the earlier report, then removes the file before the review,
+        as any earlier file of `--json`'s name: a pipeline reads whatever JSON it finds, the README's recipe among
+        them, and a run that ends in exit 2 must leave none it could take for its own. Kept once by review, so that
+        exit 2 lost no baseline, it had a pipeline annotate the last run's findings as this one's."""
         last = tmp_path / "last.json"
         run_review(cli, demo_repo, "--profile", "rules-only", "--json", str(last))
-        written = last.read_text(encoding="utf-8")
         flags = ("--previous", str(last), "--json", str(last))
         assert cli.main([str(demo_repo), "--base", BASE, "--head", BASE, *flags]) == 2
-        assert last.read_text(encoding="utf-8") == written, "the earlier report is kept"
+        assert not last.exists(), "no report a pipeline could read as this run's"
+        run_review(cli, demo_repo, "--profile", "rules-only", "--json", str(last))
         run_review(cli, demo_repo, "--profile", "rules-only", *flags)
         assert json.loads(last.read_text(encoding="utf-8"))["resolved"] == [], (
             "replaced by the review it was set against"

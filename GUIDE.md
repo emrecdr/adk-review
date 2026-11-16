@@ -327,8 +327,9 @@ chat's verdict is told to say so where it quotes one.
 ## The JSON report
 
 `--json FILE` writes the same review as data, whenever a review is decided, so never on exit 2. It is written beside
-the path and moved into place, the operator's alone; an earlier file of that name is removed before the review,
-unless it is the `--previous` file, which is kept until the review is decided and then replaced. Its
+the path and moved into place, the operator's alone; an earlier file of that name is removed before the review, the
+`--previous` report too where it names that file, so a run that ends in exit 2 leaves no JSON a pipeline could read as
+its own: where one may, name `--json` apart from `--previous` and move it over after. Its
 strings are as safe as the text report's, and plain text: a reader that renders one as markdown or HTML escapes it.
 
 | Field | What it holds |
