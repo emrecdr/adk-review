@@ -24,7 +24,7 @@ dependencies = [
     # interpreter. Pinned at the lock's own versions, as litellm is, so every install runs the two the suite ran with.
     # Read by review, with a floor here: an install that reads no lock took a ruff a day old; ruff 0.15 refused a code
     # `pitfalls` selects, exit 2; and ruff 0.16, which held that code in preview, ran without it and said so to no one.
-    "ruff==0.17.4",
+    "ruff==0.17.5",
     "pyrefly==1.4.1",
 ]
 
