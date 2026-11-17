@@ -24,8 +24,11 @@ SECRET_WORDS = r"api[_-]?key|secret|token|passw(?:or)?d|pwd"
 _WORD_CORES = ("key", "secret", "token", "passw", "pwd")
 #: (kind, pattern, replacement).
 #: The name a secret goes by, prefixed and suffixed as code spells it (`DB_PASSWORD`, `client_secret`, `SECRET_KEY`),
-#: never inside a longer word: `tokenizer` names none.
-_NAMED = r"(?:" + SECRET_WORDS + r")(?:[_.-][\w.-]{0,80})?"
+#: never inside a longer word: `tokenizer` names none. Its suffix is possessive: what follows a name in every shape,
+#: a quote, a space, `:` or `=`, is no character of the suffix, so giving one back never finds a match. Read by a
+#: Windows runner: given back, `token_` repeated over 200,000 characters took 2.3 s there, 141 ms here, where it now
+#: takes 25 ms; scrubbed alike over 2.4 million lines of the installed packages and 200,000 random strings.
+_NAMED = r"(?:" + SECRET_WORDS + r")(?:[_.-][\w.-]{0,80}+)?+"
 #: Not a value but a stand-in for one: a template, a placeholder, or what an earlier shape already hid.
 _STAND_IN = r"(?![$%{<]|\[REDACTED)"
 #: Every run a shape scans is bounded: a name to 80 characters past its keyword, a scheme to 40, a token's segment to
