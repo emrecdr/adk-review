@@ -581,14 +581,15 @@ MARKER = "adk-demo-repo"
 FIRST = "payments: charge and format"
 
 
-def build(root: Path, *, default: bool = False) -> Path:
+def build(root: Path) -> Path:
     """Build the repository at `root`, replacing a demo built there before. Any other folder that holds a file is
     refused, `ValueError`: read by an audit, and reproduced, the build deleted whatever folder it was given, a
-    repository of the person's own among them, `make demo-repo` sharing `REPO` with `make review`. The `default`
-    folder, `demo_repo()`, is the demo's by its name and replaced whatever it holds: reported from Windows, an earlier
-    demo there that git would not read, owned by another account or half removed, was refused with no way out."""
+    repository of the person's own among them, `make demo-repo` sharing `REPO` with `make review`. The demo's own
+    folder, `demo_repo()`, is the demo's by its name and replaced whatever it holds, given by its path too, as
+    `make demo` gives it: reported from Windows, an earlier demo there that git would not read, owned by another
+    account or half removed, was refused with no way out."""
     if root.exists():
-        if not default and any(root.iterdir()) and not _ours(root):
+        if any(root.iterdir()) and root.resolve() != demo_repo().resolve() and not _ours(root):
             raise ValueError(f"{root} holds files no demo build made. Delete it, or name a new or empty folder")
         shutil.rmtree(root, onexc=_writable)
     root.mkdir(parents=True)
@@ -647,11 +648,10 @@ def _pasted(path: Path) -> str:
     return text if all(c.isalnum() or c in "\\:._-" for c in text) else f'"{text}"'
 
 
-def _review(root: Path, head: str = HEAD_REF, profile: str | None = "demo") -> str:
+def _review(root: Path, head: str = HEAD_REF, profile: str = "demo") -> str:
     """A review to run on a branch of the demo, ready to paste: by default the payments branch with the rules alone, so
-    no model and no key; with no profile, the default one, whose guidelines ask a model."""
-    chosen = f" --profile {profile}" if profile else ""
-    return f"uv run adk-review {_pasted(root)} --head {head} --base {BASE_REF}{chosen}"
+    no model and no key."""
+    return f"uv run adk-review {_pasted(root)} --head {head} --base {BASE_REF} --profile {profile}"
 
 
 def main(argv: list[str]) -> int:
@@ -689,7 +689,7 @@ def main(argv: list[str]) -> int:
         print(f"\nReview it again; with both blockers gone it ends in exit 0:\n\n  {_review(root)}")
         return 0
     try:
-        build(root, default=args.path is None)
+        build(root)
     except ValueError as exc:
         print(exc, file=sys.stderr)
         return 1

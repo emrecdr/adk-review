@@ -88,7 +88,7 @@ CANNED_REVIEW = {
         }
     ],
 }
-#: How many findings of one file a canned verifier's answer judges: more than any test shows one verifier. A number no
+#: How many findings of one call a canned verifier's answer judges: more than any test shows one verifier. A number no
 #: finding holds is read by none.
 JUDGED = 50
 
@@ -907,11 +907,13 @@ def run_rule(rule, files: list[dict], tree):
     return importlib.import_module("adk_review.core.rules").run_rule(rule, files, tree)
 
 
-def sourced(severity: str, source: str = "rule.lint", file: str = "a.py", line: int = 1, title: str = "t"):
+def sourced(
+    severity: str, source: str = "rule.lint", file: str = "a.py", line: int = 1, title: str = "t", evidence: str = "e"
+):
     """A finding as the fold keeps one, made by `source` at `file:line`, from the package as it is loaded now, for
     `run_rule`'s reason: a class imported once would be another class than the one `load_agent` loaded afresh."""
     findings = importlib.import_module("adk_review.core.findings")
-    found = findings.Finding(file=file, line=line, severity=severity, title=title, evidence="e", suggestion="s")
+    found = findings.Finding(file=file, line=line, severity=severity, title=title, evidence=evidence, suggestion="s")
     return importlib.import_module("adk_review.core.verdict").Sourced(source, found, (line, line))
 
 

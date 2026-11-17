@@ -1874,15 +1874,17 @@ class TestThePreviousReportAndTheHandoff:
     def test_the_demo_build_replaces_whatever_its_default_folder_holds(self, tmp_path: Path, monkeypatch) -> None:
         """Reported from Windows: the default folder, `adk-demo-repo` in the temp folder, held an earlier demo git would
         not read, and the build refused it, naming no next step. That folder is the demo's by its name: a build replaces
-        whatever it holds and asks git nothing. A folder the person names is still guarded, as the test below holds."""
+        whatever it holds and asks git nothing, given no path or its path, as `make demo` names it. Read by review: the
+        first fix knew it only when no path was given. Another folder is still guarded, as the test below holds."""
         import make_demo_repo
 
-        default = tmp_path / "adk-demo-repo"
-        default.mkdir()
-        (default / "left-over.txt").write_text("half removed", encoding="utf-8")
-        monkeypatch.setattr(make_demo_repo, "demo_repo", lambda: default)
-        assert make_demo_repo.main([]) == 0
-        assert not (default / "left-over.txt").exists() and (default / ".git" / make_demo_repo.MARKER).is_file()
+        for run, named in enumerate((False, True)):
+            default = tmp_path / str(run) / "adk-demo-repo"  # a leftover alone, no demo's mark
+            default.mkdir(parents=True)
+            (default / "left-over.txt").write_text("half removed", encoding="utf-8")
+            monkeypatch.setattr(make_demo_repo, "demo_repo", lambda default=default: default)
+            assert make_demo_repo.main([str(default)] if named else []) == 0, named
+            assert not (default / "left-over.txt").exists() and (default / ".git" / make_demo_repo.MARKER).is_file()
 
     def test_the_demo_build_replaces_its_own_folder_and_refuses_any_other(self, tmp_path: Path, capsys) -> None:
         """Read by an audit, and reproduced: the demo script deleted whatever folder it was given, a repository of the

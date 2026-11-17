@@ -15,6 +15,7 @@ import litellm
 import pytest
 from conftest import (
     BASE,
+    CANNED_JUDGEMENT,
     CANNED_REVIEW,
     GUIDELINE_NAMES,
     HEAD,
@@ -34,6 +35,7 @@ from conftest import (
     model_key,
     quota,
     run_review,
+    sourced,
 )
 
 from adk_review.core.profiles import rule_id, state_key
@@ -52,20 +54,22 @@ SAYS_MORE = {**CANNED_REVIEW, "findings": [{**CANNED_REVIEW["findings"][0], "sev
 
 
 def _each(verdicts: tuple[str, ...]) -> dict:
-    """A verifier's answer giving finding `n` the `n`th of `verdicts`, each with the reason its verdict reads with."""
-    reasons = {"holds": "the quoted lines show it", "refuted": "the lines do not show it"}
-    return {"judgements": [{"number": n, "verdict": v, "reason": reasons[v]} for n, v in enumerate(verdicts)]}
+    """A verifier's answer giving finding `n` the `n`th of `verdicts`, with the reason conftest's answers give it."""
+    answers = {"holds": CANNED_JUDGEMENT, "refuted": REFUTED}
+    return {"judgements": [answers[verdict]["judgements"][n] for n, verdict in enumerate(verdicts)]}
 
 
-def _numbered_as_planted(asked: list[tuple[str, list[str]]]) -> None:
-    """The one verifier call on the planted branch numbers the rules' findings as the answers above name them: the two
-    keys and S105 in config.py, then S602 in charge.py. Held here, so a change of order fails, never a wrong finding."""
+def _numbered_as_planted(asked: list[tuple[str, list[str]]]) -> str:
+    """The one verifier call on the planted branch, which numbers the rules' findings as the answers above name them:
+    the two keys and S105 in config.py, then S602 in charge.py. Held here, so a change of order fails, never a wrong
+    finding."""
     (told,) = [instruction for instruction, _turns in asked if THE_VERIFIER in instruction]
     order = [(0, "rule.secrets", "config"), (1, "rule.secrets", "config"), (2, "rule.lint", "config")]
     for number, check, name in [*order, (3, "rule.lint", "charge")]:
         assert f"### Finding {number}\n- check: {check}\n" in told, (number, check)
         assert f"- file: src/payments/{name}.py\n" in told.split(f"### Finding {number}\n", 1)[1].split("### ", 1)[0]
     assert "### Finding 4" not in told
+    return told
 
 
 def _said_done(said: str) -> bool:
@@ -719,11 +723,11 @@ class TestTheTokenCeiling:
         from adk_review.core.findings import Review
         from adk_review.core.verdict import Sourced
         from adk_review.judge.plugins import UsageLedger
-        from adk_review.judge.verify import by_file, chunks, judge_files
+        from adk_review.judge.verify import chunks, judge_calls
 
         findings = Review.model_validate(CANNED_REVIEW).findings
-        calls = chunks(by_file([Sourced("guideline.security", finding) for finding in findings]), "+x = 1")
-        judged = await judge_files(calls, "", [UsageLedger(ceiling=100)])
+        calls = chunks([Sourced("guideline.security", finding) for finding in findings], "+x = 1")
+        judged = await judge_calls(calls, "", [UsageLedger(ceiling=100)])
         assert len(judged) == len(calls) == 1
         refused = "TOKEN_CEILING: this call would pass the ceiling of 100 tokens"
         assert all(isinstance(reason, str) and reason.startswith(refused) for reason in judged)
@@ -865,7 +869,7 @@ class TestTheSecondOpinion:
             return [Judgements(judgements=judgements) for judgements in said]
 
         verify = importlib.import_module("adk_review.judge.verify")
-        monkeypatch.setattr(verify, "judge_files", holds)
+        monkeypatch.setattr(verify, "judge_calls", holds)
         without, verified = Outcome(kept=list(guidelines)), Outcome(kept=list(guidelines))
         order = ["rule.lint", "guideline.security", "guideline.tests"]
         cli.fold(without, rules, order)
@@ -1036,8 +1040,8 @@ class TestTheSecondOpinion:
 
         fake_provider.answers_when(THE_GUIDELINES, {"findings": []})
         unsure = judged("unsure", "the line alone cannot settle it", range(1))  # finding 0 alone, unsure
-        held = judged("holds", "the quoted lines show it", range(3, 4))  # S602; 1 and 2 named by no judgement
-        fake_provider.answers_when(THE_VERIFIER, {"judgements": unsure["judgements"] + held["judgements"]})
+        held = CANNED_JUDGEMENT["judgements"][3:4]  # S602; 1 and 2 named by no judgement
+        fake_provider.answers_when(THE_VERIFIER, {"judgements": unsure["judgements"] + held})
         report = tmp_path / "r.json"
         assert run_review(cli, demo_repo, "--verify", "--json", str(report)) == 1
         out = capsys.readouterr().out
@@ -1057,13 +1061,9 @@ class TestTheSecondOpinion:
         fake_provider.answers_when(THE_GUIDELINES, {"findings": []})
         assert run_review(cli, demo_repo, "--verify") == 1
         out = capsys.readouterr().out
-        (told,) = [instruction for instruction, _turns in asked if THE_VERIFIER in instruction]
+        told = _numbered_as_planted(asked)
         for name in ("config", "charge"):
             assert told.count(f"### src/payments/{name}.py\n") == 1, f"{name}.py's part, once"
-        assert "### Finding 3\n" in told and "### Finding 4" not in told, "two keys and S105, then S602"
-        assert (
-            told.count("- file: src/payments/config.py\n") == 3 and told.count("- file: src/payments/charge.py\n") == 1
-        )
         assert "`verifier_0`: 1 call(s)" in out and "`verifier_1`" not in out
 
     def test_a_call_holds_whole_files_up_to_its_bounds_and_a_file_past_one_is_a_call_of_its_own(self) -> None:
@@ -1071,17 +1071,11 @@ class TestTheSecondOpinion:
         change and findings no cut at `FINDINGS_CAP_CHARS` leaves unjudged. A file is never split: one past a bound by
         itself is a call of its own, as every file was before."""
         from adk_review.collect.diff import framed
-        from adk_review.core.findings import Finding
-        from adk_review.core.verdict import Sourced
         from adk_review.judge.agents import FINDINGS_CAP_CHARS
         from adk_review.judge.verify import CHUNK_CAP_CHARS, CHUNK_FINDINGS_MAX, chunks
 
-        def found(path: str, count: int, quote: str = "x = 1") -> list[Sourced]:
-            said = [
-                Finding(file=path, line=1, severity="minor", title=f"t{n}", evidence=quote, suggestion="s")
-                for n in range(count)
-            ]
-            return [Sourced("rule.lint", finding, (1, 1)) for finding in said]
+        def found(path: str, count: int, quote: str = "x = 1") -> list:
+            return [sourced("minor", file=path, title=f"t{n}", evidence=quote) for n in range(count)]
 
         part = {
             name: framed(name, "@@ -0,0 +1 @@\n+x = 1")[0] for name in ("a.py", "b.py", "c.py", "d.py", "f.py", "g.py")
@@ -1089,16 +1083,9 @@ class TestTheSecondOpinion:
         part["e.py"] = framed("e.py", "@@ -0,0 +1 @@\n+" + "y" * CHUNK_CAP_CHARS)[0]
         block = "\n\n".join(part.values())
         half, long = CHUNK_FINDINGS_MAX // 2 + 1, "z" * (FINDINGS_CAP_CHARS // 2)
-        files = [
-            ("a.py", found("a.py", half)),
-            ("b.py", found("b.py", half)),
-            ("c.py", found("c.py", 1)),
-            ("e.py", found("e.py", 1)),
-            ("d.py", found("d.py", CHUNK_FINDINGS_MAX + 1)),
-            ("f.py", found("f.py", 1, long)),
-            ("g.py", found("g.py", 1, long)),
-        ]
-        packed = chunks(files, block)
+        items = [*found("a.py", half), *found("b.py", half), *found("c.py", 1), *found("e.py", 1)]
+        items += [*found("d.py", CHUNK_FINDINGS_MAX + 1), *found("f.py", 1, long), *found("g.py", 1, long)]
+        packed = chunks(items, block)
         assert [len(items) for items, _shown in packed] == [half, half + 1, 1, CHUNK_FINDINGS_MAX + 1, 1, 1]
         joined = f"{part['b.py']}\n\n{part['c.py']}"
         assert [shown for _items, shown in packed] == [
@@ -1109,6 +1096,22 @@ class TestTheSecondOpinion:
             part["f.py"],
             part["g.py"],
         ]
+
+    def test_the_files_the_change_shows_no_part_of_share_one_call_however_long_the_change(self) -> None:
+        """Read by review, and reproduced: each file with no part of its own read the whole change, and once the change
+        passed `CHUNK_CAP_CHARS` no two could share a call, so four such files sent the change four times; measured, ten
+        sent 2.2 million characters more. They come last, and share one call, which reads the change once."""
+        from adk_review.collect.diff import framed
+        from adk_review.judge.verify import CHUNK_CAP_CHARS, chunks
+
+        big, small = (
+            framed("a.py", "@@ -0,0 +1 @@\n+" + "y" * CHUNK_CAP_CHARS)[0],
+            framed("b.py", "@@ -0,0 +1 @@\n+x")[0],
+        )
+        block = f"{big}\n\n{small}"
+        a, b, c, d, e = ([sourced("minor", file=name)] for name in ("a.py", "b.py", "c.py", "d.py", "e.py"))
+        packed = chunks([*c, *a, *d, *b, *e], block)
+        assert packed == [(a, big), (b, small), ([*c, *d, *e], block)], [(len(i), len(s)) for i, s in packed]
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("cli")  # the package on the fake, so the verifiers build
@@ -1121,7 +1124,7 @@ class TestTheSecondOpinion:
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Sourced
         from adk_review.judge.agents import CALLERS_SHOWN, JUDGED_BOUNDARY
-        from adk_review.judge.verify import Judgements, chunks, judge_files, part_of
+        from adk_review.judge.verify import Judgements, chunks, judge_calls, part_of
 
         code, page = framed("a.py", "@@ -0,0 +1 @@\n+x = 1")[0], framed("b.md", "@@ -0,0 +2 @@\n+```py\n+```")[0]
         assert "````diff" in page, "a fence its own three backticks cannot close"
@@ -1134,10 +1137,10 @@ class TestTheSecondOpinion:
             return Sourced("rule.callers", said, (3, 3))
 
         a, b, c = [found("a.py")], [found("b.md")], [found("c.py")]
-        assert chunks([("a.py", a), ("b.md", b)], block) == [([*a, *b], f"{code}\n\n{page}")], "each own part, once"
-        calls = chunks([("b.md", b), ("c.py", c)], block)
+        assert chunks([*a, *b], block) == [([*a, *b], f"{code}\n\n{page}")], "each own part, once"
+        calls = chunks([*b, *c], block)
         assert calls == [([*b, *c], block)], "c.py has no part: the whole block, once, which holds b.md's"
-        judged = await judge_files(calls, "c.py:3: f(1)", [])
+        judged = await judge_calls(calls, "c.py:3: f(1)", [])
         assert all(isinstance(answer, Judgements) for answer in judged), judged
         (told,) = [instruction for instruction, _turns in asked]
         assert told.count(block) == 1 and told.count(page) == 1, "the whole block once, b.md's part inside it"

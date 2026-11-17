@@ -10,10 +10,9 @@ named too. One verifier a call, each call the findings of whole files up to `CHU
 `CHUNK_CAP_CHARS` of the change, fanned out the way the guidelines are — a `Workflow` under the same `max_concurrency` —
 under the same plugin instances: redaction, the ledger and its ceiling, a provider error as that verifier's own answer.
 Each reads its files' own parts of the change as the guidelines were shown them, or the whole change once where they
-were shown no part of one of its files, and the calls into what the change touched. Measured offline on the demo's
-branches: one call a file sent the instruction once a file and the whole change once for each file outside it, 8 calls
-and 49,238 characters on `feature/orders` where packed calls are 2 and 30,188, and 3 and 8,795 on `feature/payments`
-where they are 1 and 6,339.
+were shown no part of one of its files, and the calls into what the change touched. One call a file sent the
+instruction once a file and the whole change once for each file outside it; GUIDE.md's `--verify` row says what packing
+saved on the demo.
 """
 
 from __future__ import annotations
@@ -73,7 +72,7 @@ class Judgements(BaseModel):
 
 
 def keys(number: int) -> tuple[str, str, str]:
-    """The state keys of verifier `number`: the findings it reads, its file's part of the change, and what it writes."""
+    """The state keys of verifier `number`: the findings it reads, the change its call reads, and what it writes."""
     return f"findings_{number}", f"change_{number}", f"judgements_{number}"
 
 
@@ -164,31 +163,33 @@ def numbered(items: Sequence[Sourced]) -> str:
     return cut_at(_listed(items), FINDINGS_CAP_CHARS, sep="\n")
 
 
-def _shown(parts: Sequence[str], diff: str) -> str:
-    """The change one call reads: each of its files' parts once, or the whole change, which holds every part, where
-    one of its files has none of its own."""
-    return diff if diff in parts else "\n\n".join(parts)
-
-
-def chunks(files: Sequence[tuple[str, Sequence[Sourced]]], diff: str) -> list[tuple[list[Sourced], str]]:
-    """`files`, as `by_file` lists them, packed in order into the calls the verifiers make: each call's findings, and
-    the change it reads. A file joins the last call while the call stays within `CHUNK_FINDINGS_MAX` findings,
-    `CHUNK_CAP_CHARS` of the change and findings no cut at `FINDINGS_CAP_CHARS` leaves unjudged. A file is never split,
-    so a guideline's restatement stays beside the rule's finding; one past a bound by itself is a call of its own."""
-    packed: list[tuple[list[Sourced], list[str]]] = []
-    for path, items in files:
-        part = part_of(diff, path)
+def chunks(items: Sequence[Sourced], diff: str) -> list[tuple[list[Sourced], str]]:
+    """`items` packed into the calls the verifiers make, each file's findings whole, in the order `by_file` gives:
+    each call's findings, and the change it reads. A file joins the last call while the call holds at most
+    `CHUNK_FINDINGS_MAX` findings, findings no cut at `FINDINGS_CAP_CHARS` leaves unjudged, and a change within
+    `CHUNK_CAP_CHARS` or no longer than it read before. A call reads its files' parts once, or the whole change, which
+    holds every part, where one of its files has none of its own. Where the change passes the cap, such files come
+    last, so they share one call: read by review, each made a call of its own, and ten sent 2.2 million characters
+    more. Within the cap any call can read the whole change, and the order stays: measured, putting them last split
+    the demo's calls three ways, not two. A file is never split, so a guideline's restatement stays beside the rule's
+    finding; one past a bound alone is a call of its own."""
+    files = [(part_of(diff, path), held) for path, held in by_file(items)]
+    if len(diff) > CHUNK_CAP_CHARS:
+        files.sort(key=lambda file: file[0] is diff)  # stable: a file with no part of its own last
+    packed: list[tuple[list[Sourced], str]] = []
+    for part, held in files:
         if packed:
-            joined, parts = [*packed[-1][0], *items], [*packed[-1][1], part]
+            joined, shown = [*packed[-1][0], *held], packed[-1][1]
+            wider = diff if diff in (shown, part) else f"{shown}\n\n{part}"
             if (
                 len(joined) <= CHUNK_FINDINGS_MAX
-                and len(_shown(parts, diff)) <= CHUNK_CAP_CHARS
+                and len(wider) <= max(CHUNK_CAP_CHARS, len(shown))
                 and len(_listed(joined)) <= FINDINGS_CAP_CHARS
             ):
-                packed[-1] = (joined, parts)
+                packed[-1] = (joined, wider)
                 continue
-        packed.append((list(items), [part]))
-    return [(items, _shown(parts, diff)) for items, parts in packed]
+        packed.append((list(held), part))
+    return packed
 
 
 def calls(callers: str) -> str:
@@ -199,7 +200,7 @@ def calls(callers: str) -> str:
     return f"{CALLERS_SHOWN}\n{fenced('callers', cut_at(callers, CALLERS_CAP_CHARS, sep='\n'), JUDGED_BOUNDARY)}\n\n"
 
 
-async def judge_files(
+async def judge_calls(
     packed: Sequence[tuple[Sequence[Sourced], str]], callers: str, plugins: list[BasePlugin]
 ) -> list[Judgements | str]:
     """Each call's findings, as `chunks` packs them, judged by one verifier, in order: its `Judgements`, or why it gave
@@ -263,10 +264,10 @@ def second_opinion(
     """
     outcome.verified = True
     asked = [*(item for item in rules if not item.old), *outcome.kept]
-    packed = chunks(by_file(asked), diff)
-    judged = run(judge_files(packed, callers, plugins))
+    packed = chunks(asked, diff)
+    judged = run(judge_calls(packed, callers, plugins))
     refuted: set[int] = set()  # by identity: two checks can file the same finding
-    for (items, _shown), answer in zip(packed, judged, strict=True):
+    for (items, _change), answer in zip(packed, judged, strict=True):
         for item, (verdict, why) in zip(items, _read(answer, len(items)), strict=True):
             if verdict == "holds":
                 continue

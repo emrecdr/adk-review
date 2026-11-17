@@ -61,7 +61,7 @@ CALLERS_SHOWN = (
 )
 #: What a guideline reads above those calls: where a finding about one belongs.
 CALLERS_HEADING = f"{CALLERS_SHOWN} Where the change breaks one, report it on the changed lines.\n"
-#: What the chat's verdict reads of the checks is capped the same way, and so are one file's findings a verifier judges.
+#: What the chat's verdict reads of the checks is capped the same way, and so are one call's findings a verifier judges.
 #: Measured uncapped: lint over a 5-file branch of a 724-file tree gave it 21,814 characters, and that tree reviewed as
 #: one branch 619,116.
 FINDINGS_CAP_CHARS = 20_000
