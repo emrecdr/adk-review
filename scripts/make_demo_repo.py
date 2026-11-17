@@ -581,13 +581,15 @@ MARKER = "adk-demo-repo"
 FIRST = "payments: charge and format"
 
 
-def build(root: Path) -> Path:
+def build(root: Path, *, default: bool = False) -> Path:
     """Build the repository at `root`, replacing a demo built there before. Any other folder that holds a file is
     refused, `ValueError`: read by an audit, and reproduced, the build deleted whatever folder it was given, a
-    repository of the person's own among them, `make demo-repo` sharing `REPO` with `make review`."""
+    repository of the person's own among them, `make demo-repo` sharing `REPO` with `make review`. The `default`
+    folder, `demo_repo()`, is the demo's by its name and replaced whatever it holds: reported from Windows, an earlier
+    demo there that git would not read, owned by another account or half removed, was refused with no way out."""
     if root.exists():
-        if any(root.iterdir()) and not _ours(root):
-            raise ValueError(f"{root} holds files no demo build made. Name a new or empty folder")
+        if not default and any(root.iterdir()) and not _ours(root):
+            raise ValueError(f"{root} holds files no demo build made. Delete it, or name a new or empty folder")
         shutil.rmtree(root, onexc=_writable)
     root.mkdir(parents=True)
     _git(root, "init", "-q", "-b", BASE_REF)
@@ -687,7 +689,7 @@ def main(argv: list[str]) -> int:
         print(f"\nReview it again; with both blockers gone it ends in exit 0:\n\n  {_review(root)}")
         return 0
     try:
-        build(root)
+        build(root, default=args.path is None)
     except ValueError as exc:
         print(exc, file=sys.stderr)
         return 1
