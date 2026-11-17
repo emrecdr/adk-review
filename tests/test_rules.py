@@ -1001,6 +1001,32 @@ class TestTheLintRule:
         )
         assert "- profile      default (off: " in out and "`rule.reviewer-instructions`" in out, "the default ran it"
 
+    def test_lint_names_a_block_of_commented_out_code_once(self) -> None:
+        """Reported by the owner from a review on Windows: ruff reports commented-out code line by line, so one block
+        of four lines made four findings. A run that only comment lines join is one finding, at its first line ruff
+        names, quoting the lines to its last, its title naming them. A block apart, past code or a blank line, is its
+        own."""
+        text = (
+            "def total(items):\n"
+            "    result = 0\n"
+            "    # for item in items:\n"
+            "    #     if item < 0:\n"
+            "    #         raise ValueError(item)\n"
+            "    #     result += item\n"
+            "    return result\n"
+            "\n"
+            "\n"
+            "# print(total([1, 2]))\n"
+        )
+        found = lint_findings({"files": [_entry("calc.py", text)], "tree": None})
+        blocks = [f for f in found if "ERA001" in f.title]
+        assert [(f.line, f.title) for f in blocks] == [
+            (5, "lint: ERA001 Found commented-out code on lines 5 to 6"),
+            (10, "lint: ERA001 Found commented-out code"),
+        ], blocks
+        quoted = "    #         raise ValueError(item)\n    #     result += item"
+        assert blocks[0].evidence == quoted, blocks[0].evidence
+
     def test_lint_names_a_bidirectional_control_and_a_look_alike_name(self) -> None:
         """Ruff reads both in Python code: a control that reorders a line is major, a letter that is not ASCII in a name
         is minor, since a whole project may be written in another script."""

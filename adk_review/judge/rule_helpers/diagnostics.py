@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from collections import Counter
 from collections.abc import Callable, Collection, Mapping
+from dataclasses import replace
 
 from ...core.findings import RANK, Severity
 from ...core.rules import ChangedFile, Diagnostic, Hit, is_python
@@ -18,6 +19,9 @@ from ...core.rules import ChangedFile, Diagnostic, Hit, is_python
 #: severe of them, so no tier is lost and the report stays one a person reads. Measured with no cap: a new file of
 #: 1,500 unused imports made a 229 KB report and a 490 KB JSON, and the fold took 5.5 s over 8,000 findings in one file.
 PER_FILE = 50
+#: The codes ruff reports line by line where the problem is a block: commented-out code. Each run of one that only
+#: comment lines join is one finding. Reported by the owner: a block of four commented-out lines made four findings.
+BLOCKS = frozenset({"ERA001"})
 
 
 def family(code: str) -> str:
@@ -86,7 +90,7 @@ def listed(
             what = f"{len(counted)} ruff finding{'' if one else 's'}{' already in this file,' * bool(known)}"
             title = f"{what} on {'a line' if one else 'lines'} this change did not touch"
             tail.append(_counted(file.path, counted, title, why=why, old=bool(known)))
-    rated = [(found, severity) for found, severity in rated if caused(found)]
+    rated = _blocks(file, [(found, severity) for found, severity in rated if caused(found)])
     if len(rated) > PER_FILE:
         ranked = sorted(range(len(rated)), key=lambda at: -RANK[rated[at][1]])  # stable: by line
         shown = set(ranked[:PER_FILE])
@@ -98,7 +102,7 @@ def listed(
             file.path,
             found.line,
             found.source,
-            title=f"{found.code} {found.message}",
+            title=f"{found.code} {found.message}{_spanned(found)}",
             severity=severity,
             fix=fix_of(fixes, found.code, found.fix, found.applicability),
             why=found.url and f"Ruff's page for {found.code} says why it matters, with an example: {found.url}",
@@ -106,6 +110,31 @@ def listed(
         for found, severity in rated
     ]
     return hits + tail
+
+
+def _blocks(file: ChangedFile, rated: list[tuple[Diagnostic, Severity]]) -> list[tuple[Diagnostic, Severity]]:
+    """`rated`, in ruff's order of lines, with each run of a `BLOCKS` code that only comment lines join made one: at the
+    run's first line, its `last` the run's last, its source the lines between, at the most severe of them."""
+    kept: list[tuple[Diagnostic, Severity]] = []
+    runs: dict[str, int] = {}  # each block code's last run, by its place in `kept`
+    for found, severity in rated:
+        if (at := runs.get(found.code)) is not None:
+            run, worst = kept[at]
+            end = run.last or run.line
+            if end < found.line and all(file.line(n).lstrip().startswith("#") for n in range(end + 1, found.line)):
+                lines = "\n".join(file.line(n) for n in range(run.line, found.line + 1))
+                kept[at] = (replace(run, last=found.line, source=lines), max(worst, severity, key=RANK.__getitem__))
+                continue
+        if found.code in BLOCKS:
+            runs[found.code] = len(kept)
+        kept.append((found, severity))
+    return kept
+
+
+def _spanned(found: Diagnostic) -> str:
+    """Where a block's finding ends, for its title: ` on lines 5 to 8`, or nothing for one line."""
+    spans = found.code in BLOCKS and found.last is not None and found.last > found.line
+    return f" on lines {found.line} to {found.last}" if spans else ""
 
 
 def _slug(diag: Diagnostic) -> str | None:
