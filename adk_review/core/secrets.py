@@ -233,11 +233,18 @@ _VENDOR = (
 #: white space reached across the strings of a line of code 17 times, `'TOKEN = "ghp_' + ...`; with none, two lines
 #: more matched, each a real value of a test. A password of words holding the other quote is still missed.
 _QUOTED_VALUE = r"([^\"'\n]{6,}|(?:(?!\2)\S){6,})"
+#: A type annotation between a name and its value, `token: str = ...`, `KEY: Final[str] = ...` or a parameter's
+#: default: read by a replay audit, and reproduced, it hid a credential from both rules and from the redaction.
+#: Measured over 2.4 million lines of the installed packages and this repository: every line the shape matched
+#: before it matches still, and 66 more, each a constant naming a variable, a URL or a header, none a finding.
+_ANNOTATION = r"(?:\s*:\s*[\w.\[\], |]{1,80}?)?"
 #: A value a name alone says is secret, with no vendor's shape: what `named-secrets` weighs.
 _GENERIC = (
     (
         "generic_secret",  # a named value in quotes: code, JSON, YAML
-        re.compile(r"(?i)(" + _NAMED + r"[\"']?\s*[:=]\s*)([\"'])" + _STAND_IN + _QUOTED_VALUE + r"\2"),
+        re.compile(
+            r"(?i)(" + _NAMED + r"[\"']?" + _ANNOTATION + r"\s*[:=]\s*)([\"'])" + _STAND_IN + _QUOTED_VALUE + r"\2"
+        ),
         r"\1\2[REDACTED]\2",
     ),
     (

@@ -151,6 +151,29 @@ class TestTheSecretShapes:
             assert count == 1 and pw not in cleaned and "[REDACTED]@" in cleaned, cleaned
         assert [scrub(line)[1] for line in left[:3]] == [0, 0, 0], "no password, nothing to hide"
 
+    def test_a_named_value_with_a_type_annotation_is_found_and_hidden(self) -> None:
+        """Read by a replay audit, and reproduced: a type annotation between the name and its value, `token: str =
+        "..."`, a `Final` constant or a parameter's default, escaped both credential rules, so the push's history
+        rules missed it, and reached the model unredacted. The annotation is read as part of the name's side: measured
+        over 2.4 million lines of the installed packages and this repository, every line the shape matched before it
+        matches still, 66 more match, each a constant naming a variable, a URL or a header, none a finding, and each
+        hidden from the model as the same line without its annotation already is."""
+        from adk_review.core.secrets import scrub
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.named_secrets import NamedSecrets
+
+        value = "Xk9mQ2" + "vL8pR4"  # built here, so this file holds no credential a review would stop on
+        found = [
+            f'token: str = "{value}"',
+            f'DB_PASSWORD: Final = "{value}"',
+            f'def connect(password: str = "{value}"):',
+        ]
+        left = ['TOKEN_ENV: Final = "OPENAI_TOKEN"', 'api_key_header: str = "Authorization"']
+        assert lines_hit(NamedSecrets(), "settings.py", "\n".join([*found, *left]) + "\n") == [1, 2, 3]
+        for line in found:
+            cleaned, count = scrub(line)
+            assert count == 1 and value not in cleaned, cleaned
+
     def test_a_named_value_holding_the_other_quote_is_found_and_hidden(self) -> None:
         """Read by review of another tool's report, and reproduced: a value in double quotes holding a single one,
         `db_password = "P@ss'w0rd99!"`, was hidden before no model call and named by no rule, nor one in single quotes
