@@ -4152,3 +4152,75 @@ class TestTheShippedRules:
         assert "### rule.secrets" not in out and "- secrets redacted before any model call: 6" in out
         off = [check for check in catalog().ids() if check not in PROFILES["no-secrets"]]
         assert f"- profile      no-secrets (off: {', '.join(off)})" in out, "left off and named, every rule among it"
+
+
+#: The demo's second planted branch, and the files each rule finds its own defect in there, as
+#: `scripts/make_demo_repo.py` plants them: each file a rule names, where it names more than one.
+ORDERS = "feature/orders"
+PLANTED_ON_ORDERS: dict[str, tuple[str, ...]] = {
+    "callers": ("tests/test_charge.py",),
+    "hidden-text": ("AGENTS.md",),
+    "lint": ("src/payments/orders.py", "src/payments/order_db.py", "src/payments/config.py"),
+    "lockfile-sources": ("uv.lock",),
+    "named-secrets": ("src/payments/config.py",),
+    "no-print": ("src/payments/orders.py",),
+    "pinned-actions": (".github/workflows/orders.yml",),
+    "pitfalls": ("src/payments/orders.py",),
+    "private-patch": ("tests/test_orders.py",),
+    "radius-types": ("src/payments/orders.py",),
+    "reviewer-instructions": ("src/payments/order_db.py",),
+    "script-injection": (".github/workflows/orders.yml",),
+    "secrets": ("src/payments/config.py",),
+    "simplify": ("src/payments/order_db.py",),
+    "steering-files": (".github/workflows/orders.yml", "AGENTS.md"),
+    "tests-offline": ("tests/test_orders.py",),
+    "types": ("src/payments/order_db.py",),
+}
+
+
+class TestTheDemoBranches:
+    """The demo repository's two planted branches off one `main`: `feature/payments`, four defects, and
+    `feature/orders`, a defect for each check, so the demo shows every rule at work, offline."""
+
+    def test_each_rule_finds_the_defect_planted_for_it_on_the_orders_branch(
+        self, demo_repo: Path, cli, tmp_path: Path
+    ) -> None:
+        """Each rule runs alone over the orders branch and names the file its defect is planted in, as a finding or,
+        but encoding-declaration, whose finding is a hole by design that would make the branch's review a hole and
+        hide its verdict: its own examples show it. Every other rule but the demo's own has a defect there, so
+        a new rule fails here until the demo plants one for it, and the guides' "every check" stays true."""
+        shown_apart = {"encoding-declaration"}  # a hole by design: its own `--explain` examples show it
+        shipped = sorted(r.id for r in catalog().rules if not r.id.startswith("demo-") and r.id not in shown_apart)
+        assert sorted(PLANTED_ON_ORDERS) == shipped, "a defect planted on feature/orders for every rule"
+        missed = {}
+        for rule, files in PLANTED_ON_ORDERS.items():
+            path = tmp_path / f"{rule}.json"
+            argv = [str(demo_repo), "--base", BASE, "--head", ORDERS, "--check", rule_id(rule), "--json", str(path)]
+            cli.main(argv)
+            data = json.loads(path.read_text(encoding="utf-8"))
+            named = {f["file"] for f in [*data["findings"], *data["folded"]] if f["check"] == rule_id(rule)}
+            hole = data["could_not_look"].get(rule_id(rule), "")
+            if unnamed := [file for file in files if file not in named and file not in hole]:
+                missed[rule] = unnamed
+        assert missed == {}, "each rule names the file its defect is planted in"
+
+    def test_the_payments_branch_finds_what_it_found_before_the_orders_branch(
+        self, demo_repo: Path, cli, tmp_path: Path
+    ) -> None:
+        """The orders branch shares `main` and nothing else: the payments branch's findings are its four planted
+        defects' alone, at the lines they stood on before the second branch was built beside it."""
+        path = tmp_path / "payments.json"
+        assert run_review(cli, demo_repo, "--profile", "demo", "--json", str(path)) == 1
+        data = json.loads(path.read_text(encoding="utf-8"))
+        found = sorted((f["check"], f["file"], f["line"], f["severity"]) for f in [*data["findings"], *data["folded"]])
+        assert found == [
+            ("rule.demo-money-in-cents", "src/payments/report.py", 5, "major"),
+            ("rule.lint", "src/payments/charge.py", 28, "major"),
+            ("rule.lint", "src/payments/config.py", 5, "major"),
+            ("rule.secrets", "src/payments/config.py", 4, "blocker"),
+            ("rule.secrets", "src/payments/config.py", 5, "blocker"),
+            ("rule.simplify", "src/payments/refund.py", 8, "minor"),
+        ]
+        assert data["could_not_look"] == {} and data["not_read"] == {}
+        changed = [f"src/payments/{name}.py" for name in ("charge", "config", "refund", "report")]
+        assert data["reviewed"]["files"] == changed, "the four files it changes, and none of the orders branch's"

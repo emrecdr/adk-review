@@ -57,10 +57,13 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   three). Run all three before calling anything done, and report what they printed.
 - `uv run python scripts/make_demo_repo.py` builds the demo repository with its planted defects (`--fix` commits its
   two fixes); `uv run adk-review <demo repo> --head feature/payments --base main --profile demo` reviews it with
-  no model call, and `--profile default-rules`, `--check rule.<name>`, `--dry-run`, `--list-checks`, `--explain` and
-  `--try` make none either. A review whose profile names a guideline calls a provider, and so do
-  `--check guideline.<name>`, `adk web`, `adk run`, `scripts/measure.py`, `scripts/injection_suite.py` and
-  `scripts/labelled_set.py`, so run one only when the task says so.
+  no model call. Its second branch, `feature/orders`, plants a defect for each check:
+  `--head feature/orders --profile rules-only` shows each rule finding its own, exit 1, and the default profile gives each guideline a target of its kind, with a model. `tests/test_rules.py` holds
+  every rule to its planted defect there, so a new rule plants one. `--profile rules-only`, `--profile default-rules`,
+  `--check rule.<name>`, `--dry-run`, `--list-checks`, `--explain` and `--try` make no model call either. A review
+  whose profile names a guideline calls a provider, and so do `--check guideline.<name>`, `adk web`, `adk run`,
+  `scripts/measure.py`, `scripts/injection_suite.py` and `scripts/labelled_set.py`, so run one only when the task says
+  so.
 - A review under `default` makes three calls, `simplify` three, `code-review` five and `full` six, at most three in
   flight (`CONCURRENCY`). On Copilot each call is billed to the seat that logged in, and GitHub rate-limits each user,
   unpublished; Gemini's free tier allows five a minute and twenty a day: a run that met a 429 names it under

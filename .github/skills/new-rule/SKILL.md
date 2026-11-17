@@ -47,7 +47,9 @@ The shape of a rule — the three kinds, the constants it names, what it may imp
    (`TestTheShippedRules`, `TestTreeRules`; a new kind's contract in `tests/test_catalog.py`): what it flags and what it
    leaves alone through `try_rule(rule, {path: text})` and `lines_hit(rule, path, text)` from
    `adk_review.judge.rule_helpers`, what its examples do not already say, and a run on the demo repository with
-   `--profile demo` when the planted branch should trip it.
+   `--profile demo` when the planted branch should trip it. Plant a defect for it on the demo's `feature/orders`
+   branch in `scripts/make_demo_repo.py`, a comment beside it naming the rule, and add its file to `PLANTED_ON_ORDERS`
+   in `tests/test_rules.py`: that test fails until every rule but the demo's own finds its defect there.
 5. Check `uv run python -m adk_review.review --list-checks` shows it with its kind, its profiles and its file, and that
    `GUIDE.md`'s check table matches it, and run
    `uv run pytest -q tests/test_docs.py tests/test_rules.py tests/test_catalog.py tests/test_layering.py`, then the

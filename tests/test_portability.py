@@ -229,19 +229,25 @@ def test_the_fix_says_what_it_changed_in_each_file_and_what_it_left_planted(tmp_
 
 def test_the_demo_repository_names_the_review_to_run_on_it_ready_to_paste(tmp_path: Path, capsys) -> None:
     """The build once printed its path alone, and a first-time reader filled the review's command in from the README
-    by hand. The path holds a space here, as a Windows user's temp folder can: pasted, it is still one argument."""
+    by hand. The path holds a space here, as a Windows user's temp folder can: pasted, it is still one argument. The
+    build names the payments review first, then the orders branch's two, the rules alone and the default profile, each
+    on its own line: the owner asks for every common task ready to copy. `--fix` names the payments review alone."""
     import shlex
 
     import make_demo_repo
 
     root = tmp_path / "a demo"
-    review = ["uv", "run", "adk-review", str(root.resolve()), "--head", "feature/payments", "--base", "main"]
-    review += ["--profile", "demo"]
-    for argv in ([str(root)], [str(root), "--fix"]):
+    reviewed = ["uv", "run", "adk-review", str(root.resolve())]
+    review = [*reviewed, "--head", "feature/payments", "--base", "main", "--profile", "demo"]
+    orders = [*reviewed, "--head", "feature/orders", "--base", "main"]
+    for argv, expected in (
+        ([str(root)], [review, [*orders, "--profile", "rules-only"], orders]),
+        ([str(root), "--fix"], [review]),
+    ):
         assert make_demo_repo.main(argv) == 0
         lines = capsys.readouterr().out.splitlines()
         pasted = [shlex.split(line) for line in lines if line.strip().startswith("uv run adk-review")]
-        assert pasted == [review], (argv, lines)
+        assert pasted == expected, (argv, lines)
 
 
 def test_the_copilot_login_says_how_to_use_it_and_logs_in_to_nothing(monkeypatch, tmp_path: Path, capsys) -> None:

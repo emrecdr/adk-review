@@ -61,12 +61,20 @@ uv tool install --reinstall --exclude-newer P3D git+https://github.com/emrecdr/a
 ### 3. Review the demo
 
 ```bash
-uv run python scripts/make_demo_repo.py      # a throwaway repository with planted defects; prints the review to run
+uv run python scripts/make_demo_repo.py      # a throwaway repository with planted defects; prints the reviews to run
 uv run adk-review <that path> --head feature/payments --base main --profile demo
+uv run adk-review <that path> --head feature/orders --base main --profile rules-only
 ```
 
 The rules find the demo's hard-coded key pair, its shell call and a float division of cents: exit 1, a blocker.
-`make demo` runs both.
+`make demo` runs the first two lines. The second branch, `feature/orders`, adds an orders feature with a defect for
+each check, to show every check at work. Each rule of `rules-only` finds its own, offline: a call a file the branch
+left alone still makes the old way, a workflow that runs an issue's title as code, a lockfile that fetches from a
+private mirror, an order to the reviewing model, and more; that review ends in exit 1.
+Drop `--profile` to add the default guidelines, which need a model as step 5 says; `--profile full` adds all six. Each
+guideline has a target of its kind there: an inverted condition, SQL built with an f-string, a query run for each line,
+a special case in shared code, a deeply nested function and code no test calls. The comments in
+`scripts/make_demo_repo.py` name each defect and the check that finds it.
 
 ### 4. Review a repository of your own
 

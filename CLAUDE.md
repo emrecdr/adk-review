@@ -34,11 +34,13 @@ uv run pytest -q tests/test_rules.py       # one file
 uv run ruff check . && uv run ruff format --check .   # lint (make lint); `make format` fixes
 uv run pyrefly check                                  # types: the package and scripts, no error (make typecheck); `make ci` = lint + typecheck + test
 
-uv run python scripts/make_demo_repo.py          # build <tmp>/adk-demo-repo: main + feature/payments with 4 planted defects
+uv run python scripts/make_demo_repo.py          # build <tmp>/adk-demo-repo: main + feature/payments with 4 planted defects + feature/orders with a defect for each check
 uv run python scripts/make_demo_repo.py --fix    # commit the two fixes on feature/payments
 uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--path-exclude DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--handoff [FILE]] [--comment [FILE]] [--cache DIR] [--previous FILE] [--progress | --quiet] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
 uv run adk-review <demo repo> --head feature/payments --base main --profile demo   # every rule, the demo's own among them, no model call, no key
 uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # what a review would cover and run, nothing run
+uv run adk-review <demo repo> --head feature/orders --base main --profile rules-only   # each rule finds its own planted defect, exit 1; no model call
+uv run adk-review <demo repo> --head feature/orders --base main   # the default profile: its guidelines judge their planted targets too, with a model
 uv run adk-review-login                          # one-time GitHub device-flow login for the Copilot arm
 uv run adk web --no_use_local_storage .          # the chat in a browser, over the same graph; sessions in memory, never on disk
 # the commit hook, after `make install`: GUIDE.md's "Before a commit" lines, what a commit holds (`git commit -a` and `<paths>` included) with default-rules; pre-commit's adk-review-commit hook runs the same
@@ -319,7 +321,8 @@ there is no schema. The `fake_provider` fixture's `raises_when(text, exc)` / `an
 an agent calling a tool; `confirms(fake_provider, repo)` makes chat's intake confirm a scope with its tool, as a model
 would, `Chat(module)` holds one conversation over several turns, under the `run_config` a test names, as `adk web`'s
 Token Streaming does, its last turn's events in `chat.events`, and the `asked` fixture records each request as it was
-sent. `demo_repo` is a session-scoped real repository from `scripts/make_demo_repo.py`, and `hostile_repo` a branch per
+sent. `demo_repo` is a session-scoped real repository from `scripts/make_demo_repo.py`, its two planted branches
+`feature/payments` and `feature/orders`, the second holding a defect for each rule, and `hostile_repo` a branch per
 way a change once hid from the review. A hook's script is written with `_script` (LF ends, the execute bit) and run
 through `_git_shell()`, git's own `sh`, as Git for Windows runs a hook. `asyncio_mode = "strict"`, so async tests need
 `@pytest.mark.asyncio`. A test still running after `faulthandler_timeout` prints every thread's stack and ends the run.

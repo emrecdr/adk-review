@@ -17,10 +17,15 @@ On macOS they need Xcode's Command Line Tools too, `xcode-select --install`: `RE
 
 ```bash
 uv sync --locked                             # once: the reviewer, its Python and its locked dependencies
-uv run python scripts/make_demo_repo.py      # a throwaway repository with planted defects; prints the review to run
+uv run python scripts/make_demo_repo.py      # a throwaway repository with planted defects; prints the reviews to run
 uv run adk-review <that path> --head feature/payments --base main --profile demo
+uv run adk-review <that path> --head feature/orders --base main --profile rules-only   # a defect for each check
 uv run adk-review <repo> --base main --profile default-rules    # a repository of your own: the default's rules
 ```
+
+The demo has two branches off one `main`. `feature/payments` plants four defects: the rules find three, exit 1.
+`feature/orders` plants a defect for each check: each rule of `rules-only` finds its own, exit 1. Drop `--profile` to let the guidelines judge it too, with a model: each has a target of its
+kind there.
 
 `<repo>` is the path of the repository to review, and `--head` defaults to its branch checked out: on `main` itself a
 change against `main` is nothing, exit 2, and the sentence names `--head`, `--base` and `--all`. `demo`, `rules-only`

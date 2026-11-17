@@ -9,7 +9,8 @@ applyTo: "tests/**"
   the Gemini arm, where the fake registers, unless a test names another arm and model (`load_command` loads the command
   that way: the Copilot arm runs offline with ADK's LiteLLM client replaced, and LiteLLM's own routing only where a test
   replaces the network below it, as `test_a_copilot_call_carrying_a_tool_reaches_copilot` does); the `cli` fixture, the
-  command's module loaded that way; `demo_repo`, a real repository built by `make_demo_repo.build`, and `hostile_repo`,
+  command's module loaded that way; `demo_repo`, a real repository built by `make_demo_repo.build`, its planted
+  branches `feature/payments` and `feature/orders`, the second a defect for each rule, and `hostile_repo`,
   a branch per way a change once hid from the review; and `fake_provider.raises_when` / `answers_when` / `calls_when`,
   which make the provider fail, answer or call a tool on a text in the system instruction; `confirms`, chat's intake
   confirming a scope with its tool; `Chat`, one conversation over several turns, under a `run_config` where a test names
