@@ -119,6 +119,7 @@ try:
         render_explained,
         render_handoff,
         render_tried,
+        reviewed_scope,
         safe_line,
         told_in_parts,
     )
@@ -771,7 +772,7 @@ def _review(argv: list[str] | None = None) -> int:
         args.path_exclude = exclude_of(args.path_exclude)  # as git spells each, which the cache key reads too
         _mode_alone(args)
         explanation = explained(found, config["profiles"], args.explain) if args.explain else None
-        previous = read_previous(args.previous) if args.previous else (None, None)
+        previous = read_previous(args.previous) if args.previous else (None, None, None)
         _outputs_ready(args)
     except ValueError as exc:
         _say(str(exc))
@@ -1086,7 +1087,13 @@ def _reported(
     """The verdict, decided by code, and the review's reports: the text one always, the hand-off and the JSON where
     asked for or kept, and the whole kept where a cache is named and the review has no hole and no finding a verifier
     could not judge. `tidies` are the checks whose findings the hand-off lists apart, as cleanup."""
-    seen, seen_health = previous
+    seen, seen_health, seen_scope = previous
+    if seen is not None and seen_scope not in (None, reviewed_scope(evidence)):
+        _say(
+            f"--previous {args.previous} reviewed another repository, branch or scope. No finding is marked new or "
+            "fixed. Name the --json report of this branch's last review"
+        )
+        seen = seen_health = None
     verdict, code = decide(outcome, args.fail_on)
     report = render(
         evidence,

@@ -1623,12 +1623,13 @@ SCHEMA = 2
 
 
 #: A previous review's findings by fingerprint and its health, as `--previous` reads them, or none.
-type Previous = tuple[dict[str, dict] | None, dict | None]
+type Previous = tuple[dict[str, dict] | None, dict | None, tuple[str, str, bool] | None]
 
 
-def read_previous(path: str) -> tuple[dict[str, dict], dict | None]:
-    """A previous review's findings by fingerprint, from the report its `--json` wrote, and its `health`, None where it
-    has none; a sentence for anything else, before the review runs."""
+def read_previous(path: str) -> Previous:
+    """A previous review's findings by fingerprint, from the report its `--json` wrote, its `health`, None where it
+    has none, and what it reviewed, as `reviewed_scope` names it, None where it names none; a sentence for anything
+    else, before the review runs."""
     try:
         data = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
         if not isinstance(data, dict) or data.get("schema") != SCHEMA or not isinstance(data.get("findings"), list):
@@ -1640,6 +1641,9 @@ def read_previous(path: str) -> tuple[dict[str, dict], dict | None]:
         # Its health made safe too, and so bounded as the findings are: read by review, one nested deep and read as it
         # was loaded overflowed the cache key's encoding, exit 3, where the same review gave 0 without the cache.
         health = safe_value(data["health"]) if isinstance(data.get("health"), dict) else None
+        seen, scope = data.get("reviewed"), None
+        if isinstance(seen, dict) and isinstance(seen.get("repository"), str) and isinstance(seen.get("head"), str):
+            scope = (seen["repository"], seen["head"], seen.get("base") is None)
     except RecursionError:  # measured by review: nested 1,100 deep, which no report `--json` writes, it ended as a hole
         raise ValueError(
             f"--previous {path}: nested deeper than a report --json writes. Name the JSON a review wrote with --json"
@@ -1648,7 +1652,14 @@ def read_previous(path: str) -> tuple[dict[str, dict], dict | None]:
         raise ValueError(
             f"--previous {path}: {getattr(exc, 'strerror', None) or exc}. Name the JSON a review wrote with --json"
         ) from None
-    return kept, health
+    return kept, health, scope
+
+
+def reviewed_scope(evidence: Evidence) -> tuple[str, str, bool]:
+    """What a review read, as its JSON's `reviewed` names it: the repository, the head and whether it was `--all`. A
+    previous review of another is no baseline: read by an audit, and reproduced, an `--all` report named as one
+    counted each finding in a file this review never read as fixed."""
+    return safe_line(evidence["preflight"]["repo"]), safe_line(evidence["preflight"]["head"]), evidence["whole"]
 
 
 # Cached: a report's strings repeat, its keys, checks, files and fixes. Measured over 18,296 findings: a previous

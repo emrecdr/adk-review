@@ -17,9 +17,20 @@ def matches(path: str, *globs: str) -> bool:
     """Whether one of `globs` names `path`, each read as `.gitignore` reads one. A name alone, `*.py` or
     `Dockerfile*`, is the file's own name, wherever the file lies. With a `/`, `deploy/*.yaml` or `src/**/*.py`, it
     is the whole path from the top, `**` standing for any folders. Ending in `/`, `src/payments/`, it is everything
-    under that folder. Letters match as written: `*.PY` is not `*.py`. A backslash reads as a slash, as Windows writes
-    a path and `--path` reads one: read by review, `tests\\test_*.py` and `vendor\\` matched nothing."""
-    return any(_matches(path, glob.replace("\\", "/")) for glob in globs)
+    under that folder. With no wildcard, `external` or `libs/foo`, it names that folder from the top as well, as
+    `.gitignore` reads it, and a `./` or `/` it starts with is dropped, the glob being read from the top already: read
+    by an audit, `--third-party external` matched nothing and said nothing. Letters match as written: `*.PY` is not
+    `*.py`. A backslash reads as a slash, as Windows writes a path and `--path` reads one: read by review,
+    `tests\\test_*.py` and `vendor\\` matched nothing."""
+    return any(_matches(path, _from_the_top(glob)) for glob in globs)
+
+
+def _from_the_top(glob: str) -> str:
+    """A glob with `/` for `\\` and no `./` or `/` before it."""
+    glob = glob.replace("\\", "/")
+    while glob.startswith("./"):
+        glob = glob[2:]
+    return glob.lstrip("/")
 
 
 @functools.lru_cache(maxsize=4096)
@@ -27,6 +38,8 @@ def _matches(path: str, glob: str) -> bool:
     """One path against one glob. Cached, as `is_test` is: a line rule asks for every added line of a file."""
     if glob.endswith("/"):
         return path.startswith(glob)
+    if not any(sign in glob for sign in "*?[") and path.startswith(glob + "/"):
+        return True
     if "/" in glob:
         return PurePosixPath(path).full_match(glob)
     # The name off the path as git spells it, no `PurePosixPath` built: measured by review, the shipped skip list's

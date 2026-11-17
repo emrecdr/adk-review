@@ -82,6 +82,15 @@ class TestThePathReaders:
         assert matches("tests/test_billing.py", "tests\\test_*.py")
         assert matches("vendor/lib/x.py", "vendor\\") and not matches("vendorx/x.py", "vendor\\")
 
+    def test_a_folder_named_without_its_slash_or_from_the_top_is_the_folder(self) -> None:
+        """Read by an audit, and reproduced: `--third-party external`, `--skip libs/foo`, `/external/` and `./external/`
+        matched nothing, and the files they named were read, with no word. A glob with no wildcard names its folder
+        from the top too, as `.gitignore` reads `external`, and a glob read from the top drops a `./` or `/`."""
+        assert matches("external/ext.py", "external") and matches("libs/foo/mod.py", "libs/foo")
+        assert matches("external/ext.py", "/external/") and matches("external/ext.py", "./external/")
+        assert not matches("externals/x.py", "external") and not matches("src/external/x.py", "/external/")
+        assert matches("a/package-lock.json", "package-lock.json"), "a name alone is still the file's own, anywhere"
+
 
 class TestTheSyntaxReaders:
     CODE = (

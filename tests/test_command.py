@@ -2055,6 +2055,21 @@ class TestThePreviousReportAndTheHandoff:
         assert "## Fix" not in plain and "## Tidy" not in plain and "held back" not in plain, "no tidies, as before"
         assert "tidy" not in plain, "a hand-off with no tidy says nothing of one, in its check of the work least"
 
+    def test_a_previous_review_of_another_scope_marks_nothing_fixed(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ) -> None:
+        """Read by an audit, and reproduced: with `--previous` naming an `--all` review, or another branch's, a review
+        counted each earlier finding in a file it never read as fixed, and the author's comment said so. A previous
+        review of another repository, branch or scope now marks nothing new or fixed, and says why."""
+        whole, now = tmp_path / "whole.json", tmp_path / "now.json"
+        rules = ("--profile", "default-rules")
+        cli.main([str(demo_repo), "--head", HEAD, "--all", *rules, "--json", str(whole)])
+        capsys.readouterr()
+        run_review(cli, demo_repo, *rules, "--previous", str(whole), "--json", str(now))
+        said = capsys.readouterr().err
+        assert "reviewed another repository, branch or scope. No finding is marked new or fixed" in said, said
+        assert json.loads(now.read_text(encoding="utf-8"))["resolved"] is None
+
     def test_a_previous_report_is_made_safe_whole_where_it_is_read(self, tmp_path: Path) -> None:
         """An edited `--previous` is read back through `resolved`: measured by review, a runner's command as a finding's
         key, in a list or in a nested value was written as it came."""
@@ -2069,7 +2084,7 @@ class TestThePreviousReportAndTheHandoff:
         }
         path = tmp_path / "previous.json"
         path.write_text(json.dumps({"schema": SCHEMA, "findings": [crafted]}), encoding="utf-8")
-        findings, _health = read_previous(str(path))
+        findings, _health, _scope = read_previous(str(path))
         written = json.dumps(findings, ensure_ascii=False)
         assert list(findings) == ["f" * 16] and "##vso[" not in written and "##[" not in written, written
         assert "<!--" not in written, written
