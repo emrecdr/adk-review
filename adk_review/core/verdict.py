@@ -227,6 +227,15 @@ def without_fences(lines: Sequence[str]) -> list[str]:
     return list(lines[start:end])
 
 
+def echoes(code: str, quote: str) -> bool:
+    """Whether suggested `code` adds no line to the `quote` it answers: each line of it, a fence of the model's own
+    unwrapped and blank lines aside, stands in the quote already, so it proposes nothing to paste. Reported by the
+    owner from a comment: a guideline quoted a function and gave its last three lines back unchanged as the fix."""
+    quoted = {line.strip() for line in quote.splitlines()}
+    lines = [line.strip() for line in without_fences(code.strip("\n").splitlines()) if line.strip()]
+    return bool(lines) and all(line in quoted for line in lines)
+
+
 def drop_ungrounded(
     review: Review,
     quotable: dict[str, list[list[tuple[int, str]]]],
@@ -235,7 +244,8 @@ def drop_ungrounded(
     """Split findings into those that quote their own file's diff — whole lines, in order, as the guideline saw them,
     whatever whitespace joined them — and the rest, each kept one with the lines the diff places it on, whether its
     quote holds a line the change deleted, and whether its suggested code is what replaced them (`already_done`, read
-    in the hunk the quote was placed in). `quotable` is
+    in the hunk the quote was placed in); suggested code that `echoes` its quote, where that is not so, is dropped.
+    `quotable` is
     each changed file's hunks, their lines numbered, and `framing` the lines each was framed in as the guidelines were
     shown it, both from `collect_evidence`.
 
@@ -271,6 +281,8 @@ def drop_ungrounded(
         done = (gone and asks_to_remove(grounded)) or (
             hunk is not None and already_done(grounded, lines, deleted, quotable[path][hunk])
         )
+        if not done and echoes(grounded.code, grounded.evidence):
+            grounded = grounded.model_copy(update={"code": ""})
         kept.append((grounded, lines, deleted, done))
     return kept, dropped
 

@@ -1027,6 +1027,23 @@ class TestTheLintRule:
         quoted = "    #         raise ValueError(item)\n    #     result += item"
         assert blocks[0].evidence == quoted, blocks[0].evidence
 
+    def test_lint_reads_a_notebooks_ipython_lines_as_its_own_and_a_modules_as_syntax_errors(self) -> None:
+        """Reported by the owner, who keeps Databricks notebooks as Python source: ruff read each `%pip`, `%run` and
+        `!ls` line as invalid syntax, a major, once for each rule that reads ruff, and a `# MAGIC %md` line as
+        commented-out code. In a file a notebook mark names, Databricks' header or cell line or a `# %%` cell, a line
+        that opens with `%` or `!` is IPython's, and a `# MAGIC` line a cell's own. Measured: with one such line in a
+        file, ruff ran no other check on it, so the notebook is linted with those lines set aside, its unused import
+        found. The same lines in a module with no mark stay syntax errors: Python cannot import it. A `%` that
+        continues an expression was never one."""
+        body = "import os\n%load_ext autoreload\n%pip install requests\n!ls -la\n\ntotal = (1\n         % 2)\n"
+        databricks = "# Databricks notebook source\n# MAGIC %md\n# MAGIC # A job\n\n# COMMAND ----------\n\n"
+        for mark in (databricks, "# %%\n"):
+            found = lint_findings({"files": [_entry("job.py", mark + body)], "tree": None})
+            assert not [f for f in found if "invalid-syntax" in f.title or "ERA001" in f.title], found
+            assert [f for f in found if "F401" in f.title], ("ruff looked at the rest", found)
+        found = lint_findings({"files": [_entry("job.py", body)], "tree": None})
+        assert {f.line for f in found if "invalid-syntax" in f.title} == {2, 3, 4}, found
+
     def test_lint_names_a_bidirectional_control_and_a_look_alike_name(self) -> None:
         """Ruff reads both in Python code: a control that reorders a line is major, a letter that is not ASCII in a name
         is minor, since a whole project may be written in another script."""

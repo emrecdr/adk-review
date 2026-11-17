@@ -703,6 +703,28 @@ class TestWhatGroundingKeeps:
             ((kept, _at, _deleted, _done),) = _grounded([finding], {"a.py": _numbered(hunk)})[0]
             assert kept.evidence == evidence, kept.evidence
 
+    def test_suggested_code_that_adds_no_line_to_its_quote_is_dropped(self) -> None:
+        """Reported by the owner from a comment: a guideline quoted a whole function and gave as its suggested code the
+        function's last three lines, unchanged, which a person cannot paste to fix anything. Suggested code whose every
+        line the quote already holds is dropped where the finding is kept, so no reader shows it, and the change it
+        asks for stays. Code with a line of its own stays whole."""
+        hunk = [
+            "+def stringify_schema(schema):",
+            "+    for field in schema.fields:",
+            "+        field.dataType = StringType()",
+            "+    return schema",
+        ]
+        quote = "\n".join(line[1:] for line in hunk)
+        echoed = "    for field in schema.fields:\n        field.dataType = StringType()\n    return schema"
+        fixed = "    return StructType([StructField(f.name, StringType()) for f in schema.fields])"
+        _rule, _collect, schema = _grounding_of()
+        for code, kept_code in ((echoed, ""), (f"```python\n{echoed}\n```", ""), (fixed, fixed)):
+            finding = schema.Finding(
+                file="a.py", line=1, severity="major", title="t", evidence=quote, suggestion="Build anew.", code=code
+            )
+            ((kept, _at, _deleted, _done),) = _grounded([finding], {"a.py": _numbered(hunk)})[0]
+            assert (kept.code, kept.suggestion) == (kept_code, "Build anew."), code
+
     def test_a_quote_the_head_holds_too_is_placed_on_the_heads_copy_where_its_line_does_not_choose(self) -> None:
         """Read by review: a moved line, `import os` deleted above and added below, stood in both places, and a finding
         that named no line was placed on the deleted copy, its evidence `-import os`, so the comment told the reader the

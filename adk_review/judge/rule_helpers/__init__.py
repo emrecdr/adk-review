@@ -17,7 +17,18 @@ from ...core.blast import PASSED_ON, is_test, parse
 from ...core.evidence import Entry
 from ...core.findings import RANK, Severity
 from ...core.paths import matches, matching
-from ...core.rules import ChangedFile, Diagnostic, FileRule, Hit, Rule, Tree, TreeRule, UnreadError, is_python
+from ...core.rules import (
+    ChangedFile,
+    Diagnostic,
+    FileRule,
+    Hit,
+    Rule,
+    Tree,
+    TreeRule,
+    UnreadError,
+    is_databricks_notebook,
+    is_python,
+)
 from ...core.secrets import (
     SECRET_WORDS,
     holds_no_secret,
@@ -61,6 +72,7 @@ __all__ = [
     "holds_no_secret",
     "imports_in",
     "is_credential",
+    "is_databricks_notebook",
     "is_placeholder",
     "is_python",
     "is_test",

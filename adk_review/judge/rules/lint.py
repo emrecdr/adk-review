@@ -25,6 +25,7 @@ from ..rule_helpers import (
     Severity,
     holds_no_secret,
     is_credential,
+    is_databricks_notebook,
     is_test,
     listed,
     nodes_in,
@@ -87,8 +88,6 @@ IN_TESTS: frozenset[str] = frozenset({"S101", "B011", "S311", "PLR0913"})
 #: notebook as a module, calls undefined (F821). Read by review on a branch of 20 notebooks: 192 of lint's findings
 #: named `spark`, `dbutils` and `display`, nearly all of its 86 majors, where the project's own ruff reported none.
 NOTEBOOK_NAMES = frozenset({"spark", "dbutils", "display", "displayHTML", "sql", "udf"})
-#: The first line Databricks writes in a notebook kept as a `.py` source file.
-NOTEBOOK_MARK = "# Databricks notebook source"
 #: The fix a finding names when ruff offers none: ruff says what is wrong, not what to do. Keyed as `SEVERITY` is:
 #: by family, since a sentence true of every rule in one is worth more than a guess per code, and by code where the
 #: family's would mislead.
@@ -131,17 +130,12 @@ def severity_of(code: str) -> Severity:
     return tier(SEVERITY, code) or "minor"
 
 
-def is_databricks_notebook(file: ChangedFile) -> bool:
-    """Whether the file is a Databricks notebook: its first line the mark, a byte order mark before it aside. Databricks
-    reads the mark on the first line alone, so a comment above it makes the file a plain module, where the names are
-    undefined. Read by review: comments let in above the mark passed over a plain module's undefined `spark`."""
-    return file.line(1).lstrip("\ufeff").strip() == NOTEBOOK_MARK
-
-
 def defined_by_databricks(file: ChangedFile, found: Diagnostic) -> bool:
     """Whether `found` calls undefined a name Databricks defines, in a file marked as a Databricks notebook."""
     named = found.message.split("`")
-    return found.code == "F821" and len(named) > 1 and named[1] in NOTEBOOK_NAMES and is_databricks_notebook(file)
+    return (
+        found.code == "F821" and len(named) > 1 and named[1] in NOTEBOOK_NAMES and is_databricks_notebook(file.line(1))
+    )
 
 
 #: Ruff's codes for a string given to a name that says password or token: assigned or compared, passed as an

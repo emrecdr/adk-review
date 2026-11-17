@@ -551,7 +551,7 @@ each in a module named after what it reads (`lines.py`, `syntax.py`, `diagnostic
 
 | Helper | What it answers |
 |---|---|
-| `is_test(path)`, `is_python(path, first_line)` | Whether a path is a test; whether Python reads it as source |
+| `is_test(path)`, `is_python(path, first_line)`, `is_databricks_notebook(first_line)` | Whether a path is a test; whether Python reads it as source; whether a file is a Databricks notebook, its mark on its first line |
 | `matches(path, *globs)`, `matching(paths, *globs)` | Whether a `.gitignore`-style glob names a path; the paths the globs name, sorted |
 | `calls(line, *names)` | Whether the line calls a named function, `*` for anything: never a definition, a comment or a string |
 | `comment_of(line)`, `words(line)`, `tokens(line)` | The comment a line ends with; its names, numbers and operators; its tokens |

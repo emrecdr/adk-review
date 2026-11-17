@@ -24,12 +24,16 @@ from pathlib import Path, PurePath, PurePosixPath
 from typing import NamedTuple
 
 from ..core.evidence import Change, unreleased
-from ..core.rules import Diagnostic, is_python_text
+from ..core.rules import Diagnostic, is_databricks_notebook, is_python_text
 from ..core.text import lines_of, squash
 from .diff import base_line
 from .git import on_path
 
 RUFF_TIMEOUT_S = 60
+#: The line that opens a cell of a notebook kept as Python source in Jupytext's and VS Code's percent format.
+PERCENT_CELL = "# %%"
+#: What opens a line IPython runs and Python cannot: a magic, `%pip` or `%run`, and a shell command, `!ls`.
+IPYTHON_OPENERS = ("%", "!")
 #: Ruff's answer is read a finding at a time, and past this many none is: what it named past them is a hole. Measured
 #: by review, three files of unary minus chains made ruff write 589 MB of JSON each, read whole: 90 s and 4.5 GB.
 RUFF_FINDINGS_MAX = 500_000
@@ -184,6 +188,52 @@ def _marked(
 
 
 def _run(
+    ruff: str, texts: dict[str, str], select: Sequence[str], ignore: Sequence[str], line_length: int | None
+) -> dict[str, list[Diagnostic]]:
+    """`_ruffed`, with a notebook kept as Python source read as IPython reads it. Reported by the owner on Databricks
+    notebooks: ruff read each magic and shell command as invalid syntax, a major, and measured, with one such line in a
+    file it ran no other check on it. In a file `notebook` names, the lines ruff could not parse that IPython runs are
+    set aside, each a comment on its own line, and ruff reads that file again; what it says on them is dropped. A
+    `# MAGIC` line, the text of a Databricks cell, is no commented-out code. A module with no mark keeps its errors:
+    Python cannot import it."""
+    found = _ruffed(ruff, texts, select, ignore, line_length)
+    aside = {path: lines for path, said in found.items() if (lines := _ipython(said)) and notebook(texts[path])}
+    if aside:
+        again = _ruffed(
+            ruff, {path: _set_aside(texts[path], lines) for path, lines in aside.items()}, select, ignore, line_length
+        )
+        found |= {path: [d for d in again.get(path, []) if d.line not in lines] for path, lines in aside.items()}
+    return {
+        path: [d for d in said if not (d.code == "ERA001" and d.source.lstrip().startswith("# MAGIC"))]
+        for path, said in found.items()
+    }
+
+
+def notebook(text: str) -> bool:
+    """Whether `text` is a notebook kept as Python source, whose cells IPython runs: a Databricks notebook, or one with
+    a `# %%` cell."""
+    lines = text.split("\n")
+    return is_databricks_notebook(lines[0]) or any(line.startswith(PERCENT_CELL) for line in lines)
+
+
+def _ipython(said: Iterable[Diagnostic]) -> set[int]:
+    """The lines ruff could not parse that open as IPython's own: a magic or a shell command. A `%` that continues an
+    expression parses, so it is never among them."""
+    return {d.line for d in said if d.code == "invalid-syntax" and d.source.lstrip().startswith(IPYTHON_OPENERS)}
+
+
+def _set_aside(text: str, lines: set[int]) -> str:
+    """`text` with each of `lines`, as git numbers them, a comment in place: its opener `#`, every other line and
+    column where it was."""
+    rows = text.split("\n")
+    for number in lines:
+        row = rows[number - 1]
+        at = len(row) - len(row.lstrip())
+        rows[number - 1] = f"{row[:at]}#{row[at + 1 :]}"
+    return "\n".join(rows)
+
+
+def _ruffed(
     ruff: str, texts: dict[str, str], select: Sequence[str], ignore: Sequence[str], line_length: int | None
 ) -> dict[str, list[Diagnostic]]:
     """Ruff over each file's text as it stands at the head, written into a temporary directory: its diagnostics by
