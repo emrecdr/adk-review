@@ -1,15 +1,19 @@
-"""A second opinion: another model judges every finding, the rules' and the guidelines', one call a file — a second
-graph, run like the first.
+"""A second opinion: another model judges every finding, the rules' and the guidelines', in calls of whole files — a
+second graph, run like the first.
 
 A finding is an opinion, a rule's too: a rule matches a pattern, and a line can match it and mean something else.
 `--verify` asks a second agent — with its own model, so a stricter or a cheaper one, through `REVIEW_VERIFIER_MODEL` —
 whether the quoted lines really show the problem each finding names. A refuted finding is dropped and named, never
 silently, but a security rule's is kept and named as disputed: what leaks, runs or steers is never dropped on a
 model's word. A finding the verifier judged unsure, gave no judgement for or could not judge stays, and the reason is
-named too. One verifier per file that holds a finding, fanned out the way the guidelines are — a `Workflow` under the
-same `max_concurrency` — under the same plugin instances: redaction, the ledger and its ceiling, a provider error as
-that verifier's own answer. Each reads its file's own part of the change as the guidelines were shown it, or the whole
-change where they were shown no part of that file, and the calls into what the change touched.
+named too. One verifier a call, each call the findings of whole files up to `CHUNK_FINDINGS_MAX` findings and
+`CHUNK_CAP_CHARS` of the change, fanned out the way the guidelines are — a `Workflow` under the same `max_concurrency` —
+under the same plugin instances: redaction, the ledger and its ceiling, a provider error as that verifier's own answer.
+Each reads its files' own parts of the change as the guidelines were shown them, or the whole change once where they
+were shown no part of one of its files, and the calls into what the change touched. Measured offline on the demo's
+branches: one call a file sent the instruction once a file and the whole change once for each file outside it, 8 calls
+and 49,238 characters on `feature/orders` where packed calls are 2 and 30,188, and 3 and 8,795 on `feature/payments`
+where they are 1 and 6,339.
 """
 
 from __future__ import annotations
@@ -42,10 +46,14 @@ from .run import run_seeded
 
 #: The role (`REVIEW_VERIFIER_MODEL`), and the stem of every verifier's name — the author of its error events.
 VERIFIER = "verifier"
-#: The state key every verifier reads the calls into what the change touched from: the same calls for each file.
+#: The state key every verifier reads the calls into what the change touched from: the same calls for each call.
 CALLERS = "verifier_callers"
 #: Why a finding is kept unjudged where its verifier answered and named no judgement for its number.
 NOT_JUDGED = "the verifier gave no judgement for it"
+#: The most findings one verifier judges where a second file joins its call: a file past it alone is a call of its own.
+CHUNK_FINDINGS_MAX = 12
+#: The most characters of the change one verifier reads where a second file joins its call.
+CHUNK_CAP_CHARS = 40_000
 
 
 class Judgement(BaseModel):
@@ -70,16 +78,16 @@ def keys(number: int) -> tuple[str, str, str]:
 
 
 def build_verifier(number: int) -> LlmAgent:
-    """The verifier of the `number`th file that holds a finding: a name of its own, as names in a graph must be, and
-    keys of its own."""
+    """The verifier of the `number`th call: a name of its own, as names in a graph must be, and keys of its own."""
     findings, change, judgements = keys(number)
     return LlmAgent(
         model=build_model(role=VERIFIER),
         name=f"{VERIFIER}_{number}",
-        description="Judges whether each finding on one file really holds against the diff.",
+        description="Judges whether each finding on the files of its call really holds against the diff.",
         instruction=(
-            "You are a second reviewer. Other checks made the numbered findings below about one file of the change "
-            "below. For each finding, by its number, decide whether its quoted lines really show the problem it names. "
+            "You are a second reviewer. Other checks made the numbered findings below about the change below. Each "
+            "finding names its file. The change shows each changed file under a heading that names it. For each "
+            "finding, by its number, decide whether its quoted lines really show the problem it names. "
             "Answer `holds` where they do. Answer `refuted` where they do not: the code is right on that point, or "
             "the finding misreads it. Answer `unsure` where what you are shown cannot settle it. Judge only what the "
             "lines show, not whether the advice is good. A finding whose check starts with `rule.` comes from a "
@@ -133,22 +141,54 @@ def _lines(item: Sourced) -> str:
     return str(first) if first == last else f"{first} to {last}"
 
 
-def numbered(items: Sequence[Sourced]) -> str:
-    """The findings one verifier judges, each by its number from 0: its check, severity, lines, title, why and quote,
-    the quote in a fence its own backticks cannot close; the whole cut at `FINDINGS_CAP_CHARS`, as chat's verdict reads
-    the checks, a finding past the cut kept unjudged. Never its change or its code: a model's advice is no instruction
-    to a verifier."""
+def _listed(items: Sequence[Sourced]) -> str:
+    """The findings one verifier judges, each by its number from 0, uncut: its check, severity, file, lines, title, why
+    and quote, the quote in a fence its own backticks cannot close."""
     shown = []
     for number, item in enumerate(items):
         found = item.finding
         said = [f"### Finding {number}", f"- check: {item.source}", f"- severity: {found.severity}"]
-        said += [f"- lines: {_lines(item)}", f"- title: {squash(found.title)}"]
+        said += [f"- file: {squash(found.file)}", f"- lines: {_lines(item)}", f"- title: {squash(found.title)}"]
         if found.why:
             said.append(f"- why: {squash(found.why)}")
         fence = "`" * max(3, 1 + backticks(found.evidence))
         said += ["- quote:", fence, found.evidence, fence]
         shown.append("\n".join(said))
-    return cut_at("\n\n".join(shown), FINDINGS_CAP_CHARS, sep="\n")
+    return "\n\n".join(shown)
+
+
+def numbered(items: Sequence[Sourced]) -> str:
+    """The findings one verifier judges, as `_listed` lists them, the whole cut at `FINDINGS_CAP_CHARS`, as chat's
+    verdict reads the checks, a finding past the cut kept unjudged. Never its change or its code: a model's advice is
+    no instruction to a verifier."""
+    return cut_at(_listed(items), FINDINGS_CAP_CHARS, sep="\n")
+
+
+def _shown(parts: Sequence[str], diff: str) -> str:
+    """The change one call reads: each of its files' parts once, or the whole change, which holds every part, where
+    one of its files has none of its own."""
+    return diff if diff in parts else "\n\n".join(parts)
+
+
+def chunks(files: Sequence[tuple[str, Sequence[Sourced]]], diff: str) -> list[tuple[list[Sourced], str]]:
+    """`files`, as `by_file` lists them, packed in order into the calls the verifiers make: each call's findings, and
+    the change it reads. A file joins the last call while the call stays within `CHUNK_FINDINGS_MAX` findings,
+    `CHUNK_CAP_CHARS` of the change and findings no cut at `FINDINGS_CAP_CHARS` leaves unjudged. A file is never split,
+    so a guideline's restatement stays beside the rule's finding; one past a bound by itself is a call of its own."""
+    packed: list[tuple[list[Sourced], list[str]]] = []
+    for path, items in files:
+        part = part_of(diff, path)
+        if packed:
+            joined, parts = [*packed[-1][0], *items], [*packed[-1][1], part]
+            if (
+                len(joined) <= CHUNK_FINDINGS_MAX
+                and len(_shown(parts, diff)) <= CHUNK_CAP_CHARS
+                and len(_listed(joined)) <= FINDINGS_CAP_CHARS
+            ):
+                packed[-1] = (joined, parts)
+                continue
+        packed.append((list(items), [part]))
+    return [(items, _shown(parts, diff)) for items, parts in packed]
 
 
 def calls(callers: str) -> str:
@@ -160,16 +200,17 @@ def calls(callers: str) -> str:
 
 
 async def judge_files(
-    files: Sequence[tuple[str, Sequence[Sourced]]], diff: str, callers: str, plugins: list[BasePlugin]
+    packed: Sequence[tuple[Sequence[Sourced], str]], callers: str, plugins: list[BasePlugin]
 ) -> list[Judgements | str]:
-    """Each file's findings judged by one verifier, in order: its `Judgements`, or why it gave none.
+    """Each call's findings, as `chunks` packs them, judged by one verifier, in order: its `Judgements`, or why it gave
+    none.
 
-    One graph and one seeded run: `findings_<n>` and `change_<n>` in for each file, `judgements_<n>` out,
+    One graph and one seeded run: `findings_<n>` and `change_<n>` in for each call, `judgements_<n>` out,
     `CONCURRENCY` verifiers at once — the guidelines' own shape and bound.
     """
-    if not files:
+    if not packed:
         return []
-    verifiers = tuple(build_verifier(number) for number in range(len(files)))
+    verifiers = tuple(build_verifier(number) for number in range(len(packed)))
     graph = Workflow(
         name=VERIFIER,
         edges=[("START", verifiers, JoinNode(name="join_verifiers"))],
@@ -177,18 +218,18 @@ async def judge_files(
     )
     runner = InMemoryRunner(app=App(name=VERIFIER, root_agent=graph, plugins=plugins))
     seed = {CALLERS: calls(callers)}
-    for number, (path, items) in enumerate(files):
+    for number, (items, shown) in enumerate(packed):
         findings, change, _judgements = keys(number)
-        seed |= {findings: numbered(items), change: part_of(diff, path)}
+        seed |= {findings: numbered(items), change: shown}
     run = await run_seeded(runner, session_id="verify", state=seed, prompt="judge")
     return [
         read_back(run.state, keys(n)[2], Judgements, run.why(f"{VERIFIER}_{n}", "the verifier produced no output"))
-        for n in range(len(files))
+        for n in range(len(packed))
     ]
 
 
 def _read(answer: Judgements | str, count: int) -> list[tuple[str, str]]:
-    """Each of a file's `count` findings' verdict and reason, by its number: `unsure` with why where its verifier failed
+    """Each of a call's `count` findings' verdict and reason, by its number: `unsure` with why where its verifier failed
     or named no judgement for it, and the first judgement where it named two."""
     if isinstance(answer, str):
         return [("unsure", answer)] * count
@@ -208,24 +249,24 @@ def second_opinion(
     callers: str = "",
     security: frozenset[str] = frozenset(),
 ) -> None:
-    """`--verify`: every finding of the change, a rule's and a guideline's, judged once more, one verifier a file. A
+    """`--verify`: every finding of the change, a rule's and a guideline's, judged once more, in calls of whole files. A
     refuted one is dropped and named: a guideline's from `outcome.kept`, a rule's from `rules`, in place. A refuted
     finding of a rule in `security` is kept and named as disputed. One judged unsure, given no judgement or judged by no
     verifier is kept and named. `run` is the loop the review's run used, so both share it. `callers` are the calls into
     what the change touched, shown to each verifier.
 
     Before the fold, so a refuted finding folds nothing. A guideline's finding that says again what a rule found is
-    asked too, beside the rule's in its file's one call: read by review, asked of no verifier, it outlived the rule's
+    asked too, beside the rule's in its file's call: read by review, asked of no verifier, it outlived the rule's
     finding a verifier refuted, so a false reading the rule and the guideline shared stayed. One a verifier holds
     folds into the rule's, as without `--verify`. What was already in the file (`old`) is never asked: it is never at
     the bar.
     """
     outcome.verified = True
     asked = [*(item for item in rules if not item.old), *outcome.kept]
-    files = by_file(asked)
-    judged = run(judge_files(files, diff, callers, plugins))
+    packed = chunks(by_file(asked), diff)
+    judged = run(judge_files(packed, callers, plugins))
     refuted: set[int] = set()  # by identity: two checks can file the same finding
-    for (_path, items), answer in zip(files, judged, strict=True):
+    for (items, _shown), answer in zip(packed, judged, strict=True):
         for item, (verdict, why) in zip(items, _read(answer, len(items)), strict=True):
             if verdict == "holds":
                 continue

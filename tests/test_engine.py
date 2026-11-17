@@ -51,6 +51,23 @@ THE_GUIDELINES = "only in your dimension"
 SAYS_MORE = {**CANNED_REVIEW, "findings": [{**CANNED_REVIEW["findings"][0], "severity": "blocker"}]}
 
 
+def _each(verdicts: tuple[str, ...]) -> dict:
+    """A verifier's answer giving finding `n` the `n`th of `verdicts`, each with the reason its verdict reads with."""
+    reasons = {"holds": "the quoted lines show it", "refuted": "the lines do not show it"}
+    return {"judgements": [{"number": n, "verdict": v, "reason": reasons[v]} for n, v in enumerate(verdicts)]}
+
+
+def _numbered_as_planted(asked: list[tuple[str, list[str]]]) -> None:
+    """The one verifier call on the planted branch numbers the rules' findings as the answers above name them: the two
+    keys and S105 in config.py, then S602 in charge.py. Held here, so a change of order fails, never a wrong finding."""
+    (told,) = [instruction for instruction, _turns in asked if THE_VERIFIER in instruction]
+    order = [(0, "rule.secrets", "config"), (1, "rule.secrets", "config"), (2, "rule.lint", "config")]
+    for number, check, name in [*order, (3, "rule.lint", "charge")]:
+        assert f"### Finding {number}\n- check: {check}\n" in told, (number, check)
+        assert f"- file: src/payments/{name}.py\n" in told.split(f"### Finding {number}\n", 1)[1].split("### ", 1)[0]
+    assert "### Finding 4" not in told
+
+
 def _said_done(said: str) -> bool:
     """Whether any guideline was said done, by its own line: `rules done in` is another path's."""
     return any(f"{model_check(name)} done in" in said for name in GUIDELINE_NAMES)
@@ -219,7 +236,7 @@ class TestRetriesOnBothArms:
         assert run_review(cli, demo_repo, "--verify", "--json", str(data)) == 1, capsys.readouterr().out
         report = json.loads(data.read_text(encoding="utf-8"))
         copilot = "github_copilot/gpt-4.1"
-        assert sorted(asked) == [f"guideline {copilot}"] * len(GUIDELINE_NAMES) + [f"verifier {copilot}"] * 2, asked
+        assert sorted(asked) == [f"guideline {copilot}"] * len(GUIDELINE_NAMES) + [f"verifier {copilot}"], asked
         assert [(f["check"], f["line"]) for f in report["disputed"]] == [("rule.secrets", 4), ("rule.secrets", 5)]
         assert sorted(f["title"][:10] for f in report["refuted"]) == ["lint: S105", "lint: S602"], report["refuted"]
         assert report["unverified"] == [] and report["findings_at_fail_on"] == 2, "each reply read back, by number"
@@ -696,18 +713,18 @@ class TestTheTokenCeiling:
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("cli")  # the package on the fake, so the verifiers build
     async def test_a_verifier_the_ceiling_refuses_leaves_its_finding_named_with_the_ceilings_reason(self) -> None:
-        """The ceiling reaches the verifiers through the same hook: a refused verifier is its file's findings' reason.
-        One verifier a file now, where it was one a finding: the refusal is that file's."""
+        """The ceiling reaches the verifiers through the same hook: a refused verifier is its call's findings' reason.
+        One verifier a call of whole files now, where it was one a finding: the refusal is that call's."""
 
         from adk_review.core.findings import Review
         from adk_review.core.verdict import Sourced
         from adk_review.judge.plugins import UsageLedger
-        from adk_review.judge.verify import by_file, judge_files
+        from adk_review.judge.verify import by_file, chunks, judge_files
 
         findings = Review.model_validate(CANNED_REVIEW).findings
-        files = by_file([Sourced("guideline.security", finding) for finding in findings])
-        judged = await judge_files(files, "+x = 1", "", [UsageLedger(ceiling=100)])
-        assert len(judged) == len(files) == 1
+        calls = chunks(by_file([Sourced("guideline.security", finding) for finding in findings]), "+x = 1")
+        judged = await judge_files(calls, "", [UsageLedger(ceiling=100)])
+        assert len(judged) == len(calls) == 1
         refused = "TOKEN_CEILING: this call would pass the ceiling of 100 tokens"
         assert all(isinstance(reason, str) and reason.startswith(refused) for reason in judged)
 
@@ -802,25 +819,25 @@ class TestTheTokenCeiling:
 
 
 class TestTheSecondOpinion:
-    """A verifier per file that holds a finding, before the fold, asked of every finding of the change, the rules'
-    too, but a guideline's that only says again what a rule found. A refuted finding is dropped and named, a security
-    rule's kept and named as disputed, and one the verifier could not judge kept and named."""
+    """A verifier a call of whole files that hold findings, before the fold, asked of every finding of the change, the
+    rules' too, but a guideline's that only says again what a rule found. A refuted finding is dropped and named, a
+    security rule's kept and named as disputed, and one the verifier could not judge kept and named."""
 
     def test_a_guideline_finding_that_restates_a_rules_is_asked_beside_it(
         self, demo_repo: Path, cli, asked, capsys
     ) -> None:
         """Every canned guideline finding quotes S602's line at S602's severity. Read by review: asked of no verifier,
         such a restatement outlived the rule's finding a verifier refuted. Each is asked now, beside the rule's, in its
-        file's one call: two verifiers run, one a file, and holding all, the fold folds as before."""
+        file's call: one verifier runs, for both files, and holding all, the fold folds as before."""
         assert run_review(cli, demo_repo, "--verify") == 1
         out = capsys.readouterr().out
         verifiers = [instruction for instruction, _turns in asked if THE_VERIFIER in instruction]
-        assert len(verifiers) == 2, "config.py's findings and charge.py's, each a rule's"
+        assert len(verifiers) == 1, "config.py's findings and charge.py's, in one call"
         assert all("- check: rule." in told for told in verifiers), verifiers
         assert sum("- check: guideline." in told for told in verifiers) == 1, "charge.py's, beside S602"
         assert "findings refuted by the verifier: 0" in out
         guidelines = len(GUIDELINE_NAMES)
-        assert f"spend: {guidelines + 2} model call(s) completed of {guidelines + 2} attempted" in out
+        assert f"spend: {guidelines + 1} model call(s) completed of {guidelines + 1} attempted" in out
         assert f"folded into one finding: {1 + guidelines}" in out, (
             "S105 into the secrets rule's, each guideline's into S602"
         )
@@ -843,8 +860,8 @@ class TestTheSecondOpinion:
             found("guideline.tests", "major", "w = 0", "x = 1"),
         ]
 
-        async def holds(files, _diff, _callers, _plugins):
-            said = [[Judgement(number=n, verdict="holds", reason="r") for n in range(len(items))] for _, items in files]
+        async def holds(calls, _callers, _plugins):
+            said = [[Judgement(number=n, verdict="holds", reason="r") for n in range(len(items))] for items, _ in calls]
             return [Judgements(judgements=judgements) for judgements in said]
 
         verify = importlib.import_module("adk_review.judge.verify")
@@ -909,16 +926,14 @@ class TestTheSecondOpinion:
         assert loops["guideline"] == loops["verifier"], "one loop for both"
 
     def test_findings_the_verifier_holds_stay(self, demo_repo: Path, cli, fake_provider, capsys) -> None:
-        """One verifier a file now, where it was one a finding: two files hold findings, so two verifiers, each in the
-        ledger; and each is shown its own file's part of the change, so only config.py's verifier reads the keys."""
+        """One verifier a call of whole files now, where it was one a finding: two files hold findings, few enough for
+        one call, so one verifier, in the ledger, which reads the keys in config.py's part of the change."""
         fake_provider.answers_when(THE_GUIDELINES, SAYS_MORE)
         assert run_review(cli, demo_repo, "--verify") == 1
         out = capsys.readouterr().out
         assert "findings refuted by the verifier: 0" in out and "could not judge, kept: 0" in out
         assert "security findings the verifier disputed, kept: 0" in out
-        for number in range(2):
-            assert f"`verifier_{number}`: 1 call(s)" in out, "one verifier per file that holds a finding, in the ledger"
-        assert "`verifier_2`" not in out
+        assert "`verifier_0`: 1 call(s)" in out and "`verifier_1`" not in out, "one call for both files, in the ledger"
         # Measured before: the count was read before the verifiers ran, and their calls hid the keys unnamed.
         redacted = 2 * (len(GUIDELINE_NAMES) + 1)
         assert f"- secrets redacted before any model call: {redacted}" in out, "2 keys, in 3 guidelines and 1 verifier"
@@ -947,7 +962,7 @@ class TestTheSecondOpinion:
         self, demo_repo: Path, cli, fake_provider, capsys
     ) -> None:
         """Each finding a failed verifier was asked is kept and named with why: the rules' four now beside the
-        guidelines', two verifiers in all, one a file, where there was one a guideline finding."""
+        guidelines', one verifier for both files, where there was one a file, and before that one a finding."""
         fake_provider.answers_when(THE_GUIDELINES, SAYS_MORE)
         fake_provider.raises_when(THE_VERIFIER, quota())
         assert run_review(cli, demo_repo, "--verify") == 1
@@ -958,22 +973,23 @@ class TestTheSecondOpinion:
             " — RuntimeError: provider said: 429 quota" in out
         )
         assert "- `rule.secrets`: secrets: a hard-coded credential — RuntimeError: provider said: 429 quota" in out
-        guidelines, verifiers = len(GUIDELINE_NAMES), 2
+        guidelines, verifiers = len(GUIDELINE_NAMES), 1
         assert f"{guidelines} model call(s) completed of {guidelines + verifiers} attempted" in out, (
             "a call that failed is attempted, not completed"
         )
 
     def test_a_code_quality_rules_refuted_finding_is_dropped_and_named(
-        self, demo_repo: Path, cli, fake_provider, tmp_path: Path, capsys
+        self, demo_repo: Path, cli, fake_provider, asked, tmp_path: Path, capsys
     ) -> None:
         """A rule matches a pattern, and a line can match it and mean something else: under `--verify` a rule's
         finding is asked too, and refuted, one of a rule about how code reads or runs is dropped and named, as a
         guideline's is. Below the bar, it holds no verdict back."""
         fake_provider.answers_when(THE_GUIDELINES, {"findings": []})  # the rules' findings alone are asked
-        fake_provider.answers_when("### src/payments/charge.py", REFUTED)  # S602's file, and its verifier alone
+        fake_provider.answers_when(THE_VERIFIER, _each(("holds", "holds", "holds", "refuted")))  # S602 alone
         report = tmp_path / "r.json"
         assert run_review(cli, demo_repo, "--verify", "--json", str(report)) == 1, "the keys still request changes"
         out = capsys.readouterr().out
+        _numbered_as_planted(asked)
         data = json.loads(report.read_text(encoding="utf-8"))
         assert [(f["check"], f["file"], f["reason"]) for f in data["refuted"]] == [
             ("rule.lint", "src/payments/charge.py", "the lines do not show it")
@@ -985,16 +1001,17 @@ class TestTheSecondOpinion:
         assert "- **major** lint: S602" not in out
 
     def test_a_security_rules_refuted_finding_is_kept_counted_at_the_bar_and_listed_as_disputed(
-        self, demo_repo: Path, cli, fake_provider, tmp_path: Path, capsys
+        self, demo_repo: Path, cli, fake_provider, asked, tmp_path: Path, capsys
     ) -> None:
         """A model's word never drops what leaks, runs or steers: the branch's own text could tell the verifier a real
         key is a fake. A security rule's finding the verifier refutes is kept, counted at the bar as before, and listed
         as disputed with the verifier's reason. lint's S105 on the same line is no security rule's, and is dropped."""
         fake_provider.answers_when(THE_GUIDELINES, {"findings": []})
-        fake_provider.answers_when("### src/payments/config.py", REFUTED)  # the keys' file, and its verifier alone
+        fake_provider.answers_when(THE_VERIFIER, _each(("refuted", "refuted", "refuted", "holds")))  # config.py's
         report = tmp_path / "r.json"
         assert run_review(cli, demo_repo, "--verify", "--json", str(report)) == 1, "REQUEST_CHANGES, as before"
         out = capsys.readouterr().out
+        _numbered_as_planted(asked)
         data = json.loads(report.read_text(encoding="utf-8"))
         assert [(f["check"], f["line"], f["reason"]) for f in data["disputed"]] == [
             ("rule.secrets", 4, "the lines do not show it"),
@@ -1011,7 +1028,7 @@ class TestTheSecondOpinion:
         assert "### rule.secrets\n- **blocker** secrets: a hard-coded credential" in out
 
     def test_an_unsure_judgement_and_a_missing_number_are_unverified_and_kept(
-        self, demo_repo: Path, cli, fake_provider, tmp_path: Path, capsys
+        self, demo_repo: Path, cli, fake_provider, asked, tmp_path: Path, capsys
     ) -> None:
         """A verifier that answers `unsure`, or names no judgement for a finding's number, has not judged it: the
         finding is kept, at the bar where it was, and named with why, never read as held."""
@@ -1019,46 +1036,92 @@ class TestTheSecondOpinion:
 
         fake_provider.answers_when(THE_GUIDELINES, {"findings": []})
         unsure = judged("unsure", "the line alone cannot settle it", range(1))  # finding 0 alone, unsure
-        fake_provider.answers_when("### src/payments/config.py", unsure)
+        held = judged("holds", "the quoted lines show it", range(3, 4))  # S602; 1 and 2 named by no judgement
+        fake_provider.answers_when(THE_VERIFIER, {"judgements": unsure["judgements"] + held["judgements"]})
         report = tmp_path / "r.json"
         assert run_review(cli, demo_repo, "--verify", "--json", str(report)) == 1
         out = capsys.readouterr().out
+        _numbered_as_planted(asked)
         data = json.loads(report.read_text(encoding="utf-8"))
         reasons = sorted(f["reason"] for f in data["unverified"])
         assert reasons == sorted(["the line alone cannot settle it", NOT_JUDGED, NOT_JUDGED]), data["unverified"]
         assert data["refuted"] == data["disputed"] == [] and data["findings_at_fail_on"] == 2, "each kept"
         assert "findings the verifier could not judge, kept: 3" in out and f"— {NOT_JUDGED}" in out
 
-    def test_two_files_with_findings_make_two_verifier_calls_each_shown_its_own_file(
+    def test_the_files_that_hold_findings_share_one_verifier_call_each_part_shown_once(
         self, demo_repo: Path, cli, fake_provider, asked, capsys
     ) -> None:
-        """One call a file, not one a finding: the planted branch's findings sit in two files, three in config.py and
-        one in charge.py, so two verifiers run, each shown its own file's part of the change and its own findings,
-        numbered from 0, beside each one's check."""
+        """One call for several files, where it was one a file: the planted branch's findings sit in two files, three in
+        config.py and one in charge.py, well within a call's bounds, so one verifier reads each file's part of the
+        change once, under its heading, and the four findings, numbered from 0, each naming its file."""
         fake_provider.answers_when(THE_GUIDELINES, {"findings": []})
         assert run_review(cli, demo_repo, "--verify") == 1
         out = capsys.readouterr().out
-        verifiers = [instruction for instruction, _turns in asked if THE_VERIFIER in instruction]
-        assert len(verifiers) == 2, "two files, two calls"
-        config, charge = (
-            next(told for told in verifiers if f"### src/payments/{name}.py\n" in told) for name in ("config", "charge")
+        (told,) = [instruction for instruction, _turns in asked if THE_VERIFIER in instruction]
+        for name in ("config", "charge"):
+            assert told.count(f"### src/payments/{name}.py\n") == 1, f"{name}.py's part, once"
+        assert "### Finding 3\n" in told and "### Finding 4" not in told, "two keys and S105, then S602"
+        assert (
+            told.count("- file: src/payments/config.py\n") == 3 and told.count("- file: src/payments/charge.py\n") == 1
         )
-        assert "### src/payments/charge.py\n" not in config and "### src/payments/config.py\n" not in charge
-        assert "### Finding 2\n- check: rule.lint" in config and "### Finding 3" not in config, "two keys and S105"
-        assert "### Finding 0\n- check: rule.lint" in charge and "### Finding 1" not in charge, "S602 alone"
-        assert "`verifier_0`: 1 call(s)" in out and "`verifier_1`: 1 call(s)" in out
+        assert "`verifier_0`: 1 call(s)" in out and "`verifier_1`" not in out
+
+    def test_a_call_holds_whole_files_up_to_its_bounds_and_a_file_past_one_is_a_call_of_its_own(self) -> None:
+        """Files join a call in order while it holds at most `CHUNK_FINDINGS_MAX` findings, `CHUNK_CAP_CHARS` of the
+        change and findings no cut at `FINDINGS_CAP_CHARS` leaves unjudged. A file is never split: one past a bound by
+        itself is a call of its own, as every file was before."""
+        from adk_review.collect.diff import framed
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Sourced
+        from adk_review.judge.agents import FINDINGS_CAP_CHARS
+        from adk_review.judge.verify import CHUNK_CAP_CHARS, CHUNK_FINDINGS_MAX, chunks
+
+        def found(path: str, count: int, quote: str = "x = 1") -> list[Sourced]:
+            said = [
+                Finding(file=path, line=1, severity="minor", title=f"t{n}", evidence=quote, suggestion="s")
+                for n in range(count)
+            ]
+            return [Sourced("rule.lint", finding, (1, 1)) for finding in said]
+
+        part = {
+            name: framed(name, "@@ -0,0 +1 @@\n+x = 1")[0] for name in ("a.py", "b.py", "c.py", "d.py", "f.py", "g.py")
+        }
+        part["e.py"] = framed("e.py", "@@ -0,0 +1 @@\n+" + "y" * CHUNK_CAP_CHARS)[0]
+        block = "\n\n".join(part.values())
+        half, long = CHUNK_FINDINGS_MAX // 2 + 1, "z" * (FINDINGS_CAP_CHARS // 2)
+        files = [
+            ("a.py", found("a.py", half)),
+            ("b.py", found("b.py", half)),
+            ("c.py", found("c.py", 1)),
+            ("e.py", found("e.py", 1)),
+            ("d.py", found("d.py", CHUNK_FINDINGS_MAX + 1)),
+            ("f.py", found("f.py", 1, long)),
+            ("g.py", found("g.py", 1, long)),
+        ]
+        packed = chunks(files, block)
+        assert [len(items) for items, _shown in packed] == [half, half + 1, 1, CHUNK_FINDINGS_MAX + 1, 1, 1]
+        joined = f"{part['b.py']}\n\n{part['c.py']}"
+        assert [shown for _items, shown in packed] == [
+            part["a.py"],
+            joined,
+            part["e.py"],
+            part["d.py"],
+            part["f.py"],
+            part["g.py"],
+        ]
 
     @pytest.mark.asyncio
     @pytest.mark.usefixtures("cli")  # the package on the fake, so the verifiers build
     async def test_a_file_the_change_shows_no_part_of_is_judged_beside_the_whole_change(self, asked) -> None:
-        """A verifier reads its file's own part of the block the guidelines read, cut out whole, its fence however
-        long; where the block holds no part of the file, as for a tree rule's line in a file the change left alone, it
-        reads the whole block. Each reads the calls into what the change touched, fenced, where there are any."""
+        """A call reads each of its files' own parts of the block the guidelines read, cut out whole, its fence however
+        long, each once; where the block holds no part of one of its files, as for a tree rule's line in a file the
+        change left alone, it reads the whole block once, which holds every part. Each reads the calls into what the
+        change touched, fenced, where there are any."""
         from adk_review.collect.diff import framed
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Sourced
         from adk_review.judge.agents import CALLERS_SHOWN, JUDGED_BOUNDARY
-        from adk_review.judge.verify import Judgements, judge_files, part_of
+        from adk_review.judge.verify import Judgements, chunks, judge_files, part_of
 
         code, page = framed("a.py", "@@ -0,0 +1 @@\n+x = 1")[0], framed("b.md", "@@ -0,0 +2 @@\n+```py\n+```")[0]
         assert "````diff" in page, "a fence its own three backticks cannot close"
@@ -1070,16 +1133,16 @@ class TestTheSecondOpinion:
             said = Finding(file=path, line=3, severity="major", title="callers: f", evidence="f(1)", suggestion="s")
             return Sourced("rule.callers", said, (3, 3))
 
-        files = [("b.md", [found("b.md")]), ("c.py", [found("c.py")])]
-        judged = await judge_files(files, block, "c.py:3: f(1)", [])
+        a, b, c = [found("a.py")], [found("b.md")], [found("c.py")]
+        assert chunks([("a.py", a), ("b.md", b)], block) == [([*a, *b], f"{code}\n\n{page}")], "each own part, once"
+        calls = chunks([("b.md", b), ("c.py", c)], block)
+        assert calls == [([*b, *c], block)], "c.py has no part: the whole block, once, which holds b.md's"
+        judged = await judge_files(calls, "c.py:3: f(1)", [])
         assert all(isinstance(answer, Judgements) for answer in judged), judged
-        told = [instruction for instruction, _turns in asked]
-        assert len(told) == 2, "two files, two calls"
-        page_alone, whole = sorted(told, key=lambda instruction: code in instruction)
-        assert page in page_alone and code not in page_alone, "b.md's own part alone"
-        assert block in whole, "c.py's verifier reads the whole block"
+        (told,) = [instruction for instruction, _turns in asked]
+        assert told.count(block) == 1 and told.count(page) == 1, "the whole block once, b.md's part inside it"
         callers = f"{CALLERS_SHOWN}\n<<< callers {JUDGED_BOUNDARY}\nc.py:3: f(1)\n>>> callers {JUDGED_BOUNDARY}"
-        assert all(callers in instruction for instruction in told)
+        assert callers in told
 
     def test_a_verifier_is_shown_each_finding_by_its_number_and_never_its_change(self) -> None:
         """What a verifier judges is what the finding says of the lines: its check, so a rule's reads as a pattern
@@ -1108,7 +1171,7 @@ class TestTheSecondOpinion:
         )
         shown = numbered([Sourced("rule.lint", rule, (4, 4)), Sourced("guideline.security", said, (7, 9))])
         assert shown.startswith(
-            "### Finding 0\n- check: rule.lint\n- severity: major\n- lines: 4\n- title: lint: S602\n"
+            "### Finding 0\n- check: rule.lint\n- severity: major\n- file: a.py\n- lines: 4\n- title: lint: S602\n"
             "- why: A shell reads the input.\n- quote:\n```\nrun(c, shell=True)\n```\n\n### Finding 1\n"
         ), shown
         assert "- lines: 7 to 9" in shown and "````\n```\nrm -rf /\n```\n````" in shown

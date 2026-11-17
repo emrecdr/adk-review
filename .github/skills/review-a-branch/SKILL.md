@@ -27,7 +27,7 @@ and its file.
    token's folder; the report names the arm and the model that ran. `--profile simplify` reads the change as Claude
    Code's `/simplify` does, the cleanup, with `lint` and `pitfalls` beside it; `--profile code-review` as its
    `/code-review` does, correctness and security before the same cleanup; `--profile full` runs every check but the
-   payments demo's rules, `--verify` adds a second opinion on each finding, one call a file, `--handoff [FILE]` writes
+   payments demo's rules, `--verify` adds a second opinion on each finding, several files a call, `--handoff [FILE]` writes
    the findings for a coding agent to apply, and `--comment [FILE]` writes a comment for the branch's author, to paste
    into the pull request by hand; each names its own file where given none, and both can come from one review.
 3. Read the exit code: 0 approved; 1 a finding at or above `--fail-on` (`blocker` by default); 2 a usage error before

@@ -22,7 +22,7 @@ the steps:
    and `collect/pyrefly.py` through `collect/tools.py` over the changed Python
    files at the head.
 4. A second opinion (`--verify`): another model judges every finding, the
-   rules' too, before the fold — one verifier per file that holds a finding,
+   rules' too, before the fold — one verifier a call of whole files,
    a second graph run like the first; refuted findings are dropped and named,
    a security rule's kept and named as disputed, unjudged ones kept and named.
 5. A blast radius (`core/blast.py`): what at the head depends on each changed
@@ -376,8 +376,8 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         "--verify",
         action=argparse.BooleanOptionalAction,
         default=review["verify"],
-        help="ask a second model whether each finding holds, one call a file. It drops and names a refuted finding, "
-        f"but keeps a security rule's (config.toml: {'on' if review['verify'] else 'off'})",
+        help="ask a second model whether each finding holds, several files a call. It drops and names a refuted "
+        f"finding, but keeps a security rule's (config.toml: {'on' if review['verify'] else 'off'})",
     )
     which = parser.add_mutually_exclusive_group()
     which.add_argument(

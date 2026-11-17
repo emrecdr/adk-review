@@ -181,7 +181,7 @@ Every mode is the same command:
 ```bash
 uv run adk-review <repo> --base main                            # the default profile: the rules, then the guidelines
 uv run adk-review <repo> --base main --profile default-rules    # the default's rules: no model, no key
-uv run adk-review <repo> --head <branch> --base main --verify   # a second model judges each finding, one call a file
+uv run adk-review <repo> --head <branch> --base main --verify   # a second model judges each finding, files in batches
 uv run adk-review <repo> --base main --max-tokens 20000         # the call that would pass the ceiling is refused
 uv run adk-review <repo> --base main --profile rules-only       # every rule but the demo's: no model, no key
 uv run adk-review <repo> --base main --profile simplify         # as Claude Code's /simplify: the cleanup, three calls
@@ -254,8 +254,8 @@ The order is the architecture: evidence and rules first, the guidelines' judgeme
    sits between two marker lines it cannot forge.
 5. **Ground what the guidelines found.** A finding stays only where its quote is whole lines of its own file's diff;
    the rest are dropped and counted. With `--verify`, a second model judges each rule's finding and each guideline
-   finding no rule already made, one call a file, and one it refutes is dropped and named, a security rule's kept and
-   named as disputed.
+   finding no rule already made, several files a call, and one it refutes is dropped and named, a security rule's
+   kept and named as disputed.
 6. **Fold and decide.** Findings on the same lines fold into one, the most severe reading kept whole. The verdict is
    code's: a kept finding at or above `--fail-on` is `REQUEST_CHANGES`, exit 1. A hole — a check that failed or could
    not look, a changed file no check can read whole, or where a guideline runs one it was not shown whole, unless the

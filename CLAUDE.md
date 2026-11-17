@@ -171,8 +171,9 @@ or else the branch `origin/HEAD` names.
 Evidence is gathered in Python first, the rules run as one `FunctionNode` before the guidelines in both shapes
 (`judge/checks.py`, every rule through `run_rule`), or straight from the driver through the same `run_rules` where no
 guideline follows, and code decides the verdict. Around them: retries, a token ceiling, a `--verify` second opinion
-(`judge/verify.py`: before the fold, one verifier a file that holds a finding, asked of every finding of the change, a
-rule's and a guideline's, shown its file's part of the block or the whole block, and the
+(`judge/verify.py`: before the fold, one verifier a call of whole files that hold findings, up to
+`CHUNK_FINDINGS_MAX` findings and `CHUNK_CAP_CHARS` of the block a call, asked of every finding of the change, a
+rule's and a guideline's, shown each of its files' parts of the block once or the whole block, and the
 calls into what the change touched; a refuted finding dropped and named, a security rule's kept as `Outcome.disputed`,
 an unsure or unjudged one kept as `Outcome.unverified`), a JSON report a pipeline reads (`--json FILE`, schema 2,
 written for every decided review, under the text report's safety rules), a comment for the branch's author
