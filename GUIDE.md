@@ -444,6 +444,10 @@ A changed file's diff is read whole, whatever its size: a file past `MAX_FILE_BY
 shows it. That costs memory about 25 times the file's size. Measured: a branch adding a 112 MB Python file took 22.5 s
 and 2.9 GB before the review ended in exit 3. The pre-push hook read the commit again: 3.3 s and 2.2 GB at its peak.
 GitHub refuses a file over 100 MB. `--path` narrows a review by hand around a large file.
+A review that changes a Python file other than a test parses the head's Python files, up to `MAX_TREE_BYTES`, at
+about 33 bytes of memory a byte of source. Measured over a million lines, LiteLLM's and pydantic's: 0.8 to 0.9 GB at
+the review's peak, two pyrefly runs of about 0.4 GB each beside it, and 1.7 GB under `--all`. Size a pipeline's
+runner for it.
 
 The checks that read code as a syntax tree read it with the Python the reviewer runs on: `callers`, `private-patch`,
 `tests-offline`, the import graph `radius-types` and the blast radius follow, and the health section. They leave out
