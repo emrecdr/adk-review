@@ -77,6 +77,11 @@ def copilot_token() -> Path:
     return copilot_dir() / (os.environ.get("GITHUB_COPILOT_ACCESS_TOKEN_FILE") or "access-token")
 
 
+def copilot_key() -> Path:
+    """Where LiteLLM caches the API key it buys with the token: one spelling, for readiness and the login."""
+    return copilot_dir() / (os.environ.get("GITHUB_COPILOT_API_KEY_FILE") or "api-key.json")
+
+
 def copilot_dir() -> Path:
     """LiteLLM's Copilot folder, where the login keeps its token and LiteLLM the API key it is issued. A blank value
     reads as unset, as a blank `REVIEW_*` does: read by an audit, one read as the current folder had a review ask for

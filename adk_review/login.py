@@ -15,6 +15,7 @@ of the checkout, which an installed reviewer has no way to run.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import os
 import sys
 import time
@@ -25,10 +26,11 @@ from typing import Any, NoReturn
 import truststore
 from dotenv import dotenv_values
 
+from .judge.settings import copilot_key, pin_copilot_dir
+
 # The token's path as the reviewer reads it, one spelling for both, from the module that reads the environment and
 # builds nothing: the engine is not imported for a one-time login.
 from .judge.settings import copilot_token as token_path
-from .judge.settings import pin_copilot_dir
 
 # Certificates through the operating system's store, as the reviewer verifies them (see `judge/config.py`).
 truststore.inject_into_ssl()
@@ -42,7 +44,7 @@ def keep_private(token: Path) -> None:
     machine. No other file of the folder is touched: it is any folder `GITHUB_COPILOT_TOKEN_DIR` names, a home folder
     among them, where a script would lose its execute bit."""
     token.parent.chmod(0o700)
-    for path in (token, token.parent / (os.environ.get("GITHUB_COPILOT_API_KEY_FILE") or "api-key.json")):
+    for path in (token, token.parent / copilot_key().name):  # the key beside the token, as LiteLLM keeps it
         if path.is_file():
             path.chmod(0o600)
 
@@ -112,7 +114,10 @@ def main(argv: list[str]) -> int:
     pin_copilot_dir()  # LiteLLM reads the folder as written: one `~` it would read as a folder named so
     token = token_path()
     if token.is_file() and token.stat().st_size and not args.force:  # an empty file is no token, to the reviewer too
-        keep_private(token)  # read by an audit: a token another tool cached stayed readable by every account
+        # Read by an audit: a token another tool cached stayed readable by every account. A folder not this
+        # account's own keeps the modes its owner set.
+        with contextlib.suppress(OSError):
+            keep_private(token)
         print(f"[copilot] already authenticated: {token}")
         print("[copilot] re-authenticate with: adk-review-login --force")
         return 0

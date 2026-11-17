@@ -1623,7 +1623,7 @@ SCHEMA = 2
 
 
 #: A previous review's findings by fingerprint and its health, as `--previous` reads them, or none.
-type Previous = tuple[dict[str, dict] | None, dict | None, tuple[str, str, bool] | None]
+type Previous = tuple[dict[str, dict] | None, dict | None, tuple[str, bool] | None]
 
 
 def read_previous(path: str) -> Previous:
@@ -1643,7 +1643,7 @@ def read_previous(path: str) -> Previous:
         health = safe_value(data["health"]) if isinstance(data.get("health"), dict) else None
         seen, scope = data.get("reviewed"), None
         if isinstance(seen, dict) and isinstance(seen.get("repository"), str) and isinstance(seen.get("head"), str):
-            scope = (_repository_place(seen["repository"]), seen["head"], seen.get("base") is None)
+            scope = (_repository_place(seen["repository"]), seen.get("base") is None)
     except RecursionError:  # measured by review: nested 1,100 deep, which no report `--json` writes, it ended as a hole
         raise ValueError(
             f"--previous {path}: nested deeper than a report --json writes. Name the JSON a review wrote with --json"
@@ -1655,11 +1655,12 @@ def read_previous(path: str) -> Previous:
     return kept, health, scope
 
 
-def reviewed_scope(evidence: Evidence) -> tuple[str, str, bool]:
-    """What a review read, as its JSON's `reviewed` names it: the repository, the head and whether it was `--all`. A
-    previous review of another is no baseline: read by an audit, and reproduced, an `--all` report named as one
-    counted each finding in a file this review never read as fixed."""
-    return _repository_place(evidence["preflight"]["repo"]), safe_line(evidence["preflight"]["head"]), evidence["whole"]
+def reviewed_scope(evidence: Evidence) -> tuple[str, bool]:
+    """What a review read, as its JSON's `reviewed` names it: the repository, read through `safe_line` as the JSON
+    writes it, and whether it was `--all`. A previous review of another is no baseline: read by an audit, and
+    reproduced, an `--all` report named as one counted each finding in a file this review never read as fixed. The
+    head is not compared: a pipeline names it by its commit, each run another."""
+    return _repository_place(safe_line(evidence["preflight"]["repo"])), evidence["whole"]
 
 
 def _repository_place(path: str) -> str:

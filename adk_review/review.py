@@ -1090,7 +1090,7 @@ def _reported(
     seen, seen_health, seen_scope = previous
     if seen is not None and seen_scope not in (None, reviewed_scope(evidence)):
         _say(
-            f"--previous {args.previous} reviewed another repository, branch or scope. No finding is marked new or "
+            f"--previous {args.previous} reviewed another repository or scope. No finding is marked new or "
             "fixed. Name the --json report of this branch's last review"
         )
         seen = seen_health = None

@@ -300,7 +300,9 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     root = args.path.expanduser().resolve() if args.path else demo_repo()
     if args.fix:
-        if not (root / ".git").exists():  # measured: `git checkout` ended in a traceback
+        # Measured: `git checkout` ended in a traceback with no repository; and read by a review, `--fix` on a
+        # repository of the person's own committed its files as the demo's: only a demo a build made is fixed.
+        if not (root / ".git").exists() or not _ours(root):
             print(
                 f"no demo repository at {root}: build it first, `uv run python scripts/make_demo_repo.py`",
                 file=sys.stderr,

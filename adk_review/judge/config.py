@@ -32,7 +32,7 @@ from google.genai import types
 from ..core.guidelines import Models
 from .settings import (
     DEFAULTS,
-    copilot_dir,
+    copilot_key,
     copilot_token,
     fallback_name,
     model_name,
@@ -101,7 +101,7 @@ def _copilot_api() -> str:
     endpoint its cached API key was issued for, else `GITHUB_COPILOT_API_BASE`. Traced in its source by review: read
     from the variable alone, the report could name a host the calls never reached, and named none for a tenant whose
     key named its own. Of that file, which holds the key, only `endpoints.api` is read, and nothing else of it kept."""
-    issued = copilot_dir() / (os.environ.get("GITHUB_COPILOT_API_KEY_FILE") or "api-key.json")
+    issued = copilot_key()
     try:
         endpoint = json.loads(issued.read_text(encoding="utf-8"))["endpoints"]["api"]
     except OSError, ValueError, KeyError, TypeError:  # none issued yet, or of another shape: LiteLLM reads on too

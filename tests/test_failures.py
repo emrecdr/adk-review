@@ -757,6 +757,22 @@ def test_the_copilot_login_hands_litellm_the_folder_it_writes_and_no_older_key(t
     assert (home / "tokens" / "access-token").read_text(encoding="utf-8") == "gho_new"
 
 
+def test_a_cached_token_in_a_folder_not_ones_own_is_still_authenticated(tmp_path, monkeypatch, capsys) -> None:
+    """Read by a review of the loop's change, and reproduced: narrowing the modes of a token already cached raised
+    in a folder this account does not own, a traceback where the login said it was done."""
+    from adk_review import login as copilot_login
+
+    _cached_copilot_token(monkeypatch, tmp_path)
+    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
+
+    def refused(_token):
+        raise PermissionError(1, "Operation not permitted")
+
+    monkeypatch.setattr(copilot_login, "keep_private", refused)
+    assert copilot_login.main([]) == 0
+    assert "already authenticated" in capsys.readouterr().out
+
+
 def test_a_blank_copilot_folder_or_file_reads_as_the_default(tmp_path, monkeypatch) -> None:
     """Read by an audit, and reproduced: `GITHUB_COPILOT_TOKEN_DIR=` in `.env`, blank as each `REVIEW_*` default is,
     read as the current folder, so a review asked for a login and the login said it was already done."""
@@ -776,7 +792,7 @@ def test_a_copilot_key_that_cannot_be_refreshed_names_the_login() -> None:
     from adk_review.judge.plugins import describe
 
     said = describe(Exception("litellm.AuthenticationError: Failed to refresh API key: 401 Bad credentials"))
-    assert said.endswith("Run adk-review-login --force with an account that has a Copilot seat."), said
+    assert said.endswith("with an account that has a Copilot seat, or let api.github.com through."), said
 
 
 def test_the_copilot_login_waits_as_long_and_as_often_as_github_says(tmp_path, monkeypatch, capsys) -> None:

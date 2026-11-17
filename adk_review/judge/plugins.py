@@ -80,7 +80,7 @@ UNSERVED_NEXT = "Name a model your Copilot seat serves, in REVIEW_MODEL or the v
 #: LiteLLM's words where the token cached cannot buy a key: revoked, or the account lost its seat, and what to do.
 #: Read by an audit against a server answering 401: every guideline failed with these words and no next step.
 REFRESH = "Failed to refresh API key"
-REFRESH_NEXT = "Run adk-review-login --force with an account that has a Copilot seat."
+REFRESH_NEXT = "Run adk-review-login --force with an account that has a Copilot seat, or let api.github.com through."
 
 
 #: The longest wait a rate limit's header is read as naming, a week, the longest limit GitHub's documents name. Past it,

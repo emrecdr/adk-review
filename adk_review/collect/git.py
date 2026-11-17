@@ -967,19 +967,15 @@ def _budgeted(blobs: Iterable[tuple[str, str, str]]) -> tuple[list[tuple[str, st
 
 
 def _unread_why(size: str) -> str:
-    """Why a changed file's text was not read, by the size git gave its blob, and what to do. Read by an audit, and
-    reproduced: a generated module of 1.9 MB made every rule a hole, `was not read whole`, and stopped each commit
-    and push, naming neither the cap nor the flag that leaves the file out."""
+    """Why a changed file's text was not read, by the size git gave its blob, short, since a hole names its files
+    one after another under one cap. Read by an audit, and reproduced: a generated module of 1.9 MB made every rule
+    a hole, `was not read whole`, and stopped each commit and push, naming no cause; the guide's limits name the
+    caps and `--path-exclude`. A text git did not give back reads as the budget's: the batch does not say."""
     if not size.isdigit():  # a partial clone lists a blob it lacks, which nothing fetches to size
-        return "was not read whole: this clone lacks its blob. Fetch it, then review again"
+        return "was not read whole: the clone lacks its blob"
     if int(size) > MAX_FILE_BYTES:
-        return (
-            f"was not read whole: it holds {int(size):,} bytes, over the {MAX_FILE_BYTES:,} a rule reads. Leave it out"
-            " with --path-exclude, or narrow the review with --path"
-        )
-    return (
-        f"was not read whole: the rules read {MAX_TREE_BYTES:,} bytes in all before it. Narrow the review with --path"
-    )
+        return f"was not read whole: {int(size):,} bytes, over a rule's cap"
+    return "was not read whole: past the review's budget, or git gave no text"
 
 
 def _texts(resolved: dict, blobs: Iterable[tuple[str, str, str]]) -> tuple[dict[str, str], list[str]]:

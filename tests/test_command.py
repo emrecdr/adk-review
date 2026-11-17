@@ -1865,6 +1865,10 @@ class TestThePreviousReportAndTheHandoff:
         assert make_demo_repo.build(demo) == demo, "a demo it built is replaced"
         (demo / ".git" / make_demo_repo.MARKER).unlink()
         assert make_demo_repo.build(demo) == demo, "and one built before the mark, by its first commit"
+        # And `--fix` fixes a demo alone: read by a review, on a repository of the person's own it committed there.
+        _git_in(mine, "init", "-q")
+        assert make_demo_repo.main([str(mine), "--fix"]) == 1
+        assert "no demo repository at" in capsys.readouterr().err
 
     def test_a_handoffs_repository_on_windows_is_written_with_forward_slashes(self) -> None:
         """Read by an audit: on Windows the rerun command named the repository with backslashes, which cmd and
@@ -2084,8 +2088,23 @@ class TestThePreviousReportAndTheHandoff:
         capsys.readouterr()
         run_review(cli, demo_repo, *rules, "--previous", str(whole), "--json", str(now))
         said = capsys.readouterr().err
-        assert "reviewed another repository, branch or scope. No finding is marked new or fixed" in said, said
+        assert "reviewed another repository or scope. No finding is marked new or fixed" in said, said
         assert json.loads(now.read_text(encoding="utf-8"))["resolved"] is None
+
+    def test_a_previous_review_of_the_head_named_by_its_commit_is_the_same(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ) -> None:
+        """Read by a review of the loop's change, and reproduced: the README's pipeline names the head by its commit,
+        so each run read as another branch's and no finding was marked new or fixed. The head is not compared: the
+        repository and whether a review was `--all` are."""
+        first, now = tmp_path / "first.json", tmp_path / "now.json"
+        rules = ("--profile", "default-rules")
+        run_review(cli, demo_repo, *rules, "--json", str(first))
+        capsys.readouterr()
+        sha = _git_in(demo_repo, "rev-parse", HEAD)
+        cli.main([str(demo_repo), "--base", BASE, "--head", sha, *rules, "--previous", str(first), "--json", str(now)])
+        assert "reviewed another repository" not in capsys.readouterr().err
+        assert json.loads(now.read_text(encoding="utf-8"))["resolved"] is not None
 
     def test_a_previous_review_of_the_same_repository_named_otherwise_is_the_same(
         self, cli, demo_repo: Path, tmp_path: Path, capsys
