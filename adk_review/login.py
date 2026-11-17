@@ -28,6 +28,7 @@ from dotenv import dotenv_values
 # The token's path as the reviewer reads it, one spelling for both, from the module that reads the environment and
 # builds nothing: the engine is not imported for a one-time login.
 from .judge.settings import copilot_token as token_path
+from .judge.settings import pin_copilot_dir
 
 # Certificates through the operating system's store, as the reviewer verifies them (see `judge/config.py`).
 truststore.inject_into_ssl()
@@ -35,11 +36,13 @@ truststore.inject_into_ssl()
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def keep_private(directory: Path) -> None:
-    """The token's folder readable by its owner alone. Measured before: written with the default umask, both token
-    files were 0644 in a 0755 folder, readable by every account on the machine."""
-    directory.chmod(0o700)
-    for path in directory.iterdir():
+def keep_private(token: Path) -> None:
+    """The token, the key LiteLLM caches beside it, and their folder, readable by their owner alone. Measured before:
+    written with the default umask, both token files were 0644 in a 0755 folder, readable by every account on the
+    machine. No other file of the folder is touched: it is any folder `GITHUB_COPILOT_TOKEN_DIR` names, a home folder
+    among them, where a script would lose its execute bit."""
+    token.parent.chmod(0o700)
+    for path in (token, token.parent / (os.environ.get("GITHUB_COPILOT_API_KEY_FILE") or "api-key.json")):
         if path.is_file():
             path.chmod(0o600)
 
@@ -106,8 +109,10 @@ def main(argv: list[str]) -> int:
     args = parser.parse_args(argv)
     if not _endpoints_from_env():
         return 1
+    pin_copilot_dir()  # LiteLLM reads the folder as written: one `~` it would read as a folder named so
     token = token_path()
     if token.is_file() and token.stat().st_size and not args.force:  # an empty file is no token, to the reviewer too
+        keep_private(token)  # read by an audit: a token another tool cached stayed readable by every account
         print(f"[copilot] already authenticated: {token}")
         print("[copilot] re-authenticate with: adk-review-login --force")
         return 0
@@ -187,6 +192,9 @@ def _stored(auth: Any, token: Path, access_token: str) -> int:
 
     auth._ensure_token_dir()
     token.write_text(access_token, encoding="utf-8")
+    # The key cached for the token before, another account's after `--force`, would answer the exchange in this
+    # one's place: read by an audit, and reproduced, calls went on billed to the account logged in before.
+    Path(auth.api_key_file).unlink(missing_ok=True)
     try:
         auth.get_api_key()
     except GetAPIKeyError as exc:  # GitHub knows the account; Copilot serves it no key
@@ -198,7 +206,7 @@ def _stored(auth: Any, token: Path, access_token: str) -> int:
             file=sys.stderr,
         )
         return 1
-    keep_private(token.parent)
+    keep_private(token)
     print(f"[copilot] done: token cached at {token}")
     return 0
 

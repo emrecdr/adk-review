@@ -30,7 +30,16 @@ from google.auth.exceptions import GoogleAuthError
 from google.genai import types
 
 from ..core.guidelines import Models
-from .settings import DEFAULTS, copilot_dir, copilot_token, fallback_name, model_name, model_pick, provider
+from .settings import (
+    DEFAULTS,
+    copilot_dir,
+    copilot_token,
+    fallback_name,
+    model_name,
+    model_pick,
+    pin_copilot_dir,
+    provider,
+)
 
 # Certificates are verified through the operating system's own store, as a browser does, before any client is
 # built. Measured on a company Windows machine: its proxy re-signed HTTPS with a root the machine trusted and
@@ -92,7 +101,7 @@ def _copilot_api() -> str:
     endpoint its cached API key was issued for, else `GITHUB_COPILOT_API_BASE`. Traced in its source by review: read
     from the variable alone, the report could name a host the calls never reached, and named none for a tenant whose
     key named its own. Of that file, which holds the key, only `endpoints.api` is read, and nothing else of it kept."""
-    issued = copilot_dir() / os.environ.get("GITHUB_COPILOT_API_KEY_FILE", "api-key.json")
+    issued = copilot_dir() / (os.environ.get("GITHUB_COPILOT_API_KEY_FILE") or "api-key.json")
     try:
         endpoint = json.loads(issued.read_text(encoding="utf-8"))["endpoints"]["api"]
     except OSError, ValueError, KeyError, TypeError:  # none issued yet, or of another shape: LiteLLM reads on too
@@ -193,8 +202,7 @@ def _litellm():  # unannotated: a checker then knows the module and its typed fl
     LiteLLM, finding no token under a folder named `~`, would have started its own device login mid-review."""
     os.environ.setdefault("LITELLM_MODE", "PRODUCTION")
     os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")  # the pinned version's own price list
-    if "GITHUB_COPILOT_TOKEN_DIR" in os.environ:
-        os.environ["GITHUB_COPILOT_TOKEN_DIR"] = str(copilot_dir())
+    pin_copilot_dir()
     import litellm
 
     return litellm

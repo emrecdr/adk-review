@@ -66,7 +66,7 @@ def describe(error: Exception) -> str:
     wait = _wait_of(error) if 429 in (getattr(error, "code", None), getattr(error, "status_code", None)) else None
     said_so = squash(f"{code}: {message}" if code else message)
     # Copilot's code is the error's own, or in its message where LiteLLM's mapping made the code 400.
-    after = wait or (UNSERVED_NEXT if UNSERVED in said_so else None)
+    after = wait or (UNSERVED_NEXT if UNSERVED in said_so else REFRESH_NEXT if REFRESH in said_so else None)
     room = REASON_MAX_CHARS - (len(after) + 1 if after else 0)  # the next step is kept whole, inside the cap
     line = cut_at(said_so, room)
     return f"{line} {after}" if after else line
@@ -77,6 +77,10 @@ def describe(error: Exception) -> str:
 #: deprecated `gpt-4.1`, the arm's default: a review meets this the day Copilot stops serving it.
 UNSERVED = "model_not_supported"
 UNSERVED_NEXT = "Name a model your Copilot seat serves, in REVIEW_MODEL or the variable that chose this one."
+#: LiteLLM's words where the token cached cannot buy a key: revoked, or the account lost its seat, and what to do.
+#: Read by an audit against a server answering 401: every guideline failed with these words and no next step.
+REFRESH = "Failed to refresh API key"
+REFRESH_NEXT = "Run adk-review-login --force with an account that has a Copilot seat."
 
 
 #: The longest wait a rate limit's header is read as naming, a week, the longest limit GitHub's documents name. Past it,

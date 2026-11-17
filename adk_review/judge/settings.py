@@ -74,9 +74,23 @@ def registries() -> tuple[str, ...]:
 def copilot_token() -> Path:
     """Where LiteLLM caches the Copilot device-flow token: one spelling of the path, which `config.py` asks for
     readiness and the login, `login.py` at the package root, writes to."""
-    return copilot_dir() / os.environ.get("GITHUB_COPILOT_ACCESS_TOKEN_FILE", "access-token")
+    return copilot_dir() / (os.environ.get("GITHUB_COPILOT_ACCESS_TOKEN_FILE") or "access-token")
 
 
 def copilot_dir() -> Path:
-    """LiteLLM's Copilot folder, where the login keeps its token and LiteLLM the API key it is issued."""
-    return Path(os.environ.get("GITHUB_COPILOT_TOKEN_DIR", "~/.config/litellm/github_copilot")).expanduser()
+    """LiteLLM's Copilot folder, where the login keeps its token and LiteLLM the API key it is issued. A blank value
+    reads as unset, as a blank `REVIEW_*` does: read by an audit, one read as the current folder had a review ask for
+    a login and the login say it was already done."""
+    return Path(os.environ.get("GITHUB_COPILOT_TOKEN_DIR") or "~/.config/litellm/github_copilot").expanduser()
+
+
+def pin_copilot_dir() -> None:
+    """The Copilot folder and its files written for LiteLLM, which reads them as written, as this module reads them:
+    `GITHUB_COPILOT_TOKEN_DIR` with its `~` expanded, and a blank file name dropped. Read by review and by an audit:
+    `~/tokens` read ready, and the login wrote under the home folder, where LiteLLM looked in a folder named `~` and
+    started a device login of its own."""
+    if "GITHUB_COPILOT_TOKEN_DIR" in os.environ:
+        os.environ["GITHUB_COPILOT_TOKEN_DIR"] = str(copilot_dir())
+    for name in ("GITHUB_COPILOT_ACCESS_TOKEN_FILE", "GITHUB_COPILOT_API_KEY_FILE"):
+        if os.environ.get(name) == "":
+            del os.environ[name]

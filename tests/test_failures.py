@@ -725,6 +725,60 @@ def test_the_copilot_login_caches_no_token_for_an_account_without_copilot(tmp_pa
     assert "no Copilot seat" in capsys.readouterr().err
 
 
+def test_the_copilot_login_hands_litellm_the_folder_it_writes_and_no_older_key(tmp_path, monkeypatch) -> None:
+    """Read by an audit, and reproduced: given `GITHUB_COPILOT_TOKEN_DIR=~/tokens`, as `.env.example` offers it, the
+    login wrote the token under the home folder and LiteLLM read a folder named `~`, starting a second device login;
+    and `--force` kept the key LiteLLM had cached for the account before, so calls went on billed to that one."""
+    from litellm.llms.github_copilot import authenticator
+
+    from adk_review import login as copilot_login
+
+    home = tmp_path / "home"
+    (home / "tokens").mkdir(parents=True)
+    (home / "tokens" / "access-token").write_text("gho_old", encoding="utf-8")
+    (home / "tokens" / "api-key.json").write_text("{}", encoding="utf-8")
+    for name in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(name, str(home))
+    monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", "~/tokens")
+    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
+    monkeypatch.setattr(copilot_login.time, "sleep", lambda _s: None)
+    code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
+    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
+    seen: dict = {}
+
+    def exchanged(self):
+        seen.update(folder=self.token_dir, older_key=os.path.exists(self.api_key_file))
+        return "a key"
+
+    monkeypatch.setattr(authenticator.Authenticator, "get_api_key", exchanged)
+    _github_answers(monkeypatch, {"access_token": "gho_new"})
+    assert copilot_login.main(["--force"]) == 0
+    assert seen == {"folder": str(home / "tokens"), "older_key": False}, seen
+    assert (home / "tokens" / "access-token").read_text(encoding="utf-8") == "gho_new"
+
+
+def test_a_blank_copilot_folder_or_file_reads_as_the_default(tmp_path, monkeypatch) -> None:
+    """Read by an audit, and reproduced: `GITHUB_COPILOT_TOKEN_DIR=` in `.env`, blank as each `REVIEW_*` default is,
+    read as the current folder, so a review asked for a login and the login said it was already done."""
+    from adk_review.judge.settings import copilot_dir, copilot_token
+
+    for name in ("HOME", "USERPROFILE"):
+        monkeypatch.setenv(name, str(tmp_path))
+    monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", "")
+    monkeypatch.setenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", "")
+    assert copilot_dir() == tmp_path / ".config" / "litellm" / "github_copilot"
+    assert copilot_token() == copilot_dir() / "access-token"
+
+
+def test_a_copilot_key_that_cannot_be_refreshed_names_the_login() -> None:
+    """Read by an audit, and reproduced against a server answering 401: a revoked token or a lost seat failed every
+    guideline with LiteLLM's words alone, `Failed to refresh API key`, and no next step."""
+    from adk_review.judge.plugins import describe
+
+    said = describe(Exception("litellm.AuthenticationError: Failed to refresh API key: 401 Bad credentials"))
+    assert said.endswith("Run adk-review-login --force with an account that has a Copilot seat."), said
+
+
 def test_the_copilot_login_waits_as_long_and_as_often_as_github_says(tmp_path, monkeypatch, capsys) -> None:
     """GitHub's device-code reply names how long its code lives and how often to ask, as integers. LiteLLM 1.106.0
     types them `object`, so the login reads each as GitHub sends it; a conversion made for the type checker alone
@@ -817,9 +871,12 @@ def test_the_copilot_login_keeps_its_files_to_their_owner(tmp_path) -> None:
     (tmp_path / "api-key.json").write_text("{}", encoding="utf-8")
     for path in (tmp_path, *tmp_path.iterdir()):
         path.chmod(0o755 if path.is_dir() else 0o644)
-    copilot_login.keep_private(tmp_path)
+    (tmp_path / "run.sh").write_text("echo", encoding="utf-8")
+    (tmp_path / "run.sh").chmod(0o755)
+    copilot_login.keep_private(tmp_path / "access-token")
     assert oct(tmp_path.stat().st_mode & 0o777) == "0o700"
-    assert {oct(path.stat().st_mode & 0o777) for path in tmp_path.iterdir()} == {"0o600"}
+    modes = {path.name: oct(path.stat().st_mode & 0o777) for path in tmp_path.iterdir()}
+    assert modes == {"access-token": "0o600", "api-key.json": "0o600", "run.sh": "0o755"}, "the token's files alone"
 
 
 @pytest.mark.parametrize(("arm", "said"), [("gemini", "needs GOOGLE_API_KEY"), ("copilot", "needs a cached token")])
