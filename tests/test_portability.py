@@ -230,8 +230,9 @@ def test_the_fix_says_what_it_changed_in_each_file_and_what_it_left_planted(tmp_
 def test_the_demo_repository_names_the_review_to_run_on_it_ready_to_paste(tmp_path: Path, capsys) -> None:
     """The build once printed its path alone, and a first-time reader filled the review's command in from the README
     by hand. The path holds a space here, as a Windows user's temp folder can: pasted, it is still one argument. The
-    build names the payments review first, then the orders branch's two, the rules alone and the default profile, each
-    on its own line: the owner asks for every common task ready to copy. `--fix` names the payments review alone."""
+    build names the payments review first, then the orders branch's two, the rules alone and every guideline with the
+    verifier, each on its own line: the owner asks for every common task ready to copy, and on Windows could copy only
+    from their own terminal, never a long command from elsewhere. `--fix` names the payments review alone."""
     import shlex
 
     import make_demo_repo
@@ -241,7 +242,7 @@ def test_the_demo_repository_names_the_review_to_run_on_it_ready_to_paste(tmp_pa
     review = [*reviewed, "--head", "feature/payments", "--base", "main", "--profile", "demo"]
     orders = [*reviewed, "--head", "feature/orders", "--base", "main"]
     for argv, expected in (
-        ([str(root)], [review, [*orders, "--profile", "rules-only"], orders]),
+        ([str(root)], [review, [*orders, "--profile", "rules-only"], [*orders, "--profile", "full", "--verify"]]),
         ([str(root), "--fix"], [review]),
     ):
         assert make_demo_repo.main(argv) == 0

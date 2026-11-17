@@ -40,7 +40,7 @@ uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR
 uv run adk-review <demo repo> --head feature/payments --base main --profile demo   # every rule, the demo's own among them, no model call, no key
 uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # what a review would cover and run, nothing run
 uv run adk-review <demo repo> --head feature/orders --base main --profile rules-only   # each rule finds its own planted defect, exit 1; no model call
-uv run adk-review <demo repo> --head feature/orders --base main   # the default profile: its guidelines judge their planted targets too, with a model
+uv run adk-review <demo repo> --head feature/orders --base main --profile full --verify   # all six guidelines judge their planted targets, a second model checks each finding
 uv run adk-review-login                          # one-time GitHub device-flow login for the Copilot arm
 uv run adk web --no_use_local_storage .          # the chat in a browser, over the same graph; sessions in memory, never on disk
 # the commit hook, after `make install`: GUIDE.md's "Before a commit" lines, what a commit holds (`git commit -a` and `<paths>` included) with default-rules; pre-commit's adk-review-commit hook runs the same

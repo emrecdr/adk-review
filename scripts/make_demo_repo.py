@@ -722,9 +722,9 @@ def main(argv: list[str]) -> int:
         "\n"
         f"  {_review(root, ORDERS_REF, 'rules-only')}\n"
         "\n"
-        "With the default profile, the guidelines judge it too, each with a model call. --profile full asks all six.\n"
+        "With all six guidelines, each a model call, and --verify, a second model checks each finding. Copy this:\n"
         "\n"
-        f"  {_review(root, ORDERS_REF, None)}"
+        f"  {_review(root, ORDERS_REF, 'full')} --verify"
     )
     return 0
 

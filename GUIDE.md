@@ -24,8 +24,8 @@ uv run adk-review <repo> --base main --profile default-rules    # a repository o
 ```
 
 The demo has two branches off one `main`. `feature/payments` plants four defects: the rules find three, exit 1.
-`feature/orders` plants a defect for each check: each rule of `rules-only` finds its own, exit 1. Drop `--profile` to let the guidelines judge it too, with a model: each has a target of its
-kind there.
+`feature/orders` plants a defect for each check: each rule of `rules-only` finds its own, exit 1. `--profile full --verify` lets all six guidelines judge it too, with a model, and a second model check each
+finding: each guideline has a target of its kind there, and the build prints that review ready to copy.
 
 `<repo>` is the path of the repository to review, and `--head` defaults to its branch checked out: on `main` itself a
 change against `main` is nothing, exit 2, and the sentence names `--head`, `--base` and `--all`. `demo`, `rules-only`

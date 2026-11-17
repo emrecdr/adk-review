@@ -71,7 +71,8 @@ The rules find the demo's hard-coded key pair, its shell call and a float divisi
 each check, to show every check at work. Each rule of `rules-only` finds its own, offline: a call a file the branch
 left alone still makes the old way, a workflow that runs an issue's title as code, a lockfile that fetches from a
 private mirror, an order to the reviewing model, and more; that review ends in exit 1.
-Drop `--profile` to add the default guidelines, which need a model as step 5 says; `--profile full` adds all six. Each
+Drop `--profile` to add the default guidelines, which need a model as step 5 says; `--profile full` adds all six, and
+`--verify` a second model that checks each finding: the build prints that review ready to copy. Each
 guideline has a target of its kind there: an inverted condition, SQL built with an f-string, a query run for each line,
 a special case in shared code, a deeply nested function and code no test calls. The comments in
 `scripts/make_demo_repo.py` name each defect and the check that finds it.
