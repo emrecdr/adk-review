@@ -318,6 +318,17 @@ def _unchecked(outcome: Outcome, fail_on: str) -> list[str]:
     return unchecked + [f"- {code_span(one_line(path))}: {_reason(why)}" for path, why in outcome.unread.items()]
 
 
+def _is_tidy(item: Sourced, tidies: frozenset[str]) -> bool:
+    """Whether `item` is a tidy: a finding of a check in `tidies`, which changes how code reads and never what it does.
+    A guideline's at major or above is none: its model rates each finding on a scale where a major is a real bug.
+    Reported by the owner: `complexity` named a function that changed its own argument, at major, and the comment
+    listed it under Optional tidy-ups, the hand-off under what keeps behaviour as it is. Measured live on Copilot,
+    gpt-4.1, over seven reviews of the demo: each of `complexity`'s thirteen findings at major or above named what the
+    code does wrong, and none how it reads. A rule's severity is its author's, so its tidy is one at any."""
+    judged = item.source.startswith(guideline_id("")) and at_or_above(item.finding.severity, "major")
+    return item.source in tidies and not judged
+
+
 def _lanes(
     outcome: Outcome, tidies: frozenset[str], fail_on: str
 ) -> tuple[list[list[Sourced]], list[list[Sourced]], list[list[Sourced]]]:
@@ -331,11 +342,11 @@ def _lanes(
     tidy: list[list[Sourced]] = []
     for kept in outcome.kept:
         members = [kept, *under.get(id(kept), ())]
-        defects = [item for item in members if item.source not in tidies]
+        defects = [item for item in members if not _is_tidy(item, tidies)]
         if not defects:
             tidy.append(members)
             continue
-        cleanups = [item for item in members if item.source in tidies]
+        cleanups = [item for item in members if _is_tidy(item, tidies)]
         lead = max(defects, key=lambda item: RANK[item.finding.severity])
         others = [item for item in defects if item is not lead]
         if at_or_above(lead.finding.severity, "major"):  # suspect code: its tidies wait under the fix
@@ -403,7 +414,7 @@ def _folded_under(
     lines = []
     for item in folded:
         f = item.finding
-        if item.source in held:
+        if _is_tidy(item, held):
             lines.append(
                 f"   - held back, a tidy of these lines: {_titled(item)}, {f.severity}. Leave it until the finding"
                 " above is fixed and a review no longer reports it."
@@ -684,7 +695,7 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
             f"   - Suggested change: {prose(f.suggestion)}",
             *_code_lines(f, "Suggested code", "   "),
         ]
-        others = [item for item in also if item.source not in tidies]
+        others = [item for item in also if not _is_tidy(item, tidies)]
         shown = {f.why, f.suggestion, f.code}
         for item in others[:ALSO_SHOWN]:
             lines += _also_shown(item, shown)

@@ -40,7 +40,8 @@ class Guideline:
     #: Tokens of thinking the model may spend before it answers, on a provider that has the lever; Copilot has none.
     thinking_budget: ClassVar[int]
     #: Whether its findings change how code reads and never what it does, as a simplify pass's do: a handoff lists them
-    #: apart, under what a tidy keeps, and holds one back where a defect at major or above names the same lines.
+    #: apart, under what a tidy keeps, and holds one back where a defect at major or above names the same lines. One
+    #: its model rates major or above is a defect there all the same: the scale it is given calls a major a real bug.
     cleanup: ClassVar[bool] = False
     #: The model it runs on, by arm; blank runs on everyone's.
     models: ClassVar[Models] = Models()

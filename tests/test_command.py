@@ -2066,7 +2066,7 @@ class TestThePreviousReportAndTheHandoff:
         tidy is never given a fix's instruction: on lines a defect at major or above names, it waits for that defect,
         since suspect code is never tidied; anywhere else it is an item of its own after the fixes, under what it keeps.
         A fix is led by its most severe defect, where a tidy kept the lines, as a tie under `full` once did, or as a
-        major tidy over a minor defect does."""
+        major tidy over a minor defect does: a rule's, since a guideline's finding at major or above is a defect."""
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Outcome, Sourced
         from adk_review.deliver.report import TESTS_FIRST, TIDY_KEEPS, fingerprint, render_handoff
@@ -2077,10 +2077,10 @@ class TestThePreviousReportAndTheHandoff:
 
         shell, nested = at("rule.lint", 3, "major", "shell call"), at("rule.simplify", 3, "minor", "nested if")
         unit, loop = at("rule.lint", 7, "minor", "line too long"), at("rule.simplify", 7, "minor", "manual list")
-        shape = at("guideline.complexity", 12, "major", "copied block")
+        shape = at("rule.simplify", 12, "major", "copied block")
         swallowed = at("guideline.correctness", 12, "major", "error swallowed")
         big, slip = (
-            at("guideline.complexity", 30, "major", "copied again"),
+            at("rule.simplify", 30, "major", "copied again"),
             at("guideline.correctness", 30, "minor", "off by one"),
         )
         alone = at("rule.simplify", 20, "minor", "redundant dict()")
@@ -2099,12 +2099,12 @@ class TestThePreviousReportAndTheHandoff:
         assert "1. shell call (a.py:3), major" in fixes and "2. correctness: error swallowed (a.py:12), major" in fixes
         assert "3. line too long (a.py:7), minor" in fixes and "4. correctness: off by one (a.py:30), minor" in fixes
         assert "   - held back, a tidy of these lines: nested if, minor." in fixes, "a major defect holds its tidy back"
-        assert "   - held back, a tidy of these lines: complexity: copied block, major." in fixes, (
+        assert "   - held back, a tidy of these lines: copied block, major." in fixes, (
             "the defect leads, the tidy waits"
         )
         assert f"`rule.simplify` no longer reports fingerprint `{fingerprint(nested)}`" not in said, "no instruction"
         assert "manual list" not in fixes and "copied again" not in fixes, "a minor defect holds nothing back"
-        assert "5. complexity: copied again (a.py:30), major" in tidy and "6. manual list (a.py:7), minor" in tidy, tidy
+        assert "5. copied again (a.py:30), major" in tidy and "6. manual list (a.py:7), minor" in tidy, tidy
         assert f"`rule.simplify` no longer reports fingerprint `{fingerprint(loop)}`" in tidy, "its own instruction"
         assert " ".join(TIDY_KEEPS) in " ".join(tidy.split()) and "7. redundant dict() (a.py:20), minor" in tidy
         assert "held back" not in tidy
@@ -2112,6 +2112,59 @@ class TestThePreviousReportAndTheHandoff:
         plain = render_handoff({**evidence, "scope": []}, outcome, verdict="REQUEST_CHANGES", fail_on="blocker")
         assert "## Fix" not in plain and "## Tidy" not in plain and "held back" not in plain, "no tidies, as before"
         assert "tidy" not in plain, "a hand-off with no tidy says nothing of one, in its check of the work least"
+
+    def test_a_cleanup_guidelines_major_is_a_defect_to_fix_and_never_a_tidy(self) -> None:
+        """Reported by the owner: `complexity` named a function that changed its own argument, at major, and the
+        comment listed it under Optional tidy-ups, which "change how the code reads, never what it does". A model
+        rates each finding on a scale where a major is a real bug, so a guideline's finding at major or above is a
+        defect whatever its check: a point to fix, counted with the majors, and in the hand-off under no rule to keep
+        behaviour as it is. Its minor stays a tidy, and so does a rule's at any severity, which its author set."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import TIDY_KEEPS, TIDY_NOTE, render_comment, render_handoff
+
+        def at(check: str, line: int, severity: str, title: str) -> Sourced:
+            found = Finding(file="a.py", line=line, severity=severity, title=title, evidence=f"x{line}", suggestion="s")
+            return Sourced(check, found, (line, line))
+
+        tidies = frozenset({"rule.simplify", "guideline.complexity"})
+        pre = {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40}
+        given = {"evidence": {"preflight": pre, "whole": False, "scope": []}, "fail_on": "blocker", "tidies": tidies}
+        mutates, nested = (
+            at("guideline.complexity", 5, "major", "changes its own argument"),
+            at("guideline.complexity", 9, "minor", "nested if"),
+        )
+        outcome = Outcome(kept=[mutates, nested])
+        said = render_comment(outcome=outcome, verdict="APPROVED", **given)
+        assert "### Major findings" in said, said
+        major, optional = said.split("### Major findings", 1)[1].split("### Optional tidy-ups", 1)
+        assert "complexity: changes its own argument (major)" in major and TIDY_NOTE not in major, said
+        assert "complexity: nested if (minor)" in optional and TIDY_NOTE in optional, "a minor is a tidy, as before"
+        assert "It did find 1 major issue, under Major findings" in said, "counted, where it read as optional"
+        handoff = render_handoff(outcome=outcome, verdict="APPROVED", **given)
+        fixes, tidy = handoff.split("\n## Fix\n", 1)[1].split("\n## Tidy\n", 1)
+        assert "1. complexity: changes its own argument (a.py:5), major" in fixes, handoff
+        assert " ".join(TIDY_KEEPS) in " ".join(tidy.split()) and "2. complexity: nested if (a.py:9), minor" in tidy
+        # Under `full` a second guideline names the same defect: another reading to fix, never a tidy that waits.
+        inverted, again = (
+            at("guideline.correctness", 46, "major", "inverted condition"),
+            at("guideline.complexity", 46, "major", "inverted condition, said again"),
+        )
+        twice = Outcome(kept=[inverted], folded=[(again, inverted)])
+        handoff = render_handoff(outcome=twice, verdict="APPROVED", **given)
+        assert "   - also on these lines: complexity: inverted condition, said again, major" in handoff, handoff
+        assert "held back" not in handoff and "## Tidy" not in handoff, handoff
+        said = render_comment(outcome=twice, verdict="APPROVED", **given)
+        assert "   - Also on these lines: complexity: inverted condition, said again (major)" in said, said
+        # A rule's severity is its author's: its tidy is one at any, and waits under a defect of its lines, as a
+        # guideline's minor does.
+        waiting = [
+            (at("rule.simplify", 46, "major", "flatten"), inverted),
+            (at("guideline.complexity", 46, "minor", "nested"), inverted),
+        ]
+        handoff = render_handoff(outcome=Outcome(kept=[inverted], folded=waiting), verdict="APPROVED", **given)
+        assert "held back, a tidy of these lines: flatten, major." in handoff, handoff
+        assert "held back, a tidy of these lines: complexity: nested, minor." in handoff, handoff
 
     def test_a_previous_review_of_another_scope_marks_nothing_fixed(
         self, cli, demo_repo: Path, tmp_path: Path, capsys

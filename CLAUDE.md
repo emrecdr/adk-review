@@ -140,7 +140,8 @@ True`, as each rule about what runs, leaks or steers does (`file.changed` and `t
 rule reads only the files `scan` names unless it sets `reads_every_kind = True`, as the two credential rules do: a key
 leaks from a README as from code. A rule or a guideline whose findings change how code reads and never what it does sets
 `cleanup = True`, as `simplify` and `complexity` do: the hand-off lists them under `## Tidy`, apart from the fixes, and
-holds one back on lines a defect at major or above names. A rule about what leaks, runs or steers sets
+holds one back on lines a defect at major or above names; a guideline's finding at major or above is a defect there
+and in the comment, never a tidy, since its model rates a real bug so (`_is_tidy`, `deliver/report.py`). A rule about what leaks, runs or steers sets
 `security = True`, as the credential, workflow, lockfile, hidden-text and steering rules do: a verifier may dispute its
 finding but never drop it. Ruff's findings the base held too, the same code and words on the same line, as the diff
 numbers each line the change kept (`base_line`), a count no higher, are old (`Hit.old`, `Checked.old`, `Outcome.old`):

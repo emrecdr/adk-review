@@ -12,8 +12,9 @@ the catalog finds the file, and the fan-out, its state key, the chat verdict's s
 1. Copy the template under "Write a guideline" in `README.md` to a file in `adk_review/judge/guidelines/` named after
    the guideline: a lowercase id, a title of a few words, a role of one or two sentences that starts "You judge", and a
    thinking budget, which Copilot ignores; and `cleanup = True` if its findings change how code reads and never what it
-   does, as `complexity`'s do, so the hand-off lists them as tidies; and `models = Models(copilot=..., gemini=...)` if
-   it needs a model of its own. Its id is never `verifier` or `fallback`, roles of the reviewer's own.
+   does, as `complexity`'s do, so the hand-off lists them as tidies, and one it rates major or above as a defect; and
+   `models = Models(copilot=..., gemini=...)` if it needs a model of its own. Its id is never `verifier` or
+   `fallback`, roles of the reviewer's own.
 2. Profiles in `adk_review/config.toml`: `full` runs it at once, through the group `guidelines`; add
    `guideline.<name>` to `default` to run it in every review, and to `simplify` or `code-review` where it belongs to
    that pass. `rules-only` runs no guideline and stays as it is.

@@ -587,7 +587,8 @@ What a rule may do, and may not:
   shipped `scan` names unless it sets `reads_every_kind = True`, as `secrets` and `named-secrets` do: a key leaks from a
   README or a script as from code. No rule reads another project's code.
 - A rule whose findings change how code reads, never what it does, sets `cleanup = True`, as `simplify` does, and a
-  guideline the same, as `complexity` does: the hand-off lists them as tidies, never as fixes.
+  guideline the same, as `complexity` does: the hand-off lists them as tidies, never as fixes, but a guideline's
+  finding at major or above, which its model rates a real bug.
 - A rule about what leaks, runs or steers sets `security = True`, as `secrets`, `script-injection` and `steering-files`
   do: under `--verify` a verifier may dispute its finding but never drop it, and the report names the dispute.
 - Its expectations are constants at the top of its file, beside the check, and its examples follow them: a project
@@ -623,7 +624,8 @@ class Naming(Guideline):
 ```
 
 A guideline whose findings change how code reads and never what it does adds `cleanup = True`, as `complexity` does,
-and the hand-off lists its findings as tidies, apart from the fixes.
+and the hand-off lists its findings as tidies, apart from the fixes. One it rates major or above is listed as a defect
+all the same: the scale every guideline is given calls a major a real bug.
 
 A guideline that needs a stronger or a cheaper model names one per arm, `models = Models(copilot="claude-sonnet-4",
 gemini="gemini-2.5-pro")`, with `Models` imported beside `Guideline`. An arm it leaves blank runs on `REVIEW_MODEL`.
@@ -696,7 +698,11 @@ and last the next steps, by the verdict and what was kept. "The report" in `GUID
   as `simplify` and `complexity` do, and its findings are listed apart, after the fixes, under what a tidy keeps, one
   the project's tests fail on reverted; one on lines another check's defect at major or above names is held back until
   that defect is fixed, and is never given a fix's instruction, as a simplify pass keeps its two lanes: suspect code is
-  never tidied. `efficiency` and `altitude` are no cleanup: a cheaper form can reorder I/O and a deeper fix changes a
+  never tidied. A guideline's finding at major or above is no tidy, whatever its check (`_is_tidy`): its model rates
+  each finding on a scale where a major is a real bug, and reported by the owner, `complexity` named a function that
+  changed its own argument, which the comment listed under Optional tidy-ups and the hand-off under what keeps
+  behaviour as it is. A rule's severity is its author's, so its tidy is one at any. `efficiency` and `altitude` are no
+  cleanup: a cheaper form can reorder I/O and a deeper fix changes a
   shared mechanism, each a change to weigh.
 - `--comment [FILE]` writes the review as a comment for the branch's author, to paste into the pull request by hand,
   whatever the verdict: first what the change caused, a section a severity, blocker, major and minor findings, the most
