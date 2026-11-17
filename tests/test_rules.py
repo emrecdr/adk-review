@@ -1097,6 +1097,22 @@ class TestTheLintRule:
         alone = _counted(hostile, [(found[0], "major")], "lint: 1 of ruff's findings")
         assert alone.fix == "Run `ruff check --isolated --ignore-noqa` on the file to see each one.", alone.fix
 
+    def test_a_seeded_random_and_a_list_of_fixtures_are_how_tests_are_written(self) -> None:
+        """Read by a replay audit over this repository's last 60 commits: 80 major S311 findings, each a seeded
+        `random.Random(7)` in a fuzz test, and PLR0913 on a test taking its fixtures. Both are left out in a test file,
+        as `assert` is, and kept in library code."""
+        text = "import random\n\n\ndef check(a, b, c, d, e, f, g):\n"
+        text += "    return random.randint(0, a + b + c + d + e + f + g)\n"
+        codes = {
+            path: {
+                f.title.removeprefix("lint: ").split()[0]
+                for f in lint_findings({"files": [_entry(path, text)], "tree": None})
+            }
+            for path in ("src/pay.py", "tests/test_pay.py")
+        }
+        assert {"S311", "PLR0913"} <= codes["src/pay.py"], codes
+        assert not {"S311", "PLR0913"} & codes["tests/test_pay.py"], codes
+
     def test_an_assert_is_major_in_library_code_and_not_reported_in_a_test(self) -> None:
         """`assert` is how pytest checks, and in library code it vanishes under `python -O`, as `assert False` does,
         which ruff names twice, S101 and B011. Measured before: every test assert was a major S101, 762 of them in this

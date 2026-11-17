@@ -2070,6 +2070,25 @@ class TestThePreviousReportAndTheHandoff:
         assert "reviewed another repository, branch or scope. No finding is marked new or fixed" in said, said
         assert json.loads(now.read_text(encoding="utf-8"))["resolved"] is None
 
+    def test_a_previous_review_of_the_same_repository_named_otherwise_is_the_same(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ) -> None:
+        """Read by a replay audit, and reproduced: a review given the repository by a linked path, and the next given
+        it as `.`, were told they reviewed another repository, the two paths spelt apart. Each is read as one place,
+        its links followed."""
+        link = tmp_path / "link"
+        try:
+            link.symlink_to(demo_repo, target_is_directory=True)
+        except OSError:
+            pytest.skip("this account may not make a symbolic link, as Windows' without developer mode")
+        first, now = tmp_path / "first.json", tmp_path / "now.json"
+        rules = ("--profile", "default-rules")
+        cli.main([str(link), *PLANTED, *rules, "--json", str(first)])
+        capsys.readouterr()
+        run_review(cli, demo_repo, *rules, "--previous", str(first), "--json", str(now))
+        assert "reviewed another repository" not in capsys.readouterr().err
+        assert json.loads(now.read_text(encoding="utf-8"))["resolved"] is not None
+
     def test_a_previous_report_is_made_safe_whole_where_it_is_read(self, tmp_path: Path) -> None:
         """An edited `--previous` is read back through `resolved`: measured by review, a runner's command as a finding's
         key, in a list or in a nested value was written as it came."""

@@ -79,8 +79,10 @@ SEVERITY: dict[str, Severity] = {
 #: Codes left out in a test file, where their pattern is how tests are written: `assert` is pytest's way to check,
 #: while in library code it vanishes under `python -O`, as `assert False` does, which ruff names B011 beside S101.
 #: Measured: every test assert was a major S101, 762 of them in this repository's tests, 99% of its majors; rated minor
-#: they still filled each report.
-IN_TESTS: frozenset[str] = frozenset({"S101", "B011"})
+#: they still filled each report. A seeded `random`, S311, is how a test makes its cases again, and pytest hands a test
+#: its fixtures as parameters, PLR0913: read by a replay over this repository's last 60 commits, 80 S311 majors on
+#: `random.Random(7)` in fuzz tests, and PLR0913 on a test of seven fixtures.
+IN_TESTS: frozenset[str] = frozenset({"S101", "B011", "S311", "PLR0913"})
 #: The names Databricks defines in every notebook it runs, as its documentation lists them, which ruff, reading the
 #: notebook as a module, calls undefined (F821). Read by review on a branch of 20 notebooks: 192 of lint's findings
 #: named `spark`, `dbutils` and `display`, nearly all of its 86 majors, where the project's own ruff reported none.

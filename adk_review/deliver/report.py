@@ -1643,7 +1643,7 @@ def read_previous(path: str) -> Previous:
         health = safe_value(data["health"]) if isinstance(data.get("health"), dict) else None
         seen, scope = data.get("reviewed"), None
         if isinstance(seen, dict) and isinstance(seen.get("repository"), str) and isinstance(seen.get("head"), str):
-            scope = (seen["repository"], seen["head"], seen.get("base") is None)
+            scope = (_repository_place(seen["repository"]), seen["head"], seen.get("base") is None)
     except RecursionError:  # measured by review: nested 1,100 deep, which no report `--json` writes, it ended as a hole
         raise ValueError(
             f"--previous {path}: nested deeper than a report --json writes. Name the JSON a review wrote with --json"
@@ -1659,7 +1659,13 @@ def reviewed_scope(evidence: Evidence) -> tuple[str, str, bool]:
     """What a review read, as its JSON's `reviewed` names it: the repository, the head and whether it was `--all`. A
     previous review of another is no baseline: read by an audit, and reproduced, an `--all` report named as one
     counted each finding in a file this review never read as fixed."""
-    return safe_line(evidence["preflight"]["repo"]), safe_line(evidence["preflight"]["head"]), evidence["whole"]
+    return _repository_place(evidence["preflight"]["repo"]), safe_line(evidence["preflight"]["head"]), evidence["whole"]
+
+
+def _repository_place(path: str) -> str:
+    """A repository's path as one place: its links followed, its letters' case folded where the system folds it. Read
+    by a replay audit: `.` reads as the real path and a path given whole as written, so one repository read as two."""
+    return os.path.normcase(os.path.realpath(path))
 
 
 # Cached: a report's strings repeat, its keys, checks, files and fixes. Measured over 18,296 findings: a previous

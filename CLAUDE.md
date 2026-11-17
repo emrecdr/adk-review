@@ -57,7 +57,8 @@ adds nothing or shares no history with its base: "no change to review", with `--
 branch it does not hold, named with its remote copy and the `git fetch` for the person to run, a name no branch can
 have, said to be none, a `config.toml`, profile or rule file that cannot run, nothing under `--path`, a file the run
 writes or the `--record` folder where no folder holds it or no file can be written, two flags naming one file, no choice
-made at the question asked when neither `--base` nor `--all` is given, or a stop at the question a terminal is asked
+made at the question asked when neither `--base` nor `--all` is given, an index holding a conflict not yet resolved
+under `--staged`, or a stop at the question a terminal is asked
 when the guidelines cannot read the change in one run, its parts planned and printed first), 3 a hole: a rule or a
 guideline failed, a rule could not look (the head's tree not listed, a file it holds not read whole, or a link whose
 file was not read or followed), a changed file no check can read whole — binary, a submodule, a Git LFS pointer — or,
