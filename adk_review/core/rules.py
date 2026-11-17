@@ -114,6 +114,10 @@ class AnyRule(ABC):
     #: Whether its findings change how code reads and never what it does, as a simplify pass's do: a handoff lists them
     #: apart, under what a tidy keeps, and holds one back where a defect at major or above names the same lines.
     cleanup: ClassVar[bool] = False
+    #: Whether it is a rule about what leaks, runs or steers: a credential, a script an outsider writes, a line that
+    #: gives a reviewer orders. A verifier under `--verify` may dispute such a rule's finding but never drop it: the
+    #: report names the dispute and the verifier's reason, and the finding is kept, counted at the bar as before.
+    security: ClassVar[bool] = False
     #: The outside tool the rule reads, by the name of its adapter in `collect/tools.py`, and the settings that adapter
     #: takes, the rule's own and never the repository's: a file rule that names one is given each changed file with the
     #: tool's diagnostics on `file.diagnostics`, a tree rule the tree with them by path on `tree.diagnostics`. None for

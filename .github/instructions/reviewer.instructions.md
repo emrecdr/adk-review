@@ -30,10 +30,12 @@ applyTo: "adk_review/**"
   matters in a test too (a credential, hidden text, a workflow named `test_*.yml`; no test's file reaches any other
   rule, though `file.changed` and `tree.paths` list them all), `reads_every_kind = True` where it finds a credential (it
   then reads the project's own files `scan` leaves out, never another project's code), `cleanup = True` where its
-  findings change how code reads and never what it does (the hand-off lists them as tidies), and one `check` of three
-  kinds — a line, a file, the tree: a `Rule` with `check(path, line) -> bool` over each added line; a `FileRule` with
-  `check(file)` returning line numbers, which the report quotes, or `(line, what is wrong)` pairs, the line quoted and
-  `what` the finding's title, over each changed file whole at the head (`file.lines`, `file.added`, `file.changed`,
+  findings change how code reads and never what it does (the hand-off lists them as tidies), `security = True` where
+  it is about what leaks, runs or steers (a verifier under `--verify` may dispute its finding but never drop it), and
+  one `check` of three kinds — a line, a file, the tree: a `Rule` with `check(path, line) -> bool` over each added
+  line; a `FileRule` with `check(file)` returning line numbers, which the report quotes, or `(line, what is wrong)`
+  pairs, the line quoted and `what` the finding's title, over each changed file whole at the head (`file.lines`,
+  `file.added`, `file.changed`,
   `file.module`, `file.arrived(*globs)` where a file renamed or copied into a rule's paths brings every line of it
   there, `file.new_lines(*globs)` the lines a rule over those paths reads, `file.line(n)`, `file.near(n)` for a file
   past the size limits, as far as its diff shows it, and `file.diagnostics`, an outside tool's, for a rule that names

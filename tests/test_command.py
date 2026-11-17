@@ -1445,7 +1445,8 @@ class TestThePreviousReportAndTheHandoff:
 
     def test_a_finding_a_verifier_refuted_is_never_read_as_resolved(self) -> None:
         """Read by review: a finding a verifier refuted was no fingerprint found now, so `--previous` named it
-        resolved, as if a commit had fixed it, though a guideline still found it."""
+        resolved, as if a commit had fixed it, though a guideline still found it. A rule's finding is asked too now,
+        and refuted, the rule still found it: never resolved either."""
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Outcome, Sourced
         from adk_review.deliver.report import _resolved, fingerprint
@@ -1455,6 +1456,27 @@ class TestThePreviousReportAndTheHandoff:
         previous = {fingerprint(item): {"check": "guideline.correctness", "file": "a.py", "title": "t"}}
         refuted = Outcome(refuted=[(item, "no")], verified=True)
         assert _resolved(refuted, [], "APPROVED", previous, ["guideline.correctness"], []) == []
+        ruled = Sourced("rule.lint", found.model_copy(update={"title": "lint: F401", "evidence": "+import os"}), (2, 2))
+        previous = {fingerprint(ruled): {"check": "rule.lint", "file": "a.py", "title": "lint: F401"}}
+        refuted = Outcome(refuted=[(ruled, "no")], verified=True)
+        assert _resolved(refuted, [], "APPROVED", previous, ["rule.lint"], []) == []
+
+    def test_the_json_names_each_disputed_finding_after_those_no_verifier_could_judge(self) -> None:
+        """A security rule's finding a verifier refuted is kept, at the bar, and the JSON lists it apart under
+        `disputed`, with the verifier's reason, right after `unverified`, built as that field is."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+
+        title = "secrets: a hard-coded credential"
+        found = Finding(file="a.py", line=2, severity="blocker", title=title, evidence="+K = 1", suggestion="s")
+        item = Sourced("rule.secrets", found, (2, 2))
+        data = as_json(Outcome(kept=[item], disputed=[(item, "the value is a test's fake")], verified=True))
+        fields = list(data)
+        assert fields.index("disputed") == fields.index("unverified") + 1
+        (disputed,) = data["disputed"]
+        kept = {key: value for key, value in data["findings"][0].items() if key != "since_previous"}
+        assert disputed == {**kept, "reason": "the value is a test's fake"}, "the finding as data, and the reason"
+        assert data["findings_at_fail_on"] == 1 and data["refuted"] == [] and data["refuted_at_fail_on"] == 0
 
     def test_one_of_two_findings_alike_that_changes_its_list_is_never_read_as_resolved(self) -> None:
         """Read by review of another tool's report, and reproduced: two findings of one check, file and quote are told

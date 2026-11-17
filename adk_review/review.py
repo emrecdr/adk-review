@@ -21,11 +21,10 @@ the steps:
    `simplify`, pyrefly for `types` (`judge/rules/`), run by `collect/ruff.py`
    and `collect/pyrefly.py` through `collect/tools.py` over the changed Python
    files at the head.
-4. A second opinion (`--verify`): another model judges each guideline finding
-   before the fold — one verifier per finding, a second graph run like the
-   first; refuted findings are dropped and named, unjudged ones kept and
-   named, the rules' findings never asked, nor a guideline's that only says again
-   what a rule found.
+4. A second opinion (`--verify`): another model judges every finding, the
+   rules' too, before the fold — one verifier per file that holds a finding,
+   a second graph run like the first; refuted findings are dropped and named,
+   a security rule's kept and named as disputed, unjudged ones kept and named.
 5. A blast radius (`core/blast.py`): what at the head depends on each changed
    file, read from the syntax tree, told to the guidelines beside the diff and
    heading the report; the verdict never reads it.
@@ -377,8 +376,8 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         "--verify",
         action=argparse.BooleanOptionalAction,
         default=review["verify"],
-        help="ask a second model whether each guideline finding that says more than a rule holds, refuted ones named "
-        f"(config.toml: {'on' if review['verify'] else 'off'})",
+        help="ask a second model whether each finding holds, one call a file. It drops and names a refuted finding, "
+        f"but keeps a security rule's (config.toml: {'on' if review['verify'] else 'off'})",
     )
     which = parser.add_mutually_exclusive_group()
     which.add_argument(
@@ -852,8 +851,7 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
     of three by the installed command, the demo's rules-only review took 0.87 to 0.94 s, 0.41 s of it the engine
     imported for a graph holding no agent, which the pre-push hook paid on every push."""
     guidelines = tuple(guideline.check_id for guideline in chosen.guidelines)
-    # Only a guideline calls a model: a profile without one needs no key, and the verifier has no guideline finding to
-    # judge.
+    # Only a guideline calls a model: a profile without one needs no key, and runs no verifier either.
     verify = args.verify and bool(guidelines)
     why, model = _arm(verify, chosen.guidelines) if guidelines else (None, "")
     if why is not None and not args.dry_run:  # a dry run reports an arm that is not ready; a review stops at it
@@ -1037,7 +1035,7 @@ def _judged(
     from .judge.verify import second_opinion
 
     guidelines = tuple(guideline.check_id for guideline in chosen.guidelines)
-    verify = args.verify and bool(guidelines)  # the verifier has no guideline finding to judge without one
+    verify = args.verify and bool(guidelines)  # a profile with no guideline calls no model, the verifier's included
     app = build_app(
         chat=False,
         checks=chosen,
@@ -1064,8 +1062,17 @@ def _judged(
         rules, holes = read_checks(run, chosen.rules)
         outcome = read_guidelines(run, evidence["files"], guidelines, holes)
         if verify:
+            security = frozenset(rule.check_id for rule in chosen.rules if rule.security)
             with _beating(say, lambda: "verifying the findings"):
-                second_opinion(outcome, rules, evidence["diff"], app.plugins, loop.run, chosen.tidies())
+                second_opinion(
+                    outcome,
+                    rules,
+                    evidence["diff"],
+                    app.plugins,
+                    loop.run,
+                    callers=evidence.get("callers", ""),
+                    security=security,
+                )
     outcome.redacted, usage, seconds = accounted(app.plugins)
     fold(outcome, rules, chosen.ids(), chosen.tidies())
     return outcome, usage, seconds

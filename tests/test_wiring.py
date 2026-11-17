@@ -119,20 +119,22 @@ def _described(schema: dict) -> dict[str, str]:
     return found
 
 
-@pytest.mark.parametrize("where", ["core.findings:Review", "judge.verify:Judgement"])
+@pytest.mark.parametrize("where", ["core.findings:Review", "judge.verify:Judgements"])
 def test_each_arm_is_sent_each_answers_schema_as_it_is_written(where: str) -> None:
     """What a model is asked to answer in, as each arm's own converter writes it into the request: google-genai's for
     Gemini, ADK's for Copilot through LiteLLM. Every field keeps the description it is written with, the severity's
-    scale among them, which the guidelines judge by. Measured, two one-line changes each passed every other test: a
-    PEP 695 `type Severity` made the scale a `$ref`, whose description both arms dropped; `extra="forbid"` sent
-    Gemini `additionalProperties`, which its `response_schema` has refused with a 400. Copilot's is strict already."""
+    scale among them, which the guidelines judge by, and the verdict's three answers, which a verifier judges by: its
+    schema is a list of judgements now, one a finding, where it was one judgement. Measured, two one-line changes each
+    passed every other test: a PEP 695 `type Severity` made the scale a `$ref`, whose description both arms dropped;
+    `extra="forbid"` sent Gemini `additionalProperties`, which its `response_schema` has refused with a 400. Copilot's
+    is strict already."""
     from google.adk.models.lite_llm import _to_litellm_response_format
     from google.genai import Client, _transformers
 
     module, name = where.split(":")
     schema = getattr(importlib.import_module(f"adk_review.{module}"), name)
     written = _described(schema.model_json_schema())
-    assert "findings.severity" in written or "holds" in written, written
+    assert "findings.severity" in written or "judgements.verdict" in written, written
     developer_api = Client(api_key="offline")._api_client  # the stricter of Gemini's two: no Vertex AI project
     gemini = _transformers.t_schema(developer_api, schema).model_dump(exclude_none=True, by_alias=True, mode="json")
     assert _described(gemini) == written and "additionalProperties" not in str(gemini), gemini

@@ -3,7 +3,7 @@
 Every guideline is built here the same way, from its file in `judge/guidelines/`: its role opens the instruction,
 its thinking budget rides on its request, and the rest — the severity scale, the quoting rule, the fenced change and the
 reminder after it — is shared. `read_back` is the other half of `output_key`: the dict ADK put in state, validated
-back into the schema, or a named reason it could not be, for a guideline's `Review` and a verifier's `Judgement`
+back into the schema, or a named reason it could not be, for a guideline's `Review` and a verifier's `Judgements`
 alike. The agent's name and its `output_key` are its check's `state_key`. The state keys more than one module spells
 are spelled here once, and an instruction reads each through `placeholder`; what the rules found is rendered here for
 the chat's verdict, capped, as the blast radius is rendered for the guidelines.
@@ -51,15 +51,19 @@ FAILURE = "temp:failure"
 #: The blast radius beside the diff is capped as the diff is, and widest first, so the cut takes the narrowest.
 #: Measured with none, `--all` over 4,826 files gave each guideline 800,272 characters of it; this repository, 11,161.
 BLAST_CAP_CHARS = 20_000
-#: The calls into what the change touched, in all, that a guideline is shown beside the radius.
+#: The calls into what the change touched, in all, that a guideline is shown beside the radius, and a verifier beside
+#: its file's part of the change.
 CALLERS_CAP_CHARS = 12_000
-#: What a guideline reads above those calls: where a finding about one belongs.
-CALLERS_HEADING = (
+#: What a verifier reads above those calls, and a guideline too.
+CALLERS_SHOWN = (
     "## Callers the change left alone\nEach call at the head to a function the change touched, from a line the change "
-    "did not add. Where the change breaks one, report it on the changed lines.\n"
+    "did not add."
 )
-#: What the chat's verdict reads of the checks is capped the same way. Measured uncapped: lint over a 5-file branch of a
-#: 724-file tree gave it 21,814 characters, and that tree reviewed as one branch 619,116.
+#: What a guideline reads above those calls: where a finding about one belongs.
+CALLERS_HEADING = f"{CALLERS_SHOWN} Where the change breaks one, report it on the changed lines.\n"
+#: What the chat's verdict reads of the checks is capped the same way, and so are one file's findings a verifier judges.
+#: Measured uncapped: lint over a 5-file branch of a 724-file tree gave it 21,814 characters, and that tree reviewed as
+#: one branch 619,116.
 FINDINGS_CAP_CHARS = 20_000
 #: How many ignored files the chat verdict names, the rest counted.
 IGNORED_NAMED = 20

@@ -35,6 +35,7 @@ class HiddenText(Rule):
     id = "hidden-text"
     severity = "major"
     reads_tests = True  # a test's text reaches its readers, and a model, as any file's does
+    security = True  # a verifier may dispute its finding, never drop it
     title = "text a reader cannot see: tag characters, bidirectional controls or smuggled selectors"
     fix = "Remove the hidden characters, so a reader sees what a program or a model reads."
     why = "A person reviews what they see, but a program or a model reads the hidden text too."

@@ -27,6 +27,7 @@ class Secrets(Rule):
     id = "secrets"
     severity = "blocker"
     reads_tests = True  # a key in a test is a key in the history all the same
+    security = True  # a verifier may dispute its finding, never drop it
     title = "a hard-coded credential"
     fix = "Read it from the environment or a secret store, remove it from history, and rotate it."
     why = "A key in the code is in every clone and in the history. Anyone who reads either can use it."

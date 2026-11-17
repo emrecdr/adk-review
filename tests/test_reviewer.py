@@ -751,15 +751,22 @@ class TestWhatGroundingKeeps:
     def test_a_finding_at_the_bar_a_verifier_refuted_is_no_approval(self) -> None:
         """Read by review: the verifier reads the branch's own diff, so a payload in it can tell the verifier a real
         blocker does not hold, and refuted, the blocker left the kept findings and the review approved, exit 0. Refuted
-        at the bar, as dropped at the bar, is no approval: a person reads it; below the bar it is only named."""
+        at the bar, as dropped at the bar, is no approval: a person reads it; below the bar it is only named. A rule's
+        finding is asked too now, and refuted, it holds the verdict back the same way; a security rule's the verifier
+        disputes is kept, and decides as a kept finding does."""
         rule, _collect, schema = _grounding_of()
 
-        def refuted(severity: str):
+        def refuted(severity: str, source: str = model_check("security")):
             finding = schema.Finding(file="x", line=1, severity=severity, title="t", evidence="q", suggestion="s")
-            return rule.Outcome(refuted=[(rule.Sourced(model_check("security"), finding), "the lines do not show it")])
+            return rule.Outcome(refuted=[(rule.Sourced(source, finding), "the lines do not show it")])
 
         assert rule.decide(refuted("blocker"), "blocker")[0] == "DEGRADED", "a verifier told to refute would approve"
         assert rule.decide(refuted("major"), "blocker")[0] == "APPROVED", "below the bar, a refutal is only named"
+        assert rule.decide(refuted("blocker", "rule.lint"), "blocker")[0] == "DEGRADED", "a rule's, as a guideline's"
+        key = schema.Finding(file="x", line=1, severity="blocker", title="t", evidence="q", suggestion="s")
+        kept = rule.Sourced("rule.secrets", key)
+        disputed = rule.Outcome(kept=[kept], disputed=[(kept, "the value is a fake")], verified=True)
+        assert rule.decide(disputed, "blocker") == ("REQUEST_CHANGES", 1), "disputed, it is kept at the bar"
 
     def test_a_removed_line_carries_the_new_line_before_it(self) -> None:
         """Measured by review: `@@ -1,2 +0,0 @@`, a deleted file's one hunk, numbered its lines -1, and the report

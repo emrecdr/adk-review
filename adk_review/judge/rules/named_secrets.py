@@ -72,6 +72,7 @@ class NamedSecrets(Rule):
 
     id = "named-secrets"
     reads_tests = True  # all but a test's own code and its suite's fixtures, which `check` passes over
+    security = True  # a verifier may dispute its finding, never drop it
     reads_every_kind = True  # a password leaks from a script or a page as from code
     severity = "blocker"
     title = "a value assigned to a name that says secret"

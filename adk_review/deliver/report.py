@@ -1321,7 +1321,7 @@ def _resolved(
     if previous is None or verdict == "DEGRADED":
         return None
     # A finding already in a touched file is still found: listed apart, it is never fixed by being so. Nor is one a
-    # verifier refuted: a guideline still found it. Each is counted on from the kept ones, as one of two findings of
+    # verifier refuted: a check still found it. Each is counted on from the kept ones, as one of two findings of
     # one check, file and quote: read by review of another tool's report, counted from none again, the second of two
     # alike that changed its list had the first's identity, and its own read as fixed.
     held = [*(f for f, _ in outcome.folded), *outcome.old, *(item for item, _why in outcome.refuted)]
@@ -1401,6 +1401,9 @@ def render(
             f"- findings refuted by the verifier: {len(outcome.refuted)}",
             *_refuted_at_bar(outcome, fail_on),
             *_named((item, _reason(why)) for item, why in outcome.refuted),
+            # Kept and at the bar as before: a model's word never drops what leaks, runs or steers.
+            f"- security findings the verifier disputed, kept: {len(outcome.disputed)}",
+            *_named((item, _reason(why)) for item, why in outcome.disputed),
             f"- findings the verifier could not judge, kept: {len(outcome.unverified)}",
             *_named((item, _reason(why)) for item, why in outcome.unverified),
         ]
@@ -1823,6 +1826,7 @@ def as_data(
         "refuted": _reasoned(outcome.refuted, added),
         "refuted_at_fail_on": at_bar([item for item, _why in outcome.refuted], fail_on),
         "unverified": _reasoned(outcome.unverified, added),
+        "disputed": _reasoned(outcome.disputed, added),
         "secrets_redacted": outcome.redacted,
         "usage": usage,
         "seconds": dict(seconds or {}),  # how long each agent took, by the id the report uses: timing, never a verdict

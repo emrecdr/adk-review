@@ -138,9 +138,11 @@ True`, as each rule about what runs, leaks or steers does (`file.changed` and `t
 rule reads only the files `scan` names unless it sets `reads_every_kind = True`, as the two credential rules do: a key
 leaks from a README as from code. A rule or a guideline whose findings change how code reads and never what it does sets
 `cleanup = True`, as `simplify` and `complexity` do: the hand-off lists them under `## Tidy`, apart from the fixes, and
-holds one back on lines a defect at major or above names. Ruff's findings the base held too, the same code and words on
-the same line, as the diff numbers each line the change kept (`base_line`), a count no higher, are old (`Hit.old`,
-`Checked.old`, `Outcome.old`): listed last under "Already in the files you touched", fixed too by the Boy Scout rule,
+holds one back on lines a defect at major or above names. A rule about what leaks, runs or steers sets
+`security = True`, as the credential, workflow, lockfile, hidden-text and steering rules do: a verifier may dispute its
+finding but never drop it. Ruff's findings the base held too, the same code and words on the same line, as the diff
+numbers each line the change kept (`base_line`), a count no higher, are old (`Hit.old`, `Checked.old`, `Outcome.old`):
+listed last under "Already in the files you touched", fixed too by the Boy Scout rule,
 and never read by the verdict; the collector reads each modified Python file's base text for it (`base_texts`), and a
 file not set against it keeps `Diagnostic.known` None, its untouched findings counted at the bar, as before. An S105,
 S106 or S107 that covers a line the change added (`Diagnostic.last`) is the change's own whatever the base held, which
@@ -166,13 +168,17 @@ or else the branch `origin/HEAD` names.
 
 Evidence is gathered in Python first, the rules run as one `FunctionNode` before the guidelines in both shapes
 (`judge/checks.py`, every rule through `run_rule`), or straight from the driver through the same `run_rules` where no
-guideline follows, and code decides the verdict. Around them: retries, a token ceiling, a `--verify` second opinion, a
-JSON report a pipeline reads (`--json FILE`, schema 2, written for every decided review, under the text report's safety
-rules), a comment for the branch's author (`--comment [FILE]`, by default
-`comment-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md` where the command runs), which the person pastes into
-the pull request by hand: the reviewer posts nothing and prints no command that would, a hand-off for a coding agent
-(`--handoff [FILE]`, by default `handoff-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md`, named as the comment
-is), which applies nothing itself, under `--all` a
+guideline follows, and code decides the verdict. Around them: retries, a token ceiling, a `--verify` second opinion
+(`judge/verify.py`: before the fold, one verifier a file that holds a finding, asked of every finding of the change, a
+rule's and a guideline's, shown its file's part of the block or the whole block, and the
+calls into what the change touched; a refuted finding dropped and named, a security rule's kept as `Outcome.disputed`,
+an unsure or unjudged one kept as `Outcome.unverified`), a JSON report a pipeline reads (`--json FILE`, schema 2,
+written for every decided review, under the text report's safety rules), a comment for the branch's author
+(`--comment [FILE]`, by default `comment-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md` where the command
+runs), which the person pastes into the pull request by hand: the reviewer posts nothing and prints no command that
+would, a hand-off for a coding agent (`--handoff [FILE]`, by default
+`handoff-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md`, named as the comment is), which applies nothing
+itself, under `--all` a
 Health section (`core/health.py`: what was read, source and tests apart, McCabe complexity counted as ruff's C901 counts
 it, in bands graded A to E by SIG's published risk-profile rating where most of the source parsed, each rule's findings
 by severity, counted and never graded; never read by the verdict), each changed file's blast radius (`core/blast.py`: an

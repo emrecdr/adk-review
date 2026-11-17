@@ -67,6 +67,9 @@ class Outcome:
     verified: bool = False  # `--verify` ran
     refuted: list[tuple[Sourced, str]] = field(default_factory=list)  # dropped on the verifier's say-so, with why
     unverified: list[tuple[Sourced, str]] = field(default_factory=list)  # the verifier could not judge; kept, with why
+    #: A security rule's finding the verifier refuted, with why: kept and counted as before, since a model's word never
+    #: drops what leaks, runs or steers, and named apart so a person reads the dispute.
+    disputed: list[tuple[Sourced, str]] = field(default_factory=list)
 
     def unproven(self, fail_on: str) -> list[Sourced]:
         """The findings at the bar set aside unproven, their quote not borne out or a verifier refuting them: a hole
@@ -477,33 +480,6 @@ def not_read(files: list[Entry], guidelines: Collection[str]) -> dict[str, str]:
     """What no one could read, by path with why. A cut is the guidelines' limit: with none on, the rules
     read every added line, and only what no one can read — binary, a submodule, nothing shown — is a hole."""
     return {f["path"]: f["unread"] for f in files if f["unread"] and (guidelines or not f["cut"])}
-
-
-def to_verify(guidelines: list[Sourced], rules: list[Sourced], tidies: frozenset[str] = frozenset()) -> list[Sourced]:
-    """The guideline findings worth a verifier: all but those that only say again what a rule found — a rule's quote
-    and its own overlap, in one file, and the fold takes the rule's up first, by the `_precedence` `dedupe` reads, so
-    it keeps the rule's whatever were said of the guideline's. The fold still folds them, as it would without
-    `--verify`. Measured by review: with the tie rule written here a second time, a minor defect on a `simplify` tidy's
-    lines was kept by the fold and asked of no verifier. Each rule's quote
-    is normalised once and compared only within its file, as `dedupe` does: normalised per pair, a thousand of
-    ruff's findings in one file and thirty guideline findings measured 147 ms against 7 ms."""
-    said: dict[
-        str, list[tuple[tuple[int, bool], str, Lines]]
-    ] = {}  # file -> each rule finding's precedence, quote, lines
-    for rule in rules:
-        if (
-            rule.old
-        ):  # set apart before the fold, so it folds nothing: read by review, its text kept one from a verifier
-            continue
-        seen = as_seen(rule.finding.evidence)
-        said.setdefault(rule.finding.file, []).append((_precedence(rule, tidies), seen, rule.lines))
-    asked: list[Sourced] = []
-    for item in guidelines:
-        first, seen = _precedence(item, tidies), as_seen(item.finding.evidence)
-        here = said.get(item.finding.file, ())
-        if not any(at <= first and _overlaps(seen, item.lines, quote, lines) for at, quote, lines in here):
-            asked.append(item)
-    return asked
 
 
 def _precedence(item: Sourced, tidies: frozenset[str]) -> tuple[int, bool]:

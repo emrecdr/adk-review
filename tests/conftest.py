@@ -88,9 +88,19 @@ CANNED_REVIEW = {
         }
     ],
 }
-#: The verifier's answer: the finding holds. `REFUTED` is what a test tells the fake to answer instead.
-CANNED_JUDGEMENT = {"holds": True, "reason": "the quoted lines show it"}
-REFUTED = {"holds": False, "reason": "the lines do not show it"}
+#: How many findings of one file a canned verifier's answer judges: more than any test shows one verifier. A number no
+#: finding holds is read by none.
+JUDGED = 50
+
+
+def judged(verdict: str, reason: str, numbers: range = range(JUDGED)) -> dict:
+    """A verifier's answer giving each of `numbers` the same `verdict` and `reason`."""
+    return {"judgements": [{"number": n, "verdict": verdict, "reason": reason} for n in numbers]}
+
+
+#: The verifier's answer: every finding holds. `REFUTED` is what a test tells the fake to answer instead.
+CANNED_JUDGEMENT = judged("holds", "the quoted lines show it")
+REFUTED = judged("refuted", "the lines do not show it")
 CANNED_ANSWERS = (CANNED_REVIEW, CANNED_JUDGEMENT)
 #: The planted branch of the demo repository, and how the command is given it.
 BASE, HEAD = "main", "feature/payments"

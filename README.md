@@ -173,7 +173,7 @@ Every mode is the same command:
 ```bash
 uv run adk-review <repo> --base main                            # the default profile: the rules, then the guidelines
 uv run adk-review <repo> --base main --profile default-rules    # the default's rules: no model, no key
-uv run adk-review <repo> --head <branch> --base main --verify   # a second model judges each guideline finding
+uv run adk-review <repo> --head <branch> --base main --verify   # a second model judges each finding, one call a file
 uv run adk-review <repo> --base main --max-tokens 20000         # the call that would pass the ceiling is refused
 uv run adk-review <repo> --base main --profile rules-only       # every rule but the demo's: no model, no key
 uv run adk-review <repo> --base main --profile simplify         # as Claude Code's /simplify: the cleanup, three calls
@@ -245,8 +245,9 @@ The order is the architecture: evidence and rules first, the guidelines' judgeme
    bound on the calls in flight. Every request is scrubbed of credentials before it is sent, and the branch's text
    sits between two marker lines it cannot forge.
 5. **Ground what the guidelines found.** A finding stays only where its quote is whole lines of its own file's diff;
-   the rest are dropped and counted. With `--verify`, a second model judges each guideline finding no rule already
-   made, and one it refutes is dropped and named.
+   the rest are dropped and counted. With `--verify`, a second model judges each rule's finding and each guideline
+   finding no rule already made, one call a file, and one it refutes is dropped and named, a security rule's kept and
+   named as disputed.
 6. **Fold and decide.** Findings on the same lines fold into one, the most severe reading kept whole. The verdict is
    code's: a kept finding at or above `--fail-on` is `REQUEST_CHANGES`, exit 1. A hole — a check that failed or could
    not look, a changed file no check can read whole, or where a guideline runs one it was not shown whole, unless the
@@ -578,6 +579,8 @@ What a rule may do, and may not:
   README or a script as from code. No rule reads another project's code.
 - A rule whose findings change how code reads, never what it does, sets `cleanup = True`, as `simplify` does, and a
   guideline the same, as `complexity` does: the hand-off lists them as tidies, never as fixes.
+- A rule about what leaks, runs or steers sets `security = True`, as `secrets`, `script-injection` and `steering-files`
+  do: under `--verify` a verifier may dispute its finding but never drop it, and the report names the dispute.
 - Its expectations are constants at the top of its file, beside the check, and its examples follow them: a project
   that edits a rule's constants edits its examples with them.
 - A rule that cannot look — a file not read whole, a tree not listed, a link whose file was not read or followed — is a
@@ -636,8 +639,8 @@ one no rule already made.
 
 The text report goes to stdout: the verdict under the title, a table of the findings under it, the most severe first,
 what was reviewed, under `--all` the project's health, the blast radius, a section for each check that found something
-or failed, one line for those that found nothing, then what was dropped, refuted, folded, redacted and spent, and last
-the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lists it line by line. Beside it:
+or failed, one line for those that found nothing, then what was dropped, refuted, disputed, folded, redacted and spent,
+and last the next steps, by the verdict and what was kept. "The report" in `GUIDE.md` lists it line by line. Beside it:
 
 - Under `--all`, where the files are the project, a Health section measures it by code alone: the files read whole,
   the source and the tests in files and lines, the share of the source's function lines in each McCabe complexity
@@ -1057,12 +1060,18 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   in flight. The refused guideline is named, everything found is reported, exit 3: the ceiling ends the spending,
   never the report.
 - **The second opinion never removes silently.** `--verify` is the one place a model can remove a finding, so the reason
-  is in the report, and a verifier that fails leaves the finding in place, named with why. It runs before the fold, on
-  the guidelines' findings alone: a rule's findings are facts and are never asked about, nor is a guideline's finding
-  that only says again what a rule found, no more severely, which the fold folds into the rule's as it would without
-  `--verify`. Measured live on Copilot before that: 2 of 5 verifier calls judged a guideline's reading of a key the
-  secrets rule had found. It is the guidelines' shape again, one agent per finding under the same plugins, so the
-  redaction, the ledger and the ceiling cover each call. Measured live on Copilot (gpt-4.1) over the labelled set's
+  is in the report, and a verifier that fails, answers `unsure` or names no judgement for a finding leaves the finding
+  in place, named with why. It runs before the fold, on every rule's finding of the change, since a rule matches a
+  pattern and a line can match it and mean something else, and on each guideline's finding but one that only says again
+  what a rule found, no more severely, which the fold folds into the rule's as it would without `--verify`. Measured
+  live on Copilot before that: 2 of 5 verifier calls judged a guideline's reading of a key the secrets rule had found. A
+  rule about what leaks, runs or steers sets `security = True`, and its finding a verifier refutes is kept, at the bar
+  as before, and named as disputed: the verifier reads the branch's own text, which could tell it a real key is a test's
+  fake. It is the guidelines' shape again, one agent per file that holds a finding, its findings numbered, under the
+  same plugins, so the redaction, the ledger and the ceiling cover each call; each reads its file's part of the block
+  the guidelines read, or the whole block where the guidelines were shown no part of that file, and the calls into what
+  the change touched. The measurements that follow asked about guideline findings alone, one call a finding. Measured
+  live on Copilot (gpt-4.1) over the labelled set's
   `clean-rename-with-callers`, a function renamed with its caller, under `full`: the marker and the instruction's `-`
   and `+` sentences ended the guidelines' asks for the rename already made, yet a guideline still said the rename broke
   callers in 1 of 3 reviews and in 2 of 5 with an added sentence against it, which was dropped; with `--verify` the

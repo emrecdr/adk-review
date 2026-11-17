@@ -26,6 +26,7 @@ class PinnedActions(FileRule):
     id = "pinned-actions"
     severity = "major"
     reads_tests = True  # a workflow named `test_*.yml` is a test by its name, and runs with the job's secrets
+    security = True  # a verifier may dispute its finding, never drop it
     title = "a workflow runs an action at a tag, a branch or a short SHA, not its full commit SHA"
     fix = "Pin it by its full 40-character commit SHA, its version in a comment after it (`@<sha> # v4.2.2`)."
     why = "A tag or a branch can move to other code at any time. That code then runs in CI with its secrets."

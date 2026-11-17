@@ -645,7 +645,7 @@ class TestTheProfiles:
         assert "demo-money-in-cents: cents divided into a float (src/payments/report.py:5)" in out
         assert "charge.py:19" not in out
         assert "- spend: 0 model call(s) completed of 0 attempted, 0 tokens" in out and "- model " not in out
-        assert "verifier" not in out, "no guideline finding, so no verifier: none is named"
+        assert "verifier" not in out, "no guideline, so no model call, the verifier's included: none is named"
 
     def test_a_profile_that_cannot_run_is_a_sentence_before_anything(self, demo_repo: Path, cli, capsys):
         assert run_review(cli, demo_repo, "--profile", "nightly") == 2

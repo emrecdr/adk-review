@@ -33,7 +33,8 @@ The shape of a rule — the three kinds, the constants it names, what it may imp
    workflow named `test_*.yml` — and a `bad` example at a test's path proves it. A rule reads only the files `scan`
    names; a credential rule sets `reads_every_kind = True` to read the project's own files of every kind. Set `cleanup =
    True` when what it finds changes how code reads and never what it does, as `simplify`'s does: the hand-off then lists
-   it as a tidy, apart from the fixes.
+   it as a tidy, apart from the fixes. Set `security = True` when it is about what leaks, runs or steers, as `secrets`
+   and `steering-files` do: under `--verify` a verifier may then dispute its finding but never drop it.
 3. Profiles in `adk_review/config.toml`: add `rule.<name>` to `rules-only` and `full`, which a test holds to every
    rule whose id does not start with `demo-`, the prefix a rule written for the demo alone takes; `demo` runs every
    rule through the group `rules`. Add it to `default` only when every review should run it, since `default` holds

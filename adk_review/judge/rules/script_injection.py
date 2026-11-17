@@ -69,6 +69,7 @@ class ScriptInjection(FileRule):
     id = "script-injection"
     severity = "major"
     reads_tests = True  # a workflow named `test_*.yml` is a test by its name, and runs with the job's secrets
+    security = True  # a verifier may dispute its finding, never drop it
     title = "a workflow script expands a value an outsider writes, such as a pull request's title"
     fix = 'Pass the value through `env:`. Quote the variable in the script, as `"$TITLE"`.'
     why = "A title with shell syntax runs as a command in CI, with the workflow's token and secrets."
