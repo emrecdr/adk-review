@@ -217,15 +217,41 @@ def branch(root: Path, name: str, start: str, files: Mapping[str, str], message:
     commit(root, files, message)
 
 
+#: The file a build leaves in the demo's `.git`, by which a later build knows the folder for its own to replace.
+MARKER = "adk-demo-repo"
+#: The demo's first commit, by which a demo built before the marker is known too.
+FIRST = "payments: charge and format"
+
+
 def build(root: Path) -> Path:
-    """Build the repository at `root`, replacing whatever was there."""
+    """Build the repository at `root`, replacing a demo built there before. Any other folder that holds a file is
+    refused, `ValueError`: read by an audit, and reproduced, the build deleted whatever folder it was given, a
+    repository of the person's own among them, `make demo-repo` sharing `REPO` with `make review`."""
     if root.exists():
+        if any(root.iterdir()) and not _ours(root):
+            raise ValueError(f"{root} holds files no demo build made. Name a new or empty folder")
         shutil.rmtree(root, onexc=_writable)
     root.mkdir(parents=True)
     _git(root, "init", "-q", "-b", BASE_REF)
-    commit(root, BASE, "payments: charge and format")
+    (root / ".git" / MARKER).write_text("built by scripts/make_demo_repo.py\n", encoding="utf-8", newline="\n")
+    commit(root, BASE, FIRST)
     branch(root, HEAD_REF, BASE_REF, HEAD, "payments: receipts, refunds, daily report")
     return root
+
+
+def _ours(root: Path) -> bool:
+    """Whether `root` is a demo a build made: its marker, or, built before the marker, `main`'s first commit."""
+    if (root / ".git" / MARKER).is_file():
+        return True
+    first = subprocess.run(
+        ["git", "-C", str(root), "log", "--reverse", "--format=%s", BASE_REF],
+        env=ENV,
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=60,
+    )
+    return first.returncode == 0 and first.stdout.splitlines()[:1] == [FIRST]
 
 
 def fix(root: Path) -> bool:
@@ -298,6 +324,9 @@ def main(argv: list[str]) -> int:
         return 0
     try:
         build(root)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 1
     except OSError as exc:  # Windows deletes no folder a terminal or an editor holds open
         print(
             f"could not replace {root} ({exc.strerror or exc}): close what holds it open and run this again",

@@ -3,12 +3,14 @@
 REPO ?=  # blank: make demo-repo builds into the temp dir; the command assumes no repository and asks for one
 BASE ?= main
 HEAD ?= feature/payments
-# Where `make demo` builds the demo repository: the script's own default, adk-demo-repo in the temp folder.
+# Where `make demo` builds the demo repository: the script's own default, adk-demo-repo in the temp folder. Asked with
+# --no-project here and below: a plain `uv run`, read on every make, synced the environment and rewrote a stale
+# uv.lock, so `make sync`'s --locked never saw it stale. Read by an audit, and reproduced.
 ifndef DEMO
-DEMO := $(shell uv run python -c "import os, tempfile; print(os.path.join(tempfile.gettempdir(), 'adk-demo-repo'))")
+DEMO := $(shell uv run --no-project python -c "import os, tempfile; print(os.path.join(tempfile.gettempdir(), 'adk-demo-repo'))")
 endif
 # The lock, as constraints `make install` hands `uv tool install`, which reads no lock of its own.
-LOCKED := $(shell uv run python -c "import os, tempfile; print(os.path.join(tempfile.gettempdir(), 'adk-review-locked.txt'))")
+LOCKED := $(shell uv run --no-project python -c "import os, tempfile; print(os.path.join(tempfile.gettempdir(), 'adk-review-locked.txt'))")
 
 help:
 	@echo "make sync                                    - install (uv)"
@@ -24,10 +26,11 @@ help:
 sync:
 	uv sync --locked
 
-# Measured: `uv tool install .` alone took a LiteLLM three days old or less, where the lock holds an older one.
+# Measured: `uv tool install .` alone took a LiteLLM three days old or less, where the lock holds an older one; and,
+# reading no [tool.uv] of the project, it took the build backend's newest release: --exclude-newer keeps the wait.
 install:
 	uv export --frozen --no-hashes --no-dev --no-emit-project --quiet --output-file "$(LOCKED)"
-	uv tool install --reinstall --constraints "$(LOCKED)" .
+	uv tool install --reinstall --exclude-newer P3D --constraints "$(LOCKED)" .
 
 # Sessions in memory: by default ADK keeps each in .adk/session.db, which holds the diffs chat reviewed, a
 # credential among them unredacted, the redaction being the model's alone. Read by an audit, and reproduced.
@@ -39,13 +42,13 @@ demo:
 	-uv run adk-review "$(DEMO)" --head feature/payments --base main --profile demo
 
 demo-repo:
-	uv run python scripts/make_demo_repo.py $(REPO)
+	uv run python scripts/make_demo_repo.py $(if $(REPO),"$(REPO)")
 
 demo-fix:
-	uv run python scripts/make_demo_repo.py $(REPO) --fix
+	uv run python scripts/make_demo_repo.py $(if $(REPO),"$(REPO)") --fix
 
 review:
-	uv run adk-review $(REPO) $(if $(BASE),--base $(BASE)) --head $(HEAD) $(ARGS)
+	uv run adk-review $(if $(REPO),"$(REPO)") $(if $(BASE),--base $(BASE)) --head $(HEAD) $(ARGS)
 
 copilot-login:
 	uv run adk-review-login $(ARGS)

@@ -1849,6 +1849,23 @@ class TestThePreviousReportAndTheHandoff:
         assert again.split()[:2] == ["--head", f"refs/heads/{HEAD}"] and "--check guideline.security" in again, again
         assert "adk-review" not in again and "calls the model and spends its quota" in section, section
 
+    def test_the_demo_build_replaces_its_own_folder_and_refuses_any_other(self, tmp_path: Path, capsys) -> None:
+        """Read by an audit, and reproduced: the demo script deleted whatever folder it was given, a repository of the
+        person's own among them, `make demo-repo` sharing `REPO` with `make review`. It replaces a demo it built, one
+        built before its mark among them, and refuses anything else, the files left as they were."""
+        import make_demo_repo
+
+        mine = tmp_path / "mine"
+        mine.mkdir()
+        (mine / "notes.txt").write_text("keep", encoding="utf-8")
+        assert make_demo_repo.main([str(mine)]) == 1
+        assert "holds files no demo build made. Name a new or empty folder" in capsys.readouterr().err
+        assert (mine / "notes.txt").read_text(encoding="utf-8") == "keep"
+        demo = make_demo_repo.build(tmp_path / "demo")
+        assert make_demo_repo.build(demo) == demo, "a demo it built is replaced"
+        (demo / ".git" / make_demo_repo.MARKER).unlink()
+        assert make_demo_repo.build(demo) == demo, "and one built before the mark, by its first commit"
+
     def test_a_handoffs_repository_on_windows_is_written_with_forward_slashes(self) -> None:
         """Read by an audit: on Windows the rerun command named the repository with backslashes, which cmd and
         PowerShell keep and Git Bash, the shell a coding agent runs there, drops, `C:Usersmeproj`. Forward slashes
