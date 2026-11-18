@@ -3025,6 +3025,38 @@ class TestWhatAReviewKeeps:
         monkeypatch.setattr(cli.platform, "python_version", lambda: "3.15.0")
         assert cli._cached_at(args, chosen, evidence, "m", previous) != key
 
+    def test_the_cache_key_reads_the_reviewers_own_source_wherever_the_checkout_lies(
+        self, cli, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The key leaves out the terminal front end, which no review runs and which keeps its own config in its folder.
+        Read by review, and reproduced: the test for that folder read the checkout's whole path, so under a folder named
+        `tui` every file was left out, and a review kept before an update of the reviewer was served after it."""
+        import argparse
+        from types import SimpleNamespace
+
+        from adk_review.core.blast import Blast
+
+        package = tmp_path / "tui" / "adk_review"
+        (package / "judge").mkdir(parents=True)
+        (package / "tui").mkdir()
+        (package / "review.py").write_text("one = 1\n", encoding="utf-8")
+        (package / "judge" / "graph.py").write_text("two = 2\n", encoding="utf-8")
+        (package / "tui" / ".tui.toml").write_text("[projects]\n", encoding="utf-8")
+        monkeypatch.setattr(cli, "__file__", str(package / "review.py"))
+        args = argparse.Namespace(cache=str(tmp_path / "c"), previous=None)
+        chosen = SimpleNamespace(rules=[], name="default-rules", ids=lambda: ())
+        pre = {"repo": "r", "head": "b", "head_sha": "1" * 40, "base": "c", "base_sha": "2" * 40}
+        evidence = {"preflight": pre, "scope": [], "whole": False, "files": [], "blast": Blast((), (), 0)}
+
+        def key() -> Path:
+            return cli._cached_at(args, chosen, evidence, "m", ({}, None))
+
+        first = key()
+        (package / "tui" / ".tui.toml").write_text('[projects."a saved preset"]\n', encoding="utf-8")
+        assert key() == first, "the front end's own config is no input of a review"
+        (package / "judge" / "graph.py").write_text("two = 3\n", encoding="utf-8")
+        assert key() != first, "the reviewer's own source is"
+
     def test_a_previous_reports_health_is_bounded_as_its_findings_are(
         self, cli, demo_repo: Path, tmp_path: Path, capsys
     ):

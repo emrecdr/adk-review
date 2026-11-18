@@ -1265,8 +1265,11 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
     tools = sorted({rule.tool for rule in chosen.rules if rule.tool})
     here = Path(__file__).parent
     for path in sorted(here.rglob("*")):
-        if path.suffix in (".py", ".toml") and not {"__pycache__", "tui"} & set(path.parts):
-            digest.update(path.relative_to(here).as_posix().encode() + b"\0" + path.read_bytes())
+        # Each path from this folder down: read whole, a checkout under a folder named `tui` left every file out. Not
+        # the terminal front end, which no review runs and which keeps its own config and state in its folder.
+        inside = path.relative_to(here)
+        if path.suffix in (".py", ".toml") and "__pycache__" not in inside.parts and inside.parts[0] != "tui":
+            digest.update(inside.as_posix().encode() + b"\0" + path.read_bytes())
     # What was read, byte for byte, a file at a time: the index has no commit to name it by, and a hash of a commit's
     # diffs costs nothing beside the review it would spare. Joined first, the diffs were copied twice at once.
     diffs = hashlib.sha256()
