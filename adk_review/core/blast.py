@@ -61,6 +61,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from .evidence import Entry
+from .text import IPYTHON_OPENERS, notebook, set_aside
 
 #: A file that depends on a changed one is named; past this many, the rest are counted.
 NAMES_SHOWN = 5
@@ -140,11 +141,23 @@ def is_test(path: str) -> bool:
 
 
 def parse(source: str) -> ast.Module | None:
-    """The module's syntax tree, or None for one the parser refuses: a syntax error, a null byte, nesting too deep."""
-    try:
-        return ast.parse(source)
-    except SyntaxError, ValueError, RecursionError, MemoryError:
-        return None
+    """The module's syntax tree, or None for one the parser refuses: a syntax error, a null byte, nesting too deep. In a
+    notebook, each line Python refuses that opens as IPython's is set aside first, as lint sets it aside: reproduced by
+    review, one `%pip` line left a notebook unparsed, and the tree rules skipped it in silence, a call the change
+    broke in it unnamed. A `%` that continues an expression parses, so it is never set aside."""
+    rows = source.split("\n")
+    aside: set[int] = set()
+    while True:
+        try:
+            return ast.parse(set_aside(source, aside) if aside else source)
+        except SyntaxError as exc:
+            line = exc.lineno or 0
+            ipython = 0 < line <= len(rows) and rows[line - 1].lstrip().startswith(IPYTHON_OPENERS)
+            if line in aside or not ipython or not notebook(source):
+                return None
+            aside.add(line)
+        except ValueError, RecursionError, MemoryError:
+            return None
 
 
 def parsed(sources: Mapping[str, str]) -> dict[str, ast.Module | None]:

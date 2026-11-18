@@ -1066,6 +1066,17 @@ class TestTheLintRule:
         assert {f.line for f in syntax} == {2, 3}, found  # each run of ruff's words one finding, the lines all its own
         assert "lint: invalid-syntax Expected a statement on lines 2 to 4" in [f.title for f in syntax], found
 
+    def test_a_notebooks_ipython_line_alone_in_a_block_or_continued_is_no_syntax_error(self) -> None:
+        """Reproduced by review: an IPython line that was the only line of a block, set aside as a comment, left the
+        block empty, and ruff named the next line invalid syntax; one continued with a backslash left its next line
+        behind, unexpectedly indented. Each is set aside as `pass` at its own indentation, the lines it continues onto
+        blank, so every line keeps its number."""
+        body = (
+            "import os\nif os.environ.get('CI'):\n    %pip install requests\nx = 1\n%pip install a \\\n    b\ny = 2\n"
+        )
+        found = lint_findings({"files": [_entry("job.py", "# Databricks notebook source\n" + body)], "tree": None})
+        assert not [f for f in found if "invalid-syntax" in f.title], found
+
     def test_lint_names_a_bidirectional_control_and_a_look_alike_name(self) -> None:
         """Ruff reads both in Python code: a control that reorders a line is major, a letter that is not ASCII in a name
         is minor, since a whole project may be written in another script."""
@@ -2222,6 +2233,20 @@ class TestTheCallersRule:
             )
         ]
         assert self.found(files, {"pkg/repo.py": {2}}) == [], "a body changed, never the parameters: nothing to check"
+
+    def test_a_call_in_a_notebook_that_holds_ipython_lines_is_named(self) -> None:
+        """Reproduced by review: one `%pip` line made a notebook unparsed, and the tree rules skipped it in silence,
+        so a call the change broke in it went unnamed while its could-not-look stayed empty. A line Python cannot
+        parse that opens as IPython's is set aside as `pass`, as lint sets it aside, and the notebook is read."""
+        notebook = "# Databricks notebook source\n%pip install requests\nfrom pkg.repo import total\n\nif True:\n"
+        notebook += "    !echo hi\ntotal(1)\n"
+        files = {
+            "pkg/__init__.py": "",
+            "pkg/repo.py": "def total(n, rate):\n    return n * rate\n",
+            "etl/load.py": notebook,
+        }
+        found = self.found(files, {"pkg/repo.py": None})
+        assert [(path, line) for path, line, _said in found] == [("etl/load.py", 7)], found
 
     def test_each_way_a_call_can_miss_its_function_is_named(self) -> None:
         source = "def f(a, b=1, /, c=2, *, d):\n    pass\n\n\n"

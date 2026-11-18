@@ -9,6 +9,7 @@ and `deliver` cuts a quote before a person does.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 
 from .secrets import CREDENTIAL_REACH, spans
 
@@ -28,6 +29,47 @@ SUGGESTION_MAX_CHARS = 1_200
 #: sentences, the code the lines it fixes.
 WHY_MAX_CHARS = 600
 CODE_MAX_CHARS = 1_200
+
+
+#: The first line Databricks writes in a notebook kept as a `.py` source file.
+DATABRICKS_MARK = "# Databricks notebook source"
+
+
+def is_databricks_notebook(first_line: str) -> bool:
+    """Whether a file whose first line is `first_line` is a Databricks notebook: that line the mark, a byte order mark
+    before it aside. Databricks reads the mark on the first line alone, so a comment above it makes the file a plain
+    module. Read by review: comments let in above the mark passed over a plain module's undefined `spark`."""
+    return first_line.lstrip("\ufeff").strip() == DATABRICKS_MARK
+
+
+#: The line that opens a cell of a notebook kept as Python source in Jupytext's and VS Code's percent format.
+PERCENT_CELL = "# %%"
+#: What opens a line IPython runs and Python cannot: a magic, `%pip` or `%run`, and a shell command, `!ls`.
+IPYTHON_OPENERS = ("%", "!")
+
+
+def notebook(text: str) -> bool:
+    """Whether `text` is a notebook kept as Python source, whose cells IPython runs: a Databricks notebook, or one with
+    a `# %%` cell."""
+    lines = text.split("\n")
+    return is_databricks_notebook(lines[0]) or any(line.startswith(PERCENT_CELL) for line in lines)
+
+
+def set_aside(text: str, numbers: Iterable[int]) -> str:
+    """`text` with each line of `numbers`, as git numbers them, an IPython line, set aside: `pass` at its own
+    indentation, and each line it continues onto with a closing backslash blank, so every line keeps its number. Read
+    by review: set aside as a comment, a line that was a block's only one left the block empty, and the line after it
+    read as invalid syntax; and a line it continued onto was left behind, its indentation unexpected."""
+    rows = text.split("\n")
+    for number in sorted(set(numbers)):
+        if not 0 < number <= len(rows):
+            continue
+        row = rows[number - 1]
+        rows[number - 1] = f"{row[: len(row) - len(row.lstrip())]}pass"
+        while row.rstrip().endswith("\\") and number < len(rows):
+            row, rows[number] = rows[number], ""
+            number += 1
+    return "\n".join(rows)
 
 
 def squash(text: str) -> str:

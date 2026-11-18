@@ -195,17 +195,6 @@ def is_python(path: str, first_line: Callable[[], str]) -> bool:
     return suffix in PYTHON_SUFFIXES if suffix else bool(_RUNS_PYTHON.match(first_line()))
 
 
-#: The first line Databricks writes in a notebook kept as a `.py` source file.
-DATABRICKS_MARK = "# Databricks notebook source"
-
-
-def is_databricks_notebook(first_line: str) -> bool:
-    """Whether a file whose first line is `first_line` is a Databricks notebook: that line the mark, a byte order mark
-    before it aside. Databricks reads the mark on the first line alone, so a comment above it makes the file a plain
-    module. Read by review: comments let in above the mark passed over a plain module's undefined `spark`."""
-    return first_line.lstrip("\ufeff").strip() == DATABRICKS_MARK
-
-
 def is_python_text(path: str, text: str | None) -> bool:
     """`is_python` for a file whose text is in hand, or None where it was not read: its first line, or none."""
     return is_python(path, lambda: (text or "").partition("\n")[0])

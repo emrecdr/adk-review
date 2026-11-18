@@ -26,7 +26,6 @@ from ...core.rules import (
     Tree,
     TreeRule,
     UnreadError,
-    is_databricks_notebook,
     is_python,
 )
 from ...core.secrets import (
@@ -40,6 +39,7 @@ from ...core.secrets import (
     vendor_shape,
     without_examples,
 )
+from ...core.text import is_databricks_notebook
 from .diagnostics import PER_FILE, family, fix_of, listed, tier
 from .lines import calls, comment_of, tokens, words
 from .syntax import argument, calls_in, classes, defined, functions_in, imports_in, name_of, nodes_in, parameters
