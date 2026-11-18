@@ -265,3 +265,30 @@ class TestTheDraftOfAComment:
         """A mark nothing can read back is worse than none: it would say the comment can be found again."""
         unmarked = replace(row, **change)
         assert azure.mark(unmarked) == "" and "adk-review," not in azure.draft(unmarked)
+
+
+class TestAFilesLinesAtACommit:
+    """`file_lines`: the text a comment's place is counted in, as git holds it at the commit reviewed."""
+
+    def test_a_files_lines_keep_their_numbers_and_lose_their_carriage_returns(self, tmp_path: Path) -> None:
+        from conftest import _committed, _git_in
+
+        from tui.git_sync import file_lines
+
+        _git_in(tmp_path, "init", "-q", "-b", "main")
+        head = _committed(tmp_path, "src/a b.py", "\n\nx = 'ö'\r\ny = 2\n".encode())
+        assert file_lines(str(tmp_path), head, "src/a b.py") == ["", "", "x = 'ö'", "y = 2", ""]
+        _committed(tmp_path, "src/a b.py", b"y = 3\n")
+        assert file_lines(str(tmp_path), head, "src/a b.py")[3] == "y = 2", "the commit reviewed, not the branch's tip"
+
+    def test_a_file_or_a_commit_git_does_not_hold_is_none(self, tmp_path: Path) -> None:
+        from conftest import _committed, _git_in
+
+        from tui.git_sync import file_lines
+
+        _git_in(tmp_path, "init", "-q", "-b", "main")
+        head = _committed(tmp_path, "a.py", "x = 1\n")
+        assert file_lines(str(tmp_path), head, "missing.py") is None
+        assert file_lines(str(tmp_path), "f" * 40, "a.py") is None
+        assert file_lines(str(tmp_path), "--output=x", "a.py") is None, "a commit that reads as a flag is none"
+        assert file_lines(str(tmp_path / "no-repository"), head, "a.py") is None

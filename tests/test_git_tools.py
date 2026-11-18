@@ -1989,3 +1989,15 @@ def test_a_staged_review_of_an_index_holding_a_conflict_is_refused(tmp_path: Pat
         "status": "error",
         "error_message": "the index holds a conflict in a.py. Resolve it, git add it, then review again",
     }
+
+
+def test_read_only_keeps_an_answers_ends_where_asked(tmp_path: Path) -> None:
+    """The front end reads a file's lines by their numbers, to end a comment's place at a line's end. Measured: the
+    trimmed answer of `git show` lost a file's opening blank lines, and every line after them answered to a number two
+    lower."""
+    from adk_review.collect.git import read_only
+
+    _git_in(tmp_path, "init", "-q", "-b", BASE)
+    _committed(tmp_path, "a.py", "\n\nx = 1\n")
+    assert read_only(str(tmp_path), "show", "HEAD:a.py")[1] == "x = 1", "trimmed, as every caller before read it"
+    assert read_only(str(tmp_path), "show", "HEAD:a.py", strip=False)[1] == "\n\nx = 1\n"

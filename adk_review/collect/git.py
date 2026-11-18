@@ -197,12 +197,14 @@ def _git(
     return done.returncode, _text(done.stdout, strip)
 
 
-def read_only(repo: str, *args: str, ok: tuple[int, ...] = (0,)) -> tuple[int, str]:
+def read_only(repo: str, *args: str, ok: tuple[int, ...] = (0,), strip: bool = True) -> tuple[int, str]:
     """`_git` by a name another package may import, the terminal front end's: one read-only command in `repo`, under a
     review's own environment. A repository's config names no program for git to start there. Read by review, and
     reproduced: the front end ran `git status` with a person's own environment over every repository under a folder,
-    and the `core.fsmonitor` of one a person was handed started its program."""
-    return _git(repo, *args, ok=ok)
+    and the `core.fsmonitor` of one a person was handed started its program. `strip=False` keeps the answer's ends,
+    for a file's text read by its line numbers: trimmed, a file's opening blank lines are gone, and each line after
+    them answers to a lower number."""
+    return _git(repo, *args, ok=ok, strip=strip)
 
 
 def _text(raw: bytes, strip: bool = True) -> str:

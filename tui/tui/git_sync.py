@@ -198,6 +198,17 @@ def _read(repo: str, *args: str, ok: tuple[int, ...] = (0,)) -> tuple[int, str] 
         return None
 
 
+def file_lines(repo: str, commit: str, path: str) -> list[str] | None:
+    """`path`'s lines at `commit` as git holds them, line 1 first, or None where git holds no such file: split at
+    `\n` alone, as git and Azure DevOps count lines, each without the `\r` a Windows file ends its lines with. A
+    comment's place ends at its last line's end, which only the line's own text gives."""
+    try:
+        _code, text = read_only(repo, "show", "--end-of-options", f"{commit}:{path}", strip=False)
+    except GitError:
+        return None
+    return [line.removesuffix("\r") for line in text.split("\n")]
+
+
 def _status(repo: str, *args: str) -> str | None:
     """`git status` as a reader runs it: with no optional lock, so git never writes the index it refreshed. Measured
     by review: a plain status rewrote the index of each repository the scan passed."""
