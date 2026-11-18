@@ -378,7 +378,7 @@ The rules shipped with the reviewer are written as a project writes its own:
   `demo-parameters` and `demo-derives-from`. A project replaces them with its own.
 
 The guidelines are `security`, `tests`, `complexity` and `correctness`, and the two a simplify pass adds: `efficiency`
-(work the change wastes) and `altitude` (a symptom patched instead of its cause).
+(work the change wastes) and `altitude` (a defect worked around, not fixed where it starts).
 
 A profile is a list in `config.toml`, and a check runs only where a profile names it, or alone with `--check ID`:
 
@@ -725,7 +725,8 @@ and last the next steps, by the verdict and what was kept. "The report" in `GUID
   comment, and the report and the hand-off keep each whole. One at the bar stays a point to fix, and a tidy at the bar
   is listed with the points at it. An approval names its bar, and every comment counts the major issues below it: asked
   by the owner, a major read as nothing much. A blocker or a major says why it matters, a rule's `why` or ruff's page
-  for its code, and shows the corrected code a guideline gave. Each place sits in a code span, and each quote in one, or
+  for its code, and shows the corrected code a guideline gave; every guideline's finding, a minor's too, says why it
+  matters, in the comment, the hand-off and the text report (`_why`, `_judged_why`), a rule's minor keeping to its line. Each place sits in a code span, and each quote in one, or
   in a fenced block that keeps its lines where it spans several, and the whole holds at most 60,000 characters, under
   the 65,536 GitHub takes in a comment, the most severe points first and the rest counted. The reviewer posts nothing
   and prints no command that would: asked by the owner, who reviews others' branches and pastes each comment by hand.

@@ -1203,8 +1203,25 @@ class TestWhatTheLanesRead:
         for guideline in catalog().guidelines:
             instruction = build_guideline(guideline).instruction
             assert "For every finding, say in two to four sentences what is wrong" in instruction, guideline.check_id
-            assert "Never use the words of your dimension" in instruction, guideline.check_id
+            assert "Never use the jargon of your dimension" in instruction, guideline.check_id
+            # Read by review: the sentence banned `cause` beside the one that asks for the cause.
+            assert "symptom or cause" not in instruction, guideline.check_id
             assert "Leave the code empty for a minor" in instruction, guideline.check_id
+
+    def test_a_verifier_reads_the_reason_of_a_blocker_or_a_major_alone(self) -> None:
+        """Read by review: with every guideline's finding given a reason, each minor's reached the verifiers, so a big
+        file's findings passed `FINDINGS_CAP_CHARS` at about 30 where they did at 51, the rest left unjudged, and a
+        minor's case for itself was read beside its quote. A verifier is shown what it was before."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Sourced
+        from adk_review.judge.verify import _listed
+
+        def at(severity: str, why: str) -> Sourced:
+            found = Finding(file="a.py", line=1, severity=severity, title="t", evidence="+x", suggestion="s", why=why)
+            return Sourced("guideline.tests", found, (1, 1))
+
+        said = _listed([at("minor", "A minor's reason."), at("major", "A major's reason.")])
+        assert "A major's reason." in said and "A minor's reason." not in said, said
 
     def test_the_report_drops_what_a_terminal_would_run_or_reorder(self) -> None:
         """U+009B is ESC [ in one character; U+202E turns the text after it around."""

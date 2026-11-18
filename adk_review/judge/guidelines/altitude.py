@@ -11,7 +11,7 @@ class Altitude(Guideline):
     deeper fix changes the mechanism others share, a change to weigh, never a tidy."""
 
     id = "altitude"
-    title = "a symptom patched instead of its cause"
+    title = "a defect worked around, not fixed where it starts"
     role = (
         "You judge altitude: whether each change fixes a defect in the code where it starts, the code that makes the "
         "wrong value or state, or only works around it in code that meets it later — a special case for one input "

@@ -17,6 +17,7 @@ from functools import lru_cache
 
 from .evidence import Entry
 from .findings import RANK, Checked, Finding, Review, at_or_above
+from .profiles import guideline_id
 from .secrets import scrub
 from .text import REASON_MAX_CHARS, cut_at, squash
 
@@ -50,6 +51,11 @@ class Sourced:
     #: Whether its suggested code is what replaced the deleted lines it quotes, so the change may have done it already:
     #: kept, decided on as any finding is, and listed apart. Asked by the owner: a notice, not a major issue.
     done: bool = False
+
+    @property
+    def from_guideline(self) -> bool:
+        """Whether a guideline found it, a model's reading, where a rule's is code's."""
+        return self.source.startswith(guideline_id(""))
 
 
 @dataclass

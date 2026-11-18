@@ -328,7 +328,7 @@ def _is_tidy(item: Sourced, tidies: frozenset[str]) -> bool:
     listed it under Optional tidy-ups, the hand-off under what keeps behaviour as it is. Measured live on Copilot,
     gpt-4.1, over seven reviews of the demo: each of `complexity`'s thirteen findings at major or above named what the
     code does wrong, and none how it reads. A rule's severity is its author's, so its tidy is one at any."""
-    judged = item.source.startswith(guideline_id("")) and at_or_above(item.finding.severity, "major")
+    judged = item.from_guideline and at_or_above(item.finding.severity, "major")
     return item.source in tidies and not judged
 
 
@@ -719,7 +719,7 @@ def _titled(item: Sourced) -> str:
     already is. Read by review: a comment named no guideline, and its reader could not tell which wrote what; put in
     the title, the check was named twice in the report, the JSON and chat, which name it already."""
     title = item.finding.title
-    if item.source.startswith(guideline_id("")):
+    if item.from_guideline:
         title = f"{item.source.removeprefix(guideline_id(''))}: {title}"
     return prose(title)
 
@@ -955,17 +955,24 @@ def _fenced(text: str, indent: str) -> list[str]:
 
 def _serious(f: Finding) -> bool:
     """Whether a point shows its corrected code and its lines quoted whole: a blocker or a major. Asked by the owner, a
-    major read as nothing much in one line each, where a minor stays one line each."""
+    major read as nothing much in one line each, where a minor's quote stays on its line."""
     return at_or_above(f.severity, "major")
 
 
 def _why(item: Sourced, label: str) -> list[str]:
     """A finding's reason under `label`, nothing where it has none: a blocker's or a major's, and a guideline's at any
     severity. Asked by the owner: every guideline's finding says what is wrong, its cause and its result, a minor's
-    too. A rule's minor keeps to its line: its reason is the rule's own, the same for each, which `--explain` gives."""
+    too. A rule's minor keeps to its line, as before: the JSON carries its reason, the rule's own or ruff's page for
+    its code."""
     f = item.finding
-    shown = _serious(f) or item.source.startswith(guideline_id(""))
+    shown = _serious(f) or item.from_guideline
     return [f"{label}: {prose(f.why)}"] if shown and f.why.strip() else []
+
+
+def _judged_why(item: Sourced, label: str) -> list[str]:
+    """A guideline's reason under `label`, as the text report shows one: read by review, a rule's own reason, one
+    sentence for each of its findings, printed beside every blocker and major it found."""
+    return _why(item, label) if item.from_guideline else []
 
 
 def _code_lines(f: Finding, label: str, indent: str) -> list[str]:
@@ -1525,11 +1532,13 @@ def _sections(
             new = _since(identity, item, previous, scope, exclude) == "new"
             mark = " — new since the previous review" if new else ""
             mark += " — possibly already done: it asks for what the branch already does" * item.done
-            lines += [*_listed(f, mark), *_why(item, "  - why"), f"  - fix: {prose(f.suggestion)}"]
-            lines += [
-                f"  - also on these lines: `{also.source}`: {prose(also.finding.title)} ({_where(also.finding)})"
-                for also in under.get(id(item), [])
-            ]
+            lines += [*_listed(f, mark), *_judged_why(item, "  - why"), f"  - fix: {prose(f.suggestion)}"]
+            # Each folded here with its reason: read by review, a guideline's under a rule's lost it in this report.
+            for also in under.get(id(item), []):
+                lines.append(
+                    f"  - also on these lines: `{also.source}`: {prose(also.finding.title)} ({_where(also.finding)})"
+                )
+                lines += _judged_why(also, "    - why")
         if folded:
             lines.append(f"- folded: {folded} on lines another finding already holds, each listed under that finding")
         lines.append("")
@@ -1700,7 +1709,7 @@ class Earlier:
             return "seen"
         looked = (self.ran is None or item.source in self.ran) and item.source not in self.unlooked
         file = safe_line(item.finding.file)  # as the previous report wrote its paths
-        shown = not (item.source.startswith(guideline_id("")) and file in unshown)
+        shown = not (item.from_guideline and file in unshown)
         same = (sorted(self.scope), sorted(self.exclude)) == (
             sorted(map(safe_line, scope)),
             sorted(map(safe_line, exclude)),
@@ -1909,8 +1918,8 @@ def _found(item: Sourced, added: Mapping[str, frozenset[int]], identity: str = "
         "title": safe_line(f.title),
         "evidence": safe_line(f.evidence, EVIDENCE_MAX_CHARS),
         "suggestion": safe_line(f.suggestion),
-        # The model's reason and its corrected code, which it writes for a blocker or a major: reported by the owner,
-        # the front end, which reads this report, showed a major as one short line, with nothing to say what was wrong.
+        # The finding's reason, which a guideline writes for every finding, and its corrected code, for a blocker or a
+        # major: reported by the owner, the front end, which reads this report, showed a major as one short line.
         "why": safe_line(f.why),
         "code": safe_code(f.code),
         # Whether its suggested code is what replaced the deleted lines it quotes: the change may have done it already.

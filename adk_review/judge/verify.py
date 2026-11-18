@@ -27,6 +27,7 @@ from google.adk.runners import InMemoryRunner
 from google.adk.workflow import JoinNode, Workflow
 from pydantic import BaseModel, Field
 
+from ..core.findings import at_or_above
 from ..core.text import backticks, cut_at, squash
 from ..core.verdict import Outcome, Sourced
 from .agents import (
@@ -148,7 +149,9 @@ def _listed(items: Sequence[Sourced]) -> str:
         found = item.finding
         said = [f"### Finding {number}", f"- check: {item.source}", f"- severity: {found.severity}"]
         said += [f"- file: {squash(found.file)}", f"- lines: {_lines(item)}", f"- title: {squash(found.title)}"]
-        if found.why:
+        # A blocker's or a major's reason alone, as before every guideline's finding had one: read by review, each
+        # minor's took a call's room, and the findings past `FINDINGS_CAP_CHARS` went unjudged.
+        if found.why and at_or_above(found.severity, "major"):
             said.append(f"- why: {squash(found.why)}")
         fence = "`" * max(3, 1 + backticks(found.evidence))
         said += ["- quote:", fence, found.evidence, fence]

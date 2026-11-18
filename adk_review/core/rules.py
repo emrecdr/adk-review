@@ -92,8 +92,9 @@ class AnyRule(ABC):
     severity: ClassVar[Severity]
     title: ClassVar[str]
     fix: ClassVar[str]
-    #: Why a finding of the rule matters, a sentence the comment and the hand-off print beside a blocker or a major:
-    #: asked by the owner, a major read as nothing much without it. A rule that reports past minor names one.
+    #: Why a finding of the rule matters, a sentence the comment and the hand-off print beside a blocker or a major, and
+    #: the JSON beside every finding: asked by the owner, a major read as nothing much without it. A rule that reports
+    #: past minor names one.
     why: ClassVar[str] = ""
     #: What the rule reads, as `--list-checks` names it: a line, a file, the tree. Each kind below names its own, and
     #: the catalog takes a rule of none of the three kinds for no rule.

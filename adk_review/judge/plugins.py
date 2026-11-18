@@ -39,7 +39,9 @@ from .agents import BOUNDARY, FAILURE, JUDGED_BOUNDARY, mismatch, without_eviden
 from .config import REQUEST_TIMEOUT_S, require_ready, said
 
 #: Room reserved for an answer on top of a request's own size, in tokens; a guideline's typed review is well under it.
-ANSWER_ALLOWANCE = 1_000
+#: Read by review: with a reason for every finding, a minor's of 268 characters the median measured, a finding takes
+#: about 180 tokens, so the room for 9 findings held 5; it holds about 10.
+ANSWER_ALLOWANCE = 2_000
 
 
 def _text_parts(llm_request: Any) -> Iterator[Any]:

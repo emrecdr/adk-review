@@ -3563,7 +3563,7 @@ class TestWhatTheReportPrints:
     def test_the_json_carries_a_findings_reason_and_its_corrected_code_made_safe(self) -> None:
         """Reported by the owner: a guideline's major read as one short line in the front end, with nothing to say what
         was wrong or why. The front end reads the JSON, which held each finding's title and fix but not the model's
-        reason nor its corrected code, both written for a blocker or a major. It holds both: the reason as one line,
+        reason nor its corrected code, a reason now written for every finding. It holds both: the reason as one line,
         the code with its lines and indentation, a credential hidden and a runner's command broken in each."""
         from dataclasses import replace
 
@@ -3623,7 +3623,7 @@ class TestWhatTheReportPrints:
 
     def test_a_models_reason_and_code_are_capped_once_too_and_default_to_none(self) -> None:
         """Asked by the owner: a blocker or a major says why it matters and gives the corrected code. Both are a model's
-        text, cut where the finding is made as its title is; a finding without them, a minor or a rule's, has none."""
+        text, cut where the finding is made as its title is; a finding a model gave neither has none."""
         from adk_review.core.findings import Finding
         from adk_review.core.text import CODE_MAX_CHARS, WHY_MAX_CHARS
 
@@ -3641,9 +3641,30 @@ class TestWhatTheReportPrints:
         bare = Finding(file="a.py", severity="minor", title="t", evidence="x", suggestion="s")
         assert (bare.why, bare.code) == ("", "")
 
-    def test_a_blocker_or_a_major_says_why_and_shows_the_code_in_the_comment_and_the_hand_off(self) -> None:
+    def test_the_text_report_gives_a_guidelines_reason_a_folded_ones_too_and_no_rules(self) -> None:
+        """Read by review, and reproduced: a guideline's finding folded under a rule's on the same lines lost its reason
+        in the text report, which the comment and the hand-off kept; and a rule's own reason, one sentence for each of
+        its findings, was printed beside every blocker and major it found, where a guideline's is the finding's own."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import _identified, _sections
+
+        rule = Finding(
+            file="w.py", line=5, severity="major", title="r", evidence="+x = f()", suggestion="s", why="Own."
+        )
+        told = Finding(
+            file="w.py", line=5, severity="minor", title="g", evidence="+x = f()", suggestion="s", why="Read too soon."
+        )
+        lead, folded = Sourced("rule.lint", rule, (5, 5)), Sourced("guideline.correctness", told, (5, 5))
+        outcome = Outcome(kept=[lead], folded=[(folded, lead)])
+        text = "\n".join(_sections(["guideline.correctness", "rule.lint"], outcome, _identified(outcome.kept), None))
+        assert "why: Read too soon." in text and "Own." not in text, text
+
+    def test_every_guideline_finding_says_why_and_a_serious_one_shows_its_code_in_each_report(self) -> None:
         """Asked by the owner: each blocker and major is handled in more detail, its reason, its code and the fix in
-        code, where a minor stays one line each; the corrected code is a fenced block, as a quote over lines is."""
+        code, where a minor keeps its quote on its line; the corrected code is a fenced block, as a quote over lines
+        is. Asked by the owner again: every guideline's finding, a minor's too, says why it matters, in the comment,
+        the hand-off and the text report; a rule's minor keeps to its line."""
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Outcome, Sourced
         from adk_review.deliver.report import render_comment, render_handoff
