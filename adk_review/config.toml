@@ -84,7 +84,7 @@ third_party = [
 default = [
     "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
     "rule.lockfile-sources", "rule.pinned-actions", "rule.script-injection", "rule.pitfalls", "rule.callers",
-    "rule.radius-types",
+    "rule.radius-types", "rule.hidden-text",
     "guideline.security", "guideline.tests", "guideline.complexity",
 ]
 # The default's rules and no model: what fits any project's every pull request, with no key needed. Kept to the
@@ -92,7 +92,7 @@ default = [
 default-rules = [
     "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
     "rule.lockfile-sources", "rule.pinned-actions", "rule.script-injection", "rule.pitfalls", "rule.callers",
-    "rule.radius-types",
+    "rule.radius-types", "rule.hidden-text",
 ]
 # What the pre-push hook reads each commit a push sends with, beside its review of the change with `default-rules`: a
 # credential one commit adds and a later one takes out is still in the history the remote receives. A commit is read
@@ -128,7 +128,7 @@ simplify = [
 code-review = [
     "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
     "rule.lockfile-sources", "rule.pinned-actions", "rule.script-injection", "rule.pitfalls", "rule.callers",
-    "rule.radius-types",
+    "rule.radius-types", "rule.hidden-text",
     "rule.simplify",
     "guideline.correctness", "guideline.security", "guideline.complexity", "guideline.efficiency", "guideline.altitude",
 ]

@@ -158,7 +158,7 @@ prints them:
 | `rule.demo-parameters` | tree rule | major | demo | a function no longer takes a parameter its callers pass | `judge/rules/demo_parameters.py` |
 | `rule.demo-required-paths` | tree rule | major | demo | a file or folder the project needs is missing | `judge/rules/demo_required_paths.py` |
 | `rule.encoding-declaration` | file rule | blocker | default, default-rules, rules-only, full, code-review, demo | an encoding that rewrites the code every rule reads | `judge/rules/encoding_declaration.py` |
-| `rule.hidden-text` | line rule | major | rules-only, full, demo | text a reader cannot see: tag characters, bidirectional controls or smuggled selectors | `judge/rules/hidden_text.py` |
+| `rule.hidden-text` | line rule | major | default, default-rules, rules-only, full, code-review, demo | text a reader cannot see: tag characters, bidirectional controls or smuggled selectors | `judge/rules/hidden_text.py` |
 | `rule.lint` | file rule | minor | default, default-rules, rules-only, full, simplify, code-review, demo | what ruff reports, at a severity for each code | `judge/rules/lint.py` |
 | `rule.lockfile-sources` | file rule | minor | default, default-rules, rules-only, full, code-review, demo | a lockfile fetches a package from outside its public registry | `judge/rules/lockfile_sources.py` |
 | `rule.named-secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, code-review, demo | a value assigned to a name that says secret | `judge/rules/named_secrets.py` |

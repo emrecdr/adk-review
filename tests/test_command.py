@@ -953,7 +953,7 @@ class TestTheDryRun:
         assert out.startswith("# Dry run: feature/payments against main\n")
         checks = "rule.secrets, rule.named-secrets, rule.lint, rule.reviewer-instructions, rule.encoding-declaration, "
         checks += "rule.lockfile-sources, rule.pinned-actions, rule.script-injection, rule.pitfalls, rule.callers, "
-        checks += "rule.radius-types, "
+        checks += "rule.radius-types, rule.hidden-text, "
         checks += "guideline.security"
         assert (
             "- changed      4 file(s):" in out
@@ -3503,6 +3503,30 @@ class TestWhatTheReportPrints:
         assert token not in found["code"] and "##vso[" not in found["code"], found["code"]
         bare = as_json(Outcome(kept=[sourced("minor")]))["findings"][0]
         assert (bare["why"], bare["code"]) == ("", ""), "empty where the model gave none"
+
+    def test_the_default_profiles_name_text_a_reader_cannot_see(self, cli, demo_repo: Path, tmp_path: Path) -> None:
+        """Read by review: `default` and `default-rules`, the profiles most runs and the pre-push hook use, ran no
+        `hidden-text`, so a bidirectional control in Python was named only by lint's PLE2502, which a verifier may
+        drop, and hidden text in a doc or a config by nothing. Measured: 3 of 110,912 text files in the owner's projects
+        hold any, two of them tests that plant it. Both profiles run it."""
+        assert "rule.hidden-text" in profiles_of()["default"]
+        report = tmp_path / "r.json"
+        cli.main(
+            [
+                str(demo_repo),
+                "--head",
+                "feature/orders",
+                "--base",
+                "main",
+                "--profile",
+                "default-rules",
+                "--json",
+                str(report),
+            ]
+        )
+        data = json.loads(report.read_text(encoding="utf-8"))
+        assert "rule.hidden-text" in data["checks"], data["checks"]
+        assert any(f["check"] == "rule.hidden-text" for f in data["findings"]), [f["check"] for f in data["findings"]]
 
     def test_a_findings_title_keeps_300_characters_and_names_its_cut_past_them(self) -> None:
         """Reported by the owner: a finding's title, the issue's description, was cut at 200 characters, and the cut
