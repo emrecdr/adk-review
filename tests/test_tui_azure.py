@@ -6,12 +6,18 @@ what it reads where it runs, as `tests/test_tui.py` says why."""
 
 from __future__ import annotations
 
+import http.server
 import importlib
 import json
+import re
+import socket
 import subprocess
-from dataclasses import replace
+import threading
+from collections.abc import Iterator
+from dataclasses import dataclass, replace
 from pathlib import Path
 from types import ModuleType
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -71,7 +77,7 @@ class TestAPullRequestsAddress:
             "https://dev.azure.com/contoso/Web/_git/payments",  # a repository, no pull request
             "https://dev.azure.com/contoso/Web/_git/payments/pullrequest/12abc",
             "https://dev.azure.com/contoso/Web/_git/payments/pullrequest/0",
-            "https://dev.azure.com/contoso/Web/_git/payments/pullrequest/١٢",  # digits, and not ASCII's
+            "https://dev.azure.com/contoso/Web/_git/payments/pullrequest/\u0661\u0662",  # digits, and not ASCII's
             "https://dev.azure.com/contoso/Web/_git/../pullrequest/1",
             "https://dev.azure.com/contoso/Web/_git/pay%2Fments/pullrequest/1",
             "https://dev.azure.com/contoso/Web/extra/_git/payments/pullrequest/1",
@@ -115,7 +121,7 @@ class TestAFindingsLinks:
             f"&version=GC{sha}&line=42&lineEnd=58&lineStartColumn=1&lineEndColumn=1&_a=contents"
         )
         assert "&line=42&lineEnd=43&" in azure.line_link(_pr(azure), sha, "a.py", 42, 42)
-        assert "path=%2Fsrc%2F%C3%B6.py" in azure.line_link(_pr(azure), sha, "src/ö.py", 1, 1)
+        assert "path=%2Fsrc%2F%C3%B6.py" in azure.line_link(_pr(azure), sha, "src/\u00f6.py", 1, 1)
         assert f"version=GC{'b' * 64}&" in azure.line_link(_pr(azure), "b" * 64, "a.py", 1, 1), "a SHA-256 commit"
 
     @pytest.mark.parametrize("commit", ["main", "main; rm -rf", "a" * 39, "A" * 40, "a" * 40 + "&x=1", ""])
@@ -277,8 +283,8 @@ class TestAFilesLinesAtACommit:
         from tui.git_sync import file_lines
 
         _git_in(tmp_path, "init", "-q", "-b", "main")
-        head = _committed(tmp_path, "src/a b.py", "\n\nx = 'ö'\r\ny = 2\n".encode())
-        assert file_lines(str(tmp_path), head, "src/a b.py") == ["", "", "x = 'ö'", "y = 2", ""]
+        head = _committed(tmp_path, "src/a b.py", "\n\nx = '\u00f6'\r\ny = 2\n".encode())
+        assert file_lines(str(tmp_path), head, "src/a b.py") == ["", "", "x = '\u00f6'", "y = 2", ""]
         _committed(tmp_path, "src/a b.py", b"y = 3\n")
         assert file_lines(str(tmp_path), head, "src/a b.py")[3] == "y = 2", "the commit reviewed, not the branch's tip"
 
@@ -316,7 +322,7 @@ class TestTheThreadAComment:
         }
 
     @pytest.mark.parametrize(
-        ("last_line", "offset"), [("", 1), ("x = '\U0001f600'", 9), ("x = 1\r", 6), ("ö", 2), ("\t\tx", 4)]
+        ("last_line", "offset"), [("", 1), ("x = '\U0001f600'", 9), ("x = 1\r", 6), ("\u00f6", 2), ("\t\tx", 4)]
     )
     def test_the_end_is_the_last_lines_length_in_utf_16_units_plus_one(
         self, azure: ModuleType, last_line: str, offset: int
@@ -437,3 +443,278 @@ class TestTheLoginsToken:
         with pytest.raises(client.AzureError) as failed:
             login()
         assert "tok-1" not in str(failed.value), "az's own words are never repeated"
+
+
+@dataclass(frozen=True)
+class Seen:
+    """One request the fake Azure DevOps got: its header names in lower case, as HTTP reads them."""
+
+    method: str
+    path: str
+    query: dict[str, str]
+    headers: dict[str, str]
+    body: bytes
+
+
+class FakeAdo:
+    """A local Azure DevOps holding one pull request, `pr`: `answer` says what a route answers, `seen` what came."""
+
+    def __init__(self, azure: ModuleType, port: int) -> None:
+        self.pr = azure.PullRequest(f"http://127.0.0.1:{port}/contoso", "Web", "payments", 123)
+        self.root = "/contoso/Web/_apis/git/repositories/payments/pullRequests/123"
+        self.seen: list[Seen] = []
+        self._answers: dict[tuple[str, str], list[tuple[int, dict[str, str], bytes]]] = {}
+
+    def answer(
+        self,
+        method: str,
+        tail: str,
+        body: object = None,
+        *,
+        status: int = 200,
+        headers: dict[str, str] | None = None,
+        raw: bytes | None = None,
+    ) -> None:
+        """What `method` on the pull request's `tail` answers: `""`, `"/iterations"`, `"/iterations/3/changes"`,
+        `"/threads"`. Several answers for one route are served in turn, and the last one again after that."""
+        sent = raw if raw is not None else b"" if body is None else json.dumps(body).encode("utf-8")
+        self._answers.setdefault((method, self.root + tail), []).append((status, headers or {}, sent))
+
+    def answered(self, seen: Seen) -> tuple[int, dict[str, str], bytes]:
+        """The answer to one request, which is kept; a route no test named is a 404, as Azure DevOps answers one."""
+        self.seen.append(seen)
+        waiting = self._answers.get((seen.method, seen.path))
+        if not waiting:
+            return 404, {}, b'{"message": "the fake holds no such route"}'
+        return waiting.pop(0) if len(waiting) > 1 else waiting[0]
+
+
+@pytest.fixture
+def fake_ado(azure: ModuleType, monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeAdo]:
+    """A fake Azure DevOps on a local port, reached with no proxy: a machine's own proxy settings name none for it."""
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+    monkeypatch.setenv("no_proxy", "127.0.0.1")
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def _serve(self) -> None:
+            address = urlsplit(self.path)
+            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            headers = {name.lower(): value for name, value in self.headers.items()}
+            query = {name: values[-1] for name, values in parse_qs(address.query).items()}
+            status, extra, sent = fake.answered(Seen(self.command, address.path, query, headers, body))
+            self.send_response(status)
+            for name, value in {"Content-Type": "application/json", **extra}.items():
+                self.send_header(name, value)
+            self.send_header("Content-Length", str(len(sent)))
+            self.end_headers()
+            self.wfile.write(sent)
+
+        do_GET = do_POST = _serve  # noqa: N815 -- http.server's own names
+
+        def log_message(self, format: str, *args: object) -> None:  # http.server's own names
+            """Nothing printed: the suite's output stays its own."""
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    fake = FakeAdo(azure, server.server_address[1])
+    # Asked often whether to stop: by default each test would wait half a second for the server to see it should.
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+    thread.start()
+    try:
+        yield fake
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+class FakeToken:
+    """A login as the client asks it: `forgot` counts how often Azure DevOps refused it."""
+
+    def __init__(self, header: str = "Bearer tok") -> None:
+        self.header, self.forgot = header, 0
+
+    def __call__(self) -> str:
+        return self.header
+
+    def forget(self) -> None:
+        self.forgot += 1
+
+
+def _closed_port() -> int:
+    """A local port nothing listens on: bound, read, then closed."""
+    with socket.socket() as probe:
+        probe.bind(("127.0.0.1", 0))
+        return probe.getsockname()[1]
+
+
+class TestTheClient:
+    """`Client`: each call to Azure DevOps, and each refusal as a sentence that names the next step."""
+
+    def test_each_call_carries_the_token_and_the_api_version(self, client: ModuleType, fake_ado: FakeAdo) -> None:
+        fake_ado.answer("GET", "", {"status": "active"})
+        assert client.Client(fake_ado.pr, FakeToken()).status() == "active"
+        seen = fake_ado.seen[0]
+        assert (seen.method, seen.path, seen.query) == ("GET", fake_ado.root, {"api-version": "7.1"})
+        assert seen.headers["authorization"] == "Bearer tok" and seen.headers["accept"] == "application/json"
+        assert seen.headers["user-agent"] == "adk-review-tui", "a plain name: nothing of the person's goes with a call"
+
+    def test_the_iterations_are_read_oldest_first(self, client: ModuleType, fake_ado: FakeAdo) -> None:
+        pushed = [
+            {"id": 2, "sourceRefCommit": {"commitId": "b" * 40}},
+            {"id": 1, "sourceRefCommit": {"commitId": "a" * 40}},
+        ]
+        fake_ado.answer("GET", "/iterations", {"value": [*pushed, {"id": "3"}, {"id": 4, "sourceRefCommit": None}, 7]})
+        assert client.Client(fake_ado.pr, FakeToken()).iterations() == [(1, "a" * 40), (2, "b" * 40)]
+
+    def test_a_files_change_is_found_on_a_later_page_and_asked_for_once(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        first = {
+            "changeEntries": [{"changeTrackingId": 1, "item": {"path": "/a.py"}}],
+            "nextSkip": 2000,
+            "nextTop": 2000,
+        }
+        renamed = {"changeTrackingId": 9, "item": {"path": "/src/new name.py"}, "originalPath": "/src/old.py"}
+        fake_ado.answer("GET", "/iterations/3/changes", first)
+        fake_ado.answer("GET", "/iterations/3/changes", {"changeEntries": [renamed, {"item": None}], "nextSkip": 0})
+        asked = client.Client(fake_ado.pr, FakeToken())
+        found = (asked.change_of(3, "src/new name.py"), asked.change_of(3, "/a.py"), asked.change_of(3, "no.py"))
+        assert found == (9, 1, None) and asked.change_of(3, "src/old.py") is None, "a moved file is its new path"
+        assert [(seen.query["$skip"], seen.query["$top"]) for seen in fake_ado.seen] == [
+            ("0", "2000"),
+            ("2000", "2000"),
+        ]
+
+    def test_a_page_that_does_not_move_on_ends_the_read(self, client: ModuleType, fake_ado: FakeAdo) -> None:
+        fake_ado.answer("GET", "/iterations/3/changes", {"changeEntries": [], "nextSkip": 0, "nextTop": 2000})
+        assert client.Client(fake_ado.pr, FakeToken()).change_of(3, "a.py") is None and len(fake_ado.seen) == 1
+        fake_ado.answer("GET", "/iterations/4/changes", {"changeEntries": [], "nextSkip": 2000})  # the same, each time
+        assert client.Client(fake_ado.pr, FakeToken()).change_of(4, "a.py") is None and len(fake_ado.seen) == 3
+
+    def test_a_thread_is_found_by_its_mark_and_a_deleted_one_is_not(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        live = {"id": 5, "comments": [{"content": "x\n\n*adk-review, rule.lint, finding " + "ab" * 8 + "*"}]}
+        gone = {"id": 6, "isDeleted": True, "comments": [{"content": "adk-review, rule.lint, finding " + "cd" * 8}]}
+        wiped = {"id": 7, "comments": [{"isDeleted": True, "content": "adk-review, rule.lint, finding " + "ef" * 8}]}
+        system = {"id": 8, "comments": [{"commentType": "system", "content": None}, "no comment", None]}
+        fake_ado.answer("GET", "/threads", {"value": [system, wiped, gone, live, None]})
+        asked = client.Client(fake_ado.pr, FakeToken())
+        assert [asked.thread_of(mark * 8) for mark in ("ab", "cd", "ef")] == [5, None, None]
+        assert asked.thread_of("") is None and len(fake_ado.seen) == 3, "a finding with no identity asks nothing"
+
+    def test_a_post_sends_the_payload_as_utf_8_and_answers_the_threads_id(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        fake_ado.answer("POST", "/threads", {"id": 148})
+        fake_ado.answer("POST", "/threads", {"id": "148"})  # the second post's answer
+        payload = {"comments": [{"content": "\u00f6 \U0001f600"}]}
+        assert client.Client(fake_ado.pr, FakeToken()).post(payload) == 148
+        sent = fake_ado.seen[0]
+        assert (sent.method, sent.path, sent.query) == ("POST", fake_ado.root + "/threads", {"api-version": "7.1"})
+        assert json.loads(sent.body.decode("utf-8")) == payload
+        assert sent.headers["content-type"] == "application/json; charset=utf-8"
+        with pytest.raises(client.AzureError, match="no thread"):
+            client.Client(fake_ado.pr, FakeToken()).post(payload)
+
+    @pytest.mark.parametrize(
+        ("status", "headers", "raw", "said"),
+        [
+            (401, {}, b"", "did not accept your login. Run `az login`, then post again"),
+            (
+                401,
+                {"X-VSS-ResourceTenant": "72f988bf-86f1-41af-91ab-2d7cd011db47"},
+                b"",
+                "Run `az login --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47`, then post again",
+            ),
+            (401, {"X-VSS-ResourceTenant": "x; rm -rf"}, b"", "Run `az login`, then post again"),
+            (401, {"X-VSS-ResourceTenant": "00000000-0000-0000-0000-000000000000"}, b"", "Run `az login`, then"),
+            (203, {"Content-Type": "text/html"}, b"<html>Sign in</html>", "Run `az login`, then post again"),
+            (200, {"Content-Type": "text/html"}, b"<html>Sign in</html>", "Run `az login`, then post again"),
+            (200, {}, b"[1, 2]", "Run `az login`, then post again"),
+            (403, {}, b"", 'Ask for the "Contribute to pull requests" permission'),
+            (404, {}, b"", "found no such pull request. Check the address"),
+            (
+                500,
+                {},
+                b'{"message": "TF400898: An Internal\\nError Occurred."}',
+                "answered 500: TF400898: An Internal Error",
+            ),
+            (500, {}, b"<html>oops</html>", "answered 500: Internal Server Error. Nothing was posted"),
+        ],
+    )
+    def test_each_refusal_is_a_sentence_that_names_the_next_step(
+        self, client: ModuleType, fake_ado: FakeAdo, status: int, headers: dict[str, str], raw: bytes, said: str
+    ) -> None:
+        fake_ado.answer("GET", "", status=status, headers=headers, raw=raw)
+        with pytest.raises(client.AzureError, match=re.escape(said)) as refused:
+            client.Client(fake_ado.pr, FakeToken("Bearer tok-secret")).status()
+        assert "tok-secret" not in str(refused.value) and "rm -rf" not in str(refused.value)
+        assert len(fake_ado.seen) == 1, "asked once"
+
+    def test_a_refused_login_is_forgotten_so_the_next_post_asks_az_again(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        """The sentence says "run az login, then post again": the token kept in memory is the one just refused."""
+        token = FakeToken("Bearer stale")
+        fake_ado.answer("GET", "", status=401)
+        fake_ado.answer("GET", "/threads", raw=b"<html>Sign in</html>", status=203)
+        fake_ado.answer("GET", "/iterations", status=403)
+        asked = client.Client(fake_ado.pr, token)
+        for call in (asked.status, lambda: asked.thread_of("ab" * 8), asked.iterations):
+            with pytest.raises(client.AzureError):
+                call()
+        assert token.forgot == 2, "a 403 is no refused login: the same token is right"
+
+    def test_a_redirect_is_never_followed_so_the_token_goes_nowhere_else(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        """urllib sends every header again to a redirect's target, `Authorization` among them. A sign-in page is
+        one redirect away, on another host."""
+        token = FakeToken()
+        fake_ado.answer("GET", "", status=302, headers={"Location": fake_ado.pr.origin + "/elsewhere"})
+        with pytest.raises(client.AzureError, match="Run `az login`"):
+            client.Client(fake_ado.pr, token).status()
+        assert [seen.path for seen in fake_ado.seen] == [fake_ado.root] and token.forgot == 1
+
+    def test_a_429_waits_once_as_retry_after_says_and_a_long_wait_is_said(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        waited: list[float] = []
+        fake_ado.answer("GET", "", status=429, headers={"Retry-After": "2"})
+        fake_ado.answer("GET", "", {"status": "active"})
+        assert client.Client(fake_ado.pr, FakeToken(), sleep=waited.append).status() == "active" and waited == [2.0]
+        fake_ado.answer("GET", "/threads", status=429, headers={"Retry-After": "120"})
+        with pytest.raises(client.AzureError, match=re.escape("asked to wait 120 s. Post again after that")):
+            client.Client(fake_ado.pr, FakeToken(), sleep=waited.append).thread_of("ab" * 8)
+        fake_ado.answer("GET", "/iterations", status=429, headers={"Retry-After": "1"})  # and again after the wait
+        with pytest.raises(client.AzureError, match="asked to wait 1 s"):
+            client.Client(fake_ado.pr, FakeToken(), sleep=waited.append).iterations()
+        assert waited == [2.0, 1.0]
+        fake_ado.answer("GET", "/iterations/1/changes", status=429, headers={"Retry-After": "soon"})
+        with pytest.raises(client.AzureError, match="asked to wait 60 s"):
+            client.Client(fake_ado.pr, FakeToken(), sleep=waited.append).change_of(1, "a.py")
+
+    def test_a_network_failure_is_a_sentence_and_no_error_holds_the_token(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        closed = replace(fake_ado.pr, origin=f"http://127.0.0.1:{_closed_port()}/contoso")
+        with pytest.raises(client.AzureError, match="did not answer") as failed:
+            client.Client(closed, FakeToken("Bearer tok-secret")).status()
+        assert "tok-secret" not in str(failed.value) and "press c again" in str(failed.value)
+        with pytest.raises(client.AzureError, match="did not answer"):
+            client.Client(closed, FakeToken()).post({"comments": []})
+
+    def test_a_login_that_az_cannot_give_ends_the_call_before_it_is_made(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        class NoLogin(FakeToken):
+            def __call__(self) -> str:
+                raise client.AzureError("The Azure CLI gave no token. Run `az login`, then post again.")
+
+        with pytest.raises(client.AzureError, match="gave no token"):
+            client.Client(fake_ado.pr, NoLogin()).status()
+        assert fake_ado.seen == []
