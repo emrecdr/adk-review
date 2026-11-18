@@ -19,8 +19,8 @@ from ...core.rules import ChangedFile, Diagnostic, Hit, is_python
 #: severe of them, so no tier is lost and the report stays one a person reads. Measured with no cap: a new file of
 #: 1,500 unused imports made a 229 KB report and a 490 KB JSON, and the fold took 5.5 s over 8,000 findings in one file.
 PER_FILE = 50
-#: The codes ruff reports line by line where the problem is a block: commented-out code. Each run of one that only
-#: comment lines join is one finding. Reported by the owner: a block of four commented-out lines made four findings.
+#: The codes whose run of findings comment lines join too: commented-out code, which ruff reports line by line, and
+#: a line apart of which is a plain comment. Reported by the owner: a block of four commented-out lines made four.
 BLOCKS = frozenset({"ERA001"})
 
 
@@ -90,7 +90,7 @@ def listed(
             what = f"{len(counted)} ruff finding{'' if one else 's'}{' already in this file,' * bool(known)}"
             title = f"{what} on {'a line' if one else 'lines'} this change did not touch"
             tail.append(_counted(file.path, counted, title, why=why, old=bool(known)))
-    rated = _blocks(file, [(found, severity) for found, severity in rated if caused(found)])
+    rated, runs = _blocks(file, [(found, severity) for found, severity in rated if caused(found)])
     if len(rated) > PER_FILE:
         ranked = sorted(range(len(rated)), key=lambda at: -RANK[rated[at][1]])  # stable: by line
         shown = set(ranked[:PER_FILE])
@@ -102,7 +102,7 @@ def listed(
             file.path,
             found.line,
             found.source,
-            title=f"{found.code} {found.message}{_spanned(found)}",
+            title=f"{found.code} {found.message}{_spanned(found) if id(found) in runs else ''}",
             severity=severity,
             fix=fix_of(fixes, found.code, found.fix, found.applicability),
             why=found.url and f"Ruff's page for {found.code} says why it matters, with an example: {found.url}",
@@ -112,29 +112,43 @@ def listed(
     return hits + tail
 
 
-def _blocks(file: ChangedFile, rated: list[tuple[Diagnostic, Severity]]) -> list[tuple[Diagnostic, Severity]]:
-    """`rated`, in ruff's order of lines, with each run of a `BLOCKS` code that only comment lines join made one: at the
-    run's first line, its `last` the run's last, its source the lines between, at the most severe of them."""
+def _blocks(
+    file: ChangedFile, rated: list[tuple[Diagnostic, Severity]]
+) -> tuple[list[tuple[Diagnostic, Severity]], set[int]]:
+    """`rated`, in ruff's order of lines, with each run made one finding: the same code and the same words, each on the
+    line after the last, or for a `BLOCKS` code past comment lines alone. One run is at its first line, its `last` the
+    run's last, its source every line between, at the most severe of them; the second value holds each run's id.
+    Reported by the owner: E402 on lines 10 to 16, seven findings of one issue. The same code with other words stays a
+    finding a line, F401 naming another import on each: each has its own fix."""
     kept: list[tuple[Diagnostic, Severity]] = []
-    runs: dict[str, int] = {}  # each block code's last run, by its place in `kept`
+    last: dict[tuple[str, str], int] = {}  # each code and its words' last finding, by its place in `kept`
     for found, severity in rated:
-        if (at := runs.get(found.code)) is not None:
+        key = (found.code, found.message)
+        if (at := last.get(key)) is not None and _follows(file, kept[at][0], found):
             run, worst = kept[at]
-            end = run.last or run.line
-            if end < found.line and all(file.line(n).lstrip().startswith("#") for n in range(end + 1, found.line)):
-                lines = "\n".join(file.line(n) for n in range(run.line, found.line + 1))
-                kept[at] = (replace(run, last=found.line, source=lines), max(worst, severity, key=RANK.__getitem__))
-                continue
-        if found.code in BLOCKS:
-            runs[found.code] = len(kept)
+            lines = "\n".join(file.line(n) for n in range(run.line, found.line + 1))
+            kept[at] = (replace(run, last=found.line, source=lines), max(worst, severity, key=RANK.__getitem__))
+            continue
+        last[key] = len(kept)
         kept.append((found, severity))
-    return kept
+    runs = {id(run) for run, _severity in kept if run.last is not None and run.last > run.line}
+    return kept, runs
+
+
+def _follows(file: ChangedFile, run: Diagnostic, found: Diagnostic) -> bool:
+    """Whether `found` goes on `run`: on the line after its last, or, for a `BLOCKS` code, past comment lines alone."""
+    end = run.last or run.line
+    between = range(end + 1, found.line)
+    if found.line <= end:
+        return False
+    if found.code in BLOCKS:
+        return all(file.line(n).lstrip().startswith("#") for n in between)
+    return not between
 
 
 def _spanned(found: Diagnostic) -> str:
-    """Where a block's finding ends, for its title: ` on lines 5 to 8`, or nothing for one line."""
-    spans = found.code in BLOCKS and found.last is not None and found.last > found.line
-    return f" on lines {found.line} to {found.last}" if spans else ""
+    """Where a run's finding ends, for its title: ` on lines 5 to 8`."""
+    return f" on lines {found.line} to {found.last}"
 
 
 def _slug(diag: Diagnostic) -> str | None:

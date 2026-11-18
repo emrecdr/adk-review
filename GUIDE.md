@@ -198,8 +198,11 @@ minor one, and `"correcthorse"`, a secret of letters alone given to `password`, 
 weigh, `api_key = "letmeinplease"`, no rule names a secret of letters alone. The rules that run ruff, `lint`, `pitfalls`
 and `simplify`, read none of the project's ruff settings and honour no `noqa` comment, so that no branch can silence
 them: a finding there can be one the project's own ruff configuration, or its author's `noqa` with a reason, already
-accepts. Read the line before you ask for a change. Ruff names commented-out code line by line; the review names each
-block of it once, at its first line, its title naming the lines. Ruff also lints each modified file as the base held it,
+accepts. Read the line before you ask for a change. Ruff names a finding line by line, and the review names a run of
+one finding once: the same code and the same words on lines that follow one another, such as E402 on lines 10 to 16,
+or commented-out code past comment lines alone. The finding is at the run's first line, its title names the lines, and
+it quotes every line of the run. The same code with other words, F401 naming another import on each line, stays a
+finding a line, since each has its own fix. Ruff also lints each modified file as the base held it,
 and the review keeps two groups apart. What the change caused is reviewed: its own lines, and an untouched line it
 broke, as an old line's name left undefined by an import it deleted. What the base held too, the same code and ruff's
 same words on the same line, as the diff numbers each line the change kept, a count in them no higher, was already in

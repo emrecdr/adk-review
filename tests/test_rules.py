@@ -581,7 +581,8 @@ class TestTheLintRule:
         the rest are counted in one finding at the most severe of them, so no tier is lost to the cap."""
         from adk_review.judge.rule_helpers import PER_FILE
 
-        imports = "".join(f"import os as unused_{n}\n" for n in range(120))
+        # Each its own module, so ruff's words differ a line: the same words on following lines are one finding.
+        imports = "".join(f"import unused_{n}\n" for n in range(120))
         text = imports + "import subprocess\nsubprocess.run(cmd, shell=True)\n"
         found = lint_findings({"files": [_entry("m.py", text)], "tree": None})
         listed, counted = found[:-1], found[-1]
@@ -1027,6 +1028,25 @@ class TestTheLintRule:
         quoted = "    #         raise ValueError(item)\n    #     result += item"
         assert blocks[0].evidence == quoted, blocks[0].evidence
 
+    def test_lint_names_a_run_of_one_finding_on_lines_that_follow_each_other_once(self) -> None:
+        """Reported by the owner: ruff's E402, a module-level import not at the top of the file, on lines 10 to 16 made
+        seven findings, one a line, where the block is one issue. A run of ruff's findings with the same code and the
+        same words, each on the line after the last, is one finding: at its first line, its title naming the lines, its
+        quote the whole block. A run apart, past a line between, is its own; the same code with other words, as F401
+        names another import a line, stays a finding a line, since each has its own fix."""
+        imports = "".join(f"import mod{n}\n" for n in range(7))
+        text = '"""Doc."""\n\nimport os\nimport sys\n\nprint(os, sys)\n\n\n\n' + imports + "\nx = 1\nimport late\n"
+        found = lint_findings({"files": [_entry("app.py", text)], "tree": None})
+        late = [f for f in found if "E402" in f.title]
+        assert [(f.line, f.title) for f in late] == [
+            (10, "lint: E402 Module level import not at top of file on lines 10 to 16"),
+            (19, "lint: E402 Module level import not at top of file"),
+        ], late
+        assert late[0].evidence == imports.rstrip("\n"), late[0].evidence
+        unused = "import os\nimport sys\nimport json\n"
+        found = lint_findings({"files": [_entry("u.py", unused)], "tree": None})
+        assert [f.line for f in found if "F401" in f.title] == [1, 2, 3], "a fix a name, each its own"
+
     def test_lint_reads_a_notebooks_ipython_lines_as_its_own_and_a_modules_as_syntax_errors(self) -> None:
         """Reported by the owner, who keeps Databricks notebooks as Python source: ruff read each `%pip`, `%run` and
         `!ls` line as invalid syntax, a major, once for each rule that reads ruff, and a `# MAGIC %md` line as
@@ -1042,7 +1062,9 @@ class TestTheLintRule:
             assert not [f for f in found if "invalid-syntax" in f.title or "ERA001" in f.title], found
             assert [f for f in found if "F401" in f.title], ("ruff looked at the rest", found)
         found = lint_findings({"files": [_entry("job.py", body)], "tree": None})
-        assert {f.line for f in found if "invalid-syntax" in f.title} == {2, 3, 4}, found
+        syntax = [f for f in found if "invalid-syntax" in f.title]
+        assert {f.line for f in syntax} == {2, 3}, found  # each run of ruff's words one finding, the lines all its own
+        assert "lint: invalid-syntax Expected a statement on lines 2 to 4" in [f.title for f in syntax], found
 
     def test_lint_names_a_bidirectional_control_and_a_look_alike_name(self) -> None:
         """Ruff reads both in Python code: a control that reorders a line is major, a letter that is not ASCII in a name
