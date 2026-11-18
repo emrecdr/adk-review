@@ -47,9 +47,10 @@ folder of repositories. `tui.example.toml` beside it shows every setting. `--con
 
 A `fail_on` that names no severity, or a file that is no TOML, stops the start with one sentence and exit 2.
 
-Its state, the last report of each branch, which marks findings new or resolved, and the review cache, is in a
-`.state` folder beside the config. In a copy installed with `uv tool install`, a reinstall removes the config and
-the state.
+Its state, the last report of each target, which marks findings new or resolved, and the review cache, is in a
+`.state` folder beside the config. A target's last report moves on only where a review found other findings, so the
+same review run a third time is served from the cache with no model call. In a copy installed with
+`uv tool install`, a reinstall removes the config and the state.
 
 ## The steps
 
@@ -57,19 +58,25 @@ the state.
 2. The repository.
 3. The branch under review.
 4. The target branch.
-5. The folders to include or leave out: `--path` and `--path-exclude`.
+5. The folders to include or leave out: `--path` and `--path-exclude`. Type any other path in the field below
+   them, a comma or a new line between two.
 6. How it reviews: the branch against its target, what is staged (`--staged`), or every file (`--all`); the profile
    or `--check`; `--fail-on`; `--diff-cap`.
 7. The outputs: `--comment`, `--handoff`, `--verify`, the cache and `--previous`.
 
-The line under the steps shows the command it will run, ready to paste.
+The line under the steps shows the command it will run, ready to paste. While a review runs, its progress shows in
+the last tab. Its results stay with the target they came from: choose another branch, mode or repository, and the
+tabs clear.
+
+A finding is drawn as plain text. Its title and fix are a model's words, and no link in them can be clicked.
 
 ## It writes nothing until you ask
 
 As the reviewer does, the screen reads a repository and writes nothing into it:
 
 - It lists the branches as the repository holds them. F5 runs `git fetch --prune` on the repository you chose.
-- A branch only the remote holds is reviewed by its remote name, `origin/<branch>`. No local branch is made.
+- A remote's branch, `origin/<branch>`, is reviewed as the remote holds it, even where a local copy of it is ahead
+  or behind. No local branch is made.
 - For a local branch behind its remote, it asks. On yes, `git branch -f` moves that branch, but never one a working
   tree has checked out: that one stays as it is, and the remote's branch is reviewed.
 - Each read runs as the reviewer runs git: a repository's own config starts no program, and no read takes a lock.
@@ -84,7 +91,7 @@ As the reviewer does, the screen reads a repository and writes nothing into it:
 | `Ctrl+T` | Fold or unfold every section |
 | `Ctrl+Y` | Copy the open tab: the report, a finding, the comment or the hand-off |
 | `Ctrl+P` | Open the command palette: a repository, a branch, a profile or an action by name |
-| `F5` | Fetch the chosen repository, and list its branches again |
+| `F5` | Fetch the chosen repository and list its branches again, the branches you chose kept where they are still there |
 | A number key | Fold or unfold the section of that number, where no text field has the focus |
 | `q` | Quit |
 

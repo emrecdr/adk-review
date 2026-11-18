@@ -105,22 +105,21 @@ def filter_findings(
 
 
 def format_finding_detail(row: FindingRow) -> str:
-    """Render one `FindingRow` into detailed Markdown for the Findings Explorer inspector pane."""
-    fence = "````" if "```" in row.evidence else "```"
+    """One finding as plain text, drawn and copied as it is. Its title, fix and quote are a model's words and the
+    branch's: read by review, drawn as Markdown, a branch that steered the model could make a link the person might
+    click, and the JSON keeps them plain for its reader to escape."""
     badge = f"{row.tier} (possibly already done)" if row.already_held else row.tier
     lines = [
-        f"### [{row.severity.upper()}] {row.title or '(no title)'}",
+        f"[{row.severity.upper()}] {row.title or '(no title)'}",
         "",
-        f"- **Tier:** `{badge}`  |  **Check:** `{row.check}`",
-        f"- **Location:** `{row.location()}`",
+        f"Tier: {badge}    Check: {row.check}",
+        f"Location: {row.location()}",
         "",
-        "**Evidence:**",
-        fence,
-        row.evidence or "(none)",
-        fence,
+        "Evidence:",
+        *(f"    {line}" for line in (row.evidence or "(none)").splitlines()),
     ]
     if row.suggestion:
-        lines.extend(["", f"**Suggested Fix:** {row.suggestion}"])
+        lines.extend(["", f"Suggested fix: {row.suggestion}"])
     return "\n".join(lines)
 
 

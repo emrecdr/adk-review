@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import shlex
+import sys
 import tempfile
 import time
 from collections.abc import Mapping, Sequence
@@ -30,7 +33,7 @@ OPTION_DESCRIPTIONS: dict[str, str] = {
     "comment": "Write an author-ready PR review markdown file (comment-<repo>__<base>__<head>__...md).",
     "handoff": "Write coding-agent fix instructions (handoff-<repo>__<base>__<head>__...md).",
     "verify": "Ask a second model to verify each finding and drop refuted non-security findings.",
-    "use_cache": "Cache decided reviews under adk_review/tui/.state/cache so unchanged re-runs finish instantly.",
+    "use_cache": "Keep each decided review, so the same review run again makes no model call.",
     "use_previous": "Compare against the last review of this branch (--previous) to badge NEW and RESOLVED findings.",
     "path": "Review ONLY the selected folders or files (--path). Leave empty to review the whole change.",
     "path_exclude": "Leave the selected folders or files out of the review completely (--path-exclude).",
@@ -113,12 +116,13 @@ def fail_on_choices() -> list[tuple[str, str]]:
 
 
 def parse_csv_paths(raw: str) -> list[str]:
-    """Split a comma- or whitespace-separated path input into normalized relative POSIX paths."""
+    """Split typed paths at each comma or line into normalized relative POSIX paths, each keeping its spaces. Read by
+    review: split at every space too, `My Docs` left out `My` and `Docs`, two folders no one named."""
     items: list[str] = []
-    for piece in re.split(r"[,\s]+", raw.strip()):
+    for piece in (part.strip() for part in re.split(r"[,\r\n]+", raw)):
         if not piece or PureWindowsPath(piece).drive:
             continue
-        cleaned = re.sub(r"/+", "/", piece.strip().replace("\\", "/")).strip("/")
+        cleaned = re.sub(r"/+", "/", piece.replace("\\", "/")).strip("/")
         if cleaned and cleaned != "." and ".." not in cleaned.split("/"):
             items.append(cleaned)
     return list(dict.fromkeys(items))
@@ -168,10 +172,22 @@ def _safe_slug(value: str) -> str:
 
 
 def baseline_path(repo: str, base: str, head: str, mode: ReviewMode = "branch") -> Path:
-    """Path where the TUI stores the latest JSON report for `(repo, base, head)` to power `--previous`."""
+    """Where the screen keeps the last report of one target, the repository, the mode and the branches it reads, for
+    `--previous`: a readable slug, and a hash of the whole target. Reproduced by review: named by the slug alone, cut
+    at 40 characters with `/` read as `-`, the head left out under `--all` and the repository by its folder alone,
+    two branches shared one, and each review marked the other's findings new or resolved."""
     repo_slug = _safe_slug(Path(repo).name or "repo")
     target_slug = _safe_slug(mode if mode != "branch" else f"{base}__{head}")
-    return BASELINES_DIR / f"baseline-{repo_slug}__{target_slug}.json"
+    where = os.path.normcase(os.path.abspath(repo))
+    target = (where, mode, base if mode == "branch" else "", "" if mode == "staged" else head)
+    digest = hashlib.sha256("\0".join(target).encode("utf-8")).hexdigest()[:12]
+    return BASELINES_DIR / f"baseline-{repo_slug}__{target_slug}__{digest}.json"
+
+
+def review_command(argv: Sequence[str]) -> list[str]:
+    """The review the screen runs: this Python, with `-P`, so the folder the screen started in is never on the import
+    path. Reproduced by review: under `python -m` a `hashlib.py` in that folder ran in place of Python's own."""
+    return [sys.executable, "-P", "-m", "adk_review.review", *argv]
 
 
 def build_review_argv(sel: ReviewSelection) -> tuple[list[str], dict[str, Path]]:
@@ -200,6 +216,9 @@ def build_review_argv(sel: ReviewSelection) -> tuple[list[str], dict[str, Path]]
     if sel.dry_run:
         argv.append("--dry-run")
         return argv, {}
+    # A review tells its progress only at a terminal or when asked, and the screen reads it through a pipe. Read by
+    # review: the progress tab stayed empty however long a review ran.
+    argv.append("--progress")
     outputs = _output_flags(sel, argv)
     return argv, outputs
 
@@ -248,13 +267,29 @@ def _output_flags(sel: ReviewSelection, argv: list[str]) -> dict[str, Path]:
     return outputs
 
 
+def _fingerprints(path: Path) -> frozenset[str] | None:
+    """The fingerprints of a report's findings, or None where it cannot be read as one."""
+    try:
+        found = json.loads(path.read_text(encoding="utf-8"))["findings"]
+        named = (f.get("fingerprint") for f in found if isinstance(f, dict))
+        return frozenset(name for name in named if isinstance(name, str))
+    except OSError, ValueError, KeyError, TypeError:
+        return None
+
+
 def promote_baseline(outputs: Mapping[str, Path], exit_code: int) -> None:
-    """Promote the completed JSON report to the branch's `--previous` baseline on clean or findings exits."""
+    """Make a decided review's JSON report its target's saved report, which the next review reads with `--previous`,
+    where its findings differ from the saved one's. The cache key reads the previous report, and read by review, and
+    measured, a report saved after every review changed that key each time, so the same review was served from the
+    cache only from its fourth run, each a model call under a guideline's profile. Kept where the findings are the
+    same, it marks them as it did, and the same review run a third time is served from the cache."""
     if exit_code not in (EXIT_CLEAN, EXIT_FINDINGS):
         return
     json_path = outputs.get("json")
     baseline = outputs.get("baseline")
     if json_path is None or baseline is None or not json_path.is_file():
+        return
+    if baseline.is_file() and (held := _fingerprints(baseline)) is not None and held == _fingerprints(json_path):
         return
     baseline.parent.mkdir(parents=True, exist_ok=True)
     payload = json_path.read_text(encoding="utf-8")

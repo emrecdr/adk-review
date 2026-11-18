@@ -13,6 +13,18 @@ from pathlib import Path
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _state_apart(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The saved reports and the cache in a folder of the test's own. Read by review: tests wrote and deleted saved
+    reports in the package's real state folder, beside a person's own."""
+    import importlib
+
+    options = importlib.import_module("adk_review.tui.options")
+    state = tmp_path_factory.mktemp("tui-state")
+    monkeypatch.setattr(options, "BASELINES_DIR", state / "baselines")
+    monkeypatch.setattr(options, "CACHE_DIR", state / "cache")
+
+
 def _git(repo: Path, *args: str) -> str:
     from adk_review.collect.git import on_path
 
@@ -683,7 +695,7 @@ class TestFindingsExplorer:
         assert len(filter_findings(rows, tier="Old")) == 1
         assert len(filter_findings(rows, query="Hardcoded")) == 1
         detail = format_finding_detail(rows[0])
-        assert "[BLOCKER] Hardcoded key" in detail and "`a.py:12`" in detail
+        assert "[BLOCKER] Hardcoded key" in detail and "Location: a.py:12" in detail
         assert "rule.secrets" in explain_check_markdown("rule.secrets")
         assert "Unknown Check" in explain_check_markdown("rule.does_not_exist")
 
@@ -966,6 +978,267 @@ class TestWindowsAndItsShells:
             kernel32.GlobalUnlock(handle)
         finally:
             user32.CloseClipboard()
+
+
+class TestWhatTheCodeReviewFound:
+    """Each finding of a code review of the front end, reproduced before its fix."""
+
+    def test_a_review_runs_the_reviewer_whatever_folder_the_screen_started_in(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Reproduced by review: `python -m` puts the folder the screen started in first on the import path, so a
+        `hashlib.py` there ran in place of Python's own, exit 9. With `-P` that folder is never on it."""
+        from adk_review.tui.options import review_command
+
+        (tmp_path / "hashlib.py").write_text("raise SystemExit(9)\n", encoding="utf-8")
+        monkeypatch.chdir(tmp_path)
+        done = subprocess.run(
+            review_command(["--version"]), capture_output=True, text=True, encoding="utf-8", timeout=120, check=False
+        )
+        assert (done.returncode, done.stdout.strip()) == (0, "adk-review 0.1.0"), done.stderr[-400:]
+
+    def test_unchanged_reviews_tell_their_progress_and_are_served_from_the_cache(
+        self, demo_repo: Path, tmp_path: Path
+    ) -> None:
+        """Read by review, both reproduced here: a review tells its progress only at a terminal or with `--progress`,
+        and the screen gave neither, so its progress tab stayed empty however long a review ran; and the cache key
+        reads the previous report, which the screen replaced after every review, so the same review run again was
+        served from the cache only from its fourth run, each a model call under a guideline's profile. The screen
+        asks for `--progress`, and keeps the saved report where a review found the same findings."""
+        from adk_review.tui import options
+
+        sel = options.ReviewSelection(
+            repo=str(demo_repo), head="feature/payments", base="main", profile="demo", output_dir=str(tmp_path)
+        )
+        said = []
+        for _run in range(3):
+            argv, outputs = options.build_review_argv(sel)
+            done = subprocess.run(
+                options.review_command(argv), capture_output=True, text=True, encoding="utf-8", timeout=300, check=False
+            )
+            assert done.returncode == 1, done.stderr[-400:]
+            options.promote_baseline(outputs, done.returncode)
+            said.append(done.stderr)
+        assert "reading feature/payments against main" in said[0], said[0][-400:]
+        assert ["served from the cache" in err for err in said] == [False, False, True], [e[-200:] for e in said]
+
+    def test_each_review_target_has_its_own_saved_report(self) -> None:
+        """Reproduced by review: the saved report `--previous` reads was named by a slug cut at 40 characters, `/` read
+        as `-`, the head left out under `--all` and the repository named by its folder alone, so two branches shared
+        one, and each review marked the other's findings new or resolved."""
+        from adk_review.tui.options import baseline_path
+
+        long = "feature/PAY-1234-refund-retry-on-"
+        for one, other in (
+            (("/w/api", "develop", long + "timeout"), ("/w/api", "develop", long + "network-error")),
+            (("/w/api", "main", "feature/a"), ("/w/api", "main", "feature-a")),
+            (("/w/api", "", "feat/x", "all"), ("/w/api", "", "feat/y", "all")),
+            (("/w/one/api", "main", "x"), ("/w/two/api", "main", "x")),
+        ):
+            assert baseline_path(*one) != baseline_path(*other), (one, other)
+        assert baseline_path("/w/api", "main", "x") == baseline_path("/w/api", "main", "x")
+
+    def test_a_saved_choice_reads_back_whatever_characters_it_holds(self, tmp_path: Path) -> None:
+        """Reproduced by review: a preset was written with `json.dumps`, which writes an emoji as two surrogate
+        escapes that TOML refuses, so after a review of `feature/🚀-launch` every start stopped with exit 2."""
+        from adk_review.tui.config import RepoPreset, load_tui_config, save_repo_preset
+
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{tmp_path.as_posix()}"]\n', encoding="utf-8")
+        preset = RepoPreset(base='feature/\U0001f680-launch "q" \\ ü', path=("My Docs", "src/\U0001f680"))
+        save_repo_preset(load_tui_config(cfg), "repo \U0001f680", preset)
+        assert load_tui_config(cfg).projects["repo \U0001f680"] == preset
+
+    def test_a_path_typed_by_hand_keeps_its_spaces(self) -> None:
+        """Read by review: the typed paths were split at every space too, so `My Docs` left out `My` and `Docs`, two
+        folders the person never named. A comma or a line parts them now."""
+        from adk_review.tui.options import parse_csv_paths
+
+        assert parse_csv_paths("My Docs, src/api ,\ndocs/reports") == ["My Docs", "src/api", "docs/reports"]
+
+    def test_a_fetch_past_its_timeout_stops_with_every_process_it_started(self) -> None:
+        """Reproduced by review: past the timeout git was killed, but its children, ssh or git's https helper, held its
+        output open, and the screen waited on them, 6 s against a timeout of 1 s, and on a remote that hangs for
+        minutes or for ever. The whole group is stopped now, as the whole tree is on Windows."""
+        import os
+        import time
+
+        from adk_review.tui.git_sync import _bounded
+
+        grandchild = "import time; time.sleep(30)"
+        child = (
+            f"import subprocess, sys, time; subprocess.Popen([sys.executable, '-c', {grandchild!r}]); time.sleep(30)"
+        )
+        started = time.monotonic()
+        with pytest.raises(subprocess.TimeoutExpired):
+            _bounded([sys.executable, "-c", child], dict(os.environ), timeout_s=1)
+        assert time.monotonic() - started < 10, "the screen waited on a process git started"
+
+    def test_the_palette_draws_a_name_with_brackets_as_written(self) -> None:
+        """Read by review, and reproduced: Textual's `highlight` reads each name as markup, so `my[service]` was
+        listed as `my`, and `x[/old]` raised `MarkupError`, which dropped the palette's later hits."""
+        pytest.importorskip("textual")
+        from textual.fuzzy import Matcher
+
+        from adk_review.tui.commands import highlighted
+
+        for label in ("Repo: my[service]  (main, clean)", "Repo: x[/old]"):
+            assert highlighted(Matcher("old"), label).plain == label
+
+    @pytest.mark.asyncio
+    async def test_the_screen_keeps_working_through_an_error_and_a_long_line(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review, both reproduced: a config the screen could not write raised inside the review's worker,
+        which ended the whole screen with a traceback; and one line of a review's progress past 64 KiB, a provider's
+        error body, made reading it raise. The screen says what failed, and reads a line of any length."""
+        pytest.importorskip("textual")
+        from textual.widgets import Static
+
+        from adk_review.tui import app as screen
+
+        _init_repo_with_remote(tmp_path)
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+
+        def unwritable(*_args: object) -> None:
+            raise PermissionError(13, "Permission denied", str(cfg))
+
+        monkeypatch.setattr(screen, "save_repo_preset", unwritable)
+        app = screen.AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            app.selected_base = "origin/main"  # a target, which no fetch has listed others for
+            await pilot.press("ctrl+r")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert app.is_running, "the screen is still open"
+            banner = str(app.query_one("#status-banner", Static).render())
+            assert "could not run" in banner and "Permission denied" in banner, banner
+            said: list[str] = []
+            monkeypatch.setattr(app, "_log_progress", said.append)
+            long = "import sys; sys.stderr.write('x' * 100_000 + '\\nafter\\n')"
+            code, _out = await app._stream_subprocess([sys.executable, "-c", long])
+            assert code == 0 and said[-1] == "after" and len(said[0]) >= 64_000, [len(line) for line in said]
+
+    @pytest.mark.asyncio
+    async def test_results_stay_with_the_target_they_came_from(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review: a change of branch kept the last review's comment and hand-off, marked ready, which Ctrl+Y
+        then copied for another branch's pull request; and a review that ended after the person chose another target
+        filled that target's tabs. A change of target clears them now, and a review whose target changed is named,
+        its files where they are, and not shown."""
+        pytest.importorskip("textual")
+        from textual.widgets import Static, TabbedContent
+
+        from adk_review.tui.app import AdkReviewTuiApp
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        _git(local, "fetch", "origin")  # the screen fetches only at F5
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        comment = tmp_path / "comment.md"
+        comment.write_text("the last review's comment\n", encoding="utf-8")
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            await app._load_generated_files({"comment": comment})
+            assert app.last_comment_md and "ready" in str(app.query_one(TabbedContent).get_tab("tab-comment").label)
+            app._sync_chosen_branch("head", "origin/feat-remote")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert app.selected_head == "origin/feat-remote"
+            assert app.last_comment_md == "", "another branch's comment is never shown as this one's"
+            assert "ready" not in str(app.query_one(TabbedContent).get_tab("tab-comment").label)
+
+            loaded: list[object] = []
+
+            async def moved_on(_cmd: list[str]) -> tuple[int, str]:
+                app.selected_head = "main"  # the person chose another target while it ran
+                return 1, "the report of origin/feat-remote"
+
+            monkeypatch.setattr(app, "_stream_subprocess", moved_on)
+            monkeypatch.setattr(app, "_load_generated_files", lambda outputs: loaded.append(outputs))
+            app.selected_head = "origin/feat-remote"
+            app._execute_review(dry_run=False)
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            banner = str(app.query_one("#status-banner", Static).render())
+            assert loaded == [] and app.last_report_md == "", "its results fill no other target's tabs"
+            assert "origin/feat-remote" in banner and "not shown" in banner, banner
+
+    @pytest.mark.asyncio
+    async def test_f5_keeps_the_branches_chosen_and_a_remote_branch_is_reviewed_as_the_remote_holds_it(
+        self, tmp_path: Path
+    ) -> None:
+        """Read by review: F5 set the branch under review back to the one checked out, and the target to the default,
+        so a review after it read another pair; and choosing `origin/x` where a local `x` was ahead of it reviewed the
+        local branch, unpushed work and all. F5 keeps the choice where the branch is still there, and a remote's
+        branch is reviewed as the remote holds it."""
+        pytest.importorskip("textual")
+        from adk_review.tui.app import AdkReviewTuiApp
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        _git(local, "fetch", "origin")
+        _git(local, "switch", "-c", "feat-remote", "origin/feat-remote")
+        (local / "local.txt").write_text("not pushed\n", encoding="utf-8")
+        _git(local, "add", "local.txt")
+        _git(local, "commit", "-m", "local work")  # the local copy one commit ahead of the remote's
+        _git(local, "switch", "main")
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            app._sync_chosen_branch("head", "origin/feat-remote")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert app.selected_head == "origin/feat-remote", "as the remote holds it, not the local copy ahead of it"
+            app.selected_base = "origin/main"
+            await pilot.press("f5")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert (app.selected_head, app.selected_base) == ("origin/feat-remote", "origin/main")
+
+    @pytest.mark.asyncio
+    async def test_a_saved_path_is_one_choice_and_a_models_text_is_never_a_link(self, tmp_path: Path) -> None:
+        """Read by review: a saved path came back both as a ticked folder and as typed text, so unticking it changed
+        nothing; and a finding's title and fix, a model's words, were drawn as Markdown, where a branch that steered the
+        model could make a link the person might click. A saved path that is a listed folder comes back ticked alone,
+        and a finding is drawn as plain text."""
+        pytest.importorskip("textual")
+        import json
+
+        from textual.widgets import Input, SelectionList, TabbedContent
+
+        from adk_review.tui.app import AdkReviewTuiApp
+
+        _init_repo_with_remote(tmp_path)
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(
+            f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n\n'
+            '[projects."my-service"]\npath = ["src", "not/listed"]\n',
+            encoding="utf-8",
+        )
+        report = tmp_path / "report.json"
+        finding = {"check": "guideline.security", "file": "a.py", "line": 3, "severity": "major"}
+        finding |= {"title": "**Shout**", "suggestion": "See [the fix](https://attacker.example/?q=x)."}
+        report.write_text(json.dumps({"schema": 2, "findings": [finding]}), encoding="utf-8")
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            boxes = app.query_one("#path-list", SelectionList)
+            assert "src" in boxes.selected and app.query_one("#extra-path", Input).value == "not/listed"
+            boxes.deselect("src")
+            await pilot.pause()
+            assert app.current_selection().paths == ("not/listed",), "unticked, it is not reviewed"
+
+            await app._load_generated_files({"json": report})
+            app.query_one(TabbedContent).active = "tab-findings"
+            await pilot.pause()
+            shown = str(app.query_one("#finding-detail").render())
+            assert "**Shout**" in shown and "[the fix](https://attacker.example/?q=x)" in shown, shown
 
 
 async def _wait_for_branches(app, pilot) -> None:

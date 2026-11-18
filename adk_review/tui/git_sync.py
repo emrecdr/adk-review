@@ -8,9 +8,12 @@ since a fetch needs their remotes, credentials and proxy."""
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
+import signal
 import subprocess
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -111,11 +114,18 @@ def _git_env() -> dict[str, str]:
 
 
 def _run_git(repo: str, args: list[str], timeout_s: int = 15) -> subprocess.CompletedProcess[str]:
-    """One command the person asked for, a fetch or a branch moved, in `repo`: their own environment, UTF-8, and on
-    Windows the whole process tree stopped at the timeout. A read goes through `_read`, never through here."""
+    """One command the person asked for, a fetch or a branch moved, in `repo`, with their own environment. A read goes
+    through `_read`, never through here."""
     if (git := on_path("git")) == "git":
         raise OSError("git is not on PATH")
-    argv = [git, "-C", repo, *args]
+    return _bounded([git, "-C", repo, *args], _git_env(), timeout_s)
+
+
+def _bounded(argv: list[str], env: dict[str, str], timeout_s: int) -> subprocess.CompletedProcess[str]:
+    """`argv` run with `env`, decoded as UTF-8, and stopped whole past `timeout_s`: on Windows its process tree, as Git
+    for Windows' `git.exe` runs the real git as its child, and elsewhere its process group, which git's own children
+    join, ssh or its https helper. Reproduced by review: git killed alone left such a child holding the output open,
+    and the screen waited on it, 6 s against a timeout of 1 s."""
     with subprocess.Popen(
         argv,
         stdout=subprocess.PIPE,
@@ -123,12 +133,13 @@ def _run_git(repo: str, args: list[str], timeout_s: int = 15) -> subprocess.Comp
         text=True,
         encoding="utf-8",
         errors="replace",
-        env=_git_env(),
+        env=env,
+        start_new_session=sys.platform != "win32",
     ) as process:
         try:
             out, err = process.communicate(timeout=timeout_s)
         except subprocess.TimeoutExpired:
-            if os.name == "nt":
+            if sys.platform == "win32":
                 taskkill = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe")
                 subprocess.run(
                     [taskkill, "/F", "/T", "/PID", str(process.pid)],
@@ -137,6 +148,9 @@ def _run_git(repo: str, args: list[str], timeout_s: int = 15) -> subprocess.Comp
                     errors="replace",
                     check=False,
                 )
+            else:
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(process.pid, signal.SIGKILL)
             process.kill()
             process.communicate()
             raise

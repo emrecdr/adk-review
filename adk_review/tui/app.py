@@ -6,7 +6,6 @@ import asyncio
 import contextlib
 import os
 import subprocess
-import sys
 from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar
@@ -77,6 +76,7 @@ from .options import (
     parse_csv_paths,
     parse_diff_cap,
     promote_baseline,
+    review_command,
 )
 from .styles import APP_CSS, literal
 
@@ -274,7 +274,7 @@ class AdkReviewTuiApp(App[int]):
                     yield Button("Explain Check", id="btn-explain-check", variant="default", disabled=True)
                 yield DataTable(id="findings-table", cursor_type="row")
                 with VerticalScroll(id="finding-detail-scroll"):
-                    yield Markdown("*Run a review to inspect structured findings.*", id="finding-detail")
+                    yield Static("Run a review to see its findings.", id="finding-detail", markup=False)
             with TabPane("3. Author Comment (--comment)", id="tab-comment"), VerticalScroll():
                 yield Markdown("*No `--comment` generated yet.*", id="comment-md")
             with TabPane("4. Agent Handoff (--handoff)", id="tab-handoff"), VerticalScroll():
@@ -378,7 +378,7 @@ class AdkReviewTuiApp(App[int]):
         self._selected_finding = None
         self.query_one("#report-log", RichLog).clear()
         self.query_one("#findings-table", DataTable).clear()
-        self.query_one("#finding-detail", Markdown).update("*Run a review to inspect structured findings.*")
+        self.query_one("#finding-detail", Static).update("Run a review to see its findings.")
         self.query_one("#btn-explain-check", Button).disabled = True
         self.query_one("#comment-md", Markdown).update("*No `--comment` generated yet.*")
         self.query_one("#handoff-md", Markdown).update("*No `--handoff` generated yet.*")
@@ -402,8 +402,8 @@ class AdkReviewTuiApp(App[int]):
             preset.handoff if preset and preset.handoff is not None else d.handoff
         )
         self.query_one("#sw-verify", Switch).value = preset.verify if preset and preset.verify is not None else d.verify
-        self.query_one("#extra-path", Input).value = ", ".join(preset.path) if preset else ""
-        self.query_one("#extra-exclude", Input).value = ", ".join(preset.path_exclude) if preset else ""
+        self.query_one("#extra-path", Input).value = ""  # the saved paths come back when the folders are listed
+        self.query_one("#extra-exclude", Input).value = ""
         self.query_one("#check-input", Input).value = ", ".join(preset.checks) if preset else ""
         self.query_one("#diff-cap-input", Input).value = str(preset.diff_cap) if preset and preset.diff_cap > 0 else ""
 
@@ -435,14 +435,19 @@ class AdkReviewTuiApp(App[int]):
         if self.selected_project != project:
             return
         self.branches = branches
-        preset = self.tui_config.projects.get(project.name)
-        preset_base = preset.base if preset else ""
-        head_default = (
-            project.branch
-            if any(b.name == project.branch for b in branches)
-            else (branches[0].name if branches else "HEAD")
-        )
-        base_default = preferred_base_branch(project.path, branches, head_default, preset_base)
+        names = {b.name for b in branches}
+        if fetch and self.selected_head in names and self.selected_base in {*names, ""}:
+            # F5 keeps the branches chosen where they are still there. Read by review: it set them back to the branch
+            # checked out and the default target, and a review after it read another pair.
+            head_default, base_default = self.selected_head, self.selected_base
+        else:
+            preset = self.tui_config.projects.get(project.name)
+            head_default = (
+                project.branch
+                if any(b.name == project.branch for b in branches)
+                else (branches[0].name if branches else "HEAD")
+            )
+            base_default = preferred_base_branch(project.path, branches, head_default, preset.base if preset else "")
         self.selected_head = head_default
         self.selected_base = base_default
         self._render_branch_lists()
@@ -513,16 +518,24 @@ class AdkReviewTuiApp(App[int]):
         if role == "base" and self._is_head_branch(info):
             self._set_banner("Target Branch cannot be the same as Branch Under Review.")
             return
-        status = await asyncio.to_thread(inspect_branch_sync, repo, info)
-        if self.selected_project != project:
-            return
-        resolved = await self._resolve_sync_status(repo, role, info, status)
-        if self.selected_project != project:
-            return
+        if info.is_remote:
+            # As the remote holds it, never through a local copy of it. Read by review: with a local branch ahead of it,
+            # `origin/x` reviewed the local one, its unpushed work and all.
+            resolved = info.name
+        else:
+            status = await asyncio.to_thread(inspect_branch_sync, repo, info)
+            if self.selected_project != project:
+                return
+            resolved = await self._resolve_sync_status(repo, role, info, status)
+            if self.selected_project != project:
+                return
+        before = self._target()
         if role == "head":
             self.selected_head = resolved
         else:
             self.selected_base = resolved
+        if self._target() != before:
+            self._reset_outputs()
         refreshed = await asyncio.to_thread(list_branches, repo)
         if self.selected_project != project:
             return
@@ -531,11 +544,7 @@ class AdkReviewTuiApp(App[int]):
         await self._refresh_folders()
 
     async def _resolve_sync_status(self, repo: str, role: str, info: BranchInfo, status: SyncStatus) -> str:
-        if status.kind == "remote_only":  # reviewed by its remote name: no local branch is made for it
-            said = f"Reviewing '{status.upstream_branch}' as the remote holds it"
-            self._log_progress(said)
-            self._set_banner(said)
-            return status.upstream_branch
+        """The ref to review for the local branch `info`: where it is behind its remote or apart from it, asked."""
         if status.kind == "behind":
             should_update = await self.push_screen_wait(SyncBranchModal(role, status))
             if should_update:
@@ -552,19 +561,26 @@ class AdkReviewTuiApp(App[int]):
             chosen_ref = await self.push_screen_wait(DivergedBranchModal(role, status))
             self._log_progress(f"Selected {chosen_ref} for diverged {role} branch")
             return chosen_ref
-        return status.local_branch if info.is_remote else info.name
+        return info.name
+
+    def _target(self) -> tuple[str, str, str, str]:
+        """What a review reads: the repository, the mode, and its branches."""
+        repo = self.selected_project.path if self.selected_project else ""
+        return repo, self.selected_mode, self.selected_head, self.selected_base
 
     def _path_selection_sets(
-        self, project: ProjectInfo, path_list: SelectionList[str], excl_list: SelectionList[str]
+        self, project: ProjectInfo, path_list: SelectionList[str], excl_list: SelectionList[str], listed: set[str]
     ) -> tuple[set[str], set[str]]:
-        """Initial preset selections when a repo loads, or existing UI selections when branches change."""
+        """The folders ticked: the saved ones when a repository loads, else those ticked now. A saved path comes back
+        once, ticked where it is a listed folder and typed where it is not. Read by review: it came back as both, so
+        unticking it changed nothing, the typed copy still passed."""
         if self._repo_loaded_path != project.path:
             self._repo_loaded_path = project.path
             preset = self.tui_config.projects.get(project.name)
-            return (
-                set(preset.path) if preset else set(),
-                set(preset.path_exclude) if preset else set(),
-            )
+            paths, excludes = (preset.path, preset.path_exclude) if preset else ((), ())
+            self.query_one("#extra-path", Input).value = ", ".join(p for p in paths if p not in listed)
+            self.query_one("#extra-exclude", Input).value = ", ".join(p for p in excludes if p not in listed)
+            return set(paths) & listed, set(excludes) & listed
         return set(path_list.selected), set(excl_list.selected)
 
     @work(exclusive=True, group="folder_refresh")
@@ -588,7 +604,8 @@ class AdkReviewTuiApp(App[int]):
             self._set_loading(False, path_list, excl_list)
         if self.selected_project != project:
             return
-        chosen_paths, chosen_excludes = self._path_selection_sets(project, path_list, excl_list)
+        listed = {folder for folder, _label in folders}
+        chosen_paths, chosen_excludes = self._path_selection_sets(project, path_list, excl_list, listed)
         self._syncing_paths = True
         try:
             path_list.clear_options()
@@ -782,6 +799,8 @@ class AdkReviewTuiApp(App[int]):
     def _on_mode_changed(self, event: Select.Changed) -> None:
         val = str(event.value)
         if val in ("branch", "staged", "all") and self._has_dom("#base-list", "#head-list"):
+            if val != self.selected_mode:
+                self._reset_outputs()  # another target's results are never shown as this one's
             self.selected_mode = val  # type: ignore[assignment]
             self.query_one("#base-list", OptionList).disabled = val != "branch"
             self.query_one("#head-list", OptionList).disabled = val == "staged"
@@ -952,34 +971,54 @@ class AdkReviewTuiApp(App[int]):
         if self.selected_mode == "branch" and (not self.selected_base or self.selected_head == self.selected_base):
             self._set_banner("Branch Under Review and Target Branch cannot be the same.")
             return
+        label = "dry-run" if dry_run else "review"
+        try:
+            await self._run_review(dry_run=dry_run, label=label)
+        except (OSError, ValueError) as exc:
+            # Read by review: an error here, a config the screen could not write, ended the whole screen with a
+            # traceback, Textual's own way with a worker's error.
+            self._set_banner(f"The {label} could not run: {exc}")
+            self.notify(f"The {label} could not run: {exc}", severity="error", timeout=8, markup=False)
+
+    async def _run_review(self, *, dry_run: bool, label: str) -> None:
+        project, target = self.selected_project, self._target()
+        if project is None:
+            return
         sel = self.current_selection(dry_run=dry_run)
         if not dry_run:
             await asyncio.to_thread(self._save_current_preset, sel)
         argv, outputs = build_review_argv(sel)
-        cmd = [sys.executable, "-m", "adk_review.review", *argv]
         report_log = self.query_one("#report-log", RichLog)
         report_log.clear()
-        label = "dry-run" if dry_run else "review"
-        self._set_banner(f"Running {label} on {self.selected_project.name}...")
+        self._set_banner(f"Running {label} on {project.name}...")
         self._log_progress(f"$ {format_cli_command(argv)}")
         self._set_running_ui(True)
         try:
-            code, stdout_text = await self._stream_subprocess(cmd)
+            code, stdout_text = await self._stream_subprocess(review_command(argv))
         except asyncio.CancelledError:
             self._set_banner(f"{label.capitalize()} stopped by user.")
             raise
         finally:
             self._set_running_ui(False)
+        if not dry_run:
+            await asyncio.to_thread(promote_baseline, outputs, code)
+        if self._target() != target:
+            # Read by review: a review that ended after the person chose another target filled that target's tabs.
+            where = f" Its files are in {self.tui_config.output_dir}." if outputs else ""
+            self._set_banner(
+                f"Finished the {label} of {target[2] or target[1]} (exit code {code}). It is not shown: you chose "
+                f"another target since.{where}"
+            )
+            return
         self.last_report_md = stdout_text
         if stdout_text:
             report_log.write(stdout_text.rstrip("\n"))
-        if not dry_run:
-            await asyncio.to_thread(promote_baseline, outputs, code)
         await self._load_generated_files(outputs)
         self.query_one("#output-tabs", TabbedContent).active = "tab-report"
-        done_msg = f"Finished {label} (exit code {code})."
-        self._set_banner(f"Finished {label} on {self.selected_project.name} (exit code {code}).")
-        self.notify(done_msg, severity="information" if code == 0 else "warning", timeout=4)
+        self._set_banner(f"Finished {label} on {project.name} (exit code {code}).")
+        self.notify(
+            f"Finished {label} (exit code {code}).", severity="information" if code == 0 else "warning", timeout=4
+        )
 
     async def _stream_subprocess(self, cmd: list[str]) -> tuple[int, str]:
         # UTF-8 streams: on Windows Python writes a pipe in the system's code page, cp1252, where this reads UTF-8.
@@ -994,14 +1033,22 @@ class AdkReviewTuiApp(App[int]):
         self._active_proc = proc
         stdout_chunks: list[str] = []
 
+        def told(raw: bytes) -> None:
+            if line := raw.decode("utf-8", errors="replace").rstrip():
+                self._log_progress(line)
+                self._set_banner(line[:300])
+
         async def _read_stderr() -> None:
+            # In pieces, split here: `readline` raises past 64 KiB, and read by review, one line of a provider's error
+            # body could be longer.
             if proc.stderr is None:
                 return
-            while raw := await proc.stderr.readline():
-                line = raw.decode("utf-8", errors="replace").rstrip()
-                if line:
-                    self._log_progress(line)
-                    self._set_banner(line)
+            pending = b""
+            while piece := await proc.stderr.read(65_536):
+                *lines, pending = (pending + piece).split(b"\n")
+                for raw in lines:
+                    told(raw)
+            told(pending)
 
         async def _read_stdout() -> None:
             if proc.stdout is None:
@@ -1015,7 +1062,7 @@ class AdkReviewTuiApp(App[int]):
         finally:
             self._active_proc = None
             await self._terminate_proc(proc)
-        return code, "".join(stdout_chunks)
+        return code, "".join(stdout_chunks).replace("\r\n", "\n")  # Windows ends a line in CR LF
 
     @staticmethod
     async def _terminate_proc(proc: asyncio.subprocess.Process) -> None:
@@ -1076,14 +1123,14 @@ class AdkReviewTuiApp(App[int]):
         else:
             self._selected_finding = None
             self.query_one("#btn-explain-check", Button).disabled = True
-            msg = "*No findings match the current filters.*" if self.findings_rows else "*No findings in this review.*"
-            self.query_one("#finding-detail", Markdown).update(msg)
+            msg = "No finding matches the filters." if self.findings_rows else "This review has no findings."
+            self.query_one("#finding-detail", Static).update(msg)
 
     def _select_finding_at(self, row_index: int) -> None:
         if 0 <= row_index < len(self._filtered_findings):
             selected = self._filtered_findings[row_index]
             self._selected_finding = selected
-            self.query_one("#finding-detail", Markdown).update(format_finding_detail(selected))
+            self.query_one("#finding-detail", Static).update(format_finding_detail(selected))
             self.query_one("#btn-explain-check", Button).disabled = not bool(selected.check)
 
     def _set_banner(self, message: str) -> None:

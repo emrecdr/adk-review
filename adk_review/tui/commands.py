@@ -7,6 +7,7 @@ from typing import Protocol, cast
 
 from textual.command import DiscoveryHit, Hit, Hits, Provider
 from textual.content import Content
+from textual.fuzzy import Matcher
 
 from .git_sync import BranchInfo, ProjectInfo
 from .options import ProfileOption
@@ -40,6 +41,20 @@ def _call_branch(host: _PaletteHost, role: str, branch_name: str) -> Callable[[]
 
 def _call_profile(host: _PaletteHost, profile_name: str) -> Callable[[], object]:
     return lambda: host.select_profile_by_name(profile_name)
+
+
+def highlighted(matcher: Matcher, label: str) -> Content:
+    """`label` with the letters the query matched marked, read as plain text. Textual's own `highlight` reads it as
+    markup: read by review, and reproduced, a repository `my[service]` was listed as `my`, and `x[/old]` raised
+    `MarkupError`, which dropped the palette's later hits."""
+    content = Content(label)
+    score, offsets = matcher.fuzzy_search.match(matcher.query, label)
+    if not score:
+        return content
+    for offset in offsets:
+        if not label[offset].isspace():
+            content = content.stylize(matcher.match_style, offset, offset + 1)
+    return content
 
 
 class ReviewCommandProvider(Provider):
@@ -82,4 +97,4 @@ class ReviewCommandProvider(Provider):
         for label, callback, help_text in self._entries():
             score = matcher.match(label)
             if score > 0:
-                yield Hit(score, matcher.highlight(label), callback, text=label, help=literal(help_text))
+                yield Hit(score, highlighted(matcher, label), callback, text=label, help=literal(help_text))

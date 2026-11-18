@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 import tempfile
 import tomllib
@@ -76,6 +75,18 @@ def default_root_folder() -> str:
     return str(parent if parent.is_dir() else repo_root)
 
 
+def _toml(text: str) -> str:
+    """`text` as a TOML basic string: `\\` and `"` escaped, each control character as `\\uXXXX`, every other character
+    as it is. Reproduced by review: the JSON writer used before wrote an emoji as two surrogate escapes, which TOML
+    refuses, and every start after a review of `feature/🚀-launch` stopped with exit 2."""
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+    return '"' + "".join(f"\\u{ord(c):04X}" if ord(c) < 0x20 or ord(c) == 0x7F else c for c in escaped) + '"'
+
+
+def _toml_list(items: tuple[str, ...]) -> str:
+    return "[" + ", ".join(_toml(item) for item in items) + "]"
+
+
 def ensure_tui_config(path: Path | None = None) -> Path:
     """Return `path` (default `adk_review/tui/.tui.toml`), creating it if missing."""
     target = (path or DEFAULT_CONFIG_PATH).expanduser().resolve()
@@ -88,7 +99,7 @@ def ensure_tui_config(path: Path | None = None) -> Path:
         "# Add multiple paths to `root_dirs` to select a root workspace folder first.\n\n"
         "[workspace]\n"
         "root_dirs = [\n"
-        f"    {json.dumps(root)},\n"
+        f"    {_toml(root)},\n"
         "]\n"
         "scan_depth = 2\n"
         "fetch_timeout_s = 15\n"
@@ -263,9 +274,9 @@ def save_repo_preset(config: TuiConfig, repo_name: str, preset: RepoPreset) -> T
 
 def _serialize_config(config: TuiConfig) -> str:
     """Format `TuiConfig` back into clean TOML text."""
-    roots_lines = [f"    {{ label = {json.dumps(r.label)}, path = {json.dumps(r.path)} }}," for r in config.root_dirs]
+    roots_lines = [f"    {{ label = {_toml(r.label)}, path = {_toml(r.path)} }}," for r in config.root_dirs]
     if all(r.label == (Path(r.path).name or r.path) for r in config.root_dirs):
-        roots_lines = [f"    {json.dumps(r.path)}," for r in config.root_dirs]
+        roots_lines = [f"    {_toml(r.path)}," for r in config.root_dirs]
     d = config.defaults
     lines = [
         "# Configuration for `adk-review-tui`.",
@@ -277,11 +288,11 @@ def _serialize_config(config: TuiConfig) -> str:
         "]",
         f"scan_depth = {config.scan_depth}",
         f"fetch_timeout_s = {config.fetch_timeout_s}",
-        f"output_dir = {json.dumps(config.output_dir)}",
+        f"output_dir = {_toml(config.output_dir)}",
         "",
         "[defaults]",
-        f"profile = {json.dumps(d.profile)}",
-        f"fail_on = {json.dumps(d.fail_on)}",
+        f"profile = {_toml(d.profile)}",
+        f"fail_on = {_toml(d.fail_on)}",
         f"comment = {'true' if d.comment else 'false'}",
         f"handoff = {'true' if d.handoff else 'false'}",
         f"verify = {'true' if d.verify else 'false'}",
@@ -295,23 +306,23 @@ def _serialize_config(config: TuiConfig) -> str:
 
 def _serialize_preset(name: str, preset: RepoPreset) -> list[str]:
     """Serialize one `[projects.<name>]` section."""
-    rows = ["", f"[projects.{json.dumps(name)}]"]
+    rows = ["", f"[projects.{_toml(name)}]"]
     if preset.base:
-        rows.append(f"base = {json.dumps(preset.base)}")
+        rows.append(f"base = {_toml(preset.base)}")
     if preset.profile:
-        rows.append(f"profile = {json.dumps(preset.profile)}")
+        rows.append(f"profile = {_toml(preset.profile)}")
     if preset.fail_on:
-        rows.append(f"fail_on = {json.dumps(preset.fail_on)}")
+        rows.append(f"fail_on = {_toml(preset.fail_on)}")
     if preset.comment is not None:
         rows.append(f"comment = {'true' if preset.comment else 'false'}")
     if preset.handoff is not None:
         rows.append(f"handoff = {'true' if preset.handoff else 'false'}")
     if preset.verify is not None:
         rows.append(f"verify = {'true' if preset.verify else 'false'}")
-    rows.append(f"path = {json.dumps(list(preset.path))}")
-    rows.append(f"path_exclude = {json.dumps(list(preset.path_exclude))}")
+    rows.append(f"path = {_toml_list(preset.path)}")
+    rows.append(f"path_exclude = {_toml_list(preset.path_exclude)}")
     if preset.checks:
-        rows.append(f"checks = {json.dumps(list(preset.checks))}")
+        rows.append(f"checks = {_toml_list(preset.checks)}")
     if preset.diff_cap > 0:
         rows.append(f"diff_cap = {preset.diff_cap}")
     return rows
