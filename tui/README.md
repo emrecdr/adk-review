@@ -101,7 +101,7 @@ the last tab. Its results stay with the target they came from: choose another br
 tabs clear.
 
 A finding is drawn as plain text, with its reason, "Why it matters", and its corrected code where there are
-some: a rule's reason at any severity, a guideline's for a blocker or a major. A guideline's words are a model's, and
+some: a reason at any severity, and a guideline's corrected code for a blocker or a major. A guideline's words are a model's, and
 no link in them can be clicked.
 
 ## It writes nothing until you ask

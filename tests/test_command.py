@@ -3661,19 +3661,47 @@ class TestWhatTheReportPrints:
         minor = Finding(
             file="w.py", line=9, severity="minor", title="t", evidence="+x = 1", suggestion="s", why="w", code="y = 1"
         )
-        outcome = Outcome(kept=[Sourced("guideline.correctness", major, (5, 6)), Sourced("rule.lint", minor, (9, 9))])
+        # Asked by the owner: a guideline's every finding says what is wrong, its cause and its result, a minor's too.
+        told = Finding(
+            file="w.py",
+            line=12,
+            severity="minor",
+            title="a test reads the clock",
+            evidence="+assert stamp() == now()",
+            suggestion="Pass the time in.",
+            why="The test reads the clock twice. A slow run makes the two differ, so the test fails at random.",
+            code="assert stamp(at) == at",
+        )
+        outcome = Outcome(
+            kept=[
+                Sourced("guideline.correctness", major, (5, 6)),
+                Sourced("rule.lint", minor, (9, 9)),
+                Sourced("guideline.tests", told, (12, 12)),
+            ]
+        )
         pre = {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40}
         evidence = {"preflight": pre, "whole": False, "scope": []}
         comment = render_comment(evidence, outcome, verdict="APPROVED", fail_on="blocker")
         point = comment.split("### Major findings", 1)[1].split("### Minor findings", 1)[0]
         assert "   - Why it matters: Every call shares one list, so items from one caller reach the next." in point
         assert "   - Suggested code:\n     ```\n     def add(item, into=None):\n" in point, point
-        assert "Why it matters" not in comment.split("### Minor findings", 1)[1], "a minor stays one line each"
+        minors = comment.split("### Minor findings", 1)[1]
+        assert "   - Why it matters: The test reads the clock twice." in minors, minors
+        assert minors.count("Why it matters") == 1 and "Suggested code" not in minors, (
+            "a rule's minor, and code, stay out"
+        )
         handoff = render_handoff(evidence, outcome, verdict="APPROVED", fail_on="blocker")
+        assert "   - why: The test reads the clock twice." in handoff and "   - why: w" not in handoff, handoff
         item = handoff.split("\n1. ", 1)[1].split("\n2. ", 1)[0]
         assert "   - quoted:\n     ```\n     +def add(item, into=[]):\n     +    into.append(item)\n" in item, item
         assert "   - why: Every call shares one list" in item and "   - code:\n     ```\n     def add(" in item, item
-        assert "- why:" not in handoff.split("\n2. ", 1)[1] and "- code:" not in handoff.split("\n2. ", 1)[1]
+        rule_minor = handoff.split("\n2. ", 1)[1].split("\n3. ", 1)[0]
+        assert "- why:" not in rule_minor and "- code:" not in handoff.split("\n2. ", 1)[1], handoff
+        from adk_review.deliver.report import _identified, _sections
+
+        checks = ["guideline.correctness", "guideline.tests", "rule.lint"]
+        text = "\n".join(_sections(checks, outcome, _identified(outcome.kept), None))
+        assert "  - why: The test reads the clock twice." in text and "  - why: w\n" not in text, text
 
     def test_a_guidelines_reason_and_code_folded_under_a_rule_still_reach_the_comment_and_the_hand_off(self) -> None:
         """Read by review: on a tie the rule leads, and the guideline's reason and corrected code folded under it were

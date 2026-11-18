@@ -13,6 +13,6 @@ class Tests(Guideline):
     title = "untested changes, and tests that are not honest"
     role = (
         "You judge the tests: whether what the change adds is tested at all, and whether the tests are honest: "
-        "real behaviour, realistic inputs, no over-mocking."
+        "real behaviour, realistic inputs, and no mock that stands in for the code the test should run."
     )
     thinking_budget = 4096

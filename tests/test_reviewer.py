@@ -1185,9 +1185,12 @@ class TestWhatTheLanesRead:
 
         assert _long([("CALLERS_HEADING", CALLERS_HEADING.split("\n", 1)[1].strip())]) == [], "ASD-STE100"
 
-    def test_every_guideline_says_why_a_blocker_or_a_major_matters_and_gives_its_code(self, monkeypatch) -> None:
-        """Asked by the owner: each blocker and major is handled in more detail. The answer's schema holds a reason and
-        the corrected code, and each guideline is told to fill both for a blocker or a major alone."""
+    def test_every_guideline_explains_each_finding_and_gives_a_serious_ones_code(self, monkeypatch) -> None:
+        """Asked by the owner: each blocker and major is handled in more detail, and every finding of every guideline
+        says what is wrong, what causes it and what it can lead to, in words a reader new to the code understands. The
+        schema holds a reason for every finding and the corrected code for a serious one; each guideline is told so,
+        and to name the problem in the code's own terms, never in its dimension's words unexplained: read by the owner,
+        `altitude` wrote "a patch above the cause", which told them nothing."""
         load_agent(monkeypatch)
         from adk_review.core.findings import Review
         from adk_review.judge.agents import build_guideline
@@ -1195,9 +1198,13 @@ class TestWhatTheLanesRead:
 
         finding = Review.model_json_schema()["$defs"]["Finding"]["properties"]
         assert {"why", "code"} <= finding.keys(), finding.keys()
+        assert "minor" not in finding["why"]["description"], finding["why"]["description"]
+        assert "the code's own terms" in finding["title"]["description"], finding["title"]["description"]
         for guideline in catalog().guidelines:
             instruction = build_guideline(guideline).instruction
-            assert "For a blocker or a major, say why it matters" in instruction, guideline.check_id
+            assert "For every finding, say in two to four sentences what is wrong" in instruction, guideline.check_id
+            assert "Never use the words of your dimension" in instruction, guideline.check_id
+            assert "Leave the code empty for a minor" in instruction, guideline.check_id
 
     def test_the_report_drops_what_a_terminal_would_run_or_reorder(self) -> None:
         """U+009B is ESC [ in one character; U+202E turns the text after it around."""

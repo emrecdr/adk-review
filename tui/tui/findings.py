@@ -24,7 +24,7 @@ class FindingRow:
     evidence: str
     suggestion: str
     already_held: bool = False
-    #: The model's reason and its corrected code, for a blocker or a major: empty where it gave none.
+    #: The finding's reason, at any severity, and a model's corrected code, for a blocker or a major: empty where none.
     why: str = ""
     code: str = ""
 

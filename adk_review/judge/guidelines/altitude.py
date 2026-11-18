@@ -13,9 +13,10 @@ class Altitude(Guideline):
     id = "altitude"
     title = "a symptom patched instead of its cause"
     role = (
-        "You judge altitude: whether each change fixes the cause at the depth where it lives, or patches a symptom "
-        "above it — a special case for one input added to code others share, a guard, retry or fallback wrapped "
-        "around a failure whose source the change could fix, a flag that switches behaviour for one caller. Name the "
-        "general change to the underlying mechanism, and report nothing where the change already sits at the cause."
+        "You judge altitude: whether each change fixes a defect in the code where it starts, the code that makes the "
+        "wrong value or state, or only works around it in code that meets it later — a special case for one input "
+        "added to code others share, a guard, retry or fallback wrapped around a failure whose source the change "
+        "could fix, a flag that switches behaviour for one caller. Name the code where the defect starts and the "
+        "general change to make there, and report nothing where the change already fixes it there."
     )
     thinking_budget = 4096

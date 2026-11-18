@@ -397,7 +397,7 @@ def _items(
             [
                 f"{number}. {_titled(lead)} ({_where(f)}), {f.severity}{_bar(f, fail_on)}",
                 *(_quoted_lines(f, label) if _serious(f) else [f"   - {label}: {_quoted(f)}"]),
-                *_why(f, "   - why"),
+                *_why(lead, "   - why"),
                 *_to_fix(lead, identity[id(lead)], "   "),
                 *_folded_under(also, fail_on, identity, held),
             ],
@@ -425,7 +425,7 @@ def _folded_under(
             continue
         lines += [
             f"   - also on these lines: {_titled(item)}, {f.severity}{_bar(f, fail_on)}",
-            *_why(f, "     - why"),
+            *_why(item, "     - why"),
             *_to_fix(item, identity[id(item)], "     "),
         ]
     return lines
@@ -700,7 +700,7 @@ def _commented(groups: Sequence[list[Sourced]], tidies: frozenset[str]) -> list[
         lines = [
             f"{number}. {place}: {_titled(lead)} ({f.severity})",
             *_quoted_lines(f),
-            *_why(f, "   - Why it matters"),
+            *_why(lead, "   - Why it matters"),
             f"   - Suggested change: {prose(f.suggestion)}",
             *_code_lines(f, "Suggested code", "   "),
         ]
@@ -739,7 +739,7 @@ def _also_shown(item: Sourced, shown: set[str]) -> list[str]:
     f = item.finding
     lines = [f"   - Also on these lines: {_titled(item)} ({f.severity})"]
     for text, said in (
-        (f.why, _why(f, "     - Why it matters")),
+        (f.why, _why(item, "     - Why it matters")),
         (f.suggestion, [f"     - Suggested change: {prose(f.suggestion)}"]),
         (f.code, _code_lines(f, "Suggested code", "     ")),
     ):
@@ -954,14 +954,18 @@ def _fenced(text: str, indent: str) -> list[str]:
 
 
 def _serious(f: Finding) -> bool:
-    """Whether a point shows its reason and its corrected code: a blocker or a major. Asked by the owner, a major read
-    as nothing much in one line each, where a minor stays one line each."""
+    """Whether a point shows its corrected code and its lines quoted whole: a blocker or a major. Asked by the owner, a
+    major read as nothing much in one line each, where a minor stays one line each."""
     return at_or_above(f.severity, "major")
 
 
-def _why(f: Finding, label: str) -> list[str]:
-    """A blocker's or a major's reason under `label`, nothing where it has none."""
-    return [f"{label}: {prose(f.why)}"] if _serious(f) and f.why.strip() else []
+def _why(item: Sourced, label: str) -> list[str]:
+    """A finding's reason under `label`, nothing where it has none: a blocker's or a major's, and a guideline's at any
+    severity. Asked by the owner: every guideline's finding says what is wrong, its cause and its result, a minor's
+    too. A rule's minor keeps to its line: its reason is the rule's own, the same for each, which `--explain` gives."""
+    f = item.finding
+    shown = _serious(f) or item.source.startswith(guideline_id(""))
+    return [f"{label}: {prose(f.why)}"] if shown and f.why.strip() else []
 
 
 def _code_lines(f: Finding, label: str, indent: str) -> list[str]:
@@ -1521,7 +1525,7 @@ def _sections(
             new = _since(identity, item, previous, scope, exclude) == "new"
             mark = " — new since the previous review" if new else ""
             mark += " — possibly already done: it asks for what the branch already does" * item.done
-            lines += [*_listed(f, mark), f"  - fix: {prose(f.suggestion)}"]
+            lines += [*_listed(f, mark), *_why(item, "  - why"), f"  - fix: {prose(f.suggestion)}"]
             lines += [
                 f"  - also on these lines: `{also.source}`: {prose(also.finding.title)} ({_where(also.finding)})"
                 for also in under.get(id(item), [])

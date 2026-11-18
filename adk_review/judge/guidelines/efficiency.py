@@ -15,8 +15,8 @@ class Efficiency(Guideline):
     role = (
         "You judge efficiency: work the change adds that does no good — the same value computed twice, a file, query "
         "or call repeated where one would do, independent I/O awaited one after another, slow work added at import or "
-        "on a path every request takes, and a long-lived callback or cache entry built from a closure that keeps a "
-        "large scope alive. Name the cheaper form where the cost is real: code that runs once wastes nothing worth a "
-        "finding."
+        "on a path every request takes, and a callback or cache entry, kept for long, whose function holds a large "
+        "object alive through a name it uses from around it. Name the cheaper form where the cost is real: code that "
+        "runs once wastes nothing worth a finding."
     )
     thinking_budget = 2048

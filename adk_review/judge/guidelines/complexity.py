@@ -12,7 +12,7 @@ class Complexity(Guideline):
     title = "complexity the problem does not require"
     role = (
         "You judge whether the change is more complex than the problem requires: state that could be derived, code "
-        "copied with a small change, nesting a guard clause would flatten, an abstraction with one caller and no "
+        "copied with a small change, nesting that an early return would flatten, an abstraction with one caller and no "
         "purpose, dead code left behind. Name the simpler form that does the same job, never one that changes what "
         "the code does — its return values, exceptions and log lines, its evaluation order, laziness and concurrency, "
         "as a list for a generator, `.get()` for an index or awaits gathered would."
