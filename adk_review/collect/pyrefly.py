@@ -463,15 +463,17 @@ def _roots(paths: Collection[str]) -> list[str]:
     """Where an import starts, as Python's path holds it: the tree's top, and the folder above each top package, one
     whose own folder is no package, `src` in a `src/` layout. Read by review: with the top alone, `from pkg.mod import
     Repo` there named nothing, `Repo` read as `Any`, and the call the change broke through it went unnamed; and a loop
-    up the folders never ended at a package at the tree's top, whose folder's folder is itself. The tree's top comes
-    last: read by review, a folder that holds a package of its own name, Django's `mysite/mysite/`, read as that
-    package with the top first, and a relative import beside it named nothing."""
+    up the folders never ended at a package at the tree's top, whose folder's folder is itself. A folder that holds a
+    package of its own name comes before the top, the deepest first, and every other folder after it: read by review,
+    Django's `mysite/mysite/` read as that package with the top first, and a relative import beside it named nothing;
+    and with every folder before the top, a copy of a package, `examples/shop/`, hid the top's own `shop`."""
     packages = {PurePosixPath(path).parent for path in paths if PurePosixPath(path).name == "__init__.py"}
     tops = {folder.parent for folder in packages if folder.parent not in packages}
     # A folder inside a package is never where an import starts, though it holds no `__init__.py`: read by review, 60
     # such on litellm shadowed installed packages. The tree's top aside, which a package there may be.
     roots = {top.as_posix() for top in tops if not any(up in packages for up in top.parents[:-1])} - {"."}
-    return [*sorted(roots), "."]
+    own = {root for root in roots if PurePosixPath(root, PurePosixPath(root).name) in packages}
+    return [*sorted(own, key=lambda root: (-root.count("/"), root)), ".", *sorted(roots - own)]
 
 
 def _config(roots: Sequence[str]) -> str:

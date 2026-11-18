@@ -33,9 +33,9 @@ def _state_apart(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     monkeypatch.setattr(config, "DEFAULT_CONFIG_PATH", state / "config" / "tui.toml")
     monkeypatch.setattr(config, "OUTPUTS_DIR", state / "outputs")
     # Never a person's own: the config a checkout kept before, and the one in their own folder, which a first run reads.
-    monkeypatch.setattr(config, "LEGACY_CONFIG_PATH", state / "no-checkout" / ".tui.toml", raising=False)
-    monkeypatch.setattr(config, "USER_CONFIG_PATH", state / "user-config" / "tui.toml", raising=False)
-    monkeypatch.setattr(config, "OLD_PACKAGE_DIR", state / "no-checkout" / "adk_review_tui", raising=False)
+    monkeypatch.setattr(config, "LEGACY_CONFIG_PATH", state / "no-checkout" / ".tui.toml")
+    monkeypatch.setattr(config, "USER_CONFIG_PATH", state / "user-config" / "tui.toml")
+    monkeypatch.setattr(config, "OLD_PACKAGE_DIR", state / "no-checkout" / "adk_review_tui")
     monkeypatch.setattr(config, "STATE_DIR", state)
 
 
@@ -1507,6 +1507,20 @@ class TestTheConfigReview:
         (old / "notes.txt").write_text("mine\n", encoding="utf-8")
         config.ensure_tui_config()
         assert (old / "notes.txt").is_file(), "a file it does not know is never removed"
+
+    def test_an_installed_copy_leaves_the_folders_of_its_environment_alone(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review: the first run cleared the old package's folder in an installed copy too, inside the tool's
+        own environment, where the code's own comment named a checkout alone."""
+        from tui import config
+
+        installed = tmp_path / "lib" / "python3.14" / "site-packages"
+        compiled = installed / "adk_review_tui" / "__pycache__" / "app.cpython-314.pyc"
+        compiled.parent.mkdir(parents=True)
+        compiled.write_bytes(b"\0")
+        monkeypatch.setattr(config, "TUI_DIR", installed / "tui")
+        monkeypatch.setattr(config, "OLD_PACKAGE_DIR", installed / "adk_review_tui")
+        config.ensure_tui_config()
+        assert compiled.is_file()
 
     def test_the_first_run_leaves_no_trace_of_the_packages_old_name(self, tmp_path: Path, monkeypatch) -> None:
         """Reproduced by review on a clone: renamed from `adk_review_tui` to `tui`, the package left

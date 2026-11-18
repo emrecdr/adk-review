@@ -91,7 +91,7 @@ line-length = 120
 target-version = "py314"
 # Where the repository's own imports start, as pyrefly's `search-path` reads them: read by review, with the root alone
 # `tui.config` read as a third party's, and the import sorter split the front end's imports in two.
-src = [".", "tui"]
+src = ["tui", ".", "scripts"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "ARG", "ASYNC", "RUF", "BLE001", "S607", "SIM", "RET", "C4", "PIE", "PT", "C90", "PERF", "FURB"]

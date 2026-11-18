@@ -3117,29 +3117,53 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         from adk_review.collect.pyrefly import _roots
 
         assert _roots(["__init__.py", "mod.py"]) == ["."], "a package at the top: no folder above it to search"
-        assert _roots(["src/pkg/__init__.py", "src/pkg/sub/__init__.py", "tools/run.py"]) == ["src", "."]
+        assert _roots(["src/pkg/__init__.py", "src/pkg/sub/__init__.py", "tools/run.py"]) == [".", "src"]
         # Read by review: a folder with no `__init__.py` inside a package, a namespace portion, was a root, 60 of them
         # on litellm, and its folders shadowed installed packages: `import openai` named litellm's own `llms/openai`.
         assert _roots(["pkg/__init__.py", "pkg/llms/openai/__init__.py", "pkg/llms/azure/__init__.py"]) == ["."]
-        assert _roots(["__init__.py", "src/pkg/__init__.py"]) == ["src", "."], "a top package keeps `src` a root"
+        assert _roots(["__init__.py", "src/pkg/__init__.py"]) == [".", "src"], "a top package keeps `src` a root"
+        # Read by review: a folder that holds a package of its own name comes before the top, the deepest first, and
+        # every other folder after it, so a copy of a package, `examples/shop/`, never hides the top's own.
+        assert _roots(["mysite/mysite/__init__.py", "mysite/polls/__init__.py"]) == ["mysite", "."]
+        assert _roots(["a/a/__init__.py", "a/b/b/__init__.py"]) == ["a/b", "a", "."]
+        assert _roots(["shared/x/__init__.py", "api/api/__init__.py"]) == ["api", ".", "shared"]
+        assert _roots(["shop/__init__.py", "examples/shop/__init__.py"]) == [".", "examples"]
         broken = "from pkg.mod import Repo\n\n\ndef load(repo: Repo) -> str:\n    return repo.fetch_user(3)\n"
         files = {"src/pkg/mod.py": self.REPO, "src/pkg/user.py": broken, "other.py": "x = 1\n"}
         repo = self.branch(tmp_path, files, {"src/pkg/__init__.py": "", "other.py": "x = 2\n"})
         assert self.found(repo) == [], "broken before the change, which only made the folder a package"
 
-    def test_a_call_broken_in_a_folder_that_holds_a_package_of_its_name_is_named(self, tmp_path: Path) -> None:
+    @pytest.mark.parametrize("site", ["mysite", "services/api"], ids=["at-the-top", "in-a-folder-of-packages"])
+    def test_a_call_broken_in_a_folder_that_holds_a_package_of_its_name_is_named(self, tmp_path: Path, site) -> None:
         """Read by review: a folder that holds a package of its own name, Django's `mysite/mysite/` or this
         repository's `tui/tui/`, read as that package while `.` came first among the roots, so the relative import in
-        `mysite/polls/` named nothing, and the call the change broke through it went unnamed."""
+        `mysite/polls/` named nothing, and the call the change broke through it went unnamed. And with every root
+        before the top, the same project inside `services/`, a folder of packages, was missed as before."""
         base = {
-            "mysite/manage.py": "",
-            "mysite/mysite/__init__.py": "",
-            "mysite/polls/__init__.py": "",
-            "mysite/polls/repo.py": self.REPO,
-            "mysite/polls/service.py": self.SERVICE.replace("from shop.repo", "from .repo"),
+            "services/shared/__init__.py": "",
+            f"{site}/manage.py": "",
+            f"{site}/{Path(site).name}/__init__.py": "",
+            f"{site}/polls/__init__.py": "",
+            f"{site}/polls/repo.py": self.REPO,
+            f"{site}/polls/service.py": self.SERVICE.replace("from shop.repo", "from .repo"),
         }
-        repo = self.branch(tmp_path, base, {"mysite/polls/repo.py": self.RENAMED})
-        assert [(file, line) for file, line, _severity, _said in self.found(repo)] == [("mysite/polls/service.py", 5)]
+        repo = self.branch(tmp_path, base, {f"{site}/polls/repo.py": self.RENAMED})
+        assert [(file, line) for file, line, _severity, _said in self.found(repo)] == [(f"{site}/polls/service.py", 5)]
+
+    def test_a_copy_of_a_package_in_another_folder_hides_nothing(self, tmp_path: Path) -> None:
+        """Read by review: with every root before the tree's top, a copy of `shop` under `examples/` hid the top's own
+        `shop`. The call a rename broke went unnamed, and a rename in the copy alone was named at major in `shop/`."""
+        base = {
+            "shop/repo.py": self.REPO,
+            "shop/service.py": self.SERVICE,
+            "examples/shop/__init__.py": "",
+            "examples/shop/repo.py": self.REPO,
+        }
+        (tmp_path / "real").mkdir()
+        (tmp_path / "copy").mkdir()
+        broke = self.branch(tmp_path / "real", base, {"shop/repo.py": self.RENAMED})
+        assert [(file, line) for file, line, _severity, _said in self.found(broke)] == [("shop/service.py", 5)]
+        assert self.found(self.branch(tmp_path / "copy", base, {"examples/shop/repo.py": self.RENAMED})) == []
 
     def test_a_defect_on_an_added_line_with_no_cause_in_another_changed_file_is_left_to_types(
         self, tmp_path: Path

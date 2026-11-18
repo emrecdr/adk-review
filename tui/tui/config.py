@@ -168,7 +168,9 @@ def ensure_tui_config(path: Path | None = None) -> Path:
                 LEGACY_CONFIG_PATH.unlink(missing_ok=True)
         else:
             write_atomic(target, _defaults_text())
-    if default:
+    # In a checkout alone, and only once its old config has moved: read by review, the old package's folder was
+    # cleared in an installed copy's own environment too.
+    if default and _checkout() and not LEGACY_CONFIG_PATH.exists():
         for old in (LEGACY_CONFIG_PATH.parent, OLD_PACKAGE_DIR):
             _clear_old_folder(old)
     return target
@@ -184,9 +186,9 @@ def _last_edited(target: Path) -> Path | None:
 def _clear_old_folder(old: Path) -> None:
     """An old folder, `adk_review/tui/` or `tui/adk_review_tui/` in a checkout, emptied of what the front end left
     there and removed: each saved file moved into the state folder where none is in its place, Python's old cache
-    removed, and every folder left empty. A config not yet moved stays, as does a file it does not know, each with its
-    folder; nothing here fails a start."""
-    if not old.is_dir() or (old / ".tui.toml").exists():
+    removed, and every folder left empty. A file it does not know stays, and its folder with it; nothing here fails a
+    start."""
+    if not old.is_dir():
         return
     with contextlib.suppress(OSError):
         saved = old / ".state"
