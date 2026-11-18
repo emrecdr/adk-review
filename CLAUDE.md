@@ -232,7 +232,7 @@ Load-bearing rules the tests enforce:
   after `StopAtRateLimit`, `OneTurn`, which gives each judging agent one fixed turn, `review`, as the command's read:
   ADK would hand the verdict the guidelines' findings unfenced as a turn.
 - **Front end.** `tui/`, the terminal front end on Textual, is an application of its own on top of the reviewer: a uv
-  workspace member, `adk-review-tui`, with its own project file and package, `adk_review_tui`, which imports
+  workspace member, `adk-review-tui`, with its own project file and package, `tui`, which imports
   `adk_review` as any user would, its `core`, `collect`, `judge` and `deliver`'s `windows_word`; nothing in `adk_review`
   imports it, and `tui/README.md` is its guide. Textual is the member's dependency alone, never the reviewer's, so `uv
   sync --locked` and `uv tool install` of the reviewer take none of its code, command or UI package; CI, Copilot's setup

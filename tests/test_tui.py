@@ -1,4 +1,4 @@
-"""Tests for the terminal front end, `tui/adk_review_tui/`: its config, its git reads, its options and its screen.
+"""Tests for the terminal front end, `tui/tui/`: its config, its git reads, its options and its screen.
 
 Each test imports what it reads where it runs, as the suite's other files do: `load_agent` loads the package afresh
 for the tests before these, and a name bound when this file was imported is the old package's. Measured: after one
@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 #: The front end's package, by its path: where it is not installed, as with the reviewer alone, its tests find it here.
-FRONT_END = Path(__file__).resolve().parents[1] / "tui" / "adk_review_tui"
+FRONT_END = Path(__file__).resolve().parents[1] / "tui" / "tui"
 
 
 @pytest.fixture(autouse=True)
@@ -26,8 +26,8 @@ def _state_apart(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     state = tmp_path_factory.mktemp("tui-state")
     for name in ("APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_STATE_HOME"):  # read where a module loads afresh
         monkeypatch.setenv(name, str(state / name.lower()))
-    options = importlib.import_module("adk_review_tui.options")
-    config = importlib.import_module("adk_review_tui.config")
+    options = importlib.import_module("tui.options")
+    config = importlib.import_module("tui.config")
     monkeypatch.setattr(options, "BASELINES_DIR", state / "baselines")
     monkeypatch.setattr(options, "CACHE_DIR", state / "cache")
     monkeypatch.setattr(config, "DEFAULT_CONFIG_PATH", state / "config" / "tui.toml")
@@ -104,7 +104,7 @@ class TestTuiConfig:
         """Reproduced on a copy installed with `uv tool install`: its config and its saved reviews lived inside the
         tool's own environment, which an uninstall removed, choices and all, and where no one finds a comment. They
         live in the person's own folders now, as each system names them."""
-        from adk_review_tui.config import config_home, state_home
+        from tui.config import config_home, state_home
 
         monkeypatch.setenv("APPDATA", "C:\\Users\\me\\AppData\\Roaming")
         monkeypatch.setenv("LOCALAPPDATA", "C:\\Users\\me\\AppData\\Local")
@@ -118,7 +118,7 @@ class TestTuiConfig:
         assert config_home(windows=False) == Path.home() / ".config"
         assert state_home(windows=False) == Path.home() / ".local" / "state"
         # As a fresh process computes them: in this checkout, `tui/.tui.toml`, and the state never inside the package.
-        said = "from adk_review_tui import config as c; print(c.DEFAULT_CONFIG_PATH); print(c.STATE_DIR)"
+        said = "from tui import config as c; print(c.DEFAULT_CONFIG_PATH); print(c.STATE_DIR)"
         found = os.pathsep.join(filter(None, [str(FRONT_END.parent), os.environ.get("PYTHONPATH")]))
         done = subprocess.run(
             [sys.executable, "-c", said],
@@ -140,16 +140,16 @@ class TestTuiConfig:
         there once and never read again, and the screen said nothing of which file it read. In a checkout the config
         is `tui/.tui.toml` again, beside the front end, where the person edits it; an installed copy, which has no
         checkout, keeps it in the person's own folder, which a reinstall leaves alone."""
-        from adk_review_tui import config
+        from tui import config
 
         checkout = tmp_path / "adk-review"
         (checkout / "tui").mkdir(parents=True)  # no `.git`: a ZIP download is a checkout too
         (checkout / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
         (checkout / "tui" / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
-        monkeypatch.setattr(config, "TUI_DIR", checkout / "tui" / "adk_review_tui")
+        monkeypatch.setattr(config, "TUI_DIR", checkout / "tui" / "tui")
         assert config.default_config_path() == checkout / "tui" / ".tui.toml"
         installed = tmp_path / "tools" / "adk-review-tui" / "lib" / "python3.14" / "site-packages"
-        monkeypatch.setattr(config, "TUI_DIR", installed / "adk_review_tui")
+        monkeypatch.setattr(config, "TUI_DIR", installed / "tui")
         assert config.default_config_path() == config.config_home() / "adk-review-tui" / "tui.toml"
 
     def test_an_installed_copy_names_the_folder_it_starts_in_as_its_folder_of_repositories(
@@ -158,13 +158,13 @@ class TestTuiConfig:
         """Reproduced on a copy installed with `uv tool install`: its first run named its own environment's
         `lib/python3.14` as the folder of repositories, and the screen found none. A checkout still names the folder
         that holds it, where its neighbours are; an installed copy names the folder it starts in."""
-        from adk_review_tui import config
+        from tui import config
 
         checkout = tmp_path / "projects" / "adk-review"
         (checkout / "tui").mkdir(parents=True)
         (checkout / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
         (checkout / "tui" / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
-        monkeypatch.setattr(config, "TUI_DIR", checkout / "tui" / "adk_review_tui")
+        monkeypatch.setattr(config, "TUI_DIR", checkout / "tui" / "tui")
         assert config.default_root_folder() == str(tmp_path / "projects")
         installed = tmp_path / "tools" / "adk-review" / "lib" / "python3.14" / "site-packages"
         monkeypatch.setattr(config, "TUI_DIR", installed / "adk_review" / "tui")
@@ -177,7 +177,7 @@ class TestTuiConfig:
         The first run that finds no config where it reads one moves it there, its saved choices kept and its old
         `output_dir`, a path inside the package, left out. Moved, never copied: read by the owner, a copy left the old
         file to edit, and the screen read the other."""
-        from adk_review_tui import config
+        from tui import config
 
         legacy = tmp_path / "checkout" / ".tui.toml"
         legacy.parent.mkdir()
@@ -199,8 +199,9 @@ class TestTuiConfig:
         """Read by review: a `root_dirs` that was no list, or a setting misspelt, fell back in silence to the default
         folder, and the screen listed another folder's repositories than the one the person wrote. One folder written
         as a string is read as one folder; anything else is said, with what to write."""
-        from adk_review_tui import main as tui_main
-        from adk_review_tui.config import load_tui_config
+        from tui.config import load_tui_config
+
+        from tui import main as tui_main
 
         cfg = tmp_path / ".tui.toml"
         cfg.write_text(f'[workspace]\nroot_dirs = "{tmp_path.as_posix()}"\n', encoding="utf-8")
@@ -220,7 +221,7 @@ class TestTuiConfig:
     def test_a_relative_output_dir_is_read_from_the_configs_own_folder(self, tmp_path: Path) -> None:
         """Read by review: a relative `output_dir` was read from the checkout's root, which an installed copy has not,
         and its reviews landed inside its own environment. It is read from the config's folder now."""
-        from adk_review_tui.config import load_tui_config
+        from tui.config import load_tui_config
 
         cfg = tmp_path / "mine" / "tui.toml"
         cfg.parent.mkdir()
@@ -230,7 +231,7 @@ class TestTuiConfig:
         assert load_tui_config(cfg).output_dir == str((cfg.parent / "reviews").resolve())
 
     def test_ensure_and_load_tui_config_supports_multiple_root_dirs_and_presets(self, tmp_path: Path) -> None:
-        from adk_review_tui.config import RepoPreset, TuiConfig, ensure_tui_config, load_tui_config, save_repo_preset
+        from tui.config import RepoPreset, TuiConfig, ensure_tui_config, load_tui_config, save_repo_preset
 
         cfg_file = tmp_path / ".tui.toml"
         ensured = ensure_tui_config(cfg_file)
@@ -291,7 +292,7 @@ class TestTuiConfig:
         """Read by review, and reproduced: a `fail_on` no severity names raised `InvalidSelectValueError` with a
         traceback, at the start for `[defaults]` and at a repository's choice for its preset; and a file that is no
         TOML raised from inside the screen. Each is refused before the screen opens, with the value and what to give."""
-        from adk_review_tui import main as tui_main
+        from tui import main as tui_main
 
         cfg = tmp_path / ".tui.toml"
         for body, said in (
@@ -309,7 +310,7 @@ class TestGitSyncEngine:
     """Multi-root project discovery and zero-checkout branch synchronization."""
 
     def test_discover_projects_and_zero_checkout_sync_preserve_dirty_working_tree(self, tmp_path: Path) -> None:
-        from adk_review_tui.git_sync import (
+        from tui.git_sync import (
             changed_folders,
             discover_projects,
             fast_forward_local_branch,
@@ -372,7 +373,7 @@ class TestGitSyncEngine:
         """The question a person answers says their files stay untouched. Read by review: on a clean checkout the
         answer ran `git merge --ff-only`, which rewrote the files of the working tree. The remote's branch is reviewed
         by its own name, and the local one is left where it was."""
-        from adk_review_tui.git_sync import fast_forward_local_branch, fetch_remote
+        from tui.git_sync import fast_forward_local_branch, fetch_remote
 
         _remote, local = _init_repo_with_remote(tmp_path)
         assert fetch_remote(str(local), timeout_s=10).ok is True
@@ -387,7 +388,7 @@ class TestGitSyncEngine:
         """The scan reads every repository under a root, one a person was handed among them. Read by review, and
         reproduced: `git status` there started the program its `core.fsmonitor` names, the moment the screen opened.
         Each read runs under a review's own environment now, where that setting is fixed, and takes no lock."""
-        from adk_review_tui.git_sync import changed_folders, discover_projects, is_dirty, list_branches
+        from tui.git_sync import changed_folders, discover_projects, is_dirty, list_branches
 
         _remote, local = _init_repo_with_remote(tmp_path)
         ran, script = tmp_path / "ran.txt", tmp_path / "named.py"
@@ -411,7 +412,7 @@ class TestOptionsAndCliBuilder:
     """Profile discovery and CLI flag construction with mutual-exclusivity guards."""
 
     def test_profiles_and_build_review_argv_respect_mutual_exclusivity(self, tmp_path: Path) -> None:
-        from adk_review_tui.options import (
+        from tui.options import (
             ReviewSelection,
             baseline_path,
             build_review_argv,
@@ -488,7 +489,7 @@ class TestOptionsAndCliBuilder:
             build_review_argv(same_sel)
 
     def test_checks_and_diff_cap_cli_builder(self, tmp_path: Path) -> None:
-        from adk_review_tui.options import ReviewSelection, build_review_argv, parse_csv_checks, parse_diff_cap
+        from tui.options import ReviewSelection, build_review_argv, parse_csv_checks, parse_diff_cap
 
         assert parse_csv_checks(" rule.secrets , guideline.correctness, rule.secrets ") == [
             "rule.secrets",
@@ -513,9 +514,10 @@ class TestOptionsAndCliBuilder:
         assert "--diff-cap" in argv and "50000" in argv
 
     def test_windows_paths_quoting_and_missing_git_guard(self, tmp_path: Path, monkeypatch) -> None:
-        from adk_review_tui import git_sync
-        from adk_review_tui.git_sync import BranchInfo, discover_projects, fetch_remote, inspect_branch_sync
-        from adk_review_tui.options import format_cli_command, parse_csv_paths
+        from tui.git_sync import BranchInfo, discover_projects, fetch_remote, inspect_branch_sync
+        from tui.options import format_cli_command, parse_csv_paths
+
+        from tui import git_sync
 
         assert parse_csv_paths(r"\src\api\, C:\Users\dev\src, sub\\nested\ ") == ["src/api", "sub/nested"]
         cmd = format_cli_command([r"C:\My Repos\app", "--head", "feat/x"], windows=True)
@@ -535,7 +537,7 @@ class TestOptionsAndCliBuilder:
         assert inspect_branch_sync(str(tmp_path), remote_branch).kind == "remote_only"
 
     def test_cli_init_config_and_missing_textual_guard(self, tmp_path: Path, monkeypatch, capsys) -> None:
-        from adk_review_tui import main as tui_main
+        from tui import main as tui_main
 
         cfg = tmp_path / ".tui.toml"
         assert tui_main(["--init-config", "--config", str(cfg)]) == 0
@@ -543,7 +545,7 @@ class TestOptionsAndCliBuilder:
         assert str(cfg.resolve()) in capsys.readouterr().out
 
         monkeypatch.setitem(sys.modules, "textual", None)
-        monkeypatch.delitem(sys.modules, "adk_review_tui.app", raising=False)
+        monkeypatch.delitem(sys.modules, "tui.app", raising=False)
         assert tui_main(["--config", str(cfg)]) == 2
         err = capsys.readouterr().err
         assert "textual is not installed" in err and "run `uv sync --locked --all-packages`" in err, err
@@ -552,7 +554,7 @@ class TestOptionsAndCliBuilder:
     @pytest.mark.asyncio
     async def test_textual_app_chain_of_selects_mounts_and_updates_cli_preview(self, tmp_path: Path) -> None:
         pytest.importorskip("textual")
-        from adk_review_tui.app import AdkReviewTuiApp
+        from tui.app import AdkReviewTuiApp
 
         _remote, local = _init_repo_with_remote(tmp_path)
         cfg = tmp_path / ".tui.toml"
@@ -604,8 +606,8 @@ class TestOptionsAndCliBuilder:
         """Reported by the owner: the screen listed another folder's repositories than the one they set, and named
         neither the file it read nor the folder. Its first line names both now."""
         pytest.importorskip("textual")
-        from adk_review_tui.app import AdkReviewTuiApp
         from textual.widgets import Static
+        from tui.app import AdkReviewTuiApp
 
         _init_repo_with_remote(tmp_path)
         cfg = tmp_path / "mine" / ".tui.toml"
@@ -622,8 +624,8 @@ class TestOptionsAndCliBuilder:
     @pytest.mark.asyncio
     async def test_textual_app_collapsible_sections_and_multi_root(self, tmp_path: Path) -> None:
         pytest.importorskip("textual")
-        from adk_review_tui.app import AdkReviewTuiApp
         from textual.widgets import Collapsible
+        from tui.app import AdkReviewTuiApp
 
         _init_repo_with_remote(tmp_path)
         cfg = tmp_path / ".tui.toml"
@@ -675,8 +677,8 @@ class TestOptionsAndCliBuilder:
         root, which deleted a remote-tracking ref, and choosing a remote's branch made a local branch, each unasked.
         F5 is the person's own fetch; a remote's branch is reviewed by its remote name."""
         pytest.importorskip("textual")
-        from adk_review_tui.app import AdkReviewTuiApp
         from textual.widgets import OptionList
+        from tui.app import AdkReviewTuiApp
 
         remote, local = _init_repo_with_remote(tmp_path)
         _git(local, "update-ref", "refs/remotes/origin/gone", "HEAD")  # a branch the remote no longer holds
@@ -719,8 +721,8 @@ class TestOptionsAndCliBuilder:
         pytest.importorskip("textual")
         import json
 
-        from adk_review_tui.app import AdkReviewTuiApp
         from textual.widgets import DataTable, OptionList, Static, TabbedContent
+        from tui.app import AdkReviewTuiApp
 
         repo = tmp_path / "workspace" / "my[service]"
         (repo / "src").mkdir(parents=True)
@@ -781,7 +783,7 @@ class TestFindingsExplorer:
     def test_load_filter_format_and_explain(self, tmp_path: Path) -> None:
         import json
 
-        from adk_review_tui.findings import (
+        from tui.findings import (
             explain_check_markdown,
             filter_findings,
             format_finding_detail,
@@ -856,9 +858,9 @@ class TestFindingsExplorer:
         pytest.importorskip("textual")
         import json
 
-        from adk_review_tui.app import AdkReviewTuiApp
-        from adk_review_tui.modals import ExplainCheckModal
         from textual.widgets import Button, Collapsible, DataTable, Input, Static
+        from tui.app import AdkReviewTuiApp
+        from tui.modals import ExplainCheckModal
 
         _init_repo_with_remote(tmp_path)
         cfg = tmp_path / ".tui.toml"
@@ -918,13 +920,13 @@ class TestFindingsExplorer:
 
     @pytest.mark.asyncio
     async def test_textual_app_preset_reset_highlight_and_prior_baseline(self, tmp_path: Path) -> None:
-        from adk_review_tui.options import baseline_path
+        from tui.options import baseline_path
 
         pytest.importorskip("textual")
         import json
 
-        from adk_review_tui.app import AdkReviewTuiApp
         from textual.widgets import DataTable, Input, TabbedContent
+        from tui.app import AdkReviewTuiApp
 
         _init_repo_with_remote(tmp_path)
         cfg = tmp_path / ".tui.toml"
@@ -982,7 +984,7 @@ class TestWindowsAndItsShells:
         keeps one, the screen says so, and its own run, which takes no shell, is unchanged."""
         import shlex
 
-        from adk_review_tui.options import NOT_PASTED, format_cli_command
+        from tui.options import NOT_PASTED, format_cli_command
 
         assert subprocess.list2cmdline(["adk-review", "--head", "a&b;c"]) == "adk-review --head a&b;c", "as before"
         shown = format_cli_command(["C:\\My Repos\\app", "--head", "a&b;c"], windows=True)
@@ -1001,10 +1003,10 @@ class TestWindowsAndItsShells:
         text field Textual's own Ctrl+D deletes and Ctrl+X cuts, so Dry Run and Stop did nothing while a filter had
         the focus. Ctrl+T folds the sections now, and each action key goes first wherever the focus is."""
         pytest.importorskip("textual")
-        from adk_review_tui.app import AdkReviewTuiApp
-        from adk_review_tui.git_sync import SyncStatus
-        from adk_review_tui.modals import SyncBranchModal
         from textual.widgets import Collapsible, Input
+        from tui.app import AdkReviewTuiApp
+        from tui.git_sync import SyncStatus
+        from tui.modals import SyncBranchModal
 
         _init_repo_with_remote(tmp_path)
         cfg = tmp_path / ".tui.toml"
@@ -1047,7 +1049,7 @@ class TestWindowsAndItsShells:
         as replacement marks, and the report's `→` stopped the review with an error. Each review runs with UTF-8
         streams now."""
         pytest.importorskip("textual")
-        from adk_review_tui.app import AdkReviewTuiApp
+        from tui.app import AdkReviewTuiApp
 
         cfg = tmp_path / ".tui.toml"
         cfg.write_text(f'[workspace]\nroot_dirs = ["{tmp_path.as_posix()}"]\n', encoding="utf-8")
@@ -1068,7 +1070,7 @@ class TestWindowsAndItsShells:
         pytest.importorskip("textual")
         import time
 
-        from adk_review_tui import app as screen
+        from tui import app as screen
 
         def slow(*_args: object) -> list:
             time.sleep(0.5)
@@ -1090,7 +1092,7 @@ class TestWindowsAndItsShells:
         clipboard too, its lines ended as Windows ends them, and the screen says which way it went."""
         from types import SimpleNamespace
 
-        from adk_review_tui import clipboard
+        from tui import clipboard
 
         sent: list[object] = []
         app = SimpleNamespace(copy_to_clipboard=lambda text: sent.append(("terminal", text)))
@@ -1109,7 +1111,7 @@ class TestWindowsAndItsShells:
         import ctypes
         from ctypes import wintypes
 
-        from adk_review_tui.clipboard import _windows_copy
+        from tui.clipboard import _windows_copy
 
         text = "review: f\u00fcnf \u2014 done\r\nsecond line"
         assert _windows_copy(text) is True
@@ -1137,7 +1139,7 @@ class TestWhatTheCodeReviewFound:
     ) -> None:
         """Reproduced by review: `python -m` puts the folder the screen started in first on the import path, so a
         `hashlib.py` there ran in place of Python's own, exit 9. With `-P` that folder is never on it."""
-        from adk_review_tui.options import review_command
+        from tui.options import review_command
 
         (tmp_path / "hashlib.py").write_text("raise SystemExit(9)\n", encoding="utf-8")
         monkeypatch.chdir(tmp_path)
@@ -1154,7 +1156,7 @@ class TestWhatTheCodeReviewFound:
         reads the previous report, which the screen replaced after every review, so the same review run again was
         served from the cache only from its fourth run, each a model call under a guideline's profile. The screen
         asks for `--progress`, and keeps the saved report where a review found the same findings."""
-        from adk_review_tui import options
+        from tui import options
 
         sel = options.ReviewSelection(
             repo=str(demo_repo), head="feature/payments", base="main", profile="demo", output_dir=str(tmp_path)
@@ -1175,7 +1177,7 @@ class TestWhatTheCodeReviewFound:
         """Reproduced by review: the saved report `--previous` reads was named by a slug cut at 40 characters, `/` read
         as `-`, the head left out under `--all` and the repository named by its folder alone, so two branches shared
         one, and each review marked the other's findings new or resolved."""
-        from adk_review_tui.options import baseline_path
+        from tui.options import baseline_path
 
         long = "feature/PAY-1234-refund-retry-on-"
         for one, other in (
@@ -1190,7 +1192,7 @@ class TestWhatTheCodeReviewFound:
     def test_a_saved_choice_reads_back_whatever_characters_it_holds(self, tmp_path: Path) -> None:
         """Reproduced by review: a preset was written with `json.dumps`, which writes an emoji as two surrogate
         escapes that TOML refuses, so after a review of `feature/🚀-launch` every start stopped with exit 2."""
-        from adk_review_tui.config import RepoPreset, load_tui_config, save_repo_preset
+        from tui.config import RepoPreset, load_tui_config, save_repo_preset
 
         cfg = tmp_path / ".tui.toml"
         cfg.write_text(f'[workspace]\nroot_dirs = ["{tmp_path.as_posix()}"]\n', encoding="utf-8")
@@ -1201,7 +1203,7 @@ class TestWhatTheCodeReviewFound:
     def test_a_path_typed_by_hand_keeps_its_spaces(self) -> None:
         """Read by review: the typed paths were split at every space too, so `My Docs` left out `My` and `Docs`, two
         folders the person never named. A comma or a line parts them now."""
-        from adk_review_tui.options import parse_csv_paths
+        from tui.options import parse_csv_paths
 
         assert parse_csv_paths("My Docs, src/api ,\ndocs/reports") == ["My Docs", "src/api", "docs/reports"]
 
@@ -1212,7 +1214,7 @@ class TestWhatTheCodeReviewFound:
         import os
         import time
 
-        from adk_review_tui.git_sync import _bounded
+        from tui.git_sync import _bounded
 
         grandchild = "import time; time.sleep(30)"
         child = (
@@ -1227,8 +1229,8 @@ class TestWhatTheCodeReviewFound:
         """Read by review, and reproduced: Textual's `highlight` reads each name as markup, so `my[service]` was
         listed as `my`, and `x[/old]` raised `MarkupError`, which dropped the palette's later hits."""
         pytest.importorskip("textual")
-        from adk_review_tui.commands import highlighted
         from textual.fuzzy import Matcher
+        from tui.commands import highlighted
 
         for label in ("Repo: my[service]  (main, clean)", "Repo: x[/old]"):
             assert highlighted(Matcher("old"), label).plain == label
@@ -1239,8 +1241,9 @@ class TestWhatTheCodeReviewFound:
         which ended the whole screen with a traceback; and one line of a review's progress past 64 KiB, a provider's
         error body, made reading it raise. The screen says what failed, and reads a line of any length."""
         pytest.importorskip("textual")
-        from adk_review_tui import app as screen
         from textual.widgets import Static
+
+        from tui import app as screen
 
         _init_repo_with_remote(tmp_path)
         cfg = tmp_path / ".tui.toml"
@@ -1274,8 +1277,8 @@ class TestWhatTheCodeReviewFound:
         filled that target's tabs. A change of target clears them now, and a review whose target changed is named,
         its files where they are, and not shown."""
         pytest.importorskip("textual")
-        from adk_review_tui.app import AdkReviewTuiApp
         from textual.widgets import Static, TabbedContent
+        from tui.app import AdkReviewTuiApp
 
         _remote, local = _init_repo_with_remote(tmp_path)
         _git(local, "fetch", "origin")  # the screen fetches only at F5
@@ -1321,7 +1324,7 @@ class TestWhatTheCodeReviewFound:
         local branch, unpushed work and all. F5 keeps the choice where the branch is still there, and a remote's
         branch is reviewed as the remote holds it."""
         pytest.importorskip("textual")
-        from adk_review_tui.app import AdkReviewTuiApp
+        from tui.app import AdkReviewTuiApp
 
         _remote, local = _init_repo_with_remote(tmp_path)
         _git(local, "fetch", "origin")
@@ -1354,7 +1357,7 @@ class TestWhatTheCodeReviewFound:
         pytest.importorskip("textual")
         import asyncio
 
-        from adk_review_tui.app import AdkReviewTuiApp
+        from tui.app import AdkReviewTuiApp
 
         _init_repo_with_remote(tmp_path)
         cfg = tmp_path / ".tui.toml"
@@ -1386,7 +1389,7 @@ class TestWhatTheCodeReviewFound:
         """Read by review: `git branch -f x origin/x` also made `x` track `origin/x`, a line in the repository's config
         the person never asked for, where `x` had no upstream and the screen inferred one. It moves the branch alone
         now."""
-        from adk_review_tui.git_sync import fast_forward_local_branch
+        from tui.git_sync import fast_forward_local_branch
 
         _remote, local = _init_repo_with_remote(tmp_path)
         _git(local, "fetch", "origin")
@@ -1435,8 +1438,8 @@ class TestWhatTheCodeReviewFound:
         pytest.importorskip("textual")
         import json
 
-        from adk_review_tui.app import AdkReviewTuiApp
         from textual.widgets import Input, SelectionList, TabbedContent
+        from tui.app import AdkReviewTuiApp
 
         _init_repo_with_remote(tmp_path)
         cfg = tmp_path / ".tui.toml"
@@ -1474,7 +1477,7 @@ class TestTheConfigReview:
         It held only what git ignores: the old config, the state's folders and Python's cache. The first run moves
         the config, moves each saved file into the state folder, removes Python's old cache and every folder left
         empty, and the old folder is gone; a file it does not know stays, with its folder."""
-        from adk_review_tui import config
+        from tui import config
 
         old = tmp_path / "checkout" / "adk_review" / "tui"
         (old / ".state" / "outputs").mkdir(parents=True)
@@ -1506,7 +1509,7 @@ class TestTheConfigReview:
         own, and leaves the person's own file, which an installed copy reads."""
         import os
 
-        from adk_review_tui import config
+        from tui import config
 
         user = config.USER_CONFIG_PATH
         user.parent.mkdir(parents=True)
@@ -1528,7 +1531,7 @@ class TestTheConfigReview:
         """Read by review: before bd92a0a a saved config held `output_dir` as the full path into the package, which the
         move kept, and each review's files went on landing in `adk_review/tui/`. Written relative or absolute, on
         macOS or Windows, it is dropped, and the state folder's `outputs` holds."""
-        from adk_review_tui import config
+        from tui import config
 
         legacy = tmp_path / "old" / ".tui.toml"
         legacy.parent.mkdir()
@@ -1548,7 +1551,7 @@ class TestTheConfigReview:
         """Read by review: removing the old file after the move could fail, on Windows a read-only file or one another
         program holds, and the start ended in a bare `WinError`, the new config written. It starts, and says nothing:
         the screen names the file it reads."""
-        from adk_review_tui import config
+        from tui import config
 
         legacy = tmp_path / "old" / ".tui.toml"
         legacy.parent.mkdir()
@@ -1569,7 +1572,7 @@ class TestTheConfigReview:
         and `defaults = 3` were left out, the default folder listed in silence; `verify = "no"` turned `--verify` on, a
         string being true; a number out of range was clamped, a word replaced; an empty key passed; a setting before
         any table was called a table; and a bad `projects_dir` was reported as `root_dirs`."""
-        from adk_review_tui import main as tui_main
+        from tui import main as tui_main
 
         cfg = tmp_path / ".tui.toml"
         for body, said in (
@@ -1596,7 +1599,7 @@ class TestTheConfigReview:
     def test_a_config_saved_with_a_byte_order_mark_is_read(self, tmp_path: Path) -> None:
         """Read by review: PowerShell 5's `Out-File -Encoding utf8` writes a BOM first, and the config could not be
         read: `Invalid statement`, with no hint. It is read as the reviewer reads its own, `utf-8-sig`."""
-        from adk_review_tui.config import load_tui_config
+        from tui.config import load_tui_config
 
         cfg = tmp_path / ".tui.toml"
         cfg.write_text(f'[workspace]\nroot_dirs = ["{tmp_path.as_posix()}"]\n', encoding="utf-8-sig")
@@ -1607,7 +1610,7 @@ class TestTheConfigReview:
         """Read by review, measured: on one line of one row, the config's path cut the folders off at 80 and 120
         columns, the part the owner asked to see. Each has a line of its own."""
         pytest.importorskip("textual")
-        from adk_review_tui.app import AdkReviewTuiApp
+        from tui.app import AdkReviewTuiApp
 
         _init_repo_with_remote(tmp_path)
         cfg = tmp_path / "a" / "rather" / "long" / "folder" / "for" / "the" / "config" / ".tui.toml"

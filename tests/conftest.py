@@ -759,11 +759,7 @@ def load_agent(monkeypatch: pytest.MonkeyPatch, provider: str = "gemini", model:
     monkeypatch.setenv("REVIEW_MODEL", model)
     monkeypatch.setenv("GOOGLE_API_KEY", "test-key")
     # The front end's package too, a separate application that imports the reviewer's: kept, it would hold the old one.
-    for name in [
-        m
-        for m in sys.modules
-        if m in ("adk_review", "adk_review_tui") or m.startswith(("adk_review.", "adk_review_tui."))
-    ]:
+    for name in [m for m in sys.modules if m in ("adk_review", "tui") or m.startswith(("adk_review.", "tui."))]:
         del sys.modules[name]
     return importlib.import_module("adk_review.agent")
 

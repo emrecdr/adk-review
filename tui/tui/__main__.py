@@ -1,4 +1,4 @@
-"""Allow launching the TUI via `python -m adk_review_tui`."""
+"""Allow launching the TUI via `python -m tui`."""
 
 from __future__ import annotations
 

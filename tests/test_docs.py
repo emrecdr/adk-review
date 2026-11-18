@@ -48,7 +48,7 @@ def test_a_guide_names_only_paths_in_the_working_tree(guide: Path) -> None:
 def test_the_front_ends_guide_names_each_of_its_modules_and_each_key_it_binds() -> None:
     """The terminal front end has a guide of its own. Read by review: its keys changed, Ctrl+M to Ctrl+T, and the guides
     and the example config still named the old one. A module or a key the guide does not name fails here."""
-    folder = ROOT / "tui" / "adk_review_tui"
+    folder = ROOT / "tui" / "tui"
     guide = (ROOT / "tui" / "README.md").read_text(encoding="utf-8")
     unnamed = [p.name for p in sorted(folder.glob("*.py")) if f"`{p.name}`" not in guide]
     keys = re.findall(r'Binding\("([^"]+)"', (folder / "app.py").read_text(encoding="utf-8"))

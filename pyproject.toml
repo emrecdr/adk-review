@@ -115,7 +115,7 @@ project-excludes = ["tests/**"]
 # The terminal front end's, the `tui` extra a review never needs: checked whole where it is installed, as CI installs it,
 # and read as `Any` where it is not, so the check passes in a checkout synced without the extra.
 ignore-missing-imports = ["textual", "textual.*", "rich", "rich.*"]
-search-path = [".", "scripts", "tui"]
+search-path = ["tui", ".", "scripts"]  # the front end's project first: its package, `tui`, is no `tui.tui` of the root
 
 [tool.pyrefly.errors]
 # ADK declares LlmAgent(BaseAgent, abc.ABC) with no abstract method; AnyRule is still held by bad-instantiation
