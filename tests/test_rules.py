@@ -50,6 +50,34 @@ def lint_findings(evidence: dict, select: tuple[str, ...] | None = None, *, old:
 
 
 class TestTheSecretShapes:
+    def test_a_credential_in_a_urls_query_string_is_named_and_hidden(self) -> None:
+        """Read by validation: `?api_key=`, `access_token=` and `password=` in a URL's query string were left as they
+        were by the redaction, and named by neither rule, so such a value reached the model and the report. A query
+        parameter named as a secret is read as `named-secrets` reads any named value: a placeholder, a short value and
+        one with no digit are left alone."""
+        from adk_review.core.secrets import scrub
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.named_secrets import NamedSecrets
+
+        value = "9f8a7d6c5b4a3e2d"
+        named = [
+            f'URL = "https://api.example.com/v1/items?api_key={value}"',
+            f"curl 'https://example.com/hook?client_id=app&access_token={value}&page=2'",
+            f'requests.get(f"https://db.example.com/q?user=bot&password={value}")',
+        ]
+        left = [
+            'URL = "https://api.example.com/v1/items?api_key={key}"',
+            'URL = "https://api.example.com/v1/items?token=${TOKEN}"',
+            'URL = "https://api.example.com/v1/items?api_key=YOUR_API_KEY"',
+            'URL = "https://example.com/?token=ab12"',
+            'URL = "https://example.com/search?q=password&page=3"',
+        ]
+        assert lines_hit(NamedSecrets(), "app.py", "\n".join([*named, *left]) + "\n") == [1, 2, 3]
+        for line in named:
+            assert value not in scrub(line)[0], line
+        for line in left:
+            assert scrub(line)[0] == line, line
+
     def test_an_examples_credential_is_blanked_and_a_real_one_beside_it_found(self) -> None:
         """Measured on twelve real projects: all eleven credentials the rule found in their source were examples, each
         a blocker — a URL whose password names its field at a local host, a documentation host, a private key's header

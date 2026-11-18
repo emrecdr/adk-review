@@ -241,7 +241,8 @@ _QUOTED_VALUE = r"([^\"'\n]{6,}|(?:(?!\2)\S){6,})"
 #: Measured over 2.4 million lines of the installed packages and this repository: every line the shape matched
 #: before it matches still, and 66 more, each a constant naming a variable, a URL or a header, none a finding.
 _ANNOTATION = r"(?:\s*:\s*[\w.\[\], |]{1,80}?)?"
-#: A value a name alone says is secret, with no vendor's shape: what `named-secrets` weighs.
+#: A value a name alone says is secret, with no vendor's shape: what `named-secrets` weighs. Read by validation, a
+#: URL's query parameter was neither: `?api_key=`, `access_token=` and `password=` reached the model and the report.
 _GENERIC = (
     (
         "generic_secret",  # a named value in quotes: code, JSON, YAML
@@ -258,6 +259,17 @@ _GENERIC = (
             + r"\s*[:=]\s*)(?=[^\s#]*\d)"
             + _STAND_IN
             + r"([^\s\"'#(\[][^\s\"'#()\[\]{}]{7,})\s*$"
+        ),
+        r"\1[REDACTED]",
+    ),
+    (
+        "generic_secret",  # a named parameter of a URL's query string, `?api_key=...`, holding a digit
+        re.compile(
+            r"(?i)(?<=[?&])([\w.-]{0,40}?"
+            + _NAMED
+            + r"=)(?=[^\s&#\"'<>]*\d)"
+            + _STAND_IN
+            + r"([^\s&#\"'<>()\[\]{}]{8,})"
         ),
         r"\1[REDACTED]",
     ),
