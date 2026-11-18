@@ -1,0 +1,40 @@
+# Configuration for `adk-review-tui` (copied to `adk_review/tui/.tui.toml` on first run).
+# All TUI-specific configuration and state live under `adk_review/tui/`.
+#
+# Keybindings in the TUI:
+#   Ctrl+R  Run Review        Ctrl+D  Dry Run            Ctrl+X  Stop Running Review
+#   Ctrl+M  Minimize/Expand   Ctrl+P  Command Palette    Ctrl+Y  Copy Active Tab
+#   F5      Fetch & Refresh   1..7    Toggle Section 1-7
+
+[workspace]
+# One or more root folders containing your local Git repositories.
+# Accepts plain path strings or inline `{ label = "...", path = "..." }` tables.
+# When multiple entries are listed, the TUI asks you to select the root folder first,
+# then lists the repositories inside that root folder (chain of selects).
+root_dirs = [
+    "~/Projects",
+    # { label = "Work Repos", path = "~/Projects/work" },
+]
+scan_depth = 2
+fetch_timeout_s = 15
+output_dir = "adk_review/tui/.state/outputs"
+
+[defaults]
+profile = "default"
+fail_on = "blocker"
+comment = true
+handoff = false
+verify = false
+use_cache = true
+auto_previous = true
+
+# Per-repository saved presets (updated automatically when you run a review, or edited by hand)
+[projects."adk_review"]
+base = "main"
+profile = "default"
+fail_on = "blocker"
+comment = true
+handoff = false
+verify = false
+path = []
+path_exclude = ["docs/reports"]

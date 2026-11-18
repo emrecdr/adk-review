@@ -38,7 +38,7 @@ to `uv tool install --constraints`, every dependency at the version the lock hol
 `uv tool install --exclude-newer P3D git+https://github.com/emrecdr/adk-review`, the `git+` being uv's own and `P3D` the
 three days' cooldown the lock keeps, since `uv tool install` reads no lock: measured, the install without either took a
 LiteLLM three days old or less, the window LiteLLM 1.82.7 and 1.82.8 shipped a credential stealer in. Either puts
-`adk-review`, its pre-push hook, `adk-review-push`, its commit hook, `adk-review-commit`, and the Copilot login,
+`adk-review`, `adk-review-tui`, its pre-push hook, `adk-review-push`, its commit hook, `adk-review-commit`, and the Copilot login,
 `adk-review-login`, on `PATH`: the reviewer alone, with ruff beside it. An installed reviewer reads the model's settings
 from the shell alone, no `.env` being read outside the checkout, and its config from beside itself; inside the checkout,
 `uv run adk-review` is the same command. Behind a company proxy, set `UV_SYSTEM_CERTS=true` for uv's own commands,
@@ -50,6 +50,15 @@ the commit, so it does not tell an old copy from a new one. To update it, run `g
 `make install` again, or with no checkout the same install with `--reinstall`:
 `uv tool install --reinstall --exclude-newer P3D git+https://github.com/emrecdr/adk-review`. Until then the command,
 and each hook that runs it, reviews with the old code, whatever the checkout holds.
+
+To launch the optional interactive terminal UI (`adk_review/tui/`), install the `tui` extra with
+`uv sync --locked --extra tui` and run `uv run adk-review-tui` (or `uv run adk-review-tui --init-config` / `--config FILE`
+to initialize or target a custom `.tui.toml` seeded from `adk_review/tui/tui.example.toml`). It walks through workspace
+root selection (shown when multiple `root_dirs` are configured), repository discovery, zero-checkout branch sync, path
+scoping, review profile/`--check`/`--diff-cap`, and output options (`1`–`7` or `Ctrl+M` minimize sections to compact
+initials while keeping the selection summary visible, `Ctrl+P` opens the Command Palette, `Ctrl+D` runs `--dry-run`,
+`Ctrl+R` runs the review, `Ctrl+X` stops it), and displays results across five tabs: `Review Report`, `Findings Explorer`
+(with severity/tier/text filters and `--explain`), `Author Comment`, `Agent Handoff`, and `Live Progress & Git Log`.
 
 ## Flags
 
