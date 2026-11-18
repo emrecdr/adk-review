@@ -91,6 +91,11 @@ served from the cache with no model call.
    or `--check`; `--fail-on`; `--diff-cap`.
 7. The outputs: `--comment`, `--handoff`, `--verify`, the cache and `--previous`.
 
+Each step is a panel. A panel you minimize leaves its row and docks into one line at the top, as a chip that names
+its step and its choice, `▶ 2 Review: main`; a row with no open panel goes, so the results take the screen. On a
+narrow screen the chips keep the step's number and its choice, and the step's name moves to the chip's tooltip.
+Click a chip, or press its number, to restore that panel; `Ctrl+T` minimizes every panel and `Ctrl+O` restores them.
+
 The line under the steps shows the command it will run, ready to paste. While a review runs, its progress shows in
 the last tab. Its results stay with the target they came from: choose another branch, mode or repository, and the
 tabs clear.

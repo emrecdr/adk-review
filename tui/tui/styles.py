@@ -19,6 +19,21 @@ APP_CSS = """
 Screen {
     layout: vertical;
 }
+#panel-dock {
+    height: 1;
+    layout: horizontal;
+    padding: 0 1;
+    background: $panel;
+}
+.dock-chip {
+    width: auto;
+    min-width: 0;
+    height: 1;
+    margin: 0 2 0 0;
+}
+.docked {
+    display: none;
+}
 #chain-row {
     height: auto;
     max-height: 14;

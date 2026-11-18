@@ -647,16 +647,15 @@ class TestOptionsAndCliBuilder:
             width_before = head_box.size.width
             repo_box.collapsed = True
             await pilot.pause()
-            assert repo_box.title == "1.LR"
-            assert repo_box.size.width <= 10
-            assert head_box.size.width > width_before
+            assert not repo_box.display and app.query_one("#dock-repo-box").display, "minimized, it docks"
+            assert head_box.size.width > width_before, "and the open panels take its room"
             head_box.collapsed = True
             app.query_one("#base-box", Collapsible).collapsed = True
             await pilot.pause()
-            assert app.query_one("#chain-row").size.height <= 3
+            assert app.query_one("#chain-row").size.height == 0, "a row with no open panel goes"
             repo_box.collapsed = False
             await pilot.pause()
-            assert "Local Repository" in repo_box.title
+            assert repo_box.display and "Local Repository" in repo_box.title
 
         second_root = tmp_path / "workspace_two"
         second_root.mkdir()
@@ -1175,6 +1174,85 @@ class TestWindowsAndItsShells:
             await pilot.pause()
             assert not any(box.collapsed for box in shown), "Ctrl+O restores a panel minimized alone too"
             assert app.query_one("#repo-filter", Input).value == "", "and the text field took no key"
+
+    @pytest.mark.asyncio
+    async def test_minimized_panels_dock_into_one_line_and_the_results_take_their_rows(self, tmp_path: Path) -> None:
+        """Asked by the owner: six minimized panels took two rows of boxes, each labelled with initials such as
+        `2.BUR`, and the summary below them repeated their choices. Measured on 140x45: they used 8 rows, and the
+        results had 28. A minimized panel leaves its row for one chip in a single line, which names its step and its
+        choice; a row with no open panel goes, and so does the summary, while the dock carries the choices."""
+        pytest.importorskip("textual")
+        from textual.widgets import Button, TabbedContent
+
+        from tui.app import AdkReviewTuiApp
+
+        _init_repo_with_remote(tmp_path)
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        mark = chr(0x25B6)
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            assert not app.query_one("#panel-dock").display, "no dock while every panel is open"
+            await pilot.press("ctrl+t")
+            await pilot.pause()
+            chips = [chip for chip in app.query(".dock-chip").results(Button) if chip.display]
+            names = [f"{mark} {n} {name}" for n, name in enumerate(("Repo", "Review", "Target"), 1)]
+            names += [f"{mark} {n} {name}" for n, name in enumerate(("Folders", "Profile", "Outputs"), 4)]
+            assert [str(chip.label).split(":")[0] for chip in chips] == names, [str(c.label) for c in chips]
+            assert len({chip.region.y for chip in chips}) == 1, "one line"
+            assert app.query_one("#chain-row").region.height == 0 and app.query_one("#mid-row").region.height == 0
+            assert not app.query_one("#selection-summary").display, "the dock carries the choices"
+            dock, banner = app.query_one("#panel-dock").region, app.query_one("#status-banner").region
+            run_bar, results = app.query_one("#cmd-bar").region, app.query_one("#output-tabs", TabbedContent).region
+            assert dock.height == 1 and banner.y == dock.bottom and run_bar.y == banner.bottom, (dock, banner, run_bar)
+            assert results.y == run_bar.bottom, "the panels take one row, and the results every row below the run bar"
+
+            app.set_focus(None)
+            await pilot.press("2")  # one panel restored: it takes its row, the others stay docked
+            await pilot.pause()
+            assert app.query_one("#head-box").display and not app.query_one("#repo-box").display
+            assert app.query_one("#chain-row").region.height > 0 and app.query_one("#mid-row").region.height == 0
+            assert len([chip for chip in app.query(".dock-chip") if chip.display]) == 5
+            await pilot.click("#dock-base-box")  # a chip restores its own panel
+            await pilot.pause()
+            assert app.query_one("#base-box").display and not app.query_one("#dock-base-box").display
+            await pilot.press("ctrl+o")
+            await pilot.pause()
+            assert not app.query_one("#panel-dock").display and app.query_one("#selection-summary").display
+
+    @pytest.mark.asyncio
+    async def test_the_dock_keeps_every_step_on_a_narrow_screen_and_draws_a_name_as_written(
+        self, tmp_path: Path
+    ) -> None:
+        """At 100 columns the six chips still fit one line, each with its step's number: the names give way to the
+        choices, cut the longest first, and each chip's tooltip names its panel. A repository named `my[svc]` reads as
+        written: Textual reads `[svc]` in a string as a tag."""
+        pytest.importorskip("textual")
+        from textual.widgets import Button
+
+        from tui.app import AdkReviewTuiApp
+
+        repo = tmp_path / "workspace" / "my[svc]-with-a-rather-long-name-for-a-narrow-screen"
+        repo.mkdir(parents=True)
+        _git(repo, "init", "-b", "main")
+        (repo / "a.py").write_text("x = 1\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "base")
+        _git(repo, "branch", "feature/a-branch-whose-name-runs-on-and-on")
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(100, 40)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await pilot.press("ctrl+t")
+            await pilot.pause()
+            chips = [chip for chip in app.query(".dock-chip").results(Button) if chip.display]
+            assert len(chips) == 6 and len({chip.region.y for chip in chips}) == 1, [str(c.label) for c in chips]
+            assert all(chip.region.right <= 100 for chip in chips), [(str(c.label), c.region) for c in chips]
+            first = str(chips[0].label)
+            assert first.startswith(f"{chr(0x25B6)} 1 my[svc]") and first.endswith(chr(0x2026)), first
+            assert str(chips[0].tooltip).startswith("1. Local Repository [my[svc]"), "the tooltip names the panel"
 
     @pytest.mark.asyncio
     async def test_a_reviews_text_reaches_the_screen_as_written_on_windows_too(

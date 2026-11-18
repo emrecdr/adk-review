@@ -6,12 +6,12 @@ import asyncio
 import contextlib
 import os
 import subprocess
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import ClassVar, Literal
 
 from rich.text import Text
-from textual import on, work
+from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.command import Provider
@@ -79,6 +79,43 @@ from .options import (
     review_command,
 )
 from .styles import APP_CSS, literal
+
+#: The panels, in their steps' order: each docks as a chip while minimized.
+PANELS = ("#root-box", "#repo-box", "#head-box", "#base-box", "#paths-pane", "#profile-pane", "#output-options-pane")
+#: What leads a docked panel's chip: the mark Textual's Collapsible draws for a folded section.
+DOCKED = "\u25b6"
+#: The columns a chip takes beside its label: Textual measures a button as its label and a column either side, and
+#: the dock's style puts two between chips. Read by review: counted without them, the sixth chip of a 100-column
+#: screen started at its last column.
+DOCK_GAP = 2 + 2
+
+
+#: The fewest characters of a choice a chip keeps with its step's name: below it, the names give way to the choices.
+DOCK_NAMED_MIN = 10
+
+
+def _dock_labels(docked: Sequence[tuple[object, int, str, str]], width: int) -> list[str]:
+    """Each docked panel's chip, `▶ 2 Review: main`, cut to one line of `width`: the choices cut, the longest first.
+    Where a choice would keep fewer than `DOCK_NAMED_MIN` characters, the names go instead, `▶ 2 main`, and the chip's
+    tooltip names the panel: measured, at 100 columns the names left 13 characters for six choices."""
+    choices = [choice for *_rest, choice in docked]
+    for named in (True, False):
+        leads = [f"{DOCKED} {number} {name}: " if named else f"{DOCKED} {number} " for _, number, name, _c in docked]
+        room = width - 2 - sum(len(lead) + DOCK_GAP for lead in leads)  # the dock's padding, and each gap
+        cut = _fitted(choices, room)
+        kept = (len(short) >= min(len(full), DOCK_NAMED_MIN) for short, full in zip(cut, choices, strict=True))
+        if not named or all(kept):
+            return [lead + short for lead, short in zip(leads, cut, strict=True)]
+    return []
+
+
+def _fitted(choices: list[str], room: int) -> list[str]:
+    """`choices` cut, the longest first, so together they take at most `room` columns: each keeps at least 4, its last
+    an ellipsis where it was cut. A step's number and name are never cut."""
+    cap = max(map(len, choices), default=0)
+    while cap > 4 and sum(min(len(choice), cap) for choice in choices) > room:
+        cap -= 1
+    return [choice if len(choice) <= cap else choice[: cap - 1] + "\u2026" for choice in choices]
 
 
 class AdkReviewTuiApp(App[int]):
@@ -162,6 +199,7 @@ class AdkReviewTuiApp(App[int]):
             id="config-line",
             markup=False,
         )
+        yield from self._compose_dock()
         yield from self._compose_chain_row()
         initial_msg = (
             "Select a root folder and repository to begin."
@@ -177,6 +215,13 @@ class AdkReviewTuiApp(App[int]):
         yield from self._compose_command_bar()
         yield from self._compose_output_tabs()
         yield Footer()
+
+    def _compose_dock(self) -> ComposeResult:
+        """The line a minimized panel docks into, as one compact chip that names its step and its choice: hidden while
+        every panel is open."""
+        with Horizontal(id="panel-dock", classes="hidden"):
+            for selector in PANELS:
+                yield Button("", id=f"dock-{selector[1:]}", compact=True, classes="dock-chip hidden")
 
     def _compose_chain_row(self) -> ComposeResult:
         root_classes = "chain-box" if self.has_multiple_roots() else "chain-box hidden"
@@ -744,7 +789,11 @@ class AdkReviewTuiApp(App[int]):
         self.query_one("#selection-summary", Static).update(summary)
 
     def _update_section_titles(self, sel: ReviewSelection | None = None) -> None:
-        """Keep each collapsible header synced between full summary (expanded) and compact initials (collapsed)."""
+        """Each panel's title, its step and its choice, and the dock: a minimized panel leaves its row for a chip in
+        one line, a row with no open panel goes, and so does the summary, while the dock carries the choices. Asked by
+        the owner: six minimized panels took two rows of boxes labelled with initials, `2.BUR`, and 8 of 45 rows."""
+        if not self._has_dom("#panel-dock"):
+            return
         active = sel or self.current_selection(dry_run=False)
         proj_name = self.selected_project.name if self.selected_project else "none"
         paths_tag = (
@@ -755,19 +804,54 @@ class AdkReviewTuiApp(App[int]):
         head_tag = self.selected_head or self.selected_mode
         base_tag = self.selected_base if self.selected_mode == "branch" else "n/a"
         profile_tag = f"--check x{len(active.checks)}" if active.checks else active.profile
-        specs = (
-            ("#root-box", f"1. Root Workspace Folder [{self.selected_root.label}]", "1.RWF"),
-            ("#repo-box", f"{self._step(2)}. Local Repository [{proj_name}]", f"{self._step(2)}.LR"),
-            ("#head-box", f"{self._step(3)}. Branch Under Review [{head_tag}]", f"{self._step(3)}.BUR"),
-            ("#base-box", f"{self._step(4)}. Target Branch [{base_tag}]", f"{self._step(4)}.TB"),
-            ("#paths-pane", f"{self._step(5)}. Path Scoping [{paths_tag}]", f"{self._step(5)}.PS"),
-            ("#profile-pane", f"{self._step(6)}. Review Profile [{profile_tag}]", f"{self._step(6)}.RP"),
-            ("#output-options-pane", f"{self._step(7)}. Output Options", f"{self._step(7)}.OO"),
+        outputs = (("comment", active.comment), ("hand-off", active.handoff), ("verify", active.verify))
+        specs = (  # each panel's title, its chip's name, and its choice
+            ("Root Workspace Folder", "Root", self.selected_root.label),
+            ("Local Repository", "Repo", proj_name),
+            ("Branch Under Review", "Review", head_tag),
+            ("Target Branch", "Target", base_tag),
+            ("Path Scoping", "Folders", paths_tag),
+            ("Review Profile", "Profile", f"{profile_tag}, fail on {active.fail_on}"),
+            ("Output Options", "Outputs", ", ".join(name for name, on in outputs if on) or "none"),
         )
-        for selector, full_title, short_title in specs:
+        docked: list[tuple[Button, int, str, str]] = []
+        for step, (selector, (title, name, choice)) in enumerate(zip(PANELS, specs, strict=True), 1):
             box = self.query_one(selector, Collapsible)
-            box.title = literal(short_title if box.collapsed else full_title)  # a title takes a string alone
-            box.tooltip = Content(full_title)
+            number = 1 if step == 1 else self._step(step)
+            box.title = literal(f"{number}. {title} [{choice}]")  # a title takes a string alone
+            on_dock = box.collapsed and not box.has_class("hidden")
+            box.set_class(on_dock, "docked")
+            chip = self.query_one(f"#dock-{selector[1:]}", Button)
+            chip.set_class(not on_dock, "hidden")
+            if on_dock:
+                chip.tooltip = Content(f"{number}. {title} [{choice}]")
+                docked.append((chip, number, name, choice))
+        for chip, label in zip((c for c, *_rest in docked), _dock_labels(docked, self.size.width), strict=True):
+            chip.label = Content(label)  # as written: a repository's name may hold `[`
+        for row in ("#chain-row", "#mid-row"):
+            boxes = self.query_one(row).query(Collapsible)
+            self.query_one(row).set_class(all(b.has_class("hidden") or b.has_class("docked") for b in boxes), "hidden")
+        self.query_one("#panel-dock").set_class(not docked, "hidden")
+        self.query_one("#selection-summary").set_class(bool(docked), "hidden")
+
+    @on(Collapsible.Collapsed)
+    @on(Collapsible.Expanded)
+    def _on_panel_folded(self, event: Collapsible.Toggled) -> None:
+        """A panel minimized or restored, by its title, a number key, Ctrl+T or Ctrl+O: the dock follows. The focus
+        inside a panel that docks goes to its chip, never to a field no one sees."""
+        self._update_section_titles()
+        focused, box = self.focused, event.collapsible
+        if isinstance(event, Collapsible.Collapsed) and focused is not None and box in focused.ancestors:
+            self.call_after_refresh(self.query_one(f"#dock-{box.id}", Button).focus)
+
+    @on(Button.Pressed, ".dock-chip")
+    def _on_dock_chip(self, event: Button.Pressed) -> None:
+        """A chip restores its own panel, in its own place."""
+        self.query_one(f"#{(event.button.id or '').removeprefix('dock-')}", Collapsible).collapsed = False
+
+    def on_resize(self, _event: events.Resize) -> None:
+        """The dock's choices cut again for the new width."""
+        self._update_section_titles()
 
     def select_profile_by_name(self, name: str) -> None:
         """Set `#profile-select` to `name` (used by Command Palette shortcuts)."""
