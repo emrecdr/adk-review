@@ -3117,15 +3117,29 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         from adk_review.collect.pyrefly import _roots
 
         assert _roots(["__init__.py", "mod.py"]) == ["."], "a package at the top: no folder above it to search"
-        assert _roots(["src/pkg/__init__.py", "src/pkg/sub/__init__.py", "tools/run.py"]) == [".", "src"]
+        assert _roots(["src/pkg/__init__.py", "src/pkg/sub/__init__.py", "tools/run.py"]) == ["src", "."]
         # Read by review: a folder with no `__init__.py` inside a package, a namespace portion, was a root, 60 of them
         # on litellm, and its folders shadowed installed packages: `import openai` named litellm's own `llms/openai`.
         assert _roots(["pkg/__init__.py", "pkg/llms/openai/__init__.py", "pkg/llms/azure/__init__.py"]) == ["."]
-        assert _roots(["__init__.py", "src/pkg/__init__.py"]) == [".", "src"], "a top package keeps `src` a root"
+        assert _roots(["__init__.py", "src/pkg/__init__.py"]) == ["src", "."], "a top package keeps `src` a root"
         broken = "from pkg.mod import Repo\n\n\ndef load(repo: Repo) -> str:\n    return repo.fetch_user(3)\n"
         files = {"src/pkg/mod.py": self.REPO, "src/pkg/user.py": broken, "other.py": "x = 1\n"}
         repo = self.branch(tmp_path, files, {"src/pkg/__init__.py": "", "other.py": "x = 2\n"})
         assert self.found(repo) == [], "broken before the change, which only made the folder a package"
+
+    def test_a_call_broken_in_a_folder_that_holds_a_package_of_its_name_is_named(self, tmp_path: Path) -> None:
+        """Read by review: a folder that holds a package of its own name, Django's `mysite/mysite/` or this
+        repository's `tui/tui/`, read as that package while `.` came first among the roots, so the relative import in
+        `mysite/polls/` named nothing, and the call the change broke through it went unnamed."""
+        base = {
+            "mysite/manage.py": "",
+            "mysite/mysite/__init__.py": "",
+            "mysite/polls/__init__.py": "",
+            "mysite/polls/repo.py": self.REPO,
+            "mysite/polls/service.py": self.SERVICE.replace("from shop.repo", "from .repo"),
+        }
+        repo = self.branch(tmp_path, base, {"mysite/polls/repo.py": self.RENAMED})
+        assert [(file, line) for file, line, _severity, _said in self.found(repo)] == [("mysite/polls/service.py", 5)]
 
     def test_a_defect_on_an_added_line_with_no_cause_in_another_changed_file_is_left_to_types(
         self, tmp_path: Path

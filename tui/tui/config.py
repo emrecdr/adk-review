@@ -70,6 +70,9 @@ USER_CONFIG_PATH = config_home() / APP / "tui.toml"
 #: Where a checkout kept the config when the front end was a part of the reviewer's package. Git moved the front
 #: end's files, never this one, which it ignores: a checkout's first run takes it, or the person's own if edited later.
 LEGACY_CONFIG_PATH = TUI_DIR.parent.parent / "adk_review" / "tui" / ".tui.toml"
+#: The package's folder when it was named `adk_review_tui`. Git removed its files, never Python's cache in it, which
+#: it ignores: a checkout's first run removes it.
+OLD_PACKAGE_DIR = TUI_DIR.parent / "adk_review_tui"
 #: An old `output_dir`, a path inside the package however it was written, which the move leaves out so the default
 #: holds. Read by review: before bd92a0a a saved config held it as the full path, macOS's or Windows'.
 _LEGACY_OUTPUT_DIR = re.compile(
@@ -166,7 +169,8 @@ def ensure_tui_config(path: Path | None = None) -> Path:
         else:
             write_atomic(target, _defaults_text())
     if default:
-        _clear_old_folder()
+        for old in (LEGACY_CONFIG_PATH.parent, OLD_PACKAGE_DIR):
+            _clear_old_folder(old)
     return target
 
 
@@ -177,12 +181,12 @@ def _last_edited(target: Path) -> Path | None:
     return max(found, key=lambda one: one.stat().st_mtime) if found else None
 
 
-def _clear_old_folder() -> None:
-    """The old folder, `adk_review/tui/` in a checkout, emptied of what the front end left there and removed: each
-    saved file moved into the state folder where none is in its place, Python's old cache removed, and every folder
-    left empty. A file it does not know stays, and its folder with it; nothing here fails a start."""
-    old = LEGACY_CONFIG_PATH.parent
-    if not old.is_dir() or LEGACY_CONFIG_PATH.exists():
+def _clear_old_folder(old: Path) -> None:
+    """An old folder, `adk_review/tui/` or `tui/adk_review_tui/` in a checkout, emptied of what the front end left
+    there and removed: each saved file moved into the state folder where none is in its place, Python's old cache
+    removed, and every folder left empty. A config not yet moved stays, as does a file it does not know, each with its
+    folder; nothing here fails a start."""
+    if not old.is_dir() or (old / ".tui.toml").exists():
         return
     with contextlib.suppress(OSError):
         saved = old / ".state"

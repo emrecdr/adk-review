@@ -89,6 +89,9 @@ required-version = ">=0.12"
 [tool.ruff]
 line-length = 120
 target-version = "py314"
+# Where the repository's own imports start, as pyrefly's `search-path` reads them: read by review, with the root alone
+# `tui.config` read as a third party's, and the import sorter split the front end's imports in two.
+src = [".", "tui"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "ARG", "ASYNC", "RUF", "BLE001", "S607", "SIM", "RET", "C4", "PIE", "PT", "C90", "PERF", "FURB"]
@@ -112,8 +115,8 @@ max-complexity = 10
 # The tests are not type checked, in `make typecheck`, CI or an editor: they hand the code partial and wrong values on
 # purpose, an entry of two keys or a severity off the scale. An editor still resolves, hovers and completes in them.
 project-excludes = ["tests/**"]
-# The terminal front end's, the `tui` extra a review never needs: checked whole where it is installed, as CI installs it,
-# and read as `Any` where it is not, so the check passes in a checkout synced without the extra.
+# The terminal front end's, a workspace member a review never needs: checked whole where `--all-packages` installs
+# it, as CI does, and read as `Any` where it is not, so the check passes in a checkout synced without it.
 ignore-missing-imports = ["textual", "textual.*", "rich", "rich.*"]
 search-path = ["tui", ".", "scripts"]  # the front end's project first: its package, `tui`, is no `tui.tui` of the root
 

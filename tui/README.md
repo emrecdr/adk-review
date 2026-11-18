@@ -57,7 +57,8 @@ A checkout that still holds the old config, `adk_review/tui/.tui.toml`, from whe
 package, or one in your own folder from an earlier version, gets the one you edited last, in `tui/.tui.toml`. The old
 file moves, so one file holds the config; the one in your own folder stays, for an installed copy. Then the old folder
 goes: its saved reviews move to your state folder, Python's old cache is removed, and so is every folder left empty. A
-file there that the front end did not write stays, with its folder. `tui.example.toml`, in `tui/`, shows every setting.
+file there that the front end did not write stays, with its folder. The package's folder from when it was named
+`adk_review_tui`, beside `tui/tui/`, goes the same way. `tui.example.toml`, in `tui/`, shows every setting.
 
 | Setting | What it sets |
 |---|---|

@@ -35,6 +35,7 @@ def _state_apart(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     # Never a person's own: the config a checkout kept before, and the one in their own folder, which a first run reads.
     monkeypatch.setattr(config, "LEGACY_CONFIG_PATH", state / "no-checkout" / ".tui.toml", raising=False)
     monkeypatch.setattr(config, "USER_CONFIG_PATH", state / "user-config" / "tui.toml", raising=False)
+    monkeypatch.setattr(config, "OLD_PACKAGE_DIR", state / "no-checkout" / "adk_review_tui", raising=False)
     monkeypatch.setattr(config, "STATE_DIR", state)
 
 
@@ -98,7 +99,7 @@ def _init_repo_with_remote(tmp_path: Path) -> tuple[Path, Path]:
 
 
 class TestTuiConfig:
-    """`adk_review/tui/.tui.toml` loading, multi-root workspace parsing, and preset persistence."""
+    """`tui/.tui.toml` loading, multi-root workspace parsing, and preset persistence."""
 
     def test_the_config_and_the_state_live_in_the_persons_own_folders(self, tmp_path: Path, monkeypatch) -> None:
         """Reproduced on a copy installed with `uv tool install`: its config and its saved reviews lived inside the
@@ -166,8 +167,8 @@ class TestTuiConfig:
         (checkout / "tui" / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
         monkeypatch.setattr(config, "TUI_DIR", checkout / "tui" / "tui")
         assert config.default_root_folder() == str(tmp_path / "projects")
-        installed = tmp_path / "tools" / "adk-review" / "lib" / "python3.14" / "site-packages"
-        monkeypatch.setattr(config, "TUI_DIR", installed / "adk_review" / "tui")
+        installed = tmp_path / "tools" / "adk-review-tui" / "lib" / "python3.14" / "site-packages"
+        monkeypatch.setattr(config, "TUI_DIR", installed / "tui")
         (tmp_path / "work").mkdir()
         monkeypatch.chdir(tmp_path / "work")
         assert config.default_root_folder() == str(tmp_path / "work")
@@ -199,9 +200,8 @@ class TestTuiConfig:
         """Read by review: a `root_dirs` that was no list, or a setting misspelt, fell back in silence to the default
         folder, and the screen listed another folder's repositories than the one the person wrote. One folder written
         as a string is read as one folder; anything else is said, with what to write."""
-        from tui.config import load_tui_config
-
         from tui import main as tui_main
+        from tui.config import load_tui_config
 
         cfg = tmp_path / ".tui.toml"
         cfg.write_text(f'[workspace]\nroot_dirs = "{tmp_path.as_posix()}"\n', encoding="utf-8")
@@ -310,6 +310,7 @@ class TestGitSyncEngine:
     """Multi-root project discovery and zero-checkout branch synchronization."""
 
     def test_discover_projects_and_zero_checkout_sync_preserve_dirty_working_tree(self, tmp_path: Path) -> None:
+        from adk_review.collect.git import checked_out
         from tui.git_sync import (
             changed_folders,
             discover_projects,
@@ -320,8 +321,6 @@ class TestGitSyncEngine:
             list_branches,
             preferred_base_branch,
         )
-
-        from adk_review.collect.git import checked_out
 
         _remote, local = _init_repo_with_remote(tmp_path)
         projects = discover_projects(str(tmp_path / "workspace"), max_depth=2)
@@ -514,10 +513,9 @@ class TestOptionsAndCliBuilder:
         assert "--diff-cap" in argv and "50000" in argv
 
     def test_windows_paths_quoting_and_missing_git_guard(self, tmp_path: Path, monkeypatch) -> None:
+        from tui import git_sync
         from tui.git_sync import BranchInfo, discover_projects, fetch_remote, inspect_branch_sync
         from tui.options import format_cli_command, parse_csv_paths
-
-        from tui import git_sync
 
         assert parse_csv_paths(r"\src\api\, C:\Users\dev\src, sub\\nested\ ") == ["src/api", "sub/nested"]
         cmd = format_cli_command([r"C:\My Repos\app", "--head", "feat/x"], windows=True)
@@ -607,6 +605,7 @@ class TestOptionsAndCliBuilder:
         neither the file it read nor the folder. Its first line names both now."""
         pytest.importorskip("textual")
         from textual.widgets import Static
+
         from tui.app import AdkReviewTuiApp
 
         _init_repo_with_remote(tmp_path)
@@ -625,6 +624,7 @@ class TestOptionsAndCliBuilder:
     async def test_textual_app_collapsible_sections_and_multi_root(self, tmp_path: Path) -> None:
         pytest.importorskip("textual")
         from textual.widgets import Collapsible
+
         from tui.app import AdkReviewTuiApp
 
         _init_repo_with_remote(tmp_path)
@@ -678,6 +678,7 @@ class TestOptionsAndCliBuilder:
         F5 is the person's own fetch; a remote's branch is reviewed by its remote name."""
         pytest.importorskip("textual")
         from textual.widgets import OptionList
+
         from tui.app import AdkReviewTuiApp
 
         remote, local = _init_repo_with_remote(tmp_path)
@@ -722,6 +723,7 @@ class TestOptionsAndCliBuilder:
         import json
 
         from textual.widgets import DataTable, OptionList, Static, TabbedContent
+
         from tui.app import AdkReviewTuiApp
 
         repo = tmp_path / "workspace" / "my[service]"
@@ -859,6 +861,7 @@ class TestFindingsExplorer:
         import json
 
         from textual.widgets import Button, Collapsible, DataTable, Input, Static
+
         from tui.app import AdkReviewTuiApp
         from tui.modals import ExplainCheckModal
 
@@ -926,6 +929,7 @@ class TestFindingsExplorer:
         import json
 
         from textual.widgets import DataTable, Input, TabbedContent
+
         from tui.app import AdkReviewTuiApp
 
         _init_repo_with_remote(tmp_path)
@@ -1004,6 +1008,7 @@ class TestWindowsAndItsShells:
         the focus. Ctrl+T folds the sections now, and each action key goes first wherever the focus is."""
         pytest.importorskip("textual")
         from textual.widgets import Collapsible, Input
+
         from tui.app import AdkReviewTuiApp
         from tui.git_sync import SyncStatus
         from tui.modals import SyncBranchModal
@@ -1230,6 +1235,7 @@ class TestWhatTheCodeReviewFound:
         listed as `my`, and `x[/old]` raised `MarkupError`, which dropped the palette's later hits."""
         pytest.importorskip("textual")
         from textual.fuzzy import Matcher
+
         from tui.commands import highlighted
 
         for label in ("Repo: my[service]  (main, clean)", "Repo: x[/old]"):
@@ -1278,6 +1284,7 @@ class TestWhatTheCodeReviewFound:
         its files where they are, and not shown."""
         pytest.importorskip("textual")
         from textual.widgets import Static, TabbedContent
+
         from tui.app import AdkReviewTuiApp
 
         _remote, local = _init_repo_with_remote(tmp_path)
@@ -1439,6 +1446,7 @@ class TestWhatTheCodeReviewFound:
         import json
 
         from textual.widgets import Input, SelectionList, TabbedContent
+
         from tui.app import AdkReviewTuiApp
 
         _init_repo_with_remote(tmp_path)
@@ -1499,6 +1507,19 @@ class TestTheConfigReview:
         (old / "notes.txt").write_text("mine\n", encoding="utf-8")
         config.ensure_tui_config()
         assert (old / "notes.txt").is_file(), "a file it does not know is never removed"
+
+    def test_the_first_run_leaves_no_trace_of_the_packages_old_name(self, tmp_path: Path, monkeypatch) -> None:
+        """Reproduced by review on a clone: renamed from `adk_review_tui` to `tui`, the package left
+        `tui/adk_review_tui/` in each checkout that had run it. It held Python's cache alone, which git ignores, so git
+        never removed it. The first run removes it."""
+        from tui import config
+
+        old = tmp_path / "checkout" / "tui" / "adk_review_tui"
+        (old / "__pycache__").mkdir(parents=True)
+        (old / "__pycache__" / "app.cpython-314.pyc").write_bytes(b"\0")
+        monkeypatch.setattr(config, "OLD_PACKAGE_DIR", old)
+        config.ensure_tui_config()
+        assert not old.exists(), sorted(p.name for p in old.rglob("*"))
 
     def test_a_checkout_takes_the_config_last_edited_in_the_persons_own_folder(
         self, tmp_path: Path, monkeypatch
