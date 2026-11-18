@@ -52,7 +52,7 @@ class ReviewCommandProvider(Provider):
             ("Action: Dry Run (Ctrl+D)", host.action_run_dry, "Validate scope and readiness without running checks"),
             ("Action: Fetch & Refresh Repo (F5)", host.action_refresh_repo, "Run git fetch --prune on active repo"),
             (
-                "Action: Minimize / Expand All Sections (Ctrl+M)",
+                "Action: Fold / Unfold All Sections (Ctrl+T)",
                 host.action_toggle_minimize_all,
                 "Collapse or expand all configuration sections",
             ),

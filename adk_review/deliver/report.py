@@ -846,10 +846,10 @@ WINDOWS_QUOTED = WINDOWS_BARE + " ~+,;=@#&'()[]{}^*?"
 
 def _pasted(argv: Sequence[str], windows: bool = os.name == "nt") -> str | None:
     """`argv` as a shell reads it pasted, or None where no quoting keeps it the one command: each argument as a POSIX
-    shell quotes it, or as `_windows_word` does; and nowhere a line a character no one sees would break, or the
+    shell quotes it, or as `windows_word` does; and nowhere a line a character no one sees would break, or the
     report's safety rules rewrite. A branch's name is its author's, and `;`, `$`, a backtick and a typographic quote
     are legal in one."""
-    words = [_windows_word(arg) if windows else shlex.quote(arg) for arg in argv]
+    words = [windows_word(arg) if windows else shlex.quote(arg) for arg in argv]
     line = " ".join(word for word in words if word is not None)
     # Read by review: a token, and a variation selector no one sees, were printed where the prose beside hid them.
     safe = line.isprintable() and inert(_unhidden(line)) == line
@@ -862,10 +862,10 @@ def _shell_path(path: str, windows: bool = os.name == "nt") -> str:
     return PureWindowsPath(path).as_posix() if windows else path
 
 
-def _windows_word(arg: str) -> str | None:
+def windows_word(arg: str) -> str | None:
     """One argument as cmd and PowerShell both read it: bare where it holds only letters, digits and what
     `WINDOWS_BARE` names, else in double quotes where it holds only what `WINDOWS_QUOTED` names and ends in no `\\`,
-    which would keep the quote open; else None."""
+    which would keep the quote open; else None. The terminal front end quotes the command it shows with it too."""
     if arg and all(c.isalnum() or c in WINDOWS_BARE for c in arg):
         return arg
     if all(c.isalnum() or c in WINDOWS_QUOTED for c in arg) and not arg.endswith("\\"):

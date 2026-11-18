@@ -18,6 +18,8 @@ from textual.binding import Binding, BindingType
 from textual.command import Provider
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.content import Content
+from textual.screen import ModalScreen
+from textual.widget import Widget
 from textual.widgets import (
     Button,
     Collapsible,
@@ -39,6 +41,7 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 from textual.widgets.selection_list import Selection
 
+from .clipboard import copy_text
 from .commands import ReviewCommandProvider
 from .config import RepoPreset, RootDir, TuiConfig, load_tui_config, save_repo_preset
 from .findings import (
@@ -84,12 +87,15 @@ class AdkReviewTuiApp(App[int]):
     TITLE = "adk-review-tui"
     CSS = APP_CSS
     COMMANDS: ClassVar[set[type[Provider] | Callable[[], type[Provider]]]] = App.COMMANDS | {ReviewCommandProvider}
+    # Each action key goes first, wherever the focus is: in a text field Textual's own Ctrl+D deletes and Ctrl+X cuts.
+    # None is a key a terminal sends as another, Ctrl+M as Enter, or one the classic Windows console keeps for itself:
+    # Ctrl+A, Ctrl+C, Ctrl+F, Ctrl+M and Ctrl+V. Read by review: Ctrl+M folded nothing where a list had the focus.
     BINDINGS: ClassVar[list[BindingType]] = [
-        Binding("ctrl+r", "run_review", "Run Review"),
-        Binding("ctrl+d", "run_dry", "Dry Run"),
-        Binding("ctrl+x", "stop_review", "Stop Review"),
-        Binding("ctrl+m", "toggle_minimize_all", "Minimize/Expand All"),
-        Binding("ctrl+y", "copy_active_tab", "Copy Tab"),
+        Binding("ctrl+r", "run_review", "Run Review", priority=True),
+        Binding("ctrl+d", "run_dry", "Dry Run", priority=True),
+        Binding("ctrl+x", "stop_review", "Stop Review", priority=True),
+        Binding("ctrl+t", "toggle_minimize_all", "Fold/Unfold All", priority=True),
+        Binding("ctrl+y", "copy_active_tab", "Copy Tab", priority=True),
         Binding("f5", "refresh_repo", "Fetch & Refresh"),
         Binding("1", "toggle_step(1)", "Step 1", show=False),
         Binding("2", "toggle_step(2)", "Step 2", show=False),
@@ -100,6 +106,15 @@ class AdkReviewTuiApp(App[int]):
         Binding("7", "toggle_step(7)", "Step 7", show=False),
         Binding("q", "quit", "Quit"),
     ]
+
+    #: What a key starts that never runs behind a dialog: a review, a dry run, the sections folded, a tab copied. Not
+    #: Stop, which must always reach a running review.
+    BEHIND_NO_DIALOG = frozenset({"run_review", "run_dry", "toggle_minimize_all", "copy_active_tab"})
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:  # noqa: ARG002 -- Textual's
+        """No action key but Stop runs while a dialog is open. Measured: once the keys went first, Ctrl+R and Ctrl+D
+        started a review behind the question a branch behind its remote raises, which they had not before."""
+        return not (action in self.BEHIND_NO_DIALOG and isinstance(self.screen, ModalScreen))
 
     def __init__(self, config_path: Path | None = None) -> None:
         super().__init__()
@@ -309,7 +324,7 @@ class AdkReviewTuiApp(App[int]):
         try:
             found = await asyncio.to_thread(discover_projects, root.path, self.tui_config.scan_depth)
         finally:
-            repo_list.loading = False
+            self._set_loading(False, repo_list)
         if self.selected_root != root:
             return
         self.projects = found
@@ -416,8 +431,7 @@ class AdkReviewTuiApp(App[int]):
                     self.notify(said, severity="warning", timeout=4, markup=False)
             branches = await asyncio.to_thread(list_branches, project.path)
         finally:
-            head_list.loading = False
-            base_list.loading = False
+            self._set_loading(False, head_list, base_list)
         if self.selected_project != project:
             return
         self.branches = branches
@@ -571,8 +585,7 @@ class AdkReviewTuiApp(App[int]):
         try:
             folders, changed_count = await asyncio.to_thread(changed_folders, repo, base, head, self.selected_mode)
         finally:
-            path_list.loading = False
-            excl_list.loading = False
+            self._set_loading(False, path_list, excl_list)
         if self.selected_project != project:
             return
         chosen_paths, chosen_excludes = self._path_selection_sets(project, path_list, excl_list)
@@ -886,9 +899,18 @@ class AdkReviewTuiApp(App[int]):
         elif active == "tab-handoff":
             text = self.last_handoff_md
         if text:
-            self.copy_to_clipboard(text)
-            self._set_banner(f"Copied {active.removeprefix('tab-')} content to clipboard ({len(text):,} chars).")
-            self.notify("Copied active tab to clipboard.", severity="information", timeout=3)
+            name = active.removeprefix("tab-")
+            if copy_text(self, text):
+                self._set_banner(f"Copied {name} content to the clipboard ({len(text):,} chars).")
+                self.notify("Copied active tab to the clipboard.", severity="information", timeout=3)
+            else:  # through the terminal alone, which no program can check
+                self._set_banner(f"Sent {name} content to the clipboard through the terminal ({len(text):,} chars).")
+                self.notify(
+                    "Sent to the clipboard through the terminal. "
+                    "If nothing pastes, use Windows Terminal, iTerm2 or kitty.",
+                    severity="information",
+                    timeout=6,
+                )
 
     def _save_current_preset(self, sel: ReviewSelection) -> None:
         if self.selected_project is None:
@@ -907,7 +929,17 @@ class AdkReviewTuiApp(App[int]):
         )
         self.tui_config = save_repo_preset(self.tui_config, self.selected_project.name, preset)
 
+    @staticmethod
+    def _set_loading(on: bool, *widgets: Widget) -> None:
+        """Show or end each list's loading mark, where the list is still on a screen. Seen on Windows in CI, where git
+        is slower: a scan the closing screen cut short set it on a list whose screen was gone, `NoScreen`."""
+        for widget in widgets:
+            if widget.is_attached:
+                widget.loading = on
+
     def _set_running_ui(self, running: bool) -> None:
+        if not self._has_dom("#btn-stop", "#btn-run", "#btn-dry-run"):  # a review the closing screen cut short
+            return
         self.query_one("#btn-stop", Button).disabled = not running
         self.query_one("#btn-run", Button).disabled = running
         self.query_one("#btn-dry-run", Button).disabled = running
@@ -950,10 +982,14 @@ class AdkReviewTuiApp(App[int]):
         self.notify(done_msg, severity="information" if code == 0 else "warning", timeout=4)
 
     async def _stream_subprocess(self, cmd: list[str]) -> tuple[int, str]:
+        # UTF-8 streams: on Windows Python writes a pipe in the system's code page, cp1252, where this reads UTF-8.
+        # Reproduced with that code page set: a progress line's `ü` and `—` read as replacement marks, and the
+        # report's `→` stopped the review with an error.
         proc = await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "PYTHONIOENCODING": "utf-8", "PYTHONUTF8": "1"},
         )
         self._active_proc = proc
         stdout_chunks: list[str] = []

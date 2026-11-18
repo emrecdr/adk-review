@@ -809,6 +809,165 @@ class TestFindingsExplorer:
                 base_file.unlink(missing_ok=True)
 
 
+class TestWindowsAndItsShells:
+    """The front end on Windows, from cmd and from PowerShell: the command it shows, its keys, the text a review sends
+    it, and the clipboard. Each is tested on every system, the clipboard's own round trip on Windows alone."""
+
+    def test_the_command_shown_reads_the_same_in_cmd_and_powershell(self) -> None:
+        """Read by review: the command was quoted for the C runtime alone (`list2cmdline`), which leaves `&`, `;`, `$`,
+        `%` and a backtick bare. Pasted, cmd runs `&` as a second command and PowerShell `;`, and PowerShell expands
+        `$x`. Each argument is quoted now as the reviewer quotes its own commands for both shells; where no quoting
+        keeps one, the screen says so, and its own run, which takes no shell, is unchanged."""
+        import shlex
+
+        from adk_review.tui.options import NOT_PASTED, format_cli_command
+
+        assert subprocess.list2cmdline(["adk-review", "--head", "a&b;c"]) == "adk-review --head a&b;c", "as before"
+        shown = format_cli_command(["C:\\My Repos\\app", "--head", "a&b;c"], windows=True)
+        assert shown == 'adk-review "C:\\My Repos\\app" --head "a&b;c"', shown
+        # PowerShell expands `$` and a backtick and reads a typographic quote as one; cmd expands `%` and `!`.
+        for hostile in ("feat/$x", "50%off", "x`y", "a\u201db", "a!b"):
+            assert format_cli_command(["repo", "--head", hostile], windows=True) == NOT_PASTED, hostile
+        assert format_cli_command(["repo", "--head", "a\nb"], windows=False) == NOT_PASTED, "a line break"
+        posix = format_cli_command(["/a b", "--head", "feat/$x"], windows=False)
+        assert shlex.split(posix) == ["adk-review", "/a b", "--head", "feat/$x"], posix
+
+    @pytest.mark.asyncio
+    async def test_every_action_key_reaches_its_action_wherever_the_focus_is(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review: Ctrl+M, Minimize/Expand All, is the Enter a terminal sends, which Textual reads as Enter
+        and a list takes to choose its item, and which the classic Windows console keeps for its mark mode; and in a
+        text field Textual's own Ctrl+D deletes and Ctrl+X cuts, so Dry Run and Stop did nothing while a filter had
+        the focus. Ctrl+T folds the sections now, and each action key goes first wherever the focus is."""
+        pytest.importorskip("textual")
+        from textual.widgets import Collapsible, Input
+
+        from adk_review.tui.app import AdkReviewTuiApp
+        from adk_review.tui.git_sync import SyncStatus
+        from adk_review.tui.modals import SyncBranchModal
+
+        _init_repo_with_remote(tmp_path)
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        ran: list[object] = []
+        monkeypatch.setattr(AdkReviewTuiApp, "_execute_review", lambda _self, *, dry_run: ran.append(dry_run))
+        monkeypatch.setattr(AdkReviewTuiApp, "action_stop_review", lambda _self: ran.append("stop"))
+        # Keys a terminal sends as another key, or a Windows console keeps for itself: Ctrl+M Enter, Ctrl+I Tab,
+        # Ctrl+H Backspace, Ctrl+J a new line; the classic console's Ctrl+A, Ctrl+C, Ctrl+F, Ctrl+M and Ctrl+V.
+        taken = {"ctrl+m", "ctrl+i", "ctrl+h", "ctrl+j", "ctrl+a", "ctrl+c", "ctrl+f", "ctrl+v"}
+        keys = {key for binding in AdkReviewTuiApp.BINDINGS for key in str(getattr(binding, "key", "")).split(",")}
+        assert not keys & taken, keys & taken
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.query_one("#repo-filter", Input).focus()
+            await pilot.press("ctrl+d", "ctrl+x", "ctrl+r")
+            assert ran == [True, "stop", False], ran
+            app.query_one("#repo-list").focus()
+            await pilot.press("ctrl+t")
+            await pilot.pause()
+            shown = [box for box in app.query(Collapsible) if not box.has_class("hidden")]
+            assert shown and all(box.collapsed for box in shown), "Ctrl+T folds every section"
+            # Measured: once the keys went first, Ctrl+R and Ctrl+D started a review behind a dialog. None runs there
+            # now but Stop, which must always reach a running review.
+            ran.clear()
+            app.push_screen(SyncBranchModal("head", SyncStatus("behind", "main", "origin/main", 0, 2)))
+            await pilot.pause()
+            await pilot.press("ctrl+r", "ctrl+d", "ctrl+t", "ctrl+x")
+            await pilot.pause()
+            assert ran == ["stop"] and isinstance(app.screen, SyncBranchModal), ran
+            assert all(box.collapsed for box in shown), "nor did Ctrl+T unfold the sections behind it"
+
+    @pytest.mark.asyncio
+    async def test_a_reviews_text_reaches_the_screen_as_written_on_windows_too(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A review the screen runs writes to pipes, and on Windows Python writes a pipe in the system's code page,
+        cp1252, where the screen reads UTF-8. Reproduced with that code page set: a progress line's `ü` and `—` read
+        as replacement marks, and the report's `→` stopped the review with an error. Each review runs with UTF-8
+        streams now."""
+        pytest.importorskip("textual")
+        from adk_review.tui.app import AdkReviewTuiApp
+
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{tmp_path.as_posix()}"]\n', encoding="utf-8")
+        monkeypatch.setenv("PYTHONIOENCODING", "cp1252")  # what a pipe gets on Windows
+        app = AdkReviewTuiApp(config_path=cfg)
+        said: list[str] = []
+        monkeypatch.setattr(app, "_log_progress", said.append)
+        monkeypatch.setattr(app, "_set_banner", lambda _line: None)
+        child = "import sys; sys.stderr.write('feat/f\\u00fcnf \\u2014 done\\n'); print('report \\u2192 ok')"
+        code, out = await app._stream_subprocess([sys.executable, "-c", child])
+        assert (code, said, out) == (0, ["feat/f\u00fcnf \u2014 done"], "report \u2192 ok\n"), (code, said, out)
+
+    @pytest.mark.asyncio
+    async def test_quitting_while_a_scan_runs_ends_cleanly(self, tmp_path: Path, monkeypatch) -> None:
+        """Seen on Windows in CI, where git is slower: the screen closed while a scan of the repositories still ran, and
+        the scan's last step set `loading` on a list whose screen was gone, `NoScreen`, raised as `WorkerFailed`. A
+        person quitting with `q` during a scan met the same. Reproduced here with a slow scan."""
+        pytest.importorskip("textual")
+        import time
+
+        from adk_review.tui import app as screen
+
+        def slow(*_args: object) -> list:
+            time.sleep(0.5)
+            return []
+
+        monkeypatch.setattr(screen, "discover_projects", slow)
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(
+            f'[workspace]\nroot_dirs = ["{tmp_path.as_posix()}", "{(tmp_path / "b").as_posix()}"]\n', encoding="utf-8"
+        )
+        app = screen.AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await pilot.pause()
+            assert app.query_one("#repo-list").loading is True, "the scan still runs as the screen closes"
+
+    def test_copying_uses_windows_own_clipboard_and_the_terminals(self, monkeypatch) -> None:
+        """Textual copies through the terminal alone (OSC 52), which Windows Terminal reads and the classic console
+        window does not: there Ctrl+Y said "Copied" and copied nothing. On Windows the text goes to Windows' own
+        clipboard too, its lines ended as Windows ends them, and the screen says which way it went."""
+        from types import SimpleNamespace
+
+        from adk_review.tui import clipboard
+
+        sent: list[object] = []
+        app = SimpleNamespace(copy_to_clipboard=lambda text: sent.append(("terminal", text)))
+        monkeypatch.setattr(clipboard, "_windows_copy", lambda text: sent.append(("windows", text)) or True)
+        assert clipboard.copy_text(app, "a\nb", windows=True) is True
+        assert sent == [("terminal", "a\nb"), ("windows", "a\r\nb")], sent
+        sent.clear()
+        monkeypatch.setattr(clipboard, "_windows_copy", lambda _text: False)
+        assert clipboard.copy_text(app, "a\nb", windows=True) is False, "held open by another program, say"
+        assert clipboard.copy_text(app, "a\nb", windows=False) is False, "the terminal's alone: no way to know"
+        assert sent == [("terminal", "a\nb"), ("terminal", "a\nb")], sent
+
+    @pytest.mark.skipif(sys.platform != "win32", reason="the Windows clipboard exists only on Windows")
+    def test_the_windows_clipboard_holds_what_was_copied(self) -> None:
+        """The round trip through Windows' own clipboard, read back as another program reads it."""
+        import ctypes
+        from ctypes import wintypes
+
+        from adk_review.tui.clipboard import _windows_copy
+
+        text = "review: f\u00fcnf \u2014 done\r\nsecond line"
+        assert _windows_copy(text) is True
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        user32.GetClipboardData.argtypes = [wintypes.UINT]
+        user32.GetClipboardData.restype = wintypes.HANDLE
+        kernel32.GlobalLock.argtypes = [wintypes.HGLOBAL]
+        kernel32.GlobalLock.restype = ctypes.c_void_p
+        kernel32.GlobalUnlock.argtypes = [wintypes.HGLOBAL]
+        assert user32.OpenClipboard(None)
+        try:
+            handle = user32.GetClipboardData(13)  # CF_UNICODETEXT
+            assert ctypes.wstring_at(kernel32.GlobalLock(handle)) == text
+            kernel32.GlobalUnlock(handle)
+        finally:
+            user32.CloseClipboard()
+
+
 async def _wait_for_branches(app, pilot) -> None:
     await pilot.pause()
     for _ in range(60):

@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import re
 import shlex
-import subprocess
 import tempfile
 import time
 from collections.abc import Mapping, Sequence
@@ -16,6 +15,7 @@ from typing import Literal
 from ..core.findings import RANK
 from ..core.profiles import DEFAULT, expanded
 from ..core.verdict import EXIT_CLEAN, EXIT_FINDINGS
+from ..deliver.report import windows_word
 from ..judge.catalog import CONFIG, catalog, load_config
 from .config import BASELINES_DIR, CACHE_DIR, OUTPUTS_DIR
 
@@ -124,12 +124,24 @@ def parse_csv_paths(raw: str) -> list[str]:
     return list(dict.fromkeys(items))
 
 
+#: What the screen shows where no quoting keeps the command one command in the shell a person pastes it into.
+NOT_PASTED = (
+    "This command cannot be pasted into a shell as one command: an argument holds a character the shell reads. "
+    "Ctrl+R runs it here as it stands."
+)
+
+
 def format_cli_command(argv: Sequence[str], *, windows: bool = os.name == "nt") -> str:
-    """Format `adk-review` and `argv` cleanly for copy/paste in POSIX shells or Windows terminals."""
+    """`adk-review` and `argv` as a person pastes them: on Windows quoted as cmd and PowerShell both read them, by the
+    reviewer's own `windows_word`, elsewhere as a POSIX shell reads them; `NOT_PASTED` where no quoting keeps an
+    argument whole, or a line break or a character no one sees would split it. Read by review: `list2cmdline`, used
+    before, quotes for the C runtime alone and left `&`, `;`, `$` and `%` bare, which cmd or PowerShell then read."""
     full = ["adk-review", *argv]
-    if windows:
-        return subprocess.list2cmdline(full)
-    return " ".join(shlex.quote(part) for part in full)
+    words = [windows_word(arg) if windows else shlex.quote(arg) for arg in full]
+    shown = [word for word in words if word is not None]
+    if len(shown) < len(words) or not all(arg.isprintable() for arg in full):
+        return NOT_PASTED
+    return " ".join(shown)
 
 
 def parse_csv_checks(raw: str) -> list[str]:
