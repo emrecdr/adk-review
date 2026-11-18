@@ -12,6 +12,7 @@ import shlex
 import textwrap
 from collections import Counter
 from collections.abc import Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path, PurePath, PureWindowsPath
 from typing import Any
 
@@ -243,8 +244,7 @@ def render_handoff(
     `added` holds the globs the review was given beyond the config's, each as `--flag=glob`, which the check repeats."""
     pre = evidence["preflight"]
     identity = dict(zip(map(id, outcome.kept), _identified(outcome.kept), strict=True))
-    identity |= {id(item): fingerprint(item) for item in outcome.old}
-    identity |= {id(folded): fingerprint(folded) for folded, _into in outcome.folded}
+    identity |= _held_identities(outcome)
     fixes, tidy, apart = _lanes(outcome, tidies, fail_on)
     majors = sum(group[0].finding.severity == "major" and not at_or_above("major", fail_on) for group in fixes)
     approved = verdict == "APPROVED"
@@ -502,7 +502,7 @@ def render_comment(
     profile: str = "",
     model: str = "",
     checks: Sequence[str] = (),
-    previous: Mapping[str, dict] | None = None,
+    previous: Earlier | None = None,
 ) -> str:
     """`--comment FILE`: the review as a constructive comment for the branch's author, whatever its verdict — first what
     the change caused, a section a severity, the most severe first, each at the bar marked must fix before it merges, an
@@ -615,7 +615,7 @@ def _size(lines: Sequence[str]) -> int:
 def _since_last(
     outcome: Outcome,
     verdict: str,
-    previous: Mapping[str, dict],
+    previous: Earlier,
     checks: Sequence[str],
     scope: Sequence[str],
     exclude: Sequence[str] = (),
@@ -624,10 +624,13 @@ def _since_last(
     still open, the fixed ones uncounted, and said so, where this review could not look at all. Read by review: the text
     report said it and the comment did not, so a second round read as the first."""
     identities = _identified(outcome.kept)
-    new = sum(_since(identity, previous) == "new" for identity in identities)
+    marks = [_since(identity, item, previous) for identity, item in zip(identities, outcome.kept, strict=True)]
     fixed = _resolved(outcome, identities, verdict, previous, checks, scope, exclude)
     done = "" if fixed is None else f"{len(fixed)} fixed, "
-    said = f"Since the last review: {done}{new} new, {len(identities) - new} still open."
+    # Read by review: a finding the last review did not look for, its check not run or its file not read, was counted
+    # new. It is counted apart.
+    apart = f", {marks.count(None)} not compared: the last review did not look there" if None in marks else ""
+    said = f"Since the last review: {done}{marks.count('new')} new, {marks.count('seen')} still open{apart}."
     return said + (
         " Fixed points are not counted, since the review could not check all of it." if fixed is None else ""
     )
@@ -1310,16 +1313,16 @@ def _refuted_at_bar(outcome: Outcome, fail_on: str) -> list[str]:
     return [f"  - {severe} at or above `--fail-on {fail_on}`: not approved until a person reads them"] if severe else []
 
 
-def _since(identity: str, previous: Mapping[str, dict] | None) -> str | None:
-    """A kept finding against a previous review's findings, by fingerprint: `new`, `seen`, or None with none."""
-    return None if previous is None else "seen" if identity in previous else "new"
+def _since(identity: str, item: Sourced, previous: Earlier | None) -> str | None:
+    """A kept finding against a previous review: `new`, `seen`, or None with none or where it did not look."""
+    return None if previous is None else previous.since(identity, item)
 
 
 def _resolved(
     outcome: Outcome,
     identities: Sequence[str],
     verdict: str,
-    previous: Mapping[str, dict] | None,
+    previous: Earlier | None,
     checks: Sequence[str],
     scope: Sequence[str],
     exclude: Sequence[str] = (),
@@ -1339,7 +1342,7 @@ def _resolved(
     found_now = {*identities, *_identified([*outcome.kept, *held])[len(outcome.kept) :]}
     return [
         found
-        for identity, found in previous.items()
+        for identity, found in previous.findings.items()
         if identity not in found_now
         and found.get("check") in checks
         and in_scope(str(found.get("file", "")), scope, exclude)
@@ -1368,7 +1371,7 @@ def render(
     profile: str,
     off: Sequence[str],
     checks: Sequence[str],
-    previous: Mapping[str, dict] | None = None,
+    previous: Earlier | None = None,
     health: Health | None = None,
     previous_health: Mapping | None = None,
 ) -> str:
@@ -1471,7 +1474,7 @@ def _next_steps(outcome: Outcome, verdict: str, fail_on: str, *, staged: bool) -
 
 
 def _sections(
-    checks: Sequence[str], outcome: Outcome, identities: Sequence[str], previous: Mapping[str, dict] | None
+    checks: Sequence[str], outcome: Outcome, identities: Sequence[str], previous: Earlier | None
 ) -> list[str]:
     """Each check that found something, failed, or had a finding folded into another's, a section of its own; the
     checks that found nothing, one line naming them all, so each is still seen to have looked. Measured on the demo's
@@ -1495,7 +1498,7 @@ def _sections(
         lines.append(_heading(check, failed))
         for identity, item in findings:
             f = item.finding
-            mark = " — new since the previous review" if _since(identity, previous) == "new" else ""
+            mark = " — new since the previous review" if _since(identity, item, previous) == "new" else ""
             mark += " — possibly already done: it asks for what the branch already does" * item.done
             lines += [*_listed(f, mark), f"  - fix: {prose(f.suggestion)}"]
             lines += [
@@ -1637,7 +1640,31 @@ SCHEMA = 2
 
 
 #: A previous review's findings by fingerprint and its health, as `--previous` reads them, or none.
-type Previous = tuple[dict[str, dict] | None, dict | None, tuple[str, bool] | None]
+@dataclass(frozen=True)
+class Earlier:
+    """A previous review as `read_previous` read it: its kept findings by fingerprint; the fingerprints it found and
+    did not keep, folded under another, already in the files or refuted; and what it looked at: the checks it ran,
+    None where its report names none, those that could not look, and its scope. Each set a sorted tuple, so the cache
+    key that holds it reads the same each run."""
+
+    findings: dict[str, dict]
+    seen: tuple[str, ...] = ()
+    ran: tuple[str, ...] | None = None
+    unlooked: tuple[str, ...] = ()
+    scope: tuple[str, ...] = ()
+    exclude: tuple[str, ...] = ()
+
+    def since(self, identity: str, item: Sourced) -> str | None:
+        """`item` against this review: `seen` where it found it, kept or not; `new` where it looked and did not; None
+        where it did not look, its check not run there or unable to look, or its file outside the scope read.
+        Reproduced by review: each was marked new, and a comment counted it so."""
+        if identity in self.findings or identity in self.seen:
+            return "seen"
+        looked = (self.ran is None or item.source in self.ran) and item.source not in self.unlooked
+        return "new" if looked and in_scope(item.finding.file, self.scope, self.exclude) else None
+
+
+type Previous = tuple[Earlier | None, dict | None, tuple[str, bool] | None]
 
 
 def read_previous(path: str) -> Previous:
@@ -1652,6 +1679,7 @@ def read_previous(path: str) -> Previous:
         # Each finding made safe whole, keys and nested values too, where it comes in: `resolved` gives it back, and
         # a kept report can be edited. One a review wrote reads the same, a cut's run of spaces aside.
         kept = {f["fingerprint"]: f for f in map(safe_value, findings)}
+        earlier = Earlier(kept, *_looked(data))
         # Its health made safe too, and so bounded as the findings are: read by review, one nested deep and read as it
         # was loaded overflowed the cache key's encoding, exit 3, where the same review gave 0 without the cache.
         health = safe_value(data["health"]) if isinstance(data.get("health"), dict) else None
@@ -1666,7 +1694,7 @@ def read_previous(path: str) -> Previous:
         raise ValueError(
             f"--previous {path}: {getattr(exc, 'strerror', None) or exc}. Name the JSON a review wrote with --json"
         ) from None
-    return kept, health, scope
+    return earlier, health, scope
 
 
 def reviewed_scope(evidence: Evidence) -> tuple[str, bool]:
@@ -1737,6 +1765,42 @@ def fingerprint(item: Sourced, occurrence: int = 0) -> str:
     return hashlib.sha256(said.encode("utf-8", "surrogatepass")).hexdigest()[:16]
 
 
+def _held_identities(outcome: Outcome) -> dict[int, str]:
+    """Each finding a review found and did not keep, folded, already in the files or refuted, by its id: its identity
+    counted on from the kept ones, as `--previous` counts it. Read by review: the hand-off and the JSON gave two alike
+    one fingerprint where the kept ones count each."""
+    held = [*(item for item, _into in outcome.folded), *outcome.old, *(item for item, _why in outcome.refuted)]
+    return dict(zip(map(id, held), _identified([*outcome.kept, *held])[len(outcome.kept) :], strict=True))
+
+
+def _looked(data: dict) -> tuple[tuple[str, ...], tuple[str, ...] | None, tuple[str, ...], tuple[str, ...], tuple]:
+    """What a previous report says it found and did not keep, and what it looked at: the fingerprints of its folded,
+    old, refuted, disputed and unverified findings; the checks it ran, None where it names none; those that could not
+    look; and the scope it read and left out. Each made safe as the report's findings are."""
+
+    def listed(key: str, within: dict = data) -> list:
+        found = within.get(key)
+        return found if isinstance(found, list) else []
+
+    seen = {
+        safe_line(found["fingerprint"])
+        for name in ("folded", "old_findings", "refuted", "disputed", "unverified")
+        for found in listed(name)
+        if isinstance(found, dict) and isinstance(found.get("fingerprint"), str)
+    }
+    checks = data.get("checks")
+    named = isinstance(checks, list) and all(isinstance(check, str) for check in checks)
+    ran = tuple(sorted(safe_line(check) for check in checks if check)) if named and isinstance(checks, list) else None
+    holes = data.get("could_not_look")
+    unlooked = tuple(sorted(map(safe_line, holes))) if isinstance(holes, dict) else ()
+    reviewed = data.get("reviewed") if isinstance(data.get("reviewed"), dict) else {}
+
+    def paths(key: str) -> tuple[str, ...]:
+        return tuple(safe_line(path) for path in listed(key, reviewed) if isinstance(path, str))
+
+    return tuple(sorted(seen)), ran, unlooked, paths("scope"), paths("exclude")
+
+
 def _identified(items: Sequence[Sourced]) -> list[str]:
     """Each finding's fingerprint, the occurrences of one check, file and quote counted in the order given."""
     seen: Counter[str] = Counter()
@@ -1794,13 +1858,14 @@ def as_data(
     checks: Sequence[str],
     version: str = "",
     seconds: Mapping[str, float] | None = None,
-    previous: Mapping[str, dict] | None = None,
+    previous: Earlier | None = None,
     health: Health | None = None,
 ) -> dict:
     """`--json`: the review `render` prints, as data for a pipeline: the verdict and its exit code, every finding
     with its check and place, what could not look and what was not read, under the text report's safety rules."""
     pre, whole = evidence["preflight"], evidence["whole"]
     identities = _identified(outcome.kept)
+    held = _held_identities(outcome)
     # The added lines' numbers, kept when the rules let the lines go; a deleted or binary file has none.
     added = {f["path"]: f["added_at"] for f in (*evidence["files"], *evidence.get("unscanned", ()))}
     return {
@@ -1831,11 +1896,11 @@ def as_data(
         # A whole project's measures, under `--all`; None for a review of a change, which is no measure of a project.
         "health": None if health is None else _health_data(health, outcome),
         "findings": [
-            {**_found(item, added, identity), "since_previous": _since(identity, previous)}
+            {**_found(item, added, identity), "since_previous": _since(identity, item, previous)}
             for item, identity in zip(outcome.kept, identities, strict=True)
         ],
         # Asked by the owner: what was already in the files the change touched, apart, and never at the bar.
-        "old_findings": [_found(item, added) for item in outcome.old],
+        "old_findings": [_found(item, added, held[id(item)]) for item in outcome.old],
         # The previous review's findings no longer found, as it wrote them; None with no previous review, or where
         # this one has a hole, which resolves nothing.
         "resolved": _resolved(
@@ -1843,7 +1908,7 @@ def as_data(
         ),
         "could_not_look": {source: safe_line(why, REASON_MAX_CHARS) for source, why in outcome.errors.items()},
         "not_read": {safe_line(path): safe_line(why, REASON_MAX_CHARS) for path, why in outcome.unread.items()},
-        "folded": [{**_found(item, added), "into": into.source} for item, into in outcome.folded],
+        "folded": [{**_found(item, added, held[id(item)]), "into": into.source} for item, into in outcome.folded],
         "dropped": [_found(item, added) for item in outcome.dropped],
         "dropped_at_fail_on": at_bar(outcome.dropped, fail_on),
         "verified": outcome.verified,

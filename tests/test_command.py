@@ -1046,6 +1046,61 @@ class TestThePreviousReportAndTheHandoff:
         assert "- resolved since the previous review: none counted" in capsys.readouterr().out
         assert json.loads(second.read_text(encoding="utf-8"))["resolved"] is None
 
+    def test_a_finding_is_new_only_where_the_previous_review_looked(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ) -> None:
+        """Reproduced by review: a finding was marked new where the previous review never ran its check, read its
+        file, or could look with its check, as the fixed count already asks; and one folded under another last time
+        was new although found. It is new now only where the previous review looked; elsewhere it is not compared, and
+        the comment counts those apart. Each of the earlier reports here is a real one, edited where a case needs a
+        review that looked less, as a file it is."""
+        first, second, comment = tmp_path / "first.json", tmp_path / "second.json", tmp_path / "c.md"
+        rules = ("--profile", "default-rules")
+
+        def again(earlier: dict) -> dict:
+            first.write_text(json.dumps(earlier), encoding="utf-8")
+            shown = ("--json", str(second), "--comment", str(comment))
+            run_review(cli, demo_repo, *rules, "--previous", str(first), *shown)
+            capsys.readouterr()
+            return json.loads(second.read_text(encoding="utf-8"))
+
+        assert run_review(cli, demo_repo, *rules, "--json", str(first)) == 1
+        whole = json.loads(first.read_text(encoding="utf-8"))
+        checks = {f["check"] for f in whole["findings"]}
+        assert len(checks) > 1, checks
+        one = min(checks)
+
+        ran_one = again({**whole, "checks": [one], "findings": [f for f in whole["findings"] if f["check"] == one]})
+        marks = {f["check"]: f["since_previous"] for f in ran_one["findings"]}
+        assert marks[one] == "seen" and {m for c, m in marks.items() if c != one} == {None}, marks
+        said = comment.read_text(encoding="utf-8")
+        assert "0 new" in said and "not compared" in said, said.splitlines()[:6]
+
+        elsewhere = again({**whole, "reviewed": {**whole["reviewed"], "scope": ["elsewhere"]}, "findings": []})
+        assert {f["since_previous"] for f in elsewhere["findings"]} == {None}, "no file it read: nothing compared"
+
+        holed = again(
+            {
+                **whole,
+                "could_not_look": {one: "failed"},
+                "findings": [f for f in whole["findings"] if f["check"] != one],
+            }
+        )
+        assert {f["since_previous"] for f in holed["findings"] if f["check"] == one} == {None}
+
+        moved, *kept = whole["findings"]
+        folded = again({**whole, "findings": kept, "folded": [{**moved, "into": kept[0]["check"]}]})
+        assert {f["since_previous"] for f in folded["findings"]} == {"seen"}, "a finding folded last time was found"
+
+    def test_two_alike_old_findings_have_an_identity_each(self) -> None:
+        """Read by review: the JSON's findings already in the files, and its folded ones, gave two alike one
+        fingerprint, where the kept ones count each, and `--previous` counts them on from the kept."""
+        from adk_review.core.verdict import Outcome
+
+        data = as_json(Outcome(old=[sourced("minor"), sourced("minor")]))
+        prints = [f["fingerprint"] for f in data["old_findings"]]
+        assert len(set(prints)) == 2, prints
+
     def test_a_handoff_tells_a_coding_agent_what_to_fix_and_what_must_hold_after(
         self, cli, demo_repo: Path, tmp_path: Path
     ) -> None:
@@ -1203,7 +1258,7 @@ class TestThePreviousReportAndTheHandoff:
         that could not look at all says why it counts none."""
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Outcome, Sourced
-        from adk_review.deliver.report import fingerprint, render_comment
+        from adk_review.deliver.report import Earlier, fingerprint, render_comment
 
         def made(source: str, file: str, title: str) -> Sourced:
             found = Finding(file=file, line=1, severity="major", title=title, evidence=f"+{title}", suggestion="s")
@@ -1215,7 +1270,9 @@ class TestThePreviousReportAndTheHandoff:
             made("rule.lint", "a.py", "gone"),
         )
         unrun, outside = made("guideline.tests", "a.py", "unrun"), made("rule.lint", "lib/b.py", "outside")
-        previous = {fingerprint(i): {"check": i.source, "file": i.finding.file} for i in (folded, unrun, outside, gone)}
+        previous = Earlier(
+            {fingerprint(i): {"check": i.source, "file": i.finding.file} for i in (folded, unrun, outside, gone)}
+        )
         evidence = {"preflight": {"head": "h", "head_sha": "0" * 40}, "scope": ["a.py"]}
         ran = ("guideline.security", "rule.lint")
         outcome = Outcome(kept=[lead], folded=[(folded, lead)])
@@ -1449,15 +1506,15 @@ class TestThePreviousReportAndTheHandoff:
         and refuted, the rule still found it: never resolved either."""
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Outcome, Sourced
-        from adk_review.deliver.report import _resolved, fingerprint
+        from adk_review.deliver.report import Earlier, _resolved, fingerprint
 
         found = Finding(file="a.py", line=2, severity="major", title="t", evidence="-x = 1", suggestion="s", code="y")
         item = Sourced("guideline.correctness", found, (2, 2), deleted=True)
-        previous = {fingerprint(item): {"check": "guideline.correctness", "file": "a.py", "title": "t"}}
+        previous = Earlier({fingerprint(item): {"check": "guideline.correctness", "file": "a.py", "title": "t"}})
         refuted = Outcome(refuted=[(item, "no")], verified=True)
         assert _resolved(refuted, [], "APPROVED", previous, ["guideline.correctness"], []) == []
         ruled = Sourced("rule.lint", found.model_copy(update={"title": "lint: F401", "evidence": "+import os"}), (2, 2))
-        previous = {fingerprint(ruled): {"check": "rule.lint", "file": "a.py", "title": "lint: F401"}}
+        previous = Earlier({fingerprint(ruled): {"check": "rule.lint", "file": "a.py", "title": "lint: F401"}})
         refuted = Outcome(refuted=[(ruled, "no")], verified=True)
         assert _resolved(refuted, [], "APPROVED", previous, ["rule.lint"], []) == []
 
@@ -1486,7 +1543,7 @@ class TestThePreviousReportAndTheHandoff:
         kept ones, whichever of the two a list holds."""
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Outcome, Sourced
-        from adk_review.deliver.report import _identified, _resolved
+        from adk_review.deliver.report import Earlier, _identified, _resolved
 
         def twin() -> Sourced:
             found = Finding(file="app.py", line=3, severity="minor", title="t", evidence="+print(x)", suggestion="s")
@@ -1497,8 +1554,10 @@ class TestThePreviousReportAndTheHandoff:
             return len(found or [])
 
         first, second, other = twin(), twin(), twin()
-        previous = {identity: {"check": "rule.no-print", "file": "app.py"} for identity in _identified([first, second])}
-        assert len(previous) == 2, "the last review told the two apart"
+        previous = Earlier(
+            {identity: {"check": "rule.no-print", "file": "app.py"} for identity in _identified([first, second])}
+        )
+        assert len(previous.findings) == 2, "the last review told the two apart"
         assert fixed(Outcome(kept=[first, second])) == 0
         assert fixed(Outcome(kept=[first], folded=[(second, other)])) == 0
         assert fixed(Outcome(kept=[first], refuted=[(second, "no")], verified=True)) == 0
@@ -2229,9 +2288,9 @@ class TestThePreviousReportAndTheHandoff:
         }
         path = tmp_path / "previous.json"
         path.write_text(json.dumps({"schema": SCHEMA, "findings": [crafted]}), encoding="utf-8")
-        findings, _health, _scope = read_previous(str(path))
-        written = json.dumps(findings, ensure_ascii=False)
-        assert list(findings) == ["f" * 16] and "##vso[" not in written and "##[" not in written, written
+        earlier, _health, _scope = read_previous(str(path))
+        written = json.dumps(earlier.findings, ensure_ascii=False)
+        assert list(earlier.findings) == ["f" * 16] and "##vso[" not in written and "##[" not in written, written
         assert "<!--" not in written, written
 
     def test_a_previous_report_nested_past_what_can_be_read_is_a_sentence(self, tmp_path: Path) -> None:
