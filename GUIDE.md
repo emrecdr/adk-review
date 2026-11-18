@@ -35,7 +35,7 @@ command spelled long.
 
 To run it from any folder, install it as a command: `make install` in this checkout, which exports the lock and hands it
 to `uv tool install --constraints`, every dependency at the version the lock holds, or with none
-`uv tool install --exclude-newer P3D git+https://github.com/emrecdr/adk-review`, the `git+` being uv's own and `P3D` the
+`uv tool install --exclude-newer P3D git+<repository-url>`, the `git+` being uv's own and `P3D` the
 three days' cooldown the lock keeps, since `uv tool install` reads no lock: measured, the install without either took a
 LiteLLM three days old or less, the window LiteLLM 1.82.7 and 1.82.8 shipped a credential stealer in. Either puts
 `adk-review`, its pre-push hook, `adk-review-push`, its commit hook, `adk-review-commit`, and the Copilot login,
@@ -48,7 +48,7 @@ machine's own store.
 Installed either way, the reviewer is a copy of the code as it was then, and `--version` names the release, never
 the commit, so it does not tell an old copy from a new one. To update it, run `git pull` in the checkout and
 `make install` again, or with no checkout the same install with `--reinstall`:
-`uv tool install --reinstall --exclude-newer P3D git+https://github.com/emrecdr/adk-review`. Until then the command,
+`uv tool install --reinstall --exclude-newer P3D git+<repository-url>`. Until then the command,
 and each hook that runs it, reviews with the old code, whatever the checkout holds.
 
 The terminal front end, `adk-review-tui`, picks a repository, its branches, the paths and the checks, runs the review

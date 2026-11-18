@@ -5,7 +5,7 @@
 # pre-commit installs the reviewer from its own repository, at the commit named, with Python 3.14, as each hook names
 # it: its own where it runs on 3.14, else the `python3.14` on PATH. In that repository's .pre-commit-config.yaml, with
 # pre-commit's pre-push hook installed (`pre-commit install --hook-type pre-push`):
-#   - repo: https://github.com/emrecdr/adk-review
+#   - repo: <repository-url>
 #     rev: <a commit of the reviewer>
 #     hooks:
 #       - id: adk-review

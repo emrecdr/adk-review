@@ -31,7 +31,7 @@ a C compiler: Xcode's Command Line Tools, which Apple's git and Homebrew need to
 ### 2. Get the reviewer
 
 ```bash
-git clone https://github.com/emrecdr/adk-review
+git clone <repository-url> adk-review
 cd adk-review                                # every command below runs at the root of this checkout
 uv sync --locked                             # once: the reviewer and its locked dependencies, ruff among them
 ```
@@ -41,7 +41,7 @@ Or, with no checkout, install it as a command, which puts `adk-review`, `adk-rev
 script not installed:
 
 ```bash
-uv tool install --exclude-newer P3D git+https://github.com/emrecdr/adk-review    # the git+ is uv's: it refuses the plain address
+uv tool install --exclude-newer P3D git+<repository-url>    # the git+ is uv's: it refuses the plain address
 ```
 
 `uv tool install` reads no lock, so `--exclude-newer P3D` takes no release newer than three days, the cooldown the
@@ -55,7 +55,7 @@ that commit's code after its checkout moved on, and `--version` names the releas
 ```bash
 git pull                                     # in the checkout: the new code
 make install                                 # again: the installed command is a copy, not the checkout
-uv tool install --reinstall --exclude-newer P3D git+https://github.com/emrecdr/adk-review    # or, with no checkout
+uv tool install --reinstall --exclude-newer P3D git+<repository-url>    # or, with no checkout
 ```
 
 A terminal front end, `adk-review-tui`, picks a repository, its branches and the checks, and runs the review. It is
@@ -793,7 +793,7 @@ jobs:
           persist-credentials: false # the job's token stays out of the reviewed repository's config
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          repository: emrecdr/adk-review
+          repository: <owner>/<name> # the reviewer's own repository
           ref: <a commit of the reviewer> # pinned: the change under review never chooses it
           path: reviewer
           persist-credentials: false

@@ -24,7 +24,7 @@ environment match the lock exactly.
 As an installed command, with no checkout:
 
 ```bash
-uv tool install --exclude-newer P3D "adk-review-tui @ git+https://github.com/emrecdr/adk-review#subdirectory=tui"
+uv tool install --exclude-newer P3D "adk-review-tui @ git+<repository-url>#subdirectory=tui"
 adk-review-tui
 ```
 
