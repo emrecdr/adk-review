@@ -170,3 +170,28 @@ def _block(code: str, *, applies: bool) -> str:
     if _FENCE in code:
         return "Corrected code:\n\n" + "\n".join(f"    {line}" for line in code.split("\n"))
     return f"Corrected code:\n\n{_FENCE}\n{code}\n{_FENCE}"
+
+
+def thread_payload(text: str, path: str, span: tuple[int, int], last_line: str, iteration: int, change: int) -> dict:
+    """One comment as the thread it is posted as, on `path`'s lines `span` of the new side, in the shape Microsoft's
+    own sample sends. The place covers its lines whole: it ends one past `last_line`'s last character, counted in
+    UTF-16 units as Azure DevOps counts. A place that ends where it starts is empty, and "Apply changes" then puts a
+    suggestion before the line and keeps the old one. Both sides of the iteration context name `iteration`: the
+    change since the branches' common commit, which is what the review read."""
+    first, last = span
+    end = len(last_line.removesuffix("\r").encode("utf-16-le")) // 2 + 1
+    return {
+        "comments": [{"parentCommentId": 0, "content": text, "commentType": 1}],
+        "status": 1,
+        "threadContext": {
+            "filePath": "/" + path.lstrip("/"),
+            "leftFileStart": None,
+            "leftFileEnd": None,
+            "rightFileStart": {"line": first, "offset": 1},
+            "rightFileEnd": {"line": last, "offset": end},
+        },
+        "pullRequestThreadContext": {
+            "changeTrackingId": change,
+            "iterationContext": {"firstComparingIteration": iteration, "secondComparingIteration": iteration},
+        },
+    }

@@ -292,3 +292,36 @@ class TestAFilesLinesAtACommit:
         assert file_lines(str(tmp_path), "f" * 40, "a.py") is None
         assert file_lines(str(tmp_path), "--output=x", "a.py") is None, "a commit that reads as a flag is none"
         assert file_lines(str(tmp_path / "no-repository"), head, "a.py") is None
+
+
+class TestTheThreadAComment:
+    """`thread_payload`: what one comment is posted as, in the shape Microsoft's own sample sends."""
+
+    def test_the_payload_is_microsofts_sample_shape_over_whole_lines(self, azure: ModuleType) -> None:
+        assert azure.thread_payload("hello", "src/app.py", (42, 57), "    return total", 3, 7) == {
+            "comments": [{"parentCommentId": 0, "content": "hello", "commentType": 1}],
+            "status": 1,
+            "threadContext": {
+                "filePath": "/src/app.py",
+                "leftFileStart": None,
+                "leftFileEnd": None,
+                "rightFileStart": {"line": 42, "offset": 1},
+                "rightFileEnd": {"line": 57, "offset": 17},
+            },
+            "pullRequestThreadContext": {
+                "changeTrackingId": 7,
+                "iterationContext": {"firstComparingIteration": 3, "secondComparingIteration": 3},
+            },
+        }
+
+    @pytest.mark.parametrize(
+        ("last_line", "offset"), [("", 1), ("x = '\U0001f600'", 9), ("x = 1\r", 6), ("ö", 2), ("\t\tx", 4)]
+    )
+    def test_the_end_is_the_last_lines_length_in_utf_16_units_plus_one(
+        self, azure: ModuleType, last_line: str, offset: int
+    ) -> None:
+        """A place that ends where it starts is empty: "Apply changes" then puts the suggestion before the line
+        and keeps the old one, as two tools' authors found. The end is past the line's last character, counted as
+        Azure DevOps counts, in UTF-16 units."""
+        context = azure.thread_payload("t", "/a.py", (1, 1), last_line, 1, 1)["threadContext"]
+        assert context["rightFileEnd"] == {"line": 1, "offset": offset} and context["filePath"] == "/a.py"
