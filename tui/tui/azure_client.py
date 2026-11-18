@@ -15,6 +15,7 @@ import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Mapping
+from dataclasses import dataclass
 from email.message import Message
 from http import HTTPStatus
 from typing import Protocol
@@ -24,7 +25,7 @@ import truststore
 
 from adk_review.collect.git import on_path
 
-from .azure import PullRequest, marked
+from .azure import PullRequest, marked, thread_payload
 
 #: Azure DevOps' own application in Microsoft Entra: the resource `az` is asked a token for.
 RESOURCE = "499b84ac-1321-427f-aa17-267ca6975798"
@@ -255,6 +256,39 @@ class Client:
         tenant = (headers.get("X-VSS-ResourceTenant") or "").strip().lower() if headers is not None else ""
         named = f" --tenant {tenant}" if _TENANT.fullmatch(tenant) and tenant.strip("0-") else ""
         return AzureError(f"Azure DevOps did not accept your login. Run `az login{named}`, then post again.")
+
+
+@dataclass(frozen=True)
+class Posted:
+    """A finding's thread in the pull request: its id, and whether it was there already, so nothing was posted."""
+
+    thread: int
+    already: bool
+
+
+def post_comment(
+    client: Client, *, text: str, path: str, span: tuple[int, int], last_line: str, commit: str, fingerprint: str
+) -> Posted:
+    """`text` posted on `path`'s lines `span` of the pull request, once: the checks that cost one call first, each
+    refusal an `AzureError` and nothing posted. The commit reviewed must be the pull request's latest push: the
+    lines are counted in it, and a commit names its repository too, so no remote is compared. A thread that carries
+    the finding's mark already is answered instead of a second one."""
+    status = client.status()
+    if status != "active":
+        raise AzureError(f"The pull request is {' '.join(status.split())[:40]}. Nothing was posted.")
+    pushed = client.iterations()
+    if not pushed or pushed[-1][1] != commit:
+        if any(held == commit for _number, held in pushed):
+            raise AzureError(
+                f"The pull request has a newer push, {pushed[-1][1][:7]}. Fetch, review again, then comment."
+            )
+        raise AzureError(f"The pull request never held commit {commit[:7]}. Check the address and the branch reviewed.")
+    iteration = pushed[-1][0]
+    if (thread := client.thread_of(fingerprint)) is not None:
+        return Posted(thread, already=True)
+    if (change := client.change_of(iteration, path)) is None:
+        raise AzureError(f"The pull request does not change {path}. No line can hold the comment.")
+    return Posted(client.post(thread_payload(text, path, span, last_line, iteration, change)), already=False)
 
 
 def _dicts(value: object) -> list[dict]:

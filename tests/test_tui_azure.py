@@ -17,6 +17,7 @@ from collections.abc import Iterator
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import ModuleType
+from typing import ClassVar
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
@@ -718,3 +719,98 @@ class TestTheClient:
         with pytest.raises(client.AzureError, match="gave no token"):
             client.Client(fake_ado.pr, NoLogin()).status()
         assert fake_ado.seen == []
+
+
+def _ready(fake: FakeAdo, latest: str, *, status: str = "active") -> None:
+    """A pull request that takes a comment: active, pushed twice, `latest` its newest commit, changing `src/app.py`,
+    with no thread yet; a post is thread 148."""
+    older = {"id": 1, "sourceRefCommit": {"commitId": "a" * 40}}
+    fake.answer("GET", "", {"status": status})
+    fake.answer("GET", "/iterations", {"value": [older, {"id": 2, "sourceRefCommit": {"commitId": latest}}]})
+    fake.answer(
+        "GET", "/iterations/2/changes", {"changeEntries": [{"changeTrackingId": 7, "item": {"path": "/src/app.py"}}]}
+    )
+    fake.answer("GET", "/threads", {"value": []})
+    fake.answer("POST", "/threads", {"id": 148})
+
+
+class TestOnePost:
+    """`post_comment`: the checks before a post, in order, each refusal a sentence and nothing posted."""
+
+    WHERE: ClassVar[dict] = {"path": "src/app.py", "span": (42, 57), "last_line": "    return total"}
+
+    def test_a_comment_is_posted_once_on_the_latest_push(
+        self, azure: ModuleType, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        _ready(fake_ado, "b" * 40)
+        asked = client.Client(fake_ado.pr, FakeToken())
+        posted = client.post_comment(asked, text="hello", commit="b" * 40, fingerprint="ab" * 8, **self.WHERE)
+        assert posted == client.Posted(148, already=False)
+        posts = [seen for seen in fake_ado.seen if seen.method == "POST"]
+        assert len(posts) == 1
+        assert json.loads(posts[0].body) == azure.thread_payload(
+            "hello", "src/app.py", (42, 57), "    return total", 2, 7
+        )
+        tails = [seen.path.removeprefix(fake_ado.root) for seen in fake_ado.seen]
+        assert tails == ["", "/iterations", "/threads", "/iterations/2/changes", "/threads"], "the cheap checks first"
+
+    @pytest.mark.parametrize(
+        ("change", "said"),
+        [
+            ({"status": "completed"}, "The pull request is completed. Nothing was posted."),
+            ({"status": "abandoned"}, "The pull request is abandoned. Nothing was posted."),
+            ({"commit": "a" * 40}, "The pull request has a newer push, bbbbbbb. Fetch, review again, then comment."),
+            ({"commit": "c" * 40}, "The pull request never held commit ccccccc. Check the address and the branch"),
+            ({"path": "docs/x.md"}, "The pull request does not change docs/x.md. No line can hold the comment."),
+        ],
+    )
+    def test_each_refusal_posts_nothing(
+        self, client: ModuleType, fake_ado: FakeAdo, change: dict[str, str], said: str
+    ) -> None:
+        _ready(fake_ado, "b" * 40, status=change.get("status", "active"))
+        where = {**self.WHERE, "path": change.get("path", "src/app.py")}
+        with pytest.raises(client.AzureError, match=re.escape(said)) as refused:
+            client.post_comment(
+                client.Client(fake_ado.pr, FakeToken()),
+                text="hello",
+                commit=change.get("commit", "b" * 40),
+                fingerprint="ab" * 8,
+                **where,
+            )
+        assert all(seen.method == "GET" for seen in fake_ado.seen)
+        for sentence in str(refused.value).split(". "):
+            assert len(sentence.split()) <= 20 and ";" not in sentence, sentence
+
+    def test_a_pull_request_with_no_push_listed_takes_no_comment(self, client: ModuleType, fake_ado: FakeAdo) -> None:
+        fake_ado.answer("GET", "", {"status": "active"})
+        fake_ado.answer("GET", "/iterations", {"value": []})
+        with pytest.raises(client.AzureError, match="never held commit bbbbbbb"):
+            client.post_comment(
+                client.Client(fake_ado.pr, FakeToken()), text="t", commit="b" * 40, fingerprint="", **self.WHERE
+            )
+
+    def test_a_finding_already_posted_is_found_and_not_posted_again(
+        self, client: ModuleType, fake_ado: FakeAdo, azure: ModuleType, row
+    ) -> None:
+        """Post pressed twice, or a post that timed out and still arrived: one thread, never two. The mark in the
+        thread's own text says so, whatever the screen remembers."""
+        fake_ado.answer("GET", "/threads", {"value": [{"id": 5, "comments": [{"content": azure.mark(row)}]}]})
+        _ready(fake_ado, "b" * 40)
+        posted = client.post_comment(
+            client.Client(fake_ado.pr, FakeToken()),
+            text="hello",
+            commit="b" * 40,
+            fingerprint=row.fingerprint,
+            **self.WHERE,
+        )
+        assert posted == client.Posted(5, already=True)
+        assert all(seen.method == "GET" for seen in fake_ado.seen)
+
+    def test_a_finding_with_no_identity_is_posted_with_no_search_for_its_like(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        _ready(fake_ado, "b" * 40)
+        asked = client.Client(fake_ado.pr, FakeToken())
+        assert client.post_comment(asked, text="t", commit="b" * 40, fingerprint="", **self.WHERE).thread == 148
+        assert [seen.method for seen in fake_ado.seen].count("POST") == 1
+        assert ("GET", fake_ado.root + "/threads") not in [(seen.method, seen.path) for seen in fake_ado.seen]
