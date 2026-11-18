@@ -15,7 +15,7 @@ from types import MappingProxyType
 from ..rule_helpers import ChangedFile, FileRule, Hit, Severity, listed, tier
 
 #: ruff's codes, run --isolated: flake8-datetimez's, pylint's errors, and the warnings and ruff's own codes that name
-#: code doing other than it reads; with the four of flake8-simplify, flake8-pie and the logging codes that are defects
+#: code doing other than it reads; with the five of flake8-simplify, flake8-pie and the logging codes that are defects
 #: rather than style, which `simplify` leaves out.
 #: Not selected: each code whose findings, read in a sample of google-adk, pydantic, httpx and litellm, were idioms that
 #: do what they read: a loop variable rebound, `line = line.strip()` (PLW2901, 64 of 168 findings); a class constant
@@ -28,12 +28,13 @@ from ..rule_helpers import ChangedFile, FileRule, Hit, Severity, listed, tier
 #: takes: ruff reads no dependency, and six routes whose dependency or request read it, each answering each id, were
 #: named at major (measured by review on FastAPI 0.141.1). Nor LOG004 and LOG014, `.exception()` or `exc_info=True`
 #: outside a handler: 5 false hits in the owner's projects, each in a FastAPI handler that Starlette calls inside its
-#: own `except`. PLW0211, PLW0711, RUF020, RUF068 and LOG007 came in from a validation: 0 hits in the four libraries,
-#: and one real one, a duplicate in `__all__`, in the owner's projects.
+#: own `except`. PLW0211, RUF020, RUF068 and LOG007 came in from a validation: 0 hits in the four libraries, and one
+#: real one, a duplicate in `__all__`, in the owner's projects. Nor PLW0711, `except A or B`, which `lint` names as
+#: bugbear's B030: read by review, one rule names a code.
 SELECT = (
     "DTZ003", "DTZ004", "PLE",
     "PLW0128", "PLW0129", "PLW0131", "PLW0133", "PLW0177", "PLW0211", "PLW0245", "PLW0406", "PLW0642",
-    "PLW0711", "PLW1501", "PLW1507", "PLW1509", "PLW1510", "PLW2101",
+    "PLW1501", "PLW1507", "PLW1509", "PLW1510", "PLW2101",
     "RUF008", "RUF009", "RUF016", "RUF018", "RUF020", "RUF024", "RUF026", "RUF030", "RUF032", "RUF033",
     "RUF034", "RUF040", "RUF043", "RUF048", "RUF049", "RUF060", "RUF064", "RUF068", "RUF071",
     "SIM115", "PIE794", "PIE796", "G101", "LOG007",
@@ -43,7 +44,7 @@ IGNORE = ("PLE2502",)
 #: A code's severity: the longest key the code begins with inside its own family. Major where the code misbehaves
 #: whenever it runs; any other is minor, misbehaving only on some input, or a trap a reader should see.
 SEVERITY: dict[str, Severity] = {
-    "PLE": "major", "PLW0129": "major", "PLW0133": "major", "PLW0177": "major", "PLW0245": "major", "PLW0711": "major",
+    "PLE": "major", "PLW0129": "major", "PLW0133": "major", "PLW0177": "major", "PLW0245": "major",
     "PLW1501": "major", "PLW2101": "major", "RUF008": "major", "RUF009": "major",
     "RUF016": "major", "RUF018": "major", "RUF024": "major", "RUF026": "major", "RUF030": "major", "RUF033": "major",
     "RUF034": "major", "RUF060": "major", "RUF064": "major", "PIE794": "major", "PIE796": "major",
@@ -54,7 +55,6 @@ FIX = {
     "DTZ": "Use an aware value, datetime.now(UTC) or datetime.fromtimestamp(ts, UTC): a naive UTC one reads as local.",
     "PLE": "Correct it: Python raises here, or does other than the code reads.",
     "PLW": "Rewrite it as ruff names: the code does not do what it reads.",
-    "PLW0711": "Catch a tuple, except (A, B): the expression A or B names A alone.",
     "PLW1510": "Pass check=True, or read the return code: a command that fails otherwise goes unseen.",
     "RUF": "Rewrite it as ruff names: the code does not do what it reads.",
     "RUF009": "Use field(default_factory=...): a default is evaluated once, when the class is defined, and shared.",

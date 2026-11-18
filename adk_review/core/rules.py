@@ -271,6 +271,13 @@ class ChangedFile:
         return tuple(lines_of(self._text_at_head()))
 
     @property
+    def read_whole(self) -> bool:
+        """Whether the collector read the file whole, so `lines` holds it: a rule that needs the whole file, and can
+        do without it, asks first. Read by review: asked through `lines`, a workflow too large to read was a hole where
+        a rule that reads its diff alone had read it."""
+        return self._text is not None
+
+    @property
     def diagnostics(self) -> tuple[Diagnostic, ...]:
         """The tool's diagnostics on the file, for a rule that names a tool: none for any other rule."""
         self._text_at_head()  # a tool reads what was read: an unread file has no diagnostics, and no silence either

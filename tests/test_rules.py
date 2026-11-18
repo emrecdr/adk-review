@@ -61,9 +61,9 @@ class TestTheSecretShapes:
 
         value = "9f8a7d6c5b4a3e2d"
         named = [
-            f'URL = "https://api.example.com/v1/items?api_key={value}"',
-            f"curl 'https://example.com/hook?client_id=app&access_token={value}&page=2'",
-            f'requests.get(f"https://db.example.com/q?user=bot&password={value}")',
+            f'URL = "https://api.acme.io/v1/items?api_key={value}"',
+            f"curl 'https://hooks.acme.io/in?client_id=app&access_token={value}&page=2'",
+            f'requests.get(f"https://db.acme.io/q?user=bot&password={value}")',
         ]
         left = [
             'URL = "https://api.example.com/v1/items?api_key={key}"',
@@ -71,12 +71,26 @@ class TestTheSecretShapes:
             'URL = "https://api.example.com/v1/items?api_key=YOUR_API_KEY"',
             'URL = "https://example.com/?token=ab12"',
             'URL = "https://example.com/search?q=password&page=3"',
+            'URL = f"https://x.io/?token=abcdefgh(1)"',  # read by review: the digit past the value was counted
         ]
-        assert lines_hit(NamedSecrets(), "app.py", "\n".join([*named, *left]) + "\n") == [1, 2, 3]
+        # Read by review: a documentation host's example, a page's cursor and a form's CSRF token were blockers.
+        examples = [
+            f"[docs](https://api.example.com/v1?api_key={value})",
+            "GET https://www.googleapis.com/drive/v3/files?pageToken=CgkI2Lq0Yw4QAA&pageSize=100",
+            'curl "https://x.io/?csrf_token=a1b2c3d4e5"',
+        ]
+        found = lines_hit(NamedSecrets(), "README.md", "\n".join([*named, *left, *examples]) + "\n")
+        assert found == [1, 2, 3], found
         for line in named:
             assert value not in scrub(line)[0], line
         for line in left:
             assert scrub(line)[0] == line, line
+        # Read by review, and measured: the digit's search ran to the end of a run, 1.76 s over 40,000 characters.
+        import time
+
+        started = time.perf_counter()
+        scrub("?token=" * 5_700)
+        assert time.perf_counter() - started < 1.0, "the shape reads a line in one pass"
 
     def test_an_examples_credential_is_blanked_and_a_real_one_beside_it_found(self) -> None:
         """Measured on twelve real projects: all eleven credentials the rule found in their source were examples, each
@@ -1766,11 +1780,11 @@ class TestTheCleanupAndThePitfalls:
         assert ruff_rule_findings(Simplify(), [test]) == [], "cleanup in a test is not this rule's"
 
     def test_pitfalls_names_five_more_traps_ruff_proves(self) -> None:
-        """Read by validation: five stable codes no rule selected, each a trap where the code does not do what it
-        reads. Measured over google-adk, pydantic, httpx and litellm: 0 hits; over the owner's projects, 1, a real
-        duplicate in
-        `__all__`. `except A or B` catches `A` alone, a major; the rest minor. LOG004 and LOG014 are left out: 5 false
-        hits, each `exc_info=True` in a FastAPI handler, which Starlette calls inside its own `except`."""
+        """Read by validation: five stable codes no rule selected, each a trap where the code does not do what it reads.
+        Measured over google-adk, pydantic, httpx and litellm: 0 hits; over the owner's projects, 1, a real duplicate in
+        `__all__`. `except A or B` catches `A` alone, which `lint` names as B030; the rest minor. LOG004 and LOG014 are
+        left out: 5 false hits, each `exc_info=True` in a FastAPI handler, which Starlette calls inside its own
+        `except`."""
         from adk_review.judge.rules.pitfalls import Pitfalls
 
         traps = (
@@ -1781,8 +1795,12 @@ class TestTheCleanupAndThePitfalls:
             "        logging.exception('bad value', exc_info=False)\n        return None\n"
         )
         found = set(_codes(ruff_rule_findings(Pitfalls(), [_entry("m.py", traps)])))
-        expected = {("RUF068", "minor"), ("PLW0211", "minor"), ("RUF020", "minor"), ("PLW0711", "major")}
-        assert found == expected | {("LOG007", "minor")}, found
+        expected = {("RUF068", "minor"), ("PLW0211", "minor"), ("RUF020", "minor"), ("LOG007", "minor")}
+        assert found == expected, found
+        # Read by review: PLW0711 is lint's B030, at major, on the same line; one rule names it.
+        from adk_review.judge.rules.lint import Lint
+
+        assert ("B030", "major") in _codes(ruff_rule_findings(Lint(), [_entry("m.py", traps)]))
 
     def test_a_line_rule_names_a_link_whose_file_was_not_read_as_a_hole(self) -> None:
         """Read by review: a link's lines are the file it names, new under its name, and one not read, a blob a
@@ -4159,6 +4177,7 @@ class TestTheShippedRules:
         of the pull request's own head hands an outsider's code to the steps after it, the "pwn request" GitHub's guide
         names; no rule named it. A checkout of the base, or of the head under `pull_request`, which has no secrets, is
         no finding."""
+        from adk_review.judge.checks import run_rules
         from adk_review.judge.rule_helpers import lines_hit
         from adk_review.judge.rules.script_injection import ScriptInjection
 
@@ -4179,8 +4198,38 @@ class TestTheShippedRules:
         assert lines_hit(rule, path, flow("pull_request", "${{ github.event.pull_request.head.sha }}")) == []
         assert lines_hit(rule, path, flow("pull_request_target", "")) == [], "the base's code"
         assert lines_hit(rule, path, flow("pull_request_target", "${{ github.sha }}")) == [], "the base's commit"
-        from adk_review.judge.checks import run_rules
-
+        # Read by review: the merge GitHub makes, a fallback, the fork's repository, and a script that checks out.
+        for ref in (
+            "${{ github.event.pull_request.merge_commit_sha }}",
+            "${{ github.event.pull_request.head.sha || github.sha }}",
+        ):
+            assert lines_hit(rule, path, flow("pull_request_target", ref)) == [9], ref
+        fork = flow("pull_request_target", "").replace(
+            "@v4\n", "@v4\n        with:\n          repository: ${{ github.event.pull_request.head.repo.full_name }}\n"
+        )
+        assert lines_hit(rule, path, fork) == [9], fork
+        script = flow("pull_request_target", "").replace(
+            "npm ci", "gh pr checkout ${{ github.event.pull_request.number }}"
+        )
+        assert lines_hit(rule, path, script) == [8], script
+        # Read by review: a word in a condition is no trigger, a workflow moved into place runs whole, and one too large
+        # to read whole is read as far as its diff shows, no hole.
+        guarded = flow("push", "refs/pull/123/head").replace(
+            "    runs-on:", "    if: github.event_name != 'pull_request_target'\n    runs-on:"
+        )
+        assert lines_hit(rule, path, guarded) == [], guarded
+        moved = {**_entry(path, flow("pull_request_target", "${{ github.head_ref }}")), "status": "R", "added": []}
+        moved["old"] = "ci/build.yml"
+        assert [
+            f.line for f in run_rules({"files": [moved], "tree": None}, [rule])["rule.script-injection"].findings
+        ] == [9]
+        unread = {
+            **_entry(path, None, unread="past the cap"),
+            "status": "M",
+            "added": [(3, "jobs:")],
+            "shown": {3: "jobs:"},
+        }
+        assert run_rules({"files": [unread], "tree": None}, [rule])["rule.script-injection"].could_not_look is None
         planted = _entry(path, flow("pull_request_target", "${{ github.head_ref }}"))
         found = run_rules({"files": [planted], "tree": None}, [rule])["rule.script-injection"].findings
         assert found and "pull_request_target" in found[0].suggestion, found

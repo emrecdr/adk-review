@@ -241,6 +241,10 @@ _QUOTED_VALUE = r"([^\"'\n]{6,}|(?:(?!\2)\S){6,})"
 #: Measured over 2.4 million lines of the installed packages and this repository: every line the shape matched
 #: before it matches still, and 66 more, each a constant naming a variable, a URL or a header, none a finding.
 _ANNOTATION = r"(?:\s*:\s*[\w.\[\], |]{1,80}?)?"
+#: A character of a query parameter's value: none that ends one, nor a bracket. Read by review: the digit's search,
+#: unbounded and over a `?` too, read to the end of each run from each name, 1.76 s over 40,000 characters, and past
+#: a bracket the value stops at, so redaction hid what `named-secrets` let go.
+_QUERY_VALUE = r"[^\s&#?\"'<>()\[\]{}]"
 #: A value a name alone says is secret, with no vendor's shape: what `named-secrets` weighs. Read by validation, a
 #: URL's query parameter was neither: `?api_key=`, `access_token=` and `password=` reached the model and the report.
 _GENERIC = (
@@ -267,9 +271,13 @@ _GENERIC = (
         re.compile(
             r"(?i)(?<=[?&])([\w.-]{0,40}?"
             + _NAMED
-            + r"=)(?=[^\s&#\"'<>]*\d)"
+            + r"=)(?="
+            + _QUERY_VALUE
+            + r"{0,255}?\d)"
             + _STAND_IN
-            + r"([^\s&#\"'<>()\[\]{}]{8,})"
+            + r"("
+            + _QUERY_VALUE
+            + r"{8,})"
         ),
         r"\1[REDACTED]",
     ),
@@ -449,7 +457,22 @@ def without_examples(text: str) -> str:
     a password is a default credential, and a vendor's key in a URL is a key whatever its host: both stay. The rules
     weigh what is left, so a real key beside an example is still found: measured before, a line holding an example was
     let go whole. Redaction never calls this: it hides every shape, examples too."""
-    return _KEY_HINT.sub(_BLANK, _URL_CREDENTIAL.sub(_unless_example, text))
+    return _KEY_HINT.sub(_BLANK, _URL_QUERY.sub(_query_unless_example, _URL_CREDENTIAL.sub(_unless_example, text)))
+
+
+#: A URL with a query, its host the first group: where a documentation host's example credential is blanked.
+_URL_QUERY = re.compile(
+    r"(?i)\b[a-z][a-z0-9+.-]{0,40}://(?:[^\s/?#@\"'<>]*@)?([^\s/?#:\"'<>]+)[^\s?#\"'<>]*\?[^\s#\"'<>]*"
+)
+
+
+def _query_unless_example(found: re.Match[str]) -> str:
+    """A URL's query with each named credential blanked where its host is a documentation's, as `_unless_example` does
+    a password: read by review, `https://api.example.com/v1?api_key=...` was a blocker where the same key as the URL's
+    password was not."""
+    if not _EXAMPLE_HOST.fullmatch(found.group(1)):
+        return found.group(0)
+    return _GENERIC[2][1].sub(r"\1[REDACTED]", found.group(0))
 
 
 def _unless_example(found: re.Match[str]) -> str:
@@ -489,6 +512,9 @@ ABOUT = (
     "_id", "_kind", "_label", "_length", "_limit", "_marker", "_method", "_name", "_path", "_prefix", "_profile",
     "_ref", "_regex", "_scope", "_seconds", "_source", "_type", "_uri", "_url", "_version",
 )  # fmt: skip
+#: A token a name says is no credential: a page's cursor, or a form's guard against forged requests, which a URL
+#: carries in the open. Read by review: `?pageToken=` and `?csrf_token=` in a README were blockers.
+_NOT_CREDENTIAL = re.compile(r"(?i)(?:page|cursor|continuation|sync|csrf|xsrf|csrfmiddleware)[_.-]?token$")
 #: A name whose value a person chooses: a password, which may be any words. A token, a key or a secret a machine makes.
 _CHOSEN = re.compile(r"(?i)passw(?:or)?d|pwd")
 #: A value's words, `apiKey`, `api_key` and `API-KEY` alike: runs of capitals, of letters, of digits.
@@ -518,7 +544,9 @@ def holds_no_secret(name: str, value: str, quoted: bool) -> bool:
     its characters: a name about one, `token_url`, a placeholder, code, or a label that names a secret and holds none.
     Apart from `is_credential`, which also asks a digit of what a machine makes: a rule that names a secret of letters
     alone tells the two answers apart."""
-    if name.lower().endswith(ABOUT) or is_placeholder(value) or (not quoted and _CODE.fullmatch(value)):
+    if name.lower().endswith(ABOUT) or _NOT_CREDENTIAL.search(name) or is_placeholder(value):
+        return True
+    if not quoted and _CODE.fullmatch(value):
         return True
     made = _SCHEME.sub("", value)
     digit = any(char.isdigit() for char in made)

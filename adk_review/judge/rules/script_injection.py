@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 
-from ..rule_helpers import ChangedFile, FileRule, Hit, UnreadError, matches
+from ..rule_helpers import ChangedFile, FileRule, Hit, matches
 
 #: Where GitHub runs a step's script: a workflow, and an action's own metadata, whose composite steps run them too.
 READ = (".github/workflows/*.yml", ".github/workflows/*.yaml", "action.yml", "action.yaml")
@@ -44,15 +44,23 @@ _SPACED = re.compile(r"\s*([.(])\s*")
 #: runs. What comes before the key's name, the indent and a list item's dash, is captured: its length is the key's
 #: column.
 SCRIPT = re.compile(r"""^(\s*(?:-\s+)?)(["']?)(run|script)\2\s*:""")
-#: The trigger that runs a workflow with the base's token and secrets for an outsider's pull request.
+#: The trigger that runs a workflow with the base's token and secrets for an outsider's pull request, and the key that
+#: names a workflow's triggers, at the top of the file.
 TARGET = re.compile(r"\bpull_request_target\b")
-#: A checkout step, and its `ref:` naming the pull request's own code: its head, by commit or branch, or the merge
-#: GitHub makes of it, the ref an outsider writes.
+ON = re.compile(r"""^(["']?)on\1\s*:""")
+#: A checkout step, and its `ref:` or `repository:` naming the pull request's own code: its head, by commit or branch,
+#: the merge GitHub makes of it, or the fork it comes from, as an expression holds it among others, `head.sha ||
+#: github.sha`.
 CHECKOUT = re.compile(r"""^\s*(?:-\s+)?(["']?)uses\1\s*:\s*["']?actions/checkout@""", re.IGNORECASE)
-HEAD_REF = re.compile(
-    r"""^\s*(["']?)ref\1\s*:.*(?:\$\{\{\s*github\.(?:event\.pull_request\.head\.(?:sha|ref)|head_ref)\s*\}\}|refs/pull/)""",
-    re.IGNORECASE,
+_HEAD = (
+    r"github\.(?:event\.pull_request\.(?:head\.(?:sha|ref|repo\.(?:full_name|clone_url|ssh_url))|merge_commit_sha)"
+    r"|head_ref)\b"
 )
+HEAD_REF = re.compile(
+    r"""^\s*(["']?)(?:ref|repository)\1\s*:.*(?:\$\{\{(?:(?!\}\}).)*\b""" + _HEAD + r"|refs/pull/)", re.IGNORECASE
+)
+#: A script that checks out the pull request's code itself: `gh pr checkout`, or a fetch of its ref.
+RUN_CHECKOUT = re.compile(r"\bgh\s+pr\s+checkout\b|\bgit\s+fetch\b[^#\n]*\b(?:refs/)?pull/", re.IGNORECASE)
 #: What a checkout of the pull request's own code under `pull_request_target` is, needs, and why.
 CHECKOUT_TITLE = "a pull_request_target job checks out the pull request's own code"
 CHECKOUT_FIX = (
@@ -130,28 +138,43 @@ class ScriptInjection(FileRule):
 
 
 def _checked_out(file: ChangedFile) -> list[Hit]:
-    """Each `ref:` of a checkout step that names the pull request's own code, in a workflow `pull_request_target` runs,
-    where the change added the trigger, the step's `uses:` or the `ref:`. None for a file not read whole: its trigger
-    may lie past what the diff shows."""
-    if not matches(file.path, *READ[:2]):
+    """Each place a workflow `pull_request_target` runs checks out the pull request's own code, a checkout step's
+    `ref:` or `repository:`, or a script's `gh pr checkout` or fetch of its ref, where the change added the trigger,
+    the step's `uses:` or that line, or moved the workflow into place. None for a file not read whole: its trigger may
+    lie past what the diff shows."""
+    if not matches(file.path, *READ[:2]) or not file.read_whole:
         return []  # an action's metadata names no trigger
-    try:
-        lines = file.lines
-    except UnreadError:
-        return []
-    triggers = [
-        number for number, text in enumerate(lines, 1) if TARGET.search(text) and not text.lstrip().startswith("#")
-    ]
+    lines = file.lines
+    triggers = _triggers(lines)
     if not triggers:
         return []
+    added = set(file.new_lines(*READ[:2]))  # every line of a workflow moved into place runs now
+    trigger_added = not added.isdisjoint(triggers)
     found = []
     for number, text in enumerate(lines, 1):
-        if not HEAD_REF.match(text):
+        if text.lstrip().startswith("#"):
             continue
-        step = _step_of(lines, number)
-        uses = [at for at in step if CHECKOUT.match(lines[at - 1])]
-        if uses and file.added & {number, *uses, *triggers}:
+        if HEAD_REF.match(text):
+            uses = [at for at in _step_of(lines, number) if CHECKOUT.match(lines[at - 1])]
+            named = bool(uses) and (trigger_added or not added.isdisjoint({number, *uses}))
+        else:
+            named = bool(RUN_CHECKOUT.search(text)) and (trigger_added or number in added)
+        if named:
             found.append(Hit(file.path, number, text.strip(), title=CHECKOUT_TITLE, fix=CHECKOUT_FIX, why=CHECKOUT_WHY))
+    return found
+
+
+def _triggers(lines: tuple[str, ...]) -> list[int]:
+    """The lines of the workflow's `on:` key that name `pull_request_target`: its own line and those indented under it.
+    Read by review: a search of every line read a condition, `if: github.event_name != 'pull_request_target'`, as the
+    trigger."""
+    found: list[int] = []
+    inside = False
+    for number, text in enumerate(lines, 1):
+        if text.strip() and not text.lstrip().startswith("#") and not text[:1].isspace():
+            inside = bool(ON.match(text))
+        if inside and TARGET.search(text.split("#", 1)[0]):
+            found.append(number)
     return found
 
 
