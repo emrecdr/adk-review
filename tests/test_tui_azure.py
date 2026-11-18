@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib
 import json
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 
@@ -179,3 +180,88 @@ class TestWhatAReportSaysOfAFinding:
         assert findings.load_reviewed(tmp_path / "missing.json") is None
         (tmp_path / "broken.json").write_text("{", encoding="utf-8")
         assert findings.load_reviewed(tmp_path / "broken.json") is None
+
+
+@pytest.fixture
+def row(findings: ModuleType):  # the module's own type
+    """A major a guideline found on a line the change added, with its reason and its corrected code."""
+    return findings.FindingRow(
+        severity="major",
+        tier="NEW",
+        check="guideline.correctness",
+        file="src/app.py",
+        line=42,
+        title="`charge()` adds tax twice",
+        evidence="+ total = with_tax(total)",
+        suggestion="Add the tax once.",
+        why="The coupon path taxes a taxed total.",
+        code="total = with_tax(apply_coupon(subtotal, coupon))",
+        fingerprint="1a2b3c4d5e6f7a8b",
+        lines=(42, 42),
+        on_added_line=True,
+    )
+
+
+class TestTheDraftOfAComment:
+    """`draft`: a finding's own fields as a comment, its prose made safe and its corrected code left as it is."""
+
+    def test_the_draft_of_a_major_with_code_on_an_added_line(self, azure: ModuleType, row) -> None:
+        assert azure.draft(row) == (
+            "**major**: `charge()` adds tax twice\n\n"
+            "The coupon path taxes a taxed total.\n\n"
+            "Suggested fix: Add the tax once.\n\n"
+            "```suggestion\ntotal = with_tax(apply_coupon(subtotal, coupon))\n```\n\n"
+            "*adk-review, guideline.correctness, finding 1a2b3c4d5e6f7a8b*"
+        )
+
+    def test_a_minor_with_no_reason_and_no_code_is_its_title_fix_and_mark(self, azure: ModuleType, row) -> None:
+        minor = replace(row, severity="minor", why="  ", code="\n")
+        assert azure.draft(minor).split("\n\n") == [
+            "**minor**: `charge()` adds tax twice",
+            "Suggested fix: Add the tax once.",
+            azure.mark(minor),
+        ]
+        bare = replace(minor, title="", suggestion="", fingerprint="")
+        assert azure.draft(bare) == "**minor**: guideline.correctness", "a finding with no title is named by its check"
+
+    @pytest.mark.parametrize(
+        "change", [{"on_added_line": False}, {"on_added_line": None}, {"lines": None, "line": None}]
+    )
+    def test_code_off_the_added_lines_is_shown_and_cannot_be_applied(
+        self, azure: ModuleType, row, change: dict
+    ) -> None:
+        """A `suggestion` block replaces the lines its comment stands on, when the author applies it: only a finding
+        on lines the change added gets one, as the owner chose."""
+        text = azure.draft(replace(row, **change))
+        assert not azure.suggests(replace(row, **change))
+        assert "```suggestion" not in text and "Corrected code:\n\n```\ntotal = with_tax(" in text
+
+    def test_code_that_holds_a_fence_is_indented_and_never_a_suggestion(self, azure: ModuleType, row) -> None:
+        text = azure.draft(replace(row, code="```python\nx = 1\n```"))
+        assert "```suggestion" not in text and "Corrected code:\n\n    ```python\n    x = 1\n    ```" in text
+
+    def test_a_models_words_notify_no_one_and_the_code_keeps_every_character(self, azure: ModuleType, row) -> None:
+        """Azure DevOps acts on `@name`, `#12` and `!7` in a comment, so prose has each broken, as the reviewer's
+        own comment has. Inside the suggestion nothing may change: "Apply changes" writes it into the file, and
+        `@dataclass` broken there is broken code."""
+        code = "@dataclass\nclass A:  # see #12 and !7\n    items: list[T] = <T>"
+        hostile = "@alice see #12, !7, ![x](http://e.test) <img src=x>"
+        text = azure.draft(replace(row, title=hostile, why=hostile, suggestion=hostile, severity="@bob", code=code))
+        *prose, block, _mark = text.split("\n\n")
+        for part in prose:
+            assert "@ " in part and "](" not in part and "<img" not in part, part
+        assert "@ alice see # 12, ! 7" in prose[0] and prose[0].startswith("**@ bob**")
+        assert block == f"```suggestion\n{code}\n```"
+
+    def test_the_mark_is_found_again_however_the_person_framed_it(self, azure: ModuleType, row) -> None:
+        assert azure.marked(azure.draft(row)) == "1a2b3c4d5e6f7a8b"
+        assert azure.marked("> adk-review, rule.named-secrets, finding 00ff00ff00ff00ff (edited)") == "00ff00ff00ff00ff"
+        assert azure.marked("no mark here") is None and azure.marked("") is None
+
+    @pytest.mark.parametrize(
+        "change", [{"fingerprint": ""}, {"fingerprint": "XYZ"}, {"fingerprint": "ab" * 9}, {"check": "a b*c"}]
+    )
+    def test_a_finding_that_cannot_be_found_again_gets_no_mark(self, azure: ModuleType, row, change: dict) -> None:
+        """A mark nothing can read back is worse than none: it would say the comment can be found again."""
+        unmarked = replace(row, **change)
+        assert azure.mark(unmarked) == "" and "adk-review," not in azure.draft(unmarked)

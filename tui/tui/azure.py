@@ -11,13 +11,22 @@ import re
 from dataclasses import dataclass
 from urllib.parse import quote, unquote, urlsplit
 
-from .findings import COMMIT
+from adk_review.deliver.report import prose
+
+from .findings import COMMIT, FindingRow
 
 #: Azure DevOps Services' host, and its older one with the organization as its first label.
 _HOST = "dev.azure.com"
 _OLD_HOST = re.compile(r"[a-z0-9][a-z0-9-]*\.visualstudio\.com")
 #: A pull request's number as its address spells it: ASCII digits, since `str.isdigit` takes any script's.
 _NUMBER = re.compile(r"[1-9][0-9]{0,9}")
+
+#: A comment's last line, which finds it again: the check and the finding's identity across reviews. Plain words and
+#: no HTML, which Azure DevOps renders in wiki pages alone; read wherever it stands in a comment, since the person
+#: may frame it as they like.
+MARK = re.compile(r"adk-review, [\w.-]+, finding ([0-9a-f]{16})")
+#: A fence opens a code block in a comment, and closes the one it stands in.
+_FENCE = "```"
 
 _NOT_ONE = (
     "This is not a pull request's address. "
@@ -115,3 +124,49 @@ def thread_link(pr: PullRequest, thread: int) -> str:
 def _path(path: str) -> str:
     """A repository's path as these pages take it: from the root, encoded whole."""
     return _quoted("/" + path.lstrip("/"))
+
+
+def mark(row: FindingRow) -> str:
+    """The line that says a tool drafted the comment and finds it again, or nothing where `row` holds no identity
+    `marked` could read back."""
+    line = f"*adk-review, {row.check}, finding {row.fingerprint}*"
+    return line if MARK.fullmatch(line[1:-1]) else ""
+
+
+def marked(text: str) -> str | None:
+    """The finding a comment's text is marked with, by its fingerprint, or None."""
+    found = MARK.search(text)
+    return found.group(1) if found else None
+
+
+def suggests(row: FindingRow) -> bool:
+    """Whether `row`'s corrected code is drafted as a `suggestion` block, which the author applies with one click:
+    only where the finding stands on lines the change added, as the owner chose, and its code holds no fence, which
+    would close the block early."""
+    return bool(row.code.strip()) and row.on_added_line is True and row.span() is not None and _FENCE not in row.code
+
+
+def draft(row: FindingRow) -> str:
+    """The comment drafted from `row`'s own fields, for the person to edit: its severity and title, its reason, what
+    to change, its corrected code, and its mark. Each line of prose is the reviewer's `prose`, so `@name`, `#12` and
+    `!7` notify no one and link nothing. The code is never changed: "Apply changes" writes it into the file."""
+    parts = [f"**{prose(row.severity)}**: {prose(row.title) or prose(row.check)}"]
+    if why := prose(row.why):
+        parts.append(why)
+    if fix := prose(row.suggestion):
+        parts.append(f"Suggested fix: {fix}")
+    if code := row.code.strip("\n"):
+        parts.append(_block(code, applies=suggests(row)))
+    if sign := mark(row):
+        parts.append(sign)
+    return "\n\n".join(parts)
+
+
+def _block(code: str, *, applies: bool) -> str:
+    """`code` as a block of a comment: one the author can apply, one to read, or, where it holds a fence itself,
+    indented, which needs none."""
+    if applies:
+        return f"{_FENCE}suggestion\n{code}\n{_FENCE}"
+    if _FENCE in code:
+        return "Corrected code:\n\n" + "\n".join(f"    {line}" for line in code.split("\n"))
+    return f"Corrected code:\n\n{_FENCE}\n{code}\n{_FENCE}"
