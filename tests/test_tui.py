@@ -2342,8 +2342,10 @@ class TestThePickAsReviewedAgain:
 
 
 async def _wait_for_branches(app, pilot) -> None:
+    """Until the first repository's branches are listed, and its folders too: a review waits for both. Seen on
+    Windows in CI: a test that pressed Ctrl+D once the branches showed met the wait for the folders."""
     await pilot.pause()
-    for _ in range(60):
+    for _ in range(200):
         await pilot.pause(0.05)
-        if app.branches:
+        if app.branches and app._listing_for is None:
             break
