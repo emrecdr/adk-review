@@ -4,8 +4,8 @@
 #
 # Keybindings in the TUI:
 #   Ctrl+R  Run Review        Ctrl+D  Dry Run            Ctrl+X  Stop Running Review
-#   Ctrl+T  Fold/Unfold All   Ctrl+P  Command Palette    Ctrl+Y  Copy Active Tab
-#   F5      Fetch & Refresh   1..7    Toggle Section 1-7
+#   Ctrl+T  Minimize All      Ctrl+O  Restore All        Ctrl+Y  Copy Active Tab
+#   Ctrl+P  Command Palette   F5      Fetch & Refresh    1..7    Toggle Section 1-7
 # tui/README.md says what each setting and key does.
 
 [workspace]

@@ -114,11 +114,12 @@ As the reviewer does, the screen reads a repository and writes nothing into it:
 | `Ctrl+R` | Run the review |
 | `Ctrl+D` | Run a `--dry-run`: what the review would cover and run, nothing run |
 | `Ctrl+X` | Stop a running review |
-| `Ctrl+T` | Fold or unfold every section |
+| `Ctrl+T` | Minimize every panel |
+| `Ctrl+O` | Restore every panel |
 | `Ctrl+Y` | Copy the open tab: the report, a finding, the comment or the hand-off |
 | `Ctrl+P` | Open the command palette: a repository, a branch, a profile or an action by name |
 | `F5` | Fetch the chosen repository and list its branches again, the branches you chose kept where they are still there |
-| A number key | Fold or unfold the section of that number, where no text field has the focus |
+| A number key | Minimize or restore the panel of that number, where no text field has the focus |
 | `q` | Quit |
 
 The action keys work wherever the focus is, a text field included. While a dialog is open, only `Ctrl+X` works,

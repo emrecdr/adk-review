@@ -27,7 +27,8 @@ class _PaletteHost(Protocol):
     def action_run_review(self) -> None: ...
     def action_run_dry(self) -> None: ...
     def action_refresh_repo(self) -> None: ...
-    def action_toggle_minimize_all(self) -> None: ...
+    def action_minimize_all(self) -> None: ...
+    def action_restore_all(self) -> None: ...
     def action_explain_selected_check(self) -> None: ...
 
 
@@ -66,11 +67,8 @@ class ReviewCommandProvider(Provider):
             ("Action: Run Review (Ctrl+R)", host.action_run_review, "Execute adk-review with current selections"),
             ("Action: Dry Run (Ctrl+D)", host.action_run_dry, "Validate scope and readiness without running checks"),
             ("Action: Fetch & Refresh Repo (F5)", host.action_refresh_repo, "Run git fetch --prune on active repo"),
-            (
-                "Action: Fold / Unfold All Sections (Ctrl+T)",
-                host.action_toggle_minimize_all,
-                "Collapse or expand all configuration sections",
-            ),
+            ("Action: Minimize All Panels (Ctrl+T)", host.action_minimize_all, "Minimize every configuration panel"),
+            ("Action: Restore All Panels (Ctrl+O)", host.action_restore_all, "Restore every configuration panel"),
             (
                 "Action: Explain Selected Finding Check",
                 host.action_explain_selected_check,

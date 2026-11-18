@@ -94,7 +94,8 @@ class AdkReviewTuiApp(App[int]):
         Binding("ctrl+r", "run_review", "Run Review", priority=True),
         Binding("ctrl+d", "run_dry", "Dry Run", priority=True),
         Binding("ctrl+x", "stop_review", "Stop Review", priority=True),
-        Binding("ctrl+t", "toggle_minimize_all", "Fold/Unfold All", priority=True),
+        Binding("ctrl+t", "minimize_all", "Minimize All", priority=True),
+        Binding("ctrl+o", "restore_all", "Restore All", priority=True),
         Binding("ctrl+y", "copy_active_tab", "Copy Tab", priority=True),
         Binding("f5", "refresh_repo", "Fetch & Refresh"),
         Binding("1", "toggle_step(1)", "Step 1", show=False),
@@ -109,7 +110,7 @@ class AdkReviewTuiApp(App[int]):
 
     #: What a key starts that never runs behind a dialog: a review, a dry run, the sections folded, a tab copied. Not
     #: Stop, which must always reach a running review.
-    BEHIND_NO_DIALOG = frozenset({"run_review", "run_dry", "toggle_minimize_all", "copy_active_tab"})
+    BEHIND_NO_DIALOG = frozenset({"run_review", "run_dry", "minimize_all", "restore_all", "copy_active_tab"})
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:  # noqa: ARG002 -- Textual's
         """No action key but Stop runs while a dialog is open. Measured: once the keys went first, Ctrl+R and Ctrl+D
@@ -911,12 +912,19 @@ class AdkReviewTuiApp(App[int]):
             section.collapsed = not section.collapsed
             self._update_section_titles()
 
-    def action_toggle_minimize_all(self) -> None:
-        """Collapse all visible sections if any are expanded, or expand all if all are collapsed."""
-        sections = [c for c in self.query(Collapsible) if not c.has_class("hidden")]
-        should_collapse = any(not c.collapsed for c in sections)
-        for section in sections:
-            section.collapsed = should_collapse
+    def action_minimize_all(self) -> None:
+        """Minimize every visible panel, however each stands. Asked by the owner: one key that folded or unfolded
+        them all, by how it found them, gave no sure way to either."""
+        self._fold_all(collapsed=True)
+
+    def action_restore_all(self) -> None:
+        """Restore every visible panel, however each stands."""
+        self._fold_all(collapsed=False)
+
+    def _fold_all(self, *, collapsed: bool) -> None:
+        for section in self.query(Collapsible):
+            if not section.has_class("hidden"):
+                section.collapsed = collapsed
         self._update_section_titles()
 
     def action_copy_active_tab(self) -> None:

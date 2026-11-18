@@ -1044,6 +1044,39 @@ class TestWindowsAndItsShells:
             await pilot.pause()
             assert ran == ["stop"] and isinstance(app.screen, SyncBranchModal), ran
             assert all(box.collapsed for box in shown), "nor did Ctrl+T unfold the sections behind it"
+            await pilot.press("ctrl+o")
+            await pilot.pause()
+            assert all(box.collapsed for box in shown), "nor Ctrl+O restore them behind it"
+
+    @pytest.mark.asyncio
+    async def test_ctrl_t_minimizes_every_panel_and_ctrl_o_restores_every_one(self, tmp_path: Path) -> None:
+        """Asked by the owner: the panels took most of the screen. One key that folded or unfolded them all, by how it
+        found them, gave no sure way to either. Ctrl+T minimizes every panel, pressed twice too, and Ctrl+O restores
+        every one, wherever the focus is: a text field takes neither key."""
+        pytest.importorskip("textual")
+        from textual.widgets import Collapsible, Input
+
+        from tui.app import AdkReviewTuiApp
+
+        _init_repo_with_remote(tmp_path)
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            shown = [box for box in app.query(Collapsible) if not box.has_class("hidden")]
+            app.query_one("#repo-filter", Input).focus()
+            await pilot.press("ctrl+t", "ctrl+t")
+            await pilot.pause()
+            assert all(box.collapsed for box in shown), "Ctrl+T twice leaves every panel minimized"
+            await pilot.press("ctrl+o", "ctrl+o")
+            await pilot.pause()
+            assert not any(box.collapsed for box in shown), "Ctrl+O twice leaves every panel open"
+            shown[1].collapsed = True
+            await pilot.press("ctrl+o")
+            await pilot.pause()
+            assert not any(box.collapsed for box in shown), "Ctrl+O restores a panel minimized alone too"
+            assert app.query_one("#repo-filter", Input).value == "", "and the text field took no key"
 
     @pytest.mark.asyncio
     async def test_a_reviews_text_reaches_the_screen_as_written_on_windows_too(
