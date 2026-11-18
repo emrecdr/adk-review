@@ -19,10 +19,17 @@ def _state_apart(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     reports in the package's real state folder, beside a person's own."""
     import importlib
 
-    options = importlib.import_module("adk_review.tui.options")
     state = tmp_path_factory.mktemp("tui-state")
+    for name in ("APPDATA", "LOCALAPPDATA", "XDG_CONFIG_HOME", "XDG_STATE_HOME"):  # read where a module loads afresh
+        monkeypatch.setenv(name, str(state / name.lower()))
+    options = importlib.import_module("adk_review.tui.options")
+    config = importlib.import_module("adk_review.tui.config")
     monkeypatch.setattr(options, "BASELINES_DIR", state / "baselines")
     monkeypatch.setattr(options, "CACHE_DIR", state / "cache")
+    monkeypatch.setattr(config, "DEFAULT_CONFIG_PATH", state / "config" / "tui.toml")
+    monkeypatch.setattr(config, "OUTPUTS_DIR", state / "outputs")
+    # Never a person's own: the config a checkout kept before, which a first run copies.
+    monkeypatch.setattr(config, "LEGACY_CONFIG_PATH", state / "no-checkout" / ".tui.toml", raising=False)
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -87,12 +94,87 @@ def _init_repo_with_remote(tmp_path: Path) -> tuple[Path, Path]:
 class TestTuiConfig:
     """`adk_review/tui/.tui.toml` loading, multi-root workspace parsing, and preset persistence."""
 
-    def test_default_config_path_lies_inside_adk_review_tui(self) -> None:
-        from adk_review.tui.config import DEFAULT_CONFIG_PATH
+    def test_the_config_and_the_state_live_in_the_persons_own_folders(self, tmp_path: Path, monkeypatch) -> None:
+        """Reproduced on a copy installed with `uv tool install`: its config and its saved reviews lived inside the
+        tool's own environment, which an uninstall removed, choices and all, and where no one finds a comment. They
+        live in the person's own folders now, as each system names them."""
+        from adk_review.tui import config
+        from adk_review.tui.config import config_home, state_home
 
-        assert DEFAULT_CONFIG_PATH.name == ".tui.toml"
-        assert DEFAULT_CONFIG_PATH.parent.name == "tui"
-        assert DEFAULT_CONFIG_PATH.parent.parent.name == "adk_review"
+        monkeypatch.setenv("APPDATA", "C:\\Users\\me\\AppData\\Roaming")
+        monkeypatch.setenv("LOCALAPPDATA", "C:\\Users\\me\\AppData\\Local")
+        assert config_home(windows=True) == Path("C:\\Users\\me\\AppData\\Roaming")
+        assert state_home(windows=True) == Path("C:\\Users\\me\\AppData\\Local")
+        monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+        monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+        assert (config_home(windows=False), state_home(windows=False)) == (tmp_path / "config", tmp_path / "state")
+        monkeypatch.setenv("XDG_CONFIG_HOME", "relative/no")  # the XDG spec takes an absolute path alone
+        monkeypatch.delenv("XDG_STATE_HOME")
+        assert config_home(windows=False) == Path.home() / ".config"
+        assert state_home(windows=False) == Path.home() / ".local" / "state"
+        # As a fresh process computes them, never inside the package.
+        said = (
+            "from adk_review.tui import config as c; print(c.DEFAULT_CONFIG_PATH); print(c.STATE_DIR); print(c.TUI_DIR)"
+        )
+        done = subprocess.run(
+            [sys.executable, "-c", said], capture_output=True, text=True, encoding="utf-8", check=True
+        )
+        default, state, package = map(Path, done.stdout.splitlines())
+        assert not default.is_relative_to(package) and not state.is_relative_to(package), (default, state)
+        assert (default.name, default.parent.name, state.name) == ("tui.toml", "adk-review-tui", "adk-review-tui")
+        assert package == config.TUI_DIR
+
+    def test_an_installed_copy_names_the_folder_it_starts_in_as_its_folder_of_repositories(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Reproduced on a copy installed with `uv tool install`: its first run named its own environment's
+        `lib/python3.14` as the folder of repositories, and the screen found none. A checkout still names the folder
+        that holds it, where its neighbours are; an installed copy names the folder it starts in."""
+        from adk_review.tui import config
+
+        checkout = tmp_path / "projects" / "adk-review"
+        (checkout / ".git").mkdir(parents=True)
+        (checkout / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        monkeypatch.setattr(config, "TUI_DIR", checkout / "adk_review" / "tui")
+        assert config.default_root_folder() == str(tmp_path / "projects")
+        installed = tmp_path / "tools" / "adk-review" / "lib" / "python3.14" / "site-packages"
+        monkeypatch.setattr(config, "TUI_DIR", installed / "adk_review" / "tui")
+        (tmp_path / "work").mkdir()
+        monkeypatch.chdir(tmp_path / "work")
+        assert config.default_root_folder() == str(tmp_path / "work")
+
+    def test_a_checkouts_old_config_is_copied_to_the_new_folder_once(self, tmp_path: Path, monkeypatch) -> None:
+        """A checkout kept its config as `adk_review/tui/.tui.toml`. The first run that finds none in the person's own
+        folder copies it there, its saved choices kept and its old `output_dir`, a path inside the package, left out,
+        and leaves the old file where it is. A later run reads the new one alone."""
+        from adk_review.tui import config
+
+        legacy = tmp_path / "checkout" / ".tui.toml"
+        legacy.parent.mkdir()
+        legacy.write_text(
+            f'[workspace]\nroot_dirs = ["{tmp_path.as_posix()}"]\noutput_dir = "adk_review/tui/.state/outputs"\n\n'
+            '[projects."my-service"]\nbase = "develop"\n',
+            encoding="utf-8",
+        )
+        monkeypatch.setattr(config, "LEGACY_CONFIG_PATH", legacy)
+        target = config.ensure_tui_config()
+        assert target == config.DEFAULT_CONFIG_PATH.resolve() and legacy.is_file(), "copied, the old file kept"
+        loaded = config.load_tui_config(target)
+        assert loaded.projects["my-service"].base == "develop" and loaded.output_dir == str(config.OUTPUTS_DIR)
+        legacy.write_text('[projects."other"]\n', encoding="utf-8")
+        assert "my-service" in config.load_tui_config().projects, "copied once: the new file is the one read"
+
+    def test_a_relative_output_dir_is_read_from_the_configs_own_folder(self, tmp_path: Path) -> None:
+        """Read by review: a relative `output_dir` was read from the checkout's root, which an installed copy has not,
+        and its reviews landed inside its own environment. It is read from the config's folder now."""
+        from adk_review.tui.config import load_tui_config
+
+        cfg = tmp_path / "mine" / "tui.toml"
+        cfg.parent.mkdir()
+        cfg.write_text(
+            f'[workspace]\nroot_dirs = ["{tmp_path.as_posix()}"]\noutput_dir = "reviews"\n', encoding="utf-8"
+        )
+        assert load_tui_config(cfg).output_dir == str((cfg.parent / "reviews").resolve())
 
     def test_ensure_and_load_tui_config_supports_multiple_root_dirs_and_presets(self, tmp_path: Path) -> None:
         from adk_review.tui.config import RepoPreset, TuiConfig, ensure_tui_config, load_tui_config, save_repo_preset

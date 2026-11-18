@@ -1,8 +1,14 @@
-"""Configuration loader and preset persistence for `adk_review/tui/.tui.toml`."""
+"""The front end's config, `tui.toml`, and where it and the front end's state live: the person's own folders.
+
+Reproduced on a copy installed with `uv tool install`: the config and the saved reviews lived inside the tool's own
+environment, which an uninstall removed, choices and all, and where no one finds a comment; and its first run named
+that environment's `lib/python3.14` as the folder of repositories. Each lives where its system keeps a person's own now.
+"""
 
 from __future__ import annotations
 
 import os
+import re
 import tempfile
 import tomllib
 from dataclasses import dataclass, field
@@ -10,9 +16,38 @@ from pathlib import Path
 
 from ..core.findings import RANK
 
+#: The folder each of the front end's folders is named after.
+APP = "adk-review-tui"
+
+
+def _home(variable: str, *fallback: str) -> Path:
+    """The folder `variable` names where it names an absolute one, as the XDG spec reads it; else `~/<fallback>`."""
+    named = os.environ.get(variable, "")
+    return Path(named) if named and os.path.isabs(named) else Path.home().joinpath(*fallback)
+
+
+def config_home(*, windows: bool = os.name == "nt") -> Path:
+    """Where a person's own config lives: `%APPDATA%` on Windows, `$XDG_CONFIG_HOME` or `~/.config` elsewhere."""
+    if windows:
+        return Path(os.environ.get("APPDATA") or Path.home() / "AppData" / "Roaming")
+    return _home("XDG_CONFIG_HOME", ".config")
+
+
+def state_home(*, windows: bool = os.name == "nt") -> Path:
+    """Where a person's own state lives: `%LOCALAPPDATA%` on Windows, `$XDG_STATE_HOME` or `~/.local/state`
+    elsewhere."""
+    if windows:
+        return Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
+    return _home("XDG_STATE_HOME", ".local", "state")
+
+
 TUI_DIR = Path(__file__).resolve().parent
-DEFAULT_CONFIG_PATH = TUI_DIR / ".tui.toml"
-STATE_DIR = TUI_DIR / ".state"
+DEFAULT_CONFIG_PATH = config_home() / APP / "tui.toml"
+#: Where a checkout kept the config before: a first run that finds none at `DEFAULT_CONFIG_PATH` copies it there.
+LEGACY_CONFIG_PATH = TUI_DIR / ".tui.toml"
+#: Its old `output_dir`, a path inside the package, which the copy leaves out so the new default holds.
+_LEGACY_OUTPUT_DIR = re.compile(r'(?m)^output_dir\s*=\s*"adk_review/tui/\.state/outputs"[ \t]*\n?')
+STATE_DIR = state_home() / APP
 CACHE_DIR = STATE_DIR / "cache"
 BASELINES_DIR = STATE_DIR / "baselines"
 OUTPUTS_DIR = STATE_DIR / "outputs"
@@ -28,7 +63,7 @@ class RootDir:
 
 @dataclass(frozen=True)
 class ReviewDefaults:
-    """Default review option toggles loaded from `[defaults]` in `.tui.toml`."""
+    """Default review option toggles loaded from `[defaults]` in `tui.toml`."""
 
     profile: str = "default"
     fail_on: str = "blocker"
@@ -41,7 +76,7 @@ class ReviewDefaults:
 
 @dataclass(frozen=True)
 class RepoPreset:
-    """Saved per-repository review selections under `[projects.<name>]` in `.tui.toml`."""
+    """Saved per-repository review selections under `[projects.<name>]` in `tui.toml`."""
 
     base: str = ""
     profile: str = ""
@@ -57,7 +92,7 @@ class RepoPreset:
 
 @dataclass(frozen=True)
 class TuiConfig:
-    """Complete parsed configuration from `adk_review/tui/.tui.toml`."""
+    """Complete parsed configuration from `tui.toml`."""
 
     config_path: Path
     root_dirs: tuple[RootDir, ...]
@@ -69,10 +104,12 @@ class TuiConfig:
 
 
 def default_root_folder() -> str:
-    """The parent directory of this repository checkout, used when initializing `.tui.toml`."""
-    repo_root = TUI_DIR.parent.parent
-    parent = repo_root.parent
-    return str(parent if parent.is_dir() else repo_root)
+    """The folder of repositories a first run names: in a checkout, the folder that holds it, where its neighbours
+    are; in an installed copy, the folder the command starts in."""
+    checkout = TUI_DIR.parent.parent
+    if (checkout / ".git").exists() and (checkout / "pyproject.toml").is_file():
+        return str(checkout.parent)
+    return str(Path.cwd())
 
 
 def _toml(text: str) -> str:
@@ -88,11 +125,16 @@ def _toml_list(items: tuple[str, ...]) -> str:
 
 
 def ensure_tui_config(path: Path | None = None) -> Path:
-    """Return `path` (default `adk_review/tui/.tui.toml`), creating it if missing."""
+    """`path`, by default `tui.toml` in the person's config folder, written with the defaults where it is missing. A
+    checkout's old config, `adk_review/tui/.tui.toml`, is copied there once in their place, its saved choices kept,
+    and left where it is."""
     target = (path or DEFAULT_CONFIG_PATH).expanduser().resolve()
     if target.is_file():
         return target
     target.parent.mkdir(parents=True, exist_ok=True)
+    if target == DEFAULT_CONFIG_PATH.expanduser().resolve() and LEGACY_CONFIG_PATH.is_file():
+        write_atomic(target, _LEGACY_OUTPUT_DIR.sub("", LEGACY_CONFIG_PATH.read_text(encoding="utf-8")))
+        return target
     root = default_root_folder().replace("\\", "/")
     content = (
         "# Configuration for `adk-review-tui`.\n"
@@ -102,8 +144,7 @@ def ensure_tui_config(path: Path | None = None) -> Path:
         f"    {_toml(root)},\n"
         "]\n"
         "scan_depth = 2\n"
-        "fetch_timeout_s = 15\n"
-        'output_dir = "adk_review/tui/.state/outputs"\n\n'
+        "fetch_timeout_s = 15\n\n"
         "[defaults]\n"
         'profile = "default"\n'
         'fail_on = "blocker"\n'
@@ -119,7 +160,7 @@ def ensure_tui_config(path: Path | None = None) -> Path:
 
 
 def load_tui_config(path: Path | None = None) -> TuiConfig:
-    """Read and validate `adk_review/tui/.tui.toml`, creating a starter file if absent."""
+    """Read the config at `path`, by default the person's own `tui.toml`, written first where it is missing."""
     target = ensure_tui_config(path)
     try:
         raw = tomllib.loads(target.read_text(encoding="utf-8"))
@@ -129,8 +170,7 @@ def load_tui_config(path: Path | None = None) -> TuiConfig:
     roots = _parse_roots(workspace)
     depth = _int_in_range(workspace.get("scan_depth", 2), 2, 1, 5)
     timeout = _int_in_range(workspace.get("fetch_timeout_s", 15), 15, 3, 120)
-    out_raw = str(workspace.get("output_dir", "adk_review/tui/.state/outputs")).strip()
-    output_dir = _resolve_output_dir(out_raw)
+    output_dir = _resolve_output_dir(workspace.get("output_dir"), target.parent)
     try:
         defaults = _parse_defaults(raw.get("defaults"))
         projects = _parse_projects(raw.get("projects"))
@@ -170,14 +210,14 @@ def _fail_on(value: object, table: str, default: str) -> str:
     return value
 
 
-def _resolve_output_dir(out_raw: str) -> str:
-    """Resolve `output_dir` relative to the repository root when given as a relative path."""
-    if not out_raw or out_raw == ".":
-        return str(Path.cwd())
-    candidate = Path(out_raw).expanduser()
-    if candidate.is_absolute():
-        return str(candidate)
-    return str((TUI_DIR.parent.parent / candidate).resolve())
+def _resolve_output_dir(out_raw: object, beside: Path) -> str:
+    """Where the reviews' files go: the state folder's `outputs` where the config names none, and a relative path
+    read from the config's own folder, `beside`. Read by review: it was read from the checkout's root, which an
+    installed copy has not, and its reviews landed inside its own environment."""
+    if not isinstance(out_raw, str) or not out_raw.strip():
+        return str(OUTPUTS_DIR)
+    candidate = Path(out_raw.strip()).expanduser()
+    return str(candidate if candidate.is_absolute() else (beside / candidate).resolve())
 
 
 def _parse_roots(workspace: dict) -> tuple[RootDir, ...]:
@@ -212,7 +252,7 @@ def _one_root(item: object) -> RootDir | None:
 
 
 def _parse_defaults(section: object) -> ReviewDefaults:
-    """Parse `[defaults]` table from `.tui.toml`."""
+    """Parse `[defaults]` table from `tui.toml`."""
     if not isinstance(section, dict):
         return ReviewDefaults()
     return ReviewDefaults(
@@ -227,7 +267,7 @@ def _parse_defaults(section: object) -> ReviewDefaults:
 
 
 def _parse_projects(section: object) -> dict[str, RepoPreset]:
-    """Parse `[projects]` table from `.tui.toml`."""
+    """Parse `[projects]` table from `tui.toml`."""
     if not isinstance(section, dict):
         return {}
     presets: dict[str, RepoPreset] = {}
@@ -288,7 +328,7 @@ def _serialize_config(config: TuiConfig) -> str:
         "]",
         f"scan_depth = {config.scan_depth}",
         f"fetch_timeout_s = {config.fetch_timeout_s}",
-        f"output_dir = {_toml(config.output_dir)}",
+        *([f"output_dir = {_toml(config.output_dir)}"] if config.output_dir != str(OUTPUTS_DIR) else []),
         "",
         "[defaults]",
         f"profile = {_toml(d.profile)}",

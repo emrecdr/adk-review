@@ -32,25 +32,33 @@ In a pipeline, install the reviewer as [GUIDE.md](../../GUIDE.md) says, with no 
 
 ## Its config
 
-The first run writes `.tui.toml` beside its code, in `adk_review/tui/`, with the folder above the checkout as the
-folder of repositories. `tui.example.toml` beside it shows every setting. `--config FILE` reads another file, and
-`--init-config` writes the file and prints its path.
+The first run writes `tui.toml` in your own config folder, which an update, a reinstall or an uninstall leaves alone:
+
+| System | Config | State: saved reports, the cache and each review's files |
+|---|---|---|
+| Windows | `%APPDATA%\adk-review-tui\tui.toml` | `%LOCALAPPDATA%\adk-review-tui` |
+| macOS and Linux | `~/.config/adk-review-tui/tui.toml`, or under `$XDG_CONFIG_HOME` | `~/.local/state/adk-review-tui`, or under `$XDG_STATE_HOME` |
+
+`--init-config` writes the file where it is missing and prints its path, and `--config FILE` reads another file. The
+first run names a folder of repositories for you: in a checkout, the folder that holds the checkout, where its
+neighbours are; in an installed copy, the folder the command starts in. A checkout's old config,
+`adk_review/tui/.tui.toml`, is copied to the new place once, and left where it is. `tui.example.toml`, in
+`adk_review/tui/`, shows every setting.
 
 | Setting | What it sets |
 |---|---|
 | `[workspace] root_dirs` | The folders that hold your repositories: a path, or `{ label = "...", path = "..." }`. With more than one, the screen asks for the folder first. |
 | `scan_depth` | How many folders deep it looks for repositories, from 1 to 5. |
 | `fetch_timeout_s` | How long the fetch at F5 may run, in seconds. |
-| `output_dir` | Where each review's JSON report, comment and hand-off go. |
+| `output_dir` | Where each review's JSON report, comment and hand-off go: by default the state folder's `outputs`, and a relative path is read from the config's own folder. |
 | `[defaults]` | The profile, the `--fail-on` bar, and which outputs and options are on. |
 | `[projects."<name>"]` | One repository's saved choices, written at each review the screen runs. |
 
 A `fail_on` that names no severity, or a file that is no TOML, stops the start with one sentence and exit 2.
 
-Its state, the last report of each target, which marks findings new or resolved, and the review cache, is in a
-`.state` folder beside the config. A target's last report moves on only where a review found other findings, so the
-same review run a third time is served from the cache with no model call. In a copy installed with
-`uv tool install`, a reinstall removes the config and the state.
+The state folder holds the last report of each target, which marks findings new or resolved, and the review cache.
+A target's last report moves on only where a review found other findings, so the same review run a third time is
+served from the cache with no model call.
 
 ## The steps
 
@@ -117,7 +125,7 @@ It runs in cmd, in PowerShell and in Windows Terminal alike.
 |---|---|
 | `__init__.py`, `__main__.py` | The `adk-review-tui` command: `--config`, `--init-config`, and the config read before the screen opens |
 | `app.py` | The screen: the steps, the tabs, the keys, and the review it runs |
-| `config.py` | `.tui.toml`: the folders of repositories, the defaults and each repository's saved choices |
+| `config.py` | `tui.toml` and where it and the state live: the folders of repositories, the defaults and each repository's saved choices |
 | `git_sync.py` | The repositories under a folder, their branches and how each stands to its remote, and the fetch at F5 |
 | `options.py` | The profiles, the command a selection makes, and the report `--previous` reads |
 | `findings.py` | A `--json` report read for the findings tab, its filters, and a check's explanation |

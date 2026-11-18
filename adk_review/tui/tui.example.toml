@@ -1,5 +1,5 @@
-# Every setting of `adk-review-tui`, as an example: its first run writes `.tui.toml` beside this file, with the folder
-# above the checkout as the folder of repositories. Copy what you need from here into it.
+# Every setting of `adk-review-tui`, as an example. Its first run writes `tui.toml` in your own config folder:
+# %APPDATA%\adk-review-tui on Windows, ~/.config/adk-review-tui elsewhere. Copy what you need from here into it.
 #
 # Keybindings in the TUI:
 #   Ctrl+R  Run Review        Ctrl+D  Dry Run            Ctrl+X  Stop Running Review
@@ -18,7 +18,8 @@ root_dirs = [
 ]
 scan_depth = 2
 fetch_timeout_s = 15
-output_dir = "adk_review/tui/.state/outputs"
+# output_dir = "reviews"   # where each review's files go; by default your state folder's outputs, a relative path read
+#                          # from this file's own folder
 
 [defaults]
 profile = "default"

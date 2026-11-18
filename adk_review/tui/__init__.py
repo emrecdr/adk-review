@@ -1,8 +1,8 @@
 """Interactive Textual front-end shell (`adk-review-tui`) for `adk-review`.
 
-All TUI configuration (`adk_review/tui/.tui.toml`), state (`adk_review/tui/.state/`), and UI modules live in this
-subpackage. `textual` is an optional dependency (`[project.optional-dependencies] tui`), so CI/CD installs of
-`adk-review` never pull UI packages.
+Its code lives in this subpackage, and its config and state in the person's own folders (`config.py`). `textual`
+is an optional dependency (`[project.optional-dependencies] tui`), so an install of `adk-review` for a pipeline takes
+no UI package.
 """
 
 from __future__ import annotations
@@ -25,12 +25,12 @@ def build_tui_parser() -> argparse.ArgumentParser:
         "--config",
         metavar="FILE",
         default=str(DEFAULT_CONFIG_PATH),
-        help="path to the TUI config file (default: adk_review/tui/.tui.toml)",
+        help=f"read the config from FILE. Default: {DEFAULT_CONFIG_PATH}",
     )
     parser.add_argument(
         "--init-config",
         action="store_true",
-        help="ensure adk_review/tui/.tui.toml exists, print its path, and exit",
+        help="write the config where it is missing, print its path, and exit",
     )
     return parser
 
