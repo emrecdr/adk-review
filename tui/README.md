@@ -166,6 +166,7 @@ It runs in cmd, in PowerShell and in Windows Terminal alike.
 | `options.py` | The profiles, the command a selection makes, and the report `--previous` reads |
 | `findings.py` | A `--json` report read for the findings tab, its filters, and a check's explanation |
 | `azure.py` | Azure DevOps, with no call made: a pull request's address read, a finding's links built, the comment drafted from a finding, with the mark that finds it again, and the thread it is posted as |
+| `azure_client.py` | The calls to Azure DevOps and their login: a token from `az`, with fixed arguments, kept in memory alone |
 | `modals.py` | The dialogs: a branch behind or apart from its remote, and a check's explanation |
 | `commands.py` | The command palette |
 | `clipboard.py` | Copying, through the terminal and through Windows' own clipboard |

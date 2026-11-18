@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
@@ -325,3 +326,114 @@ class TestTheThreadAComment:
         Azure DevOps counts, in UTF-16 units."""
         context = azure.thread_payload("t", "/a.py", (1, 1), last_line, 1, 1)["threadContext"]
         assert context["rightFileEnd"] == {"line": 1, "offset": offset} and context["filePath"] == "/a.py"
+
+
+@pytest.fixture
+def client() -> ModuleType:
+    """`tui.azure_client`, imported where the test runs."""
+    return importlib.import_module("tui.azure_client")
+
+
+class FakeAz:
+    """The Azure CLI as `AzLogin` runs it: each call counted and kept, a new token each time, or what `answer` says."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.argv: list[str] = []
+        self.kwargs: dict = {}
+        self.expires_on: object = 4600
+        self.answer: dict = {}
+
+    def __call__(self, argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        self.calls += 1
+        self.argv, self.kwargs = argv, kwargs
+        if "raises" in self.answer:
+            raise self.answer["raises"]
+        token = {"accessToken": f"tok-{self.calls}", "expires_on": self.expires_on, "tokenType": "Bearer"}
+        out = self.answer.get("stdout", json.dumps(token))
+        return subprocess.CompletedProcess(argv, self.answer.get("returncode", 0), out, self.answer.get("stderr", ""))
+
+
+@pytest.fixture
+def fake_az(client: ModuleType, monkeypatch: pytest.MonkeyPatch) -> FakeAz:
+    """A fake `az`, found on PATH at `/bin/az`."""
+    monkeypatch.setattr(client, "on_path", lambda name: f"/bin/{name}")
+    return FakeAz()
+
+
+class TestTheLoginsToken:
+    """`AzLogin`: the person's own Azure CLI login, asked with fixed arguments, its token kept in memory alone."""
+
+    def test_az_is_asked_with_fixed_arguments_and_no_shell(self, client: ModuleType, fake_az: FakeAz) -> None:
+        """On Windows `az` is `az.cmd`, which runs through cmd.exe: no argument is text a person or a model wrote."""
+        assert client.AzLogin(run=fake_az, clock=lambda: 1000.0)() == "Bearer tok-1"
+        resource = "499b84ac-1321-427f-aa17-267ca6975798"
+        assert fake_az.argv == ["/bin/az", "account", "get-access-token", "--resource", resource, "--output", "json"]
+        assert fake_az.kwargs == {
+            "capture_output": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "stdin": subprocess.DEVNULL,
+            "timeout": 30,
+            "check": False,
+        }
+
+    def test_a_token_is_kept_until_two_minutes_before_it_expires(self, client: ModuleType, fake_az: FakeAz) -> None:
+        now = [1000.0]
+        login = client.AzLogin(run=fake_az, clock=lambda: now[0])
+        assert login() == "Bearer tok-1"
+        now[0] = 4479.0
+        assert login() == "Bearer tok-1" and fake_az.calls == 1
+        now[0] = 4481.0
+        assert login() == "Bearer tok-2" and fake_az.calls == 2
+        login.forget()
+        assert login() == "Bearer tok-3" and fake_az.calls == 3
+
+    @pytest.mark.parametrize("expires_on", [None, "4600", 4600.5, True])
+    def test_a_token_that_names_no_whole_second_to_expire_at_is_not_kept(
+        self, client: ModuleType, fake_az: FakeAz, expires_on: object
+    ) -> None:
+        fake_az.expires_on = expires_on
+        login = client.AzLogin(run=fake_az, clock=lambda: 1000.0)
+        assert (login(), login()) == ("Bearer tok-1", "Bearer tok-2")
+
+    @pytest.mark.parametrize(
+        ("answer", "said"),
+        [
+            ({"returncode": 1, "stderr": "Please run 'az login' to setup account."}, "Run `az login`"),
+            ({"returncode": 0, "stdout": "not json"}, "Run `az login`"),
+            ({"returncode": 0, "stdout": '{"tokenType": "Bearer"}'}, "Run `az login`"),
+            ({"returncode": 0, "stdout": '{"accessToken": ""}'}, "Run `az login`"),
+            ({"returncode": 0, "stdout": '{"accessToken": "a\\r\\nX-Evil: 1"}'}, "Run `az login`"),
+            ({"returncode": 0, "stdout": '["accessToken"]'}, "Run `az login`"),
+            ({"returncode": 1, "stdout": '{"accessToken": "tok-old"}'}, "Run `az login`"),
+            ({"raises": subprocess.TimeoutExpired("az", 30)}, "did not answer within 30 s"),
+            ({"raises": PermissionError(13, "Permission denied")}, "could not start: Permission denied"),
+        ],
+    )
+    def test_each_way_az_fails_is_a_sentence_that_names_the_next_step(
+        self, client: ModuleType, fake_az: FakeAz, answer: dict, said: str
+    ) -> None:
+        fake_az.answer = answer
+        with pytest.raises(client.AzureError, match=said) as failed:
+            client.AzLogin(run=fake_az)()
+        for sentence in str(failed.value).split(". "):
+            assert len(sentence.split()) <= 20 and ";" not in sentence, sentence
+
+    def test_az_missing_from_path_is_said(
+        self, client: ModuleType, fake_az: FakeAz, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(client, "on_path", lambda name: name)  # as the reviewer's finder answers a name not found
+        with pytest.raises(client.AzureError, match="not on PATH"):
+            client.AzLogin(run=fake_az)()
+        assert fake_az.calls == 0, "a bare name is never run: Windows would look in the current folder too"
+
+    def test_a_token_is_in_no_error_and_no_repr(self, client: ModuleType, fake_az: FakeAz) -> None:
+        login = client.AzLogin(run=fake_az, clock=lambda: 1000.0)
+        login()
+        assert "tok-1" not in repr(login) and "tok-1" not in str(login)
+        fake_az.answer = {"returncode": 1, "stderr": "ERROR: tok-1 expired", "stdout": "tok-1"}
+        login.forget()
+        with pytest.raises(client.AzureError) as failed:
+            login()
+        assert "tok-1" not in str(failed.value), "az's own words are never repeated"
