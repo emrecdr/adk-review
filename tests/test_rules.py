@@ -4257,6 +4257,33 @@ class TestTheShippedRules:
             assert lines_hit(rule, "tests/test_a.py", code) == [], code
         assert lines_hit(rule, "src/a.py", 'patch("pkg._x")\n') == [], "library code is the tests guideline's business"
 
+    def test_the_patch_rule_reads_what_a_call_patches_never_the_value_it_patches_in(self) -> None:
+        """Reproduced by review: a public name patched to a value that starts with `_` was named, the value read as if
+        it were the target. Each call is read for what it patches: `patch`'s target, `patch.object`'s attribute,
+        `setattr`'s name, and `monkeypatch.setattr`'s dotted path where it is given one in place of an object."""
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.private_patch import PrivatePatch
+
+        rule = PrivatePatch()
+        for code in (
+            'monkeypatch.setattr(config, "table_prefix", "_staging")\n',
+            'setattr(user, "role", "_guest")\n',
+            'patch("pkg.service.DEFAULT_SUFFIX", "_v2")\n',
+            'patch.object(service, "mode", "_readonly")\n',
+            'monkeypatch.setattr("pkg.mod.TIMEOUT", "_x")\n',
+            'patch("pkg.service.MODE", new="_fast")\n',
+        ):
+            assert lines_hit(rule, "tests/test_a.py", code) == [], code
+        for code in (
+            'monkeypatch.setattr(config, "_secret", 1)\n',
+            'setattr(user, "_role", "guest")\n',
+            'monkeypatch.setattr("pkg.mod._TIMEOUT", 3)\n',
+            'patch(target="pkg.service._helper")\n',
+            'patch.object(service, attribute="_cache")\n',
+            'mocker.patch.object(Service, "_connect", fake)\n',
+        ):
+            assert lines_hit(rule, "tests/test_a.py", code) == [1], code
+
     def test_the_offline_rule_finds_a_network_call_in_a_test_only(self) -> None:
         from adk_review.judge.rule_helpers import lines_hit
         from adk_review.judge.rules.tests_offline import OfflineTests

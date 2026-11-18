@@ -5,7 +5,7 @@ from __future__ import annotations
 import ast
 import re
 
-from ..rule_helpers import ChangedFile, FileRule, calls_in, is_test
+from ..rule_helpers import ChangedFile, FileRule, argument, calls_in, is_test, name_of
 
 #: The patch calls, as the code writes them: patch(...), patch.object(...), mocker.patch(...), monkeypatch.setattr(...)
 #: and setattr(...).
@@ -46,9 +46,24 @@ class PrivatePatch(FileRule):
 
 
 def _private(call: ast.Call) -> bool:
-    """Whether a string `call` passes names a private name, by its last part: one leading underscore, a dunder being
-    public."""
-    given = (*call.args, *(keyword.value for keyword in call.keywords))
-    named = (node.value for node in given if isinstance(node, ast.Constant) and isinstance(node.value, str))
-    leaves = (name.rsplit(".", 1)[-1] for name in named if _NAME.fullmatch(name))
-    return any(leaf.startswith("_") and not leaf.startswith("__") for leaf in leaves)
+    """Whether what `call` patches is a private name, by its last part: one leading underscore, a dunder being public.
+    What it patches is `patch`'s target, `patch.object`'s attribute, `setattr`'s name, and `monkeypatch.setattr`'s
+    dotted path where its first argument is one: reproduced by review, read in every string the call passed, a public
+    name patched to `"_staging"` was named."""
+    target = _patched(call)
+    if not (isinstance(target, ast.Constant) and isinstance(target.value, str) and _NAME.fullmatch(target.value)):
+        return False
+    leaf = target.value.rsplit(".", 1)[-1]
+    return leaf.startswith("_") and not leaf.startswith("__")
+
+
+def _patched(call: ast.Call) -> ast.expr | None:
+    """The argument naming what `call` patches, as each call takes it."""
+    called = name_of(call.func)
+    if called.endswith("patch.object"):
+        return argument(call, "attribute", 1)
+    if called == "patch" or called.endswith(".patch"):
+        return argument(call, "target", 0)
+    first = call.args[0] if call.args else None
+    dotted = isinstance(first, ast.Constant) and isinstance(first.value, str) and called != "setattr"
+    return argument(call, "target", 0) if dotted and len(call.args) <= 2 else argument(call, "name", 1)
