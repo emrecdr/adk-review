@@ -1201,6 +1201,88 @@ class TestWhatTheCodeReviewFound:
             assert (app.selected_head, app.selected_base) == ("origin/feat-remote", "origin/main")
 
     @pytest.mark.asyncio
+    async def test_a_running_review_is_never_restarted_by_its_own_key(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review: the review's worker is exclusive, so Ctrl+R or Ctrl+D during a run stopped the review and
+        started another, its model calls spent again. The Run button was disabled while it ran, its key was not.
+        While a review runs, both keys wait for it now."""
+        pytest.importorskip("textual")
+        import asyncio
+
+        from adk_review.tui.app import AdkReviewTuiApp
+
+        _init_repo_with_remote(tmp_path)
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        started: list[list[str]] = []
+        release = asyncio.Event()
+
+        async def slow(cmd: list[str]) -> tuple[int, str]:
+            started.append(cmd)
+            await release.wait()
+            return 0, ""
+
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            app.selected_base = "origin/main"
+            monkeypatch.setattr(app, "_stream_subprocess", slow)
+            await pilot.press("ctrl+r")
+            await pilot.pause(0.2)
+            await pilot.press("ctrl+r", "ctrl+d")
+            await pilot.pause(0.2)
+            assert len(started) == 1, f"{len(started)} reviews started"
+            release.set()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+
+    def test_moving_a_branch_to_its_remote_writes_no_tracking_into_its_config(self, tmp_path: Path) -> None:
+        """Read by review: `git branch -f x origin/x` also made `x` track `origin/x`, a line in the repository's config
+        the person never asked for, where `x` had no upstream and the screen inferred one. It moves the branch alone
+        now."""
+        from adk_review.tui.git_sync import fast_forward_local_branch
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        _git(local, "fetch", "origin")
+        _git(local, "branch", "--no-track", "feat-remote", "origin/feat-remote~1")
+        done = fast_forward_local_branch(str(local), "feat-remote", "origin/feat-remote")
+        assert done.ok and _git(local, "rev-parse", "feat-remote") == _git(local, "rev-parse", "origin/feat-remote")
+        tracked = subprocess.run(
+            ["git", "-C", str(local), "config", "--get", "branch.feat-remote.merge"], capture_output=True, check=False
+        )
+        assert tracked.returncode == 1, tracked.stdout
+
+    def test_no_sentence_the_screen_shows_joins_two_with_a_semicolon(self) -> None:
+        """The package's own words are ASD-STE100, as CLAUDE.md asks: one idea a sentence, and no `;` joining two.
+        Read by review: three of the front end's did; the reviewer's own guard reads the command's words alone."""
+        import ast
+
+        from adk_review.tui import app
+
+        folder = Path(app.__file__).parent
+        joined = []
+        for path in sorted(folder.glob("*.py")):
+            if path.name == "styles.py":  # CSS, where `;` ends each rule
+                continue
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            docs = {
+                id(node.body[0].value)
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)
+                and node.body
+                and isinstance(node.body[0], ast.Expr)
+            }
+            joined += [
+                f"{path.name}:{node.lineno}: {node.value[:80]}"
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Constant)
+                and isinstance(node.value, str)
+                and id(node) not in docs
+                and "; " in node.value
+            ]
+        assert joined == [], joined
+
+    @pytest.mark.asyncio
     async def test_a_saved_path_is_one_choice_and_a_models_text_is_never_a_link(self, tmp_path: Path) -> None:
         """Read by review: a saved path came back both as a ticked folder and as typed text, so unticking it changed
         nothing; and a finding's title and fix, a model's words, were drawn as Markdown, where a branch that steered the

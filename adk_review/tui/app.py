@@ -114,6 +114,10 @@ class AdkReviewTuiApp(App[int]):
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:  # noqa: ARG002 -- Textual's
         """No action key but Stop runs while a dialog is open. Measured: once the keys went first, Ctrl+R and Ctrl+D
         started a review behind the question a branch behind its remote raises, which they had not before."""
+        if action in {"run_review", "run_dry"} and self._reviewing:
+            # Read by review: the review's worker is exclusive, so Ctrl+R or Ctrl+D during a run stopped it and started
+            # another, its model calls spent again. Its button was disabled, its key was not.
+            return False
         return not (action in self.BEHIND_NO_DIALOG and isinstance(self.screen, ModalScreen))
 
     def __init__(self, config_path: Path | None = None) -> None:
@@ -137,6 +141,7 @@ class AdkReviewTuiApp(App[int]):
         self._repo_loaded_path: str = ""
         self._syncing_paths: bool = False
         self._active_proc: asyncio.subprocess.Process | None = None
+        self._reviewing: bool = False  # a review or a dry run in its worker, from its start to its end
 
     def has_multiple_roots(self) -> bool:
         """Whether more than one root workspace directory is configured."""
@@ -972,6 +977,7 @@ class AdkReviewTuiApp(App[int]):
             self._set_banner("Branch Under Review and Target Branch cannot be the same.")
             return
         label = "dry-run" if dry_run else "review"
+        self._reviewing = True
         try:
             await self._run_review(dry_run=dry_run, label=label)
         except (OSError, ValueError) as exc:
@@ -979,6 +985,8 @@ class AdkReviewTuiApp(App[int]):
             # traceback, Textual's own way with a worker's error.
             self._set_banner(f"The {label} could not run: {exc}")
             self.notify(f"The {label} could not run: {exc}", severity="error", timeout=8, markup=False)
+        finally:
+            self._reviewing = False
 
     async def _run_review(self, *, dry_run: bool, label: str) -> None:
         project, target = self.selected_project, self._target()

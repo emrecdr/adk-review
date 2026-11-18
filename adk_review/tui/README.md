@@ -77,8 +77,8 @@ As the reviewer does, the screen reads a repository and writes nothing into it:
 - It lists the branches as the repository holds them. F5 runs `git fetch --prune` on the repository you chose.
 - A remote's branch, `origin/<branch>`, is reviewed as the remote holds it, even where a local copy of it is ahead
   or behind. No local branch is made.
-- For a local branch behind its remote, it asks. On yes, `git branch -f` moves that branch, but never one a working
-  tree has checked out: that one stays as it is, and the remote's branch is reviewed.
+- For a local branch behind its remote, it asks. On yes, `git branch -f` moves that branch and writes nothing else,
+  but never one a working tree has checked out: that one stays as it is, and the remote's branch is reviewed.
 - Each read runs as the reviewer runs git: a repository's own config starts no program, and no read takes a lock.
 
 ## Keys
@@ -95,7 +95,8 @@ As the reviewer does, the screen reads a repository and writes nothing into it:
 | A number key | Fold or unfold the section of that number, where no text field has the focus |
 | `q` | Quit |
 
-The action keys work wherever the focus is, a text field included. While a dialog is open, only `Ctrl+X` works.
+The action keys work wherever the focus is, a text field included. While a dialog is open, only `Ctrl+X` works,
+and while a review runs, `Ctrl+R` and `Ctrl+D` wait for it to end: they never restart it.
 
 ## On Windows
 

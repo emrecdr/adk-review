@@ -114,7 +114,7 @@ def ensure_tui_config(path: Path | None = None) -> Path:
         "auto_previous = true\n\n"
         "[projects]\n"
     )
-    _write_atomic(target, content)
+    write_atomic(target, content)
     return target
 
 
@@ -268,7 +268,7 @@ def save_repo_preset(config: TuiConfig, repo_name: str, preset: RepoPreset) -> T
         defaults=config.defaults,
         projects=updated,
     )
-    _write_atomic(config.config_path, _serialize_config(new_config))
+    write_atomic(config.config_path, _serialize_config(new_config))
     return new_config
 
 
@@ -328,7 +328,7 @@ def _serialize_preset(name: str, preset: RepoPreset) -> list[str]:
     return rows
 
 
-def _write_atomic(path: Path, text: str) -> None:
+def write_atomic(path: Path, text: str) -> None:
     """Write `text` to a sibling temp file and atomically replace `path`."""
     path.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.NamedTemporaryFile(

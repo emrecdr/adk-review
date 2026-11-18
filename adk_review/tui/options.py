@@ -8,7 +8,6 @@ import os
 import re
 import shlex
 import sys
-import tempfile
 import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -20,7 +19,7 @@ from ..core.profiles import DEFAULT, expanded
 from ..core.verdict import EXIT_CLEAN, EXIT_FINDINGS
 from ..deliver.report import windows_word
 from ..judge.catalog import CONFIG, catalog, load_config
-from .config import BASELINES_DIR, CACHE_DIR, OUTPUTS_DIR
+from .config import BASELINES_DIR, CACHE_DIR, OUTPUTS_DIR, write_atomic
 
 type ReviewMode = Literal["branch", "staged", "all"]
 
@@ -29,7 +28,7 @@ _SAFE_TOKEN = re.compile(r"[^a-z0-9._-]+")
 OPTION_DESCRIPTIONS: dict[str, str] = {
     "mode": "Choose between reviewing a branch diff (--head/--base), staged index (--staged), or all files (--all).",
     "profile": "Named set of deterministic rules and LLM guidelines from config.toml.",
-    "fail_on": "Exit 1 at or above this severity (blocker, major, minor); lower findings stay in the report.",
+    "fail_on": "Exit 1 at or above this severity: blocker, major or minor. Lower findings stay in the report.",
     "comment": "Write an author-ready PR review markdown file (comment-<repo>__<base>__<head>__...md).",
     "handoff": "Write coding-agent fix instructions (handoff-<repo>__<base>__<head>__...md).",
     "verify": "Ask a second model to verify each finding and drop refuted non-security findings.",
@@ -108,7 +107,7 @@ def load_profile_options() -> list[ProfileOption]:
 def fail_on_choices() -> list[tuple[str, str]]:
     """Return `(label, severity)` pairs for the `--fail-on` selector."""
     descriptions = {
-        "blocker": "blocker  (exit 1 on blockers only; major & minor still reported)",
+        "blocker": "blocker  (exit 1 on a blocker only, major and minor still reported)",
         "major": "major    (exit 1 on major or blocker findings)",
         "minor": "minor    (exit 1 on any finding: minor, major, or blocker)",
     }
@@ -291,21 +290,4 @@ def promote_baseline(outputs: Mapping[str, Path], exit_code: int) -> None:
         return
     if baseline.is_file() and (held := _fingerprints(baseline)) is not None and held == _fingerprints(json_path):
         return
-    baseline.parent.mkdir(parents=True, exist_ok=True)
-    payload = json_path.read_text(encoding="utf-8")
-    with tempfile.NamedTemporaryFile(
-        "w",
-        encoding="utf-8",
-        newline="\n",
-        dir=baseline.parent,
-        prefix=f".{baseline.name}.",
-        delete=False,
-    ) as handle:
-        try:
-            handle.write(payload)
-            handle.close()
-            os.replace(handle.name, baseline)
-        except BaseException:
-            handle.close()
-            Path(handle.name).unlink(missing_ok=True)
-            raise
+    write_atomic(baseline, json_path.read_text(encoding="utf-8"))

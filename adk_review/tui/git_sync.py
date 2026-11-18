@@ -400,10 +400,13 @@ def fast_forward_local_branch(repo: str, local_branch: str, upstream_ref: str) -
         return SyncOutcome(
             ok=True,
             resolved_ref=upstream_ref,
-            message=f"'{local_branch}' is checked out and stays as it is; reviewing '{upstream_ref}' directly",
+            message=f"'{local_branch}' is checked out, so it stays as it is. The review reads '{upstream_ref}'.",
         )
     try:
-        done = _run_git(repo, ["branch", "-f", "--end-of-options", local_branch, upstream_ref], timeout_s=10)
+        # `--no-track`: the branch moves, and nothing else. Read by review: it also made the branch track the remote's,
+        # a line in the repository's config no one asked for, where the screen had inferred the upstream.
+        args = ["branch", "-f", "--no-track", "--end-of-options", local_branch, upstream_ref]
+        done = _run_git(repo, args, timeout_s=10)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return SyncOutcome(ok=False, resolved_ref=upstream_ref, message=f"Branch sync failed: {exc}")
     if done.returncode == 0:
