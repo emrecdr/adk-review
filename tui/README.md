@@ -112,6 +112,9 @@ As the reviewer does, the screen reads a repository, and writes into it only whe
   by itself as it opens is not fetched. `fetch_on_select = false` turns this off.
 - F5 runs `git fetch --prune` on the repository you chose: it also removes the branches the remote no longer holds.
 - A fetch that fails, offline or past `fetch_timeout_s`, leaves the lists as the repository holds them, and says so.
+- The lists wait for the fetch, and no review starts until they are drawn. One fetch of a repository runs at a
+  time. Quitting waits for a fetch that is running, at most `fetch_timeout_s`: git stopped midway can leave its
+  locks behind.
 - A remote's branch, `origin/<branch>`, is reviewed as the remote holds it, even where a local copy of it is ahead
   or behind. No local branch is made.
 - For a local branch behind its remote, it asks. On yes, `git branch -f` moves that branch and writes nothing else,

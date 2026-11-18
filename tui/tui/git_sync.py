@@ -1,10 +1,12 @@
 """Git discovery, the person's own fetch, and branch states for the TUI.
 
-The screen reads a repository and writes nothing into it, as the reviewer does: each read runs under a review's own
-environment (`read_only`), where a repository's config names no program for git to start, and takes no lock. Two
-commands write, each only where the person asks: `git fetch --prune` at F5, and `git branch -f` at the question a
+The screen reads a repository as the reviewer does: each read runs under a review's own environment (`read_only`),
+where a repository's config names no program for git to start, and takes no lock. Three commands write, each only
+where the person acts: `git fetch --no-prune` as they pick a repository, which adds the branches its remote got since
+and removes none, unless `fetch_on_select = false`; `git fetch --prune` at F5; and `git branch -f` at the question a
 branch behind its remote raises, never on a branch a working tree holds. They run with the person's own environment,
-since a fetch needs their remotes, credentials and proxy."""
+since a fetch needs their remotes, credentials and proxy, and with no terminal to prompt on: a session of their own,
+or on Windows no console."""
 
 from __future__ import annotations
 
@@ -14,6 +16,7 @@ import re
 import signal
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -65,7 +68,7 @@ class BranchInfo:
 
 @dataclass(frozen=True)
 class FetchResult:
-    """Outcome of running `git fetch --prune` on a selected repository."""
+    """Outcome of a `git fetch` on a selected repository: F5's, with `--prune`, or a pick's, with `--no-prune`."""
 
     ok: bool
     message: str
@@ -121,6 +124,18 @@ def _run_git(repo: str, args: list[str], timeout_s: int = 15) -> subprocess.Comp
     return _bounded([git, "-C", repo, *args], _git_env(), timeout_s)
 
 
+#: Windows' flag for a process with no console: `subprocess` holds it there alone.
+NO_CONSOLE = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+_FETCH_LOCKS: dict[str, threading.Lock] = {}
+_FETCH_LOCKS_GUARD = threading.Lock()
+
+
+def _fetch_lock(repo: str) -> threading.Lock:
+    """The one lock of `repo`'s fetches, however its path is spelled."""
+    with _FETCH_LOCKS_GUARD:
+        return _FETCH_LOCKS.setdefault(os.path.normcase(os.path.abspath(repo)), threading.Lock())
+
+
 def _bounded(argv: list[str], env: dict[str, str], timeout_s: int) -> subprocess.CompletedProcess[str]:
     """`argv` run with `env`, decoded as UTF-8, and stopped whole past `timeout_s`: on Windows its process tree, as Git
     for Windows' `git.exe` runs the real git as its child, and elsewhere its process group, which git's own children
@@ -135,6 +150,9 @@ def _bounded(argv: list[str], env: dict[str, str], timeout_s: int) -> subprocess
         errors="replace",
         env=env,
         start_new_session=sys.platform != "win32",
+        # Read by review: on Windows git ran in the screen's own console, where ssh could ask for a host key or a
+        # passphrase over the screen, racing it for the keys. With no console it finds none to prompt on.
+        creationflags=NO_CONSOLE if sys.platform == "win32" else 0,
     ) as process:
         try:
             out, err = process.communicate(timeout=timeout_s)
@@ -247,7 +265,12 @@ def fetch_remote(repo: str, timeout_s: int = 15, *, prune: bool = True) -> Fetch
     if not remotes:
         return FetchResult(ok=True, message="No remote configured (local repository)")
     try:
-        done = _run_git(repo, ["fetch", *(["--prune"] if prune else []), "--quiet"], timeout_s=timeout_s)
+        # `--no-prune` said, never left out: read by review, and reproduced, `fetch.prune` in the person's config, as
+        # the guide advises for the push hook, made a pick's fetch prune a branch they had chosen. One fetch of a
+        # repository at a time: F5 pressed during a pick's fetch started a second, which no cancel stops, and the two
+        # raced for the repository's ref locks.
+        with _fetch_lock(repo):
+            done = _run_git(repo, ["fetch", "--prune" if prune else "--no-prune", "--quiet"], timeout_s=timeout_s)
     except subprocess.TimeoutExpired:
         return FetchResult(ok=False, message=f"git fetch timed out after {timeout_s}s (using cached refs)")
     except OSError as exc:
