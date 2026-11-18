@@ -11,13 +11,13 @@ import re
 from dataclasses import dataclass
 from urllib.parse import quote, unquote, urlsplit
 
+from .findings import COMMIT
+
 #: Azure DevOps Services' host, and its older one with the organization as its first label.
 _HOST = "dev.azure.com"
 _OLD_HOST = re.compile(r"[a-z0-9][a-z0-9-]*\.visualstudio\.com")
 #: A pull request's number as its address spells it: ASCII digits, since `str.isdigit` takes any script's.
 _NUMBER = re.compile(r"[1-9][0-9]{0,9}")
-#: A commit as git names it whole, SHA-1 or SHA-256: what a report's `head_sha` holds.
-_COMMIT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 
 _NOT_ONE = (
     "This is not a pull request's address. "
@@ -96,7 +96,7 @@ def line_link(pr: PullRequest, commit: str, path: str, first: int, last: int) ->
     """The repository's file view at `commit` with lines `first` to `last` chosen whole: the range ends where the
     next line starts, as the page's own links end one. The commit is pinned, since a branch moves with its next push,
     and its lines with it."""
-    if not _COMMIT.fullmatch(commit):
+    if not COMMIT.fullmatch(commit):
         raise ValueError("no link: a commit is 40 or 64 hex digits")
     query = f"path={_path(path)}&version=GC{commit}&line={first}&lineEnd={last + 1}"
     return f"{pr.repository_web}?{query}&lineStartColumn=1&lineEndColumn=1&_a=contents"

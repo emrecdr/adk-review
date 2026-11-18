@@ -7,6 +7,8 @@ what it reads where it runs, as `tests/test_tui.py` says why."""
 from __future__ import annotations
 
 import importlib
+import json
+from pathlib import Path
 from types import ModuleType
 
 import pytest
@@ -124,3 +126,56 @@ class TestAFindingsLinks:
         assert azure.files_link(pr, "src/app.py") == pr.web + "?_a=files&path=%2Fsrc%2Fapp.py"
         assert azure.files_link(pr, "a&b=c#d.py") == pr.web + "?_a=files&path=%2Fa%26b%3Dc%23d.py"
         assert azure.thread_link(pr, 148) == pr.web + "?discussionId=148"
+
+
+@pytest.fixture
+def findings() -> ModuleType:
+    """`tui.findings`, imported where the test runs."""
+    return importlib.import_module("tui.findings")
+
+
+def _report(folder: Path, found: list[dict], reviewed: object = None) -> Path:
+    """A review's JSON report in `folder`, holding `found` and what it says it reviewed."""
+    path = folder / "report.json"
+    path.write_text(json.dumps({"schema": 2, "findings": found, "reviewed": reviewed}), encoding="utf-8")
+    return path
+
+
+class TestWhatAReportSaysOfAFinding:
+    """A finding's identity and lines, and the commit reviewed: what a link, a draft and a thread are built from."""
+
+    def test_a_row_holds_the_findings_fingerprint_lines_and_whether_the_change_added_them(
+        self, findings: ModuleType, tmp_path: Path
+    ) -> None:
+        found = {"check": "rule.lint", "file": "a.py", "line": 42, "severity": "major", "title": "t"}
+        found |= {"fingerprint": "ab" * 8, "lines": [42, 57], "on_added_line": True}
+        row = findings.load_findings_from_json(_report(tmp_path, [found]))[0]
+        assert (row.fingerprint, row.lines, row.on_added_line, row.span()) == ("ab" * 8, (42, 57), True, (42, 57))
+
+    @pytest.mark.parametrize(
+        "lines", [None, "42-57", [42], [42, 57, 60], [57, 42], [0, 3], [True, 2], ["1", "2"], [1.0, 2.0], {"a": 1}]
+    )
+    def test_lines_that_are_no_range_are_none_and_the_span_falls_back_to_the_line(
+        self, findings: ModuleType, tmp_path: Path, lines: object
+    ) -> None:
+        row = findings.load_findings_from_json(_report(tmp_path, [{"file": "a.py", "line": 9, "lines": lines}]))[0]
+        assert row.lines is None and row.span() == (9, 9)
+
+    def test_a_finding_with_no_line_has_no_span_and_an_old_report_reads_as_before(
+        self, findings: ModuleType, tmp_path: Path
+    ) -> None:
+        old = {"file": "a.py", "on_added_line": "yes", "fingerprint": 7}
+        row = findings.load_findings_from_json(_report(tmp_path, [old]))[0]
+        assert (row.span(), row.fingerprint, row.on_added_line, row.lines) == (None, "", None, None)
+        zero = findings.load_findings_from_json(_report(tmp_path, [{"file": "b.py", "line": 0}]))[0]
+        assert zero.span() is None, "no file has a line 0"
+
+    def test_the_reviewed_commit_is_read_from_the_report(self, findings: ModuleType, tmp_path: Path) -> None:
+        good = {"repository": "/work/payments", "head": "feature/orders", "head_sha": "a" * 40}
+        read = findings.load_reviewed(_report(tmp_path, [], good))
+        assert read == findings.Reviewed("/work/payments", "feature/orders", "a" * 40)
+        for bad in ({**good, "head_sha": "main"}, {**good, "head": 7}, {**good, "repository": None}, None, [good]):
+            assert findings.load_reviewed(_report(tmp_path, [], bad)) is None, bad
+        assert findings.load_reviewed(tmp_path / "missing.json") is None
+        (tmp_path / "broken.json").write_text("{", encoding="utf-8")
+        assert findings.load_reviewed(tmp_path / "broken.json") is None

@@ -3,12 +3,16 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
 from adk_review.core.findings import RANK
 from adk_review.judge.catalog import CONFIG, catalog, explained, load_config
+
+#: A commit as git names it whole, SHA-1 or SHA-256: what a report's `head_sha` holds, and what a link may carry.
+COMMIT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 
 
 @dataclass(frozen=True)
@@ -27,10 +31,31 @@ class FindingRow:
     #: The finding's reason, at any severity, and the corrected code where a model gave one: empty where none.
     why: str = ""
     code: str = ""
+    #: The finding's identity across reviews, the lines the diff places it on, and whether the change added one of
+    #: them: what a link, a comment's mark and its place in a pull request are built from. Empty or None where the
+    #: report holds none.
+    fingerprint: str = ""
+    lines: tuple[int, int] | None = None
+    on_added_line: bool | None = None
 
     def location(self) -> str:
         """Display location formatted as `file:line` or `file`."""
         return f"{self.file}:{self.line}" if self.line else self.file
+
+    def span(self) -> tuple[int, int] | None:
+        """The lines the finding stands on, first and last: the report's range, else its one line, else none."""
+        if self.lines is not None:
+            return self.lines
+        return (self.line, self.line) if self.line is not None and self.line >= 1 else None
+
+
+@dataclass(frozen=True)
+class Reviewed:
+    """What a report says it reviewed: the clone, the branch, and the commit its findings' lines are counted in."""
+
+    repository: str
+    head: str
+    head_sha: str
 
 
 def _row_from_item(item: dict, tier: str) -> FindingRow:
@@ -49,7 +74,18 @@ def _row_from_item(item: dict, tier: str) -> FindingRow:
         already_held=bool(item.get("already_held", False)),
         why=str(item.get("why") or ""),
         code=str(item.get("code") or ""),
+        fingerprint=fingerprint if isinstance(fingerprint := item.get("fingerprint"), str) else "",
+        lines=_range(item.get("lines")),
+        on_added_line=added if isinstance(added := item.get("on_added_line"), bool) else None,
     )
+
+
+def _range(raw: object) -> tuple[int, int] | None:
+    """A report's `lines` where it is a range of a file's lines: two whole numbers, from 1, in order. A `bool` is
+    no line number, though Python counts it as a whole number."""
+    if isinstance(raw, list) and len(raw) == 2 and all(type(n) is int for n in raw) and 1 <= raw[0] <= raw[1]:
+        return raw[0], raw[1]
+    return None
 
 
 def _extend_rows(rows: list[FindingRow], items: object, tier_resolver: str | None = None) -> None:
@@ -63,13 +99,36 @@ def _extend_rows(rows: list[FindingRow], items: object, tier_resolver: str | Non
         rows.append(_row_from_item(item, tier))
 
 
-def load_findings_from_json(json_path: Path) -> list[FindingRow]:
-    """Load `findings`, `old_findings`, and `resolved` entries from a JSON report, sorted by priority."""
+def _read(json_path: Path) -> dict | None:
+    """A JSON report as data, or None where the file is missing, is no JSON, or holds no object."""
     try:
         raw = json.loads(json_path.read_text(encoding="utf-8"))
     except OSError, json.JSONDecodeError, UnicodeDecodeError:
-        return []
-    if not isinstance(raw, dict):
+        return None
+    return raw if isinstance(raw, dict) else None
+
+
+def load_reviewed(json_path: Path) -> Reviewed | None:
+    """What the report at `json_path` reviewed, or None where it does not say: no line is linked to, and no comment
+    placed, on a commit the report did not name whole."""
+    seen = (_read(json_path) or {}).get("reviewed")
+    if not isinstance(seen, dict):
+        return None
+    repository, head, head_sha = seen.get("repository"), seen.get("head"), seen.get("head_sha")
+    if (
+        isinstance(repository, str)
+        and isinstance(head, str)
+        and isinstance(head_sha, str)
+        and COMMIT.fullmatch(head_sha)
+    ):
+        return Reviewed(repository, head, head_sha)
+    return None
+
+
+def load_findings_from_json(json_path: Path) -> list[FindingRow]:
+    """Load `findings`, `old_findings`, and `resolved` entries from a JSON report, sorted by priority."""
+    raw = _read(json_path)
+    if raw is None:
         return []
     rows: list[FindingRow] = []
     _extend_rows(rows, raw.get("findings"))
