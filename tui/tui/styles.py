@@ -94,16 +94,6 @@ Screen {
     border: solid $primary;
     padding: 0 1;
 }
-.chain-box.-collapsed,
-#paths-pane.-collapsed,
-#profile-pane.-collapsed,
-#output-options-pane.-collapsed {
-    width: auto;
-    min-width: 7;
-    max-width: 10;
-    height: 3;
-    padding: 0;
-}
 #paths-pane > Contents, #profile-pane > Contents, #output-options-pane > Contents {
     height: 1fr;
     padding: 0;

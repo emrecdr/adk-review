@@ -66,7 +66,7 @@ def _init_repo_with_remote(tmp_path: Path) -> tuple[Path, Path]:
     _git(seed, "config", "user.email", "dev@example.com")
     _git(seed, "config", "user.name", "Dev")
     (seed / "src").mkdir()
-    (seed / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
+    (seed / "src" / "app.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
     _git(seed, "add", ".")
     _git(seed, "commit", "-m", "initial main")
     _git(seed, "remote", "add", "origin", str(remote))
@@ -716,9 +716,9 @@ class TestOptionsAndCliBuilder:
     @pytest.mark.asyncio
     async def test_picking_a_repository_fetches_its_new_branches_and_removes_none(self, tmp_path: Path) -> None:
         """Measured on the owner's repositories: 5 of 13 lists were out of step with their remote, a branch pushed
-        since the last fetch not listed, until F5. Picking a repository shows its branches as it holds them at once,
-        then fetches, with no `--prune`: a branch the remote no longer holds stays until F5 removes it, and the
-        branches chosen stay chosen. The repository the screen picks itself, as it opens, is not fetched."""
+        since the last fetch not listed, until F5. Picking a repository fetches, with `--no-prune`, and then lists its
+        branches: a branch the remote no longer holds stays until F5 removes it, and picked again, the branches chosen
+        stay chosen. The repository the screen picks itself, as it opens, is not fetched."""
         pytest.importorskip("textual")
         from textual.widgets import OptionList
 
@@ -726,19 +726,13 @@ class TestOptionsAndCliBuilder:
 
         _remote, local = _init_repo_with_remote(tmp_path)
         _git(local, "update-ref", "refs/remotes/origin/gone", "HEAD")  # a branch the remote no longer holds
-        cfg = tmp_path / ".tui.toml"
-        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        cfg = _screen_config(tmp_path)
         app = AdkReviewTuiApp(config_path=cfg)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             await app.workers.wait_for_complete()
             assert "origin/feat-remote" not in [b.name for b in app.branches], "opening fetched nothing"
-            repo = app.query_one("#repo-list", OptionList)
-            repo.highlighted = 0
-            repo.action_select()
-            await pilot.pause()
-            await app.workers.wait_for_complete()
-            await pilot.pause()
+            await _pick(app, pilot)
             names = [b.name for b in app.branches]
             assert "origin/feat-remote" in names, "picking the repository fetched the branch the remote got since"
             assert "origin/gone" in names, "and removed none: F5 prunes"
@@ -746,9 +740,7 @@ class TestOptionsAndCliBuilder:
             assert "origin/feat-remote" in [str(head.get_option_at_index(at).id) for at in range(head.option_count)]
             app._sync_chosen_branch("base", "origin/feat-remote")
             await app.workers.wait_for_complete()
-            repo.action_select()  # picked again: fetched again, the target kept
-            await pilot.pause()
-            await app.workers.wait_for_complete()
+            await _pick(app, pilot)  # picked again: fetched again, the target kept
             assert app.selected_base == "origin/feat-remote", app.selected_base
             await pilot.press("f5")
             await pilot.pause()
@@ -790,27 +782,20 @@ class TestOptionsAndCliBuilder:
         """A remote that cannot be reached, offline or gone: the lists stay as the repository holds them, and a notice
         says the fetch failed and that F5 fetches again, as F5's own failure says it."""
         pytest.importorskip("textual")
-        from textual.widgets import OptionList
 
         from tui.app import AdkReviewTuiApp
 
         _remote, local = _init_repo_with_remote(tmp_path)
         _git(local, "remote", "set-url", "origin", str(tmp_path / "no-such-remote.git"))
         held = sorted(_git(local, "for-each-ref", "--format=%(refname)").split())
-        cfg = tmp_path / ".tui.toml"
-        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        cfg = _screen_config(tmp_path)
         app = AdkReviewTuiApp(config_path=cfg)
         said: list[str] = []
         app.notify = lambda message, **_options: said.append(str(message))
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             listed = sorted(b.name for b in app.branches)
-            repo = app.query_one("#repo-list", OptionList)
-            repo.highlighted = 0
-            repo.action_select()
-            await pilot.pause()
-            await app.workers.wait_for_complete()
-            await pilot.pause()
+            await _pick(app, pilot)
             assert sorted(b.name for b in app.branches) == listed, "the lists as the repository holds them"
             assert sorted(_git(local, "for-each-ref", "--format=%(refname)").split()) == held
             assert any("Fetch warning" in line and "F5" in line for line in said), said
@@ -833,7 +818,7 @@ class TestOptionsAndCliBuilder:
         _git(repo, "init", "-b", "main")
         _git(repo, "config", "user.email", "dev@example.com")
         _git(repo, "config", "user.name", "Dev")
-        (repo / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
+        (repo / "src" / "app.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
         _git(repo, "add", ".")
         _git(repo, "commit", "-m", "one")
         _git(repo, "branch", "feature")
@@ -1161,8 +1146,7 @@ class TestWindowsAndItsShells:
         from tui.app import AdkReviewTuiApp
 
         _init_repo_with_remote(tmp_path)
-        cfg = tmp_path / ".tui.toml"
-        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        cfg = _screen_config(tmp_path)
         app = AdkReviewTuiApp(config_path=cfg)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
@@ -1192,8 +1176,7 @@ class TestWindowsAndItsShells:
         from tui.app import AdkReviewTuiApp
 
         _init_repo_with_remote(tmp_path)
-        cfg = tmp_path / ".tui.toml"
-        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        cfg = _screen_config(tmp_path)
         mark = chr(0x25B6)
         app = AdkReviewTuiApp(config_path=cfg)
         async with app.run_test(size=(140, 45)) as pilot:
@@ -1241,12 +1224,11 @@ class TestWindowsAndItsShells:
         repo = tmp_path / "workspace" / "my[svc]-with-a-rather-long-name-for-a-narrow-screen"
         repo.mkdir(parents=True)
         _git(repo, "init", "-b", "main")
-        (repo / "a.py").write_text("x = 1\n", encoding="utf-8")
+        (repo / "a.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
         _git(repo, "add", ".")
         _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "base")
         _git(repo, "branch", "feature/a-branch-whose-name-runs-on-and-on")
-        cfg = tmp_path / ".tui.toml"
-        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        cfg = _screen_config(tmp_path)
         app = AdkReviewTuiApp(config_path=cfg)
         async with app.run_test(size=(100, 40)) as pilot:
             await _wait_for_branches(app, pilot)
@@ -1903,24 +1885,6 @@ class TestTheConfigReview:
 class TestThePickAndTheDockAsReviewed:
     """A code review of the fetch a pick starts and of the dock, each finding reproduced by a test that failed first."""
 
-    @staticmethod
-    def _config(tmp_path: Path, *extra: str) -> Path:
-        cfg = tmp_path / ".tui.toml"
-        root = (tmp_path / "workspace").as_posix()
-        cfg.write_text("\n".join([f'[workspace]\nroot_dirs = ["{root}"]', *extra]) + "\n", encoding="utf-8")
-        return cfg
-
-    @staticmethod
-    async def _pick(app, pilot) -> None:
-        from textual.widgets import OptionList
-
-        repo = app.query_one("#repo-list", OptionList)
-        repo.highlighted = 0
-        repo.action_select()
-        await pilot.pause()
-        await app.workers.wait_for_complete()
-        await pilot.pause()
-
     @pytest.mark.asyncio
     async def test_the_fetch_a_pick_starts_prunes_nothing_where_the_persons_config_prunes(self, tmp_path: Path) -> None:
         """Read by review, and reproduced: with `fetch.prune` set, as the guide advises for the push hook, the pick's
@@ -1931,10 +1895,10 @@ class TestThePickAndTheDockAsReviewed:
         _remote, local = _init_repo_with_remote(tmp_path)
         _git(local, "config", "fetch.prune", "true")
         _git(local, "update-ref", "refs/remotes/origin/gone", "HEAD")
-        app = AdkReviewTuiApp(config_path=self._config(tmp_path))
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
-            await self._pick(app, pilot)
+            await _pick(app, pilot)
             names = [b.name for b in app.branches]
             assert "origin/feat-remote" in names and "origin/gone" in names, names
 
@@ -1948,7 +1912,7 @@ class TestThePickAndTheDockAsReviewed:
         _remote, local = _init_repo_with_remote(tmp_path)
         for name in ("release", "develop"):
             _git(local, "update-ref", f"refs/remotes/origin/{name}", "HEAD")
-        app = AdkReviewTuiApp(config_path=self._config(tmp_path))
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             await app.workers.wait_for_complete()
@@ -1957,7 +1921,7 @@ class TestThePickAndTheDockAsReviewed:
             app._sync_chosen_branch("base", chosen)
             await app.workers.wait_for_complete()
             assert app.selected_base == chosen
-            await self._pick(app, pilot)
+            await _pick(app, pilot)
             assert app.selected_base == chosen, (app.selected_base, default)
 
     @pytest.mark.asyncio
@@ -1983,7 +1947,7 @@ class TestThePickAndTheDockAsReviewed:
             return FetchResult(ok=True, message="Fetched")
 
         monkeypatch.setattr(screen, "list_branches", lambda path: listed.append(path) or real_list(path))
-        app = screen.AdkReviewTuiApp(config_path=self._config(tmp_path))
+        app = screen.AdkReviewTuiApp(config_path=_screen_config(tmp_path))
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             await app.workers.wait_for_complete()
@@ -1997,8 +1961,11 @@ class TestThePickAndTheDockAsReviewed:
             repo.action_select()
             await pilot.pause()
             assert listed == [], "nothing listed before the fetch ends"
+            said: list[str] = []
+            app.notify = lambda message, **_options: said.append(str(message))
             await pilot.press("ctrl+r")
             await pilot.pause()
+            assert any("loading" in line for line in said), "a review asked for meanwhile says why it waits"
             released.set()
             await app.workers.wait_for_complete()
             await pilot.pause()
@@ -2022,9 +1989,13 @@ class TestThePickAndTheDockAsReviewed:
             return subprocess.CompletedProcess(args, 0, "", "")
 
         monkeypatch.setattr(git_sync, "_run_git", slow)
-        fetches = [threading.Thread(target=git_sync.fetch_remote, args=(str(local),)) for _ in range(2)]
+        fetches = [
+            threading.Thread(target=git_sync.fetch_remote, args=(str(local),), kwargs={"prune": prune})
+            for prune in (False, True)  # F5's prune is no answer a pick's fetch gives: it runs, after it
+        ]
         for one in fetches:
             one.start()
+            time.sleep(0.05)  # the pick's first, as F5 pressed during it
         for one in fetches:
             one.join(10)
         (_first, first_end), (second_start, _second) = sorted(spans)
@@ -2070,7 +2041,7 @@ class TestThePickAndTheDockAsReviewed:
         from tui.app import AdkReviewTuiApp
 
         _init_repo_with_remote(tmp_path)
-        app = AdkReviewTuiApp(config_path=self._config(tmp_path))
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
         async with app.run_test(size=(160, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             await pilot.press("ctrl+t")
@@ -2089,7 +2060,7 @@ class TestThePickAndTheDockAsReviewed:
         from tui.app import AdkReviewTuiApp
 
         _init_repo_with_remote(tmp_path)
-        app = AdkReviewTuiApp(config_path=self._config(tmp_path))
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             head = app.query_one("#head-box")
@@ -2106,15 +2077,16 @@ class TestThePickAndTheDockAsReviewed:
         wide = tmp_path / "workspace" / "\u4ed3\u5e93-\u670d\u52a1-\u6d4b\u8bd5-\u4ed3\u5e93"
         wide.mkdir(parents=True)
         _git(wide, "init", "-b", "main")
-        (wide / "a.py").write_text("x = 1\n", encoding="utf-8")
+        (wide / "a.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
         _git(wide, "add", ".")
         _git(wide, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "base")
         (tmp_path / "other").mkdir()
-        cfg = self._config(tmp_path)
-        cfg.write_text(cfg.read_text(encoding="utf-8").replace('"]', f'", "{(tmp_path / "other").as_posix()}"]', 1))
+        cfg = _screen_config(tmp_path)
+        both = cfg.read_text(encoding="utf-8").replace('"]', f'", "{(tmp_path / "other").as_posix()}"]', 1)
+        cfg.write_text(both, encoding="utf-8")
         for size, roots in (((80, 40), 2), ((100, 40), 1)):
             if roots == 1:
-                self._config(tmp_path)
+                _screen_config(tmp_path)
             app = AdkReviewTuiApp(config_path=cfg)
             async with app.run_test(size=size) as pilot:
                 await pilot.pause(0.3)
@@ -2130,20 +2102,20 @@ class TestThePickAndTheDockAsReviewed:
         80 the last ran off the screen. Where no choice fits, each chip keeps its step's number alone."""
         from rich.cells import cell_len
 
-        from tui.app import DOCK_GAP, _dock_labels
+        from tui.app import DOCK_GAP, Panel, _dock_labels
 
-        docked = [(None, number, "Name", "a-choice-that-runs-on-and-on") for number in range(1, 8)]
+        docked = [Panel(f"#p{n}", n, "Title", "Name", "a-choice-that-runs-on-and-on") for n in range(1, 8)]
         for width in (80, 60):
             labels = _dock_labels(docked, width)
             assert 2 + sum(cell_len(label) + DOCK_GAP for label in labels) <= width + 2, (width, labels)
         assert _dock_labels(docked, 60) == [f"{chr(0x25B6)} {n}" for n in range(1, 8)]
-        usual = [(None, 1, "Repo", "payments-service"), (None, 2, "Review", "main"), (None, 3, "Target", "develop")]
-        usual += [(None, 4, "Folders", "all"), (None, 5, "Profile", "default, fail on blocker")]
-        usual += [(None, 6, "Outputs", "comment")]
+        named = (("Repo", "payments-service"), ("Review", "main"), ("Target", "develop"), ("Folders", "all"))
+        named += (("Profile", "default, fail on blocker"), ("Outputs", "comment"))
+        usual = [Panel(f"#p{n}", n, "Title", name, choice) for n, (name, choice) in enumerate(named, 1)]
         at_140 = _dock_labels(usual, 140)
         assert at_140[0] == f"{chr(0x25B6)} 1 Repo: payments-{chr(0x2026)}", "at 140 columns the names stay"
         assert at_140[4] == f"{chr(0x25B6)} 5 Profile: default, {chr(0x2026)}", at_140
-        wide = [(None, 1, "Repo", "\u4ed3\u5e93" * 10)]
+        wide = [Panel("#p1", 1, "Title", "Repo", "\u4ed3\u5e93" * 10)]
         assert cell_len(_dock_labels(wide, 30)[0]) + DOCK_GAP + 2 <= 30 + 2, "a wide character counts as two"
 
     @pytest.mark.asyncio
@@ -2157,7 +2129,7 @@ class TestThePickAndTheDockAsReviewed:
         read: list[int] = []
         real = AdkReviewTuiApp.current_selection
         monkeypatch.setattr(AdkReviewTuiApp, "current_selection", lambda self, **kw: read.append(1) or real(self, **kw))
-        app = AdkReviewTuiApp(config_path=self._config(tmp_path))
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             await app.workers.wait_for_complete()
@@ -2167,6 +2139,206 @@ class TestThePickAndTheDockAsReviewed:
             await pilot.pause()
             await pilot.pause()
             assert len(read) <= 6, len(read)
+
+
+def _screen_config(tmp_path: Path, *extra: str) -> Path:
+    """The front end's config listing the fixture's `workspace` folder, each of `extra` a line of `[workspace]`."""
+    cfg = tmp_path / ".tui.toml"
+    root = (tmp_path / "workspace").as_posix()
+    cfg.write_text("\n".join([f'[workspace]\nroot_dirs = ["{root}"]', *extra]) + "\n", encoding="utf-8")
+    return cfg
+
+
+async def _pick(app, pilot) -> None:
+    """The person's pick of the first repository listed, and what it starts."""
+    from textual.widgets import OptionList
+
+    repo = app.query_one("#repo-list", OptionList)
+    repo.highlighted = 0
+    repo.action_select()
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+
+
+def _repository(path: Path, branches: tuple[str, ...], checked_out: str) -> Path:
+    """A repository at `path` holding `branches`, each at one commit, with `checked_out` checked out."""
+    path.mkdir(parents=True)
+    _git(path, "init", "-b", "main")
+    (path / "a.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
+    _git(path, "add", ".")
+    _git(path, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "base")
+    for name in branches:
+        if name != "main":
+            _git(path, "branch", name)
+    _git(path, "switch", checked_out)
+    return path
+
+
+class TestThePickAsReviewedAgain:
+    """A second code review of the pick's fetch, each finding reproduced by a test that failed first."""
+
+    @pytest.mark.asyncio
+    async def test_picking_another_repository_takes_its_own_branches_and_none_of_the_last(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by review, and reproduced: every pick fetched, and a fetch kept the branches chosen, so picking another
+        repository kept the last one's head and base wherever it had branches of the same names, its own checked-out
+        branch ignored. And while its fetch ran, the palette offered the last repository's branches."""
+        pytest.importorskip("textual")
+        import threading
+
+        from textual.widgets import OptionList
+
+        from tui import app as screen
+        from tui.git_sync import FetchResult
+
+        _repository(tmp_path / "workspace" / "alpha", ("main", "dev"), "dev")
+        _repository(tmp_path / "workspace" / "beta", ("main", "dev", "feat"), "feat")
+        released = threading.Event()
+
+        def held(*_args: object, **_options: object) -> FetchResult:
+            released.wait(10)
+            return FetchResult(ok=True, message="Fetched")
+
+        app = screen.AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            assert app.selected_project.name == "alpha" and app.selected_head == "dev", app.selected_head
+            monkeypatch.setattr(screen, "fetch_remote", held)
+            repo = app.query_one("#repo-list", OptionList)
+            repo.highlighted = 1
+            repo.action_select()
+            await pilot.pause()
+            assert app.branches == [], "no branch of the last repository is offered while the fetch runs"
+            released.set()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert (app.selected_project.name, app.selected_head) == ("beta", "feat"), app.selected_head
+
+    @pytest.mark.asyncio
+    async def test_picking_the_same_repository_again_keeps_the_options_set(self, tmp_path: Path) -> None:
+        """Read by review, and reproduced: picked again, as a fetch of its new branches, the repository's saved preset
+        set every option back, a switch turned on among them, and the folders ticked."""
+        pytest.importorskip("textual")
+        from textual.widgets import Switch
+
+        from tui.app import AdkReviewTuiApp
+
+        _init_repo_with_remote(tmp_path)
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            verify = app.query_one("#sw-verify", Switch)
+            verify.value = not verify.value
+            chosen = verify.value
+            await _pick(app, pilot)
+            assert verify.value is chosen, "the switch kept as set"
+
+    @pytest.mark.asyncio
+    async def test_no_review_starts_while_a_picked_repositorys_folders_load(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review: the wait for a review ended as the branches were drawn, while the folders still loaded with
+        the last repository's ticks, so a review started then ran with another repository's `--path`."""
+        pytest.importorskip("textual")
+        import asyncio
+
+        from textual.widgets import OptionList
+
+        from tui import app as screen
+
+        _init_repo_with_remote(tmp_path)
+        ran: list[bool] = []
+        app = screen.AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            gate, entered = asyncio.Event(), asyncio.Event()
+            real = screen.AdkReviewTuiApp._refresh_folders
+
+            async def held(self: screen.AdkReviewTuiApp) -> None:
+                entered.set()
+                await gate.wait()
+                await real(self)
+
+            monkeypatch.setattr(screen.AdkReviewTuiApp, "_refresh_folders", held)
+            monkeypatch.setattr(screen.AdkReviewTuiApp, "_execute_review", lambda _app, *, dry_run: ran.append(dry_run))
+            repo = app.query_one("#repo-list", OptionList)
+            repo.highlighted = 0
+            repo.action_select()
+            for _ in range(80):  # until the branches are drawn and the folders wait
+                await pilot.pause(0.05)
+                if entered.is_set():
+                    break
+            assert entered.is_set(), "the folders load after the branches"
+            await pilot.press("ctrl+r")
+            await pilot.pause()
+            gate.set()
+            await app.workers.wait_for_complete()
+            assert ran == [], ran
+
+    def test_a_second_fetch_while_one_runs_takes_its_answer(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review: a cancelled pick's fetch runs on in its thread, and each later fetch of the repository waited
+        for it and then ran its own, so picks to an unreachable remote queued up one timeout each, and quitting waited
+        for all of them. A fetch asked for while one runs takes that one's answer; F5's prune, which a pick's fetch
+        does not do, runs after it. A linked worktree shares its repository's refs, and so its fetches."""
+        import threading
+        import time
+
+        from tui import git_sync
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        worktree = tmp_path / "worktree"
+        _git(local, "worktree", "add", str(worktree), "-b", "elsewhere")
+        ran: list[list[str]] = []
+
+        def slow(_repo: str, args: list[str], **_options: object) -> subprocess.CompletedProcess[str]:
+            ran.append(args)
+            time.sleep(0.3)
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        monkeypatch.setattr(git_sync, "_run_git", slow)
+        answers: list[object] = []
+        fetches = [
+            threading.Thread(target=lambda path=path: answers.append(git_sync.fetch_remote(str(path))))
+            for path in (local, local, worktree)
+        ]
+        for one in fetches:
+            one.start()
+            time.sleep(0.05)
+        for one in fetches:
+            one.join(10)
+        assert len(ran) == 1 and len(answers) == 3, ran
+        ran.clear()
+        both = [threading.Thread(target=git_sync.fetch_remote, args=(str(local),), kwargs={"prune": p}) for p in (0, 1)]
+        for one in both:
+            one.start()
+            time.sleep(0.05)
+        for one in both:
+            one.join(10)
+        assert ["--prune" in args for args in ran] == [False, True], ran
+
+    def test_a_fetch_prunes_only_where_asked_and_starts_no_maintenance(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review: `fetch_remote` pruned unless told not to, so a caller that left the flag out undid the
+        pick's promise; and a fetch can start git's own maintenance, which a timeout then stops halfway, leaving its
+        files behind. A fetch prunes only where asked, and starts no maintenance."""
+        from tui import git_sync
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        seen: list[list[str]] = []
+
+        def recorded(_repo: str, args: list[str], **_options: object) -> subprocess.CompletedProcess[str]:
+            seen.append(args)
+            return subprocess.CompletedProcess(args, 0, "", "")
+
+        monkeypatch.setattr(git_sync, "_run_git", recorded)
+        git_sync.fetch_remote(str(local))
+        git_sync.fetch_remote(str(local), prune=True)
+        assert [("--prune" in a, "--no-prune" in a, "--no-auto-maintenance" in a) for a in seen] == [
+            (False, True, True),
+            (True, False, True),
+        ], seen
 
 
 async def _wait_for_branches(app, pilot) -> None:

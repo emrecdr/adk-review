@@ -17,7 +17,7 @@ import signal
 import subprocess
 import sys
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
@@ -126,14 +126,28 @@ def _run_git(repo: str, args: list[str], timeout_s: int = 15) -> subprocess.Comp
 
 #: Windows' flag for a process with no console: `subprocess` holds it there alone.
 NO_CONSOLE = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
-_FETCH_LOCKS: dict[str, threading.Lock] = {}
-_FETCH_LOCKS_GUARD = threading.Lock()
 
 
-def _fetch_lock(repo: str) -> threading.Lock:
-    """The one lock of `repo`'s fetches, however its path is spelled."""
-    with _FETCH_LOCKS_GUARD:
-        return _FETCH_LOCKS.setdefault(os.path.normcase(os.path.abspath(repo)), threading.Lock())
+@dataclass
+class _Running:
+    """A fetch of one repository in its thread, and its answer once it ends."""
+
+    prune: bool
+    ended: threading.Event = field(default_factory=threading.Event)
+    answer: FetchResult | None = None
+
+
+#: The fetch running for each repository, by its common git folder: a linked worktree shares its repository's refs.
+_RUNNING: dict[str, _Running] = {}
+_RUNNING_GUARD = threading.Lock()
+
+
+def _fetch_key(repo: str) -> str:
+    """`repo`'s common git folder, however its path is spelled, the same for each of its linked worktrees: read by
+    review, keyed on the worktree's own path, two fetches into one set of refs raced for its locks again."""
+    found = _read(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    folder = found[1].strip() if found is not None and found[1].strip() else repo
+    return os.path.normcase(os.path.abspath(folder))
 
 
 def _bounded(argv: list[str], env: dict[str, str], timeout_s: int) -> subprocess.CompletedProcess[str]:
@@ -255,22 +269,45 @@ def is_dirty(repo: str) -> bool:
     return bool(_status(repo, "--porcelain"))
 
 
-def fetch_remote(repo: str, timeout_s: int = 15, *, prune: bool = True) -> FetchResult:
-    """Run `git fetch --quiet` on `repo` if it has a configured remote: with `--prune` at F5, the person's own fetch;
-    without it as the person picks the repository, which adds the branches the remote got since and removes none."""
+def fetch_remote(repo: str, timeout_s: int = 15, *, prune: bool = False) -> FetchResult:
+    """Run `git fetch` on `repo` where it has a remote: with `--prune` only where asked, F5's, the person's own; else
+    `--no-prune`, as the person picks the repository, which adds the branches its remote got since and removes none.
+    One fetch of a repository runs at a time, and one asked for meanwhile takes its answer, F5's prune excepted, which
+    runs after a pick's fetch. Read by review: a cancelled pick's fetch runs on in its thread, and each later fetch of
+    the repository waited for it and ran its own, a timeout each, which quitting then waited for."""
     try:
         _code, remotes = read_only(repo, "remote")
     except GitError as exc:
         return FetchResult(ok=False, message=f"git fetch failed: {exc}")
     if not remotes:
         return FetchResult(ok=True, message="No remote configured (local repository)")
+    key = _fetch_key(repo)
+    while True:
+        with _RUNNING_GUARD:
+            running = _RUNNING.get(key)
+            if running is None:
+                mine = _RUNNING[key] = _Running(prune)
+                break
+        running.ended.wait()  # bounded: the running fetch ends at its timeout
+        if running.answer is not None and (running.prune or not prune):
+            return running.answer
     try:
-        # `--no-prune` said, never left out: read by review, and reproduced, `fetch.prune` in the person's config, as
-        # the guide advises for the push hook, made a pick's fetch prune a branch they had chosen. One fetch of a
-        # repository at a time: F5 pressed during a pick's fetch started a second, which no cancel stops, and the two
-        # raced for the repository's ref locks.
-        with _fetch_lock(repo):
-            done = _run_git(repo, ["fetch", "--prune" if prune else "--no-prune", "--quiet"], timeout_s=timeout_s)
+        mine.answer = _fetched(repo, timeout_s, prune=prune)
+        return mine.answer
+    finally:
+        with _RUNNING_GUARD:
+            del _RUNNING[key]
+        mine.ended.set()
+
+
+def _fetched(repo: str, timeout_s: int, *, prune: bool) -> FetchResult:
+    """One `git fetch` of `repo`, and what it says. `--no-prune` is said, never left out: read by review, and
+    reproduced, `fetch.prune` in the person's config, as the guide advises for the push hook, made a pick's fetch prune
+    a branch they had chosen. No maintenance starts: read by review, a fetch can start git's own, which a timeout
+    then stops halfway, leaving its files behind."""
+    args = ["fetch", "--prune" if prune else "--no-prune", "--no-auto-maintenance", "--quiet"]
+    try:
+        done = _run_git(repo, args, timeout_s=timeout_s)
     except subprocess.TimeoutExpired:
         return FetchResult(ok=False, message=f"git fetch timed out after {timeout_s}s (using cached refs)")
     except OSError as exc:

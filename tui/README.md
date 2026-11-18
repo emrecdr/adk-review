@@ -107,14 +107,15 @@ A finding is drawn as plain text. Its title and fix are a model's words, and no 
 As the reviewer does, the screen reads a repository, and writes into it only where you act:
 
 - It lists the branches as the repository holds them, as of its last fetch. When you pick a repository, in its list
-  or the command palette, it lists them at once, then runs `git fetch` in the background and adds the branches the
-  remote got since. That fetch removes none, and the branches you chose stay chosen. The repository the screen picks
-  by itself as it opens is not fetched. `fetch_on_select = false` turns this off.
+  or the command palette, it first runs `git fetch --no-prune`, which adds the branches the remote got since and
+  removes none, then lists them. Picked again, the repository keeps the branches and options you chose. The
+  repository the screen picks by itself as it opens is not fetched. `fetch_on_select = false` turns this off.
 - F5 runs `git fetch --prune` on the repository you chose: it also removes the branches the remote no longer holds.
 - A fetch that fails, offline or past `fetch_timeout_s`, leaves the lists as the repository holds them, and says so.
-- The lists wait for the fetch, and no review starts until they are drawn. One fetch of a repository runs at a
-  time. Quitting waits for a fetch that is running, at most `fetch_timeout_s`: git stopped midway can leave its
-  locks behind.
+- While a repository's branches and folders load, a review waits, and says so. One fetch of a repository runs at a
+  time, its linked worktrees with it, and one asked for meanwhile takes its answer. A fetch starts none of git's own
+  maintenance. Quitting waits for a fetch that is running, at most `fetch_timeout_s`: git stopped midway can leave
+  its locks behind.
 - A remote's branch, `origin/<branch>`, is reviewed as the remote holds it, even where a local copy of it is ahead
   or behind. No local branch is made.
 - For a local branch behind its remote, it asks. On yes, `git branch -f` moves that branch and writes nothing else,

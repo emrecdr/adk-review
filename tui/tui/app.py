@@ -8,7 +8,7 @@ import os
 import subprocess
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, NamedTuple
 
 from rich.cells import cell_len, set_cell_size
 from rich.text import Text
@@ -95,21 +95,37 @@ DOCK_GAP = 2 + 2
 DOCK_NAMED_MIN = 10
 
 
-def _dock_labels(docked: Sequence[tuple[object, int, str, str]], width: int) -> list[str]:
+class Panel(NamedTuple):
+    """One panel as the screen names it: its selector, its step's number, its title, the dock's name for it, and the
+    choice made in it."""
+
+    selector: str
+    number: int
+    title: str
+    name: str
+    choice: str
+
+    @property
+    def heading(self) -> str:
+        """Its title as the panel and its tooltip read it: `2. Branch Under Review [main]`."""
+        return f"{self.number}. {self.title} [{self.choice}]"
+
+
+def _dock_labels(docked: Sequence[Panel], width: int) -> list[str]:
     """Each docked panel's chip, `▶ 2 Review: main`, on one line of `width` terminal columns, in the first form that
     fits: the step's number, name and choice, each choice keeping `DOCK_NAMED_MIN` columns; the number and the choice;
     the number alone. The choices are cut the longest first, and each chip's tooltip names its panel. Measured: at 100
     columns the names left 13 columns for six choices. Read by review: a character a terminal draws two columns wide
     counted as one, and seven chips at 80 columns ran past the screen in the shortest form there was."""
-    choices = [choice for *_rest, choice in docked]
+    choices = [panel.choice for panel in docked]
     for named in (True, False):
-        leads = [f"{DOCKED} {number} {name}: " if named else f"{DOCKED} {number} " for _, number, name, _c in docked]
+        leads = [f"{DOCKED} {p.number} {p.name}: " if named else f"{DOCKED} {p.number} " for p in docked]
         room = width - 2 - sum(cell_len(lead) + DOCK_GAP for lead in leads)  # the dock's padding, and each gap
         cut = _fitted(choices, room)
         kept = all(cell_len(s) >= min(cell_len(f), DOCK_NAMED_MIN) for s, f in zip(cut, choices, strict=True))
         if sum(map(cell_len, cut)) <= room and (kept or not named):
             return [lead + short for lead, short in zip(leads, cut, strict=True)]
-    return [f"{DOCKED} {number}" for _, number, _name, _choice in docked]
+    return [f"{DOCKED} {panel.number}" for panel in docked]
 
 
 def _fitted(choices: list[str], room: int) -> list[str]:
@@ -155,14 +171,17 @@ class AdkReviewTuiApp(App[int]):
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:  # noqa: ARG002 -- Textual's
         """No action key but Stop runs while a dialog is open. Measured: once the keys went first, Ctrl+R and Ctrl+D
         started a review behind the question a branch behind its remote raises, which they had not before."""
-        if action in {"run_review", "run_dry"} and self._run_waits():
+        if action in {"run_review", "run_dry"} and self._reviewing:  # the action says why where the branches load
             return False
         return not (action in self.BEHIND_NO_DIALOG and isinstance(self.screen, ModalScreen))
 
     def _run_waits(self) -> bool:
-        """Whether a review or a dry run waits: while one runs, and while the branches load. Read by review: the
-        review's worker is exclusive, so Ctrl+R or Ctrl+D during a run stopped it and started another, its model calls
-        spent again; and a review started while a pick's fetch ran read the branches chosen in the last repository."""
+        """Whether a review or a dry run waits: while one runs, whose progress shows, and while a repository's branches
+        and folders load, which a notice says. Read by review: the review's worker is exclusive, so Ctrl+R or Ctrl+D
+        during a run stopped it and started another, its model calls spent again; a review started while a pick's
+        fetch ran read the branches chosen in the last repository; and waiting said nothing."""
+        if self._listing_for is not None and not self._reviewing:
+            self.notify("The branches are loading. Run the review once they are listed.", timeout=4, markup=False)
         return self._reviewing or self._listing_for is not None
 
     def __init__(self, config_path: Path | None = None) -> None:
@@ -422,11 +441,16 @@ class AdkReviewTuiApp(App[int]):
         self.workers.cancel_group(self, "branch_sync")
         self.workers.cancel_group(self, "folder_refresh")
         self.selected_project = project
-        self._repo_loaded_path = ""
         self._sync_repo_list_highlight(project.path)
-        if prev_path and os.path.normcase(prev_path) != os.path.normcase(project.path):
-            self._reset_outputs()
-        self._apply_repo_preset(project.name)
+        if not again:
+            # Another repository: its own preset and folders, and none of the last one's branches, which the palette
+            # would offer while its fetch runs. Read by review, and reproduced: picked again, as a fetch of its new
+            # branches, a repository set every option back to its preset, a switch turned on among them.
+            self._repo_loaded_path = ""
+            self.branches = []
+            if prev_path:
+                self._reset_outputs()
+            self._apply_repo_preset(project.name)
         self._load_repo_branches(project, fetch=picked and self.tui_config.fetch_on_select, keep=again)
 
     def _sync_repo_list_highlight(self, repo_path: str) -> None:
@@ -490,10 +514,20 @@ class AdkReviewTuiApp(App[int]):
         says the person picked the same repository again, wherever they are still there. Nothing is fetched as the
         screen opens: read by review, and reproduced, opening it fetched the first repository of the root, and pruned
         a remote-tracking ref there."""
+        self._listing_for = project
+        try:
+            await self._list_branches(project, fetch=fetch, prune=prune, keep=keep)
+        finally:
+            if self._listing_for is project:  # a later pick's worker may hold it already
+                self._listing_for = None
+
+    async def _list_branches(self, project: ProjectInfo, *, fetch: bool, prune: bool, keep: bool) -> None:
+        """One pick's or F5's listing of `project`'s branches, its fetch first, and then its folders: a review waits
+        for all of it. Read by review: the wait ended as the branches were drawn, while the folders still held the
+        last repository's ticks, so a review started then ran with its `--path`."""
         head_list = self.query_one("#head-list", OptionList)
         base_list = self.query_one("#base-list", OptionList)
         said = "branches as the repository holds them"
-        self._listing_for = project
         self._set_loading(True, head_list, base_list)
         try:
             if fetch:
@@ -517,16 +551,15 @@ class AdkReviewTuiApp(App[int]):
                     )
             branches = await asyncio.to_thread(list_branches, project.path)
         finally:
-            if self._listing_for is project:  # a later pick's worker may hold it already
-                self._listing_for = None
             self._set_loading(False, head_list, base_list)
         if self.selected_project != project:
             return
         self.branches = branches
         names = {b.name for b in branches}
-        if (fetch or keep) and self.selected_head in names and self.selected_base in {*names, ""}:
-            # F5 and a pick keep the branches chosen where they are still there. Read by review: F5 set them back to
-            # the branch checked out and the default target, and a review after it read another pair.
+        if (prune or keep) and self.selected_head in names and self.selected_base in {*names, ""}:
+            # F5 and a pick of the same repository keep the branches chosen where they are still there; a pick of
+            # another takes its own. Read by review: F5 set them back to the branch checked out and the default
+            # target; and, kept at every fetch, another repository took the last one's head and base.
             head_default, base_default = self.selected_head, self.selected_base
         else:
             preset = self.tui_config.projects.get(project.name)
@@ -782,7 +815,8 @@ class AdkReviewTuiApp(App[int]):
         self.query_one("#cli-preview", Static).update(format_cli_command(argv))
 
     def _update_selection_summary(self, sel: ReviewSelection) -> None:
-        """Keep a 1-line summary of active choices visible even when sections are minimized."""
+        """The one-line summary of the choices, shown while every panel is open: the dock carries them once one is
+        minimized."""
         proj = self.selected_project.name if self.selected_project else "none"
         target = f"{sel.head or 'HEAD'} -> {sel.base}" if sel.mode == "branch" else f"--{sel.mode}"
         checks_or_prof = f"--check ({len(sel.checks)})" if sel.checks else sel.profile
@@ -795,8 +829,8 @@ class AdkReviewTuiApp(App[int]):
         )
         self.query_one("#selection-summary", Static).update(summary)
 
-    def _panel_specs(self, sel: ReviewSelection | None = None) -> list[tuple[str, int, str, str, str]]:
-        """Each panel's selector, step number, title, chip name and choice, as the selection stands."""
+    def _panel_specs(self, sel: ReviewSelection | None = None) -> list[Panel]:
+        """Each panel as the selection stands."""
         active = sel or self.current_selection(dry_run=False)
         proj_name = self.selected_project.name if self.selected_project else "none"
         paths_tag = (
@@ -818,7 +852,7 @@ class AdkReviewTuiApp(App[int]):
             ("Output Options", "Outputs", ", ".join(name for name, on in outputs if on) or "none"),
         )
         return [
-            (selector, 1 if step == 1 else self._step(step), title, name, choice)
+            Panel(selector, 1 if step == 1 else self._step(step), title, name, choice)
             for step, (selector, (title, name, choice)) in enumerate(zip(PANELS, named, strict=True), 1)
         ]
 
@@ -827,30 +861,33 @@ class AdkReviewTuiApp(App[int]):
         review, the dock had set it on its chips alone. Then the dock, its chips naming the same choices."""
         if not self._has_dom("#panel-dock"):
             return
-        specs = self._panel_specs(sel)
-        for selector, number, title, _name, choice in specs:
-            box = self.query_one(selector, Collapsible)
-            box.title = literal(f"{number}. {title} [{choice}]")  # a title takes a string alone
-            box.tooltip = Content(f"{number}. {title} [{choice}]")
-        self._update_dock(specs)
+        panels = self._panel_specs(sel)
+        for panel in panels:
+            box = self.query_one(panel.selector, Collapsible)
+            box.title = literal(panel.heading)  # a title takes a string alone
+            box.tooltip = Content(panel.heading)
+        self._update_dock(panels)
 
-    def _update_dock(self, specs: list[tuple[str, int, str, str, str]] | None = None, *, width: int = 0) -> None:
+    def _update_dock(self, panels: list[Panel] | None = None, *, width: int | None = None) -> None:
         """The dock: a minimized panel leaves its row for a chip in one line, a row with no open panel goes, and so
         does the summary, while the dock carries the choices. Asked by the owner: six minimized panels took two rows
         of boxes labelled with initials, `2.BUR`, and 8 of 45 rows."""
         if not self._has_dom("#panel-dock"):
             return
-        docked: list[tuple[Button, int, str, str]] = []
-        for selector, number, title, name, choice in self._panel_specs() if specs is None else specs:
-            box = self.query_one(selector, Collapsible)
+        chips: list[Button] = []
+        docked: list[Panel] = []
+        for panel in self._panel_specs() if panels is None else panels:
+            box = self.query_one(panel.selector, Collapsible)
             on_dock = box.collapsed and not box.has_class("hidden")
             box.set_class(on_dock, "docked")
-            chip = self.query_one(f"#dock-{selector[1:]}", Button)
+            chip = self.query_one(f"#dock-{panel.selector[1:]}", Button)
             chip.set_class(not on_dock, "hidden")
             if on_dock:
-                chip.tooltip = Content(f"{number}. {title} [{choice}]")
-                docked.append((chip, number, name, choice))
-        for (chip, *_rest), label in zip(docked, _dock_labels(docked, width or self.size.width), strict=True):
+                chip.tooltip = Content(panel.heading)
+                chips.append(chip)
+                docked.append(panel)
+        labels = _dock_labels(docked, self.size.width if width is None else width)
+        for chip, label in zip(chips, labels, strict=True):
             chip.label = Content(label)  # as written: a repository's name may hold `[`
         for row in ("#chain-row", "#mid-row"):
             boxes = self.query_one(row).query(Collapsible)
