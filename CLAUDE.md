@@ -237,15 +237,17 @@ Load-bearing rules the tests enforce:
   imports it, and `tui/README.md` is its guide. Textual is the member's dependency alone, never the reviewer's, so `uv
   sync --locked` and `uv tool install` of the reviewer take none of its code, command or UI package; CI, Copilot's setup
   and `make sync` sync `--all-packages`, so the suite and the type check read the screen, and pyrefly reads Textual as
-  `Any` where it is missing. Its config and state live in the person's own folders, `%APPDATA%` and `%LOCALAPPDATA%` on
-  Windows, the XDG folders elsewhere. A review it runs is `review_command`'s, `python -P`, with `--progress`. It reads
-  git only through `collect`'s `read_only`, under a review's own environment, and writes into a repository only at the
-  person's F5, a fetch, or their answer to a branch behind its remote, `git branch -f` on a branch no working tree has
-  checked out. Every string a repository, a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a
-  tag. On Windows, from cmd and PowerShell alike: the command it shows is quoted by `windows_word`, or not shown; no key
-  is one a terminal sends as another or the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first and
-  none but Stop runs behind a dialog; a review it runs gets UTF-8 streams; and a copy goes to Windows' own clipboard
-  too. `adk_review/` still leaves a `tui/` folder out of the cache key: a checkout keeps a person's old config there.
+  `Any` where it is missing. Its config is `tui/.tui.toml` in a checkout, which git ignores, and for an installed copy
+  `tui.toml` in the person's own folder, `%APPDATA%` on Windows, the XDG one elsewhere; its state is in the person's
+  state folder; the screen's first line names the config it reads, and the loader names any key it does not know. A
+  review it runs is `review_command`'s, `python -P`, with `--progress`. It reads git only through `collect`'s
+  `read_only`, under a review's own environment, and writes into a repository only at the person's F5, a fetch, or their
+  answer to a branch behind its remote, `git branch -f` on a branch no working tree has checked out. Every string a
+  repository, a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a tag. On Windows, from cmd
+  and PowerShell alike: the command it shows is quoted by `windows_word`, or not shown; no key is one a terminal sends
+  as another or the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first and none but Stop runs behind a
+  dialog; a review it runs gets UTF-8 streams; and a copy goes to Windows' own clipboard too. `adk_review/` still leaves
+  a `tui/` folder out of the cache key: a checkout keeps a person's old config there.
 - **Layering** (`tests/test_layering.py`): `core` → `collect` → `judge` → `deliver`, with imports pointing one way
   only, never spelled from the top (`adk_review.…`), `deliver/` importing `core` alone, a guideline importing `core`
   alone, and a rule importing one door, `judge/rule_helpers/`, alone, which imports `core` alone and lists in `__all__`

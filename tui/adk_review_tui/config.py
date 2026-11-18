@@ -42,7 +42,24 @@ def state_home(*, windows: bool = os.name == "nt") -> Path:
 
 
 TUI_DIR = Path(__file__).resolve().parent
-DEFAULT_CONFIG_PATH = config_home() / APP / "tui.toml"
+
+
+def _checkout() -> Path | None:
+    """The adk-review checkout the front end runs from, its root holding `.git` and the reviewer's project file; None
+    for an installed copy."""
+    root = TUI_DIR.parent.parent
+    return root if (root / ".git").exists() and (root / "pyproject.toml").is_file() else None
+
+
+def default_config_path() -> Path:
+    """Where the config is read when no `--config` names one: in a checkout, `tui/.tui.toml`, beside the front end,
+    where the person edits it; in an installed copy, which has no checkout, `tui.toml` in the person's own config
+    folder, which a reinstall leaves alone. Reported by the owner: with the config in their own folder in a checkout
+    too, the `.tui.toml` they edited was read no more, and the screen named no file."""
+    return TUI_DIR.parent / ".tui.toml" if _checkout() else config_home() / APP / "tui.toml"
+
+
+DEFAULT_CONFIG_PATH = default_config_path()
 #: Where a checkout kept the config before, when the front end was a part of the reviewer's package: a first run
 #: that finds none at `DEFAULT_CONFIG_PATH` copies it there. Git moved the front end's files, never this one, which
 #: it ignores.
@@ -108,10 +125,8 @@ class TuiConfig:
 def default_root_folder() -> str:
     """The folder of repositories a first run names: in a checkout, the folder that holds it, where its neighbours
     are; in an installed copy, the folder the command starts in."""
-    checkout = TUI_DIR.parent.parent
-    if (checkout / ".git").exists() and (checkout / "pyproject.toml").is_file():
-        return str(checkout.parent)
-    return str(Path.cwd())
+    checkout = _checkout()
+    return str(checkout.parent) if checkout else str(Path.cwd())
 
 
 def _toml(text: str) -> str:
@@ -127,15 +142,16 @@ def _toml_list(items: tuple[str, ...]) -> str:
 
 
 def ensure_tui_config(path: Path | None = None) -> Path:
-    """`path`, by default `tui.toml` in the person's config folder, written with the defaults where it is missing. A
-    checkout's old config, `adk_review/tui/.tui.toml`, is copied there once in their place, its saved choices kept,
-    and left where it is."""
+    """`path`, by default `DEFAULT_CONFIG_PATH`, written with the defaults where it is missing. A checkout's old config,
+    `adk_review/tui/.tui.toml`, moves there once in their place, its saved choices kept: moved, never copied, so one
+    file holds the config. Reported by the owner: a copy left the old file to edit, and the screen read the other."""
     target = (path or DEFAULT_CONFIG_PATH).expanduser().resolve()
     if target.is_file():
         return target
     target.parent.mkdir(parents=True, exist_ok=True)
     if target == DEFAULT_CONFIG_PATH.expanduser().resolve() and LEGACY_CONFIG_PATH.is_file():
         write_atomic(target, _LEGACY_OUTPUT_DIR.sub("", LEGACY_CONFIG_PATH.read_text(encoding="utf-8")))
+        LEGACY_CONFIG_PATH.unlink()  # its text is the new file's now
         return target
     root = default_root_folder().replace("\\", "/")
     content = (
@@ -162,18 +178,20 @@ def ensure_tui_config(path: Path | None = None) -> Path:
 
 
 def load_tui_config(path: Path | None = None) -> TuiConfig:
-    """Read the config at `path`, by default the person's own `tui.toml`, written first where it is missing."""
+    """Read the config at `path`, by default `DEFAULT_CONFIG_PATH`, written first where it is missing. Read whole, as
+    the reviewer reads its own: a table or a setting it does not know is said and named, never left out in silence."""
     target = ensure_tui_config(path)
     try:
         raw = tomllib.loads(target.read_text(encoding="utf-8"))
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ValueError(f"could not read {target}: {exc}") from None
-    workspace = raw.get("workspace") if isinstance(raw.get("workspace"), dict) else {}
-    roots = _parse_roots(workspace)
-    depth = _int_in_range(workspace.get("scan_depth", 2), 2, 1, 5)
-    timeout = _int_in_range(workspace.get("fetch_timeout_s", 15), 15, 3, 120)
-    output_dir = _resolve_output_dir(workspace.get("output_dir"), target.parent)
     try:
+        _known(raw)
+        workspace = raw.get("workspace") if isinstance(raw.get("workspace"), dict) else {}
+        roots = _parse_roots(workspace)
+        depth = _int_in_range(workspace.get("scan_depth", 2), 2, 1, 5)
+        timeout = _int_in_range(workspace.get("fetch_timeout_s", 15), 15, 3, 120)
+        output_dir = _resolve_output_dir(workspace.get("output_dir"), target.parent)
         defaults = _parse_defaults(raw.get("defaults"))
         projects = _parse_projects(raw.get("projects"))
     except ValueError as exc:
@@ -222,22 +240,58 @@ def _resolve_output_dir(out_raw: object, beside: Path) -> str:
     return str(candidate if candidate.is_absolute() else (beside / candidate).resolve())
 
 
+#: The settings each table takes, as `.tui.toml` spells them: a key the config does not know is said, never left out.
+_WORKSPACE = ("root_dirs", "projects_dir", "scan_depth", "fetch_timeout_s", "output_dir")
+
+
+def _known(raw: dict) -> None:
+    """`ValueError` naming a table or a setting the config does not know, with those it does. Read by review: a
+    setting misspelt, `root_dir`, fell back in silence to the default, and the screen listed another folder."""
+    tables = {"workspace": _WORKSPACE, "defaults": tuple(ReviewDefaults.__dataclass_fields__), "projects": None}
+    for key, value in raw.items():
+        if key in _WORKSPACE:
+            raise ValueError(f"{key} belongs under [workspace]. Write it there")
+        if key not in tables:
+            raise ValueError(f"the config has no table {key!r}. Its tables are [workspace], [defaults] and [projects]")
+        if (settings := tables[key]) is not None and isinstance(value, dict):
+            _settings_known(f"[{key}]", value, settings)
+    for name, preset in (raw.get("projects") or {}).items():
+        if isinstance(preset, dict):
+            _settings_known(f"[projects.{name}]", preset, tuple(RepoPreset.__dataclass_fields__))
+
+
+def _settings_known(table: str, given: dict, settings: tuple[str, ...]) -> None:
+    if unknown := next((key for key in given if key not in settings), None):
+        *most, last = (s for s in settings if s != "projects_dir")
+        raise ValueError(f"{table} has no setting {unknown!r}. Its settings are {', '.join(most)} and {last}")
+
+
 def _parse_roots(workspace: dict) -> tuple[RootDir, ...]:
-    """Parse `root_dirs` (or single `projects_dir`) into deduplicated `RootDir` entries."""
+    """The folders of repositories, `root_dirs`, or the default where none is named: one folder written as a string
+    is one folder. Read by review: one that was no list fell back in silence to the default folder."""
     given = workspace.get("root_dirs")
     if given is None and "projects_dir" in workspace:
-        single = workspace["projects_dir"]
-        given = [single] if isinstance(single, str) else single
-    if not isinstance(given, list) or not given:
+        given = workspace["projects_dir"]
+    if given is None:
         given = [default_root_folder()]
+    elif isinstance(given, str):
+        given = [given]
+    if not isinstance(given, list) or not given:
+        raise ValueError(
+            "root_dirs lists the folders that hold your repositories. Write it under [workspace] as root_dirs = "
+            '["~/Projects"]'
+        )
     roots: list[RootDir] = []
     seen: set[str] = set()
     for item in given:
-        root = _one_root(item)
-        if root is not None and (key := os.path.normcase(root.path)) not in seen:
+        if (root := _one_root(item)) is None:
+            raise ValueError(
+                f'root_dirs holds {item!r}, which names no folder. Write a path, or {{ label = "...", path = "..." }}'
+            )
+        if (key := os.path.normcase(root.path)) not in seen:
             seen.add(key)
             roots.append(root)
-    return tuple(roots) or (RootDir(label=Path(default_root_folder()).name, path=default_root_folder()),)
+    return tuple(roots)
 
 
 def _one_root(item: object) -> RootDir | None:

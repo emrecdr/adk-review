@@ -35,18 +35,24 @@ In a pipeline, install the reviewer as [GUIDE.md](../../GUIDE.md) says, with no 
 
 ## Its config
 
-The first run writes `tui.toml` in your own config folder, which an update, a reinstall or an uninstall leaves alone:
+The screen's first line names the config it reads and the folders of repositories it lists. Where it reads it:
 
-| System | Config | State: saved reports, the cache and each review's files |
-|---|---|---|
-| Windows | `%APPDATA%\adk-review-tui\tui.toml` | `%LOCALAPPDATA%\adk-review-tui` |
-| macOS and Linux | `~/.config/adk-review-tui/tui.toml`, or under `$XDG_CONFIG_HOME` | `~/.local/state/adk-review-tui`, or under `$XDG_STATE_HOME` |
+| Run from | Config |
+|---|---|
+| A checkout of adk-review | `tui/.tui.toml`, beside the front end, which git ignores |
+| An installed copy, on Windows | `%APPDATA%\adk-review-tui\tui.toml` |
+| An installed copy, on macOS and Linux | `~/.config/adk-review-tui/tui.toml`, or under `$XDG_CONFIG_HOME` |
 
-`--init-config` writes the file where it is missing and prints its path, and `--config FILE` reads another file. The
-first run names a folder of repositories for you: in a checkout, the folder that holds the checkout, where its
-neighbours are; in an installed copy, the folder the command starts in. A checkout's old config,
-`adk_review/tui/.tui.toml`, is copied to the new place once, and left where it is. `tui.example.toml`, in `tui/`,
-shows every setting.
+An installed copy's config is in your own folder, which a reinstall or an uninstall leaves alone. Its state, the saved
+reports, the cache and each review's files, is in your state folder in either case: `%LOCALAPPDATA%\adk-review-tui` on
+Windows, `~/.local/state/adk-review-tui` elsewhere, or under `$XDG_STATE_HOME`.
+
+The first run writes the config where it is missing, and names a folder of repositories for you: in a checkout, the
+folder that holds the checkout, where its neighbours are; in an installed copy, the folder the command starts in.
+Change `root_dirs` there to list your own, as `root_dirs = ["~/Projects"]`. `--init-config` writes the file and prints
+its path, and `--config FILE` reads another file. A checkout's old config, `adk_review/tui/.tui.toml`, from when the
+front end lived in the reviewer's package, moves to `tui/.tui.toml` once, so one file holds it. `tui.example.toml`, in
+`tui/`, shows every setting.
 
 | Setting | What it sets |
 |---|---|
@@ -57,7 +63,8 @@ shows every setting.
 | `[defaults]` | The profile, the `--fail-on` bar, and which outputs and options are on. |
 | `[projects."<name>"]` | One repository's saved choices, written at each review the screen runs. |
 
-A `fail_on` that names no severity, or a file that is no TOML, stops the start with one sentence and exit 2.
+A `fail_on` that names no severity, a `root_dirs` that names no folder, a table or a setting the config does not
+know, or a file that is no TOML, stops the start with one sentence that says what to write, and exit 2.
 
 The state folder holds the last report of each target, which marks findings new or resolved, and the review cache.
 A target's last report moves on only where a review found other findings, so the same review run a third time is

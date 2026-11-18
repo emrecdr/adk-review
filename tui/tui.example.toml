@@ -1,5 +1,6 @@
-# Every setting of `adk-review-tui`, as an example. Its first run writes `tui.toml` in your own config folder:
-# %APPDATA%\adk-review-tui on Windows, ~/.config/adk-review-tui elsewhere. Copy what you need from here into it.
+# Every setting of `adk-review-tui`, as an example: this file is read by no code. The config it reads is the one its
+# screen names in its first line: `tui/.tui.toml` in a checkout, `tui.toml` in your config folder for an installed
+# copy. Copy what you need from here into it.
 #
 # Keybindings in the TUI:
 #   Ctrl+R  Run Review        Ctrl+D  Dry Run            Ctrl+X  Stop Running Review

@@ -11,6 +11,11 @@ def literal(text: str) -> str:
 
 
 APP_CSS = """
+#config-line {
+    height: 1;
+    padding: 0 1;
+    color: $text-muted;
+}
 Screen {
     layout: vertical;
 }

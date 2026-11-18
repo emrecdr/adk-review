@@ -102,7 +102,6 @@ class TestTuiConfig:
         """Reproduced on a copy installed with `uv tool install`: its config and its saved reviews lived inside the
         tool's own environment, which an uninstall removed, choices and all, and where no one finds a comment. They
         live in the person's own folders now, as each system names them."""
-        from adk_review_tui import config
         from adk_review_tui.config import config_home, state_home
 
         monkeypatch.setenv("APPDATA", "C:\\Users\\me\\AppData\\Roaming")
@@ -116,10 +115,8 @@ class TestTuiConfig:
         monkeypatch.delenv("XDG_STATE_HOME")
         assert config_home(windows=False) == Path.home() / ".config"
         assert state_home(windows=False) == Path.home() / ".local" / "state"
-        # As a fresh process computes them, never inside the package.
-        said = (
-            "from adk_review_tui import config as c; print(c.DEFAULT_CONFIG_PATH); print(c.STATE_DIR); print(c.TUI_DIR)"
-        )
+        # As a fresh process computes them: in this checkout, `tui/.tui.toml`, and the state never inside the package.
+        said = "from adk_review_tui import config as c; print(c.DEFAULT_CONFIG_PATH); print(c.STATE_DIR)"
         found = os.pathsep.join(filter(None, [str(FRONT_END.parent), os.environ.get("PYTHONPATH")]))
         done = subprocess.run(
             [sys.executable, "-c", said],
@@ -129,10 +126,28 @@ class TestTuiConfig:
             check=True,
             env={**os.environ, "PYTHONPATH": found},  # where the front end is not installed, as with the reviewer alone
         )
-        default, state, package = map(Path, done.stdout.splitlines())
-        assert not default.is_relative_to(package) and not state.is_relative_to(package), (default, state)
-        assert (default.name, default.parent.name, state.name) == ("tui.toml", "adk-review-tui", "adk-review-tui")
-        assert package == config.TUI_DIR
+        default, state = map(Path, done.stdout.splitlines())
+        assert default == FRONT_END.parent / ".tui.toml", default
+        assert not state.is_relative_to(FRONT_END) and state.name == "adk-review-tui", state
+
+    def test_a_checkout_reads_its_own_tui_toml_and_an_installed_copy_the_persons_folder(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Reported by the owner: they set their folder of repositories in `.tui.toml`, the config they know, and the
+        screen went on listing the old one. Since the config moved to the person's own folder, `.tui.toml` was copied
+        there once and never read again, and the screen said nothing of which file it read. In a checkout the config
+        is `tui/.tui.toml` again, beside the front end, where the person edits it; an installed copy, which has no
+        checkout, keeps it in the person's own folder, which a reinstall leaves alone."""
+        from adk_review_tui import config
+
+        checkout = tmp_path / "adk-review"
+        (checkout / ".git").mkdir(parents=True)
+        (checkout / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        monkeypatch.setattr(config, "TUI_DIR", checkout / "tui" / "adk_review_tui")
+        assert config.default_config_path() == checkout / "tui" / ".tui.toml"
+        installed = tmp_path / "tools" / "adk-review-tui" / "lib" / "python3.14" / "site-packages"
+        monkeypatch.setattr(config, "TUI_DIR", installed / "adk_review_tui")
+        assert config.default_config_path() == config.config_home() / "adk-review-tui" / "tui.toml"
 
     def test_an_installed_copy_names_the_folder_it_starts_in_as_its_folder_of_repositories(
         self, tmp_path: Path, monkeypatch
@@ -153,10 +168,11 @@ class TestTuiConfig:
         monkeypatch.chdir(tmp_path / "work")
         assert config.default_root_folder() == str(tmp_path / "work")
 
-    def test_a_checkouts_old_config_is_copied_to_the_new_folder_once(self, tmp_path: Path, monkeypatch) -> None:
-        """A checkout kept its config as `adk_review/tui/.tui.toml`. The first run that finds none in the person's own
-        folder copies it there, its saved choices kept and its old `output_dir`, a path inside the package, left out,
-        and leaves the old file where it is. A later run reads the new one alone."""
+    def test_a_checkouts_old_config_moves_to_the_new_place_once(self, tmp_path: Path, monkeypatch) -> None:
+        """A checkout kept its config as `adk_review/tui/.tui.toml`, when the front end lived in the reviewer's package.
+        The first run that finds no config where it reads one moves it there, its saved choices kept and its old
+        `output_dir`, a path inside the package, left out. Moved, never copied: read by the owner, a copy left the old
+        file to edit, and the screen read the other."""
         from adk_review_tui import config
 
         legacy = tmp_path / "checkout" / ".tui.toml"
@@ -168,11 +184,34 @@ class TestTuiConfig:
         )
         monkeypatch.setattr(config, "LEGACY_CONFIG_PATH", legacy)
         target = config.ensure_tui_config()
-        assert target == config.DEFAULT_CONFIG_PATH.resolve() and legacy.is_file(), "copied, the old file kept"
+        assert target == config.DEFAULT_CONFIG_PATH.resolve() and not legacy.exists(), "moved, one file to edit"
         loaded = config.load_tui_config(target)
         assert loaded.projects["my-service"].base == "develop" and loaded.output_dir == str(config.OUTPUTS_DIR)
-        legacy.write_text('[projects."other"]\n', encoding="utf-8")
-        assert "my-service" in config.load_tui_config().projects, "copied once: the new file is the one read"
+        assert loaded.root_dirs[0].path == str(tmp_path.resolve())
+
+    def test_a_folder_of_repositories_or_a_setting_it_cannot_read_is_one_sentence_and_exit_2(
+        self, tmp_path: Path, capsys
+    ) -> None:
+        """Read by review: a `root_dirs` that was no list, or a setting misspelt, fell back in silence to the default
+        folder, and the screen listed another folder's repositories than the one the person wrote. One folder written
+        as a string is read as one folder; anything else is said, with what to write."""
+        from adk_review_tui import main as tui_main
+        from adk_review_tui.config import load_tui_config
+
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = "{tmp_path.as_posix()}"\n', encoding="utf-8")
+        assert [root.path for root in load_tui_config(cfg).root_dirs] == [str(tmp_path.resolve())]
+        for body, said in (
+            ("[workspace]\nroot_dirs = 3\n", "root_dirs lists the folders that hold your repositories"),
+            ("[workspace]\nroot_dirs = []\n", "root_dirs lists the folders that hold your repositories"),
+            ('[workspace]\nroot_dir = ["~/Projects"]\n', "[workspace] has no setting 'root_dir'"),
+            ('[defaults]\nfail_om = "major"\n', "[defaults] has no setting 'fail_om'"),
+            ("[worksapce]\n", "has no table 'worksapce'"),
+        ):
+            cfg.write_text(body, encoding="utf-8")
+            assert tui_main(["--config", str(cfg)]) == 2, body
+            err = capsys.readouterr().err
+            assert said in err and "Traceback" not in err, err
 
     def test_a_relative_output_dir_is_read_from_the_configs_own_folder(self, tmp_path: Path) -> None:
         """Read by review: a relative `output_dir` was read from the checkout's root, which an installed copy has not,
@@ -556,6 +595,26 @@ class TestOptionsAndCliBuilder:
 
             sel = app.current_selection(dry_run=False)
             assert sel.repo == str(local.resolve()) and sel.profile == "default-rules" and sel.comment is True
+
+    @pytest.mark.asyncio
+    async def test_the_screen_names_the_config_it_reads_and_the_folder_of_repositories(self, tmp_path: Path) -> None:
+        """Reported by the owner: the screen listed another folder's repositories than the one they set, and named
+        neither the file it read nor the folder. Its first line names both now."""
+        pytest.importorskip("textual")
+        from adk_review_tui.app import AdkReviewTuiApp
+        from textual.widgets import Static
+
+        _init_repo_with_remote(tmp_path)
+        cfg = tmp_path / "mine" / ".tui.toml"
+        cfg.parent.mkdir()
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(200, 45)) as pilot:
+            await pilot.pause()
+            shown = str(app.query_one("#config-line", Static).render())
+            assert f"Config: {cfg.resolve()}" in shown and str((tmp_path / "workspace").resolve()) in shown, shown
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
 
     @pytest.mark.asyncio
     async def test_textual_app_collapsible_sections_and_multi_root(self, tmp_path: Path) -> None:

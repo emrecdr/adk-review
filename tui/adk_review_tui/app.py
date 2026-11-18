@@ -153,6 +153,14 @@ class AdkReviewTuiApp(App[int]):
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=True)
+        # Reported by the owner: the screen listed another folder than the one they set, and named neither the file it
+        # read nor the folder. Its first line names both.
+        folders = ", ".join(root.path for root in self.tui_config.root_dirs)
+        yield Static(
+            f"Config: {self.tui_config.config_path}  |  Folders of repositories: {folders}",
+            id="config-line",
+            markup=False,
+        )
         yield from self._compose_chain_row()
         initial_msg = (
             "Select a root folder and repository to begin."
