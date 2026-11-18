@@ -52,7 +52,8 @@ the commit, so it does not tell an old copy from a new one. To update it, run `g
 and each hook that runs it, reviews with the old code, whatever the checkout holds.
 
 The terminal front end, `adk-review-tui`, picks a repository, its branches, the paths and the checks, runs the review
-and shows its report, findings, comment and hand-off in tabs. It is an application of its own on top of the reviewer,
+and shows its report, findings, comment and hand-off in tabs. On your click it opens a finding in its Azure DevOps
+pull request, and posts the comment you edited to that line. It is an application of its own on top of the reviewer,
 in `tui/`, which no install of the reviewer takes. Its own guide, `tui/README.md`, says how to install it, its keys,
 and how it runs on Windows, in cmd and PowerShell.
 

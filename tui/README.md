@@ -104,6 +104,59 @@ A finding is drawn as plain text, with its reason, "Why it matters", and its cor
 some: a reason at any severity, and the corrected code where a model gave one. A guideline's words are a model's, and
 no link in them can be clicked.
 
+## Comment on an Azure DevOps pull request
+
+A finding of the Findings tab opens at its place in Azure DevOps, and its comment is posted to that file and line,
+when you ask. The reviewer itself posts nothing, as before: this is the screen's one write outside your machine.
+
+1. Log in once, in a terminal: `az login`. The screen asks the Azure CLI for a token when you post, and stores none.
+2. Review the pull request's branch, as any branch.
+3. Paste the pull request's address into the field above the findings, as the browser shows it:
+   `https://dev.azure.com/<organization>/<project>/_git/<repository>/pullrequest/<number>`. It is kept for that
+   repository and branch, so you paste it once.
+4. Choose a finding, then press a key:
+
+| Key | What opens |
+|---|---|
+| `o` | The finding's lines, highlighted, in the file as the commit reviewed holds it |
+| `p` | The pull request at the finding's file, or at its comment once posted |
+| `c` | The comment's draft, in an editor |
+
+The draft is the finding's own words: its severity and title, its reason, what to change, and its corrected code.
+Edit it as you like: you are its author. Where the finding stands on lines the change added, the code is a
+`suggestion` block, which the pull request's author applies with one click. The editor shows the lines it would
+replace: check that it fits, or delete the block. The last line names the tool, the check and the finding. Keep it:
+it finds the comment again, so a finding is never posted twice, by you or by a teammate.
+
+**Post** asks once more, naming the file, the lines and the pull request. Then one comment is posted, as you, on
+those lines. **Copy** gives you the text to paste by hand. Nothing is sent before the confirmation, and never more
+than one comment a click.
+
+A post is refused, with what to do next, where:
+
+| What the screen says | What to do |
+|---|---|
+| Azure DevOps did not accept your login | Run `az login`, or `az login --tenant <id>` where it names one, then post again |
+| Your account may not comment here | Ask for the "Contribute to pull requests" permission |
+| The pull request has a newer push | Fetch, review the branch again, then comment: the lines may have moved |
+| The pull request never held the commit | Check the address, and the branch you reviewed |
+| The pull request does not change the file | Nothing: no line there can hold a comment |
+| The pull request is completed or abandoned | Nothing: it takes no new comment from here |
+| This clone does not hold the reviewed commit's file | Fetch, then press `c` again |
+
+Your edit is kept after a refusal: press `c` again.
+
+What it sends and keeps:
+
+- It calls `dev.azure.com`, or your organization's older `visualstudio.com` address, and no other host. An address
+  on any other host is refused before a token is asked for. Azure DevOps Server is not read yet.
+- The token comes from `az account get-access-token`, stays in memory, and is asked again when it expires. A login
+  Azure DevOps refuses is forgotten, so the next post asks `az` again.
+- `azure.json` in the state folder holds the address you gave for each branch, and the thread each finding was
+  posted as. You may delete it: a finding posted before is found by its comment's last line.
+- A company proxy's certificate is trusted where your system trusts it, as for the reviewer. `SSL_CERT_FILE` names a
+  bundle where it does not.
+
 ## It writes nothing until you ask
 
 As the reviewer does, the screen reads a repository, and writes into it only where you act:
@@ -123,6 +176,8 @@ As the reviewer does, the screen reads a repository, and writes into it only whe
 - For a local branch behind its remote, it asks. On yes, `git branch -f` moves that branch and writes nothing else,
   but never one a working tree has checked out: that one stays as it is, and the remote's branch is reviewed.
 - Each read runs as the reviewer runs git: a repository's own config starts no program, and no read takes a lock.
+- A comment is posted to an Azure DevOps pull request only when you press Post and confirm, one a click: the
+  section above says what is sent and where.
 
 ## Keys
 

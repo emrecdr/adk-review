@@ -234,7 +234,8 @@ Load-bearing rules the tests enforce:
   ADK would hand the verdict the guidelines' findings unfenced as a turn.
 - **Front end.** `tui/`, the terminal front end on Textual, is an application of its own on top of the reviewer: a uv
   workspace member, `adk-review-tui`, with its own project file and package, `tui`, which imports
-  `adk_review` as any user would, its `core`, `collect`, `judge` and `deliver`'s `windows_word`; nothing in `adk_review`
+  `adk_review` as any user would, its `core`, `collect`, `judge` and `deliver`'s `windows_word` and `prose`; nothing in
+  `adk_review`
   imports it, and `tui/README.md` is its guide. Textual is the member's dependency alone, never the reviewer's, so `uv
   sync --locked` and `uv tool install` of the reviewer take none of its code, command or UI package; CI, Copilot's setup
   and `make sync` sync `--all-packages`, so the suite and the type check read the screen, and pyrefly reads Textual as
@@ -245,7 +246,14 @@ Load-bearing rules the tests enforce:
   `read_only`, under a review's own environment, and writes into a repository only where the person acts: their pick of
   a repository, a `git fetch` that adds the branches its remote got since and removes none, unless `fetch_on_select =
   false`, never the pick the screen makes as it opens; F5, a `git fetch --prune`; and their answer to a branch behind
-  its remote, `git branch -f` on a branch no working tree has checked out. Every string a
+  its remote, `git branch -f` on a branch no working tree has checked out. It writes outside the machine in one place:
+  one comment posted to an Azure DevOps pull request, on the person's click, after their edit and a confirmation,
+  never a batch, and never from the reviewer, which gains no network call and no posting command. Its login is the
+  person's own `az` login: a token asked of `az` by its full path with fixed arguments alone, since `az.cmd` runs
+  through cmd.exe, kept in memory and written nowhere. The token goes to `dev.azure.com` or a `visualstudio.com`
+  organization alone, and no redirect is followed: `urllib` sends `Authorization` again to a redirect's target. A
+  comment's prose passes through `prose`, and its corrected code is never changed, since "Apply changes" writes it
+  into the file. Its tests are offline: a fake Azure DevOps on a local port, and a fake `az`. Every string a
   repository, a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a tag. On Windows, from cmd
   and PowerShell alike: the command it shows is quoted by `windows_word`, or not shown; no key is one a terminal sends
   as another or the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first and none but Stop runs behind a

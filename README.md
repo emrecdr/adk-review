@@ -58,7 +58,8 @@ make install                                 # again: the installed command is a
 uv tool install --reinstall --exclude-newer P3D git+<repository-url>    # or, with no checkout
 ```
 
-A terminal front end, `adk-review-tui`, picks a repository, its branches and the checks, and runs the review. It is
+A terminal front end, `adk-review-tui`, picks a repository, its branches and the checks, and runs the review. On your
+click it opens a finding in its Azure DevOps pull request and posts the comment you edited there. It is
 an application of its own on top of the reviewer, in `tui/`: no review needs it, and an install of the reviewer takes
 none of it. [Its own guide](tui/README.md) says how to
 install and use it, on Windows in cmd and PowerShell too.
