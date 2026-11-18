@@ -38,7 +38,17 @@ ON_ADDED_LINES = (
 #: every override named there, a new tool on an installed base beside an edited helper was a major finding a method,
 #: and of google-adk's own source written anew, 10 of the 15 overrides named said these words. The pinned pyrefly's
 #: words: a test holds them, and fails where an update says it otherwise.
-NOT_ON_ADDED_LINES = ("is marked as an override, but no parent class has a matching attribute",)
+NOT_ON_ADDED_LINES = (
+    "is marked as an override, but no parent class has a matching attribute",
+    "which cannot be unpacked into a callable that accepts no extra keyword arguments",
+)
+#: The kinds named on a line the change added wherever the function called is another file's, whether the change
+#: touched it or not: a call's arguments that do not fit its parameters. Read by validation, and reproduced:
+#: `total(2, 3.0, 4)` added into a module, `total` in one the change left alone, was named by no rule, `types` reading
+#: the import as `Any`. Measured over this repository's last 200 Python commits and google-adk's last 150: nothing
+#: named there, and each wrong call planted named. A TypedDict that may hold extra items unpacked into a call is left
+#: out by its words, above: measured on litellm, it runs.
+CALLED_ACROSS = ("missing-argument", "bad-argument-count", "unexpected-keyword")
 
 
 class RadiusTypes(TreeRule):
@@ -48,7 +58,9 @@ class RadiusTypes(TreeRule):
     its file and kind and the base's own line for it, as the diff numbers a line the change kept; and, in a file the
     change edited, where a line may have moved, by the line's text for what that leaves. One on a line the change
     added is named where it is a call's, an attribute's or an override's that does not fit a parent pyrefly names,
-    which `types`, reading the file alone, cannot see across files, and a test's file is not read. Measured over ADK,
+    caused by another file the change touched, or a call's arguments that do not fit a function another file of the
+    tree defines, touched or not, which `types`, reading the file alone, cannot see across files; and a test's file is
+    not read. Measured over ADK,
     31 method edits: 24 named, at 59 call sites and 4 kept lines of the edited file, none wrongly; over this
     repository's last 195 commits, none wrongly, and one true break named, a value that may be None passed where a
     string is taken, which the next commit fixed; and on litellm, a parameter added first in `get_secret` shifted 11
@@ -80,20 +92,16 @@ class RadiusTypes(TreeRule):
             "ignored": ("missing-import", "parse-error"),
             "added_kinds": ON_ADDED_LINES,
             "added_unless": NOT_ON_ADDED_LINES,
+            "called": CALLED_ACROSS,
             "tests": False,
         }
     )
 
     def needs_head(self, files: list[Entry]) -> bool:
-        """A Python file the change modified, moved or removed: what depends on it is in the head alone. Not a test's,
-        whose findings the rule reads none of and its runs leave out: read by review, on ADK a commit that edited one
-        test read and parsed the whole project for nothing."""
-        return any(
-            item["status"] in ("M", "T", "R", "D")
-            and item.get("old", item["path"]).endswith(".py")
-            and not is_test(item["path"])
-            for item in files
-        )
+        """A Python file the change touched: what depends on one it modified, moved or removed is in the head alone,
+        and what one it added calls too. Not a test's, whose findings the rule reads none of and its runs leave out:
+        read by review, on ADK a commit that edited one test read and parsed the whole project for nothing."""
+        return any(item.get("old", item["path"]).endswith(".py") and not is_test(item["path"]) for item in files)
 
     def check(self, tree: Tree) -> list[Hit]:
         hits = []

@@ -336,8 +336,8 @@ each file the change modified in place, for the calls, the names and the modules
 from the changed files alone that it has nothing to read at the head says
 so in `needs_head(files)`, and is then handed nothing to read: `callers` needs the head only where a name that was there
 before changed its parameters, one a line the change removed names or one not all of whose lines it added, or where the
-change removed a name a module defined or moved or removed a module, and `radius-types` wherever the change modified,
-moved or removed a Python file other than a test. None is handed a test's file unless it sets `reads_tests`, as the list
+change removed a name a module defined or moved or removed a module, and `radius-types` wherever the change touched
+a Python file other than a test. None is handed a test's file unless it sets `reads_tests`, as the list
 of what a rule may do says below. A guideline names its role and a thinking budget, and `cleanup = True` where its
 findings change how code reads and never what it does; the instruction around the role is every guideline's.
 
@@ -365,7 +365,7 @@ The rules shipped with the reviewer are written as a project writes its own:
   the change added takes from a module that does not define it), and the tree rule
   `radius-types` (what a type checker says the change broke elsewhere: a method, an attribute, a parameter or a type, in
   a file the change left alone or on a line of a changed file it kept, or on one it added where another file's change
-  breaks it, a test's file aside, read from pyrefly over the head's tree and the base's, each diagnostic the head holds
+  breaks it or where it calls another file's function with arguments it does not take, a test's file aside, read from pyrefly over the head's tree and the base's, each diagnostic the head holds
   and the base did not);
 - for Python beside `lint`, each reading ruff with codes no other rule names: `pitfalls` (code that does not do what it
   reads: a naive UTC datetime from `utcnow()`, a dataclass default evaluated once and shared, an exception built and

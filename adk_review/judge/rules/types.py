@@ -1,17 +1,17 @@
 """A call or a value its own types say is wrong, as pyrefly reads a changed file alone: a call missing an argument or
 given too many by position, an attribute a class does not hold, a value of the wrong type passed or returned, one an
-operation cannot take, added, compared, indexed or iterated. Ruff, which `lint` runs, reads no types: of 30 such defects
-planted in four libraries and this repository, it found the 3 that were also undefined names, and pyrefly 27, each on
-its own line. Only what pyrefly finds on the lines the change added is a finding, of the kinds weighed below; a name a
-file imports from beyond itself reads as `Any`, so a module pyrefly cannot find is the layout's, never the change's.
-Measured over 1.12 million lines of four libraries' correct code, google-adk, pydantic, httpx and litellm, no ignore
-comment honoured: these kinds made 0.53 false alarms a thousand lines, and every other kind more, a missing module or a
-star import among them. A call's arguments are the surest, 11 errors in those lines, each read, so they are major; the
-rest minor. Not read, as known limits: a defect the change causes on a line it kept, a caller of a function whose
-signature it changed among them, which `radius-types` reads; code under a platform or a version pyrefly does not take,
-as Linux and the Python the reviewer runs on, or under `if not TYPE_CHECKING:`; and a function a branch marks
-`@no_type_check`. And a call to an API that Python lacks, newer or removed, reads as a missing attribute.
-"""
+operation cannot take, added, compared, indexed or iterated, and a keyword it does not take. Ruff, which `lint` runs,
+reads no types: of 30 such defects planted in four libraries and this repository, it found the 3 that were also
+undefined names, and pyrefly 27, each on its own line. Only what pyrefly finds on the lines the change added is a
+finding, of the kinds weighed below; a name a file imports from beyond itself reads as `Any`, so a module pyrefly cannot
+find is the layout's, never the change's. Measured over 1.12 million lines of four libraries' correct code, google-adk,
+pydantic, httpx and litellm, no ignore comment honoured: these kinds made 0.53 false alarms a thousand lines, and every
+other kind more, a missing module or a star import among them. A call's arguments are the surest, 11 errors in those
+lines, each read, so they are major; the rest minor. Not read, as known limits: a defect the change causes on a line it
+kept, a caller of a function whose signature it changed among them, which `radius-types` reads; code under a platform or
+a version pyrefly does not take, as Linux and the Python the reviewer runs on, or under `if not TYPE_CHECKING:`; and a
+function a branch marks `@no_type_check`. And a call to an API that Python lacks, newer or removed, reads as a missing
+attribute."""
 
 from __future__ import annotations
 
@@ -24,12 +24,20 @@ from ..rule_helpers import PER_FILE, RANK, ChangedFile, Diagnostic, FileRule, Hi
 SEVERITY: dict[str, Severity] = {
     "bad-argument-count": "major",
     "missing-argument": "major",
+    "unexpected-keyword": "major",
     "missing-attribute": "minor",
     "bad-argument-type": "minor",
     "bad-return": "minor",
     "not-iterable": "minor",
     "unsupported-operation": "minor",
 }
+
+
+#: Pyrefly's words for a diagnostic of those kinds that is not read: a TypedDict that may hold extra items unpacked into
+#: a call that takes no others. Read by validation: `unexpected-keyword` was not read, a call given a keyword it does
+#: not take named by no rule; measured over four libraries' working code, it named 0 in httpx and google-adk, and 3 of
+#: litellm's 15 were these words, on code that runs.
+UNLESS = ("which cannot be unpacked into a callable that accepts no extra keyword arguments",)
 
 
 class Types(FileRule):
@@ -46,7 +54,11 @@ class Types(FileRule):
     def check(self, file: ChangedFile) -> list[Hit]:
         if not is_python(file.path, lambda: file.line(1)):
             return []  # pyrefly reads Python, and another file's text is never asked for
-        found = [item for item in file.diagnostics if item.line in file.added and item.code in SEVERITY]
+        found = [
+            item
+            for item in file.diagnostics
+            if item.line in file.added and item.code in SEVERITY and not any(said in item.message for said in UNLESS)
+        ]
         # At most `PER_FILE` listed, the most severe first, the rest counted in one finding at the most severe of
         # them, as `lint` lists ruff's. Read by review: one file of `1 + ""` lines printed 125,000 findings.
         ranked = sorted(found, key=lambda item: -RANK[SEVERITY[item.code]])  # stable: by line

@@ -1544,6 +1544,24 @@ class TestTypesReadsWhatPyreflyFinds:
         found = ruff_rule_findings(Types(), [entry])
         assert [(f.line, f.severity) for f in found] == [(13, "major")], [(f.line, f.title) for f in found]
 
+    def test_an_unknown_keyword_is_a_major_finding_and_a_typeddict_unpacked_none(self) -> None:
+        """Read by validation: the rule did not read `unexpected-keyword`, so `total(prices, tax=1, rate=2)` was named
+        by no rule. Measured over four libraries' working code: 0 in httpx and google-adk, and of litellm's 15, 3 were
+        a TypedDict that may hold extra items unpacked into a call, which runs fine, and pyrefly's words for those
+        are left out."""
+        from adk_review.judge.rules.types import Types
+
+        text = (
+            "from typing import TypedDict\n\n\n"
+            "class Opts(TypedDict, extra_items=int):\n    a: int\n\n\n"
+            "def total(prices: list[int], tax: int) -> int:\n    return sum(prices) + tax\n\n\n"
+            "def take(a: int) -> int:\n    return a\n\n\n"
+            "def checkout(prices: list[int], o: Opts) -> int:\n    return total(prices, tax=1, rate=2) + take(**o)\n"
+        )
+        found = ruff_rule_findings(Types(), [_entry("shop/orders.py", text)])
+        assert [(f.line, f.severity) for f in found] == [(17, "major")], [(f.line, f.title) for f in found]
+        assert "unexpected-keyword" in found[0].title and "rate" in found[0].title, found[0].title
+
     def test_a_branch_cannot_silence_it_with_an_ignore_comment(self) -> None:
         """As ruff runs `--ignore-noqa`: a branch would otherwise judge itself."""
         from adk_review.judge.rules.types import Types
@@ -3232,6 +3250,41 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
             },
         )
         assert self.found(repo) == []
+
+    def test_a_wrong_call_the_change_added_into_a_file_it_left_alone_is_named(self, tmp_path: Path) -> None:
+        """Read by validation, and reproduced: `total(2, 3.0, 4)` and `total(count=2)`, added to a module and calling
+        one the change left alone, were named by no rule: `types` reads an import as `Any`, and this rule named a call
+        only into a file the change touched. Measured with this change over this repository's last 200 Python commits
+        and google-adk's last 150: no finding added there, and each call planted named. A call into the same file is
+        still `types`'s, a new file's calls are read too, and a TypedDict of extra items unpacked into a call is no
+        finding, as `types` reads it."""
+        lib = (
+            "from typing import TypedDict\n\n\n"
+            "def total(n: int, price: float) -> float:\n    return n * price\n\n\n"
+            "class Cart:\n    def add(self, item: str) -> None:\n        print(item)\n\n\n"
+            "class Opts(TypedDict, extra_items=int):\n    a: int\n\n\n"
+            "def take(a: int) -> int:\n    return a\n"
+        )
+        app = "from shop.lib import Cart, Opts, take, total\n"
+        added = (
+            'total(2, 3.0, 4)\ntotal(count=2)\nCart().add("x", "y")\n\n\n'
+            "def local(a: int) -> int:\n    return a\n\n\n"
+            "local(1, 2)\n\n\n"
+            "def use(o: Opts) -> int:\n    return take(**o)\n"
+        )
+        repo = self.branch(
+            tmp_path,
+            {"shop/lib.py": lib, "shop/app.py": app},
+            {"shop/app.py": app + added, "shop/job.py": app + "total(1)\n"},
+        )
+        named = {(file, line, title.split(": ", 1)[1].split()[0]) for file, line, _severity, title in self.found(repo)}
+        assert named == {
+            ("shop/app.py", 2, "bad-argument-count"),
+            ("shop/app.py", 3, "missing-argument"),
+            ("shop/app.py", 3, "unexpected-keyword"),
+            ("shop/app.py", 4, "bad-argument-count"),
+            ("shop/job.py", 2, "missing-argument"),
+        }, named
 
     def test_the_base_is_read_as_git_holds_it_never_rebuilt_from_the_diff(self, tmp_path: Path) -> None:
         """Read by review: the base was rebuilt from the diff the rules read, which shows a form feed and a lone `\\r`

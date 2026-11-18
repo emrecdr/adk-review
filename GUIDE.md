@@ -515,15 +515,16 @@ For each ref a push sends, the hook asks git which commits the remote does not h
 with `default-rules`, against the commit they grow from on the remote's side, or with `--all` where the remote holds
 none of their history. Those rules read the whole head only where the change alters the parameters of a function that
 was there before, removes a name a module defined, or moves or removes a module, for `rule.callers`, which holds every
-call to the function and every file that still takes the name or imports the module, and wherever the change modifies,
-moves or removes a Python file other than a test, for `rule.radius-types`, which runs pyrefly over the head and the
+call to the function and every file that still takes the name or imports the module, and wherever the change touches
+a Python file other than a test, for `rule.radius-types`, which runs pyrefly over the head and the
 base, and sets a type error on a line the change kept against the base's own line for it, as the diff numbers that line;
 in a file the change itself edited, where a line may have moved, an error gone from one line and found on another of the
 same text is read as moved, never as new: measured, a push's review took 0.6 s more on this repository; on ADK's 815
 files, 0.9 s more where `rule.callers` read the head anyway and 1.8 s where it did not; on litellm's 2,776, 2.4 s and
-4.9 s; otherwise they read the changed files alone, as for a push that only adds files: a name a line of a new file
-takes from a module that does not define it is named where a review reads the head, as one with a guideline does, and
-not by this hook. A merge grows from more than one: the change is reviewed against each, and passes when one review
+4.9 s; and where a push only adds Python files, which `rule.radius-types` reads for a call into another file with
+arguments it does not take, 0.15 s on this repository and 2.2 s on ADK. Otherwise, where a push adds only tests or files
+other than Python, they read the changed files alone: a name a line of a new test takes from a module that does not
+define it is named where a review reads the head, as one with a guideline does, and not by this hook. A merge grows from more than one: the change is reviewed against each, and passes when one review
 passes, since a line the remote holds nowhere is new to every one of them; where every
 review stops, the push stops only on what all of them found, since what one side brings the remote holds already, or
 where one review's reasons were cut in its JSON or named none; what all of them found is listed after the report, which

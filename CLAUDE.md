@@ -127,10 +127,11 @@ change added (`tree.added`), what each import binds (`tree.imports`), the paths 
 (`tree.removed`, `tree.imports_before`), the diff of each file it modified in place (`tree.modified`) and, where it
 names a tool, its diagnostics by path (`tree.diagnostics`: `radius-types` names `pyrefly-radius`, pyrefly over the
 head's tree and the base's, what is new in a file or on a line the change left alone, or on an added line another
-file's change breaks); the head is read whole only where a tree
+file's change breaks or calling another file's function with arguments it does not take); the head is read whole only
+where a tree
 rule's `needs_head(files)` or a guideline asks, `callers` asking only where a function that was there before changed its
 parameters, or the change removed a name a module defined or moved or removed a module, and `radius-types` wherever the
-change modified, moved or removed a Python file other than a test. A guideline is a class naming its role, a thinking
+change touched a Python file other than a test. A guideline is a class naming its role, a thinking
 budget and, optionally, its own model per arm (`core/guidelines.py`), built into an agent by `judge/agents.py`.
 `judge/catalog.py` finds every check, reads `config.toml` and resolves what runs, for the command and the chat alike. A
 rule imports one door, `judge/rule_helpers/`: the contract, passed on from `core/` (`rules.py`'s kinds, `Hit` and
