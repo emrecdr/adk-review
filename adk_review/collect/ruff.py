@@ -189,20 +189,54 @@ def _run(
     """`_ruffed`, with a notebook kept as Python source read as IPython reads it. Reported by the owner on Databricks
     notebooks: ruff read each magic and shell command as invalid syntax, a major, and measured, with one such line in a
     file it ran no other check on it. In a file `notebook` names, the lines ruff could not parse that IPython runs are
-    set aside, each a comment on its own line, and ruff reads that file again; what it says on them is dropped. A
+    set aside, a comment at the left margin and `pass` inside a block, and ruff reads that file again; what it says
+    on them, and on a block whose every line was one, is dropped. A
     `# MAGIC` line, the text of a Databricks cell, is no commented-out code. A module with no mark keeps its errors:
     Python cannot import it."""
     found = _ruffed(ruff, texts, select, ignore, line_length)
     aside = {path: lines for path, said in found.items() if (lines := _ipython(said)) and notebook(texts[path])}
     if aside:
-        again = _ruffed(
-            ruff, {path: set_aside(texts[path], lines) for path, lines in aside.items()}, select, ignore, line_length
-        )
-        found |= {path: [d for d in again.get(path, []) if d.line not in lines] for path, lines in aside.items()}
+        masked = {path: set_aside(texts[path], lines) for path, lines in aside.items()}
+        again = _ruffed(ruff, masked, select, ignore, line_length)
+        found |= {
+            path: [d for d in again.get(path, []) if d.line not in lines | _emptied(masked[path], lines)]
+            for path, lines in aside.items()
+        }
     return {
         path: [d for d in said if not (d.code == "ERA001" and d.source.lstrip().startswith("# MAGIC"))]
         for path, said in found.items()
     }
+
+
+def _emptied(masked: str, aside: set[int]) -> set[int]:
+    """The header of each block in `masked` whose every line is one of `aside`, an IPython line set aside as `pass`:
+    what ruff says of that header is of the stand-in, a loop variable unused or an `except` that passes. Read by
+    review: a loop whose only line was `!echo {name}` was named B007, a major."""
+    rows = masked.split("\n")
+
+    def depth(row: str) -> int:
+        return len(row) - len(row.lstrip())
+
+    def code(row: str) -> bool:
+        return bool(row.strip()) and not row.lstrip().startswith("#")
+
+    headers = set()
+    for number in sorted(aside):
+        inner = depth(rows[number - 1])
+        if not inner:
+            continue
+        header = next((n for n in range(number - 1, 0, -1) if code(rows[n - 1]) and depth(rows[n - 1]) < inner), 0)
+        if header in headers or not header:
+            continue
+        body = []
+        for n in range(header + 1, len(rows) + 1):
+            if code(rows[n - 1]):
+                if depth(rows[n - 1]) <= depth(rows[header - 1]):
+                    break
+                body.append(n)
+        if all(n in aside for n in body):
+            headers.add(header)
+    return headers
 
 
 def _ipython(said: Iterable[Diagnostic]) -> set[int]:

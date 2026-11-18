@@ -384,7 +384,8 @@ A profile is a list in `config.toml`, and a check runs only where a profile name
 
 - `default` runs when no `--profile` names another, and the file must hold it: the basics, `rule.secrets`,
   `rule.named-secrets`, `rule.lint`, `rule.reviewer-instructions`, `rule.encoding-declaration`, `rule.lockfile-sources`,
-  `rule.pinned-actions`, `rule.script-injection`, `rule.pitfalls` and `rule.callers`, and the guidelines `security`,
+  `rule.pinned-actions`, `rule.script-injection`, `rule.pitfalls`, `rule.callers`, `rule.radius-types` and
+  `rule.hidden-text`, and the guidelines `security`,
   `tests` and `complexity`;
 - `default-rules` is the default's rules and no model, so it needs no key and fits any project's every pull request;
   a test keeps it to the default's rules;
@@ -737,7 +738,9 @@ and last the next steps, by the verdict and what was kept. "The report" in `GUID
   review served from `--cache`, one with no guideline, and two started in one minute end within it, and a name made by
   the minute let the second replace the first. Asked by the owner, the commit tells two rounds of review on one branch
   apart, and comes last so one branch's files list by time.
-- `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint: its
+- `--previous FILE` reads an earlier `--json` report and marks each finding new or seen before, by its fingerprint,
+  new only where the earlier review looked, and not compared where it did not, its check not run or the file not
+  read: its
   check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line, so a
   finding keeps it when lines move. It lists what is no longer found, among what this review looked for, a check that
   ran and a file in its scope, a finding folded under another still found, and the comment for the branch's author opens

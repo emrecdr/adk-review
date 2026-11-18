@@ -1077,6 +1077,23 @@ class TestTheLintRule:
         found = lint_findings({"files": [_entry("job.py", "# Databricks notebook source\n" + body)], "tree": None})
         assert not [f for f in found if "invalid-syntax" in f.title], found
 
+    def test_a_notebooks_ipython_lines_set_aside_raise_no_finding_of_their_own(self) -> None:
+        """Reproduced by review: set aside as `pass`, a `%pip` line above a notebook's imports was a statement before
+        them, E402, and F404 before a `__future__` import, in the commonest layout; and a loop or an `except` whose
+        only line was a magic read as one that does nothing, B007 and S110, majors. A line at the left margin is set
+        aside as a comment, as before, which no block needs; one inside a block as `pass`; and what ruff says of a
+        block whose every line was set aside is dropped with them."""
+        mark = "# Databricks notebook source\n"
+        for body in (
+            "%pip install requests\nimport os\nimport json\n\nprint(os, json)\n",
+            "%pip install requests\nfrom __future__ import annotations\n\nimport os\n\nprint(os)\n",
+            "%load_ext autoreload\n%autoreload 2\nimport json\n\nprint(json)\n",
+            "for name in ['a', 'b']:\n    !echo {name}\n",
+            "try:\n    import os\nexcept Exception:\n    !echo failed\n\nprint(os)\n",
+        ):
+            found = lint_findings({"files": [_entry("job.py", mark + body)], "tree": None})
+            assert found == [], (body, [f.title for f in found])
+
     def test_lint_names_a_bidirectional_control_and_a_look_alike_name(self) -> None:
         """Ruff reads both in Python code: a control that reorders a line is major, a letter that is not ASCII in a name
         is minor, since a whole project may be written in another script."""
@@ -4281,6 +4298,10 @@ class TestTheShippedRules:
             'patch(target="pkg.service._helper")\n',
             'patch.object(service, attribute="_cache")\n',
             'mocker.patch.object(Service, "_connect", fake)\n',
+            # Read by review, and reproduced: a call that spreads `**options` was read through them, and named nothing.
+            'patch("pkg._x", **opts)\n',
+            'patch.object(Svc, "_m", new_callable=Mock, **extra)\n',
+            'monkeypatch.setattr(target="pkg.mod._x", value=1)\n',
         ):
             assert lines_hit(rule, "tests/test_a.py", code) == [1], code
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import os
 import re
 import shlex
@@ -17,7 +16,7 @@ from typing import Literal
 from adk_review.core.findings import RANK
 from adk_review.core.profiles import DEFAULT, expanded
 from adk_review.core.verdict import EXIT_CLEAN, EXIT_FINDINGS
-from adk_review.deliver.report import windows_word
+from adk_review.deliver.report import read_previous, windows_word
 from adk_review.judge.catalog import CONFIG, catalog, load_config
 
 from .config import BASELINES_DIR, CACHE_DIR, OUTPUTS_DIR, write_atomic
@@ -267,28 +266,30 @@ def _output_flags(sel: ReviewSelection, argv: list[str]) -> dict[str, Path]:
     return outputs
 
 
-def _fingerprints(path: Path) -> frozenset[str] | None:
-    """The fingerprints of a report's findings, or None where it cannot be read as one."""
+def _marks(path: Path) -> tuple | None:
+    """What in a report marks a later review's findings, as `--previous` reads it, or None where it cannot be read as
+    one: its findings' fingerprints, their words aside, its checks, holes, scope, unread files and unkept findings."""
     try:
-        found = json.loads(path.read_text(encoding="utf-8"))["findings"]
-        named = (f.get("fingerprint") for f in found if isinstance(f, dict))
-        return frozenset(name for name in named if isinstance(name, str))
-    except OSError, ValueError, KeyError, TypeError:
+        earlier = read_previous(str(path))[0]
+    except ValueError:
         return None
+    return earlier.marks() if earlier is not None else None
 
 
 def promote_baseline(outputs: Mapping[str, Path], exit_code: int) -> None:
     """Make a decided review's JSON report its target's saved report, which the next review reads with `--previous`,
-    where its findings differ from the saved one's. The cache key reads the previous report, and read by review, and
+    where what marks a later review's findings differs from the saved one's: its findings' fingerprints, its checks,
+    holes, scope, unread files and unkept findings. The cache key reads the previous report, and read by review, and
     measured, a report saved after every review changed that key each time, so the same review was served from the
-    cache only from its fourth run, each a model call under a guideline's profile. Kept where the findings are the
-    same, it marks them as it did, and the same review run a third time is served from the cache."""
+    cache only from its fourth run, each a model call under a guideline's profile. Kept where those are the same, it
+    marks them as it did, and the same review run a third time is served from the cache. Read by review too: kept
+    while the fingerprints alone held, its other parts went stale."""
     if exit_code not in (EXIT_CLEAN, EXIT_FINDINGS):
         return
     json_path = outputs.get("json")
     baseline = outputs.get("baseline")
     if json_path is None or baseline is None or not json_path.is_file():
         return
-    if baseline.is_file() and (held := _fingerprints(baseline)) is not None and held == _fingerprints(json_path):
+    if baseline.is_file() and (held := _marks(baseline)) is not None and held == _marks(json_path):
         return
     write_atomic(baseline, json_path.read_text(encoding="utf-8"))

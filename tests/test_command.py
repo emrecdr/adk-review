@@ -1092,6 +1092,42 @@ class TestThePreviousReportAndTheHandoff:
         folded = again({**whole, "findings": kept, "folded": [{**moved, "into": kept[0]["check"]}]})
         assert {f["since_previous"] for f in folded["findings"]} == {"seen"}, "a finding folded last time was found"
 
+    def test_a_finding_in_a_file_the_previous_review_left_unread_or_kept_out_is_not_new(self, tmp_path: Path) -> None:
+        """Read by review: a file the previous review did not read whole, cut at the diff cap or skipped, held findings
+        it could not see, and each was marked new. And a tree rule names a line inside a folder `--path-exclude` leaves
+        out, so where both reviews leave it out, one found there now is new, never not compared."""
+        from adk_review.core.verdict import Outcome
+        from adk_review.deliver.report import SCHEMA, read_previous
+
+        report = tmp_path / "previous.json"
+        reviewed = {"repository": "r", "head": "h", "scope": [], "exclude": ["lib"], "skipped": {"gen.py": "skip"}}
+        written = {"schema": SCHEMA, "findings": [], "checks": ["rule.lint", "rule.callers"], "reviewed": reviewed}
+        report.write_text(json.dumps({**written, "not_read": {"big.py": "cut at the diff cap"}}), encoding="utf-8")
+        earlier, _health, _scope = read_previous(str(report))
+        found = [sourced("minor", file=name) for name in ("big.py", "gen.py", "a.py")]
+        found.append(sourced("major", "rule.callers", file="lib/x.py"))
+        marks = {
+            f["file"]: f["since_previous"]
+            for f in as_json(Outcome(kept=found), previous=earlier, exclude=("lib",))["findings"]
+        }
+        assert marks == {"big.py": None, "gen.py": None, "a.py": "new", "lib/x.py": "new"}, marks
+
+    def test_a_refuted_finding_and_a_fixed_ones_code_are_written_as_read(self, tmp_path: Path) -> None:
+        """Read by review: a refuted finding's fingerprint restarted at the first occurrence, where `--previous` counts
+        it on from the kept ones, so one alike to a kept finding was new the next run; and a fixed finding's corrected
+        code, given back under `resolved`, was squashed to one line."""
+        from adk_review.core.verdict import Outcome
+        from adk_review.deliver.report import SCHEMA, read_previous
+
+        kept, refuted = sourced("minor"), sourced("minor")
+        data = as_json(Outcome(kept=[kept], refuted=[(refuted, "not a defect")]))
+        assert data["findings"][0]["fingerprint"] != data["refuted"][0]["fingerprint"], "two alike, two identities"
+        report = tmp_path / "previous.json"
+        finding = {"fingerprint": "f" * 16, "check": "rule.lint", "file": "a.py", "code": "def f():\n    return 1"}
+        report.write_text(json.dumps({"schema": SCHEMA, "findings": [finding]}), encoding="utf-8")
+        earlier, _health, _scope = read_previous(str(report))
+        assert earlier.findings["f" * 16]["code"] == "def f():\n    return 1"
+
     def test_two_alike_old_findings_have_an_identity_each(self) -> None:
         """Read by review: the JSON's findings already in the files, and its folded ones, gave two alike one
         fingerprint, where the kept ones count each, and `--previous` counts them on from the kept."""
@@ -3501,6 +3537,10 @@ class TestWhatTheReportPrints:
         lines = found["code"].splitlines()
         assert lines[0] == "def charge(total):" and lines[-1] == "    return total", lines
         assert token not in found["code"] and "##vso[" not in found["code"], found["code"]
+        # Read by review: a tab became a space, and a line opening as a GitHub runner's `::` command was left whole.
+        tabbed = replace(item, finding=item.finding.model_copy(update={"code": "if x:\n\treturn y\n::add-mask::z"}))
+        lines = as_json(Outcome(kept=[tabbed]))["findings"][0]["code"].splitlines()
+        assert lines[1] == "\treturn y" and not lines[2].startswith("::"), lines
         bare = as_json(Outcome(kept=[sourced("minor")]))["findings"][0]
         assert (bare["why"], bare["code"]) == ("", ""), "empty where the model gave none"
 

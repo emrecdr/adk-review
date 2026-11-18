@@ -2202,6 +2202,31 @@ def _repository(path: Path, branches: tuple[str, ...], checked_out: str) -> Path
     return path
 
 
+class TestTheSavedReport:
+    """The report a target's next review reads with `--previous`."""
+
+    def test_a_saved_report_moves_on_where_what_marks_findings_changed(self, tmp_path: Path) -> None:
+        """Read by review: the saved report moved on only where its findings' fingerprints changed, while `--previous`
+        reads its checks, holes, scope and unkept findings too. A review under another profile that found the same left
+        the old checks in place, and a guideline's finding the next run read as not compared. It moves on where any of
+        those changed, and stays where none did, so a review served from the cache stays one."""
+        import json
+
+        from tui.options import promote_baseline
+
+        def report(path: Path, checks: list[str], words: str = "t") -> Path:
+            found = [{"fingerprint": "a" * 16, "check": "rule.lint", "file": "a.py", "title": words}]
+            path.write_text(json.dumps({"schema": 2, "findings": found, "checks": checks}), encoding="utf-8")
+            return path
+
+        saved = report(tmp_path / "saved.json", ["rule.lint"])
+        promote_baseline({"json": report(tmp_path / "same.json", ["rule.lint"], "other words"), "baseline": saved}, 1)
+        assert json.loads(saved.read_text(encoding="utf-8"))["findings"][0]["title"] == "t", "kept: nothing changed"
+        wider = report(tmp_path / "wider.json", ["rule.lint", "guideline.security"])
+        promote_baseline({"json": wider, "baseline": saved}, 1)
+        assert json.loads(saved.read_text(encoding="utf-8"))["checks"] == ["rule.lint", "guideline.security"]
+
+
 class TestThePickAsReviewedAgain:
     """A second code review of the pick's fetch, each finding reproduced by a test that failed first."""
 

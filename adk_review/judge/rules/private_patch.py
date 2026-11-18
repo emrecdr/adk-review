@@ -64,6 +64,6 @@ def _patched(call: ast.Call) -> ast.expr | None:
         return argument(call, "attribute", 1)
     if called == "patch" or called.endswith(".patch"):
         return argument(call, "target", 0)
-    first = call.args[0] if call.args else None
-    dotted = isinstance(first, ast.Constant) and isinstance(first.value, str) and called != "setattr"
-    return argument(call, "target", 0) if dotted and len(call.args) <= 2 else argument(call, "name", 1)
+    target = argument(call, "target", 0)  # `monkeypatch.setattr`: a dotted path in place of an object
+    dotted = isinstance(target, ast.Constant) and isinstance(target.value, str) and called != "setattr"
+    return target if dotted else argument(call, "name", 1)

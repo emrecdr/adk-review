@@ -325,7 +325,8 @@ def as_json(outcome, files=(), **said) -> dict:
     pre = {"repo": "r", "head": "h", "head_sha": "0" * 40, "base": "b", "base_sha": "1" * 40, "merge_base": "2" * 40}
     # Each file whole, as the collector hands one over, with what the test gives laid over it.
     whole = [{**entry(f["path"], f.get("status", "M"), f.get("diff"), f.get("added", [])), **f} for f in files]
-    evidence = {"preflight": pre, "whole": False, "scope": (), "files": whole}
+    evidence = {"preflight": pre, "whole": False, "scope": said.pop("scope", ()), "files": whole}
+    evidence["exclude"] = said.pop("exclude", ())
     shown = {"verdict": "APPROVED", "code": 0, "usage": {}, "fail_on": "blocker", "model": "", "profile": "default"}
     return as_data(evidence, outcome, **{**shown, "off": (), "checks": (), **said})
 

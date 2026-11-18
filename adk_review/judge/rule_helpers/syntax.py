@@ -51,16 +51,18 @@ def calls_in(code: ast.AST | str, *names: str) -> list[ast.Call]:
 
 
 def argument(call: ast.Call, name: str, position: int | None = None) -> ast.expr | None:
-    """What `call` passes for one parameter: by its `name`, or as the argument at `position`, counted from 0. Where
-    the call spreads `*args` or `**options`, those, since they may hold it; None where the call does not pass it."""
-    for keyword in call.keywords:
-        if keyword.arg in (name, None):  # None: `**options`
-            return keyword.value
-    if position is not None:
-        if len(call.args) > position:
-            return call.args[position]
-        return next((given for given in call.args if isinstance(given, ast.Starred)), None)
-    return None
+    """What `call` passes for one parameter: by its `name`, or as the argument at `position`, counted from 0, before
+    a spread one; where the call passes it neither way but spreads `*args` or `**options`, those, since they may hold
+    it; None where the call does not pass it. Read by review, and reproduced: a `**options` was read first, so
+    `patch("pkg._x", **options)` was read as patching whatever the options held."""
+    named = next((keyword.value for keyword in call.keywords if keyword.arg == name), None)
+    if named is not None:
+        return named
+    placed = call.args[: position + 1] if position is not None else []
+    if position is not None and len(placed) > position and not any(isinstance(a, ast.Starred) for a in placed):
+        return call.args[position]
+    spread = next((keyword.value for keyword in call.keywords if keyword.arg is None), None)
+    return spread or next((given for given in call.args if isinstance(given, ast.Starred)), None)
 
 
 def functions_in(code: ast.AST | str) -> list[ast.FunctionDef | ast.AsyncFunctionDef]:

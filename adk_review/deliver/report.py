@@ -65,6 +65,10 @@ def _unhidden(text: str) -> str:
 _RUNNER_COMMAND = re.compile(r"#[^ -~]*#[^ -~]*(?:vso)?(?=\[)")
 
 
+#: Where a line opens as a GitHub runner's command, `::`, after any indentation.
+_LINE_COMMAND = re.compile(r"^(\s*)::")
+
+
 def inert(text: str) -> str:
     """`text` with each CI runner's command opener broken by a space, `##vso [`, and each HTML comment's, `<! --`,
     which hid what lay between two paths wherever the report renders as markdown: paths and quotes are the branch's."""
@@ -624,7 +628,10 @@ def _since_last(
     still open, the fixed ones uncounted, and said so, where this review could not look at all. Read by review: the text
     report said it and the comment did not, so a second round read as the first."""
     identities = _identified(outcome.kept)
-    marks = [_since(identity, item, previous) for identity, item in zip(identities, outcome.kept, strict=True)]
+    marks = [
+        _since(identity, item, previous, scope, exclude)
+        for identity, item in zip(identities, outcome.kept, strict=True)
+    ]
     fixed = _resolved(outcome, identities, verdict, previous, checks, scope, exclude)
     done = "" if fixed is None else f"{len(fixed)} fixed, "
     # Read by review: a finding the last review did not look for, its check not run or its file not read, was counted
@@ -962,10 +969,10 @@ def _code_lines(f: Finding, label: str, indent: str) -> list[str]:
     """A blocker's or a major's corrected code as a fenced block under `label`, a credential hidden, a fence a model
     wrapped it in, as a chat answer does, unwrapped; nothing where it gave none. Each fence line goes at either end:
     read by review, code cut at its cap kept its opening fence, and a `~~~` fence kept both."""
-    lines = without_fences(f.code.strip("\n").splitlines())
-    if not _serious(f) or not "".join(lines).strip():
+    body = _unfenced(f.code)
+    if not _serious(f) or not body.strip():
         return []
-    return [f"{indent}- {label}:", *_fenced(scrub("\n".join(lines))[0], f"{indent}  ")]
+    return [f"{indent}- {label}:", *_fenced(body, f"{indent}  ")]
 
 
 def _listed(f: Finding, mark: str = "") -> list[str]:
@@ -1313,9 +1320,12 @@ def _refuted_at_bar(outcome: Outcome, fail_on: str) -> list[str]:
     return [f"  - {severe} at or above `--fail-on {fail_on}`: not approved until a person reads them"] if severe else []
 
 
-def _since(identity: str, item: Sourced, previous: Earlier | None) -> str | None:
-    """A kept finding against a previous review: `new`, `seen`, or None with none or where it did not look."""
-    return None if previous is None else previous.since(identity, item)
+def _since(
+    identity: str, item: Sourced, previous: Earlier | None, scope: Sequence[str], exclude: Sequence[str]
+) -> str | None:
+    """A kept finding against a previous review, from this one of `scope` and `exclude`: `new`, `seen`, or None with
+    none or where it did not look."""
+    return None if previous is None else previous.since(identity, item, scope, exclude)
 
 
 def _resolved(
@@ -1338,8 +1348,7 @@ def _resolved(
     # verifier refuted: a check still found it. Each is counted on from the kept ones, as one of two findings of
     # one check, file and quote: read by review of another tool's report, counted from none again, the second of two
     # alike that changed its list had the first's identity, and its own read as fixed.
-    held = [*(f for f, _ in outcome.folded), *outcome.old, *(item for item, _why in outcome.refuted)]
-    found_now = {*identities, *_identified([*outcome.kept, *held])[len(outcome.kept) :]}
+    found_now = {*identities, *_held_identities(outcome).values()}
     return [
         found
         for identity, found in previous.findings.items()
@@ -1395,7 +1404,7 @@ def render(
     ]
     # Read against a previous review alone: with none, no finding is fingerprinted.
     identities = _identified(outcome.kept) if previous is not None else [""] * len(outcome.kept)
-    lines += _sections(checks, outcome, identities, previous)
+    lines += _sections(checks, outcome, identities, previous, evidence["scope"], evidence.get("exclude", ()))
     resolved = _resolved(outcome, identities, verdict, previous, checks, evidence["scope"], evidence.get("exclude", ()))
     if previous is not None and resolved is None:
         lines.append("- resolved since the previous review: none counted, since this review could not look at all")
@@ -1474,7 +1483,12 @@ def _next_steps(outcome: Outcome, verdict: str, fail_on: str, *, staged: bool) -
 
 
 def _sections(
-    checks: Sequence[str], outcome: Outcome, identities: Sequence[str], previous: Earlier | None
+    checks: Sequence[str],
+    outcome: Outcome,
+    identities: Sequence[str],
+    previous: Earlier | None,
+    scope: Sequence[str] = (),
+    exclude: Sequence[str] = (),
 ) -> list[str]:
     """Each check that found something, failed, or had a finding folded into another's, a section of its own; the
     checks that found nothing, one line naming them all, so each is still seen to have looked. Measured on the demo's
@@ -1498,7 +1512,8 @@ def _sections(
         lines.append(_heading(check, failed))
         for identity, item in findings:
             f = item.finding
-            mark = " — new since the previous review" if _since(identity, item, previous) == "new" else ""
+            new = _since(identity, item, previous, scope, exclude) == "new"
+            mark = " — new since the previous review" if new else ""
             mark += " — possibly already done: it asks for what the branch already does" * item.done
             lines += [*_listed(f, mark), f"  - fix: {prose(f.suggestion)}"]
             lines += [
@@ -1653,15 +1668,63 @@ class Earlier:
     unlooked: tuple[str, ...] = ()
     scope: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
+    unread: tuple[str, ...] = ()
 
-    def since(self, identity: str, item: Sourced) -> str | None:
+    def since(self, identity: str, item: Sourced, scope: Sequence[str] = (), exclude: Sequence[str] = ()) -> str | None:
         """`item` against this review: `seen` where it found it, kept or not; `new` where it looked and did not; None
-        where it did not look, its check not run there or unable to look, or its file outside the scope read.
-        Reproduced by review: each was marked new, and a comment counted it so."""
+        where it did not look: its check not run there or unable to look, its file one it did not read whole, cut or
+        skipped, or outside the scope it read where this review's, `scope` and `exclude`, is another. Reproduced by
+        review: each was marked new, and a comment counted it so. Under the same scope its own is no limit: a tree rule
+        names a line inside a folder `--path-exclude` leaves out, in either review."""
         if identity in self.findings or identity in self.seen:
             return "seen"
         looked = (self.ran is None or item.source in self.ran) and item.source not in self.unlooked
-        return "new" if looked and in_scope(item.finding.file, self.scope, self.exclude) else None
+        file = item.finding.file
+        same = (self.scope, self.exclude) == (tuple(scope), tuple(exclude))
+        read = file not in self.unread and (same or in_scope(file, self.scope, self.exclude))
+        return "new" if looked and read else None
+
+    def marks(self) -> tuple:
+        """What marks a later review's findings, their words aside: a saved report kept while this holds, so a review
+        served from the cache stays one. Read by review: kept while its findings' fingerprints held, a saved report's
+        other parts went stale, its checks among them."""
+        return (tuple(sorted(self.findings)), self.seen, self.ran, self.unlooked, self.scope, self.exclude, self.unread)
+
+    @classmethod
+    def read(cls, kept: dict[str, dict], data: dict) -> Earlier:
+        """A previous report's kept findings and what it says it found and did not keep, and looked at: the
+        fingerprints of its folded, old, refuted, disputed and unverified findings; the checks it ran, None where it
+        names none; those that could not look; the scope it read and left out; and the files it did not read whole,
+        cut or skipped. Each made safe as the report's findings are."""
+
+        def listed(key: str, within: dict = data) -> list:
+            found = within.get(key)
+            return found if isinstance(found, list) else []
+
+        def keys(value: object) -> list[str]:
+            named = value if isinstance(value, dict | list) else []
+            return [name for name in named if isinstance(name, str)]
+
+        seen = {
+            safe_line(found["fingerprint"])
+            for name in ("folded", "old_findings", "refuted", "disputed", "unverified")
+            for found in listed(name)
+            if isinstance(found, dict) and isinstance(found.get("fingerprint"), str)
+        }
+        checks = data.get("checks")
+        named = isinstance(checks, list) and all(isinstance(check, str) for check in checks)
+        ran = tuple(sorted(map(safe_line, filter(None, keys(checks))))) if named else None
+        reviewed = data.get("reviewed") if isinstance(data.get("reviewed"), dict) else {}
+        unread = {*keys(data.get("not_read")), *keys(reviewed.get("skipped")), *keys(reviewed.get("ignored"))}
+        return cls(
+            kept,
+            tuple(sorted(seen)),
+            ran,
+            tuple(sorted(map(safe_line, keys(data.get("could_not_look"))))),
+            tuple(map(safe_line, keys(reviewed.get("scope")))),
+            tuple(map(safe_line, keys(reviewed.get("exclude")))),
+            tuple(sorted(map(safe_line, unread))),
+        )
 
 
 type Previous = tuple[Earlier | None, dict | None, tuple[str, bool] | None]
@@ -1678,8 +1741,8 @@ def read_previous(path: str) -> Previous:
         findings = [f for f in data["findings"] if isinstance(f, dict) and isinstance(f.get("fingerprint"), str)]
         # Each finding made safe whole, keys and nested values too, where it comes in: `resolved` gives it back, and
         # a kept report can be edited. One a review wrote reads the same, a cut's run of spaces aside.
-        kept = {f["fingerprint"]: f for f in map(safe_value, findings)}
-        earlier = Earlier(kept, *_looked(data))
+        kept = {f["fingerprint"]: f for f in map(_safe_finding, findings)}
+        earlier = Earlier.read(kept, data)
         # Its health made safe too, and so bounded as the findings are: read by review, one nested deep and read as it
         # was loaded overflowed the cache key's encoding, exit 3, where the same review gave 0 without the cache.
         health = safe_value(data["health"]) if isinstance(data.get("health"), dict) else None
@@ -1722,13 +1785,30 @@ def safe_line(text: str, limit: int | None = None) -> str:
     return inert(cut_at(line, limit) if limit else line)
 
 
+def _safe_finding(found: dict) -> dict:
+    """A previous report's finding made safe whole, as `safe_value` makes it, its corrected code with its lines: read
+    by review, `resolved` gave a fixed finding's code back squashed to one line."""
+    safe = safe_value({key: value for key, value in found.items() if key != "code"})
+    return {**safe, "code": safe_code(found["code"])} if isinstance(found.get("code"), str) else safe
+
+
 def safe_code(code: str) -> str:
-    """A model's corrected code as the JSON keeps it: its lines and their indentation as written, a fence a model
-    wrapped it in unwrapped, a credential hidden, every character a reader cannot see a space, and each line inert, as
-    `safe_line` makes one: a pipeline prints the JSON. Empty where the model gave none."""
-    lines = without_fences(code.strip("\n").splitlines())
-    hidden = scrub("\n".join(lines))[0]
-    return "\n".join(inert(_CONTROL.sub(" ", line).rstrip()) for line in hidden.splitlines()).strip("\n")
+    """A model's corrected code as the JSON keeps it: its lines and their indentation as written, tabs among them, a
+    fence a model wrapped it in unwrapped, a credential hidden, every other character a reader cannot see a space, and
+    each line inert, as `safe_line` makes one, a GitHub runner's `::` too: read by review, the JSON's first field of
+    several lines let a line a model wrote open as a runner's command where a pipeline printed the field. Empty where
+    the model gave none."""
+    lines = (
+        _LINE_COMMAND.sub(r"\1: :", "\t".join(_CONTROL.sub(" ", part) for part in line.split("\t")).rstrip())
+        for line in _unfenced(code).splitlines()
+    )
+    return "\n".join(inert(line) for line in lines).strip("\n")
+
+
+def _unfenced(code: str) -> str:
+    """A model's corrected code with a fence it wrapped it in unwrapped and each credential hidden: what the JSON and
+    the comment show of it, each made safe its own way after."""
+    return scrub("\n".join(without_fences(code.strip("\n").splitlines())))[0]
 
 
 def safe_value(value: Any) -> Any:
@@ -1773,34 +1853,6 @@ def _held_identities(outcome: Outcome) -> dict[int, str]:
     return dict(zip(map(id, held), _identified([*outcome.kept, *held])[len(outcome.kept) :], strict=True))
 
 
-def _looked(data: dict) -> tuple[tuple[str, ...], tuple[str, ...] | None, tuple[str, ...], tuple[str, ...], tuple]:
-    """What a previous report says it found and did not keep, and what it looked at: the fingerprints of its folded,
-    old, refuted, disputed and unverified findings; the checks it ran, None where it names none; those that could not
-    look; and the scope it read and left out. Each made safe as the report's findings are."""
-
-    def listed(key: str, within: dict = data) -> list:
-        found = within.get(key)
-        return found if isinstance(found, list) else []
-
-    seen = {
-        safe_line(found["fingerprint"])
-        for name in ("folded", "old_findings", "refuted", "disputed", "unverified")
-        for found in listed(name)
-        if isinstance(found, dict) and isinstance(found.get("fingerprint"), str)
-    }
-    checks = data.get("checks")
-    named = isinstance(checks, list) and all(isinstance(check, str) for check in checks)
-    ran = tuple(sorted(safe_line(check) for check in checks if check)) if named and isinstance(checks, list) else None
-    holes = data.get("could_not_look")
-    unlooked = tuple(sorted(map(safe_line, holes))) if isinstance(holes, dict) else ()
-    reviewed = data.get("reviewed") if isinstance(data.get("reviewed"), dict) else {}
-
-    def paths(key: str) -> tuple[str, ...]:
-        return tuple(safe_line(path) for path in listed(key, reviewed) if isinstance(path, str))
-
-    return tuple(sorted(seen)), ran, unlooked, paths("scope"), paths("exclude")
-
-
 def _identified(items: Sequence[Sourced]) -> list[str]:
     """Each finding's fingerprint, the occurrences of one check, file and quote counted in the order given."""
     seen: Counter[str] = Counter()
@@ -1839,9 +1891,16 @@ def _found(item: Sourced, added: Mapping[str, frozenset[int]], identity: str = "
     }
 
 
-def _reasoned(judged: Sequence[tuple[Sourced, str]], added: Mapping[str, frozenset[int]]) -> list[dict]:
-    """Findings a verifier judged, as data, each beside the reason it gave."""
-    return [{**_found(item, added), "reason": safe_line(why, REASON_MAX_CHARS)} for item, why in judged]
+def _reasoned(
+    judged: Sequence[tuple[Sourced, str]], added: Mapping[str, frozenset[int]], named: Mapping[int, str]
+) -> list[dict]:
+    """Findings a verifier judged, as data, each beside the reason it gave and with the identity `named` gives it:
+    read by review, a refuted one's restarted at the first occurrence, where `--previous` counts it on from the kept
+    ones."""
+    return [
+        {**_found(item, added, named.get(id(item), "")), "reason": safe_line(why, REASON_MAX_CHARS)}
+        for item, why in judged
+    ]
 
 
 def as_data(
@@ -1866,6 +1925,7 @@ def as_data(
     pre, whole = evidence["preflight"], evidence["whole"]
     identities = _identified(outcome.kept)
     held = _held_identities(outcome)
+    named = {**dict(zip(map(id, outcome.kept), identities, strict=True)), **held}
     # The added lines' numbers, kept when the rules let the lines go; a deleted or binary file has none.
     added = {f["path"]: f["added_at"] for f in (*evidence["files"], *evidence.get("unscanned", ()))}
     return {
@@ -1896,7 +1956,10 @@ def as_data(
         # A whole project's measures, under `--all`; None for a review of a change, which is no measure of a project.
         "health": None if health is None else _health_data(health, outcome),
         "findings": [
-            {**_found(item, added, identity), "since_previous": _since(identity, item, previous)}
+            {
+                **_found(item, added, identity),
+                "since_previous": _since(identity, item, previous, evidence["scope"], evidence.get("exclude", ())),
+            }
             for item, identity in zip(outcome.kept, identities, strict=True)
         ],
         # Asked by the owner: what was already in the files the change touched, apart, and never at the bar.
@@ -1912,10 +1975,10 @@ def as_data(
         "dropped": [_found(item, added) for item in outcome.dropped],
         "dropped_at_fail_on": at_bar(outcome.dropped, fail_on),
         "verified": outcome.verified,
-        "refuted": _reasoned(outcome.refuted, added),
+        "refuted": _reasoned(outcome.refuted, added, named),
         "refuted_at_fail_on": at_bar([item for item, _why in outcome.refuted], fail_on),
-        "unverified": _reasoned(outcome.unverified, added),
-        "disputed": _reasoned(outcome.disputed, added),
+        "unverified": _reasoned(outcome.unverified, added, named),
+        "disputed": _reasoned(outcome.disputed, added, named),
         "secrets_redacted": outcome.redacted,
         "usage": usage,
         "seconds": dict(seconds or {}),  # how long each agent took, by the id the report uses: timing, never a verdict

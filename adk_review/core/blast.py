@@ -145,15 +145,18 @@ def parse(source: str) -> ast.Module | None:
     notebook, each line Python refuses that opens as IPython's is set aside first, as lint sets it aside: reproduced by
     review, one `%pip` line left a notebook unparsed, and the tree rules skipped it in silence, a call the change
     broke in it unnamed. A `%` that continues an expression parses, so it is never set aside."""
-    rows = source.split("\n")
     aside: set[int] = set()
+    rows: list[str] = []  # read once, at the first refusal, and only in a notebook: most modules parse at once
     while True:
         try:
             return ast.parse(set_aside(source, aside) if aside else source)
         except SyntaxError as exc:
+            if not rows:
+                if not notebook(source):
+                    return None
+                rows = source.split("\n")
             line = exc.lineno or 0
-            ipython = 0 < line <= len(rows) and rows[line - 1].lstrip().startswith(IPYTHON_OPENERS)
-            if line in aside or not ipython or not notebook(source):
+            if line in aside or not 0 < line <= len(rows) or not rows[line - 1].lstrip().startswith(IPYTHON_OPENERS):
                 return None
             aside.add(line)
         except ValueError, RecursionError, MemoryError:

@@ -56,16 +56,19 @@ def notebook(text: str) -> bool:
 
 
 def set_aside(text: str, numbers: Iterable[int]) -> str:
-    """`text` with each line of `numbers`, as git numbers them, an IPython line, set aside: `pass` at its own
-    indentation, and each line it continues onto with a closing backslash blank, so every line keeps its number. Read
-    by review: set aside as a comment, a line that was a block's only one left the block empty, and the line after it
-    read as invalid syntax; and a line it continued onto was left behind, its indentation unexpected."""
+    """`text` with each line of `numbers`, as git numbers them, an IPython line, set aside, and each line it continues
+    onto with a closing backslash blank, so every line keeps its number. One at the left margin becomes a comment,
+    which no block needs and no rule counts as a statement; one inside a block becomes `pass` at its indentation, so
+    the block holds a statement still. Read by review: a comment in a block whose only line it was left the block
+    empty, read as invalid syntax; `pass` at the margin was a statement above the imports, E402; and a line continued
+    onto was left behind, its indentation unexpected."""
     rows = text.split("\n")
     for number in sorted(set(numbers)):
         if not 0 < number <= len(rows):
             continue
         row = rows[number - 1]
-        rows[number - 1] = f"{row[: len(row) - len(row.lstrip())]}pass"
+        at = len(row) - len(row.lstrip())
+        rows[number - 1] = f"{row[:at]}pass" if at else f"#{row[1:]}"
         while row.rstrip().endswith("\\") and number < len(rows):
             row, rows[number] = rows[number], ""
             number += 1
