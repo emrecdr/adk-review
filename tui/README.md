@@ -165,6 +165,7 @@ It runs in cmd, in PowerShell and in Windows Terminal alike.
 | `git_sync.py` | The repositories under a folder, their branches and how each stands to its remote, and the fetch |
 | `options.py` | The profiles, the command a selection makes, and the report `--previous` reads |
 | `findings.py` | A `--json` report read for the findings tab, its filters, and a check's explanation |
+| `azure.py` | Azure DevOps, with no call made: a pull request's address read, and a finding's links built |
 | `modals.py` | The dialogs: a branch behind or apart from its remote, and a check's explanation |
 | `commands.py` | The command palette |
 | `clipboard.py` | Copying, through the terminal and through Windows' own clipboard |
