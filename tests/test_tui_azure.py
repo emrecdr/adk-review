@@ -814,3 +814,88 @@ class TestOnePost:
         assert client.post_comment(asked, text="t", commit="b" * 40, fingerprint="", **self.WHERE).thread == 148
         assert [seen.method for seen in fake_ado.seen].count("POST") == 1
         assert ("GET", fake_ado.root + "/threads") not in [(seen.method, seen.path) for seen in fake_ado.seen]
+
+
+@pytest.fixture
+def state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> ModuleType:
+    """`tui.azure_state`, keeping what it keeps in a folder of the test's own: never a person's state folder."""
+    monkeypatch.setattr(importlib.import_module("tui.config"), "STATE_DIR", tmp_path / "state")
+    return importlib.import_module("tui.azure_state")
+
+
+class TestWhatTheScreenRemembers:
+    """`azure.json` in the state folder: a pull request's address a branch, and each thread posted."""
+
+    def test_an_address_is_kept_per_repository_and_branch_and_forgotten_when_emptied(
+        self, state: ModuleType, tmp_path: Path
+    ) -> None:
+        assert state.pull_request_url("/work/payments", "feature/orders") == "", "nothing kept, and no file yet"
+        state.keep_pull_request_url(
+            "/work/payments", "feature/orders", "https://dev.azure.com/contoso/a/_git/b/pullrequest/1"
+        )
+        state.keep_pull_request_url(
+            "/work/payments", "feature/tax", "https://dev.azure.com/contoso/a/_git/b/pullrequest/2"
+        )
+        state.keep_pull_request_url(
+            "/work/other", "feature/orders", "https://dev.azure.com/contoso/a/_git/c/pullrequest/3"
+        )
+        assert state.pull_request_url("/work/payments", "feature/orders").endswith("/1")
+        assert state.pull_request_url("/work/payments", "feature/tax").endswith("/2")
+        assert state.pull_request_url("/work/other", "feature/orders").endswith("/3")
+        state.keep_pull_request_url("/work/payments", "feature/orders", "")
+        state.keep_pull_request_url("/work/other", "feature/orders", "")
+        assert state.pull_request_url("/work/payments", "feature/orders") == ""
+        kept = json.loads((tmp_path / "state" / "azure.json").read_text(encoding="utf-8"))
+        assert list(kept["pull_requests"]) == ["/work/payments"], "a repository with no address left is not listed"
+
+    def test_a_posted_thread_is_kept_per_pull_request_and_finding(self, state: ModuleType, azure: ModuleType) -> None:
+        one, other = _pr(azure), replace(_pr(azure), number=124)
+        assert state.posted_thread(one, "ab" * 8) is None
+        state.keep_posted(one, "ab" * 8, 148)
+        state.keep_posted(other, "ab" * 8, 7)
+        state.keep_posted(one, "cd" * 8, 149)
+        found = [
+            state.posted_thread(one, "ab" * 8),
+            state.posted_thread(other, "ab" * 8),
+            state.posted_thread(one, "cd" * 8),
+        ]
+        assert found == [148, 7, 149]
+
+    @pytest.mark.parametrize(
+        "damaged", [b"{", b"[]", b'{"pull_requests": 7, "posted": "x"}', b"\xff\xfe\x00", b'{"posted": {"k": [1]}}']
+    )
+    def test_a_damaged_file_reads_as_empty_and_the_next_write_repairs_it(
+        self, state: ModuleType, azure: ModuleType, tmp_path: Path, damaged: bytes
+    ) -> None:
+        """The marks kept here are a convenience: the thread's own text is what stops a second post."""
+        (tmp_path / "state").mkdir()
+        (tmp_path / "state" / "azure.json").write_bytes(damaged)
+        assert (
+            state.pull_request_url("/work/payments", "main") == "" and state.posted_thread(_pr(azure), "ab" * 8) is None
+        )
+        state.keep_posted(_pr(azure), "ab" * 8, 148)
+        assert state.posted_thread(_pr(azure), "ab" * 8) == 148
+        assert set(json.loads((tmp_path / "state" / "azure.json").read_text(encoding="utf-8"))) == {
+            "pull_requests",
+            "posted",
+        }
+
+    def test_a_thread_that_is_no_whole_number_is_none(
+        self, state: ModuleType, azure: ModuleType, tmp_path: Path
+    ) -> None:
+        held = {"posted": {_pr(azure).web: {"aa": "148", "bb": True, "cc": 12}}, "pull_requests": {"/r": {"b": 7}}}
+        (tmp_path / "state").mkdir()
+        (tmp_path / "state" / "azure.json").write_text(json.dumps(held), encoding="utf-8")
+        assert [state.posted_thread(_pr(azure), name) for name in ("aa", "bb", "cc")] == [None, None, 12]
+        assert state.pull_request_url("/r", "b") == ""
+
+    def test_only_what_was_given_is_written(self, state: ModuleType, azure: ModuleType, tmp_path: Path) -> None:
+        """The screen gives the pull request's own address, as Azure DevOps shows it, never the text a person
+        pasted: a paste can hold a credential."""
+        state.keep_pull_request_url("/work/payments", "feature/orders", _pr(azure).web)
+        written = (tmp_path / "state" / "azure.json").read_text(encoding="utf-8")
+        assert json.loads(written) == {
+            "pull_requests": {"/work/payments": {"feature/orders": _pr(azure).web}},
+            "posted": {},
+        }
+        assert written.endswith("\n") and "\r" not in written
