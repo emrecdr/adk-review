@@ -355,7 +355,8 @@ The rules shipped with the reviewer are written as a project writes its own:
   registry of the operator's own is the setting `REVIEW_REGISTRIES`, never a line of the rule), `pinned-actions` (a
   workflow or an action running another action at a tag, a branch or a short SHA, which can be moved to other code after
   review, not its full commit SHA), `script-injection` (a workflow's script expanding a value an outsider writes, a pull
-  request's title or a branch's name, which GitHub writes into the code before it runs), `hidden-text` (tag characters,
+  request's title or a branch's name, which GitHub writes into the code before it runs, and a `pull_request_target`
+  job that checks out the pull request's own code), `hidden-text` (tag characters,
   bidirectional controls, and text smuggled in variation selectors, invisible operators or Hangul fillers, in any file)
   and `steering-files` (a change to a file another tool or agent obeys: a coding agent's instructions or settings,
   Copilot's and Gemini CLI's among them, an editor's settings and the tool servers an agent starts, a GitHub workflow or

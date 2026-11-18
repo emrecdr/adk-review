@@ -1738,8 +1738,9 @@ class TestTheCleanupAndThePitfalls:
         assert ruff_rule_findings(Simplify(), [test]) == [], "cleanup in a test is not this rule's"
 
     def test_pitfalls_names_five_more_traps_ruff_proves(self) -> None:
-        """Read by validation: five stable codes no rule selected, each a trap the code does not do what it reads. Measured
-        over google-adk, pydantic, httpx and litellm: 0 hits; over the owner's projects, 1, a real duplicate in
+        """Read by validation: five stable codes no rule selected, each a trap where the code does not do what it
+        reads. Measured over google-adk, pydantic, httpx and litellm: 0 hits; over the owner's projects, 1, a real
+        duplicate in
         `__all__`. `except A or B` catches `A` alone, a major; the rest minor. LOG004 and LOG014 are left out: 5 false
         hits, each `exc_info=True` in a FastAPI handler, which Starlette calls inside its own `except`."""
         from adk_review.judge.rules.pitfalls import Pitfalls
@@ -4085,6 +4086,8 @@ class TestTheShippedRules:
             (10, "`github.head_ref` is written into the script before it runs"),
             (17, "`github.event.head_commit.message` is written into the script before it runs"),
             (24, "`github.event.commits[0].author.name` is written into the script before it runs"),
+            # Read by validation: a checkout of the pull request's own branch, under `pull_request_target`.
+            (20, "a pull_request_target job checks out the pull request's own code"),
         ]
         lines = workflow.splitlines()
         added = [(number, lines[number - 1]) for number in (6, 7)]  # the block's line 10 kept
@@ -4122,6 +4125,37 @@ class TestTheShippedRules:
         assert lines_hit(rule, ".github/workflows/edges.yml", edges) == [5, 6, 9, 10, 11, 12, 16]
         assert try_rule(rule, {"docs/ci.md": workflow}) == [], "a workflow or an action alone is read"
         assert self_check(rule) == []
+
+    def test_a_pull_request_target_job_that_checks_out_the_pull_requests_own_code_is_named(self) -> None:
+        """Read by validation: under `pull_request_target`, a job runs with the base's token and secrets, and a checkout
+        of the pull request's own head hands an outsider's code to the steps after it, the "pwn request" GitHub's guide
+        names; no rule named it. A checkout of the base, or of the head under `pull_request`, which has no secrets, is
+        no finding."""
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.script_injection import ScriptInjection
+
+        rule, path = ScriptInjection(), ".github/workflows/build.yml"
+
+        def flow(trigger: str, ref: str) -> str:
+            checkout = "      - uses: actions/checkout@v4\n" + (f"        with:\n          ref: {ref}\n" if ref else "")
+            head = f"on:\n  {trigger}:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
+            return f"{head}{checkout}      - run: npm ci\n"
+
+        for ref in (
+            "${{ github.event.pull_request.head.sha }}",
+            "${{ github.event.pull_request.head.ref }}",
+            "${{ github.head_ref }}",
+            "refs/pull/${{ github.event.pull_request.number }}/merge",
+        ):
+            assert lines_hit(rule, path, flow("pull_request_target", ref)) == [9], ref
+        assert lines_hit(rule, path, flow("pull_request", "${{ github.event.pull_request.head.sha }}")) == []
+        assert lines_hit(rule, path, flow("pull_request_target", "")) == [], "the base's code"
+        assert lines_hit(rule, path, flow("pull_request_target", "${{ github.sha }}")) == [], "the base's commit"
+        from adk_review.judge.checks import run_rules
+
+        planted = _entry(path, flow("pull_request_target", "${{ github.head_ref }}"))
+        found = run_rules({"files": [planted], "tree": None}, [rule])["rule.script-injection"].findings
+        assert found and "pull_request_target" in found[0].suggestion, found
 
     def test_tojson_inside_a_string_of_the_script_is_named_wherever_the_string_opens(self) -> None:
         """Read by review of another tool's report, and reproduced: `toJSON` was named where a quote stood right

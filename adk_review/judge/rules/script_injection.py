@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 
-from ..rule_helpers import ChangedFile, FileRule, matches
+from ..rule_helpers import ChangedFile, FileRule, Hit, UnreadError, matches
 
 #: Where GitHub runs a step's script: a workflow, and an action's own metadata, whose composite steps run them too.
 READ = (".github/workflows/*.yml", ".github/workflows/*.yaml", "action.yml", "action.yaml")
@@ -44,6 +44,21 @@ _SPACED = re.compile(r"\s*([.(])\s*")
 #: runs. What comes before the key's name, the indent and a list item's dash, is captured: its length is the key's
 #: column.
 SCRIPT = re.compile(r"""^(\s*(?:-\s+)?)(["']?)(run|script)\2\s*:""")
+#: The trigger that runs a workflow with the base's token and secrets for an outsider's pull request.
+TARGET = re.compile(r"\bpull_request_target\b")
+#: A checkout step, and its `ref:` naming the pull request's own code: its head, by commit or branch, or the merge
+#: GitHub makes of it, the ref an outsider writes.
+CHECKOUT = re.compile(r"""^\s*(?:-\s+)?(["']?)uses\1\s*:\s*["']?actions/checkout@""", re.IGNORECASE)
+HEAD_REF = re.compile(
+    r"""^\s*(["']?)ref\1\s*:.*(?:\$\{\{\s*github\.(?:event\.pull_request\.head\.(?:sha|ref)|head_ref)\s*\}\}|refs/pull/)""",
+    re.IGNORECASE,
+)
+#: What a checkout of the pull request's own code under `pull_request_target` is, needs, and why.
+CHECKOUT_TITLE = "a pull_request_target job checks out the pull request's own code"
+CHECKOUT_FIX = (
+    "Run the pull request's code under pull_request, with no secrets. Under pull_request_target, check out the base."
+)
+CHECKOUT_WHY = "The job has the base's token and secrets, and the steps after the checkout run an outsider's code."
 #: The key whose `run:` holds the shell and the folder a job's scripts run in, and no script.
 DEFAULTS = re.compile(r"""^\s*(["']?)defaults\1\s*:""")
 #: What opens a string in a script, and closes it again: a quote, or a template literal's backtick.
@@ -64,7 +79,11 @@ class ScriptInjection(FileRule):
     past the size limits is read as far as its diff shows it. Not read: an expression written with brackets,
     `github['head_ref']`, or wrapped over two lines; a step written in YAML's flow style, `- {run: …}`; a script
     reached through a YAML alias, `run: *script`; a value passed through `env:` and then written into the script as
-    `${{ env.NAME }}`; and `toJSON` in a template that a line above its own opened."""
+    `${{ env.NAME }}`; and `toJSON` in a template that a line above its own opened. And under
+    `pull_request_target`, which runs with the base's token and secrets, a checkout of the pull request's own code,
+    its head or the merge GitHub makes of it, the "pwn request" GitHub's guide names: read by validation, no rule named
+    it. Named where the change added the trigger, the checkout or its `ref:`; not read in a workflow too large to read
+    whole, nor a checkout whose ref an expression builds from another value."""
 
     id = "script-injection"
     severity = "major"
@@ -85,10 +104,10 @@ class ScriptInjection(FileRule):
         ("docs/ci.md", '- run: echo "${{ github.head_ref }}"\n'),
     )
 
-    def check(self, file: ChangedFile) -> list[tuple[int | None, str]]:
+    def check(self, file: ChangedFile) -> list[tuple[int | None, str] | Hit]:
         if not matches(file.path, *READ):
             return []
-        found: list[tuple[int | None, str]] = []
+        found: list[tuple[int | None, str] | Hit] = []
         held: dict[int, str | None] = {}  # each line asked, and the script key that holds it
         for number in file.new_lines(*READ):  # a workflow moved into place adds no line, and every line of it runs now
             line = file.near(number) or ""
@@ -107,7 +126,53 @@ class ScriptInjection(FileRule):
                         continue
                 found.append((number, f"`{named[1]}` is written into the script before it runs"))
                 break
-        return found
+        return [*found, *_checked_out(file)]
+
+
+def _checked_out(file: ChangedFile) -> list[Hit]:
+    """Each `ref:` of a checkout step that names the pull request's own code, in a workflow `pull_request_target` runs,
+    where the change added the trigger, the step's `uses:` or the `ref:`. None for a file not read whole: its trigger
+    may lie past what the diff shows."""
+    if not matches(file.path, *READ[:2]):
+        return []  # an action's metadata names no trigger
+    try:
+        lines = file.lines
+    except UnreadError:
+        return []
+    triggers = [
+        number for number, text in enumerate(lines, 1) if TARGET.search(text) and not text.lstrip().startswith("#")
+    ]
+    if not triggers:
+        return []
+    found = []
+    for number, text in enumerate(lines, 1):
+        if not HEAD_REF.match(text):
+            continue
+        step = _step_of(lines, number)
+        uses = [at for at in step if CHECKOUT.match(lines[at - 1])]
+        if uses and file.added & {number, *uses, *triggers}:
+            found.append(Hit(file.path, number, text.strip(), title=CHECKOUT_TITLE, fix=CHECKOUT_FIX, why=CHECKOUT_WHY))
+    return found
+
+
+def _step_of(lines: tuple[str, ...], number: int) -> range:
+    """The lines of the step that holds line `number`: from the list item above it, `- `, less indented than the line,
+    to the line before the next one as little indented."""
+    depth = _indent(lines[number - 1])
+    start = next(
+        (
+            at
+            for at in range(number, 0, -1)
+            if lines[at - 1].lstrip().startswith("-") and _indent(lines[at - 1]) < depth
+        ),
+        number,
+    )
+    dash = _indent(lines[start - 1])
+    end = next(
+        (at for at in range(start + 1, len(lines) + 1) if lines[at - 1].strip() and _indent(lines[at - 1]) <= dash),
+        len(lines) + 1,
+    )
+    return range(start, end)
 
 
 def _string_at(text: str, start: int, end: int, held: str) -> str:
