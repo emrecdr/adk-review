@@ -3422,6 +3422,16 @@ class TestWhatTheReportPrints:
         short = Finding(file="a.py", severity="minor", title="a title", evidence="x", suggestion="a change")
         assert (short.title, short.suggestion) == ("a title", "a change"), "what fits is kept as it is"
 
+    def test_a_findings_title_keeps_300_characters_and_names_its_cut_past_them(self) -> None:
+        """Reported by the owner: a finding's title, the issue's description, was cut at 200 characters, and the cut
+        lost what the issue was. It keeps 300, two short sentences, and past them is cut with the cut named."""
+        from adk_review.core.findings import Finding
+
+        whole = "a" * 300
+        assert Finding(file="a.py", severity="minor", title=whole, evidence="x", suggestion="s").title == whole
+        long = Finding(file="a.py", severity="minor", title="b" * 301, evidence="x", suggestion="s").title
+        assert long.startswith("b" * 300) and not long.startswith("b" * 301) and "cut at 300" in long, long[-40:]
+
     def test_a_models_reason_and_code_are_capped_once_too_and_default_to_none(self) -> None:
         """Asked by the owner: a blocker or a major says why it matters and gives the corrected code. Both are a model's
         text, cut where the finding is made as its title is; a finding without them, a minor or a rule's, has none."""

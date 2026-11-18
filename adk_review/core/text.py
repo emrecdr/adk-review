@@ -20,8 +20,9 @@ REASON_MAX_CHARS = 400
 EVIDENCE_MAX_CHARS = 400
 #: A finding's title and its change are a model's own words, read by a person and by the coding agent a hand-off is
 #: for. Nothing capped them, and an injection that survives into one needs room: a title is one line, a change a few
-#: sentences or a short snippet. Cut where the finding is made, so every reader reads the same.
-TITLE_MAX_CHARS = 200
+#: sentences or a short snippet. Cut where the finding is made, so every reader reads the same. A title keeps 300:
+#: reported by the owner, cut at 200 it lost what the issue was, a model's two short sentences past the cap.
+TITLE_MAX_CHARS = 300
 SUGGESTION_MAX_CHARS = 1_200
 #: A blocker's or a major's reason and its corrected code, a model's words too, cut as the change is: a reason is a few
 #: sentences, the code the lines it fixes.

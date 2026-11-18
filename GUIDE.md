@@ -425,7 +425,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | A tool's findings listed for one file by a rule that names ruff or pyrefly, or pyrefly over the radius; the rest are counted in one finding | 50 | `judge/rule_helpers/diagnostics.py`, `PER_FILE` |
 | A finding's evidence in the report | 400 characters | `core/text.py`, `EVIDENCE_MAX_CHARS` |
 | A reason in the report: why a check failed, a verifier's word, a provider's error, a dropped finding's file as a model wrote it | 400 characters | `core/text.py`, `REASON_MAX_CHARS` |
-| A finding's title, as a model wrote it | 200 characters | `core/text.py`, `TITLE_MAX_CHARS` |
+| A finding's title, as a model wrote it | 300 characters | `core/text.py`, `TITLE_MAX_CHARS` |
 | A finding's change, as a model wrote it | 1,200 characters | `core/text.py`, `SUGGESTION_MAX_CHARS` |
 | A blocker's or a major's reason, as a model wrote it | 600 characters | `core/text.py`, `WHY_MAX_CHARS` |
 | A blocker's or a major's corrected code, as a model wrote it | 1,200 characters | `core/text.py`, `CODE_MAX_CHARS` |
