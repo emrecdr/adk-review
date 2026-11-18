@@ -3556,6 +3556,40 @@ class TestTheShippedRules:
         assert try_rule(rule, {"src/sources.py": mirror}) == [], "a lockfile alone is read"
         assert self_check(rule) == []
 
+    def test_a_domain_of_the_operators_own_holds_every_host_under_it_over_tls(self) -> None:
+        """Reported by the owner: `uv.lock` fetching from the company's own host drew a minor finding, and a company
+        serves its packages from several hosts of one domain, `pypi.`, `artifactory.`, where `REVIEW_REGISTRIES` named
+        one address and the path under it. `*.corp.example.com` there names the domain and every host under it, on any
+        port and path, over TLS alone. A host that only ends in its name, one past it, plain HTTP, and a user's name
+        before another host are each still a source a person reads."""
+        from adk_review.judge.rule_helpers import try_rule
+        from adk_review.judge.rules.lockfile_sources import LockfileSources
+
+        rule = LockfileSources()
+        rule.own_registries = ("*.corp.example.com",)
+
+        def fetched(url: str, lock: str = "uv.lock") -> list[str]:
+            line = f'source = {{ registry = "{url}" }}\n'
+            return [hit.title or "" for hit in try_rule(rule, {lock: line})]
+
+        for lock, url in (
+            ("uv.lock", "https://corp.example.com/simple"),
+            ("uv.lock", "https://pypi.corp.example.com/simple"),
+            ("uv.lock", "https://artifactory.corp.example.com:8443/artifactory/api/pypi/remote/simple"),
+            ("uv.lock", "HTTPS://Pypi.Corp.Example.com/simple"),
+            ("Cargo.lock", "sparse+https://cargo.corp.example.com/index/"),
+            ("Cargo.lock", "registry+https://cargo.corp.example.com/index"),
+        ):
+            assert fetched(url, lock) == [], (lock, url)
+        outside = "uv.lock fetches from {}, outside its public registry".format
+        for url, origin in (
+            ("https://corp.example.com.evil.example/simple", "https://corp.example.com.evil.example"),
+            ("https://evilcorp.example.com/simple", "https://evilcorp.example.com"),
+            ("http://pypi.corp.example.com/simple", "http://pypi.corp.example.com"),
+            ("https://pypi.corp.example.com:x@evil.example/simple", "https://evil.example"),
+        ):
+            assert fetched(url) == [outside(origin)], url
+
     def test_a_registry_of_the_operators_own_is_known_and_nothing_near_it_is(self) -> None:
         """Read by review on two projects' branches, every change to `uv.lock` drew a minor finding that it fetched
         from the company's own registry, which the projects declare as their default index. Read by review again: the

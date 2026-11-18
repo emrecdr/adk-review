@@ -96,7 +96,8 @@ pin and the lock move together.
 One `.env` at the root (copy `.env.example`). `REVIEW_PROVIDER=copilot|gemini` picks the arm, `copilot` when unset;
 `REVIEW_MODEL` blank means `gpt-4.1` / `gemini-2.5-flash`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` are read
 too, and `REVIEW_<ID>_MODEL` gives one guideline its own model, over the `models` its file may name per arm.
-`REVIEW_REGISTRIES` names the operator's own package registries, addresses over TLS with a comma between two, which
+`REVIEW_REGISTRIES` names the operator's own package registries, addresses over TLS or domains, `*.example.com`, each
+domain with every host under it, a comma between two, which
 `judge/settings.py` reads, the catalog hands each rule as `own_registries` and `lockfile-sources` takes as known, the
 cache key reading them too: a company's host is that setting, never a line of a rule, a guide or a test, since the
 repository is public. Copilot needs a one-time `uv run adk-review-login`; Gemini needs `GOOGLE_API_KEY`, or through

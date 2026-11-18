@@ -2922,11 +2922,17 @@ class TestWhatAReviewKeeps:
         assert cli.main(argv) == 0
         said = capsys.readouterr()
         assert "fetches from" not in said.out and "served from the cache" not in said.err, said
+        monkeypatch.setenv("REVIEW_REGISTRIES", "*.Example.com")  # a domain and every host under it, its case folded
+        assert cli.main(argv) == 0
+        assert "fetches from" not in capsys.readouterr().out
         for given in (
             "http://nexus.example.com:8443/",
-            "nexus.example.com",
+            "nexus.example.com",  # a bare host is no address: `https://` or `*.` says which is meant
             "https://me@nexus.example.com/",
             "https://",
+            "*.com",  # a domain of one name would hold every host of it
+            "*.",
+            "*.exa mple.com",
         ):
             monkeypatch.setenv("REVIEW_REGISTRIES", given)
             assert cli.main(argv) == 2, given

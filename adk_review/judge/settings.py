@@ -17,6 +17,9 @@ DEFAULTS = {"gemini": "gemini-2.5-flash", "copilot": "gpt-4.1"}
 #: An address a registry is given as: over TLS, a host, its port where it has one, and a path under it. No user's
 #: name, which a lookalike host hides behind, no query and no space.
 _REGISTRY = re.compile(r"https://[A-Za-z0-9._-]+(?::\d+)?(?:/[^\s?#@]*)?")
+#: A domain of the operator's own, `*.example.com`: the domain and every host under it, two names at least, so no
+#: setting holds a whole top-level domain. Asked by the owner: a company serves its packages from several hosts.
+_DOMAIN = re.compile(r"\*\.((?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z][a-z0-9-]*[a-z0-9])", re.IGNORECASE)
 
 
 def provider() -> str:
@@ -56,19 +59,25 @@ def fallback_name() -> str:
 
 
 def registries() -> tuple[str, ...]:
-    """The operator's own package registries, `REVIEW_REGISTRIES`: addresses over TLS, a comma between two, each known
-    to `lockfile-sources` for every lockfile it reads, by its scheme, host and port and the path under it. Set in the
+    """The operator's own package registries, `REVIEW_REGISTRIES`, a comma between two, each known to
+    `lockfile-sources` for every lockfile it reads: an address over TLS, by its scheme, host and port and the path
+    under it, or a domain, `*.example.com`, the domain and every host under it over TLS, its case folded. Set in the
     shell or the central `.env`, never in a file of the repository: read by review, a company's host stood in the
-    rule's own source, in a public repository. `ValueError` for one that is no such address: a registry misspelt is
-    said, never one more or one fewer taken in silence."""
+    rule's own source, in a public repository. `ValueError` for one that is neither: a registry misspelt is said,
+    never one more or one fewer taken in silence, and a bare host, which could mean either, is one."""
     given = [one.strip() for one in os.environ.get("REVIEW_REGISTRIES", "").split(",")]
+    known = []
     for one in filter(None, given):
-        if not _REGISTRY.fullmatch(one):
+        if _REGISTRY.fullmatch(one):
+            known.append(one)
+        elif domain := _DOMAIN.fullmatch(one):
+            known.append(f"*.{domain[1].lower()}")
+        else:
             raise ValueError(
-                f"REVIEW_REGISTRIES names {one!r}, which is no https address. Give each as https://host:port/, with a "
-                "comma between two"
+                f"REVIEW_REGISTRIES names {one!r}, which is no https address and no domain. Give each as "
+                "https://host:port/, or *.example.com for a domain and every host under it, with a comma between two"
             )
-    return tuple(filter(None, given))
+    return tuple(known)
 
 
 def copilot_token() -> Path:

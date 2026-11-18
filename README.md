@@ -305,13 +305,14 @@ The model comes from the shell, or from the `.env` at the root of the checkout, 
 `REVIEW_PROVIDER` picks the arm, `copilot` when unset or `gemini`, and `REVIEW_MODEL` the model, blank for `gpt-4.1` or
 `gemini-2.5-flash`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` give `--verify` and every role's fallback a
 model of their own. `REVIEW_<ID>_MODEL` gives one guideline its own, over the `models` its file may name.
-`REVIEW_REGISTRIES` names the operator's own package registries, addresses over TLS, which `lockfile-sources` takes as
-known: a company's host is a setting, never a line of this repository. Copilot is the arm this reviewer targets and the
-default; Gemini is first-class too. Readiness is asked before any call: Copilot's cached token, from the one-time
-`uv run adk-review-login`, or Gemini's `GOOGLE_API_KEY` or Vertex AI project, which google-genai itself answers, never a
-copy of its rules; on the Gemini arm a model that is not Gemini's, `gpt-*` or `claude-*`, is refused. Every certificate
-is verified through the operating system's own store, so a company proxy's root the machine trusts, the reviewer trusts
-too. "Configuration" in `GUIDE.md` lists each variable with its default, and `.env.example` shows each arm's block.
+`REVIEW_REGISTRIES` names the operator's own package registries, addresses over TLS or domains, `*.example.com`, which
+`lockfile-sources` takes as known: a company's host is a setting, never a line of this repository. Copilot is the arm
+this reviewer targets and the default; Gemini is first-class too. Readiness is asked before any call: Copilot's cached
+token, from the one-time `uv run adk-review-login`, or Gemini's `GOOGLE_API_KEY` or Vertex AI project, which
+google-genai itself answers, never a copy of its rules; on the Gemini arm a model that is not Gemini's, `gpt-*` or
+`claude-*`, is refused. Every certificate is verified through the operating system's own store, so a company proxy's
+root the machine trusts, the reviewer trusts too. "Configuration" in `GUIDE.md` lists each variable with its default,
+and `.env.example` shows each arm's block.
 
 ## Checks and profiles
 

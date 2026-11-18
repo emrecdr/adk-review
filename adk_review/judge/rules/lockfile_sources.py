@@ -74,7 +74,10 @@ class LockfileSources(FileRule):
     reads_tests = True  # a lock file a test installs from fetches what it names all the same
     security = True  # a verifier may dispute its finding, never drop it
     title = "a lockfile fetches a package from outside its public registry"
-    fix = "Confirm the source before an install fetches it. Use a registry or a mirror the team trusts, over TLS."
+    fix = (
+        "Confirm the source before an install fetches it. Name a registry of your own in REVIEW_REGISTRIES, or use "
+        "one the team trusts, over TLS."
+    )
     bad = (
         ("uv.lock", 'source = { registry = "https://pypi.evil.example/simple" }\n'),
         ("web/package-lock.json", '"resolved": "http://registry.npmjs.org/left-pad/-/left-pad-1.3.0.tgz",\n'),
@@ -163,9 +166,23 @@ def _in_pieces(line: str) -> bool:
 
 def _of_the_operators(source: str, own: Sequence[str]) -> bool:
     """Whether `source` lies under a registry the operator named as their own, for any lockfile, however Cargo says
-    it reads one. Over TLS alone, and by its port: the setting takes no other address."""
+    it reads one: under an address, by its port too, or on a host of a domain, `*.example.com`. Over TLS alone: the
+    setting takes no other address."""
     address = next((source.removeprefix(how) for how in READ_AS_A_REGISTRY if source.startswith(how)), source)
-    return any(_within(address, start) for start in own)
+    return any(_in_domain(address, start[2:]) if start.startswith("*.") else _within(address, start) for start in own)
+
+
+def _in_domain(source: str, domain: str) -> bool:
+    """Whether `source` is fetched over TLS from `domain` or a host under it: `corp.example.com` holds
+    `https://pypi.corp.example.com/simple` on any port, never `corp.example.com.evil.example` nor
+    `evilcorp.example.com`, and a user's name before an `@` is no host. Asked by the owner: a company serves its
+    packages from several hosts of one domain, where an address names one. A git source there is still one to read,
+    as under an address."""
+    origin = ORIGIN.match(source.removesuffix(":"))
+    if origin is None or origin[1].lower() != "https":
+        return False
+    host = origin[2].lower().rstrip(".")
+    return host == domain.lower() or host.endswith(f".{domain.lower()}")
 
 
 def _within(source: str, start: str) -> bool:

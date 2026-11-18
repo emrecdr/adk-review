@@ -246,7 +246,8 @@ from, and names a source outside the package manager's public registry, in any s
 `HTTPS://`, `https:/` and `https:\\` are sources as `https://` is. A line that writes a string as no package manager
 does, with an escape, `\u0068ttps`, or over several lines, is named too, for what it may hide. A registry of your own,
 a company's Nexus say, is yours to name in `REVIEW_REGISTRIES`, below, never in a file of the reviewer: a lockfile
-that fetches from it then raises no finding, where another port, plain HTTP and any other host still do. Known limit:
+that fetches from it then raises no finding, where another port, plain HTTP and any other host still do. A company
+that serves its packages from several hosts of one domain names the domain once, as `*.example.com`. Known limit:
 an address a YAML lockfile writes over several lines of one string is not read. The other lockfiles the list names
 are read by the credential rules alone: `go.sum`, `gradle.lockfile` and NuGet's
 `packages.lock.json` name no source, Swift's `Package.resolved`, Nix's `flake.lock` and Composer's `composer.lock` name
@@ -279,7 +280,7 @@ checkout; a variable set in the shell wins over the file:
 | `REVIEW_VERIFIER_MODEL` | The model `--verify` asks. Blank: `REVIEW_MODEL`. |
 | `REVIEW_<ID>_MODEL` | One guideline's model, by its id: `REVIEW_SECURITY_MODEL`. Blank: the guideline file's `models` for the arm, else `REVIEW_MODEL`. |
 | `REVIEW_FALLBACK_MODEL` | A second model behind every role's first, tried on a 429, a 5xx or a timeout, never behind a role whose own model it is. Blank: none. |
-| `REVIEW_REGISTRIES` | Your own package registries, a company's Nexus or Artifactory say: each an address over TLS, a comma between two, as `https://nexus.example.com:8443/`. `rule.lockfile-sources` takes a source under one as known, in every lockfile it reads, by its scheme, host and port. An installed command, a hook among them, reads it from the shell. Blank: none. A value that is no such address is exit 2. |
+| `REVIEW_REGISTRIES` | Your own package registries, a company's Nexus or Artifactory say: each an address over TLS, as `https://nexus.example.com:8443/`, or a domain, as `*.example.com`, a comma between two. `rule.lockfile-sources` takes a source as known, in every lockfile it reads, under an address by its scheme, host and port, and on a domain from that domain or any host under it, `pypi.example.com` say, on any port and path, over TLS alone: plain HTTP, a git source and a host that only ends in the name still draw a finding. An installed command, a hook among them, reads it from the shell. Blank: none. A value that is neither is exit 2, a bare host among them, since it could mean either. |
 | `GOOGLE_API_KEY` | The Gemini arm's key. |
 | `GOOGLE_GENAI_USE_ENTERPRISE` | `true` sends the Gemini arm through Vertex AI. |
 | `GOOGLE_CLOUD_PROJECT` | Vertex AI's project, signed in with Application Default Credentials (`gcloud auth application-default login`); no `GOOGLE_API_KEY` is needed, a key being Vertex AI's express mode. Blank: the project the credentials name, gcloud's own or a service account's, as on Cloud Run or GKE. |
