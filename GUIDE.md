@@ -219,9 +219,9 @@ any other file, are still reported. In such a notebook, or one with `# %%` cells
 magic or a shell command, is IPython's: ruff reads the file with those lines set aside, where with one of them it ran no
 other check, and a `# MAGIC` line is no commented-out code. The same lines in a plain module stay syntax errors. `types`
 runs pyrefly on each changed Python file alone, a name it imports from beyond itself read as `Any`, and keeps what it
-finds on the lines the change added: a call missing an argument or given too many by position, a major, and a missing
-attribute, a value of the wrong type passed or returned, or one an operation cannot take, added, compared, indexed or
-iterated, a minor. No branch's ignore comment silences it, though `@no_type_check` on a function does. It is in no
+finds on the lines the change added: a call missing an argument or given too many by position, a major, and a keyword
+a call does not take, a missing attribute, a value of the wrong type passed or returned, or one an operation cannot
+take, added, compared, indexed or iterated, a minor. No branch's ignore comment silences it, though `@no_type_check` on a function does. It is in no
 default profile: name it with `--check rule.types`, or run `rules-only` or `full`.
 
 ## Configuration

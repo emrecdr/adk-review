@@ -40,7 +40,7 @@ from ...core.secrets import (
     without_examples,
 )
 from ...core.text import is_databricks_notebook
-from .diagnostics import PER_FILE, family, fix_of, listed, tier
+from .diagnostics import PER_FILE, UNPACKED_EXTRA, family, fix_of, listed, tier
 from .lines import calls, comment_of, tokens, words
 from .syntax import argument, calls_in, classes, defined, functions_in, imports_in, name_of, nodes_in, parameters
 from .testing import lines_hit, self_check, self_test, try_rule
@@ -50,6 +50,7 @@ __all__ = [
     "PER_FILE",
     "RANK",
     "SECRET_WORDS",
+    "UNPACKED_EXTRA",
     "ChangedFile",
     "Diagnostic",
     "Entry",

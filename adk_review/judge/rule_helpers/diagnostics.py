@@ -22,6 +22,10 @@ PER_FILE = 50
 #: The codes whose run of findings comment lines join too: commented-out code, which ruff reports line by line, and
 #: a line apart of which is a plain comment. Reported by the owner: a block of four commented-out lines made four.
 BLOCKS = frozenset({"ERA001"})
+#: Pyrefly's words for a TypedDict that may hold extra items, unpacked into a call that takes no others, which it
+#: names `unexpected-keyword`: measured on litellm, such code runs, and neither rule that reads pyrefly names it.
+#: Spelled once, as read by review: a pyrefly that reworded it, fixed in one rule alone, would bring the other's back.
+UNPACKED_EXTRA = "which cannot be unpacked into a callable that accepts no extra keyword arguments"
 
 
 def family(code: str) -> str:

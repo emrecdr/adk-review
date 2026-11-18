@@ -228,11 +228,11 @@ def radius(
     where the function it calls is another file's of the tree, and pyrefly's words for it hold none of `added_unless`:
     what the `types` rule, reading each changed file alone, cannot see across files. A test's file is in neither run
     where `tests` is False: measured on ADK, half its bytes tests, a run took 0.96 s where it took 1.59. Nothing under
-    `--all` or `--try`, which have no base, where the change touches no Python file, nor where the head was not read.
-    Measured over ADK, 31 method edits: 24 named, none wrongly, 0.5 s a run; over this repository's last 195 commits,
-    none wrongly, where 37 were before a test's file was left out, 34 of them in tests, and before a new diagnostic was
-    charged first to the lines the change added; and one true break, a value that may be None passed where a string is
-    taken, which the next commit fixed."""
+    `--all` or `--try`, which have no base, where the change touches no Python file it reads, nor where the head was not
+    read. Measured over ADK, 31 method edits: 24 named, none wrongly, 0.5 s a run; over this repository's last 195
+    commits, none wrongly, where 37 were before a test's file was left out, 34 of them in tests, and before a new
+    diagnostic was charged first to the lines the change added; and one true break, a value that may be None passed
+    where a string is taken, which the next commit fixed."""
     tree, resolved = evidence.get("tree"), evidence.get("preflight")
     python = [
         f for f in evidence["files"] if f.get("old", f["path"]).endswith(".py") and (tests or not is_test(f["path"]))
@@ -276,8 +276,19 @@ def radius(
     lost = (gave_now | {renamed.get(path, path) for path in gave_before}) & head.keys()
     # Only a file the base's tree holds as git held it is numbered by its diff: one left as the head holds it is not.
     numbered = frozenset(renamed.values())
-    kinds = (frozenset(added_kinds), tuple(added_unless), frozenset(called), _modules(head, roots))
-    return _compared(evidence["files"], tree.imports, now, before, lost, *kinds, numbered)
+    modules = _modules(head, roots)
+    return _compared(
+        evidence["files"],
+        tree.imports,
+        now,
+        before,
+        lost,
+        added_kinds=frozenset(added_kinds),
+        added_unless=tuple(added_unless),
+        called=frozenset(called),
+        elsewhere=lambda path, message: _called_elsewhere(path, message, modules, head.get(path, "")),
+        numbered=numbered,
+    )
 
 
 def _compared(
@@ -286,20 +297,24 @@ def _compared(
     now: Mapping[Found, Ranged],
     before: Mapping[Found, Ranged],
     lost: Collection[str],
+    *,
     added_kinds: Collection[str],
     added_unless: Collection[str],
     called: Collection[str],
-    modules: Mapping[str, frozenset[str]],
+    elsewhere: Callable[[str, str], bool],
     numbered: Collection[str],
 ) -> dict[str, list[Diagnostic]] | str:
     """The head's run against the base's, by `_new`, each diagnostic placed first by `_placed`, but for each file
     pyrefly checked nothing in, too deeply nested, left out of both alike: where the change touched one or it reaches a
     file the change touched, the rule could not look there, as `types` says of one, and a file the change does not
     reach is no hole of it. One on a line the change added is named where its kind is one of `added_kinds` and its
-    words hold none of `added_unless`, and its file imports from another the change touched or, of the kinds `called`,
-    the function it names is defined in another file, by the tree's `modules`; `numbered` names the changed files
-    whose base text the base's tree holds."""
+    words hold none of `added_unless`, and its file imports from another the change touched, one it added aside for a
+    file it added, or, of the kinds `called`, the function it names is another file's, as `elsewhere` says; `numbered`
+    names the changed files whose base text the base's tree holds."""
     touched = {f["path"] for f in files} | {f["old"] for f in files if "old" in f}
+    # Read by review, and reproduced: a new file that imported another new file had each of its own errors named, as
+    # if that file caused them. What a file the change added gets wrong of its own is `types`'s.
+    new_files = {f["path"] for f in files if f["status"] in ("A", "C")}
 
     @functools.cache
     def bound(path: str) -> Mapping[str, tuple[str, str | None]]:
@@ -315,9 +330,10 @@ def _compared(
         """Whether a name `path` imports comes from another file the change touched, followed where a file only passes
         it on, as a package's `__init__.py` does: read by review, only the import's own file was asked, and a call
         through `from shop import Repo` was left to `types`."""
+        causes = touched - new_files if path in new_files else touched
         for file, name in bound(path).values():
             for _ in range(PASSED_ON + 1):
-                if file != path and file in touched:
+                if file != path and file in causes:
                     return True
                 if name is None or (passed := bound(file).get(name)) is None:
                     break
@@ -333,7 +349,7 @@ def _compared(
 
     def charged(path: str, one: Diagnostic) -> bool:
         kept = one.code in added_kinds and not any(said in one.message for said in added_unless)
-        return kept and (reaches(path) or (one.code in called and _called_elsewhere(path, one.message, modules)))
+        return kept and (reaches(path) or (one.code in called and elsewhere(path, one.message)))
 
     return _new(*placed, added, charged)
 
@@ -400,10 +416,10 @@ def _new(
     class among two that read alike, and the wrong line it carried was named on a kept line. What the base has left is
     charged first to the head's whose range meets a line the change added, where a moved line stands, then to its kept
     ones, and each beyond it is new. One on an added line is named where `charged` says so of its file and of it, a
-    call's, an attribute's or an override's in a file that reaches another the change touched: read by review, a branch
-    that renamed a method and edited the call to it in another file was approved by every rule; and named for any file,
-    a defect within the one file `types` reads and grades was named at major, and a new file's beside an unrelated
-    change."""
+    call's, an attribute's or an override's in a file that reaches another the change touched, or a call's arguments
+    that do not fit another file's function: read by review, a branch that renamed a method and edited the call to it in
+    another file was approved by every rule; and named for any file, a defect within the one file `types` reads and
+    grades was named at major, and a new file's beside an unrelated change."""
     held = Counter(key[:4] for key in before)
     left: defaultdict[tuple[str, str, str], list[Ranged]] = defaultdict(list)
     for key, ranged in now.items():
@@ -483,15 +499,19 @@ def _modules(paths: Collection[str], roots: Sequence[str]) -> dict[str, frozense
     return {name: frozenset(files) for name, files in found.items()}
 
 
-def _called_elsewhere(path: str, message: str, modules: Mapping[str, frozenset[str]]) -> bool:
+def _called_elsewhere(path: str, message: str, modules: Mapping[str, frozenset[str]], text: str) -> bool:
     """Whether the function `message` says a call's arguments do not fit is defined in a file of the tree other than
-    `path`: the longest leading part of its name that names a module of `modules` names another file. One of the same
-    file is `types`'s, which reads it there, and one of a package the tree does not hold, as the standard library's,
-    is no file of the tree. Read by validation, and reproduced: a wrong call added into code the change left alone was
-    named by no rule. Measured over this repository's last 200 Python commits and google-adk's last 150: nothing
-    named that was not before, and each wrong call planted named."""
+    `path`, whose `text` this is: the longest leading part of its name that names a module of `modules` names another
+    file. One of the same file is `types`'s, which reads it there, pyrefly naming it by its own name, a method by its
+    class's, so a name `text` defines at its top is its own: read by review, and reproduced, `Config.load` of a class
+    beside a module `Config.py` read as that module's. And one of a package the tree does not hold, as the standard
+    library's, is no file of the tree. Read by validation, and reproduced: a wrong call added into code the change left
+    alone was named by no rule. Measured over this repository's last 200 Python commits and google-adk's last 150:
+    nothing named that was not before, and each wrong call planted named."""
     found = _CALLED.search(message)
     parts = found.group(1).split(".") if found else []
+    if parts and re.search(rf"^(?:async\s+def|def|class)\s+{re.escape(parts[0])}\b", text, re.MULTILINE):
+        return False
     for count in range(len(parts) - 1, 0, -1):
         if files := modules.get(".".join(parts[:count])):
             return path not in files

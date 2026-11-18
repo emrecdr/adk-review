@@ -10,7 +10,7 @@ from collections import Counter
 from collections.abc import Sequence
 from types import MappingProxyType
 
-from ..rule_helpers import PER_FILE, Diagnostic, Entry, Hit, Tree, TreeRule, is_test
+from ..rule_helpers import PER_FILE, UNPACKED_EXTRA, Diagnostic, Entry, Hit, Tree, TreeRule, is_test
 
 #: The kinds named on a line the change added: what a call, an attribute, a value or an override breaks across files,
 #: which `types` cannot see, reading each changed file alone, a base class from another file `Any`. Read by review, and
@@ -38,10 +38,7 @@ ON_ADDED_LINES = (
 #: every override named there, a new tool on an installed base beside an edited helper was a major finding a method,
 #: and of google-adk's own source written anew, 10 of the 15 overrides named said these words. The pinned pyrefly's
 #: words: a test holds them, and fails where an update says it otherwise.
-NOT_ON_ADDED_LINES = (
-    "is marked as an override, but no parent class has a matching attribute",
-    "which cannot be unpacked into a callable that accepts no extra keyword arguments",
-)
+NOT_ON_ADDED_LINES = ("is marked as an override, but no parent class has a matching attribute", UNPACKED_EXTRA)
 #: The kinds named on a line the change added wherever the function called is another file's, whether the change
 #: touched it or not: a call's arguments that do not fit its parameters. Read by validation, and reproduced:
 #: `total(2, 3.0, 4)` added into a module, `total` in one the change left alone, was named by no rule, `types` reading
@@ -49,6 +46,11 @@ NOT_ON_ADDED_LINES = (
 #: named there, and each wrong call planted named. A TypedDict that may hold extra items unpacked into a call is left
 #: out by its words, above: measured on litellm, it runs.
 CALLED_ACROSS = ("missing-argument", "bad-argument-count", "unexpected-keyword")
+#: What a call the change added that does not fit its function's parameters needs, and why.
+CALL_FIX = (
+    "Change the call to fit the parameters of the function it calls. Or change those parameters, and every caller."
+)
+CALL_WHY = "Python raises a TypeError at this call when the code runs."
 
 
 class RadiusTypes(TreeRule):
@@ -110,10 +112,20 @@ class RadiusTypes(TreeRule):
                 continue
             # At most `PER_FILE` listed, the rest counted in one finding, as `types` lists pyrefly's.
             shown = sorted(found[:PER_FILE], key=lambda item: item.line)
-            hits += [Hit(path, item.line, item.source, title=f"{item.code} {item.message}") for item in shown]
+            hits += [self._listed(path, item, item.line in tree.added.get(path, ())) for item in shown]
             if rest := found[PER_FILE:]:
                 hits.append(_counted(path, rest))
         return hits
+
+    @staticmethod
+    def _listed(path: str, item: Diagnostic, added: bool) -> Hit:
+        """One of pyrefly's diagnostics as a finding: a call's on a line the change added with a call's own fix and
+        why, since that call is the change's to correct. Read by review: it carried the rule's, which tell the person
+        to fit the code to what the change made, where the change's own call is what does not fit."""
+        title = f"{item.code} {item.message}"
+        if added and item.code in CALLED_ACROSS:
+            return Hit(path, item.line, item.source, title=title, fix=CALL_FIX, why=CALL_WHY)
+        return Hit(path, item.line, item.source, title=title)
 
 
 def _counted(path: str, rest: Sequence[Diagnostic]) -> Hit:

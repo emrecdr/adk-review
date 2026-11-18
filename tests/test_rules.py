@@ -1544,11 +1544,12 @@ class TestTypesReadsWhatPyreflyFinds:
         found = ruff_rule_findings(Types(), [entry])
         assert [(f.line, f.severity) for f in found] == [(13, "major")], [(f.line, f.title) for f in found]
 
-    def test_an_unknown_keyword_is_a_major_finding_and_a_typeddict_unpacked_none(self) -> None:
+    def test_an_unknown_keyword_is_a_minor_finding_and_a_typeddict_unpacked_none(self) -> None:
         """Read by validation: the rule did not read `unexpected-keyword`, so `total(prices, tax=1, rate=2)` was named
         by no rule. Measured over four libraries' working code: 0 in httpx and google-adk, and of litellm's 15, 3 were
         a TypedDict that may hold extra items unpacked into a call, which runs fine, and pyrefly's words for those
-        are left out."""
+        are left out. Read by review, and measured: the 11 left, 9 in litellm and 2 in pydantic, were each on working
+        code, most a class built by a decorator of a package pyrefly does not read, so the kind is a minor."""
         from adk_review.judge.rules.types import Types
 
         text = (
@@ -1559,7 +1560,7 @@ class TestTypesReadsWhatPyreflyFinds:
             "def checkout(prices: list[int], o: Opts) -> int:\n    return total(prices, tax=1, rate=2) + take(**o)\n"
         )
         found = ruff_rule_findings(Types(), [_entry("shop/orders.py", text)])
-        assert [(f.line, f.severity) for f in found] == [(17, "major")], [(f.line, f.title) for f in found]
+        assert [(f.line, f.severity) for f in found] == [(17, "minor")], [(f.line, f.title) for f in found]
         assert "unexpected-keyword" in found[0].title and "rate" in found[0].title, found[0].title
 
     def test_a_branch_cannot_silence_it_with_an_ignore_comment(self) -> None:
@@ -3285,6 +3286,43 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
             ("shop/app.py", 4, "bad-argument-count"),
             ("shop/job.py", 2, "missing-argument"),
         }, named
+
+    def test_a_change_that_only_adds_files_names_its_wrong_calls_into_another_file_alone(self, tmp_path: Path) -> None:
+        """Read by review, and reproduced: with the head read for a change that only adds Python files, a new file that
+        imported another new file had each of its own type errors named at major, as if that file caused them, a value
+        of the wrong type and a missing attribute of the standard library among them. A file the change added causes no
+        error of another it added: what a new file gets wrong of its own is `types`'s. Its wrong call into another file
+        is still named, with the fix a call needs."""
+        from adk_review.collect.git import collect_evidence
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.radius_types import RadiusTypes
+
+        job = (
+            "import os\n\nfrom shop.helper import helper\nfrom shop.lib import total\n\n"
+            'x: int = "s"\nos.getcwdx()\nhelper(1, 2)\ntotal()\n'
+        )
+        repo = self.branch(
+            tmp_path,
+            {"shop/lib.py": "def total(n: int) -> int:\n    return n\n"},
+            {"shop/helper.py": "def helper(a: int) -> int:\n    return a\n", "shop/job.py": job},
+        )
+        named = {(file, line, title.split(": ", 1)[1].split()[0]) for file, line, _severity, title in self.found(repo)}
+        assert named == {("shop/job.py", 8, "bad-argument-count"), ("shop/job.py", 9, "missing-argument")}, named
+        assert RadiusTypes().needs_head([{"path": "shop/job.py", "status": "A"}])
+        assert not RadiusTypes().needs_head([{"path": "tests/test_job.py", "status": "A"}])
+        answer = run_rules(collect_evidence(str(repo), BASE, "change"), [RadiusTypes()])["rule.radius-types"]
+        assert {f.suggestion.split(".")[0] for f in answer.findings} == {
+            "Change the call to fit the parameters of the function it calls"
+        }, answer.findings
+
+    def test_a_call_into_a_class_of_its_own_file_is_left_to_types_whatever_a_module_is_named(
+        self, tmp_path: Path
+    ) -> None:
+        """Read by review, and reproduced: pyrefly names a method of the same file by its class alone, `Config.load`,
+        and where a module of the tree bore the class's name, `Config.py`, the call read as one into that file."""
+        app = "class Config:\n    def load(self, a: int) -> int:\n        return a\n"
+        repo = self.branch(tmp_path, {"Config.py": "x = 1\n", "app.py": app}, {"app.py": app + "\n\nConfig().load()\n"})
+        assert self.found(repo) == []
 
     def test_the_base_is_read_as_git_holds_it_never_rebuilt_from_the_diff(self, tmp_path: Path) -> None:
         """Read by review: the base was rebuilt from the diff the rules read, which shows a form feed and a lone `\\r`
