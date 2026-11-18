@@ -427,7 +427,7 @@ strings are as safe as the text report's, and plain text: a reader that renders 
 | A reason in the report: why a check failed, a verifier's word, a provider's error, a dropped finding's file as a model wrote it | 400 characters | `core/text.py`, `REASON_MAX_CHARS` |
 | A finding's title, as a model wrote it | 300 characters | `core/text.py`, `TITLE_MAX_CHARS` |
 | A finding's change, as a model wrote it | 1,200 characters | `core/text.py`, `SUGGESTION_MAX_CHARS` |
-| A finding's reason, as a model wrote it | 1,000 characters | `core/text.py`, `WHY_MAX_CHARS` |
+| A finding's reason, as a model wrote it | 800 characters | `core/text.py`, `WHY_MAX_CHARS` |
 | A blocker's or a major's corrected code, as a model wrote it | 1,200 characters | `core/text.py`, `CODE_MAX_CHARS` |
 
 A file past a guideline's cap is named under "not read", and the review ends in exit 3: a hole, never "nothing
