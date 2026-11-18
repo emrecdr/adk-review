@@ -142,16 +142,17 @@ def _lines(item: Sourced) -> str:
 
 
 def _listed(items: Sequence[Sourced]) -> str:
-    """The findings one verifier judges, each by its number from 0, uncut: its check, severity, file, lines, title, why
-    and quote, the quote in a fence its own backticks cannot close."""
+    """The findings one verifier judges, each by its number from 0, uncut: its check, severity, file, lines, title, its
+    reason where a rule gave one or a guideline's blocker or major did, and quote, the quote in a fence its own
+    backticks cannot close."""
     shown = []
     for number, item in enumerate(items):
         found = item.finding
         said = [f"### Finding {number}", f"- check: {item.source}", f"- severity: {found.severity}"]
         said += [f"- file: {squash(found.file)}", f"- lines: {_lines(item)}", f"- title: {squash(found.title)}"]
-        # A blocker's or a major's reason alone, as before every guideline's finding had one: read by review, each
-        # minor's took a call's room, and the findings past `FINDINGS_CAP_CHARS` went unjudged.
-        if found.why and at_or_above(found.severity, "major"):
+        # As before every guideline's finding had a reason: a guideline's minor's is left out. Read by review, each
+        # took a call's room, and the findings past `FINDINGS_CAP_CHARS` went unjudged.
+        if found.why and (not item.from_guideline or at_or_above(found.severity, "major")):
             said.append(f"- why: {squash(found.why)}")
         fence = "`" * max(3, 1 + backticks(found.evidence))
         said += ["- quote:", fence, found.evidence, fence]

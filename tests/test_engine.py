@@ -744,7 +744,7 @@ class TestTheTokenCeiling:
         from adk_review.judge.plugins import UsageLedger
 
         request = LlmRequest(config=types.GenerateContentConfig(system_instruction="x" * 400))
-        ledger = UsageLedger(ceiling=int(UsageLedger._estimate(request) * 1.5))
+        ledger = UsageLedger(ceiling=int(UsageLedger._estimate(request, "guideline_a") * 1.5))
         a, b = SimpleNamespace(agent_name="guideline_a", state={}), SimpleNamespace(agent_name="guideline_b", state={})
         assert await ledger.before_model_callback(callback_context=a, llm_request=request) is None
         refused = await ledger.before_model_callback(callback_context=b, llm_request=request)
@@ -760,6 +760,19 @@ class TestTheTokenCeiling:
             "over, not completed"
         )
 
+    def test_a_guidelines_call_reserves_room_for_its_findings_and_another_an_answers(self) -> None:
+        """Read by review: with a reason for every finding, a guideline's answer took the room of 5 findings where it
+        took 9's, so its allowance grew; and the larger room went to every call, a verifier's and chat's intake among
+        them, so a review near its ceiling was refused calls whose answers had not grown."""
+        from google.adk.models.llm_request import LlmRequest
+        from google.genai import types
+
+        from adk_review.judge.plugins import ANSWER_ALLOWANCE, FINDINGS_ALLOWANCE, UsageLedger
+
+        request = LlmRequest(config=types.GenerateContentConfig(system_instruction="x" * 400))
+        assert UsageLedger._estimate(request, "guideline_security") == 100 + FINDINGS_ALLOWANCE
+        assert UsageLedger._estimate(request, "verifier") == 100 + ANSWER_ALLOWANCE < 100 + FINDINGS_ALLOWANCE
+
     @pytest.mark.asyncio
     async def test_a_call_reserves_the_thinking_its_request_allows(self) -> None:
         """Measured by review: a call reserved its text and an answer's worth, while Gemini bills the thinking a
@@ -773,7 +786,7 @@ class TestTheTokenCeiling:
         plain = LlmRequest(config=types.GenerateContentConfig(system_instruction="x" * 400))
         budget = types.ThinkingConfig(thinking_budget=4096)
         thinking = LlmRequest(config=types.GenerateContentConfig(system_instruction="x" * 400, thinking_config=budget))
-        ledger = UsageLedger(ceiling=UsageLedger._estimate(plain) + 4095)
+        ledger = UsageLedger(ceiling=UsageLedger._estimate(plain, "guideline_security") + 4095)
         security = SimpleNamespace(agent_name="guideline_security", state={})
         refused = await ledger.before_model_callback(callback_context=security, llm_request=thinking)
         assert refused is not None and refused.error_code == "TOKEN_CEILING", "its thinking does not fit"
@@ -795,7 +808,7 @@ class TestTheTokenCeiling:
         request = LlmRequest(config=types.GenerateContentConfig(system_instruction="x" * 400))
         billed = LlmResponse(usage_metadata=types.GenerateContentResponseUsageMetadata(total_token_count=10_000))
         for per_turn in (True, False):
-            ledger = UsageLedger(ceiling=UsageLedger._estimate(request) * 2, per_turn=per_turn)
+            ledger = UsageLedger(ceiling=UsageLedger._estimate(request, "intake") * 2, per_turn=per_turn)
             intake = SimpleNamespace(agent_name="intake", state={})
             assert await ledger.before_model_callback(callback_context=intake, llm_request=request) is None
             await ledger.after_model_callback(callback_context=intake, llm_response=billed)

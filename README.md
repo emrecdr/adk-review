@@ -726,7 +726,8 @@ and last the next steps, by the verdict and what was kept. "The report" in `GUID
   is listed with the points at it. An approval names its bar, and every comment counts the major issues below it: asked
   by the owner, a major read as nothing much. A blocker or a major says why it matters, a rule's `why` or ruff's page
   for its code, and shows the corrected code a guideline gave; every guideline's finding, a minor's too, says why it
-  matters, in the comment, the hand-off and the text report (`_why`, `_judged_why`), a rule's minor keeping to its line. Each place sits in a code span, and each quote in one, or
+  matters, in the comment and the hand-off (`_why`), a rule's minor keeping to its line, and in the text report,
+  which prints no rule's reason, a guideline's alone (`_judged_why`). Each place sits in a code span, and each quote in one, or
   in a fenced block that keeps its lines where it spans several, and the whole holds at most 60,000 characters, under
   the 65,536 GitHub takes in a comment, the most severe points first and the rest counted. The reviewer posts nothing
   and prints no command that would: asked by the owner, who reviews others' branches and pastes each comment by hand.

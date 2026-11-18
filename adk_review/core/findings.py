@@ -29,7 +29,10 @@ class Finding(BaseModel):
     file: str = Field(description="Repository-relative path of the file the finding is about.")
     line: int | None = Field(default=None, description="Line number in the new file, if it can be named.")
     severity: Severity = Field(description="blocker: must not merge; major: fix before merge; minor: worth fixing.")
-    title: str = Field(description="One line naming the problem in the code's own terms: what is wrong, and where.")
+    title: str = Field(
+        description="One line naming the problem in the code's own terms: what is wrong, in which function or file, "
+        "never a line number."
+    )
     evidence: str = Field(description="The exact diff lines this finding is about, quoted verbatim.")
     why: str = Field(
         default="",

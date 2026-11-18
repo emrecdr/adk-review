@@ -33,15 +33,18 @@ from google.genai import types
 from pydantic import BaseModel, ValidationError
 
 from ..core.guidelines import Models
+from ..core.profiles import guideline_id, state_key
 from ..core.secrets import scrub, scrub_value
 from ..core.text import REASON_MAX_CHARS, cut_at, squash
 from .agents import BOUNDARY, FAILURE, JUDGED_BOUNDARY, mismatch, without_evidence
 from .config import REQUEST_TIMEOUT_S, require_ready, said
 
-#: Room reserved for an answer on top of a request's own size, in tokens; a guideline's typed review is well under it.
-#: Read by review: with a reason for every finding, a minor's of 268 characters the median measured, a finding takes
-#: about 180 tokens, so the room for 9 findings held 5; it holds about 10.
-ANSWER_ALLOWANCE = 2_000
+#: Room reserved for an answer on top of a request's own size, in tokens: a verifier's judgements, chat's intake and
+#: its verdict are well under it.
+ANSWER_ALLOWANCE = 1_000
+#: The room a guideline's answer has, its findings each with a reason: read by review, a reason of 268 characters, the
+#: median of the nine measured, makes a finding about 180 tokens, so the room for 9 held 5; this holds about 10.
+FINDINGS_ALLOWANCE = 2_000
 
 
 def _text_parts(llm_request: Any) -> Iterator[Any]:
@@ -487,22 +490,24 @@ class UsageLedger(BasePlugin):
         return sum(r["tokens"] for r in self.rows.values())
 
     @staticmethod
-    def _estimate(llm_request: Any) -> int:
+    def _estimate(llm_request: Any, agent: str) -> int:
         """What a request will cost, before it is sent: its text over four, an answer's worth, and the thinking its
         budget allows, which Gemini bills and the provider's total counts. Measured by review: without it, `default`'s
         three guidelines in flight could pass the ceiling by about 7,000 tokens. A budget left to the model, -1, is
-        no number to reserve."""
+        no number to reserve. A guideline, the `agent` named, answers with findings, and has their room."""
         chars = len(str(llm_request.config.system_instruction or ""))
         chars += sum(len(part.text) for part in _text_parts(llm_request))
         thinking = getattr(llm_request.config.thinking_config, "thinking_budget", None) or 0
-        return chars // 4 + ANSWER_ALLOWANCE + max(thinking, 0)
+        answer = FINDINGS_ALLOWANCE if agent.startswith(state_key(guideline_id(""))) else ANSWER_ALLOWANCE
+        return chars // 4 + answer + max(thinking, 0)
 
     @override
     async def before_model_callback(self, *, callback_context: Any, llm_request: Any) -> LlmResponse | None:
         self._row(callback_context)["attempted"] += 1  # a call that never returns is attempted, not billed
         if self.ceiling is None:
             return None
-        estimate, in_flight = self._estimate(llm_request), sum(self.reserved.values())
+        estimate = self._estimate(llm_request, callback_context.agent_name)
+        in_flight = sum(self.reserved.values())
         if self.spent + in_flight + estimate > self.ceiling:
             why = (
                 f"this call would pass the ceiling of {self.ceiling:,} tokens: {self.spent:,} spent, "

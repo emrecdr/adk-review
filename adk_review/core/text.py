@@ -28,7 +28,8 @@ SUGGESTION_MAX_CHARS = 1_200
 #: A finding's reason and a blocker's or a major's corrected code, a model's words too, cut as the change is: a reason
 #: is two to four sentences, what is wrong, its cause and its result, the code the lines it fixes. Measured on
 #: Copilot's gpt-4.1 over the demo's orders, two runs under `full`: nine reasons of 193 to 357 characters, 268 the
-#: median, where a blocker's was 186 at most before; four sentences of 25 words with their names fit.
+#: median, where a blocker's was 186 at most before; four sentences of 20 words with their names fit, and a model
+#: that writes past 20, as one did there.
 WHY_MAX_CHARS = 800
 CODE_MAX_CHARS = 1_200
 

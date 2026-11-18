@@ -972,7 +972,8 @@ def _why(item: Sourced, label: str) -> list[str]:
 def _judged_why(item: Sourced, label: str) -> list[str]:
     """A guideline's reason under `label`, as the text report shows one: read by review, a rule's own reason, one
     sentence for each of its findings, printed beside every blocker and major it found."""
-    return _why(item, label) if item.from_guideline else []
+    reason = item.finding.why
+    return [f"{label}: {prose(reason)}"] if item.from_guideline and reason.strip() else []
 
 
 def _code_lines(f: Finding, label: str, indent: str) -> list[str]:
