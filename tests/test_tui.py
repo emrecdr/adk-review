@@ -1,4 +1,8 @@
-"""Tests for `adk_review/tui/`: configuration, multi-root discovery, zero-checkout branch sync, and CLI builder."""
+"""Tests for `adk_review/tui/`: configuration, multi-root discovery, zero-checkout branch sync, and CLI builder.
+
+Each test imports what it reads where it runs, as the suite's other files do: `load_agent` loads the package afresh
+for the tests before these, and a name bound when this file was imported is the old package's. Measured: after one
+such test, three of these failed, the catalog reading no rule as a rule and a patch landing on another module."""
 
 from __future__ import annotations
 
@@ -8,48 +12,10 @@ from pathlib import Path
 
 import pytest
 
-from adk_review.collect.git import checked_out, on_path
-from adk_review.tui import main as tui_main
-from adk_review.tui.config import (
-    DEFAULT_CONFIG_PATH,
-    RepoPreset,
-    TuiConfig,
-    ensure_tui_config,
-    load_tui_config,
-    save_repo_preset,
-)
-from adk_review.tui.findings import (
-    explain_check_markdown,
-    filter_findings,
-    format_finding_detail,
-    load_findings_from_json,
-)
-from adk_review.tui.git_sync import (
-    BranchInfo,
-    changed_folders,
-    discover_projects,
-    fast_forward_local_branch,
-    fetch_remote,
-    inspect_branch_sync,
-    is_dirty,
-    list_branches,
-    materialize_remote_branch,
-    preferred_base_branch,
-)
-from adk_review.tui.options import (
-    ReviewSelection,
-    baseline_path,
-    build_review_argv,
-    format_cli_command,
-    load_profile_options,
-    parse_csv_checks,
-    parse_csv_paths,
-    parse_diff_cap,
-    promote_baseline,
-)
-
 
 def _git(repo: Path, *args: str) -> str:
+    from adk_review.collect.git import on_path
+
     done = subprocess.run(
         [on_path("git"), "-C", str(repo), *args],
         capture_output=True,
@@ -62,6 +28,8 @@ def _git(repo: Path, *args: str) -> str:
 
 def _init_repo_with_remote(tmp_path: Path) -> tuple[Path, Path]:
     """Create a bare `origin` remote and a cloned `local` repository with `main` and `origin/feat-remote`."""
+    from adk_review.collect.git import on_path
+
     remote = tmp_path / "remote.git"
     remote.mkdir()
     _git(remote, "init", "--bare", "-b", "main")
@@ -108,11 +76,15 @@ class TestTuiConfig:
     """`adk_review/tui/.tui.toml` loading, multi-root workspace parsing, and preset persistence."""
 
     def test_default_config_path_lies_inside_adk_review_tui(self) -> None:
+        from adk_review.tui.config import DEFAULT_CONFIG_PATH
+
         assert DEFAULT_CONFIG_PATH.name == ".tui.toml"
         assert DEFAULT_CONFIG_PATH.parent.name == "tui"
         assert DEFAULT_CONFIG_PATH.parent.parent.name == "adk_review"
 
     def test_ensure_and_load_tui_config_supports_multiple_root_dirs_and_presets(self, tmp_path: Path) -> None:
+        from adk_review.tui.config import RepoPreset, TuiConfig, ensure_tui_config, load_tui_config, save_repo_preset
+
         cfg_file = tmp_path / ".tui.toml"
         ensured = ensure_tui_config(cfg_file)
         assert ensured == cfg_file.resolve() and cfg_file.is_file()
@@ -174,6 +146,19 @@ class TestGitSyncEngine:
     """Multi-root project discovery and zero-checkout branch synchronization."""
 
     def test_discover_projects_and_zero_checkout_sync_preserve_dirty_working_tree(self, tmp_path: Path) -> None:
+        from adk_review.collect.git import checked_out
+        from adk_review.tui.git_sync import (
+            changed_folders,
+            discover_projects,
+            fast_forward_local_branch,
+            fetch_remote,
+            inspect_branch_sync,
+            is_dirty,
+            list_branches,
+            materialize_remote_branch,
+            preferred_base_branch,
+        )
+
         _remote, local = _init_repo_with_remote(tmp_path)
         projects = discover_projects(str(tmp_path / "workspace"), max_depth=2)
         assert len(projects) == 1
@@ -228,6 +213,15 @@ class TestOptionsAndCliBuilder:
     """Profile discovery and CLI flag construction with mutual-exclusivity guards."""
 
     def test_profiles_and_build_review_argv_respect_mutual_exclusivity(self, tmp_path: Path) -> None:
+        from adk_review.tui.options import (
+            ReviewSelection,
+            baseline_path,
+            build_review_argv,
+            load_profile_options,
+            parse_csv_paths,
+            promote_baseline,
+        )
+
         profiles = load_profile_options()
         names = [p.name for p in profiles]
         assert "default" in names and "default-rules" in names and "full" in names
@@ -296,6 +290,8 @@ class TestOptionsAndCliBuilder:
             build_review_argv(same_sel)
 
     def test_checks_and_diff_cap_cli_builder(self, tmp_path: Path) -> None:
+        from adk_review.tui.options import ReviewSelection, build_review_argv, parse_csv_checks, parse_diff_cap
+
         assert parse_csv_checks(" rule.secrets , guideline.correctness, rule.secrets ") == [
             "rule.secrets",
             "guideline.correctness",
@@ -320,6 +316,8 @@ class TestOptionsAndCliBuilder:
 
     def test_windows_paths_quoting_and_missing_git_guard(self, tmp_path: Path, monkeypatch) -> None:
         from adk_review.tui import git_sync
+        from adk_review.tui.git_sync import BranchInfo, discover_projects, fetch_remote, inspect_branch_sync
+        from adk_review.tui.options import format_cli_command, parse_csv_paths
 
         assert parse_csv_paths(r"\src\api\, C:\Users\dev\src, sub\\nested\ ") == ["src/api", "sub/nested"]
         cmd = format_cli_command([r"C:\My Repos\app", "--head", "feat/x"], windows=True)
@@ -336,6 +334,8 @@ class TestOptionsAndCliBuilder:
         assert inspect_branch_sync(str(tmp_path), remote_branch).kind == "remote_only"
 
     def test_cli_init_config_and_missing_textual_guard(self, tmp_path: Path, monkeypatch, capsys) -> None:
+        from adk_review.tui import main as tui_main
+
         cfg = tmp_path / ".tui.toml"
         assert tui_main(["--init-config", "--config", str(cfg)]) == 0
         assert cfg.is_file()
@@ -452,6 +452,13 @@ class TestFindingsExplorer:
 
     def test_load_filter_format_and_explain(self, tmp_path: Path) -> None:
         import json
+
+        from adk_review.tui.findings import (
+            explain_check_markdown,
+            filter_findings,
+            format_finding_detail,
+            load_findings_from_json,
+        )
 
         report = tmp_path / "report.json"
         report.write_text(
@@ -584,6 +591,8 @@ class TestFindingsExplorer:
 
     @pytest.mark.asyncio
     async def test_textual_app_preset_reset_highlight_and_prior_baseline(self, tmp_path: Path) -> None:
+        from adk_review.tui.options import baseline_path
+
         pytest.importorskip("textual")
         import json
 
