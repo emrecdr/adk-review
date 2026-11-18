@@ -125,23 +125,32 @@ def _token(done: subprocess.CompletedProcess[str]) -> tuple[str, float]:
     return token, (expires - _EARLY_S if type(expires) is int else 0.0)
 
 
-class _NoRedirect(urllib.request.HTTPRedirectHandler):
-    """No redirect is followed: urllib sends every header again to a redirect's target, `Authorization` among them,
-    and a sign-in page is one redirect away, on another host."""
-
-    def redirect_request(self, req, fp, code, msg, headers, newurl) -> None:  # noqa: ARG002 -- urllib's own
-        return None
+def _opener() -> urllib.request.OpenerDirector:
+    """What makes each call: HTTP and HTTPS through the machine's own proxy settings, and nothing else urllib would
+    add by itself. No handler follows a redirect, so a 3xx is an error like any other: urllib sends every header
+    again to a redirect's target, `Authorization` among them, and a sign-in page is one redirect away, on another
+    host. None opens a file, an FTP address or a `data:` one. Certificates are verified through the operating
+    system's store, as the reviewer verifies its own, so a company proxy's root the machine trusts is trusted here."""
+    opener = urllib.request.OpenerDirector()
+    secure = urllib.request.HTTPSHandler(context=truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT))
+    for handler in (
+        urllib.request.ProxyHandler(),
+        urllib.request.HTTPHandler(),
+        secure,
+        urllib.request.HTTPDefaultErrorHandler(),
+        urllib.request.HTTPErrorProcessor(),
+    ):
+        opener.add_handler(handler)
+    return opener
 
 
 class Client:
-    """One pull request of Azure DevOps Services, over HTTPS: certificates verified through the operating system's
-    store, as the reviewer verifies its own, so a company proxy's root the machine trusts is trusted here. Each
-    refusal is an `AzureError` whose text names what to do next."""
+    """One pull request of Azure DevOps Services, over HTTPS. Each refusal is an `AzureError` whose text names what
+    to do next."""
 
     def __init__(self, pr: PullRequest, credential: Credential, *, sleep: Callable[[float], None] = time.sleep) -> None:
         self._pr, self._credential, self._sleep = pr, credential, sleep
-        secure = urllib.request.HTTPSHandler(context=truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT))
-        self._opener = urllib.request.build_opener(secure, _NoRedirect())
+        self._opener = _opener()
         self._changed: dict[int, dict[str, int]] = {}  # an iteration's files, read once: its changes never change
 
     def status(self) -> str:
