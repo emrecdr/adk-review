@@ -1071,14 +1071,17 @@ class TestWindowsAndItsShells:
     async def test_quitting_while_a_scan_runs_ends_cleanly(self, tmp_path: Path, monkeypatch) -> None:
         """Seen on Windows in CI, where git is slower: the screen closed while a scan of the repositories still ran, and
         the scan's last step set `loading` on a list whose screen was gone, `NoScreen`, raised as `WorkerFailed`. A
-        person quitting with `q` during a scan met the same. Reproduced here with a slow scan."""
+        person quitting with `q` during a scan met the same. Reproduced here with a scan that ends only once the screen
+        has closed: read on a slow macOS runner, a scan that slept half a second ended first, and the test failed."""
         pytest.importorskip("textual")
-        import time
+        import threading
 
         from tui import app as screen
 
+        closed = threading.Event()
+
         def slow(*_args: object) -> list:
-            time.sleep(0.5)
+            closed.wait(10)  # never forever, where a change makes the screen wait for it
             return []
 
         monkeypatch.setattr(screen, "discover_projects", slow)
@@ -1087,9 +1090,12 @@ class TestWindowsAndItsShells:
             f'[workspace]\nroot_dirs = ["{tmp_path.as_posix()}", "{(tmp_path / "b").as_posix()}"]\n', encoding="utf-8"
         )
         app = screen.AdkReviewTuiApp(config_path=cfg)
-        async with app.run_test(size=(140, 45)) as pilot:
-            await pilot.pause()
-            assert app.query_one("#repo-list").loading is True, "the scan still runs as the screen closes"
+        try:
+            async with app.run_test(size=(140, 45)) as pilot:
+                await pilot.pause()
+                assert app.query_one("#repo-list").loading is True, "the scan still runs as the screen closes"
+        finally:
+            closed.set()
 
     def test_copying_uses_windows_own_clipboard_and_the_terminals(self, monkeypatch) -> None:
         """Textual copies through the terminal alone (OSC 52), which Windows Terminal reads and the classic console
