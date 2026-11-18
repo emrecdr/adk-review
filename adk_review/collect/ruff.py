@@ -198,8 +198,13 @@ def _run(
     if aside:
         masked = {path: set_aside(texts[path], lines) for path, lines in aside.items()}
         again = _ruffed(ruff, masked, select, ignore, line_length)
+        emptied = {path: _emptied(masked[path], lines) for path, lines in aside.items()}  # once a file: read by review
         found |= {
-            path: [d for d in again.get(path, []) if d.line not in lines | _emptied(masked[path], lines)]
+            path: [
+                d
+                for d in again.get(path, [])
+                if d.line not in lines and not (d.line in emptied[path] and d.code in STAND_IN_CODES)
+            ]
             for path, lines in aside.items()
         }
     return {
@@ -208,10 +213,16 @@ def _run(
     }
 
 
+#: What ruff says of a block's header only because its body is the stand-in `pass`, measured under each tool's
+#: selection: a loop variable unused, an `except` that passes, and its `as` name unused. Read by review: every code on
+#: such a header was dropped, a bare `except`, E722, and a password default, S107, among them.
+STAND_IN_CODES = frozenset({"B007", "S110", "F841"})
+
+
 def _emptied(masked: str, aside: set[int]) -> set[int]:
     """The header of each block in `masked` whose every line is one of `aside`, an IPython line set aside as `pass`:
-    what ruff says of that header is of the stand-in, a loop variable unused or an `except` that passes. Read by
-    review: a loop whose only line was `!echo {name}` was named B007, a major."""
+    what ruff says there of `STAND_IN_CODES` is of the stand-in. Read by review: a loop whose only line was
+    `!echo {name}` was named B007, a major."""
     rows = masked.split("\n")
 
     def depth(row: str) -> int:

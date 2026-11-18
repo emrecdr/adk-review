@@ -1093,6 +1093,13 @@ class TestTheLintRule:
         ):
             found = lint_findings({"files": [_entry("job.py", mark + body)], "tree": None})
             assert found == [], (body, [f.title for f in found])
+        # Read by review: what ruff says of the header itself is kept, a bare except and a password default.
+        for body, code in (
+            ("try:\n    import os\nexcept:\n    !echo failed\n\nprint(os)\n", "E722"),
+            ('def connect(password="hunter2"):\n    !echo {password}\n', "S107"),
+        ):
+            found = lint_findings({"files": [_entry("job.py", mark + body)], "tree": None})
+            assert any(code in f.title for f in found), (body, [f.title for f in found])
 
     def test_lint_names_a_bidirectional_control_and_a_look_alike_name(self) -> None:
         """Ruff reads both in Python code: a control that reorders a line is major, a letter that is not ASCII in a name
