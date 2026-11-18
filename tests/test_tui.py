@@ -2337,6 +2337,7 @@ class TestThePickAsReviewedAgain:
         does not do, runs after it. A linked worktree shares its repository's refs, and so its fetches."""
         import threading
         import time
+        from dataclasses import dataclass, field
 
         from tui import git_sync
 
@@ -2344,29 +2345,64 @@ class TestThePickAsReviewedAgain:
         worktree = tmp_path / "worktree"
         _git(local, "worktree", "add", str(worktree), "-b", "elsewhere")
         ran: list[list[str]] = []
+        entered, release, parked = threading.Event(), threading.Event(), threading.Condition()
+        waiting = [0]
 
         def slow(_repo: str, args: list[str], **_options: object) -> subprocess.CompletedProcess[str]:
             ran.append(args)
-            time.sleep(0.3)
+            entered.set()
+            release.wait(10)
             return subprocess.CompletedProcess(args, 0, "", "")
 
+        class Counted(threading.Event):
+            """An end the test sees each fetch wait on, so the running one is held until every other waits."""
+
+            def wait(self, timeout: float | None = None) -> bool:
+                with parked:
+                    waiting[0] += 1
+                    parked.notify_all()
+                return super().wait(timeout)
+
+        @dataclass
+        class Watched(git_sync._Running):
+            ended: threading.Event = field(default_factory=Counted)
+
+        def held(count: int) -> None:
+            with parked:
+                assert parked.wait_for(lambda: waiting[0] == count, 10), waiting
+
         monkeypatch.setattr(git_sync, "_run_git", slow)
+        monkeypatch.setattr(git_sync, "_Running", Watched)
+        # Read by CI: on a slow runner one fetch's own git calls outlasted the first fetch, timed by sleeps, and it ran
+        # its own. Each fetch is now held by events, and the worktree's lookup is slowed as that runner's was.
+        keyed = git_sync._fetch_key
+        monkeypatch.setattr(
+            git_sync, "_fetch_key", lambda repo: (time.sleep(0.3 * ("worktree" in repo)), keyed(repo))[1]
+        )
         answers: list[object] = []
         fetches = [
             threading.Thread(target=lambda path=path: answers.append(git_sync.fetch_remote(str(path))))
             for path in (local, local, worktree)
         ]
-        for one in fetches:
+        fetches[0].start()
+        assert entered.wait(10)
+        for one in fetches[1:]:
             one.start()
-            time.sleep(0.05)
+        held(2)
+        release.set()
         for one in fetches:
             one.join(10)
         assert len(ran) == 1 and len(answers) == 3, ran
         ran.clear()
+        entered.clear()
+        release.clear()
+        waiting[0] = 0
         both = [threading.Thread(target=git_sync.fetch_remote, args=(str(local),), kwargs={"prune": p}) for p in (0, 1)]
-        for one in both:
-            one.start()
-            time.sleep(0.05)
+        both[0].start()
+        assert entered.wait(10)
+        both[1].start()
+        held(1)
+        release.set()
         for one in both:
             one.join(10)
         assert ["--prune" in args for args in ran] == [False, True], ran
