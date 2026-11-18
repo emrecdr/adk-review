@@ -219,6 +219,28 @@ ModalScreen {
 #explain-scroll {
     height: 1fr;
 }
+#comment-dialog {
+    width: 100;
+    height: 85%;
+    border: thick $accent;
+    background: $surface;
+    padding: 1 2;
+}
+#comment-target {
+    text-style: bold;
+    margin-bottom: 1;
+}
+#comment-replaced {
+    max-height: 14;
+    color: $text-muted;
+    border-left: solid $primary;
+    padding: 0 1;
+    margin-bottom: 1;
+}
+#comment-text {
+    height: 1fr;
+    min-height: 6;
+}
 #modal-buttons {
     height: 3;
     margin-top: 1;

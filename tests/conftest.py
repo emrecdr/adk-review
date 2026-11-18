@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import errno
 import functools
+import http.server
 import importlib
 import json
 import os
@@ -25,9 +26,12 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from collections.abc import AsyncGenerator, Iterator, Mapping
+from dataclasses import dataclass
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from google.adk.models.google_llm import Gemini
@@ -966,3 +970,117 @@ PROFILES = {
     "no-guidelines": ["rule.secrets", "rule.lint"],
     "no-secrets": list(SOME_CHECKS[1:]),
 }
+
+
+# The front end's Azure DevOps side: a fake service on a local port, for its own tests and the screen's.
+
+
+@dataclass(frozen=True)
+class Seen:
+    """One request the fake Azure DevOps got: its header names in lower case, as HTTP reads them."""
+
+    method: str
+    path: str
+    query: dict[str, str]
+    headers: dict[str, str]
+    body: bytes
+
+
+class FakeAdo:
+    """A local Azure DevOps holding one pull request, `pr`: `answer` says what a route answers, `seen` what came."""
+
+    def __init__(self, azure, port: int) -> None:  # the front end's module, imported where a test runs
+        self.pr = azure.PullRequest(f"http://127.0.0.1:{port}/contoso", "Web", "payments", 123)
+        self.root = "/contoso/Web/_apis/git/repositories/payments/pullRequests/123"
+        self.seen: list[Seen] = []
+        self._answers: dict[tuple[str, str], list[tuple[int, dict[str, str], bytes]]] = {}
+
+    def answer(
+        self,
+        method: str,
+        tail: str,
+        body: object = None,
+        *,
+        status: int = 200,
+        headers: dict[str, str] | None = None,
+        raw: bytes | None = None,
+    ) -> None:
+        """What `method` on the pull request's `tail` answers: `""`, `"/iterations"`, `"/iterations/3/changes"`,
+        `"/threads"`. Several answers for one route are served in turn, and the last one again after that."""
+        sent = raw if raw is not None else b"" if body is None else json.dumps(body).encode("utf-8")
+        self._answers.setdefault((method, self.root + tail), []).append((status, headers or {}, sent))
+
+    def answered(self, seen: Seen) -> tuple[int, dict[str, str], bytes]:
+        """The answer to one request, which is kept; a route no test named is a 404, as Azure DevOps answers one."""
+        self.seen.append(seen)
+        waiting = self._answers.get((seen.method, seen.path))
+        if not waiting:
+            return 404, {}, b'{"message": "the fake holds no such route"}'
+        return waiting.pop(0) if len(waiting) > 1 else waiting[0]
+
+
+@pytest.fixture
+def fake_ado(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeAdo]:
+    """A fake Azure DevOps on a local port, reached with no proxy: a machine's own proxy settings name none for it."""
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+    monkeypatch.setenv("no_proxy", "127.0.0.1")
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def _serve(self) -> None:
+            address = urlsplit(self.path)
+            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            headers = {name.lower(): value for name, value in self.headers.items()}
+            query = {name: values[-1] for name, values in parse_qs(address.query).items()}
+            status, extra, sent = fake.answered(Seen(self.command, address.path, query, headers, body))
+            self.send_response(status)
+            for name, value in {"Content-Type": "application/json", **extra}.items():
+                self.send_header(name, value)
+            self.send_header("Content-Length", str(len(sent)))
+            self.end_headers()
+            self.wfile.write(sent)
+
+        do_GET = do_POST = _serve  # noqa: N815 -- http.server's own names
+
+        def log_message(self, format: str, *args: object) -> None:  # http.server's own names
+            """Nothing printed: the suite's output stays its own."""
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server.daemon_threads = True
+    fake = FakeAdo(importlib.import_module("tui.azure"), server.server_address[1])
+    # Asked often whether to stop: by default each test would wait half a second for the server to see it should.
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+    thread.start()
+    try:
+        yield fake
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+class FakeToken:
+    """A login as the client asks it: `forgot` counts how often Azure DevOps refused it."""
+
+    def __init__(self, header: str = "Bearer tok") -> None:
+        self.header, self.forgot = header, 0
+
+    def __call__(self) -> str:
+        return self.header
+
+    def forget(self) -> None:
+        self.forgot += 1
+
+
+def _ready_to_comment(fake: FakeAdo, latest: str, *, status: str = "active") -> None:
+    """A pull request that takes a comment: active, pushed twice, `latest` its newest commit, changing `src/app.py`,
+    with no thread yet; a post is thread 148."""
+    older = {"id": 1, "sourceRefCommit": {"commitId": "a" * 40}}
+    fake.answer("GET", "", {"status": status})
+    fake.answer("GET", "/iterations", {"value": [older, {"id": 2, "sourceRefCommit": {"commitId": latest}}]})
+    fake.answer(
+        "GET", "/iterations/2/changes", {"changeEntries": [{"changeTrackingId": 7, "item": {"path": "/src/app.py"}}]}
+    )
+    fake.answer("GET", "/threads", {"value": []})
+    fake.answer("POST", "/threads", {"id": 148})

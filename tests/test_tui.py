@@ -2648,3 +2648,318 @@ class TestAzureDevOpsOnTheScreen:
             await pilot.press("p")
             await pilot.pause()
             assert opened == [files_link(pr, "src/app.py"), thread_link(pr, 148)]
+
+
+#: The file a comment is placed in: its line 2 is the finding's, and "Apply changes" would replace it.
+CODE = "def charge(total):\n    total = with_tax(total)\n    return total\n"
+TAXED = "    total = with_tax(total)"
+
+
+def _payments_with_code(tmp_path: Path):  # the application, not yet running, and the commit that holds the file
+    """The screen over `payments`, its branch `feature/orders` holding `src/app.py` at the commit answered."""
+    from tui.app import AdkReviewTuiApp
+
+    repo = _repository(tmp_path / "workspace" / "payments", ("main", "feature/orders"), "feature/orders")
+    (repo / "src").mkdir()
+    (repo / "src" / "app.py").write_text(CODE, encoding="utf-8", newline="\n")
+    _git(repo, "add", ".")
+    _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "code")
+    return AdkReviewTuiApp(config_path=_screen_config(tmp_path)), _git(repo, "rev-parse", "HEAD")
+
+
+async def _ready_screen(app, pilot, tmp_path: Path, fake, sha: str, **changed: object) -> list[str]:
+    """The finding of line 2 shown, the fake pull request taking a comment on `sha`, and a login that needs no
+    `az`: the notices the screen then raises."""
+    from conftest import FakeToken, _ready_to_comment
+
+    said: list[str] = []
+    await _wait_for_branches(app, pilot)
+    app.notify = lambda message, **_options: said.append(str(message))
+    app._credential = FakeToken()
+    app._pull_request = fake.pr
+    _ready_to_comment(fake, sha)
+    await _show_findings(app, pilot, _pull_request_report(tmp_path, sha, **{"line": 2, "lines": [2, 2], **changed}))
+    return said
+
+
+async def _editor(app, pilot):  # the dialog `c` opened
+    """`c` pressed, and the editor it opens once the file's lines are read."""
+    from tui.modals import CommentModal
+
+    await pilot.press("c")
+    for _ in range(200):
+        await pilot.pause(0.02)
+        if isinstance(app.screen, CommentModal):
+            return app.screen
+    raise AssertionError("no editor opened")
+
+
+async def _posted(app, pilot) -> None:
+    """Until the post's worker has ended and the screen has drawn what it answered."""
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+
+
+class TestACommentOnThePullRequest:
+    """`c`: the draft, the person's edit, a confirmation, and one post, to the file's line in the pull request."""
+
+    @pytest.mark.asyncio
+    async def test_c_opens_the_draft_and_cancel_sends_nothing(self, tmp_path: Path, fake_ado) -> None:
+        pytest.importorskip("textual")
+        from textual.widgets import Static, TextArea
+
+        from tui.modals import CommentModal
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            editor = await _editor(app, pilot)
+            text = editor.query_one("#comment-text", TextArea).text
+            assert text.startswith("**major**: `charge()` adds tax twice") and "```suggestion" in text
+            assert "src/app.py, line 2, pull request 123" in str(editor.query_one("#comment-target", Static).render())
+            assert TAXED in str(editor.query_one("#comment-replaced", Static).render()), (
+                "the line a suggestion replaces"
+            )
+            await pilot.click("#btn-comment-cancel")
+            await pilot.pause()
+            assert not isinstance(app.screen, CommentModal) and fake_ado.seen == []
+            editor = await _editor(app, pilot)
+            await pilot.press("escape")
+            await pilot.pause()
+            assert not isinstance(app.screen, CommentModal) and fake_ado.seen == [], "Escape cancels too"
+
+    @pytest.mark.asyncio
+    async def test_go_back_returns_to_the_editor_with_the_edit(self, tmp_path: Path, fake_ado) -> None:
+        pytest.importorskip("textual")
+        from textual.widgets import Static, TextArea
+
+        from tui.modals import CommentModal, ConfirmPostModal
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            editor = await _editor(app, pilot)
+            editor.query_one("#comment-text", TextArea).text = "my own words"
+            await pilot.click("#btn-comment-post")
+            await pilot.pause()
+            assert isinstance(app.screen, ConfirmPostModal)
+            asked = str(app.screen.query_one("#confirm-post", Static).render())
+            assert asked == "Post this comment as you, on src/app.py, line 2, pull request 123?"
+            assert app.focused is not None and app.focused.id == "btn-post-no", "Enter by habit posts nothing"
+            await pilot.click("#btn-post-no")
+            await pilot.pause()
+            assert isinstance(app.screen, CommentModal)
+            assert app.screen.query_one("#comment-text", TextArea).text == "my own words"
+            assert not app.screen.query("#comment-replaced"), "no suggestion in the text now: nothing is replaced"
+            assert fake_ado.seen == []
+
+    @pytest.mark.asyncio
+    async def test_post_and_confirm_send_the_edited_text_once(self, tmp_path: Path, fake_ado) -> None:
+        pytest.importorskip("textual")
+        import json
+
+        from textual.widgets import DataTable, TextArea
+
+        from tui import azure_state
+        from tui.azure import thread_payload
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            editor = await _editor(app, pilot)
+            editor.query_one("#comment-text", TextArea).text = "my own words"
+            await pilot.click("#btn-comment-post")
+            await pilot.pause()
+            await pilot.click("#btn-post-yes")
+            await _posted(app, pilot)
+            posts = [seen for seen in fake_ado.seen if seen.method == "POST"]
+            assert len(posts) == 1
+            assert json.loads(posts[0].body) == thread_payload("my own words", "src/app.py", (2, 2), TAXED, 2, 7)
+            assert posts[0].headers["authorization"] == "Bearer tok"
+            assert said[-1] == "Posted as thread 148. Press p to open it."
+            assert str(app.query_one("#findings-table", DataTable).get_row_at(0)[-1]) == "148"
+            assert azure_state.posted_thread(fake_ado.pr, "1a2b3c4d5e6f7a8b") == 148
+            await pilot.press("c")
+            await pilot.pause()
+            assert said[-1] == "This finding is posted as thread 148. Press p to open it."
+            assert len([seen for seen in fake_ado.seen if seen.method == "POST"]) == 1, "no editor, and no second post"
+
+    @pytest.mark.asyncio
+    async def test_a_refused_post_says_why_and_keeps_the_edit(self, tmp_path: Path, fake_ado) -> None:
+        pytest.importorskip("textual")
+        from textual.widgets import DataTable, TextArea
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            fake_ado.answer("POST", "/threads", status=403)  # before the answer `_ready_screen` gives: served first
+            said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            editor = await _editor(app, pilot)
+            editor.query_one("#comment-text", TextArea).text = "my own words"
+            await pilot.click("#btn-comment-post")
+            await pilot.pause()
+            await pilot.click("#btn-post-yes")
+            await _posted(app, pilot)
+            assert (
+                said[-1] == 'Your account may not comment here. Ask for the "Contribute to pull requests" permission.'
+            )
+            assert str(app.query_one("#findings-table", DataTable).get_row_at(0)[-1]) == "", "nothing is posted"
+            editor = await _editor(app, pilot)
+            assert editor.query_one("#comment-text", TextArea).text == "my own words", "the edit is not lost"
+
+    @pytest.mark.asyncio
+    async def test_a_finding_posted_before_is_found_and_marked_with_no_second_post(
+        self, tmp_path: Path, fake_ado
+    ) -> None:
+        """The screen forgot it, or a teammate posted it: the thread's own mark says so at the post."""
+        pytest.importorskip("textual")
+        from textual.widgets import DataTable
+
+        mark = "*adk-review, guideline.correctness, finding 1a2b3c4d5e6f7a8b*"
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            fake_ado.answer("GET", "/threads", {"value": [{"id": 5, "comments": [{"content": mark}]}]})
+            said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            await _editor(app, pilot)
+            await pilot.click("#btn-comment-post")
+            await pilot.pause()
+            await pilot.click("#btn-post-yes")
+            await _posted(app, pilot)
+            assert said[-1] == "This finding was posted before, as thread 5. Nothing was posted."
+            assert all(seen.method == "GET" for seen in fake_ado.seen)
+            assert str(app.query_one("#findings-table", DataTable).get_row_at(0)[-1]) == "5"
+
+    @pytest.mark.asyncio
+    async def test_copy_puts_the_edited_text_on_the_clipboard_and_posts_nothing(self, tmp_path: Path, fake_ado) -> None:
+        pytest.importorskip("textual")
+        from textual.widgets import TextArea
+
+        from tui.modals import CommentModal
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            editor = await _editor(app, pilot)
+            editor.query_one("#comment-text", TextArea).text = "to paste by hand"
+            await pilot.click("#btn-comment-copy")
+            await pilot.pause()
+            assert app.clipboard == "to paste by hand"
+            assert isinstance(app.screen, CommentModal) and fake_ado.seen == [], "still open, and nothing sent"
+
+    @pytest.mark.asyncio
+    async def test_an_empty_comment_is_not_posted(self, tmp_path: Path, fake_ado) -> None:
+        pytest.importorskip("textual")
+        from textual.widgets import TextArea
+
+        from tui.modals import CommentModal
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            editor = await _editor(app, pilot)
+            editor.query_one("#comment-text", TextArea).text = "  \n "
+            await pilot.click("#btn-comment-post")
+            await pilot.pause()
+            assert isinstance(app.screen, CommentModal) and said[-1] == "The comment is empty. Write it, or cancel."
+
+    @pytest.mark.asyncio
+    async def test_a_second_c_while_a_post_runs_posts_once(self, tmp_path: Path, fake_ado) -> None:
+        """A worker that is its group's only one would stop the post under way and start another: the screen waits
+        for the one it sent."""
+        pytest.importorskip("textual")
+        import threading
+
+        from conftest import FakeToken
+
+        class Held(FakeToken):
+            """A login that waits for the test's word, as `az` takes its seconds."""
+
+            def __call__(self) -> str:
+                asked.set()
+                assert go.wait(timeout=20)
+                return self.header
+
+        asked, go = threading.Event(), threading.Event()
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            app._credential = Held()
+            await _editor(app, pilot)
+            await pilot.click("#btn-comment-post")
+            await pilot.pause()
+            await pilot.click("#btn-post-yes")
+            for _ in range(200):
+                await pilot.pause(0.02)
+                if asked.is_set():
+                    break
+            await pilot.press("c")
+            await pilot.pause()
+            assert said[-1] == "A comment is on its way. Wait for its answer."
+            go.set()
+            await _posted(app, pilot)
+            assert [seen.method for seen in fake_ado.seen].count("POST") == 1
+            assert said[-1] == "Posted as thread 148. Press p to open it."
+
+    @pytest.mark.asyncio
+    async def test_no_review_starts_behind_the_editor(self, tmp_path: Path, fake_ado) -> None:
+        pytest.importorskip("textual")
+        from tui.modals import CommentModal
+
+        app, sha = _payments_with_code(tmp_path)
+        started: list[bool] = []
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            app._execute_review = lambda *, dry_run: started.append(dry_run)
+            await _editor(app, pilot)
+            await pilot.press("ctrl+r", "ctrl+d", "o", "p")
+            await pilot.pause()
+            assert started == [] and isinstance(app.screen, CommentModal)
+
+    @pytest.mark.asyncio
+    async def test_a_finding_no_comment_fits_gets_a_sentence_and_no_editor(self, tmp_path: Path, fake_ado) -> None:
+        pytest.importorskip("textual")
+        import json
+
+        from tui.modals import CommentModal
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha, line=None, lines=None)
+            await pilot.press("c")
+            await pilot.pause()
+            assert said[-1] == "This finding names no line."
+            await _show_findings(app, pilot, _pull_request_report(tmp_path, sha, line=90, lines=[90, 91]))
+            await pilot.press("c")
+            await _posted(app, pilot)
+            assert said[-1] == "This clone does not hold the reviewed commit's file. Fetch, then press c again."
+            await _show_findings(app, pilot, _pull_request_report(tmp_path, "f" * 40, line=2, lines=[2, 2]))
+            await pilot.press("c")
+            await _posted(app, pilot)
+            assert said[-1] == "This clone does not hold the reviewed commit's file. Fetch, then press c again."
+            report = json.loads(_pull_request_report(tmp_path, sha).read_text(encoding="utf-8"))
+            gone = {"schema": 2, "findings": [], "resolved": report["findings"], "reviewed": report["reviewed"]}
+            (tmp_path / "report.json").write_text(json.dumps(gone), encoding="utf-8")
+            await _show_findings(app, pilot, tmp_path / "report.json")
+            await pilot.press("c")
+            await pilot.pause()
+            assert said[-1] == "This finding is resolved. There is nothing to comment on."
+            assert not isinstance(app.screen, CommentModal) and fake_ado.seen == []
+
+    @pytest.mark.asyncio
+    async def test_text_that_looks_like_markup_is_drawn_as_written(self, tmp_path: Path, fake_ado) -> None:
+        """A model's title, a repository's path and Azure DevOps' own message are text: Textual reads `[name]` as a
+        tag, and one that closes nothing ends the screen."""
+        pytest.importorskip("textual")
+        from textual.widgets import Static, TextArea
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            fake_ado.answer("POST", "/threads", status=500, raw=b'{"message": "[/bold] closes [nothing"}')
+            said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha, title="[bold]x[/] and [/red]")
+            editor = await _editor(app, pilot)
+            assert "[bold]x[/] and [/red]" in editor.query_one("#comment-text", TextArea).text
+            assert "src/app.py" in str(editor.query_one("#comment-target", Static).render())
+            await pilot.click("#btn-comment-post")
+            await pilot.pause()
+            await pilot.click("#btn-post-yes")
+            await _posted(app, pilot)
+            assert said[-1] == "Azure DevOps answered 500: [/bold] closes [nothing. Nothing was posted."

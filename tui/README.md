@@ -139,10 +139,11 @@ As the reviewer does, the screen reads a repository, and writes into it only whe
 | A number key | Minimize or restore the panel of that number, where no text field has the focus |
 | `o` | Open the chosen finding's lines in Azure DevOps, in the file as the commit reviewed holds it |
 | `p` | Open the pull request at the chosen finding: its comment thread once posted, else its file in the Files tab |
+| `c` | Comment on the chosen finding in its pull request: a draft to edit, a confirmation, then one post |
 | `q` | Quit |
 
 The action keys work wherever the focus is, a text field included. While a dialog is open, only `Ctrl+X` works,
-and while a review runs, `Ctrl+R` and `Ctrl+D` wait for it to end: they never restart it. `o` and `p` are plain
+and while a review runs, `Ctrl+R` and `Ctrl+D` wait for it to end: they never restart it. `o`, `p` and `c` are plain
 letters: they act on the Findings tab alone, where no text field has the focus, and they need the pull request's
 address in the field above the table.
 
@@ -172,7 +173,7 @@ It runs in cmd, in PowerShell and in Windows Terminal alike.
 | `azure.py` | Azure DevOps, with no call made: a pull request's address read, a finding's links built, the comment drafted from a finding, with the mark that finds it again, and the thread it is posted as |
 | `azure_client.py` | The calls to Azure DevOps and their login: a token from `az`, with fixed arguments, kept in memory alone, and one comment's post, with the checks before it |
 | `azure_state.py` | `azure.json` in the state folder: the pull request's address given for a branch, and the thread each finding was posted as |
-| `modals.py` | The dialogs: a branch behind or apart from its remote, and a check's explanation |
+| `modals.py` | The dialogs: a branch behind or apart from its remote, a check's explanation, and a comment's editor and the question before its post |
 | `commands.py` | The command palette |
 | `clipboard.py` | Copying, through the terminal and through Windows' own clipboard |
 | `styles.py` | The screen's styles, and `literal`, which draws a `[` as written |

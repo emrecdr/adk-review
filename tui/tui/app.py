@@ -41,8 +41,9 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 from textual.widgets.selection_list import Selection
 
-from .azure import PullRequest, files_link, line_link, parse_pr_url, thread_link
-from .azure_state import keep_pull_request_url, posted_threads, pull_request_url
+from .azure import PullRequest, draft, files_link, line_link, parse_pr_url, thread_link
+from .azure_client import AzLogin, AzureError, Client, Credential, post_comment
+from .azure_state import keep_posted, keep_pull_request_url, posted_threads, pull_request_url
 from .clipboard import copy_text
 from .commands import ReviewCommandProvider
 from .config import RepoPreset, RootDir, TuiConfig, load_tui_config, save_repo_preset
@@ -62,11 +63,12 @@ from .git_sync import (
     discover_projects,
     fast_forward_local_branch,
     fetch_remote,
+    file_lines,
     inspect_branch_sync,
     list_branches,
     preferred_base_branch,
 )
-from .modals import DivergedBranchModal, ExplainCheckModal, SyncBranchModal
+from .modals import CommentModal, ConfirmPostModal, DivergedBranchModal, ExplainCheckModal, SyncBranchModal
 from .options import (
     OPTION_DESCRIPTIONS,
     ProfileOption,
@@ -162,6 +164,7 @@ class AdkReviewTuiApp(App[int]):
         # Findings tab alone, where the person sees the finding they open.
         Binding("o", "open_lines", "Open Lines"),
         Binding("p", "open_pull_request", "Open in PR"),
+        Binding("c", "comment", "Comment"),
         Binding("1", "toggle_step(1)", "Step 1", show=False),
         Binding("2", "toggle_step(2)", "Step 2", show=False),
         Binding("3", "toggle_step(3)", "Step 3", show=False),
@@ -174,11 +177,9 @@ class AdkReviewTuiApp(App[int]):
 
     #: What a key starts that never runs behind a dialog: a review, a dry run, the sections folded, a tab copied. Not
     #: Stop, which must always reach a running review.
-    BEHIND_NO_DIALOG = frozenset(
-        {"run_review", "run_dry", "minimize_all", "restore_all", "copy_active_tab", "open_lines", "open_pull_request"}
-    )
     #: What acts on the finding chosen, so only where the Findings tab shows it.
-    ON_A_FINDING = frozenset({"open_lines", "open_pull_request"})
+    ON_A_FINDING = frozenset({"open_lines", "open_pull_request", "comment"})
+    BEHIND_NO_DIALOG = ON_A_FINDING | {"run_review", "run_dry", "minimize_all", "restore_all", "copy_active_tab"}
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:  # noqa: ARG002 -- Textual's
         """No action key but Stop runs while a dialog is open. Measured: once the keys went first, Ctrl+R and Ctrl+D
@@ -210,6 +211,10 @@ class AdkReviewTuiApp(App[int]):
         self._reviewed: Reviewed | None = None  # what the findings' report reviewed: their lines are counted in it
         self._pull_request: PullRequest | None = None  # the address field's, where it reads as one
         self._pull_request_of: tuple[str, str] | None = None  # the repository and branch the field was restored for
+        self._credential: Credential = AzLogin()  # the person's own `az` login, asked only when a comment is posted
+        self._clients: dict[str, Client] = {}  # one a pull request, by its address: what it read once is kept
+        self._drafts: dict[str, str] = {}  # an edit a refused post left, by finding, so no words are lost
+        self._commenting: bool = False  # a comment from its key to its answer: one at a time
         self.selected_root: RootDir = self.tui_config.root_dirs[0]
         self.selected_project: ProjectInfo | None = None
         self.selected_mode: ReviewMode = "branch"
@@ -1138,6 +1143,88 @@ class AdkReviewTuiApp(App[int]):
         thread = self._posted().get(row.fingerprint)
         self.open_url(files_link(pr, row.file) if thread is None else thread_link(pr, thread))
 
+    def _no_comment(self, row: FindingRow) -> str:
+        """Why `row` takes no comment, as a sentence, or nothing where it takes one."""
+        if self._commenting:
+            return "A comment is on its way. Wait for its answer."
+        if row.tier == "Resolved":
+            return "This finding is resolved. There is nothing to comment on."
+        if self._reviewed is None or self.selected_project is None:
+            return "Run a review first."
+        if row.span() is None:
+            return "This finding names no line."
+        if (thread := self._posted().get(row.fingerprint)) is not None:
+            return f"This finding is posted as thread {thread}. Press p to open it."
+        return ""
+
+    def action_comment(self) -> None:
+        """Draft a comment on the chosen finding, for the person to edit, confirm and post to the pull request."""
+        if (ready := self._finding_to_open()) is None:
+            return
+        row, pr = ready
+        if said := self._no_comment(row):
+            self.notify(said, timeout=6, markup=False)
+            return
+        self._commenting = True
+        self._comment(row, pr)
+
+    @work(group="azure")
+    async def _comment(self, row: FindingRow, pr: PullRequest) -> None:
+        """One comment, from its draft to its answer. Never the only worker of its group by Textual's own rule,
+        which would stop a post under way to start another: `_commenting` holds the next one off instead."""
+        try:
+            await self._comment_on(row, pr)
+        finally:
+            self._commenting = False
+
+    async def _comment_on(self, row: FindingRow, pr: PullRequest) -> None:
+        span, reviewed, project = row.span(), self._reviewed, self.selected_project
+        if span is None or reviewed is None or project is None:
+            return
+        first, last = span
+        lines = await asyncio.to_thread(file_lines, project.path, reviewed.head_sha, row.file)
+        if lines is None or last > len(lines):
+            said = "This clone does not hold the reviewed commit's file. Fetch, then press c again."
+            self.notify(said, severity="warning", timeout=8, markup=False)
+            return
+        where = f"line {first}" if first == last else f"lines {first} to {last}"
+        target = f"{row.file}, {where}, pull request {pr.number}"
+        kept = row.fingerprint or row.location()
+        text = self._drafts.get(kept) or draft(row)
+        while True:
+            replaced = lines[first - 1 : last] if "```suggestion" in text else ()
+            edited = await self.push_screen_wait(CommentModal(text, target, replaced))
+            if edited is None:
+                return
+            text = edited
+            if await self.push_screen_wait(ConfirmPostModal(target)):
+                break
+        self._set_banner(f"Posting the comment to pull request {pr.number}.")
+        client = self._clients.setdefault(pr.web, Client(pr, self._credential))
+        where_posted = {"path": row.file, "span": span, "last_line": lines[last - 1], "commit": reviewed.head_sha}
+        try:
+            posted = await asyncio.to_thread(
+                post_comment, client, text=text, fingerprint=row.fingerprint, **where_posted
+            )
+        except AzureError as refused:
+            self._drafts[kept] = text
+            self._set_banner("The comment was not posted. Press c to open your text again.")
+            self.notify(str(refused), severity="error", timeout=12, markup=False)
+            return
+        self._drafts.pop(kept, None)
+        said = f"Posted as thread {posted.thread}. Press p to open it."
+        if posted.already:
+            said = f"This finding was posted before, as thread {posted.thread}. Nothing was posted."
+        if row.fingerprint:
+            try:
+                keep_posted(pr, row.fingerprint, posted.thread)
+            except OSError as failed:
+                reason = failed.strerror or type(failed).__name__
+                self.notify(f"The thread could not be kept: {reason}.", severity="warning", markup=False)
+        self._render_findings_table(keep=row)
+        self._set_banner(said)
+        self.notify(said, severity="information", timeout=8, markup=False)
+
     @on(DataTable.RowHighlighted, "#findings-table")
     @on(DataTable.RowSelected, "#findings-table")
     def _on_finding_row_active(self, event: DataTable.RowHighlighted | DataTable.RowSelected) -> None:
@@ -1400,7 +1487,7 @@ class AdkReviewTuiApp(App[int]):
         else:
             tabs.get_tab("tab-handoff").label = "4. Agent Handoff (--handoff)"
 
-    def _render_findings_table(self) -> None:
+    def _render_findings_table(self, *, keep: FindingRow | None = None) -> None:
         if not self._has_dom("#finding-sev-filter", "#finding-tier-filter", "#finding-search", "#findings-table"):
             return
         sev = str(self.query_one("#finding-sev-filter", Select).value)
@@ -1423,7 +1510,9 @@ class AdkReviewTuiApp(App[int]):
             )
             table.add_row(*(Text(cell) for cell in cells))  # a cell given as a string is read as markup
         if filtered:
-            self._select_finding_at(0)
+            chosen = filtered.index(keep) if keep in filtered else 0  # the finding just posted stays the one chosen
+            table.move_cursor(row=chosen)
+            self._select_finding_at(chosen)
         else:
             self._selected_finding = None
             self.query_one("#btn-explain-check", Button).disabled = True

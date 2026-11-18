@@ -1,7 +1,9 @@
-"""Modal dialogs for branch synchronization and `--explain` check lookup in `adk-review-tui`."""
+"""Modal dialogs for branch synchronization, `--explain` check lookup and a pull request's comment in
+`adk-review-tui`."""
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import ClassVar
 
 from textual import on
@@ -9,8 +11,9 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Label, Markdown, Static
+from textual.widgets import Button, Label, Markdown, Static, TextArea
 
+from .clipboard import copy_text
 from .findings import explain_check_markdown
 from .git_sync import SyncStatus
 
@@ -106,3 +109,94 @@ class ExplainCheckModal(ModalScreen[None]):
     def action_close_modal(self) -> None:
         """Close the check reference dialog."""
         self.dismiss(None)
+
+
+class CommentModal(ModalScreen[str | None]):
+    """A finding's comment, for the person to edit before it is posted: the text as it will be sent, or None where
+    they cancel. Nothing leaves the machine from here. A model drafted the words, and the person is their author:
+    every string a model, a repository or a person wrote is drawn as text, never as markup."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancel")]
+    #: The most lines shown of those a suggestion replaces: the rest are counted.
+    REPLACED_SHOWN = 12
+
+    def __init__(self, text: str, target: str, replaced: Sequence[str] = ()) -> None:
+        super().__init__()
+        self.text = text
+        self.target = target
+        self.replaced = tuple(replaced)
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="comment-dialog"):
+            yield Label("Comment on the Pull Request", classes="chain-title")
+            yield Static(self.target, id="comment-target", markup=False)
+            if self.replaced:
+                more = len(self.replaced) - self.REPLACED_SHOWN
+                shown = [*self.replaced[: self.REPLACED_SHOWN], *([f"({more} more lines)"] if more > 0 else [])]
+                yield Static(
+                    '"Apply changes" replaces these lines with the suggestion block. '
+                    "Check that it fits, or delete the block.",
+                    id="comment-replaces",
+                    markup=False,
+                )
+                yield Static("\n".join(shown), id="comment-replaced", markup=False)
+            yield TextArea(self.text, id="comment-text")
+            with Horizontal(id="modal-buttons"):
+                yield Button("Post", id="btn-comment-post", variant="primary")
+                yield Button("Copy", id="btn-comment-copy", variant="default")
+                yield Button("Cancel", id="btn-comment-cancel", variant="default")
+
+    def on_mount(self) -> None:
+        self.query_one("#comment-text", TextArea).focus()
+
+    def _edited(self) -> str:
+        return self.query_one("#comment-text", TextArea).text
+
+    @on(Button.Pressed, "#btn-comment-post")
+    def _post(self) -> None:
+        if self._edited().strip():
+            self.dismiss(self._edited())
+        else:
+            self.app.notify("The comment is empty. Write it, or cancel.", severity="warning", timeout=4, markup=False)
+
+    @on(Button.Pressed, "#btn-comment-copy")
+    def _copy(self) -> None:
+        """The text as it stands, for a comment the person pastes by hand: where a post is refused, say."""
+        known = copy_text(self.app, self._edited())
+        said = "Copied the comment." if known else "Sent the comment to the clipboard through the terminal."
+        self.app.notify(said, severity="information", timeout=4, markup=False)
+
+    @on(Button.Pressed, "#btn-comment-cancel")
+    def action_cancel(self) -> None:
+        """Close the editor and post nothing."""
+        self.dismiss(None)
+
+
+class ConfirmPostModal(ModalScreen[bool]):
+    """The last question before a comment leaves the machine: it is posted as the person, where `target` says."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "go_back", "Go Back")]
+
+    def __init__(self, target: str) -> None:
+        super().__init__()
+        self.target = target
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Label("Post the Comment?", classes="chain-title")
+            yield Static(f"Post this comment as you, on {self.target}?", id="confirm-post", markup=False)
+            with Horizontal(id="modal-buttons"):
+                yield Button("Go Back", id="btn-post-no", variant="primary")
+                yield Button("Post Comment", id="btn-post-yes", variant="warning")
+
+    def on_mount(self) -> None:
+        self.query_one("#btn-post-no", Button).focus()  # Enter by habit posts nothing
+
+    @on(Button.Pressed, "#btn-post-yes")
+    def _yes(self) -> None:
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#btn-post-no")
+    def action_go_back(self) -> None:
+        """Return to the editor, the text as it was."""
+        self.dismiss(False)

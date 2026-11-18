@@ -6,21 +6,18 @@ what it reads where it runs, as `tests/test_tui.py` says why."""
 
 from __future__ import annotations
 
-import http.server
 import importlib
 import json
 import re
 import socket
 import subprocess
-import threading
-from collections.abc import Iterator
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 from typing import ClassVar
-from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from conftest import FakeAdo, FakeToken, _ready_to_comment
 
 
 @pytest.fixture
@@ -446,104 +443,6 @@ class TestTheLoginsToken:
         assert "tok-1" not in str(failed.value), "az's own words are never repeated"
 
 
-@dataclass(frozen=True)
-class Seen:
-    """One request the fake Azure DevOps got: its header names in lower case, as HTTP reads them."""
-
-    method: str
-    path: str
-    query: dict[str, str]
-    headers: dict[str, str]
-    body: bytes
-
-
-class FakeAdo:
-    """A local Azure DevOps holding one pull request, `pr`: `answer` says what a route answers, `seen` what came."""
-
-    def __init__(self, azure: ModuleType, port: int) -> None:
-        self.pr = azure.PullRequest(f"http://127.0.0.1:{port}/contoso", "Web", "payments", 123)
-        self.root = "/contoso/Web/_apis/git/repositories/payments/pullRequests/123"
-        self.seen: list[Seen] = []
-        self._answers: dict[tuple[str, str], list[tuple[int, dict[str, str], bytes]]] = {}
-
-    def answer(
-        self,
-        method: str,
-        tail: str,
-        body: object = None,
-        *,
-        status: int = 200,
-        headers: dict[str, str] | None = None,
-        raw: bytes | None = None,
-    ) -> None:
-        """What `method` on the pull request's `tail` answers: `""`, `"/iterations"`, `"/iterations/3/changes"`,
-        `"/threads"`. Several answers for one route are served in turn, and the last one again after that."""
-        sent = raw if raw is not None else b"" if body is None else json.dumps(body).encode("utf-8")
-        self._answers.setdefault((method, self.root + tail), []).append((status, headers or {}, sent))
-
-    def answered(self, seen: Seen) -> tuple[int, dict[str, str], bytes]:
-        """The answer to one request, which is kept; a route no test named is a 404, as Azure DevOps answers one."""
-        self.seen.append(seen)
-        waiting = self._answers.get((seen.method, seen.path))
-        if not waiting:
-            return 404, {}, b'{"message": "the fake holds no such route"}'
-        return waiting.pop(0) if len(waiting) > 1 else waiting[0]
-
-
-@pytest.fixture
-def fake_ado(azure: ModuleType, monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeAdo]:
-    """A fake Azure DevOps on a local port, reached with no proxy: a machine's own proxy settings name none for it."""
-    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
-    monkeypatch.setenv("no_proxy", "127.0.0.1")
-
-    class Handler(http.server.BaseHTTPRequestHandler):
-        def _serve(self) -> None:
-            address = urlsplit(self.path)
-            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
-            headers = {name.lower(): value for name, value in self.headers.items()}
-            query = {name: values[-1] for name, values in parse_qs(address.query).items()}
-            status, extra, sent = fake.answered(Seen(self.command, address.path, query, headers, body))
-            self.send_response(status)
-            for name, value in {"Content-Type": "application/json", **extra}.items():
-                self.send_header(name, value)
-            self.send_header("Content-Length", str(len(sent)))
-            self.end_headers()
-            self.wfile.write(sent)
-
-        do_GET = do_POST = _serve  # noqa: N815 -- http.server's own names
-
-        def log_message(self, format: str, *args: object) -> None:  # http.server's own names
-            """Nothing printed: the suite's output stays its own."""
-
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    server.daemon_threads = True
-    fake = FakeAdo(azure, server.server_address[1])
-    # Asked often whether to stop: by default each test would wait half a second for the server to see it should.
-    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
-    thread.start()
-    try:
-        yield fake
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=5)
-
-
-class FakeToken:
-    """A login as the client asks it: `forgot` counts how often Azure DevOps refused it."""
-
-    def __init__(self, header: str = "Bearer tok") -> None:
-        self.header, self.forgot = header, 0
-
-    def __call__(self) -> str:
-        return self.header
-
-    def forget(self) -> None:
-        self.forgot += 1
-
-
 def _closed_port() -> int:
     """A local port nothing listens on: bound, read, then closed."""
     with socket.socket() as probe:
@@ -721,19 +620,6 @@ class TestTheClient:
         assert fake_ado.seen == []
 
 
-def _ready(fake: FakeAdo, latest: str, *, status: str = "active") -> None:
-    """A pull request that takes a comment: active, pushed twice, `latest` its newest commit, changing `src/app.py`,
-    with no thread yet; a post is thread 148."""
-    older = {"id": 1, "sourceRefCommit": {"commitId": "a" * 40}}
-    fake.answer("GET", "", {"status": status})
-    fake.answer("GET", "/iterations", {"value": [older, {"id": 2, "sourceRefCommit": {"commitId": latest}}]})
-    fake.answer(
-        "GET", "/iterations/2/changes", {"changeEntries": [{"changeTrackingId": 7, "item": {"path": "/src/app.py"}}]}
-    )
-    fake.answer("GET", "/threads", {"value": []})
-    fake.answer("POST", "/threads", {"id": 148})
-
-
 class TestOnePost:
     """`post_comment`: the checks before a post, in order, each refusal a sentence and nothing posted."""
 
@@ -742,7 +628,7 @@ class TestOnePost:
     def test_a_comment_is_posted_once_on_the_latest_push(
         self, azure: ModuleType, client: ModuleType, fake_ado: FakeAdo
     ) -> None:
-        _ready(fake_ado, "b" * 40)
+        _ready_to_comment(fake_ado, "b" * 40)
         asked = client.Client(fake_ado.pr, FakeToken())
         posted = client.post_comment(asked, text="hello", commit="b" * 40, fingerprint="ab" * 8, **self.WHERE)
         assert posted == client.Posted(148, already=False)
@@ -767,7 +653,7 @@ class TestOnePost:
     def test_each_refusal_posts_nothing(
         self, client: ModuleType, fake_ado: FakeAdo, change: dict[str, str], said: str
     ) -> None:
-        _ready(fake_ado, "b" * 40, status=change.get("status", "active"))
+        _ready_to_comment(fake_ado, "b" * 40, status=change.get("status", "active"))
         where = {**self.WHERE, "path": change.get("path", "src/app.py")}
         with pytest.raises(client.AzureError, match=re.escape(said)) as refused:
             client.post_comment(
@@ -795,7 +681,7 @@ class TestOnePost:
         """Post pressed twice, or a post that timed out and still arrived: one thread, never two. The mark in the
         thread's own text says so, whatever the screen remembers."""
         fake_ado.answer("GET", "/threads", {"value": [{"id": 5, "comments": [{"content": azure.mark(row)}]}]})
-        _ready(fake_ado, "b" * 40)
+        _ready_to_comment(fake_ado, "b" * 40)
         posted = client.post_comment(
             client.Client(fake_ado.pr, FakeToken()),
             text="hello",
@@ -809,7 +695,7 @@ class TestOnePost:
     def test_a_finding_with_no_identity_is_posted_with_no_search_for_its_like(
         self, client: ModuleType, fake_ado: FakeAdo
     ) -> None:
-        _ready(fake_ado, "b" * 40)
+        _ready_to_comment(fake_ado, "b" * 40)
         asked = client.Client(fake_ado.pr, FakeToken())
         assert client.post_comment(asked, text="t", commit="b" * 40, fingerprint="", **self.WHERE).thread == 148
         assert [seen.method for seen in fake_ado.seen].count("POST") == 1

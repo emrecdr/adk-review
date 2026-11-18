@@ -7,6 +7,7 @@
 #   Ctrl+T  Minimize All      Ctrl+O  Restore All        Ctrl+Y  Copy Active Tab
 #   Ctrl+P  Command Palette   F5      Fetch & Refresh    1..7    Toggle Section 1-7
 #   o       Open Finding's Lines in Azure DevOps      p       Open Finding in Its Pull Request
+#   c       Comment on the Finding in Its Pull Request: edit, confirm, post
 # tui/README.md says what each setting and key does.
 
 [workspace]
