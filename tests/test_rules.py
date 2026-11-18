@@ -91,6 +91,27 @@ class TestTheSecretShapes:
         started = time.perf_counter()
         scrub("?token=" * 5_700)
         assert time.perf_counter() - started < 1.0, "the shape reads a line in one pass"
+        # Read by the second review, and reproduced: a vendor's key at a documentation host was blanked as an example;
+        # a real URL nested in an example's query was blanked with it; a masked password hid the example's host; and
+        # an escaped `&amp;`, a `;` and an OAuth fragment, `#access_token=`, opened no parameter.
+        from adk_review.judge.rules.secrets import Secrets
+
+        key = "ghp_" + "a1B2c3D4" * 4 + "e5F6"
+        assert lines_hit(Secrets(), "README.md", f'URL = "https://api.example.com/v1?token={key}"\n') == [1]
+        second = [
+            f'URL = "https://docs.example.com/go?to=https://api.acme.io/v1?token={value}"',
+            f'<a href="https://api.acme.io/v1?a=1&amp;access_token={value}">',
+            f"https://app.acme.io/callback#access_token={value}&token_type=bearer",
+            f"https://api.acme.io/v1?a=1;token={value}",
+            f'URL = "https://u:****@api.example.com/v1?token={value}"',
+        ]
+        assert lines_hit(NamedSecrets(), "README.md", "\n".join(second) + "\n") == [1, 2, 3, 4], second
+        for line in second[1:4]:
+            assert value not in scrub(line)[0], line
+        hostile = "x = 'https://api.acme.io/v1?token=9f8a7d6c5b4a' https://" + "a" * 80_000
+        started = time.perf_counter()
+        NamedSecrets().check("app.py", hostile)
+        assert time.perf_counter() - started < 1.0, "a URL with no query is read in one pass"
 
     def test_an_examples_credential_is_blanked_and_a_real_one_beside_it_found(self) -> None:
         """Measured on twelve real projects: all eleven credentials the rule found in their source were examples, each
@@ -1779,12 +1800,12 @@ class TestTheCleanupAndThePitfalls:
         assert _codes(ruff_rule_findings(Pitfalls(), [test])) == [("PLW0129", "major")]
         assert ruff_rule_findings(Simplify(), [test]) == [], "cleanup in a test is not this rule's"
 
-    def test_pitfalls_names_five_more_traps_ruff_proves(self) -> None:
-        """Read by validation: five stable codes no rule selected, each a trap where the code does not do what it reads.
-        Measured over google-adk, pydantic, httpx and litellm: 0 hits; over the owner's projects, 1, a real duplicate in
-        `__all__`. `except A or B` catches `A` alone, which `lint` names as B030; the rest minor. LOG004 and LOG014 are
-        left out: 5 false hits, each `exc_info=True` in a FastAPI handler, which Starlette calls inside its own
-        `except`."""
+    def test_pitfalls_names_four_more_traps_ruff_proves(self) -> None:
+        """Read by validation: five stable codes no rule selected, four of them now pitfalls' and one lint's, each a
+        trap where the code does not do what it reads. Measured over google-adk, pydantic, httpx and litellm: 0
+        hits; over the owner's projects, 1, a real duplicate in `__all__`. `except A or B` catches `A` alone, which
+        `lint` names as B030; the rest minor. LOG004 and LOG014 are left out: 5 false hits, each `exc_info=True` in
+        a FastAPI handler, which Starlette calls inside its own `except`."""
         from adk_review.judge.rules.pitfalls import Pitfalls
 
         traps = (
@@ -4233,6 +4254,34 @@ class TestTheShippedRules:
         planted = _entry(path, flow("pull_request_target", "${{ github.head_ref }}"))
         found = run_rules({"files": [planted], "tree": None}, [rule])["rule.script-injection"].findings
         assert found and "pull_request_target" in found[0].suggestion, found
+        # Read by the second review, and reproduced: where the diff of a file too large to read adds a checkout of the
+        # head, the rule cannot tell its trigger, and says so; a sequence under `on:` at its key's column was no
+        # trigger; a comment, a step's name and spaces GitHub's lexer skips misled it; a step was named twice for its
+        # fork and its ref; its quote lost the diff's `+`; and its patterns took 4.6 s over a line of 40,000 characters.
+        ref = "          ref: ${{ github.head_ref }}"
+        hidden = {**_entry(path, None, unread="past the cap"), "status": "M", "added": [(9, ref)], "shown": {9: ref}}
+        assert run_rules({"files": [hidden], "tree": None}, [rule])["rule.script-injection"].could_not_look is not None
+        flush = flow("pull_request_target", "${{ github.event.pull_request.head.sha }}").replace(
+            "on:\n  pull_request_target:", "on:\n- pull_request_target"
+        )
+        assert lines_hit(rule, path, flush) == [9], flush
+        for ref in ("main  # not ${{ github.head_ref }}", "${{ github.event.pull_request.head . sha }}"):
+            assert lines_hit(rule, path, flow("pull_request_target", ref)) == ([9] if "head ." in ref else []), ref
+        named = flow("pull_request_target", "").replace(
+            "      - run: npm ci", "      - name: do not gh pr checkout here"
+        )
+        assert lines_hit(rule, path, named) == [], named
+        both = fork.replace(
+            "full_name }}\n", "full_name }}\n          ref: ${{ github.event.pull_request.head.ref }}\n"
+        )
+        assert lines_hit(rule, path, both) == [9], both
+        assert found[0].evidence.startswith("+          ref:"), found[0].evidence
+        import time
+
+        for line in ("          ref: " + "${{ " * 10_000, "      - run: " + "git fetch " * 4_000):
+            started = time.perf_counter()
+            lines_hit(rule, path, flow("pull_request_target", "") + line + "\n")
+            assert time.perf_counter() - started < 1.0, line[:40]
 
     def test_tojson_inside_a_string_of_the_script_is_named_wherever_the_string_opens(self) -> None:
         """Read by review of another tool's report, and reproduced: `toJSON` was named where a quote stood right

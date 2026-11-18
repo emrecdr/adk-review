@@ -3,9 +3,10 @@ runs."""
 
 from __future__ import annotations
 
+import contextlib
 import re
 
-from ..rule_helpers import ChangedFile, FileRule, Hit, matches
+from ..rule_helpers import ChangedFile, FileRule, Hit, UnreadError, matches
 
 #: Where GitHub runs a step's script: a workflow, and an action's own metadata, whose composite steps run them too.
 READ = (".github/workflows/*.yml", ".github/workflows/*.yaml", "action.yml", "action.yaml")
@@ -50,17 +51,21 @@ TARGET = re.compile(r"\bpull_request_target\b")
 ON = re.compile(r"""^(["']?)on\1\s*:""")
 #: A checkout step, and its `ref:` or `repository:` naming the pull request's own code: its head, by commit or branch,
 #: the merge GitHub makes of it, or the fork it comes from, as an expression holds it among others, `head.sha ||
-#: github.sha`.
+#: github.sha`. Read in two steps, the key and then the name, each once along the line: read by the second review, one
+#: pattern for both took 4.6 s over a line of 40,000 characters.
 CHECKOUT = re.compile(r"""^\s*(?:-\s+)?(["']?)uses\1\s*:\s*["']?actions/checkout@""", re.IGNORECASE)
-_HEAD = (
+CHECKOUT_KEY = re.compile(r"""^\s*(["']?)(?:ref|repository)\1\s*:""", re.IGNORECASE)
+HEAD = re.compile(
     r"github\.(?:event\.pull_request\.(?:head\.(?:sha|ref|repo\.(?:full_name|clone_url|ssh_url))|merge_commit_sha)"
-    r"|head_ref)\b"
+    r"|head_ref)\b|refs/pull/",
+    re.IGNORECASE,
 )
-HEAD_REF = re.compile(
-    r"""^\s*(["']?)(?:ref|repository)\1\s*:.*(?:\$\{\{(?:(?!\}\}).)*\b""" + _HEAD + r"|refs/pull/)", re.IGNORECASE
-)
-#: A script that checks out the pull request's code itself: `gh pr checkout`, or a fetch of its ref.
-RUN_CHECKOUT = re.compile(r"\bgh\s+pr\s+checkout\b|\bgit\s+fetch\b[^#\n]*\b(?:refs/)?pull/", re.IGNORECASE)
+#: A script that checks out the pull request's code itself: `gh pr checkout`, or a fetch, then its ref.
+GH_CHECKOUT = re.compile(r"\bgh\s+pr\s+checkout\b", re.IGNORECASE)
+GIT_FETCH = re.compile(r"\bgit\s+fetch\b", re.IGNORECASE)
+PULL_REF = re.compile(r"\b(?:refs/)?pull/", re.IGNORECASE)
+#: Where GitHub reads a workflow's triggers: a workflow, never an action's metadata.
+WORKFLOWS = READ[:2]
 #: What a checkout of the pull request's own code under `pull_request_target` is, needs, and why.
 CHECKOUT_TITLE = "a pull_request_target job checks out the pull request's own code"
 CHECKOUT_FIX = (
@@ -138,42 +143,83 @@ class ScriptInjection(FileRule):
 
 
 def _checked_out(file: ChangedFile) -> list[Hit]:
-    """Each place a workflow `pull_request_target` runs checks out the pull request's own code, a checkout step's
-    `ref:` or `repository:`, or a script's `gh pr checkout` or fetch of its ref, where the change added the trigger,
-    the step's `uses:` or that line, or moved the workflow into place. None for a file not read whole: its trigger may
-    lie past what the diff shows."""
-    if not matches(file.path, *READ[:2]) or not file.read_whole:
+    """Each step of a workflow `pull_request_target` runs that checks out the pull request's own code, once a step: a
+    checkout's `ref:` or `repository:`, or a script's `gh pr checkout` or fetch of its ref, where the change added the
+    trigger, the step's `uses:` or that line, or moved the workflow into place. Of a file not read whole, a hole where
+    a line its diff adds may be one, its trigger past what the diff shows, and none where none is. Read by review: none
+    at all was a review that said nothing of a checkout it could not judge."""
+    if not matches(file.path, *WORKFLOWS):
         return []  # an action's metadata names no trigger
+    if not file.read_whole:
+        shown = (file.near(number) or "" for number in sorted(file.added))
+        if any(TARGET.search(text) or _checkout_line(text) for text in shown):
+            with contextlib.suppress(UnreadError):  # asked, it marks the file missed: a hole, the script findings kept
+                file.lines  # noqa: B018
+        return []
     lines = file.lines
     triggers = _triggers(lines)
     if not triggers:
         return []
-    added = set(file.new_lines(*READ[:2]))  # every line of a workflow moved into place runs now
+    added = set(file.new_lines(*WORKFLOWS))  # every line of a workflow moved into place runs now
     trigger_added = not added.isdisjoint(triggers)
-    found = []
+    found, steps, held = [], set(), {}
     for number, text in enumerate(lines, 1):
-        if text.lstrip().startswith("#"):
-            continue
-        if HEAD_REF.match(text):
-            uses = [at for at in _step_of(lines, number) if CHECKOUT.match(lines[at - 1])]
-            named = bool(uses) and (trigger_added or not added.isdisjoint({number, *uses}))
+        if CHECKOUT_KEY.match(text) and _names_head(text):
+            step = _step_of(lines, number)
+            uses = [at for at in step if CHECKOUT.match(lines[at - 1])]
+            named = bool(uses) and step.start not in steps and (trigger_added or not added.isdisjoint({number, *uses}))
+        elif trigger_added or number in added:
+            step = range(number, number + 1)
+            named = _fetches_head(text) and _script_of(file, number, text, held) is not None
         else:
-            named = bool(RUN_CHECKOUT.search(text)) and (trigger_added or number in added)
+            continue
         if named:
-            found.append(Hit(file.path, number, text.strip(), title=CHECKOUT_TITLE, fix=CHECKOUT_FIX, why=CHECKOUT_WHY))
+            steps.add(step.start)
+            quoted = ("+" if number in file.added else " ") + text
+            found.append(Hit(file.path, number, quoted, title=CHECKOUT_TITLE, fix=CHECKOUT_FIX, why=CHECKOUT_WHY))
     return found
 
 
+def _uncommented(text: str) -> str:
+    """A line with its comment, YAML's ` #` to its end, left out, GitHub's lexer's spaces around a `.` too: read by the
+    second review, `ref: main  # not ${{ github.head_ref }}` and `head . sha` misled it each way."""
+    return _SPACED.sub(r"\1", re.split(r"(?:^|\s)#", text, maxsplit=1)[0])
+
+
+def _names_head(text: str) -> bool:
+    """Whether a checkout key's value names the pull request's own code, in an expression or as a ref of `pull/`."""
+    value = _uncommented(text)
+    for named in HEAD.finditer(value):
+        if named[0].lower() == "refs/pull/" or value.rfind("${{", 0, named.start()) > value.rfind(
+            "}}", 0, named.start()
+        ):
+            return True
+    return False
+
+
+def _fetches_head(text: str) -> bool:
+    """Whether a script line checks out the pull request's code: `gh pr checkout`, or a `git fetch` of `pull/`."""
+    value = _uncommented(text)
+    fetch = GIT_FETCH.search(value)
+    return bool(GH_CHECKOUT.search(value) or (fetch and PULL_REF.search(value, fetch.end())))
+
+
+def _checkout_line(text: str) -> bool:
+    """Whether a line can check out the pull request's code, as a step's key or a script's command."""
+    return bool(CHECKOUT_KEY.match(text) and _names_head(text)) or _fetches_head(text)
+
+
 def _triggers(lines: tuple[str, ...]) -> list[int]:
-    """The lines of the workflow's `on:` key that name `pull_request_target`: its own line and those indented under it.
-    Read by review: a search of every line read a condition, `if: github.event_name != 'pull_request_target'`, as the
-    trigger."""
+    """The lines of the workflow's `on:` key that name `pull_request_target`: its own line and those under it, a
+    sequence at its column among them. Read by review: a search of every line read a condition, `if:
+    github.event_name != 'pull_request_target'`, as the trigger; and by the second review, `on:` with its sequence,
+    `- pull_request_target`, at its own column was none."""
     found: list[int] = []
     inside = False
     for number, text in enumerate(lines, 1):
-        if text.strip() and not text.lstrip().startswith("#") and not text[:1].isspace():
+        if text.strip() and not text[:1].isspace() and not text.startswith(("#", "-")):
             inside = bool(ON.match(text))
-        if inside and TARGET.search(text.split("#", 1)[0]):
+        if inside and TARGET.search(_uncommented(text)):
             found.append(number)
     return found
 

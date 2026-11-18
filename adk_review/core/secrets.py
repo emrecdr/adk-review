@@ -244,7 +244,20 @@ _ANNOTATION = r"(?:\s*:\s*[\w.\[\], |]{1,80}?)?"
 #: A character of a query parameter's value: none that ends one, nor a bracket. Read by review: the digit's search,
 #: unbounded and over a `?` too, read to the end of each run from each name, 1.76 s over 40,000 characters, and past
 #: a bracket the value stops at, so redaction hid what `named-secrets` let go.
-_QUERY_VALUE = r"[^\s&#?\"'<>()\[\]{}]"
+_QUERY_VALUE = r"[^\s&#?;\"'<>()\[\]{}]"
+#: A named parameter of a URL's query, or of its fragment, `#access_token=`, after a `?`, an `&`, a `;` or HTML's
+#: `&amp;`: read by the second review, an escaped separator and an OAuth fragment opened none.
+_QUERY_SECRET = re.compile(
+    r"(?i)(?<=[?&;#])([\w.-]{0,40}?"
+    + _NAMED
+    + r"=)(?="
+    + _QUERY_VALUE
+    + r"{0,255}?\d)"
+    + _STAND_IN
+    + r"("
+    + _QUERY_VALUE
+    + r"{8,})"
+)
 #: A value a name alone says is secret, with no vendor's shape: what `named-secrets` weighs. Read by validation, a
 #: URL's query parameter was neither: `?api_key=`, `access_token=` and `password=` reached the model and the report.
 _GENERIC = (
@@ -266,21 +279,7 @@ _GENERIC = (
         ),
         r"\1[REDACTED]",
     ),
-    (
-        "generic_secret",  # a named parameter of a URL's query string, `?api_key=...`, holding a digit
-        re.compile(
-            r"(?i)(?<=[?&])([\w.-]{0,40}?"
-            + _NAMED
-            + r"=)(?="
-            + _QUERY_VALUE
-            + r"{0,255}?\d)"
-            + _STAND_IN
-            + r"("
-            + _QUERY_VALUE
-            + r"{8,})"
-        ),
-        r"\1[REDACTED]",
-    ),
+    ("generic_secret", _QUERY_SECRET, r"\1[REDACTED]"),  # a URL's query parameter, `?api_key=...`, holding a digit
 )
 #: A named value in quotes running to the end of a text cut from a longer one, its closing quote past the cut: read
 #: only where the text was cut there. Read by review: a scrub that read as far as a cut and a credential crossing it
@@ -457,22 +456,25 @@ def without_examples(text: str) -> str:
     a password is a default credential, and a vendor's key in a URL is a key whatever its host: both stay. The rules
     weigh what is left, so a real key beside an example is still found: measured before, a line holding an example was
     let go whole. Redaction never calls this: it hides every shape, examples too."""
-    return _KEY_HINT.sub(_BLANK, _URL_QUERY.sub(_query_unless_example, _URL_CREDENTIAL.sub(_unless_example, text)))
+    return _KEY_HINT.sub(_BLANK, _URL_CREDENTIAL.sub(_unless_example, _URL_QUERY.sub(_query_unless_example, text)))
 
 
 #: A URL with a query, its host the first group: where a documentation host's example credential is blanked.
 _URL_QUERY = re.compile(
-    r"(?i)\b[a-z][a-z0-9+.-]{0,40}://(?:[^\s/?#@\"'<>]*@)?([^\s/?#:\"'<>]+)[^\s?#\"'<>]*\?[^\s#\"'<>]*"
+    r"(?i)\b[a-z][a-z0-9+.-]{0,40}://(?:[^\s/?#@\"'<>]*+@)?([^\s/?#:@\"'<>]++)[^\s?#\"'<>]*+\?[^\s#\"'<>]*+"
 )
 
 
 def _query_unless_example(found: re.Match[str]) -> str:
     """A URL's query with each named credential blanked where its host is a documentation's, as `_unless_example` does
     a password: read by review, `https://api.example.com/v1?api_key=...` was a blocker where the same key as the URL's
-    password was not."""
-    if not _EXAMPLE_HOST.fullmatch(found.group(1)):
-        return found.group(0)
-    return _GENERIC[2][1].sub(r"\1[REDACTED]", found.group(0))
+    password was not. Read by the second review, and reproduced: a vendor's key there is a key whatever its host, and
+    a URL its query holds, a redirect's target, has a host of its own, so neither is blanked. The pattern reads each
+    part once, none giving back what it read: an overlap of host and path took 17 s over a line of 80,000 characters."""
+    url = found.group(0)
+    if not _EXAMPLE_HOST.fullmatch(found.group(1)) or "://" in url.partition("?")[2]:
+        return url
+    return _QUERY_SECRET.sub(lambda named: named[0] if vendor_shape(named[2]) else f"{named[1]}[REDACTED]", url)
 
 
 def _unless_example(found: re.Match[str]) -> str:
