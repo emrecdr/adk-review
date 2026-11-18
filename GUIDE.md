@@ -522,7 +522,8 @@ in a file the change itself edited, where a line may have moved, an error gone f
 same text is read as moved, never as new: measured, a push's review took 0.6 s more on this repository; on ADK's 815
 files, 0.9 s more where `rule.callers` read the head anyway and 1.8 s where it did not; on litellm's 2,776, 2.4 s and
 4.9 s; and where a push only adds Python files, which `rule.radius-types` reads for a call into another file with
-arguments it does not take, 0.15 s on this repository and 2.2 s on ADK. Otherwise, where a push adds only tests or files
+arguments it does not take, 0.15 s on this repository and 2.2 s on ADK; under `--all`, which has no base, it reads the
+head and names nothing, 4.5 s more on ADK under `default-rules`. Otherwise, where a push adds only tests or files
 other than Python, they read the changed files alone: a name a line of a new test takes from a module that does not
 define it is named where a review reads the head, as one with a guideline does, and not by this hook. A merge grows from more than one: the change is reviewed against each, and passes when one review
 passes, since a line the remote holds nowhere is new to every one of them; where every

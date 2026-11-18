@@ -11,6 +11,7 @@ the package took up to 5 s. What the diagnostics mean, a kind kept and its sever
 
 from __future__ import annotations
 
+import ast
 import functools
 import json
 import os
@@ -277,6 +278,14 @@ def radius(
     # Only a file the base's tree holds as git held it is numbered by its diff: one left as the head holds it is not.
     numbered = frozenset(renamed.values())
     modules = _modules(head, roots)
+
+    @functools.cache
+    def own(path: str) -> frozenset[str]:
+        """The names `path` defines at its top, read once a file: read by review, a pattern over its whole text, once
+        a diagnostic, took 35 s over a new file of 20,000 wrong calls."""
+        module = tree.parsed.get(path)
+        return _top_names(module) if isinstance(module, ast.Module) else frozenset()
+
     return _compared(
         evidence["files"],
         tree.imports,
@@ -286,7 +295,8 @@ def radius(
         added_kinds=frozenset(added_kinds),
         added_unless=tuple(added_unless),
         called=frozenset(called),
-        elsewhere=lambda path, message: _called_elsewhere(path, message, modules, head.get(path, "")),
+        elsewhere=lambda path, message: _called_elsewhere(path, message, modules, own(path)),
+        edited=bool(altered),
         numbered=numbered,
     )
 
@@ -302,19 +312,22 @@ def _compared(
     added_unless: Collection[str],
     called: Collection[str],
     elsewhere: Callable[[str, str], bool],
+    edited: bool,
     numbered: Collection[str],
 ) -> dict[str, list[Diagnostic]] | str:
     """The head's run against the base's, by `_new`, each diagnostic placed first by `_placed`, but for each file
     pyrefly checked nothing in, too deeply nested, left out of both alike: where the change touched one or it reaches a
     file the change touched, the rule could not look there, as `types` says of one, and a file the change does not
     reach is no hole of it. One on a line the change added is named where its kind is one of `added_kinds` and its
-    words hold none of `added_unless`, and its file imports from another the change touched, one it added aside for a
-    file it added, or, of the kinds `called`, the function it names is another file's, as `elsewhere` says; `numbered`
-    names the changed files whose base text the base's tree holds."""
+    words hold none of `added_unless`, and its file imports from another the change touched, where it `edited` a
+    file, or, of the kinds `called`, the function it names is another file's, as `elsewhere` says; `numbered` names
+    the changed files whose base text the base's tree holds. Known limit: a file that imports a touched file has each
+    error of those kinds named on its added lines, those of its own among them, as `types` names them too."""
     touched = {f["path"] for f in files} | {f["old"] for f in files if "old" in f}
-    # Read by review, and reproduced: a new file that imported another new file had each of its own errors named, as
-    # if that file caused them. What a file the change added gets wrong of its own is `types`'s.
-    new_files = {f["path"] for f in files if f["status"] in ("A", "C")}
+    # Read by review, and reproduced: where the change edited no file, a new file that imported another new file had
+    # each of its own errors named, as if that file caused them. What it added breaks nothing that was there, so a
+    # wrong call into another file is all that is named. Where it edited one, a new file may break another, as before.
+    causes = touched if edited else frozenset()
 
     @functools.cache
     def bound(path: str) -> Mapping[str, tuple[str, str | None]]:
@@ -330,7 +343,6 @@ def _compared(
         """Whether a name `path` imports comes from another file the change touched, followed where a file only passes
         it on, as a package's `__init__.py` does: read by review, only the import's own file was asked, and a call
         through `from shop import Repo` was left to `types`."""
-        causes = touched - new_files if path in new_files else touched
         for file, name in bound(path).values():
             for _ in range(PASSED_ON + 1):
                 if file != path and file in causes:
@@ -473,7 +485,7 @@ def _whole(
         number, line = rows[path].place(error["line"])
         stop = rows[path].place(error.get("stop_line") or error["line"])[0]
         message = _LITERAL.sub("'…'", squash(error["concise_description"]))
-        diagnostic = Diagnostic(number, line, error["name"], message)
+        diagnostic = Diagnostic(number, line, error["name"], message, last=stop)  # the rule weighs its range
         found[(path, error["name"], squash(line), index)] = (
             diagnostic,
             range(_decorated(rows[path], number), stop + 1),
@@ -499,7 +511,7 @@ def _modules(paths: Collection[str], roots: Sequence[str]) -> dict[str, frozense
     return {name: frozenset(files) for name, files in found.items()}
 
 
-def _called_elsewhere(path: str, message: str, modules: Mapping[str, frozenset[str]], text: str) -> bool:
+def _called_elsewhere(path: str, message: str, modules: Mapping[str, frozenset[str]], own: Collection[str]) -> bool:
     """Whether the function `message` says a call's arguments do not fit is defined in a file of the tree other than
     `path`, whose `text` this is: the longest leading part of its name that names a module of `modules` names another
     file. One of the same file is `types`'s, which reads it there, pyrefly naming it by its own name, a method by its
@@ -510,12 +522,27 @@ def _called_elsewhere(path: str, message: str, modules: Mapping[str, frozenset[s
     nothing named that was not before, and each wrong call planted named."""
     found = _CALLED.search(message)
     parts = found.group(1).split(".") if found else []
-    if parts and re.search(rf"^(?:async\s+def|def|class)\s+{re.escape(parts[0])}\b", text, re.MULTILINE):
-        return False
     for count in range(len(parts) - 1, 0, -1):
         if files := modules.get(".".join(parts[:count])):
-            return path not in files
+            # A module of one part may be a name of the file's `own`, which pyrefly names alone: read by review, a
+            # `def shop()` hid a call into `shop.lib` where every such name was the file's.
+            return path not in files and not (count == 1 and parts[0] in own)
     return False
+
+
+def _top_names(module: ast.Module) -> frozenset[str]:
+    """The names of the functions and classes `module` defines at its top, those under an `if`, a `try`, a `with`, a
+    loop or a `match` there too: read by review, a class under `if sys.version_info` was missed."""
+    names: set[str] = set()
+    stack: list[ast.AST] = list(module.body)
+    while stack:
+        node = stack.pop()
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            names.add(node.name)
+            continue
+        for field in ("body", "orelse", "finalbody", "handlers", "cases"):
+            stack.extend(getattr(node, field, ()))
+    return frozenset(names)
 
 
 def _roots(paths: Collection[str]) -> list[str]:

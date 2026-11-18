@@ -3009,6 +3009,14 @@ def test_every_sentence_the_command_and_its_hook_print_is_short_and_one_command(
     said += [(rule.check_id, text) for rule in catalog().rules for text in (rule.title, rule.fix, rule.why)]
     fixes = {rule.check_id: getattr(sys.modules[type(rule).__module__], "FIX", {}) for rule in catalog().rules}
     said += [(check, text) for check, table in fixes.items() for text in table.values()]  # a tool's code's own fix
+    # A rule's own sentence for one kind of its findings, `CALL_FIX` and `CALL_WHY`: read by review, none was read.
+    modules = {rule.check_id: vars(sys.modules[type(rule).__module__]) for rule in catalog().rules}
+    said += [
+        (check, text)
+        for check, names in modules.items()
+        for name, text in names.items()
+        if name.endswith(("_FIX", "_WHY")) and isinstance(text, str)
+    ]
     assert _long(said) == []
 
 

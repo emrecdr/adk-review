@@ -3324,6 +3324,67 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         repo = self.branch(tmp_path, {"Config.py": "x = 1\n", "app.py": app}, {"app.py": app + "\n\nConfig().load()\n"})
         assert self.found(repo) == []
 
+    def test_where_the_change_edits_a_file_one_new_file_breaking_another_is_named(self, tmp_path: Path) -> None:
+        """Read by the second review, and reproduced: the first's fix read no file the change added as the cause of
+        another's errors, so where the change also edited a file, a new file's misuse of another new file's class,
+        named on `main`, was named by no rule, `types` reading the import as `Any`. Only a change that edits no Python
+        file reads what it added as its own alone."""
+        helper = (
+            "class Cart:\n    def add(self, item: str) -> None:\n        print(item)\n\n\n"
+            "def helper(a: int) -> int:\n    return a\n"
+        )
+        job = 'from shop.helper import Cart, helper\n\nCart().nope()\nhelper("x")\nCart().add(1)\n'
+        repo = self.branch(
+            tmp_path,
+            {"shop/lib.py": "x = 1\n"},
+            {"shop/lib.py": "x = 2\n", "shop/helper.py": helper, "shop/job.py": job},
+        )
+        named = {(file, line, title.split(": ", 1)[1].split()[0]) for file, line, _severity, title in self.found(repo)}
+        assert named == {
+            ("shop/job.py", 3, "missing-attribute"),
+            ("shop/job.py", 4, "bad-argument-type"),
+            ("shop/job.py", 5, "bad-argument-type"),
+        }, named
+
+    def test_a_name_of_its_own_decides_a_call_only_where_pyrefly_names_no_package(self, tmp_path: Path) -> None:
+        """Read by the second review, and reproduced: the check for a name of the file's own read any `def` or `class`
+        at its top, so `def shop()` hid a wrong call into `shop.lib`, and a class under an `if` was missed, its method
+        read as the module's of its name. It reads the parsed module once a file, an `if`'s and a `try`'s body too, and
+        a name of its own decides only a name pyrefly gives no package."""
+        lib = "def total(n: int) -> int:\n    return n\n"
+        cli = "from shop.lib import total\n\n\ndef shop() -> None:\n    total()\n"
+        app = (
+            "import sys\n\nif sys.version_info >= (3, 11):\n\n    class Config:\n"
+            "        def load(self, a: int) -> int:\n            return a\n\n"
+            "else:\n\n    class Config:\n        def load(self, a: int) -> int:\n            return a\n"
+        )
+        repo = self.branch(
+            tmp_path,
+            {"shop/lib.py": lib, "Config.py": "x = 1\n", "app.py": app},
+            {"shop/cli.py": cli, "app.py": app + "\n\nConfig().load()\n"},
+        )
+        named = {(file, line, title.split(": ", 1)[1].split()[0]) for file, line, _severity, title in self.found(repo)}
+        assert named == {("shop/cli.py", 5, "missing-argument")}, named
+
+    def test_each_finding_on_a_wrong_call_the_change_made_carries_a_calls_fix(self, tmp_path: Path) -> None:
+        """Read by the second review, and reproduced: the call's fix was chosen by a diagnostic's first line, where the
+        rule names one whose range meets a line the change added, so a call over several lines whose argument line was
+        edited had two findings, one fix each way."""
+        from adk_review.collect.git import collect_evidence
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.radius_types import CALL_FIX, RadiusTypes
+
+        lib = "def total(n: int, price: float) -> float:\n    return n * price\n"
+        app = "from shop.lib import total\n\ntotal(\n    1,\n    2.0,\n)\n"
+        repo = self.branch(
+            tmp_path,
+            {"shop/lib.py": lib, "shop/app.py": app},
+            {"shop/lib.py": lib + "\n\nx = 1\n", "shop/app.py": app.replace("    2.0,", "    cost=2.0,")},
+        )
+        answer = run_rules(collect_evidence(str(repo), BASE, "change"), [RadiusTypes()])["rule.radius-types"]
+        assert answer.findings, "the wrong call is named"
+        assert {f.suggestion for f in answer.findings} == {CALL_FIX}, [(f.line, f.suggestion) for f in answer.findings]
+
     def test_the_base_is_read_as_git_holds_it_never_rebuilt_from_the_diff(self, tmp_path: Path) -> None:
         """Read by review: the base was rebuilt from the diff the rules read, which shows a form feed and a lone `\\r`
         as escapes and drops CRLF's `\\r`, so the base was not the file git holds. Read from git, it is."""

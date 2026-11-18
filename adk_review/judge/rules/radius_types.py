@@ -1,7 +1,8 @@
 """What a change breaks where no diff shows it, as pyrefly reads the head's tree against the base's: a method, an
-attribute, a parameter or a type the change altered, in a file it left alone or on a line of a changed file it kept.
-`types` reads each changed file alone, a name it imports read as `Any`, and `callers` reads no types, so a call through
-an object, `repo.get_user(3)`, is read here or nowhere.
+attribute, a parameter or a type the change altered, in a file it left alone or on a line of a changed file it kept;
+and a call the change added whose arguments do not fit another file's function, touched or not. `types` reads each
+changed file alone, a name it imports read as `Any`, and `callers` reads no types, so a call through an object,
+`repo.get_user(3)`, is read here or nowhere.
 """
 
 from __future__ import annotations
@@ -33,11 +34,12 @@ ON_ADDED_LINES = (
     "bad-override",
 )
 #: Pyrefly's words for a diagnostic of those kinds that is no other file's doing, never named on a line the change
-#: added: a method marked `@override` that no parent pyrefly reads holds. The run reads no installed package, so under a
-#: class from one pyrefly says so of every method so marked. Read by the check before the merge, and reproduced: with
-#: every override named there, a new tool on an installed base beside an edited helper was a major finding a method,
-#: and of google-adk's own source written anew, 10 of the 15 overrides named said these words. The pinned pyrefly's
-#: words: a test holds them, and fails where an update says it otherwise.
+#: added: a method marked `@override` that no parent pyrefly reads holds, and a TypedDict that may hold extra items
+#: unpacked into a call, `UNPACKED_EXTRA`, which on a kept line the change's own TypedDict made open. The run reads no
+#: installed package, so under a class from one pyrefly says so of every method so marked. Read by the check before the
+#: merge, and reproduced: with every override named there, a new tool on an installed base beside an edited helper was a
+#: major finding a method, and of google-adk's own source written anew, 10 of the 15 overrides named said these words.
+#: The pinned pyrefly's words: a test holds them, and fails where an update says it otherwise.
 NOT_ON_ADDED_LINES = ("is marked as an override, but no parent class has a matching attribute", UNPACKED_EXTRA)
 #: The kinds named on a line the change added wherever the function called is another file's, whether the change
 #: touched it or not: a call's arguments that do not fit its parameters. Read by validation, and reproduced:
@@ -112,7 +114,13 @@ class RadiusTypes(TreeRule):
                 continue
             # At most `PER_FILE` listed, the rest counted in one finding, as `types` lists pyrefly's.
             shown = sorted(found[:PER_FILE], key=lambda item: item.line)
-            hits += [self._listed(path, item, item.line in tree.added.get(path, ())) for item in shown]
+            added = tree.added.get(path, frozenset())
+            # A diagnostic's whole range, as the rule weighs it: read by review, a call over several lines whose
+            # argument line the change edited was given a kept line's fix on its first.
+            hits += [
+                self._listed(path, item, not added.isdisjoint(range(item.line, (item.last or item.line) + 1)))
+                for item in shown
+            ]
             if rest := found[PER_FILE:]:
                 hits.append(_counted(path, rest))
         return hits
