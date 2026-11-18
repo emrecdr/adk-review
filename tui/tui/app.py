@@ -41,7 +41,7 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 from textual.widgets.selection_list import Selection
 
-from .azure import PullRequest, draft, files_link, line_link, parse_pr_url, thread_link
+from .azure import Place, PullRequest, draft, files_link, line_link, parse_pr_url, thread_link
 from .azure_client import AzLogin, AzureError, Client, Credential, post_comment
 from .azure_state import keep_posted, keep_pull_request_url, posted_threads, pull_request_url
 from .clipboard import copy_text
@@ -1201,10 +1201,10 @@ class AdkReviewTuiApp(App[int]):
                 break
         self._set_banner(f"Posting the comment to pull request {pr.number}.")
         client = self._clients.setdefault(pr.web, Client(pr, self._credential))
-        where_posted = {"path": row.file, "span": span, "last_line": lines[last - 1], "commit": reviewed.head_sha}
+        place = Place(row.file, first, last, lines[last - 1])
         try:
             posted = await asyncio.to_thread(
-                post_comment, client, text=text, fingerprint=row.fingerprint, **where_posted
+                post_comment, client, text=text, place=place, commit=reviewed.head_sha, fingerprint=row.fingerprint
             )
         except AzureError as refused:
             self._drafts[kept] = text

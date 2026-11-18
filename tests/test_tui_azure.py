@@ -14,7 +14,6 @@ import subprocess
 from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
-from typing import ClassVar
 
 import pytest
 from conftest import FakeAdo, FakeToken, _ready_to_comment
@@ -96,7 +95,7 @@ class TestAPullRequestsAddress:
     def test_an_address_holding_a_credential_is_refused_and_never_repeated(self, azure: ModuleType) -> None:
         """A clone's address may hold a token before its host: such a paste is refused, and its text is in no
         sentence the screen then shows."""
-        login = ":".join(("someone", "hunter2secret"))  # joined: no line holds a login in a URL
+        login = ":".join(("someone", "hunter2secret"))  # joined here: no line of this file holds a login in a URL
         with pytest.raises(ValueError, match=r"pullrequest/<number>") as refused:
             azure.parse_pr_url(f"https://{login}@dev.azure.com/contoso/Web/_git/payments/pullrequest/1")
         assert "hunter2secret" not in str(refused.value) and "someone" not in str(refused.value)
@@ -303,7 +302,7 @@ class TestTheThreadAComment:
     """`thread_payload`: what one comment is posted as, in the shape Microsoft's own sample sends."""
 
     def test_the_payload_is_microsofts_sample_shape_over_whole_lines(self, azure: ModuleType) -> None:
-        assert azure.thread_payload("hello", "src/app.py", (42, 57), "    return total", 3, 7) == {
+        assert azure.thread_payload("hello", azure.Place("src/app.py", 42, 57, "    return total"), 3, 7) == {
             "comments": [{"parentCommentId": 0, "content": "hello", "commentType": 1}],
             "status": 1,
             "threadContext": {
@@ -328,7 +327,7 @@ class TestTheThreadAComment:
         """A place that ends where it starts is empty: "Apply changes" then puts the suggestion before the line
         and keeps the old one, as two tools' authors found. The end is past the line's last character, counted as
         Azure DevOps counts, in UTF-16 units."""
-        context = azure.thread_payload("t", "/a.py", (1, 1), last_line, 1, 1)["threadContext"]
+        context = azure.thread_payload("t", azure.Place("/a.py", 1, 1, last_line), 1, 1)["threadContext"]
         assert context["rightFileEnd"] == {"line": 1, "offset": offset} and context["filePath"] == "/a.py"
 
 
@@ -608,6 +607,27 @@ class TestTheClient:
         with pytest.raises(client.AzureError, match="did not answer"):
             client.Client(closed, FakeToken()).post({"comments": []})
 
+    @pytest.mark.parametrize(
+        "origin",
+        [
+            "http://example.test/contoso",
+            "http://127.0.0.1.example.test:80/contoso",
+            "http://localhost:8080/contoso",
+            "ftp://dev.azure.com/contoso",
+            "file:///contoso",
+            "//dev.azure.com/contoso",
+        ],
+    )
+    def test_a_token_goes_over_https_or_to_this_machine_alone(
+        self, client: ModuleType, fake_ado: FakeAdo, origin: str
+    ) -> None:
+        """Whatever built the address: a pasted one is HTTPS by the time it is read, and this is the second lock.
+        A call on any other road is refused before the login is asked for."""
+        token = FakeToken()
+        with pytest.raises(client.AzureError, match="not Azure DevOps' own address"):
+            client.Client(replace(fake_ado.pr, origin=origin), token).status()
+        assert token.asked == 0 and fake_ado.seen == []
+
     def test_a_login_that_az_cannot_give_ends_the_call_before_it_is_made(
         self, client: ModuleType, fake_ado: FakeAdo
     ) -> None:
@@ -620,23 +640,24 @@ class TestTheClient:
         assert fake_ado.seen == []
 
 
+def _place(path: str = "src/app.py"):  # the module's own type
+    """Where the tests' comment goes: lines 42 to 57 of `path`, the last of them `    return total`."""
+    return importlib.import_module("tui.azure").Place(path, 42, 57, "    return total")
+
+
 class TestOnePost:
     """`post_comment`: the checks before a post, in order, each refusal a sentence and nothing posted."""
-
-    WHERE: ClassVar[dict] = {"path": "src/app.py", "span": (42, 57), "last_line": "    return total"}
 
     def test_a_comment_is_posted_once_on_the_latest_push(
         self, azure: ModuleType, client: ModuleType, fake_ado: FakeAdo
     ) -> None:
         _ready_to_comment(fake_ado, "b" * 40)
         asked = client.Client(fake_ado.pr, FakeToken())
-        posted = client.post_comment(asked, text="hello", commit="b" * 40, fingerprint="ab" * 8, **self.WHERE)
+        posted = client.post_comment(asked, text="hello", place=_place(), commit="b" * 40, fingerprint="ab" * 8)
         assert posted == client.Posted(148, already=False)
         posts = [seen for seen in fake_ado.seen if seen.method == "POST"]
         assert len(posts) == 1
-        assert json.loads(posts[0].body) == azure.thread_payload(
-            "hello", "src/app.py", (42, 57), "    return total", 2, 7
-        )
+        assert json.loads(posts[0].body) == azure.thread_payload("hello", _place(), 2, 7)
         tails = [seen.path.removeprefix(fake_ado.root) for seen in fake_ado.seen]
         assert tails == ["", "/iterations", "/threads", "/iterations/2/changes", "/threads"], "the cheap checks first"
 
@@ -654,14 +675,13 @@ class TestOnePost:
         self, client: ModuleType, fake_ado: FakeAdo, change: dict[str, str], said: str
     ) -> None:
         _ready_to_comment(fake_ado, "b" * 40, status=change.get("status", "active"))
-        where = {**self.WHERE, "path": change.get("path", "src/app.py")}
         with pytest.raises(client.AzureError, match=re.escape(said)) as refused:
             client.post_comment(
                 client.Client(fake_ado.pr, FakeToken()),
                 text="hello",
+                place=_place(change.get("path", "src/app.py")),
                 commit=change.get("commit", "b" * 40),
                 fingerprint="ab" * 8,
-                **where,
             )
         assert all(seen.method == "GET" for seen in fake_ado.seen)
         for sentence in str(refused.value).split(". "):
@@ -672,7 +692,7 @@ class TestOnePost:
         fake_ado.answer("GET", "/iterations", {"value": []})
         with pytest.raises(client.AzureError, match="never held commit bbbbbbb"):
             client.post_comment(
-                client.Client(fake_ado.pr, FakeToken()), text="t", commit="b" * 40, fingerprint="", **self.WHERE
+                client.Client(fake_ado.pr, FakeToken()), text="t", place=_place(), commit="b" * 40, fingerprint=""
             )
 
     def test_a_finding_already_posted_is_found_and_not_posted_again(
@@ -687,7 +707,7 @@ class TestOnePost:
             text="hello",
             commit="b" * 40,
             fingerprint=row.fingerprint,
-            **self.WHERE,
+            place=_place(),
         )
         assert posted == client.Posted(5, already=True)
         assert all(seen.method == "GET" for seen in fake_ado.seen)
@@ -697,7 +717,7 @@ class TestOnePost:
     ) -> None:
         _ready_to_comment(fake_ado, "b" * 40)
         asked = client.Client(fake_ado.pr, FakeToken())
-        assert client.post_comment(asked, text="t", commit="b" * 40, fingerprint="", **self.WHERE).thread == 148
+        assert client.post_comment(asked, text="t", place=_place(), commit="b" * 40, fingerprint="").thread == 148
         assert [seen.method for seen in fake_ado.seen].count("POST") == 1
         assert ("GET", fake_ado.root + "/threads") not in [(seen.method, seen.path) for seen in fake_ado.seen]
 

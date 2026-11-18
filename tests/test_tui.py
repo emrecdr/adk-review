@@ -2530,11 +2530,8 @@ class TestAzureDevOpsOnTheScreen:
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             field, status = app.query_one("#pr-url", Input), app.query_one("#pr-status", Static)
-            for wrong in (
-                "https://github.com/contoso/payments/pull/1",
-                "[bold]x[/]",
-                "https://" + ":".join(("u", "hunter2")) + "@dev.azure.com/c",
-            ):
+            held = "https://" + ":".join(("u", "hunter2")) + "@dev.azure.com/c"  # joined: no line holds a login
+            for wrong in ("https://github.com/contoso/payments/pull/1", "[bold]x[/]", held):
                 field.value = wrong
                 await pilot.pause()
                 said = str(status.render())
@@ -2761,7 +2758,7 @@ class TestACommentOnThePullRequest:
         from textual.widgets import DataTable, TextArea
 
         from tui import azure_state
-        from tui.azure import thread_payload
+        from tui.azure import Place, thread_payload
 
         app, sha = _payments_with_code(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
@@ -2774,7 +2771,7 @@ class TestACommentOnThePullRequest:
             await _posted(app, pilot)
             posts = [seen for seen in fake_ado.seen if seen.method == "POST"]
             assert len(posts) == 1
-            assert json.loads(posts[0].body) == thread_payload("my own words", "src/app.py", (2, 2), TAXED, 2, 7)
+            assert json.loads(posts[0].body) == thread_payload("my own words", Place("src/app.py", 2, 2, TAXED), 2, 7)
             assert posts[0].headers["authorization"] == "Bearer tok"
             assert said[-1] == "Posted as thread 148. Press p to open it."
             assert str(app.query_one("#findings-table", DataTable).get_row_at(0)[-1]) == "148"

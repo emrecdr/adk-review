@@ -1064,9 +1064,10 @@ class FakeToken:
     """A login as the client asks it: `forgot` counts how often Azure DevOps refused it."""
 
     def __init__(self, header: str = "Bearer tok") -> None:
-        self.header, self.forgot = header, 0
+        self.header, self.forgot, self.asked = header, 0, 0
 
     def __call__(self) -> str:
+        self.asked += 1
         return self.header
 
     def forget(self) -> None:

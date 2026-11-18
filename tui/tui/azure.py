@@ -172,23 +172,33 @@ def _block(code: str, *, applies: bool) -> str:
     return f"Corrected code:\n\n{_FENCE}\n{code}\n{_FENCE}"
 
 
-def thread_payload(text: str, path: str, span: tuple[int, int], last_line: str, iteration: int, change: int) -> dict:
-    """One comment as the thread it is posted as, on `path`'s lines `span` of the new side, in the shape Microsoft's
-    own sample sends. The place covers its lines whole: it ends one past `last_line`'s last character, counted in
-    UTF-16 units as Azure DevOps counts. A place that ends where it starts is empty, and "Apply changes" then puts a
-    suggestion before the line and keeps the old one. Both sides of the iteration context name `iteration`: the
-    change since the branches' common commit, which is what the review read."""
-    first, last = span
-    end = len(last_line.removesuffix("\r").encode("utf-16-le")) // 2 + 1
+@dataclass(frozen=True)
+class Place:
+    """Where a comment goes: lines `first` to `last` of `path`, on the new side, and the last line's own text, which
+    alone says where the place ends."""
+
+    path: str
+    first: int
+    last: int
+    last_line: str
+
+
+def thread_payload(text: str, place: Place, iteration: int, change: int) -> dict:
+    """One comment as the thread it is posted as, at `place`, in the shape Microsoft's own sample sends. The place
+    covers its lines whole: it ends one past the last line's last character, counted in UTF-16 units as Azure DevOps
+    counts. A place that ends where it starts is empty, and "Apply changes" then puts a suggestion before the line
+    and keeps the old one. Both sides of the iteration context name `iteration`: the change since the branches'
+    common commit, which is what the review read."""
+    end = len(place.last_line.removesuffix("\r").encode("utf-16-le")) // 2 + 1
     return {
         "comments": [{"parentCommentId": 0, "content": text, "commentType": 1}],
         "status": 1,
         "threadContext": {
-            "filePath": "/" + path.lstrip("/"),
+            "filePath": "/" + place.path.lstrip("/"),
             "leftFileStart": None,
             "leftFileEnd": None,
-            "rightFileStart": {"line": first, "offset": 1},
-            "rightFileEnd": {"line": last, "offset": end},
+            "rightFileStart": {"line": place.first, "offset": 1},
+            "rightFileEnd": {"line": place.last, "offset": end},
         },
         "pullRequestThreadContext": {
             "changeTrackingId": change,

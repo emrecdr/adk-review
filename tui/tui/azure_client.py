@@ -25,7 +25,7 @@ import truststore
 
 from adk_review.collect.git import on_path
 
-from .azure import PullRequest, marked, thread_payload
+from .azure import Place, PullRequest, marked, thread_payload
 
 #: Azure DevOps' own application in Microsoft Entra: the resource `az` is asked a token for.
 RESOURCE = "499b84ac-1321-427f-aa17-267ca6975798"
@@ -43,6 +43,8 @@ _PAGE = 2000
 #: A Microsoft Entra tenant's id, as Azure DevOps names the organization's in `X-VSS-ResourceTenant`. Only this
 #: shape is repeated to the person: the header is a server's text, and the sentence names a command to run.
 _TENANT = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
+#: Where a call may go: Azure DevOps over HTTPS, or this machine's own address, where the tests' fake answers.
+_HTTPS, _LOCAL = "https://", "http://127.0.0.1:"
 #: A server's own words in a sentence: one line, this long at most.
 _SAID_MAX_CHARS = 200
 
@@ -203,12 +205,16 @@ class Client:
         the call and did nothing. Nothing is sent again after a failure of the network, where a post may have
         arrived."""
         full = f"{url}?{urlencode({**(query or {}), 'api-version': API_VERSION})}"
+        if not full.startswith((_HTTPS, _LOCAL)):  # the second lock: a pasted address is HTTPS by the time it is read
+            raise AzureError(
+                "This is not Azure DevOps' own address over HTTPS. Paste the pull request's address again."
+            )
         data = None if body is None else json.dumps(body).encode("utf-8")
         headers = {"Authorization": self._credential(), "Accept": "application/json", "User-Agent": "adk-review-tui"}
         if data is not None:
             headers["Content-Type"] = "application/json"  # UTF-8, as JSON is by its own standard
         for waited in (False, True):
-            request = urllib.request.Request(full, data=data, headers=headers, method=method)
+            request = _request(full, data, headers, method)
             try:
                 with self._opener.open(request, timeout=HTTP_TIMEOUT_S) as answer:
                     return self._answered(answer.status, answer.read())
@@ -258,6 +264,18 @@ class Client:
         return AzureError(f"Azure DevOps did not accept your login. Run `az login{named}`, then post again.")
 
 
+def _request(full: str, data: bytes | None, headers: Mapping[str, str], method: str) -> urllib.request.Request:
+    """The request for `full`, which `_call` has read as one of the two roads a token may take. Each is spelled with
+    its scheme as written here, so no address, whatever built it, opens a file or another scheme."""
+    if full.startswith(_HTTPS):
+        return urllib.request.Request(
+            f"https://{full.removeprefix(_HTTPS)}", data=data, headers=dict(headers), method=method
+        )
+    return urllib.request.Request(
+        f"http://127.0.0.1:{full.removeprefix(_LOCAL)}", data=data, headers=dict(headers), method=method
+    )
+
+
 @dataclass(frozen=True)
 class Posted:
     """A finding's thread in the pull request: its id, and whether it was there already, so nothing was posted."""
@@ -266,11 +284,9 @@ class Posted:
     already: bool
 
 
-def post_comment(
-    client: Client, *, text: str, path: str, span: tuple[int, int], last_line: str, commit: str, fingerprint: str
-) -> Posted:
-    """`text` posted on `path`'s lines `span` of the pull request, once: the checks that cost one call first, each
-    refusal an `AzureError` and nothing posted. The commit reviewed must be the pull request's latest push: the
+def post_comment(client: Client, *, text: str, place: Place, commit: str, fingerprint: str) -> Posted:
+    """`text` posted at `place` in the pull request, once: the checks that cost one call first, each refusal an
+    `AzureError` and nothing posted. The commit reviewed must be the pull request's latest push: the
     lines are counted in it, and a commit names its repository too, so no remote is compared. A thread that carries
     the finding's mark already is answered instead of a second one."""
     status = client.status()
@@ -286,9 +302,9 @@ def post_comment(
     iteration = pushed[-1][0]
     if (thread := client.thread_of(fingerprint)) is not None:
         return Posted(thread, already=True)
-    if (change := client.change_of(iteration, path)) is None:
-        raise AzureError(f"The pull request does not change {path}. No line can hold the comment.")
-    return Posted(client.post(thread_payload(text, path, span, last_line, iteration, change)), already=False)
+    if (change := client.change_of(iteration, place.path)) is None:
+        raise AzureError(f"The pull request does not change {place.path}. No line can hold the comment.")
+    return Posted(client.post(thread_payload(text, place, iteration, change)), already=False)
 
 
 def _dicts(value: object) -> list[dict]:
