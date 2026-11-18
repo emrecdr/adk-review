@@ -4296,6 +4296,9 @@ class TestTheShippedRules:
             'patch.object(service, "mode", "_readonly")\n',
             'monkeypatch.setattr("pkg.mod.TIMEOUT", "_x")\n',
             'patch("pkg.service.MODE", new="_fast")\n',
+            # Read by review: a dotted path held in a name or built in an f-string is the target all the same.
+            'monkeypatch.setattr(TARGET, "_staging")\n',
+            'monkeypatch.setattr(f"{MODULE}.ENV", "_v2")\n',
         ):
             assert lines_hit(rule, "tests/test_a.py", code) == [], code
         for code in (

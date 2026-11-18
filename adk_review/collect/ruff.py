@@ -237,12 +237,12 @@ def _emptied(masked: str, aside: set[int]) -> set[int]:
         if not inner:
             continue
         header = next((n for n in range(number - 1, 0, -1) if code(rows[n - 1]) and depth(rows[n - 1]) < inner), 0)
-        if header in headers or not header:
+        if not header or header in headers:
             continue
-        body = []
+        outer, body = depth(rows[header - 1]), []
         for n in range(header + 1, len(rows) + 1):
             if code(rows[n - 1]):
-                if depth(rows[n - 1]) <= depth(rows[header - 1]):
+                if depth(rows[n - 1]) <= outer:
                     break
                 body.append(n)
         if all(n in aside for n in body):

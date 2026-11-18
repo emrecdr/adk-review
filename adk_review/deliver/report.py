@@ -60,19 +60,18 @@ def _unhidden(text: str) -> str:
 
 
 #: A CI runner's command in its log: Azure runs `##vso[` and GitHub `##[` anywhere in a line, GitHub across invisible
-#: characters between them (measured on .NET), so any non-ASCII run counts. GitHub's `::` counts only opening a line,
-#: and no printed line opens with the branch's text.
+#: characters between them (measured on .NET), so any non-ASCII run counts.
 _RUNNER_COMMAND = re.compile(r"#[^ -~]*#[^ -~]*(?:vso)?(?=\[)")
-
-
-#: Where a line opens as a GitHub runner's command, `::`, after any indentation.
-_LINE_COMMAND = re.compile(r"^(\s*)::")
+#: GitHub's other command opener, `::`, which counts only opening a line, after any indentation: read by review, a
+#: pipeline prints a field of the JSON as a line of its own, a model's words opening it.
+_LINE_COMMAND = re.compile(r"^([^\S\n]*)::", re.MULTILINE)
 
 
 def inert(text: str) -> str:
-    """`text` with each CI runner's command opener broken by a space, `##vso [`, and each HTML comment's, `<! --`,
-    which hid what lay between two paths wherever the report renders as markdown: paths and quotes are the branch's."""
-    return _RUNNER_COMMAND.sub(r"\g<0> ", text).replace("<!--", "<! --")
+    """`text` with each CI runner's command opener broken by a space, `##vso [` and `: :`, and each HTML comment's,
+    `<! --`, which hid what lay between two paths wherever the report renders as markdown: paths and quotes are the
+    branch's."""
+    return _LINE_COMMAND.sub(r"\1: :", _RUNNER_COMMAND.sub(r"\g<0> ", text)).replace("<!--", "<! --")
 
 
 #: Where an HTML tag would open: a `<` before a letter, a `/`, a `!` or a `?`.
@@ -526,7 +525,7 @@ def render_comment(
     where = reviewed_where(evidence)
     lines = [head, "", *where, *([""] if where else []), COMMENT_OPENS[verdict].format(bar=fail_on)]
     if previous is not None:
-        lines.append(_since_last(outcome, verdict, previous, checks, evidence["scope"], evidence.get("exclude", ())))
+        lines.append(_since_last(outcome, verdict, previous, checks, evidence))
     if majors := sum(group[0].finding.severity == "major" for group in worth):
         found = "did find" if verdict == "APPROVED" else "also found"
         lines.append(MAJORS_BELOW_BAR.format(found=found, n=majors, s="" if majors == 1 else "s"))
@@ -621,18 +620,18 @@ def _since_last(
     verdict: str,
     previous: Earlier,
     checks: Sequence[str],
-    scope: Sequence[str],
-    exclude: Sequence[str] = (),
+    evidence: Evidence,
 ) -> str:
     """How the change moved since the review `--previous` names, as its author reads it: the points fixed, new and
     still open, the fixed ones uncounted, and said so, where this review could not look at all. Read by review: the text
     report said it and the comment did not, so a second round read as the first."""
+    scope, exclude = evidence["scope"], evidence.get("exclude", ())
     identities = _identified(outcome.kept)
     marks = [
         _since(identity, item, previous, scope, exclude)
         for identity, item in zip(identities, outcome.kept, strict=True)
     ]
-    fixed = _resolved(outcome, identities, verdict, previous, checks, scope, exclude)
+    fixed = _resolved(outcome, identities, verdict, previous, checks, scope, _left_out(evidence))
     done = "" if fixed is None else f"{len(fixed)} fixed, "
     # Read by review: a finding the last review did not look for, its check not run or its file not read, was counted
     # new. It is counted apart.
@@ -1328,6 +1327,13 @@ def _since(
     return None if previous is None else previous.since(identity, item, scope, exclude)
 
 
+def _left_out(evidence: Evidence) -> tuple[str, ...]:
+    """What this review read of no file: the folders and files `--path-exclude` names, and those it skipped or set
+    aside as third-party, none a hole. Read by the second review: a previous finding in a file this one skipped was
+    named fixed."""
+    return (*evidence.get("exclude", ()), *evidence.get("skipped", {}), *evidence.get("ignored", ()))
+
+
 def _resolved(
     outcome: Outcome,
     identities: Sequence[str],
@@ -1405,7 +1411,7 @@ def render(
     # Read against a previous review alone: with none, no finding is fingerprinted.
     identities = _identified(outcome.kept) if previous is not None else [""] * len(outcome.kept)
     lines += _sections(checks, outcome, identities, previous, evidence["scope"], evidence.get("exclude", ()))
-    resolved = _resolved(outcome, identities, verdict, previous, checks, evidence["scope"], evidence.get("exclude", ()))
+    resolved = _resolved(outcome, identities, verdict, previous, checks, evidence["scope"], _left_out(evidence))
     if previous is not None and resolved is None:
         lines.append("- resolved since the previous review: none counted, since this review could not look at all")
     elif resolved is not None:
@@ -1659,8 +1665,10 @@ SCHEMA = 2
 class Earlier:
     """A previous review as `read_previous` read it: its kept findings by fingerprint; the fingerprints it found and
     did not keep, folded under another, already in the files or refuted; and what it looked at: the checks it ran,
-    None where its report names none, those that could not look, and its scope. Each set a sorted tuple, so the cache
-    key that holds it reads the same each run."""
+    None where its report names none, those that could not look, its scope, the files no check read, skipped or set
+    aside as third-party, and those it did not show the guidelines whole. Each set a sorted tuple, so the cache key
+    that holds it reads the same each run, and read through a set made once: read by review, a tuple scanned for each
+    finding took seconds over a report of thousands."""
 
     findings: dict[str, dict]
     seen: tuple[str, ...] = ()
@@ -1669,61 +1677,78 @@ class Earlier:
     scope: tuple[str, ...] = ()
     exclude: tuple[str, ...] = ()
     unread: tuple[str, ...] = ()
+    unshown: tuple[str, ...] = ()
 
-    def since(self, identity: str, item: Sourced, scope: Sequence[str] = (), exclude: Sequence[str] = ()) -> str | None:
+    @functools.cached_property
+    def _sets(self) -> tuple[frozenset[str], frozenset[str], frozenset[str]]:
+        return frozenset(self.seen), frozenset(self.unread), frozenset(self.unshown)
+
+    def since(self, identity: str, item: Sourced, scope: Sequence[str], exclude: Sequence[str]) -> str | None:
         """`item` against this review: `seen` where it found it, kept or not; `new` where it looked and did not; None
-        where it did not look: its check not run there or unable to look, its file one it did not read whole, cut or
-        skipped, or outside the scope it read where this review's, `scope` and `exclude`, is another. Reproduced by
-        review: each was marked new, and a comment counted it so. Under the same scope its own is no limit: a tree rule
-        names a line inside a folder `--path-exclude` leaves out, in either review."""
-        if identity in self.findings or identity in self.seen:
+        where it did not look: its check not run there or unable to look, its file one no check read, or, for a
+        guideline, one it was not shown whole, or outside the scope it read where this review's, `scope` and
+        `exclude`, is another. Reproduced by review: each was marked new, and a comment counted it so. Under the same
+        scope its own is no limit: a tree rule names a line inside a folder `--path-exclude` leaves out, in either
+        review. Read by the second review: a file cut at the diff cap is cut for the guidelines alone, every rule
+        reading it whole; and the same folders named in another order are the same scope."""
+        seen, unread, unshown = self._sets
+        if identity in self.findings or identity in seen:
             return "seen"
         looked = (self.ran is None or item.source in self.ran) and item.source not in self.unlooked
-        file = item.finding.file
-        same = (self.scope, self.exclude) == (tuple(scope), tuple(exclude))
-        read = file not in self.unread and (same or in_scope(file, self.scope, self.exclude))
+        file = safe_line(item.finding.file)  # as the previous report wrote its paths
+        shown = not (item.source.startswith(guideline_id("")) and file in unshown)
+        same = (sorted(self.scope), sorted(self.exclude)) == (
+            sorted(map(safe_line, scope)),
+            sorted(map(safe_line, exclude)),
+        )
+        read = file not in unread and shown and (same or in_scope(file, self.scope, self.exclude))
         return "new" if looked and read else None
 
     def marks(self) -> tuple:
         """What marks a later review's findings, their words aside: a saved report kept while this holds, so a review
         served from the cache stays one. Read by review: kept while its findings' fingerprints held, a saved report's
         other parts went stale, its checks among them."""
-        return (tuple(sorted(self.findings)), self.seen, self.ran, self.unlooked, self.scope, self.exclude, self.unread)
+        kept = tuple(sorted(self.findings))
+        return (kept, self.seen, self.ran, self.unlooked, self.scope, self.exclude, self.unread, self.unshown)
 
     @classmethod
     def read(cls, kept: dict[str, dict], data: dict) -> Earlier:
         """A previous report's kept findings and what it says it found and did not keep, and looked at: the
         fingerprints of its folded, old, refuted, disputed and unverified findings; the checks it ran, None where it
-        names none; those that could not look; the scope it read and left out; and the files it did not read whole,
-        cut or skipped. Each made safe as the report's findings are."""
+        names none; those that could not look; the scope it read and left out; the files no check read, skipped or
+        third-party; and those not read whole, which it shows the guidelines alone. Each made safe as the report's
+        findings are."""
 
-        def listed(key: str, within: dict = data) -> list:
-            found = within.get(key)
+        def listed(key: str) -> list:
+            found = data.get(key)
             return found if isinstance(found, list) else []
 
         def keys(value: object) -> list[str]:
             named = value if isinstance(value, dict | list) else []
             return [name for name in named if isinstance(name, str)]
 
-        seen = {
-            safe_line(found["fingerprint"])
+        def safe(names: list[str]) -> tuple[str, ...]:
+            return tuple(sorted(set(map(safe_line, names))))
+
+        seen = [
+            found["fingerprint"]
             for name in ("folded", "old_findings", "refuted", "disputed", "unverified")
             for found in listed(name)
             if isinstance(found, dict) and isinstance(found.get("fingerprint"), str)
-        }
+        ]
         checks = data.get("checks")
         named = isinstance(checks, list) and all(isinstance(check, str) for check in checks)
-        ran = tuple(sorted(map(safe_line, filter(None, keys(checks))))) if named else None
-        reviewed = data.get("reviewed") if isinstance(data.get("reviewed"), dict) else {}
-        unread = {*keys(data.get("not_read")), *keys(reviewed.get("skipped")), *keys(reviewed.get("ignored"))}
+        reviewed = data.get("reviewed")
+        reviewed = reviewed if isinstance(reviewed, dict) else {}
         return cls(
             kept,
-            tuple(sorted(seen)),
-            ran,
-            tuple(sorted(map(safe_line, keys(data.get("could_not_look"))))),
+            safe(seen),
+            safe(list(filter(None, keys(checks)))) if named else None,
+            safe(keys(data.get("could_not_look"))),
             tuple(map(safe_line, keys(reviewed.get("scope")))),
             tuple(map(safe_line, keys(reviewed.get("exclude")))),
-            tuple(sorted(map(safe_line, unread))),
+            safe([*keys(reviewed.get("skipped")), *keys(reviewed.get("ignored"))]),
+            safe(keys(data.get("not_read"))),
         )
 
 
@@ -1795,11 +1820,9 @@ def _safe_finding(found: dict) -> dict:
 def safe_code(code: str) -> str:
     """A model's corrected code as the JSON keeps it: its lines and their indentation as written, tabs among them, a
     fence a model wrapped it in unwrapped, a credential hidden, every other character a reader cannot see a space, and
-    each line inert, as `safe_line` makes one, a GitHub runner's `::` too: read by review, the JSON's first field of
-    several lines let a line a model wrote open as a runner's command where a pipeline printed the field. Empty where
-    the model gave none."""
+    each line inert, as `safe_line` makes one. Empty where the model gave none."""
     lines = (
-        _LINE_COMMAND.sub(r"\1: :", "\t".join(_CONTROL.sub(" ", part) for part in line.split("\t")).rstrip())
+        "\t".join(_CONTROL.sub(" ", part) for part in line.split("\t")).rstrip()
         for line in _unfenced(code).splitlines()
     )
     return "\n".join(inert(line) for line in lines).strip("\n")
@@ -1966,9 +1989,7 @@ def as_data(
         "old_findings": [_found(item, added, held[id(item)]) for item in outcome.old],
         # The previous review's findings no longer found, as it wrote them; None with no previous review, or where
         # this one has a hole, which resolves nothing.
-        "resolved": _resolved(
-            outcome, identities, verdict, previous, checks, evidence["scope"], evidence.get("exclude", ())
-        ),
+        "resolved": _resolved(outcome, identities, verdict, previous, checks, evidence["scope"], _left_out(evidence)),
         "could_not_look": {source: safe_line(why, REASON_MAX_CHARS) for source, why in outcome.errors.items()},
         "not_read": {safe_line(path): safe_line(why, REASON_MAX_CHARS) for path, why in outcome.unread.items()},
         "folded": [{**_found(item, added, held[id(item)]), "into": into.source} for item, into in outcome.folded],

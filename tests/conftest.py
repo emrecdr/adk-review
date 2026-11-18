@@ -327,6 +327,7 @@ def as_json(outcome, files=(), **said) -> dict:
     whole = [{**entry(f["path"], f.get("status", "M"), f.get("diff"), f.get("added", [])), **f} for f in files]
     evidence = {"preflight": pre, "whole": False, "scope": said.pop("scope", ()), "files": whole}
     evidence["exclude"] = said.pop("exclude", ())
+    evidence["skipped"], evidence["ignored"] = said.pop("skipped", {}), said.pop("ignored", ())
     shown = {"verdict": "APPROVED", "code": 0, "usage": {}, "fail_on": "blocker", "model": "", "profile": "default"}
     return as_data(evidence, outcome, **{**shown, "off": (), "checks": (), **said})
 

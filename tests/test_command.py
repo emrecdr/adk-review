@@ -1095,22 +1095,57 @@ class TestThePreviousReportAndTheHandoff:
     def test_a_finding_in_a_file_the_previous_review_left_unread_or_kept_out_is_not_new(self, tmp_path: Path) -> None:
         """Read by review: a file the previous review did not read whole, cut at the diff cap or skipped, held findings
         it could not see, and each was marked new. And a tree rule names a line inside a folder `--path-exclude` leaves
-        out, so where both reviews leave it out, one found there now is new, never not compared."""
+        out, so where both reviews leave it out, one found there now is new, never not compared. Read by the second
+        review: a file cut at the diff cap is cut for the guidelines alone, and every rule read it whole; and the same
+        folders left out, named in another order, read as another scope."""
         from adk_review.core.verdict import Outcome
         from adk_review.deliver.report import SCHEMA, read_previous
 
         report = tmp_path / "previous.json"
-        reviewed = {"repository": "r", "head": "h", "scope": [], "exclude": ["lib"], "skipped": {"gen.py": "skip"}}
-        written = {"schema": SCHEMA, "findings": [], "checks": ["rule.lint", "rule.callers"], "reviewed": reviewed}
+        reviewed = {"repository": "r", "head": "h", "scope": [], "exclude": ["lib", "vendor"]}
+        reviewed["skipped"] = {"gen.py": "skip"}
+        checks = ["rule.lint", "rule.callers", "guideline.security"]
+        written = {"schema": SCHEMA, "findings": [], "checks": checks, "reviewed": reviewed}
         report.write_text(json.dumps({**written, "not_read": {"big.py": "cut at the diff cap"}}), encoding="utf-8")
         earlier, _health, _scope = read_previous(str(report))
         found = [sourced("minor", file=name) for name in ("big.py", "gen.py", "a.py")]
-        found.append(sourced("major", "rule.callers", file="lib/x.py"))
+        found += [sourced("major", "rule.callers", file="lib/x.py"), sourced("major", "guideline.security", "big.py")]
         marks = {
-            f["file"]: f["since_previous"]
-            for f in as_json(Outcome(kept=found), previous=earlier, exclude=("lib",))["findings"]
+            (f["check"], f["file"]): f["since_previous"]
+            for f in as_json(Outcome(kept=found), previous=earlier, exclude=("vendor", "lib"))["findings"]
         }
-        assert marks == {"big.py": None, "gen.py": None, "a.py": "new", "lib/x.py": "new"}, marks
+        assert marks == {
+            ("rule.lint", "big.py"): "new",
+            ("rule.lint", "gen.py"): None,
+            ("rule.lint", "a.py"): "new",
+            ("rule.callers", "lib/x.py"): "new",
+            ("guideline.security", "big.py"): None,
+        }, marks
+
+    def test_a_finding_in_a_file_this_review_skipped_is_never_fixed(self, tmp_path: Path) -> None:
+        """Read by the second review: a previous finding in a file this review skipped or set aside as third-party,
+        which no check read, was named fixed, since a skipped file is no hole."""
+        from adk_review.core.verdict import Outcome
+        from adk_review.deliver.report import SCHEMA, read_previous
+
+        report = tmp_path / "previous.json"
+        findings = [{"fingerprint": f"{n}" * 16, "check": "rule.lint", "file": name} for n, name in enumerate("abc")]
+        report.write_text(json.dumps({"schema": SCHEMA, "findings": findings}), encoding="utf-8")
+        earlier, _health, _scope = read_previous(str(report))
+        data = as_json(Outcome(), previous=earlier, checks=("rule.lint",), skipped={"a": "a"}, ignored=("b",))
+        assert [f["file"] for f in data["resolved"]] == ["c"], data["resolved"]
+
+    def test_no_string_of_the_json_opens_as_a_github_runners_command(self) -> None:
+        """Read by the second review: GitHub's runner reads `::` opening a line, after any indentation, as a command,
+        and a pipeline prints a field of the JSON as a line, `jq -r '.findings[].why'`; only `code` was broken."""
+        from dataclasses import replace
+
+        from adk_review.core.verdict import Outcome
+
+        item = sourced("major", title="::error::pwned")
+        item = replace(item, finding=item.finding.model_copy(update={"why": "  ::add-mask::x"}))
+        found = as_json(Outcome(kept=[item]))["findings"][0]
+        assert not found["title"].lstrip().startswith("::") and not found["why"].lstrip().startswith("::"), found
 
     def test_a_refuted_finding_and_a_fixed_ones_code_are_written_as_read(self, tmp_path: Path) -> None:
         """Read by review: a refuted finding's fingerprint restarted at the first occurrence, where `--previous` counts

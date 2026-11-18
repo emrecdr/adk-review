@@ -64,6 +64,9 @@ def _patched(call: ast.Call) -> ast.expr | None:
         return argument(call, "attribute", 1)
     if called == "patch" or called.endswith(".patch"):
         return argument(call, "target", 0)
-    target = argument(call, "target", 0)  # `monkeypatch.setattr`: a dotted path in place of an object
-    dotted = isinstance(target, ast.Constant) and isinstance(target.value, str) and called != "setattr"
-    return target if dotted else argument(call, "name", 1)
+    # `monkeypatch.setattr` takes a dotted path in place of an object: a string, or, read by review, two arguments and
+    # no value, as pytest reads them, the path held in a name or built in an f-string.
+    target = argument(call, "target", 0)
+    literal = isinstance(target, ast.Constant) and isinstance(target.value, str)
+    two = len(call.args) == 2 and argument(call, "value") is None
+    return target if called != "setattr" and (literal or two) else argument(call, "name", 1)

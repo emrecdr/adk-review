@@ -58,9 +58,10 @@ def argument(call: ast.Call, name: str, position: int | None = None) -> ast.expr
     named = next((keyword.value for keyword in call.keywords if keyword.arg == name), None)
     if named is not None:
         return named
-    placed = call.args[: position + 1] if position is not None else []
-    if position is not None and len(placed) > position and not any(isinstance(a, ast.Starred) for a in placed):
-        return call.args[position]
+    if position is not None:
+        placed = call.args[: position + 1]
+        if len(placed) > position and not any(isinstance(given, ast.Starred) for given in placed):
+            return placed[position]
     spread = next((keyword.value for keyword in call.keywords if keyword.arg is None), None)
     return spread or next((given for given in call.args if isinstance(given, ast.Starred)), None)
 
