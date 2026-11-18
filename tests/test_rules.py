@@ -1737,6 +1737,24 @@ class TestTheCleanupAndThePitfalls:
         assert _codes(ruff_rule_findings(Pitfalls(), [test])) == [("PLW0129", "major")]
         assert ruff_rule_findings(Simplify(), [test]) == [], "cleanup in a test is not this rule's"
 
+    def test_pitfalls_names_five_more_traps_ruff_proves(self) -> None:
+        """Read by validation: five stable codes no rule selected, each a trap the code does not do what it reads. Measured
+        over google-adk, pydantic, httpx and litellm: 0 hits; over the owner's projects, 1, a real duplicate in
+        `__all__`. `except A or B` catches `A` alone, a major; the rest minor. LOG004 and LOG014 are left out: 5 false
+        hits, each `exc_info=True` in a FastAPI handler, which Starlette calls inside its own `except`."""
+        from adk_review.judge.rules.pitfalls import Pitfalls
+
+        traps = (
+            "import logging\nfrom typing import NoReturn\n\n__all__ = ['run', 'run']\n\n\n"
+            "class Tool:\n    @staticmethod\n    def make(self):\n        return self\n\n\n"
+            "def never() -> NoReturn | int:\n    raise SystemExit\n\n\n"
+            "def run(value):\n    try:\n        return int(value)\n    except ValueError or TypeError:\n"
+            "        logging.exception('bad value', exc_info=False)\n        return None\n"
+        )
+        found = set(_codes(ruff_rule_findings(Pitfalls(), [_entry("m.py", traps)])))
+        expected = {("RUF068", "minor"), ("PLW0211", "minor"), ("RUF020", "minor"), ("PLW0711", "major")}
+        assert found == expected | {("LOG007", "minor")}, found
+
     def test_a_line_rule_names_a_link_whose_file_was_not_read_as_a_hole(self) -> None:
         """Read by review: a link's lines are the file it names, new under its name, and one not read, a blob a
         partial clone lacks or a file past the size cap, showed a line rule only that file's path. A key there was
