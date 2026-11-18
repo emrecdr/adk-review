@@ -3,8 +3,9 @@
 #
 # Keybindings in the TUI:
 #   Ctrl+R  Run Review        Ctrl+D  Dry Run            Ctrl+X  Stop Running Review
-#   Ctrl+M  Minimize/Expand   Ctrl+P  Command Palette    Ctrl+Y  Copy Active Tab
+#   Ctrl+T  Fold/Unfold All   Ctrl+P  Command Palette    Ctrl+Y  Copy Active Tab
 #   F5      Fetch & Refresh   1..7    Toggle Section 1-7
+# adk_review/tui/README.md says what each setting and key does.
 
 [workspace]
 # One or more root folders containing your local Git repositories.

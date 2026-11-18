@@ -1,6 +1,6 @@
 ---
 name: update-docs
-description: Keep the docs true after a change to the reviewer — find every guide that names what changed, not only the one beside the edit, and hold each to the code — GUIDE.md, README.md, CLAUDE.md, the Copilot files under .github/, .env.example and the comments of the workflows and the Makefile. Use after a change to a flag, check, JSON field, limit, exit code, module, helper, command, CI step or setting, and before calling the change done.
+description: Keep the docs true after a change to the reviewer — find every guide that names what changed, not only the one beside the edit, and hold each to the code — GUIDE.md, README.md, CLAUDE.md, the terminal front end's adk_review/tui/README.md, the Copilot files under .github/, .env.example and the comments of the workflows and the Makefile. Use after a change to a flag, check, JSON field, limit, exit code, module, helper, command, CI step or setting, and before calling the change done.
 ---
 
 # Keep the docs true after a change
@@ -13,7 +13,7 @@ tree holds, and that `README.md` names each module at the package's root; `tests
 1. Name what the change made stale: a function, type or flag renamed or added, a file moved, a CI step added, a
    default or an exit code changed.
 2. Search every guide for the old wording, not only the file beside the edit: a case-insensitive search of
-   `README.md`, `GUIDE.md`, `CLAUDE.md`, `.github/` and `.env.example` for the name, the flag and the phrase the change
+   `README.md`, `GUIDE.md`, `CLAUDE.md`, `adk_review/tui/README.md`, `.github/` and `.env.example` for the name, the flag and the phrase the change
    outdated, such as "the lint and the suite" once a gate joins them. A guide that lists several things in one place —
    the README's module table, the door's contract, the exit codes — is wrong when one is missing.
 3. Each guide holds one kind of truth: `GUIDE.md` what a user runs and reads back; `README.md` the architecture and

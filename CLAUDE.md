@@ -230,14 +230,17 @@ Load-bearing rules the tests enforce:
   before it builds anything, and while the arm cannot run answers the turn with its sentence before any agent runs, and
   after `StopAtRateLimit`, `OneTurn`, which gives each judging agent one fixed turn, `review`, as the command's read:
   ADK would hand the verdict the guidelines' findings unfenced as a turn.
-- **Front end.** `tui/`, the terminal front end on Textual, imports `core`, `collect` and `judge`, and nothing imports
-  it; the cache key leaves its folder out. Textual is the `tui` extra, never a dependency or in the `dev` group, so a
-  pipeline's `uv sync --locked` or `uv tool install` installs no UI package; CI, Copilot's setup and `make sync` ask for
-  it, so the suite and the type check read the screen, and pyrefly reads Textual as `Any` where it is missing. It reads
-  git only through `collect`'s `read_only`, under a review's own environment, and writes into a repository only at the
-  person's F5, a fetch, or their answer to a branch behind its remote, `git branch -f` on a branch no working tree has
-  checked out. Every string a repository, a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a
-  tag.
+- **Front end.** `tui/`, the terminal front end on Textual, imports `core`, `collect`, `judge` and `deliver`'s
+  `windows_word`, and nothing imports it; the cache key leaves its folder out, and `adk_review/tui/README.md` is its
+  guide. Textual is the `tui` extra, never a dependency or in the `dev` group, so a pipeline's `uv sync --locked` or `uv
+  tool install` installs no UI package; CI, Copilot's setup and `make sync` ask for it, so the suite and the type check
+  read the screen, and pyrefly reads Textual as `Any` where it is missing. It reads git only through `collect`'s
+  `read_only`, under a review's own environment, and writes into a repository only at the person's F5, a fetch, or their
+  answer to a branch behind its remote, `git branch -f` on a branch no working tree has checked out. Every string a
+  repository, a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a tag. On Windows, from cmd
+  and PowerShell alike: the command it shows is quoted by `windows_word`, or not shown; no key is one a terminal sends
+  as another or the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first and none but Stop runs behind a
+  dialog; a review it runs gets UTF-8 streams; and a copy goes to Windows' own clipboard too.
 - **Layering** (`tests/test_layering.py`): `core` → `collect` → `judge` → `deliver`, with imports pointing one way
   only, never spelled from the top (`adk_review.…`), `deliver/` importing `core` alone, a guideline importing `core`
   alone, and a rule importing one door, `judge/rule_helpers/`, alone, which imports `core` alone and lists in `__all__`

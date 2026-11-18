@@ -16,7 +16,12 @@ from conftest import ROOT, as_json, in_the_working_tree
 PACKAGE = ROOT / "adk_review"
 #: The guides a reader or an assistant follows, held to the paths they name. `README.md` names other repositories'
 #: paths too — a hostile branch's `X.py/y.py`, a skip glob's `.venv/` — so it is not among them.
-GUIDES = [ROOT / "CLAUDE.md", ROOT / "GUIDE.md", *sorted((ROOT / ".github").rglob("*.md"))]
+GUIDES = [
+    ROOT / "CLAUDE.md",
+    ROOT / "GUIDE.md",
+    PACKAGE / "tui" / "README.md",
+    *sorted((ROOT / ".github").rglob("*.md")),
+]
 #: A backticked path with a folder in it: a file by the dot in its name, a folder by its trailing slash.
 _PATH = re.compile(r"`((?:[\w.-]+/)+(?:[\w-]+\.[\w.]+)?)`")
 #: The one path a guide names that no checkout holds: `adk web`'s session store, written when it runs.
@@ -38,6 +43,23 @@ def test_a_guide_names_only_paths_in_the_working_tree(guide: Path) -> None:
     named = set(_PATH.findall(guide.read_text(encoding="utf-8"))) - NOT_IN_THE_REPOSITORY
     missing = sorted(name for name in named if not _present(name))
     assert missing == [], f"{guide.relative_to(ROOT)} names paths that are not in the working tree: {missing}"
+
+
+def test_the_front_ends_guide_names_each_of_its_modules_and_each_key_it_binds() -> None:
+    """The terminal front end has a guide of its own. Read by review: its keys changed, Ctrl+M to Ctrl+T, and the guides
+    and the example config still named the old one. A module or a key the guide does not name fails here."""
+    folder = PACKAGE / "tui"
+    guide = (folder / "README.md").read_text(encoding="utf-8")
+    unnamed = [p.name for p in sorted(folder.glob("*.py")) if f"`{p.name}`" not in guide]
+    keys = re.findall(r'Binding\("([^"]+)"', (folder / "app.py").read_text(encoding="utf-8"))
+
+    def written(key: str) -> str:  # as the guide writes a key: `q`, `F5`, `Ctrl+R`
+        *held, last = key.split("+")
+        last = last.upper() if held or len(last) > 1 else last
+        return "+".join([*(part.capitalize() for part in held), last])
+
+    missing = [f"`{written(key)}`" for key in keys if not key.isdigit() and f"`{written(key)}`" not in guide]
+    assert (unnamed, missing) == ([], []), f"adk_review/tui/README.md never names: {unnamed + missing}"
 
 
 def test_the_readme_names_every_module_at_the_packages_root() -> None:

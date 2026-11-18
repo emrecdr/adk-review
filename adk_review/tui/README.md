@@ -1,0 +1,121 @@
+# The terminal front end
+
+`adk-review-tui` is a screen for the terminal, built on [Textual](https://textual.textualize.io/). It picks a
+repository, the branch to review and its target, the folders, the profile or the checks, and the outputs. Then it runs
+the review and shows the report, the findings, the comment and the hand-off in tabs. A review it runs is the command's
+own: the same checks, the same exit codes and the same files.
+
+It is optional. A review never imports it, and a pipeline never needs it.
+
+## Install
+
+In a checkout of adk-review:
+
+```bash
+uv sync --locked --extra tui     # the reviewer and Textual; make sync does the same
+uv run adk-review-tui            # start it
+```
+
+`uv sync --locked` without `--extra tui` removes Textual again: uv makes the environment match the lock exactly.
+
+As an installed command, with no checkout:
+
+```bash
+uv tool install --exclude-newer P3D "adk-review[tui] @ git+https://github.com/emrecdr/adk-review"
+adk-review-tui
+```
+
+`uv tool install` reads no lock, so `--exclude-newer P3D` keeps the three days' cooldown the lock keeps. Without the
+`tui` extra, `adk-review-tui` says how to install it and stops.
+
+In a pipeline, install the reviewer as [GUIDE.md](../../GUIDE.md) says, with no extra: no UI package is installed.
+
+## Its config
+
+The first run writes `.tui.toml` beside its code, in `adk_review/tui/`, with the folder above the checkout as the
+folder of repositories. `tui.example.toml` beside it shows every setting. `--config FILE` reads another file, and
+`--init-config` writes the file and prints its path.
+
+| Setting | What it sets |
+|---|---|
+| `[workspace] root_dirs` | The folders that hold your repositories: a path, or `{ label = "...", path = "..." }`. With more than one, the screen asks for the folder first. |
+| `scan_depth` | How many folders deep it looks for repositories, from 1 to 5. |
+| `fetch_timeout_s` | How long the fetch at F5 may run, in seconds. |
+| `output_dir` | Where each review's JSON report, comment and hand-off go. |
+| `[defaults]` | The profile, the `--fail-on` bar, and which outputs and options are on. |
+| `[projects."<name>"]` | One repository's saved choices, written at each review the screen runs. |
+
+A `fail_on` that names no severity, or a file that is no TOML, stops the start with one sentence and exit 2.
+
+Its state, the last report of each branch, which marks findings new or resolved, and the review cache, is in a
+`.state` folder beside the config. In a copy installed with `uv tool install`, a reinstall removes the config and
+the state.
+
+## The steps
+
+1. The folder of repositories, where `root_dirs` names more than one.
+2. The repository.
+3. The branch under review.
+4. The target branch.
+5. The folders to include or leave out: `--path` and `--path-exclude`.
+6. How it reviews: the branch against its target, what is staged (`--staged`), or every file (`--all`); the profile
+   or `--check`; `--fail-on`; `--diff-cap`.
+7. The outputs: `--comment`, `--handoff`, `--verify`, the cache and `--previous`.
+
+The line under the steps shows the command it will run, ready to paste.
+
+## It writes nothing until you ask
+
+As the reviewer does, the screen reads a repository and writes nothing into it:
+
+- It lists the branches as the repository holds them. F5 runs `git fetch --prune` on the repository you chose.
+- A branch only the remote holds is reviewed by its remote name, `origin/<branch>`. No local branch is made.
+- For a local branch behind its remote, it asks. On yes, `git branch -f` moves that branch, but never one a working
+  tree has checked out: that one stays as it is, and the remote's branch is reviewed.
+- Each read runs as the reviewer runs git: a repository's own config starts no program, and no read takes a lock.
+
+## Keys
+
+| Key | What it does |
+|---|---|
+| `Ctrl+R` | Run the review |
+| `Ctrl+D` | Run a `--dry-run`: what the review would cover and run, nothing run |
+| `Ctrl+X` | Stop a running review |
+| `Ctrl+T` | Fold or unfold every section |
+| `Ctrl+Y` | Copy the open tab: the report, a finding, the comment or the hand-off |
+| `Ctrl+P` | Open the command palette: a repository, a branch, a profile or an action by name |
+| `F5` | Fetch the chosen repository, and list its branches again |
+| A number key | Fold or unfold the section of that number, where no text field has the focus |
+| `q` | Quit |
+
+The action keys work wherever the focus is, a text field included. While a dialog is open, only `Ctrl+X` works.
+
+## On Windows
+
+It runs in cmd, in PowerShell and in Windows Terminal alike.
+
+- The command it shows reads the same in cmd and in PowerShell. Where an argument holds a character one of them
+  reads, such as `$`, `%` or `!`, it says the command cannot be pasted, and `Ctrl+R` still runs it.
+- `Ctrl+Y` copies into Windows' own clipboard, so it works in the classic console window too. Elsewhere it copies
+  through the terminal: Windows Terminal, iTerm2 and kitty take it, and macOS Terminal does not.
+- No key is one a terminal sends as another key, as it sends Enter for `Ctrl+M`, or one the classic console keeps for
+  itself: `Ctrl+A`, `Ctrl+C`, `Ctrl+F`, `Ctrl+M` and `Ctrl+V`.
+- A review it runs writes its text in UTF-8, so a branch's or a file's name reads as written.
+- Stopping a review stops its whole process tree.
+
+## Its modules
+
+| Module | What it holds |
+|---|---|
+| `__init__.py`, `__main__.py` | The `adk-review-tui` command: `--config`, `--init-config`, and the config read before the screen opens |
+| `app.py` | The screen: the steps, the tabs, the keys, and the review it runs |
+| `config.py` | `.tui.toml`: the folders of repositories, the defaults and each repository's saved choices |
+| `git_sync.py` | The repositories under a folder, their branches and how each stands to its remote, and the fetch at F5 |
+| `options.py` | The profiles, the command a selection makes, and the report `--previous` reads |
+| `findings.py` | A `--json` report read for the findings tab, its filters, and a check's explanation |
+| `modals.py` | The dialogs: a branch behind or apart from its remote, and a check's explanation |
+| `commands.py` | The command palette |
+| `clipboard.py` | Copying, through the terminal and through Windows' own clipboard |
+| `styles.py` | The screen's styles, and `literal`, which draws a `[` as written |
+
+The rules for changing this folder are in [CLAUDE.md](../../CLAUDE.md), under "Front end".
