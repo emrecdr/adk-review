@@ -155,7 +155,6 @@ class TestGitSyncEngine:
             inspect_branch_sync,
             is_dirty,
             list_branches,
-            materialize_remote_branch,
             preferred_base_branch,
         )
 
@@ -188,25 +187,60 @@ class TestGitSyncEngine:
         assert "999" in (local / "src" / "app.py").read_text(encoding="utf-8"), "dirty working tree preserved"
         assert inspect_branch_sync(str(local), list_branches(str(local))[1]).kind == "up_to_date"
 
-        # 3. Selecting remote branch `origin/feat-remote` materializes local `feat-remote` without checkout
+        # 3. A branch only the remote holds is reviewed by its remote name: no local branch is made for it
         remote_status = inspect_branch_sync(str(local), by_name["origin/feat-remote"])
-        assert remote_status.kind == "remote_only"
-        mat = materialize_remote_branch(str(local), "feat-remote", "origin/feat-remote")
-        assert mat.ok is True and mat.resolved_ref == "feat-remote"
-        assert checked_out(str(local)) == "feat-local", "still on feat-local with zero checkout"
-        assert "999" in (local / "src" / "app.py").read_text(encoding="utf-8")
+        assert remote_status.kind == "remote_only" and remote_status.upstream_branch == "origin/feat-remote"
+        assert "feat-remote" not in _git(local, "for-each-ref", "--format=%(refname:short)", "refs/heads").split()
 
         # 4. Changed folders between `main` and `feat-remote`, and in `--staged` mode
-        folders, file_count = changed_folders(str(local), "main", "feat-remote")
+        folders, file_count = changed_folders(str(local), "main", "origin/feat-remote")
         folder_names = [f for f, _label in folders]
         assert file_count == 1 and "tests" in folder_names and "src" in folder_names
-        assert preferred_base_branch(str(local), list_branches(str(local)), "feat-remote") == "main"
+        assert preferred_base_branch(str(local), list_branches(str(local)), "origin/feat-remote") == "main"
 
         (local / "src" / "staged_new.py").write_text("y = 1\n", encoding="utf-8")
         _git(local, "add", "src/staged_new.py")
         staged_folders, staged_count = changed_folders(str(local), "main", "feat-local", mode="staged")
         assert staged_count == 1
         assert ("src", "src  (1 changed)") in staged_folders
+
+    def test_a_checked_out_branch_behind_its_remote_is_left_as_it_is(self, tmp_path: Path) -> None:
+        """The question a person answers says their files stay untouched. Read by review: on a clean checkout the
+        answer ran `git merge --ff-only`, which rewrote the files of the working tree. The remote's branch is reviewed
+        by its own name, and the local one is left where it was."""
+        from adk_review.tui.git_sync import fast_forward_local_branch, fetch_remote
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        assert fetch_remote(str(local), timeout_s=10).ok is True
+        before = _git(local, "rev-parse", "main")
+        assert before != _git(local, "rev-parse", "origin/main"), "main is behind its remote"
+        done = fast_forward_local_branch(str(local), "main", "origin/main")
+        assert done.ok is True and done.resolved_ref == "origin/main", done
+        assert _git(local, "rev-parse", "main") == before, "the checked-out branch did not move"
+        assert (local / "src" / "app.py").read_text(encoding="utf-8") == "x = 1\n", "nor did its files"
+
+    def test_reading_a_repository_starts_no_program_its_own_config_names(self, tmp_path: Path) -> None:
+        """The scan reads every repository under a root, one a person was handed among them. Read by review, and
+        reproduced: `git status` there started the program its `core.fsmonitor` names, the moment the screen opened.
+        Each read runs under a review's own environment now, where that setting is fixed, and takes no lock."""
+        from adk_review.tui.git_sync import changed_folders, discover_projects, is_dirty, list_branches
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        ran, script = tmp_path / "ran.txt", tmp_path / "named.py"
+        script.write_text(f"open({str(ran)!r}, 'w').close()\n", encoding="utf-8")
+        _git(local, "config", "core.fsmonitor", f'"{Path(sys.executable).as_posix()}" "{script.as_posix()}"')
+        _git(local, "status")
+        assert ran.exists(), "git starts it for a plain status, so this test can see it"
+        ran.unlink()
+        index = local / ".git" / "index"
+        held = (index.read_bytes(), index.stat().st_mtime_ns)
+        assert [project.name for project in discover_projects(str(tmp_path / "workspace"))] == ["my-service"]
+        assert is_dirty(str(local)) is False
+        assert list_branches(str(local))[0].name == "main"
+        changed_folders(str(local), "origin/main", "main")
+        changed_folders(str(local), None, "main", mode="staged")
+        assert not ran.exists(), "no read started the program"
+        assert (index.read_bytes(), index.stat().st_mtime_ns) == held, "and none rewrote the index"
 
 
 class TestOptionsAndCliBuilder:
@@ -323,7 +357,10 @@ class TestOptionsAndCliBuilder:
         cmd = format_cli_command([r"C:\My Repos\app", "--head", "feat/x"], windows=True)
         assert cmd == 'adk-review "C:\\My Repos\\app" --head feat/x'
 
+        from adk_review.collect import git as collector
+
         monkeypatch.setattr(git_sync, "on_path", lambda _name: "git")
+        monkeypatch.setattr(collector, "on_path", lambda _name: "git")  # the reads' runner, which finds git itself
         with pytest.raises(OSError, match="not on PATH"):
             git_sync._run_git(str(tmp_path), ["status"])
         assert discover_projects(str(tmp_path)) == []
@@ -445,6 +482,50 @@ class TestOptionsAndCliBuilder:
             await pilot.pause()
             multi_box = multi_app.query_one("#root-box", Collapsible)
             assert not multi_box.has_class("hidden") and multi_box.display is True
+
+    @pytest.mark.asyncio
+    async def test_the_screen_writes_nothing_into_a_repository_until_the_person_asks(self, tmp_path: Path) -> None:
+        """The reviewer writes nothing into the repository under review, and names the `git fetch` for the person to
+        run. Read by review, and reproduced: opening the screen ran `git fetch --prune` on the first repository of the
+        root, which deleted a remote-tracking ref, and choosing a remote's branch made a local branch, each unasked.
+        F5 is the person's own fetch; a remote's branch is reviewed by its remote name."""
+        pytest.importorskip("textual")
+        from textual.widgets import OptionList
+
+        from adk_review.tui.app import AdkReviewTuiApp
+
+        remote, local = _init_repo_with_remote(tmp_path)
+        _git(local, "update-ref", "refs/remotes/origin/gone", "HEAD")  # a branch the remote no longer holds
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+
+        def refs() -> list[str]:
+            return _git(local, "for-each-ref", "--format=%(refname) %(objectname)").splitlines()
+
+        held = refs()
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            assert refs() == held and not (local / ".git" / "FETCH_HEAD").exists(), "opening fetched nothing"
+            assert "F5" in str(app.query_one("#status-banner").render()), "and the banner names the key that does"
+
+            await pilot.press("f5")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert (local / ".git" / "FETCH_HEAD").exists(), "F5 is the person's own fetch"
+            assert "origin/feat-remote" in [branch.name for branch in app.branches]
+
+            fetched = refs()
+            head = app.query_one("#head-list", OptionList)
+            names = [str(head.get_option_at_index(at).id) for at in range(head.option_count)]
+            head.highlighted = names.index("origin/feat-remote")
+            head.action_select()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert app.selected_head == "origin/feat-remote", "reviewed by its remote name"
+            assert refs() == fetched, "and no local branch was made for it"
+        assert remote.is_dir()
 
 
 class TestFindingsExplorer:

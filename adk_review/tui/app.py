@@ -55,7 +55,6 @@ from .git_sync import (
     fetch_remote,
     inspect_branch_sync,
     list_branches,
-    materialize_remote_branch,
     preferred_base_branch,
 )
 from .modals import DivergedBranchModal, ExplainCheckModal, SyncBranchModal
@@ -389,20 +388,27 @@ class AdkReviewTuiApp(App[int]):
         self.query_one("#diff-cap-input", Input).value = str(preset.diff_cap) if preset and preset.diff_cap > 0 else ""
 
     @work(exclusive=True, group="git_load")
-    async def _load_repo_branches(self, project: ProjectInfo) -> None:
-        self._set_banner(f"Running git fetch --prune on {project.name}...")
-        self._log_progress(f"[{project.name}] git fetch --prune ...")
+    async def _load_repo_branches(self, project: ProjectInfo, *, fetch: bool = False) -> None:
+        """List `project`'s branches as the repository holds them; with `fetch`, the person's own F5, after a
+        `git fetch --prune`. Nothing is fetched unasked, as the reviewer writes nothing into a repository under review.
+        Read by review, and reproduced: opening the screen fetched the first repository of the root, and pruned a
+        remote-tracking ref there."""
         head_list = self.query_one("#head-list", OptionList)
         base_list = self.query_one("#base-list", OptionList)
         head_list.loading = True
         base_list.loading = True
+        said = "branches as the repository holds them"
         try:
-            fetch_res = await asyncio.to_thread(fetch_remote, project.path, self.tui_config.fetch_timeout_s)
-            if self.selected_project != project:
-                return
-            self._log_progress(f"[{project.name}] {fetch_res.message}")
-            if not fetch_res.ok:
-                self.notify(fetch_res.message, severity="warning", timeout=4)
+            if fetch:
+                self._set_banner(f"Running git fetch --prune on {project.name}...")
+                self._log_progress(f"[{project.name}] git fetch --prune ...")
+                fetch_res = await asyncio.to_thread(fetch_remote, project.path, self.tui_config.fetch_timeout_s)
+                if self.selected_project != project:
+                    return
+                said = fetch_res.message
+                self._log_progress(f"[{project.name}] {said}")
+                if not fetch_res.ok:
+                    self.notify(said, severity="warning", timeout=4)
             branches = await asyncio.to_thread(list_branches, project.path)
         finally:
             head_list.loading = False
@@ -421,9 +427,7 @@ class AdkReviewTuiApp(App[int]):
         self.selected_head = head_default
         self.selected_base = base_default
         self._render_branch_lists()
-        self._set_banner(
-            f"{project.name}: {fetch_res.message} | Head: {self.selected_head} | Base: {self.selected_base}"
-        )
+        self._set_banner(f"{project.name}: {said} | Head: {self.selected_head} | Base: {self.selected_base}")
         await self._refresh_folders()
 
     def _is_head_branch(self, branch: BranchInfo) -> bool:
@@ -508,14 +512,11 @@ class AdkReviewTuiApp(App[int]):
         await self._refresh_folders()
 
     async def _resolve_sync_status(self, repo: str, role: str, info: BranchInfo, status: SyncStatus) -> str:
-        if status.kind == "remote_only":
-            outcome = await asyncio.to_thread(
-                materialize_remote_branch, repo, status.local_branch, status.upstream_branch
-            )
-            self._log_progress(outcome.message)
-            self._set_banner(outcome.message)
-            self.notify(outcome.message, severity="information" if outcome.ok else "warning", timeout=4)
-            return outcome.resolved_ref
+        if status.kind == "remote_only":  # reviewed by its remote name: no local branch is made for it
+            said = f"Reviewing '{status.upstream_branch}' as the remote holds it"
+            self._log_progress(said)
+            self._set_banner(said)
+            return status.upstream_branch
         if status.kind == "behind":
             should_update = await self.push_screen_wait(SyncBranchModal(role, status))
             if should_update:
@@ -586,7 +587,7 @@ class AdkReviewTuiApp(App[int]):
         prev_badge = "prior baseline available" if has_prev else "no prior baseline yet"
         self._set_banner(
             f"{project.name} ({self.selected_base or self.selected_mode} -> {self.selected_head}): "
-            f"{changed_count} changed file(s) across {len(folders)} folder(s) | {prev_badge}"
+            f"{changed_count} changed file(s) across {len(folders)} folder(s) | {prev_badge} | F5 fetches"
         )
         await self._sync_prior_baseline_findings(project, prev_file, has_prev=has_prev)
         self._update_cli_preview()
@@ -845,9 +846,9 @@ class AdkReviewTuiApp(App[int]):
         self._log_progress("Review stopped by user.")
 
     def action_refresh_repo(self) -> None:
-        """Fetch latest remote refs and reload branches for the active repository."""
+        """Fetch latest remote refs and reload branches for the active repository: the person's own `git fetch`."""
         if self.selected_project is not None:
-            self._load_repo_branches(self.selected_project)
+            self._load_repo_branches(self.selected_project, fetch=True)
 
     def action_toggle_step(self, step_num: int) -> None:
         """Toggle the visible section numbered `step_num` when focus is outside a text `Input`."""

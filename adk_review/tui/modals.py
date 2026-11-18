@@ -31,7 +31,8 @@ class SyncBranchModal(ModalScreen[bool]):
             f"Local {self.role} branch '{s.local_branch}' is {s.behind} commit(s) behind "
             f"'{s.upstream_branch}'.\n\n"
             "Do you want to fast-forward your local branch from remote before reviewing?\n"
-            "(Updates refs without git checkout so uncommitted files stay untouched.)"
+            "(Runs `git branch -f`: no checkout, no file touched. A checked-out branch stays as it is,\n"
+            "and the remote's branch is reviewed.)"
         )
         with Vertical(id="modal-dialog"):
             yield Label("Branch Behind Remote", classes="chain-title")

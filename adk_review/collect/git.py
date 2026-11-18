@@ -197,6 +197,14 @@ def _git(
     return done.returncode, _text(done.stdout, strip)
 
 
+def read_only(repo: str, *args: str, ok: tuple[int, ...] = (0,)) -> tuple[int, str]:
+    """`_git` by a name another package may import, the terminal front end's: one read-only command in `repo`, under a
+    review's own environment. A repository's config names no program for git to start there. Read by review, and
+    reproduced: the front end ran `git status` with a person's own environment over every repository under a folder,
+    and the `core.fsmonitor` of one a person was handed started its program."""
+    return _git(repo, *args, ok=ok)
+
+
 def _text(raw: bytes, strip: bool = True) -> str:
     """git's answer decoded here, never in text mode, which reads a lone `\\r` inside a line as a break, and trimmed of
     ASCII whitespace alone: measured by review, `str.strip` cut a branch's closing U+2028 and read it as another."""

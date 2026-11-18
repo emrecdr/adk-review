@@ -1,4 +1,10 @@
-"""Git discovery, non-interactive fetch, and zero-checkout branch synchronization for the TUI."""
+"""Git discovery, the person's own fetch, and branch states for the TUI.
+
+The screen reads a repository and writes nothing into it, as the reviewer does: each read runs under a review's own
+environment (`read_only`), where a repository's config names no program for git to start, and takes no lock. Two
+commands write, each only where the person asks: `git fetch --prune` at F5, and `git branch -f` at the question a
+branch behind its remote raises, never on a branch a working tree holds. They run with the person's own environment,
+since a fetch needs their remotes, credentials and proxy."""
 
 from __future__ import annotations
 
@@ -9,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from ..collect.git import checked_out, default_base, on_path
+from ..collect.git import GitError, checked_out, default_base, on_path, read_only
 
 SKIP_DIRS = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", ".mypy_cache", ".ruff_cache"})
 _AHEAD = re.compile(r"\bahead (\d+)\b")
@@ -49,7 +55,7 @@ class BranchInfo:
     def label(self) -> str:
         """Display label for `--head` and `--base` branch selectors."""
         if self.is_remote:
-            return f"[remote] {self.name}  (->{self.local_name})"
+            return f"[remote] {self.name}"
         status = _sync_badge(self.upstream, self.ahead, self.behind)
         return f"[local]  {self.name}  {status}"
 
@@ -75,7 +81,7 @@ class SyncStatus:
 
 @dataclass(frozen=True)
 class SyncOutcome:
-    """Result of materializing or fast-forwarding a branch without `git checkout`."""
+    """Result of moving a local branch to its remote's commit, or of leaving it and naming the ref to review."""
 
     ok: bool
     resolved_ref: str
@@ -95,7 +101,8 @@ def _sync_badge(upstream: str, ahead: int, behind: int) -> str:
 
 
 def _git_env() -> dict[str, str]:
-    """User git environment with interactive terminal prompts disabled so the TUI never hangs."""
+    """The person's own git environment, for a command they asked for, with every prompt off so the screen never
+    hangs."""
     env = dict(os.environ)
     env["GIT_TERMINAL_PROMPT"] = "0"
     env["GCM_INTERACTIVE"] = "never"
@@ -104,7 +111,8 @@ def _git_env() -> dict[str, str]:
 
 
 def _run_git(repo: str, args: list[str], timeout_s: int = 15) -> subprocess.CompletedProcess[str]:
-    """Run git in `repo` with UTF-8 decoding, non-interactive env, and Windows process-tree cleanup on timeout."""
+    """One command the person asked for, a fetch or a branch moved, in `repo`: their own environment, UTF-8, and on
+    Windows the whole process tree stopped at the timeout. A read goes through `_read`, never through here."""
     if (git := on_path("git")) == "git":
         raise OSError("git is not on PATH")
     argv = [git, "-C", repo, *args]
@@ -135,17 +143,30 @@ def _run_git(repo: str, args: list[str], timeout_s: int = 15) -> subprocess.Comp
     return subprocess.CompletedProcess(argv, process.returncode, out, err)
 
 
+def _read(repo: str, *args: str, ok: tuple[int, ...] = (0,)) -> tuple[int, str] | None:
+    """What a read-only git command answers in `repo`, its exit code first, or None where git could not answer: the
+    screen lists what it can read and says nothing of the rest."""
+    try:
+        return read_only(repo, *args, ok=ok)
+    except GitError:
+        return None
+
+
+def _status(repo: str, *args: str) -> str | None:
+    """`git status` as a reader runs it: with no optional lock, so git never writes the index it refreshed. Measured
+    by review: a plain status rewrote the index of each repository the scan passed."""
+    done = _read(repo, "--no-optional-locks", "status", "--untracked-files=no", *args)
+    return None if done is None else done[1]
+
+
 def _inspect_repo_status(repo: str) -> tuple[bool, str, bool]:
     """Inspect repository validity, checked-out branch, and tracked dirtiness in one `git status` pass."""
-    try:
-        done = _run_git(repo, ["status", "--porcelain=v2", "--branch", "--untracked-files=no"], timeout_s=5)
-    except OSError, subprocess.TimeoutExpired:
-        return False, "", False
-    if done.returncode != 0:
+    said = _status(repo, "--porcelain=v2", "--branch")
+    if said is None:
         return False, "", False
     branch = "DETACHED"
     dirty = False
-    for line in done.stdout.splitlines():
+    for line in said.splitlines():
         if line.startswith("# branch.head "):
             head_name = line.removeprefix("# branch.head ").strip()
             if head_name and head_name != "(detached)":
@@ -199,19 +220,18 @@ def _walk_for_repos(current: Path, depth: int, max_depth: int, acc: list[Path]) 
 
 def is_dirty(repo: str) -> bool:
     """Whether `repo` has uncommitted tracked modifications in its working tree or index."""
-    try:
-        done = _run_git(repo, ["status", "--porcelain", "--untracked-files=no"], timeout_s=5)
-    except OSError, subprocess.TimeoutExpired:
-        return False
-    return done.returncode == 0 and bool(done.stdout.strip())
+    return bool(_status(repo, "--porcelain"))
 
 
 def fetch_remote(repo: str, timeout_s: int = 15) -> FetchResult:
-    """Run `git fetch --prune --quiet` on `repo` if it has a configured remote."""
+    """Run `git fetch --prune --quiet` on `repo` if it has a configured remote: the person's own fetch, at F5."""
     try:
-        remotes = _run_git(repo, ["remote"], timeout_s=5)
-        if remotes.returncode != 0 or not remotes.stdout.strip():
-            return FetchResult(ok=True, message="No remote configured (local repository)")
+        _code, remotes = read_only(repo, "remote")
+    except GitError as exc:
+        return FetchResult(ok=False, message=f"git fetch failed: {exc}")
+    if not remotes:
+        return FetchResult(ok=True, message="No remote configured (local repository)")
+    try:
         done = _run_git(repo, ["fetch", "--prune", "--quiet"], timeout_s=timeout_s)
     except subprocess.TimeoutExpired:
         return FetchResult(ok=False, message=f"git fetch timed out after {timeout_s}s (using cached refs)")
@@ -223,25 +243,27 @@ def fetch_remote(repo: str, timeout_s: int = 15) -> FetchResult:
     return FetchResult(ok=True, message="Fetched latest refs from remote")
 
 
+def _checked_out(repo: str) -> str | None:
+    """The branch `repo` has checked out, or None where it has none or git could not say."""
+    try:
+        return checked_out(repo)
+    except GitError:
+        return None
+
+
 def list_branches(repo: str) -> list[BranchInfo]:
     """List all local and remote branches in `repo` with ahead/behind counts."""
-    try:
-        done = _run_git(
-            repo,
-            [
-                "for-each-ref",
-                "--format=%(refname)|%(refname:short)|%(upstream:short)|%(upstream:track,nobracket)",
-                "refs/heads",
-                "refs/remotes",
-            ],
-            timeout_s=10,
-        )
-    except OSError, subprocess.TimeoutExpired:
+    done = _read(
+        repo,
+        "for-each-ref",
+        "--format=%(refname)|%(refname:short)|%(upstream:short)|%(upstream:track,nobracket)",
+        "refs/heads",
+        "refs/remotes",
+    )
+    if done is None:
         return []
-    if done.returncode != 0:
-        return []
-    locals_found, remotes_found = _parse_ref_lines(repo, done.stdout.splitlines())
-    current = checked_out(repo)
+    locals_found, remotes_found = _parse_ref_lines(repo, done[1].splitlines())
+    current = _checked_out(repo)
     locals_sorted = sorted(locals_found, key=lambda b: (0 if b.name == current else 1, b.name.lower()))
     remotes_sorted = sorted(remotes_found, key=lambda b: b.name.lower())
     return [*locals_sorted, *remotes_sorted]
@@ -314,13 +336,8 @@ def _parse_ref_lines(repo: str, lines: list[str]) -> tuple[list[BranchInfo], lis
 
 def branch_divergence(repo: str, local_ref: str, upstream_ref: str) -> tuple[int, int]:
     """Return `(ahead, behind)` commits between `local_ref` and `upstream_ref`."""
-    try:
-        done = _run_git(repo, ["rev-list", "--left-right", "--count", f"{local_ref}...{upstream_ref}"], timeout_s=5)
-    except OSError, subprocess.TimeoutExpired:
-        return 0, 0
-    if done.returncode != 0:
-        return 0, 0
-    parts = done.stdout.strip().split()
+    done = _read(repo, "rev-list", "--left-right", "--count", "--end-of-options", f"{local_ref}...{upstream_ref}")
+    parts = done[1].split() if done is not None else []
     if len(parts) != 2:
         return 0, 0
     try:
@@ -332,11 +349,8 @@ def branch_divergence(repo: str, local_ref: str, upstream_ref: str) -> tuple[int
 def inspect_branch_sync(repo: str, branch: BranchInfo) -> SyncStatus:
     """Determine whether `branch` is a remote-only ref, up-to-date, ahead, behind, or diverged."""
     if branch.is_remote:
-        try:
-            exists = _run_git(repo, ["show-ref", "--verify", "--quiet", f"refs/heads/{branch.local_name}"], timeout_s=5)
-        except OSError, subprocess.TimeoutExpired:
-            return SyncStatus("remote_only", branch.local_name, branch.name, 0, 0)
-        if exists.returncode != 0:
+        held = _read(repo, "show-ref", "--verify", "--quiet", f"refs/heads/{branch.local_name}", ok=(0, 1))
+        if held is None or held[0] != 0:
             return SyncStatus("remote_only", branch.local_name, branch.name, 0, 0)
         ahead, behind = branch_divergence(repo, branch.local_name, branch.name)
         return _classify_counts(branch.local_name, branch.name, ahead, behind)
@@ -356,61 +370,35 @@ def _classify_counts(local_branch: str, upstream_branch: str, ahead: int, behind
     return SyncStatus("diverged", local_branch, upstream_branch, ahead, behind)
 
 
-def materialize_remote_branch(repo: str, local_branch: str, remote_ref: str) -> SyncOutcome:
-    """Create local tracking branch `local_branch` from `remote_ref` without running `git checkout`."""
-    try:
-        done = _run_git(repo, ["branch", "--track", local_branch, remote_ref], timeout_s=10)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return SyncOutcome(ok=False, resolved_ref=remote_ref, message=f"Could not create local branch: {exc}")
-    if done.returncode == 0:
-        return SyncOutcome(
-            ok=True,
-            resolved_ref=local_branch,
-            message=f"Created local branch '{local_branch}' tracking '{remote_ref}' (without checkout)",
-        )
-    return fast_forward_local_branch(repo, local_branch, remote_ref)
-
-
 def fast_forward_local_branch(repo: str, local_branch: str, upstream_ref: str) -> SyncOutcome:
-    """Fast-forward `local_branch` to `upstream_ref` without switching branches or losing local changes."""
-    try:
-        return _fast_forward_local_branch(repo, local_branch, upstream_ref)
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        return SyncOutcome(ok=False, resolved_ref=upstream_ref, message=f"Branch sync failed: {exc}")
-
-
-def _fast_forward_local_branch(repo: str, local_branch: str, upstream_ref: str) -> SyncOutcome:
-    anc = _run_git(repo, ["merge-base", "--is-ancestor", local_branch, upstream_ref], timeout_s=5)
-    if anc.returncode != 0:
+    """Move `local_branch` to `upstream_ref` where that is a fast-forward: the person's own `git branch -f`, asked for
+    at the question. A branch the repository has checked out is left as it is, its files too, and the remote's is
+    reviewed by its own name. Read by review: there the answer ran `git merge --ff-only`, which rewrote the files of a
+    working tree the question had said would stay untouched."""
+    ancestor = _read(repo, "merge-base", "--is-ancestor", "--end-of-options", local_branch, upstream_ref, ok=(0, 1))
+    if ancestor is None or ancestor[0] != 0:
         return SyncOutcome(
             ok=False,
             resolved_ref=local_branch,
             message=f"'{local_branch}' cannot be fast-forwarded cleanly to '{upstream_ref}'",
         )
-    current = checked_out(repo)
-    if current != local_branch:
-        done = _run_git(repo, ["branch", "-f", local_branch, upstream_ref], timeout_s=10)
-        if done.returncode == 0:
-            return SyncOutcome(
-                ok=True,
-                resolved_ref=local_branch,
-                message=f"Fast-forwarded local '{local_branch}' to '{upstream_ref}' (zero checkout)",
-            )
-        return SyncOutcome(ok=False, resolved_ref=upstream_ref, message=done.stderr.strip() or "branch update failed")
-    if is_dirty(repo):
+    if _checked_out(repo) == local_branch:
         return SyncOutcome(
             ok=True,
             resolved_ref=upstream_ref,
-            message=f"Kept uncommitted edits on '{local_branch}'; reviewing '{upstream_ref}' directly",
+            message=f"'{local_branch}' is checked out and stays as it is; reviewing '{upstream_ref}' directly",
         )
-    done = _run_git(repo, ["merge", "--ff-only", upstream_ref], timeout_s=10)
+    try:
+        done = _run_git(repo, ["branch", "-f", "--end-of-options", local_branch, upstream_ref], timeout_s=10)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return SyncOutcome(ok=False, resolved_ref=upstream_ref, message=f"Branch sync failed: {exc}")
     if done.returncode == 0:
         return SyncOutcome(
             ok=True,
             resolved_ref=local_branch,
-            message=f"Fast-forwarded checked-out branch '{local_branch}' to '{upstream_ref}'",
+            message=f"Fast-forwarded local '{local_branch}' to '{upstream_ref}' (zero checkout)",
         )
-    return SyncOutcome(ok=True, resolved_ref=upstream_ref, message=f"Reviewing '{upstream_ref}' directly")
+    return SyncOutcome(ok=False, resolved_ref=upstream_ref, message=done.stderr.strip() or "branch update failed")
 
 
 def preferred_base_branch(repo: str, branches: list[BranchInfo], head_ref: str, preset_base: str = "") -> str:
@@ -418,7 +406,10 @@ def preferred_base_branch(repo: str, branches: list[BranchInfo], head_ref: str, 
     names = {b.name for b in branches}
     if preset_base and preset_base in names and preset_base != head_ref:
         return preset_base
-    detected = default_base(repo)
+    try:
+        detected = default_base(repo)
+    except GitError:
+        detected = None
     if detected and detected in names and detected != head_ref:
         return detected
     for candidate in ("develop", "main", "master", "origin/develop", "origin/main", "origin/master"):
@@ -452,18 +443,13 @@ def changed_folders(repo: str, base: str | None, head: str, mode: str = "branch"
 def _changed_files(repo: str, base: str | None, head: str, mode: str = "branch") -> list[str]:
     """List changed file paths for `staged`, `all`, or `branch` mode."""
     if mode == "staged":
-        args = ["diff", "--cached", "--name-only"]
+        args = ("diff", "--cached", "--name-only")
     elif mode == "all" or not base:
-        args = ["ls-tree", "-r", "--name-only", head]
+        args = ("ls-tree", "-r", "--name-only", "--end-of-options", head)
     else:
-        args = ["diff", "--name-only", f"{base}...{head}"]
-    try:
-        done = _run_git(repo, args, timeout_s=10)
-    except OSError, subprocess.TimeoutExpired:
-        return []
-    if done.returncode != 0:
-        return []
-    return [line.strip() for line in done.stdout.splitlines() if line.strip()]
+        args = ("diff", "--name-only", "--end-of-options", f"{base}...{head}")
+    done = _read(repo, *args)
+    return [] if done is None else [line.strip() for line in done[1].splitlines() if line.strip()]
 
 
 def _repo_top_folders(repo: str) -> list[str]:
