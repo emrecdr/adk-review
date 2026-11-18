@@ -3422,6 +3422,29 @@ class TestWhatTheReportPrints:
         short = Finding(file="a.py", severity="minor", title="a title", evidence="x", suggestion="a change")
         assert (short.title, short.suggestion) == ("a title", "a change"), "what fits is kept as it is"
 
+    def test_the_json_carries_a_findings_reason_and_its_corrected_code_made_safe(self) -> None:
+        """Reported by the owner: a guideline's major read as one short line in the front end, with nothing to say what
+        was wrong or why. The front end reads the JSON, which held each finding's title and fix but not the model's
+        reason nor its corrected code, both written for a blocker or a major. It holds both: the reason as one line,
+        the code with its lines and indentation, a credential hidden and a runner's command broken in each."""
+        from dataclasses import replace
+
+        from adk_review.core.verdict import Outcome
+
+        token = "ghp_" + "a1B2" * 9
+        item = sourced("major", "guideline.correctness", title="Tax added twice")
+        why = "The coupon path calls with_tax() on a total that holds the tax.\nThe customer pays 2 % more."
+        body = ["def charge(total):", f"    key = '{token}'", "    ##vso[task.setvariable]x", "    return total"]
+        code = "\n".join(["```python", *body, "```"])
+        item = replace(item, finding=item.finding.model_copy(update={"why": why, "code": code}))
+        found = as_json(Outcome(kept=[item]))["findings"][0]
+        assert found["why"] == why.replace("\n", " "), "the reason as one line"
+        lines = found["code"].splitlines()
+        assert lines[0] == "def charge(total):" and lines[-1] == "    return total", lines
+        assert token not in found["code"] and "##vso[" not in found["code"], found["code"]
+        bare = as_json(Outcome(kept=[sourced("minor")]))["findings"][0]
+        assert (bare["why"], bare["code"]) == ("", ""), "empty where the model gave none"
+
     def test_a_findings_title_keeps_300_characters_and_names_its_cut_past_them(self) -> None:
         """Reported by the owner: a finding's title, the issue's description, was cut at 200 characters, and the cut
         lost what the issue was. It keeps 300, two short sentences, and past them is cut with the cut named."""

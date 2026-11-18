@@ -24,6 +24,9 @@ class FindingRow:
     evidence: str
     suggestion: str
     already_held: bool = False
+    #: The model's reason and its corrected code, for a blocker or a major: empty where it gave none.
+    why: str = ""
+    code: str = ""
 
     def location(self) -> str:
         """Display location formatted as `file:line` or `file`."""
@@ -44,6 +47,8 @@ def _row_from_item(item: dict, tier: str) -> FindingRow:
         evidence=str(item.get("evidence") or ""),
         suggestion=str(item.get("suggestion") or ""),
         already_held=bool(item.get("already_held", False)),
+        why=str(item.get("why") or ""),
+        code=str(item.get("code") or ""),
     )
 
 
@@ -105,9 +110,10 @@ def filter_findings(
 
 
 def format_finding_detail(row: FindingRow) -> str:
-    """One finding as plain text, drawn and copied as it is. Its title, fix and quote are a model's words and the
-    branch's: read by review, drawn as Markdown, a branch that steered the model could make a link the person might
-    click, and the JSON keeps them plain for its reader to escape."""
+    """One finding as plain text, drawn and copied as it is: its reason and its corrected code too, where the model gave
+    them. Reported by the owner: a major read as one short line, with nothing to say what was wrong. Its title, fix and
+    quote are a model's words and the branch's: read by review, drawn as Markdown, a branch that steered the model
+    could make a link the person might click, and the JSON keeps them plain for its reader to escape."""
     badge = f"{row.tier} (possibly already done)" if row.already_held else row.tier
     lines = [
         f"[{row.severity.upper()}] {row.title or '(no title)'}",
@@ -118,8 +124,12 @@ def format_finding_detail(row: FindingRow) -> str:
         "Evidence:",
         *(f"    {line}" for line in (row.evidence or "(none)").splitlines()),
     ]
+    if row.why:
+        lines.extend(["", f"Why it matters: {row.why}"])
     if row.suggestion:
         lines.extend(["", f"Suggested fix: {row.suggestion}"])
+    if row.code:
+        lines.extend(["", "Corrected code:", *(f"    {line}" for line in row.code.splitlines())])
     return "\n".join(lines)
 
 

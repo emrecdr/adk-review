@@ -939,6 +939,33 @@ class TestFindingsExplorer:
         assert len(filter_findings(rows, query="Hardcoded")) == 1
         detail = format_finding_detail(rows[0])
         assert "[BLOCKER] Hardcoded key" in detail and "Location: a.py:12" in detail
+        # Reported by the owner: a major read as one short line here, its reason and its corrected code, which the
+        # JSON holds, never shown.
+        report.write_text(
+            json.dumps(
+                {
+                    "schema": 2,
+                    "findings": [
+                        {
+                            "fingerprint": "f",
+                            "check": "guideline.correctness",
+                            "file": "a.py",
+                            "line": 3,
+                            "severity": "major",
+                            "title": "Tax added twice",
+                            "evidence": "total = with_tax(total)",
+                            "suggestion": "Remove the second call.",
+                            "why": "The coupon path adds the tax again, so the customer pays 2 % more.",
+                            "code": "def charge(total):\n    return total",
+                        }
+                    ],
+                }
+            ),
+            encoding="utf-8",
+        )
+        explained = format_finding_detail(load_findings_from_json(report)[0])
+        assert "Why it matters: The coupon path adds the tax again" in explained, explained
+        assert "Corrected code:\n    def charge(total):\n        return total" in explained, explained
         assert "rule.secrets" in explain_check_markdown("rule.secrets")
         assert "Unknown Check" in explain_check_markdown("rule.does_not_exist")
 

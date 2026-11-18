@@ -1694,6 +1694,15 @@ def safe_line(text: str, limit: int | None = None) -> str:
     return inert(cut_at(line, limit) if limit else line)
 
 
+def safe_code(code: str) -> str:
+    """A model's corrected code as the JSON keeps it: its lines and their indentation as written, a fence a model
+    wrapped it in unwrapped, a credential hidden, every character a reader cannot see a space, and each line inert, as
+    `safe_line` makes one: a pipeline prints the JSON. Empty where the model gave none."""
+    lines = without_fences(code.strip("\n").splitlines())
+    hidden = scrub("\n".join(lines))[0]
+    return "\n".join(inert(_CONTROL.sub(" ", line).rstrip()) for line in hidden.splitlines()).strip("\n")
+
+
 def safe_value(value: Any) -> Any:
     """`safe_line` over every string inside a JSON value, its keys too: a file a review is given, a previous report,
     made as safe as the review's own report before any of it is printed or written back."""
@@ -1757,6 +1766,10 @@ def _found(item: Sourced, added: Mapping[str, frozenset[int]], identity: str = "
         "title": safe_line(f.title),
         "evidence": safe_line(f.evidence, EVIDENCE_MAX_CHARS),
         "suggestion": safe_line(f.suggestion),
+        # The model's reason and its corrected code, which it writes for a blocker or a major: reported by the owner,
+        # the front end, which reads this report, showed a major as one short line, with nothing to say what was wrong.
+        "why": safe_line(f.why),
+        "code": safe_code(f.code),
         # Whether its suggested code is what replaced the deleted lines it quotes: the change may have done it already.
         "already_held": item.done,
     }

@@ -100,7 +100,8 @@ The line under the steps shows the command it will run, ready to paste. While a 
 the last tab. Its results stay with the target they came from: choose another branch, mode or repository, and the
 tabs clear.
 
-A finding is drawn as plain text. Its title and fix are a model's words, and no link in them can be clicked.
+A finding is drawn as plain text, with the model's reason, "Why it matters", and its corrected code where it gave
+them, as it does for a blocker or a major. Its words are a model's, and no link in them can be clicked.
 
 ## It writes nothing until you ask
 
