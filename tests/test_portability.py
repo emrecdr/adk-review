@@ -168,6 +168,24 @@ def test_the_demo_repository_builds_and_rebuilds_whatever_the_builders_git_confi
     assert (root / ".git").is_dir()
 
 
+def test_the_demo_repository_is_fixed_and_rebuilt_in_a_folder_another_user_owns(tmp_path: Path) -> None:
+    """On Windows a demo built from an administrator's terminal belongs to the Administrators group, and git refuses
+    such a folder from the person's own terminal. Reproduced with git's `GIT_TEST_ASSUME_DIFFERENT_OWNER`: `--fix`
+    and a rebuild each ended in a traceback, git's exit 128, the builder's own `safe.directory` unread, since the
+    build reads no global config. Each call now names the demo itself as safe, as the reviewer's collector does."""
+    import os
+    import sys
+
+    root = tmp_path / "repo"
+    script = [sys.executable, str(ROOT / "scripts" / "make_demo_repo.py"), str(root)]
+    built = subprocess.run(script, capture_output=True, encoding="utf-8", timeout=120, check=False)
+    assert built.returncode == 0, built.stderr[-300:]
+    someone_elses = {**os.environ, "GIT_TEST_ASSUME_DIFFERENT_OWNER": "1"}
+    for argv in ([*script, "--fix"], script):
+        done = subprocess.run(argv, capture_output=True, encoding="utf-8", timeout=120, check=False, env=someone_elses)
+        assert done.returncode == 0, (argv[-1], done.stderr[-400:])
+
+
 @pytest.mark.usefixtures("signing_git_config")
 def test_the_test_fixtures_build_whatever_the_developers_git_config(tmp_path: Path) -> None:
     """Measured before: the same config failed every fixture's commit, so the suite failed on a signing machine."""

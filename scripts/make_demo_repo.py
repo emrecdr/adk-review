@@ -537,10 +537,19 @@ ORDERS_HEAD = {
 }
 
 
+def _env(root: Path) -> dict[str, str]:
+    """`ENV` with the demo itself named safe, as the reviewer's collector names the repository it reads. On Windows a
+    demo built from an administrator's terminal belongs to the Administrators group, and git refuses such a folder
+    from the person's own: reproduced with git's `GIT_TEST_ASSUME_DIFFERENT_OWNER`, `--fix` and a rebuild each ended
+    in a traceback, the builder's own `safe.directory` unread, since the build reads no global config."""
+    safe = Path(os.path.realpath(root)).as_posix()
+    return {**ENV, "GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "safe.directory", "GIT_CONFIG_VALUE_0": safe}
+
+
 def _git(root: Path, *args: str, check: bool = True) -> int:
     return subprocess.run(
         ["git", "-C", str(root), *args],
-        env=ENV,
+        env=_env(root),
         check=check,
         capture_output=True,
         encoding="utf-8",
@@ -608,7 +617,7 @@ def _ours(root: Path) -> bool:
         return True
     first = subprocess.run(
         ["git", "-C", str(root), "log", "--reverse", "--format=%s", BASE_REF],
-        env=ENV,
+        env=_env(root),
         capture_output=True,
         encoding="utf-8",
         errors="replace",
