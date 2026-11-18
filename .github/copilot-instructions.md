@@ -86,7 +86,8 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   the checks and the helpers import no network, process or model module and must import with ADK absent.
 - `tui/`, the terminal front end, an application of its own on top of the reviewer, reads git only through
   `collect`'s `read_only` and writes into a
-  repository only at the person's F5, a fetch, or their answer to a branch behind its remote. It draws every string a
+  repository only where the person acts: their pick of a repository, a fetch that removes nothing, F5, a fetch with
+  `--prune`, or their answer to a branch behind its remote. It draws every string a
   repository, a branch or a model wrote with no markup. Its own guide is `tui/README.md`.
 - The docs are tested (`tests/test_docs.py`): every guide names only paths the working tree has, `README.md` names each
   module at the package's root, and `GUIDE.md` holds every flag, check, JSON field and limit as the code has them.

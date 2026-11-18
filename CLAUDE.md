@@ -241,8 +241,10 @@ Load-bearing rules the tests enforce:
   `tui.toml` in the person's own folder, `%APPDATA%` on Windows, the XDG one elsewhere; its state is in the person's
   state folder; the screen's first line names the config it reads, and the loader names any key it does not know. A
   review it runs is `review_command`'s, `python -P`, with `--progress`. It reads git only through `collect`'s
-  `read_only`, under a review's own environment, and writes into a repository only at the person's F5, a fetch, or their
-  answer to a branch behind its remote, `git branch -f` on a branch no working tree has checked out. Every string a
+  `read_only`, under a review's own environment, and writes into a repository only where the person acts: their pick of
+  a repository, a `git fetch` that adds the branches its remote got since and removes none, unless `fetch_on_select =
+  false`, never the pick the screen makes as it opens; F5, a `git fetch --prune`; and their answer to a branch behind
+  its remote, `git branch -f` on a branch no working tree has checked out. Every string a
   repository, a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a tag. On Windows, from cmd
   and PowerShell alike: the command it shows is quoted by `windows_word`, or not shown; no key is one a terminal sends
   as another or the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first and none but Stop runs behind a

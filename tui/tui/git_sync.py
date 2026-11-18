@@ -237,8 +237,9 @@ def is_dirty(repo: str) -> bool:
     return bool(_status(repo, "--porcelain"))
 
 
-def fetch_remote(repo: str, timeout_s: int = 15) -> FetchResult:
-    """Run `git fetch --prune --quiet` on `repo` if it has a configured remote: the person's own fetch, at F5."""
+def fetch_remote(repo: str, timeout_s: int = 15, *, prune: bool = True) -> FetchResult:
+    """Run `git fetch --quiet` on `repo` if it has a configured remote: with `--prune` at F5, the person's own fetch;
+    without it as the person picks the repository, which adds the branches the remote got since and removes none."""
     try:
         _code, remotes = read_only(repo, "remote")
     except GitError as exc:
@@ -246,7 +247,7 @@ def fetch_remote(repo: str, timeout_s: int = 15) -> FetchResult:
     if not remotes:
         return FetchResult(ok=True, message="No remote configured (local repository)")
     try:
-        done = _run_git(repo, ["fetch", "--prune", "--quiet"], timeout_s=timeout_s)
+        done = _run_git(repo, ["fetch", *(["--prune"] if prune else []), "--quiet"], timeout_s=timeout_s)
     except subprocess.TimeoutExpired:
         return FetchResult(ok=False, message=f"git fetch timed out after {timeout_s}s (using cached refs)")
     except OSError as exc:

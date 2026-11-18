@@ -19,6 +19,7 @@ root_dirs = [
 ]
 scan_depth = 2
 fetch_timeout_s = 15
+fetch_on_select = true    # picking a repository fetches its new remote branches, removing none; F5 prunes
 # output_dir = "reviews"   # where each review's files go; by default your state folder's outputs, a relative path read
 #                          # from this file's own folder
 

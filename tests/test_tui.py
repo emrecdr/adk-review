@@ -715,6 +715,104 @@ class TestOptionsAndCliBuilder:
         assert remote.is_dir()
 
     @pytest.mark.asyncio
+    async def test_picking_a_repository_fetches_its_new_branches_and_removes_none(self, tmp_path: Path) -> None:
+        """Measured on the owner's repositories: 5 of 13 lists were out of step with their remote, a branch pushed
+        since the last fetch not listed, until F5. Picking a repository shows its branches as it holds them at once,
+        then fetches, with no `--prune`: a branch the remote no longer holds stays until F5 removes it, and the
+        branches chosen stay chosen. The repository the screen picks itself, as it opens, is not fetched."""
+        pytest.importorskip("textual")
+        from textual.widgets import OptionList
+
+        from tui.app import AdkReviewTuiApp
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        _git(local, "update-ref", "refs/remotes/origin/gone", "HEAD")  # a branch the remote no longer holds
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            assert "origin/feat-remote" not in [b.name for b in app.branches], "opening fetched nothing"
+            repo = app.query_one("#repo-list", OptionList)
+            repo.highlighted = 0
+            repo.action_select()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            names = [b.name for b in app.branches]
+            assert "origin/feat-remote" in names, "picking the repository fetched the branch the remote got since"
+            assert "origin/gone" in names, "and removed none: F5 prunes"
+            head = app.query_one("#head-list", OptionList)
+            assert "origin/feat-remote" in [str(head.get_option_at_index(at).id) for at in range(head.option_count)]
+            app._sync_chosen_branch("base", "origin/feat-remote")
+            await app.workers.wait_for_complete()
+            repo.action_select()  # picked again: fetched again, the target kept
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert app.selected_base == "origin/feat-remote", app.selected_base
+            await pilot.press("f5")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert "origin/gone" not in [b.name for b in app.branches], "F5 is the fetch that prunes"
+
+    @pytest.mark.asyncio
+    async def test_with_fetch_on_select_off_picking_a_repository_fetches_nothing(self, tmp_path: Path) -> None:
+        """`fetch_on_select = false`, for a person offline or on a metered line: picking a repository lists it as it
+        holds it, as before, and F5 still fetches."""
+        pytest.importorskip("textual")
+        from textual.widgets import OptionList
+
+        from tui.app import AdkReviewTuiApp
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        cfg = tmp_path / ".tui.toml"
+        root = (tmp_path / "workspace").as_posix()
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{root}"]\nfetch_on_select = false\n', encoding="utf-8")
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            repo = app.query_one("#repo-list", OptionList)
+            repo.highlighted = 0
+            repo.action_select()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert not (local / ".git" / "FETCH_HEAD").exists(), "nothing fetched"
+            assert "origin/feat-remote" not in [b.name for b in app.branches]
+
+    @pytest.mark.asyncio
+    async def test_a_fetch_that_fails_on_picking_leaves_the_lists_as_the_repository_holds_them(
+        self, tmp_path: Path
+    ) -> None:
+        """A remote that cannot be reached, offline or gone: the lists stay as the repository holds them, and a notice
+        says the fetch failed and that F5 fetches again, as F5's own failure says it."""
+        pytest.importorskip("textual")
+        from textual.widgets import OptionList
+
+        from tui.app import AdkReviewTuiApp
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        _git(local, "remote", "set-url", "origin", str(tmp_path / "no-such-remote.git"))
+        held = sorted(_git(local, "for-each-ref", "--format=%(refname)").split())
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        app = AdkReviewTuiApp(config_path=cfg)
+        said: list[str] = []
+        app.notify = lambda message, **_options: said.append(str(message))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            listed = sorted(b.name for b in app.branches)
+            repo = app.query_one("#repo-list", OptionList)
+            repo.highlighted = 0
+            repo.action_select()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert sorted(b.name for b in app.branches) == listed, "the lists as the repository holds them"
+            assert sorted(_git(local, "for-each-ref", "--format=%(refname)").split()) == held
+            assert any("Fetch warning" in line and "F5" in line for line in said), said
+
+    @pytest.mark.asyncio
     async def test_the_screen_draws_a_square_bracket_as_it_is_written(self, tmp_path: Path) -> None:
         """Textual reads `[name]` in a string as markup. Read by review, and reproduced: each section's title lost the
         choice it names, "Branch Under Review [main]" drawn with no branch; a repository `my[service]` was listed as
@@ -1669,6 +1767,24 @@ class TestTheConfigReview:
             assert tui_main(["--config", str(cfg)]) == 2, body
             err = capsys.readouterr().err
             assert said in err and "Traceback" not in err, (body, err)
+
+    def test_fetch_on_select_is_a_switch_on_by_default_that_saving_a_preset_keeps(self, tmp_path: Path) -> None:
+        """`[workspace] fetch_on_select` says whether picking a repository fetches its new branches: on unless the
+        config says `false`, and anything but `true` or `false` is said. Saving a review's preset rewrites the config,
+        and keeps it: read before, the preset's save built the config field by field, so a new setting went back to
+        its default at the next review."""
+        from tui.config import RepoPreset, load_tui_config, save_repo_preset
+
+        cfg = tmp_path / ".tui.toml"
+        workspace = f'[workspace]\nroot_dirs = ["{tmp_path.as_posix()}"]\n'
+        cfg.write_text(workspace, encoding="utf-8")
+        assert load_tui_config(cfg).fetch_on_select is True
+        cfg.write_text(workspace + 'fetch_on_select = "no"\n', encoding="utf-8")
+        with pytest.raises(ValueError, match=r"fetch_on_select is 'no'\. Write true or false"):
+            load_tui_config(cfg)
+        cfg.write_text(workspace + "fetch_on_select = false\n", encoding="utf-8")
+        save_repo_preset(load_tui_config(cfg), "svc", RepoPreset(base="develop"))
+        assert load_tui_config(cfg).fetch_on_select is False, cfg.read_text(encoding="utf-8")
 
     def test_a_config_saved_with_a_byte_order_mark_is_read(self, tmp_path: Path) -> None:
         """Read by review: PowerShell 5's `Out-File -Encoding utf8` writes a BOM first, and the config could not be

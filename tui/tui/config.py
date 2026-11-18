@@ -15,7 +15,7 @@ import re
 import shutil
 import tempfile
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from adk_review.core.findings import RANK
@@ -129,6 +129,8 @@ class TuiConfig:
     root_dirs: tuple[RootDir, ...]
     scan_depth: int = 2
     fetch_timeout_s: int = 15
+    #: Whether picking a repository fetches the branches its remote got since, removing none: F5 prunes.
+    fetch_on_select: bool = True
     output_dir: str = str(OUTPUTS_DIR)
     defaults: ReviewDefaults = field(default_factory=ReviewDefaults)
     projects: dict[str, RepoPreset] = field(default_factory=dict)
@@ -215,7 +217,8 @@ def _defaults_text() -> str:
         f"    {_toml(root)},\n"
         "]\n"
         "scan_depth = 2\n"
-        "fetch_timeout_s = 15\n\n"
+        "fetch_timeout_s = 15\n"
+        "fetch_on_select = true\n\n"
         "[defaults]\n"
         'profile = "default"\n'
         'fail_on = "blocker"\n'
@@ -242,6 +245,7 @@ def load_tui_config(path: Path | None = None) -> TuiConfig:
         roots = _parse_roots(workspace)
         depth = _number("[workspace]", "scan_depth", workspace.get("scan_depth"), 2, 1, 5)
         timeout = _number("[workspace]", "fetch_timeout_s", workspace.get("fetch_timeout_s"), 15, 3, 120)
+        fetch_on_select = bool(_switch("[workspace]", "fetch_on_select", workspace.get("fetch_on_select"), True))
         output_dir = _resolve_output_dir(workspace.get("output_dir"), target.parent)
         defaults = _parse_defaults(raw.get("defaults"))
         projects = _parse_projects(raw.get("projects"))
@@ -252,6 +256,7 @@ def load_tui_config(path: Path | None = None) -> TuiConfig:
         root_dirs=roots,
         scan_depth=depth,
         fetch_timeout_s=timeout,
+        fetch_on_select=fetch_on_select,
         output_dir=output_dir,
         defaults=defaults,
         projects=projects,
@@ -299,7 +304,7 @@ def _resolve_output_dir(out_raw: object, beside: Path) -> str:
 
 
 #: The settings each table takes, as `.tui.toml` spells them: a key the config does not know is said, never left out.
-_WORKSPACE = ("root_dirs", "projects_dir", "scan_depth", "fetch_timeout_s", "output_dir")
+_WORKSPACE = ("root_dirs", "projects_dir", "scan_depth", "fetch_timeout_s", "fetch_on_select", "output_dir")
 
 
 def _known(raw: dict) -> None:
@@ -419,17 +424,9 @@ def _str_tuple(value: object) -> tuple[str, ...]:
 
 def save_repo_preset(config: TuiConfig, repo_name: str, preset: RepoPreset) -> TuiConfig:
     """Persist `preset` for `repo_name` into `config.config_path` and return the updated `TuiConfig`."""
-    updated = dict(config.projects)
-    updated[repo_name] = preset
-    new_config = TuiConfig(
-        config_path=config.config_path,
-        root_dirs=config.root_dirs,
-        scan_depth=config.scan_depth,
-        fetch_timeout_s=config.fetch_timeout_s,
-        output_dir=config.output_dir,
-        defaults=config.defaults,
-        projects=updated,
-    )
+    # Every other setting as it was: read by review, built field by field here, a new setting went back to its
+    # default each time a review saved its preset.
+    new_config = replace(config, projects={**config.projects, repo_name: preset})
     write_atomic(config.config_path, _serialize_config(new_config))
     return new_config
 
@@ -450,6 +447,7 @@ def _serialize_config(config: TuiConfig) -> str:
         "]",
         f"scan_depth = {config.scan_depth}",
         f"fetch_timeout_s = {config.fetch_timeout_s}",
+        f"fetch_on_select = {'true' if config.fetch_on_select else 'false'}",
         *([f"output_dir = {_toml(config.output_dir)}"] if config.output_dir != str(OUTPUTS_DIR) else []),
         "",
         "[defaults]",

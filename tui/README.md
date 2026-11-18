@@ -64,7 +64,8 @@ file there that the front end did not write stays, with its folder. The package'
 |---|---|
 | `[workspace] root_dirs` | The folders that hold your repositories: a path, or `{ label = "...", path = "..." }`. With more than one, the screen asks for the folder first. |
 | `scan_depth` | How many folders deep it looks for repositories, from 1 to 5. |
-| `fetch_timeout_s` | How long the fetch at F5 may run, in seconds. |
+| `fetch_timeout_s` | How long a fetch may run, in seconds. |
+| `fetch_on_select` | Whether picking a repository fetches the branches its remote got since: `true` unless set to `false`. |
 | `output_dir` | Where each review's JSON report, comment and hand-off go: by default the state folder's `outputs`, and a relative path is read from the config's own folder. |
 | `[defaults]` | The profile, the `--fail-on` bar, and which outputs and options are on. |
 | `[projects."<name>"]` | One repository's saved choices, written at each review the screen runs. |
@@ -98,9 +99,14 @@ A finding is drawn as plain text. Its title and fix are a model's words, and no 
 
 ## It writes nothing until you ask
 
-As the reviewer does, the screen reads a repository and writes nothing into it:
+As the reviewer does, the screen reads a repository, and writes into it only where you act:
 
-- It lists the branches as the repository holds them. F5 runs `git fetch --prune` on the repository you chose.
+- It lists the branches as the repository holds them, as of its last fetch. When you pick a repository, in its list
+  or the command palette, it lists them at once, then runs `git fetch` in the background and adds the branches the
+  remote got since. That fetch removes none, and the branches you chose stay chosen. The repository the screen picks
+  by itself as it opens is not fetched. `fetch_on_select = false` turns this off.
+- F5 runs `git fetch --prune` on the repository you chose: it also removes the branches the remote no longer holds.
+- A fetch that fails, offline or past `fetch_timeout_s`, leaves the lists as the repository holds them, and says so.
 - A remote's branch, `origin/<branch>`, is reviewed as the remote holds it, even where a local copy of it is ahead
   or behind. No local branch is made.
 - For a local branch behind its remote, it asks. On yes, `git branch -f` moves that branch and writes nothing else,
@@ -118,7 +124,7 @@ As the reviewer does, the screen reads a repository and writes nothing into it:
 | `Ctrl+O` | Restore every panel |
 | `Ctrl+Y` | Copy the open tab: the report, a finding, the comment or the hand-off |
 | `Ctrl+P` | Open the command palette: a repository, a branch, a profile or an action by name |
-| `F5` | Fetch the chosen repository and list its branches again, the branches you chose kept where they are still there |
+| `F5` | Fetch the chosen repository with `--prune` and list its branches again, the branches you chose kept where they are still there |
 | A number key | Minimize or restore the panel of that number, where no text field has the focus |
 | `q` | Quit |
 
@@ -145,7 +151,7 @@ It runs in cmd, in PowerShell and in Windows Terminal alike.
 | `__init__.py`, `__main__.py` | The `adk-review-tui` command: `--config`, `--init-config`, and the config read before the screen opens |
 | `app.py` | The screen: the steps, the tabs, the keys, and the review it runs |
 | `config.py` | `tui.toml` and where it and the state live: the folders of repositories, the defaults and each repository's saved choices |
-| `git_sync.py` | The repositories under a folder, their branches and how each stands to its remote, and the fetch at F5 |
+| `git_sync.py` | The repositories under a folder, their branches and how each stands to its remote, and the fetch |
 | `options.py` | The profiles, the command a selection makes, and the report `--previous` reads |
 | `findings.py` | A `--json` report read for the findings tab, its filters, and a check's explanation |
 | `modals.py` | The dialogs: a branch behind or apart from its remote, and a check's explanation |

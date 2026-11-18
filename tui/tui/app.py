@@ -8,7 +8,7 @@ import os
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from rich.text import Text
 from textual import on, work
@@ -359,9 +359,11 @@ class AdkReviewTuiApp(App[int]):
             return
         repo_list.highlighted = 0
         if initial or self.selected_project is None:
-            self._on_project_chosen(shown[0])
+            self._on_project_chosen(shown[0], picked=False)  # the screen's own pick, never fetched
 
-    def _on_project_chosen(self, project: ProjectInfo) -> None:
+    def _on_project_chosen(self, project: ProjectInfo, *, picked: bool = True) -> None:
+        """`project` chosen: `picked` by the person, in the list or the palette, which fetches its new branches where
+        `fetch_on_select` says so, or by the screen itself as it lists the repositories, which fetches nothing."""
         prev_path = self.selected_project.path if self.selected_project else ""
         self.workers.cancel_group(self, "branch_sync")
         self.workers.cancel_group(self, "folder_refresh")
@@ -371,7 +373,7 @@ class AdkReviewTuiApp(App[int]):
         if prev_path and os.path.normcase(prev_path) != os.path.normcase(project.path):
             self._reset_outputs()
         self._apply_repo_preset(project.name)
-        self._load_repo_branches(project)
+        self._load_repo_branches(project, fetch="add" if picked and self.tui_config.fetch_on_select else "")
 
     def _sync_repo_list_highlight(self, repo_path: str) -> None:
         """Move `#repo-list` highlight onto `repo_path` when selected outside the list (e.g. Command Palette)."""
@@ -422,27 +424,47 @@ class AdkReviewTuiApp(App[int]):
         self.query_one("#diff-cap-input", Input).value = str(preset.diff_cap) if preset and preset.diff_cap > 0 else ""
 
     @work(exclusive=True, group="git_load")
-    async def _load_repo_branches(self, project: ProjectInfo, *, fetch: bool = False) -> None:
-        """List `project`'s branches as the repository holds them; with `fetch`, the person's own F5, after a
-        `git fetch --prune`. Nothing is fetched unasked, as the reviewer writes nothing into a repository under review.
-        Read by review, and reproduced: opening the screen fetched the first repository of the root, and pruned a
-        remote-tracking ref there."""
+    async def _load_repo_branches(self, project: ProjectInfo, *, fetch: Literal["", "add", "prune"] = "") -> None:
+        """List `project`'s branches as the repository holds them, fetching where `fetch` says. `prune`, the person's
+        own F5, runs `git fetch --prune` first. `add`, as the person picks the repository, lists the branches at once,
+        then fetches the ones its remote got since, removing none, and lists them again with the choices kept:
+        measured on the owner's repositories, 5 of 13 lists were out of step with their remote. Nothing is fetched as
+        the screen opens: read by review, and reproduced, opening it fetched the first repository of the root, and
+        pruned a remote-tracking ref there."""
+        if fetch == "add":
+            await self._list_repo_branches(project)
+            if self.selected_project != project:
+                return
+        await self._list_repo_branches(project, fetch=fetch)
+
+    async def _list_repo_branches(self, project: ProjectInfo, *, fetch: Literal["", "add", "prune"] = "") -> None:
+        """One listing of `project`'s branches, after the fetch `fetch` names. The lists wait on F5's fetch, which the
+        person asked for, and stay in use while the fetch a pick starts runs."""
         head_list = self.query_one("#head-list", OptionList)
         base_list = self.query_one("#base-list", OptionList)
-        head_list.loading = True
-        base_list.loading = True
         said = "branches as the repository holds them"
         try:
             if fetch:
-                self._set_banner(f"Running git fetch --prune on {project.name}...")
-                self._log_progress(f"[{project.name}] git fetch --prune ...")
-                fetch_res = await asyncio.to_thread(fetch_remote, project.path, self.tui_config.fetch_timeout_s)
+                if fetch == "prune":
+                    self._set_loading(True, head_list, base_list)
+                command = "git fetch --prune" if fetch == "prune" else "git fetch"
+                self._set_banner(f"Running {command} on {project.name}...")
+                self._log_progress(f"[{project.name}] {command} ...")
+                fetch_res = await asyncio.to_thread(
+                    fetch_remote, project.path, self.tui_config.fetch_timeout_s, prune=fetch == "prune"
+                )
                 if self.selected_project != project:
                     return
                 said = fetch_res.message
                 self._log_progress(f"[{project.name}] {said}")
                 if not fetch_res.ok:
-                    self.notify(said, severity="warning", timeout=4, markup=False)
+                    self.notify(
+                        f"{said}. The lists show the branches as the repository holds them. F5 fetches again.",
+                        severity="warning",
+                        timeout=6,
+                        markup=False,
+                    )
+            self._set_loading(True, head_list, base_list)
             branches = await asyncio.to_thread(list_branches, project.path)
         finally:
             self._set_loading(False, head_list, base_list)
@@ -900,7 +922,7 @@ class AdkReviewTuiApp(App[int]):
     def action_refresh_repo(self) -> None:
         """Fetch latest remote refs and reload branches for the active repository: the person's own `git fetch`."""
         if self.selected_project is not None:
-            self._load_repo_branches(self.selected_project, fetch=True)
+            self._load_repo_branches(self.selected_project, fetch="prune")
 
     def action_toggle_step(self, step_num: int) -> None:
         """Toggle the visible section numbered `step_num` when focus is outside a text `Input`."""
