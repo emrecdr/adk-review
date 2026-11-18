@@ -63,9 +63,14 @@ def keep_pull_request_url(repo: str, branch: str, url: str) -> None:
     _keep(kept)
 
 
+def posted_threads(pr: PullRequest) -> dict[str, int]:
+    """Each finding's thread in `pr`, by fingerprint, where this screen posted or found it: one read for a table."""
+    return _kept()["posted"].get(pr.web, {})
+
+
 def posted_thread(pr: PullRequest, fingerprint: str) -> int | None:
-    """The thread the finding `fingerprint` was posted as in `pr`, where this screen posted or found it."""
-    return _kept()["posted"].get(pr.web, {}).get(fingerprint)
+    """The thread the finding `fingerprint` was posted as in `pr`."""
+    return posted_threads(pr).get(fingerprint)
 
 
 def keep_posted(pr: PullRequest, fingerprint: str, thread: int) -> None:

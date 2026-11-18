@@ -41,14 +41,18 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 from textual.widgets.selection_list import Selection
 
+from .azure import PullRequest, files_link, line_link, parse_pr_url, thread_link
+from .azure_state import keep_pull_request_url, posted_threads, pull_request_url
 from .clipboard import copy_text
 from .commands import ReviewCommandProvider
 from .config import RepoPreset, RootDir, TuiConfig, load_tui_config, save_repo_preset
 from .findings import (
     FindingRow,
+    Reviewed,
     filter_findings,
     format_finding_detail,
     load_findings_from_json,
+    load_reviewed,
 )
 from .git_sync import (
     BranchInfo,
@@ -154,6 +158,10 @@ class AdkReviewTuiApp(App[int]):
         Binding("ctrl+o", "restore_all", "Restore All", priority=True),
         Binding("ctrl+y", "copy_active_tab", "Copy Tab", priority=True),
         Binding("f5", "refresh_repo", "Fetch & Refresh"),
+        # A finding's place in Azure DevOps: plain letters, which a text field takes as text, and which act on the
+        # Findings tab alone, where the person sees the finding they open.
+        Binding("o", "open_lines", "Open Lines"),
+        Binding("p", "open_pull_request", "Open in PR"),
         Binding("1", "toggle_step(1)", "Step 1", show=False),
         Binding("2", "toggle_step(2)", "Step 2", show=False),
         Binding("3", "toggle_step(3)", "Step 3", show=False),
@@ -166,12 +174,18 @@ class AdkReviewTuiApp(App[int]):
 
     #: What a key starts that never runs behind a dialog: a review, a dry run, the sections folded, a tab copied. Not
     #: Stop, which must always reach a running review.
-    BEHIND_NO_DIALOG = frozenset({"run_review", "run_dry", "minimize_all", "restore_all", "copy_active_tab"})
+    BEHIND_NO_DIALOG = frozenset(
+        {"run_review", "run_dry", "minimize_all", "restore_all", "copy_active_tab", "open_lines", "open_pull_request"}
+    )
+    #: What acts on the finding chosen, so only where the Findings tab shows it.
+    ON_A_FINDING = frozenset({"open_lines", "open_pull_request"})
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:  # noqa: ARG002 -- Textual's
         """No action key but Stop runs while a dialog is open. Measured: once the keys went first, Ctrl+R and Ctrl+D
         started a review behind the question a branch behind its remote raises, which they had not before."""
         if action in {"run_review", "run_dry"} and self._reviewing:  # the action says why where the branches load
+            return False
+        if action in self.ON_A_FINDING and not self._on_findings_tab():
             return False
         return not (action in self.BEHIND_NO_DIALOG and isinstance(self.screen, ModalScreen))
 
@@ -193,6 +207,9 @@ class AdkReviewTuiApp(App[int]):
         self.findings_rows: list[FindingRow] = []
         self._filtered_findings: list[FindingRow] = []
         self._selected_finding: FindingRow | None = None
+        self._reviewed: Reviewed | None = None  # what the findings' report reviewed: their lines are counted in it
+        self._pull_request: PullRequest | None = None  # the address field's, where it reads as one
+        self._pull_request_of: tuple[str, str] | None = None  # the repository and branch the field was restored for
         self.selected_root: RootDir = self.tui_config.root_dirs[0]
         self.selected_project: ProjectInfo | None = None
         self.selected_mode: ReviewMode = "branch"
@@ -358,6 +375,11 @@ class AdkReviewTuiApp(App[int]):
                     yield Select(tier_opts, value="all", allow_blank=False, id="finding-tier-filter")
                     yield Input(placeholder="Search findings (file, check, title)...", id="finding-search")
                     yield Button("Explain Check", id="btn-explain-check", variant="default", disabled=True)
+                with Horizontal(id="pr-bar"):
+                    yield Input(
+                        placeholder="Pull request address (Azure DevOps): paste it once for a branch", id="pr-url"
+                    )
+                    yield Static("", id="pr-status", markup=False)
                 yield DataTable(id="findings-table", cursor_type="row")
                 with VerticalScroll(id="finding-detail-scroll"):
                     yield Static("Run a review to see its findings.", id="finding-detail", markup=False)
@@ -371,7 +393,7 @@ class AdkReviewTuiApp(App[int]):
     def on_mount(self) -> None:
         """Configure Findings Explorer columns, populate roots, and scan initial workspace."""
         table = self.query_one("#findings-table", DataTable)
-        table.add_columns("Severity", "Tier", "Check", "Location", "Title")
+        table.add_columns("Severity", "Tier", "Check", "Location", "Title", "Posted")
         self._populate_roots(initial=True)
         root_list = self.query_one("#root-list", OptionList)
         if self.has_multiple_roots():
@@ -470,6 +492,7 @@ class AdkReviewTuiApp(App[int]):
         self.findings_rows = []
         self._filtered_findings = []
         self._selected_finding = None
+        self._reviewed = None
         self.query_one("#report-log", RichLog).clear()
         self.query_one("#findings-table", DataTable).clear()
         self.query_one("#finding-detail", Static).update("Run a review to see its findings.")
@@ -712,6 +735,7 @@ class AdkReviewTuiApp(App[int]):
         project = self.selected_project
         if project is None:
             return
+        self._restore_pull_request()
         repo = project.path
         base = self.selected_base if self.selected_mode == "branch" else None
         head = self.selected_head or "HEAD"
@@ -754,17 +778,18 @@ class AdkReviewTuiApp(App[int]):
         tabs = self.query_one("#output-tabs", TabbedContent)
         if has_prev:
             rows = await asyncio.to_thread(load_findings_from_json, prev_file)
+            reviewed = await asyncio.to_thread(load_reviewed, prev_file)
             if (
                 self.selected_project != project
                 or baseline_path(project.path, self.selected_base, self.selected_head, self.selected_mode) != prev_file
             ):
                 return
-            self.findings_rows = rows
+            self.findings_rows, self._reviewed = rows, reviewed
             tabs.get_tab("tab-findings").label = (
                 f"2. Findings Explorer ({len(rows)} prior)" if rows else "2. Findings Explorer"
             )
         else:
-            self.findings_rows = []
+            self.findings_rows, self._reviewed = [], None
             tabs.get_tab("tab-findings").label = "2. Findings Explorer"
         self._render_findings_table()
 
@@ -1033,6 +1058,86 @@ class AdkReviewTuiApp(App[int]):
     def _on_finding_filter_changed(self) -> None:
         self._render_findings_table()
 
+    @on(Input.Changed, "#pr-url")
+    def _on_pull_request_typed(self, event: Input.Changed) -> None:
+        self._read_pull_request(event.value, keep=True)
+
+    @on(TabbedContent.TabActivated, "#output-tabs")
+    def _on_output_tab(self) -> None:
+        self.refresh_bindings()  # the keys that act on a finding show on its tab alone
+
+    def _on_findings_tab(self) -> bool:
+        return self._has_dom("#output-tabs") and self.query_one("#output-tabs", TabbedContent).active == "tab-findings"
+
+    def _read_pull_request(self, text: str, *, keep: bool) -> None:
+        """The address field read: the pull request it names, or the sentence that says what to paste. A whole
+        address is kept for the repository and branch chosen, as Azure DevOps shows it and never as pasted, which can
+        hold a credential; an emptied field forgets it, and a wrong one keeps what was kept."""
+        pasted, said, self._pull_request = text.strip(), "", None
+        if pasted:
+            try:
+                self._pull_request = parse_pr_url(pasted)
+                said = f"Pull request {self._pull_request.number} of {self._pull_request.repository}."
+            except ValueError as refused:
+                said = str(refused)
+        self.query_one("#pr-status", Static).update(said)
+        if keep and self.selected_project is not None and (self._pull_request is not None or not pasted):
+            kept = self._pull_request.web if self._pull_request is not None else ""
+            try:
+                keep_pull_request_url(self.selected_project.path, self.selected_head, kept)
+            except OSError as failed:
+                reason = failed.strerror or type(failed).__name__
+                self.notify(f"The address could not be kept: {reason}.", severity="warning", markup=False)
+        self._render_findings_table()  # the threads posted are a pull request's own
+
+    def _restore_pull_request(self) -> None:
+        """The address kept for the repository and branch now chosen, put back in its field: once for a pair, so
+        nothing the person types is replaced by a later refresh."""
+        pair = (self.selected_project.path if self.selected_project else "", self.selected_head)
+        if pair == self._pull_request_of or not self._has_dom("#pr-url"):
+            return
+        self._pull_request_of = pair
+        kept = pull_request_url(*pair)
+        with self.prevent(Input.Changed):
+            self.query_one("#pr-url", Input).value = kept
+        self._read_pull_request(kept, keep=False)
+
+    def _posted(self) -> dict[str, int]:
+        """Each finding's thread in the pull request the field names, by fingerprint."""
+        return posted_threads(self._pull_request) if self._pull_request is not None else {}
+
+    def _finding_to_open(self) -> tuple[FindingRow, PullRequest] | None:
+        """The finding chosen and the pull request to open it in, or a notice of which is missing."""
+        missing = ""
+        if self._selected_finding is None:
+            missing = "Run a review first."
+        elif self._pull_request is None:
+            missing = "Paste the pull request's address above the table first."
+        if missing or self._selected_finding is None or self._pull_request is None:
+            self.notify(missing, timeout=4, markup=False)
+            return None
+        return self._selected_finding, self._pull_request
+
+    def action_open_lines(self) -> None:
+        """Open the chosen finding's lines in Azure DevOps, in the file as the commit reviewed holds it."""
+        if (ready := self._finding_to_open()) is None:
+            return
+        row, pr = ready
+        span = row.span()
+        if span is None or self._reviewed is None:
+            said = "This finding names no line." if span is None else "Run a review first."
+            self.notify(said, timeout=4, markup=False)
+            return
+        self.open_url(line_link(pr, self._reviewed.head_sha, row.file, *span))
+
+    def action_open_pull_request(self) -> None:
+        """Open the pull request at the chosen finding: its thread once posted, else its file in the Files tab."""
+        if (ready := self._finding_to_open()) is None:
+            return
+        row, pr = ready
+        thread = self._posted().get(row.fingerprint)
+        self.open_url(files_link(pr, row.file) if thread is None else thread_link(pr, thread))
+
     @on(DataTable.RowHighlighted, "#findings-table")
     @on(DataTable.RowSelected, "#findings-table")
     def _on_finding_row_active(self, event: DataTable.RowHighlighted | DataTable.RowSelected) -> None:
@@ -1276,6 +1381,7 @@ class AdkReviewTuiApp(App[int]):
         json_path = outputs.get("json")
         if json_path and json_path.is_file():
             self.findings_rows = await asyncio.to_thread(load_findings_from_json, json_path)
+            self._reviewed = await asyncio.to_thread(load_reviewed, json_path)
             count = len(self.findings_rows)
             tabs.get_tab("tab-findings").label = f"2. Findings Explorer ({count})" if count else "2. Findings Explorer"
             self._render_findings_table()
@@ -1304,8 +1410,17 @@ class AdkReviewTuiApp(App[int]):
         self._filtered_findings = filtered
         table = self.query_one("#findings-table", DataTable)
         table.clear()
+        posted = self._posted()
         for row in filtered:
-            cells = (row.severity, row.tier, row.check, row.location(), row.title)
+            thread = posted.get(row.fingerprint)
+            cells = (
+                row.severity,
+                row.tier,
+                row.check,
+                row.location(),
+                row.title,
+                "" if thread is None else str(thread),
+            )
             table.add_row(*(Text(cell) for cell in cells))  # a cell given as a string is read as markup
         if filtered:
             self._select_finding_at(0)

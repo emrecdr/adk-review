@@ -2437,3 +2437,214 @@ async def _wait_for_branches(app, pilot) -> None:
         await pilot.pause(0.05)
         if app.branches and app._listing_for is None:
             break
+
+
+#: A pull request's address as its page shows it, with the placeholder names every example uses.
+PR_ADDRESS = "https://dev.azure.com/contoso/Web/_git/payments/pullrequest/123"
+
+
+def _pull_request_report(folder: Path, head_sha: str = "a" * 40, **changed: object) -> Path:
+    """A review's JSON report in `folder`: one major on `src/app.py`, lines 42 to 57, of the commit `head_sha`."""
+    import json
+
+    found = {
+        "check": "guideline.correctness",
+        "file": "src/app.py",
+        "line": 42,
+        "lines": [42, 57],
+        "on_added_line": True,
+        "severity": "major",
+        "title": "`charge()` adds tax twice",
+        "evidence": "+ total = with_tax(total)",
+        "suggestion": "Add the tax once.",
+        "why": "The coupon path taxes a taxed total.",
+        "code": "total = with_tax(apply_coupon(subtotal, coupon))",
+        "fingerprint": "1a2b3c4d5e6f7a8b",
+        **changed,
+    }
+    reviewed = {"repository": str(folder / "workspace" / "payments"), "head": "feature/orders", "head_sha": head_sha}
+    path = folder / "report.json"
+    path.write_text(json.dumps({"schema": 2, "findings": [found], "reviewed": reviewed}), encoding="utf-8")
+    return path
+
+
+async def _show_findings(app, pilot, report: Path) -> None:
+    """`report`'s findings on the Findings tab, the table holding the focus, as after a review."""
+    from textual.widgets import DataTable, TabbedContent
+
+    await app._load_generated_files({"json": report})
+    app.query_one("#output-tabs", TabbedContent).active = "tab-findings"
+    await pilot.pause()
+    app.query_one("#findings-table", DataTable).focus()
+    await pilot.pause()
+
+
+async def _payments_screen(tmp_path: Path):  # the application, not yet running
+    """The screen over one repository, `payments`, its branch `feature/orders` checked out."""
+    from tui.app import AdkReviewTuiApp
+
+    _repository(tmp_path / "workspace" / "payments", ("main", "feature/orders", "feature/tax"), "feature/orders")
+    return AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+
+
+class TestAzureDevOpsOnTheScreen:
+    """The pull request's address, pasted once a branch, and the keys that open a finding's place in Azure DevOps."""
+
+    @pytest.mark.asyncio
+    async def test_a_pasted_address_is_kept_for_its_branch_and_comes_back_after_a_restart(self, tmp_path: Path) -> None:
+        pytest.importorskip("textual")
+        from textual.widgets import Input, Static
+
+        from tui.app import AdkReviewTuiApp
+
+        app = await _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            assert app.selected_head == "feature/orders"
+            field = app.query_one("#pr-url", Input)
+            field.value = f"  {PR_ADDRESS}?_a=files  "
+            await pilot.pause()
+            assert "Pull request 123 of payments." in str(app.query_one("#pr-status", Static).render())
+            app._sync_chosen_branch("head", "feature/tax")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert field.value == "" and app._pull_request is None, "another branch has its own pull request"
+            app._sync_chosen_branch("head", "feature/orders")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert field.value == PR_ADDRESS, "as Azure DevOps shows it: the query a paste carried is gone"
+        again = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        async with again.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(again, pilot)
+            assert again.query_one("#pr-url", Input).value == PR_ADDRESS
+            assert again._pull_request is not None and again._pull_request.number == 123
+
+    @pytest.mark.asyncio
+    async def test_a_wrong_address_shows_what_to_paste_and_keeps_nothing(self, tmp_path: Path) -> None:
+        pytest.importorskip("textual")
+        from textual.widgets import Input, Static
+
+        from tui import azure_state
+
+        app = await _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            field, status = app.query_one("#pr-url", Input), app.query_one("#pr-status", Static)
+            for wrong in (
+                "https://github.com/contoso/payments/pull/1",
+                "[bold]x[/]",
+                "https://" + ":".join(("u", "hunter2")) + "@dev.azure.com/c",
+            ):
+                field.value = wrong
+                await pilot.pause()
+                said = str(status.render())
+                assert "pullrequest/<number>" in said and "hunter2" not in said, said
+                assert app._pull_request is None
+            assert azure_state.pull_request_url(app.selected_project.path, "feature/orders") == ""
+            field.value = PR_ADDRESS
+            await pilot.pause()
+            field.value = PR_ADDRESS + "abc"  # an address being edited: the one kept stays until another is whole
+            await pilot.pause()
+            assert azure_state.pull_request_url(app.selected_project.path, "feature/orders") == PR_ADDRESS
+            field.value = ""
+            await pilot.pause()
+            assert azure_state.pull_request_url(app.selected_project.path, "feature/orders") == "", "emptied: forgotten"
+            assert str(status.render()) == ""
+
+    @pytest.mark.asyncio
+    async def test_o_opens_the_findings_lines_at_the_reviewed_commit(self, tmp_path: Path) -> None:
+        pytest.importorskip("textual")
+        from textual.widgets import Input
+
+        from tui.azure import line_link, parse_pr_url
+
+        app = await _payments_screen(tmp_path)
+        opened: list[str] = []
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.open_url = lambda url, **_how: opened.append(url)
+            app.query_one("#pr-url", Input).value = PR_ADDRESS
+            await _show_findings(app, pilot, _pull_request_report(tmp_path))
+            await pilot.press("o")
+            await pilot.pause()
+            assert opened == [line_link(parse_pr_url(PR_ADDRESS), "a" * 40, "src/app.py", 42, 57)]
+
+    @pytest.mark.asyncio
+    async def test_o_typed_in_a_text_field_is_a_letter_and_off_the_findings_tab_nothing(self, tmp_path: Path) -> None:
+        pytest.importorskip("textual")
+        from textual.widgets import Input, TabbedContent
+
+        app = await _payments_screen(tmp_path)
+        opened: list[str] = []
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.open_url = lambda url, **_how: opened.append(url)
+            app.query_one("#pr-url", Input).value = PR_ADDRESS
+            await _show_findings(app, pilot, _pull_request_report(tmp_path))
+            search = app.query_one("#finding-search", Input)
+            search.focus()
+            await pilot.press("o", "p")
+            await pilot.pause()
+            assert search.value == "op" and opened == []
+            app.query_one("#output-tabs", TabbedContent).active = "tab-report"
+            await pilot.pause()
+            app.query_one("#repo-list").focus()
+            await pilot.press("o", "p")
+            await pilot.pause()
+            assert opened == [], "a finding the person cannot see is opened by no stray key"
+
+    @pytest.mark.asyncio
+    async def test_o_and_p_say_what_is_missing_where_nothing_can_open(self, tmp_path: Path) -> None:
+        pytest.importorskip("textual")
+        from textual.widgets import DataTable, Input, TabbedContent
+
+        app = await _payments_screen(tmp_path)
+        opened: list[str] = []
+        said: list[str] = []
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.open_url = lambda url, **_how: opened.append(url)
+            app.notify = lambda message, **_options: said.append(str(message))
+            app.query_one("#output-tabs", TabbedContent).active = "tab-findings"
+            await pilot.pause()
+            app.query_one("#findings-table", DataTable).focus()
+            await pilot.press("o", "p")
+            await pilot.pause()
+            assert said == ["Run a review first."] * 2
+            await _show_findings(app, pilot, _pull_request_report(tmp_path))
+            await pilot.press("o", "p")
+            await pilot.pause()
+            assert said[2:] == ["Paste the pull request's address above the table first."] * 2
+            app.query_one("#pr-url", Input).value = PR_ADDRESS
+            await _show_findings(app, pilot, _pull_request_report(tmp_path, line=None, lines=None))
+            await pilot.press("o")
+            await pilot.pause()
+            assert said[4:] == ["This finding names no line."] and opened == []
+
+    @pytest.mark.asyncio
+    async def test_p_opens_the_file_in_the_pull_request_and_the_thread_once_posted(self, tmp_path: Path) -> None:
+        pytest.importorskip("textual")
+        from textual.widgets import DataTable, Input
+
+        from tui import azure_state
+        from tui.azure import files_link, parse_pr_url, thread_link
+
+        app = await _payments_screen(tmp_path)
+        opened: list[str] = []
+        pr = parse_pr_url(PR_ADDRESS)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.open_url = lambda url, **_how: opened.append(url)
+            app.query_one("#pr-url", Input).value = PR_ADDRESS
+            await _show_findings(app, pilot, _pull_request_report(tmp_path))
+            table = app.query_one("#findings-table", DataTable)
+            assert str(table.get_row_at(0)[-1]) == "", "not posted yet"
+            await pilot.press("p")
+            await pilot.pause()
+            azure_state.keep_posted(pr, "1a2b3c4d5e6f7a8b", 148)
+            app._render_findings_table()
+            await pilot.pause()
+            assert str(table.get_row_at(0)[-1]) == "148", "the thread it was posted as"
+            await pilot.press("p")
+            await pilot.pause()
+            assert opened == [files_link(pr, "src/app.py"), thread_link(pr, 148)]

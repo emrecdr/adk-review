@@ -617,7 +617,7 @@ class TestTheClient:
         sent = fake_ado.seen[0]
         assert (sent.method, sent.path, sent.query) == ("POST", fake_ado.root + "/threads", {"api-version": "7.1"})
         assert json.loads(sent.body.decode("utf-8")) == payload
-        assert sent.headers["content-type"] == "application/json; charset=utf-8"
+        assert sent.headers["content-type"] == "application/json"
         with pytest.raises(client.AzureError, match="no thread"):
             client.Client(fake_ado.pr, FakeToken()).post(payload)
 

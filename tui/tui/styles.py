@@ -175,6 +175,21 @@ Screen {
     width: 1fr;
     margin-right: 1;
 }
+#pr-bar {
+    height: 3;
+    padding: 0 1;
+    layout: horizontal;
+    align-vertical: middle;
+}
+#pr-url {
+    width: 2fr;
+    margin-right: 1;
+}
+#pr-status {
+    width: 1fr;
+    height: auto;
+    max-height: 3;
+}
 #findings-table {
     height: 1fr;
     min-height: 6;

@@ -206,7 +206,7 @@ class Client:
         data = None if body is None else json.dumps(body).encode("utf-8")
         headers = {"Authorization": self._credential(), "Accept": "application/json", "User-Agent": "adk-review-tui"}
         if data is not None:
-            headers["Content-Type"] = "application/json; charset=utf-8"
+            headers["Content-Type"] = "application/json"  # UTF-8, as JSON is by its own standard
         for waited in (False, True):
             request = urllib.request.Request(full, data=data, headers=headers, method=method)
             try:

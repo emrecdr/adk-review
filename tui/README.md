@@ -137,10 +137,14 @@ As the reviewer does, the screen reads a repository, and writes into it only whe
 | `Ctrl+P` | Open the command palette: a repository, a branch, a profile or an action by name |
 | `F5` | Fetch the chosen repository with `--prune` and list its branches again, the branches you chose kept where they are still there |
 | A number key | Minimize or restore the panel of that number, where no text field has the focus |
+| `o` | Open the chosen finding's lines in Azure DevOps, in the file as the commit reviewed holds it |
+| `p` | Open the pull request at the chosen finding: its comment thread once posted, else its file in the Files tab |
 | `q` | Quit |
 
 The action keys work wherever the focus is, a text field included. While a dialog is open, only `Ctrl+X` works,
-and while a review runs, `Ctrl+R` and `Ctrl+D` wait for it to end: they never restart it.
+and while a review runs, `Ctrl+R` and `Ctrl+D` wait for it to end: they never restart it. `o` and `p` are plain
+letters: they act on the Findings tab alone, where no text field has the focus, and they need the pull request's
+address in the field above the table.
 
 ## On Windows
 
