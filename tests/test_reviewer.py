@@ -725,6 +725,25 @@ class TestWhatGroundingKeeps:
             ((kept, _at, _deleted, _done),) = _grounded([finding], {"a.py": _numbered(hunk)})[0]
             assert (kept.code, kept.suggestion) == (kept_code, "Build anew."), code
 
+    def test_suggested_code_that_deletes_reorders_or_reindents_a_line_of_its_quote_is_kept(self) -> None:
+        """Reproduced by review: code whose every line the quote held was dropped as an echo though it changed them, a
+        line deleted inside, two lines swapped, or one moved out of a loop, since each line was looked up alone, its
+        indentation stripped. Code is an echo only where its lines are one unbroken run of the quote's, indented alike
+        once both are dedented: the owner's case, the last lines given back unchanged, still is one."""
+        from adk_review.core.verdict import echoes
+
+        quote = "for row in rows:\n    validate(row)\n    save(row)\n    db.commit()"
+        assert echoes("    save(row)\n    db.commit()", quote), "the last lines given back unchanged"
+        assert echoes("validate(row)\nsave(row)", quote), "the same lines, only dedented"
+        assert echoes("```python\n    save(row)\n```", quote), "a fence a model wrapped them in"
+        for changed in (
+            "for row in rows:\n    save(row)\n    db.commit()",  # a line deleted inside
+            "for row in rows:\n    save(row)\n    validate(row)\n    db.commit()",  # two lines swapped
+            "for row in rows:\n    validate(row)\n    save(row)\ndb.commit()",  # one moved out of the loop
+            "    save(row)\n    db.session.commit()",  # a line of its own
+        ):
+            assert not echoes(changed, quote), changed
+
     def test_a_quote_the_head_holds_too_is_placed_on_the_heads_copy_where_its_line_does_not_choose(self) -> None:
         """Read by review: a moved line, `import os` deleted above and added below, stood in both places, and a finding
         that named no line was placed on the deleted copy, its evidence `-import os`, so the comment told the reader the

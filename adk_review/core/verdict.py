@@ -228,12 +228,21 @@ def without_fences(lines: Sequence[str]) -> list[str]:
 
 
 def echoes(code: str, quote: str) -> bool:
-    """Whether suggested `code` adds no line to the `quote` it answers: each line of it, a fence of the model's own
-    unwrapped and blank lines aside, stands in the quote already, so it proposes nothing to paste. Reported by the
-    owner from a comment: a guideline quoted a function and gave its last three lines back unchanged as the fix."""
-    quoted = {line.strip() for line in quote.splitlines()}
-    lines = [line.strip() for line in without_fences(code.strip("\n").splitlines()) if line.strip()]
-    return bool(lines) and all(line in quoted for line in lines)
+    """Whether suggested `code` gives back part of the `quote` it answers unchanged, proposing nothing to paste: its
+    lines, a fence of the model's own unwrapped and blank lines aside, one unbroken run of the quote's lines, indented
+    alike once both are dedented. Reported by the owner from a comment: a guideline quoted a function and gave its
+    last three lines back unchanged as the fix. Reproduced by review: each line looked up alone, its indentation
+    stripped, a line deleted inside, two lines swapped or one moved out of a loop read as an echo, and the fix was
+    wiped. Deleting a quote's first or last line still reads as one: its text is a run of the quote's."""
+    lines = [line.rstrip() for line in without_fences(code.strip("\n").splitlines()) if line.strip()]
+    quoted = [line.rstrip() for line in quote.splitlines() if line.strip()]
+    if not lines or len(lines) > len(quoted):
+        return False
+    given = textwrap.dedent("\n".join(lines))
+    return any(
+        textwrap.dedent("\n".join(quoted[start : start + len(lines)])) == given
+        for start in range(len(quoted) - len(lines) + 1)
+    )
 
 
 def drop_ungrounded(
