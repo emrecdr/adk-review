@@ -9,6 +9,8 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from ..core.findings import RANK
+
 TUI_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = TUI_DIR / ".tui.toml"
 EXAMPLE_CONFIG_PATH = TUI_DIR / "tui.example.toml"
@@ -119,8 +121,11 @@ def load_tui_config(path: Path | None = None) -> TuiConfig:
     timeout = _int_in_range(workspace.get("fetch_timeout_s", 15), 15, 3, 120)
     out_raw = str(workspace.get("output_dir", "adk_review/tui/.state/outputs")).strip()
     output_dir = _resolve_output_dir(out_raw)
-    defaults = _parse_defaults(raw.get("defaults"))
-    projects = _parse_projects(raw.get("projects"))
+    try:
+        defaults = _parse_defaults(raw.get("defaults"))
+        projects = _parse_projects(raw.get("projects"))
+    except ValueError as exc:
+        raise ValueError(f"{target}: {exc}") from None
     return TuiConfig(
         config_path=target,
         root_dirs=roots,
@@ -141,6 +146,18 @@ def _int_in_range(value: object, default: int, minimum: int, maximum: int) -> in
     except ValueError:
         return default
     return max(minimum, min(maximum, parsed))
+
+
+def _fail_on(value: object, table: str, default: str) -> str:
+    """`table`'s `fail_on` where a severity names it, and `default` where the table gives none. Any other value is
+    refused and named with what to give: the screen's selector takes a severity alone, and read by review, `critical`
+    there raised from inside the screen, with a traceback."""
+    if value is None or value == "":
+        return default
+    if not isinstance(value, str) or value not in RANK:
+        *most, last = sorted(RANK, key=RANK.__getitem__, reverse=True)  # the most severe first
+        raise ValueError(f"{table} fail_on is {value!r}. Give {', '.join(most)} or {last}")
+    return value
 
 
 def _resolve_output_dir(out_raw: str) -> str:
@@ -190,7 +207,7 @@ def _parse_defaults(section: object) -> ReviewDefaults:
         return ReviewDefaults()
     return ReviewDefaults(
         profile=str(section.get("profile", "default")),
-        fail_on=str(section.get("fail_on", "blocker")),
+        fail_on=_fail_on(section.get("fail_on"), "[defaults]", "blocker"),
         comment=bool(section.get("comment", True)),
         handoff=bool(section.get("handoff", False)),
         verify=bool(section.get("verify", False)),
@@ -210,7 +227,7 @@ def _parse_projects(section: object) -> dict[str, RepoPreset]:
         presets[str(name)] = RepoPreset(
             base=str(data.get("base", "")),
             profile=str(data.get("profile", "")),
-            fail_on=str(data.get("fail_on", "")),
+            fail_on=_fail_on(data.get("fail_on"), f"[projects.{name}]", ""),
             comment=data["comment"] if isinstance(data.get("comment"), bool) else None,
             handoff=data["handoff"] if isinstance(data.get("handoff"), bool) else None,
             verify=data["verify"] if isinstance(data.get("verify"), bool) else None,

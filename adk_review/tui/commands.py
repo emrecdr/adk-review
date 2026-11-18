@@ -6,9 +6,11 @@ from collections.abc import Callable
 from typing import Protocol, cast
 
 from textual.command import DiscoveryHit, Hit, Hits, Provider
+from textual.content import Content
 
 from .git_sync import BranchInfo, ProjectInfo
 from .options import ProfileOption
+from .styles import literal
 
 
 class _PaletteHost(Protocol):
@@ -72,7 +74,7 @@ class ReviewCommandProvider(Provider):
     async def discover(self) -> Hits:
         """Show core actions and configured repositories before typing."""
         for label, callback, help_text in self._entries()[:12]:
-            yield DiscoveryHit(label, callback, text=label, help=help_text)
+            yield DiscoveryHit(Content(label), callback, text=label, help=literal(help_text))  # no markup: a name's own
 
     async def search(self, query: str) -> Hits:
         """Fuzzy-match commands, repos, branches, and profiles against `query`."""
@@ -80,4 +82,4 @@ class ReviewCommandProvider(Provider):
         for label, callback, help_text in self._entries():
             score = matcher.match(label)
             if score > 0:
-                yield Hit(score, matcher.highlight(label), callback, text=label, help=help_text)
+                yield Hit(score, matcher.highlight(label), callback, text=label, help=literal(help_text))

@@ -141,6 +141,23 @@ class TestTuiConfig:
         safe = load_tui_config(cfg_file)
         assert safe.scan_depth == 2 and safe.fetch_timeout_s == 15
 
+    def test_a_config_the_screen_cannot_show_is_one_sentence_and_exit_2(self, tmp_path: Path, capsys) -> None:
+        """Read by review, and reproduced: a `fail_on` no severity names raised `InvalidSelectValueError` with a
+        traceback, at the start for `[defaults]` and at a repository's choice for its preset; and a file that is no
+        TOML raised from inside the screen. Each is refused before the screen opens, with the value and what to give."""
+        from adk_review.tui import main as tui_main
+
+        cfg = tmp_path / ".tui.toml"
+        for body, said in (
+            ('[defaults]\nfail_on = "critical"\n', "[defaults] fail_on is 'critical'. Give blocker, major or minor"),
+            ('[projects."my-service"]\nfail_on = "high"\n', "[projects.my-service] fail_on is 'high'. Give blocker"),
+            ("[defaults\n", "could not read"),
+        ):
+            cfg.write_text(body, encoding="utf-8")
+            assert tui_main(["--config", str(cfg)]) == 2, body
+            err = capsys.readouterr().err
+            assert err.startswith("tui: ") and said in err and "Traceback" not in err, err
+
 
 class TestGitSyncEngine:
     """Multi-root project discovery and zero-checkout branch synchronization."""
@@ -526,6 +543,70 @@ class TestOptionsAndCliBuilder:
             assert app.selected_head == "origin/feat-remote", "reviewed by its remote name"
             assert refs() == fetched, "and no local branch was made for it"
         assert remote.is_dir()
+
+    @pytest.mark.asyncio
+    async def test_the_screen_draws_a_square_bracket_as_it_is_written(self, tmp_path: Path) -> None:
+        """Textual reads `[name]` in a string as markup. Read by review, and reproduced: each section's title lost the
+        choice it names, "Branch Under Review [main]" drawn with no branch; a repository `my[service]` was listed as
+        `my`; and a finding titled "The path [/tmp] is shared" raised `MarkupError` and ended the screen."""
+        pytest.importorskip("textual")
+        import json
+
+        from textual.widgets import DataTable, OptionList, Static, TabbedContent
+
+        from adk_review.tui.app import AdkReviewTuiApp
+
+        repo = tmp_path / "workspace" / "my[service]"
+        (repo / "src").mkdir(parents=True)
+        _git(repo, "init", "-b", "main")
+        _git(repo, "config", "user.email", "dev@example.com")
+        _git(repo, "config", "user.name", "Dev")
+        (repo / "src" / "app.py").write_text("x = 1\n", encoding="utf-8")
+        _git(repo, "add", ".")
+        _git(repo, "commit", "-m", "one")
+        _git(repo, "branch", "feature")
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+
+        def drawn(widget, line: int = 0) -> str:
+            return "".join(segment.text for segment in widget.render_line(line)).strip()
+
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(200, 50)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert "Branch Under Review [main]" in str(app.query_one("#head-box CollapsibleTitle").render())
+            assert "Local Repository [my[service]]" in str(app.query_one("#repo-box CollapsibleTitle").render())
+            assert drawn(app.query_one("#repo-list", OptionList)).startswith("my[service]  (main, clean)")
+            assert "Repo: my[service]" in str(app.query_one("#selection-summary", Static).render())
+            app._set_banner("guideline.security [done] in src/[id]/page.py [/bold]")
+            assert "[done] in src/[id]/page.py [/bold]" in str(app.query_one("#status-banner", Static).render())
+            app.notify("closing tag [/bold] alone")
+            findings = [
+                {
+                    "check": "rule.lint",
+                    "file": "src/[id]/a.py",
+                    "line": 3,
+                    "severity": "minor",
+                    "title": "Use list[int]",
+                },
+                {
+                    "check": "guideline.security",
+                    "file": "a.py",
+                    "line": 9,
+                    "severity": "major",
+                    "title": "[/tmp] is shared",
+                },
+            ]
+            report = tmp_path / "report.json"
+            report.write_text(json.dumps({"schema": 2, "findings": findings}), encoding="utf-8")
+            await app._load_generated_files({"json": report})
+            app.query_one("#output-tabs", TabbedContent).active = "tab-findings"  # a hidden table draws no line
+            await pilot.pause()
+            table = app.query_one("#findings-table", DataTable)
+            rows = [drawn(table, line) for line in (1, 2)]
+            assert "[/tmp] is shared" in rows[0] and "src/[id]/a.py:3" in rows[1] and "Use list[int]" in rows[1], rows
 
 
 class TestFindingsExplorer:

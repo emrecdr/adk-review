@@ -36,7 +36,7 @@ class SyncBranchModal(ModalScreen[bool]):
         )
         with Vertical(id="modal-dialog"):
             yield Label("Branch Behind Remote", classes="chain-title")
-            yield Static(msg)
+            yield Static(msg, markup=False)
             with Horizontal(id="modal-buttons"):
                 yield Button("Update Local Branch", id="btn-sync-yes", variant="primary")
                 yield Button("Keep Local As-Is", id="btn-sync-no", variant="default")
@@ -70,7 +70,7 @@ class DivergedBranchModal(ModalScreen[str]):
         )
         with Vertical(id="modal-dialog"):
             yield Label("Diverged Branch Detected", classes="chain-title")
-            yield Static(msg)
+            yield Static(msg, markup=False)
             with Horizontal(id="modal-buttons"):
                 yield Button(f"Local ({s.local_branch})", id="btn-div-local", variant="primary")
                 yield Button(f"Remote ({s.upstream_branch})", id="btn-div-remote", variant="warning")
@@ -96,7 +96,7 @@ class ExplainCheckModal(ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="explain-dialog"):
-            yield Label(f"Check Reference: {self.check_id}", classes="chain-title")
+            yield Label(f"Check Reference: {self.check_id}", classes="chain-title", markup=False)
             with VerticalScroll(id="explain-scroll"):
                 yield Markdown(explain_check_markdown(self.check_id), id="explain-md")
             with Horizontal(id="modal-buttons"):

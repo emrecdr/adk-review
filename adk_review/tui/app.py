@@ -11,11 +11,13 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import ClassVar
 
+from rich.text import Text
 from textual import on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding, BindingType
 from textual.command import Provider
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.content import Content
 from textual.widgets import (
     Button,
     Collapsible,
@@ -73,7 +75,7 @@ from .options import (
     parse_diff_cap,
     promote_baseline,
 )
-from .styles import APP_CSS
+from .styles import APP_CSS, literal
 
 
 class AdkReviewTuiApp(App[int]):
@@ -137,9 +139,12 @@ class AdkReviewTuiApp(App[int]):
             if self.has_multiple_roots()
             else f"Workspace: {self.selected_root.path} | Select a repository to begin."
         )
-        yield Static(initial_msg, id="status-banner")
+        # No markup in what a repository, a branch, a path or a model wrote: Textual reads `[name]` in a string as a
+        # tag. Read by review, and reproduced: a title lost the choice it names, "Branch Under Review [main]" drawn
+        # with no branch, and a finding titled "The path [/tmp] is shared" raised `MarkupError` and ended the screen.
+        yield Static(initial_msg, id="status-banner", markup=False)
         yield from self._compose_mid_row()
-        yield Static("Select a repository to preview review scope.", id="selection-summary")
+        yield Static("Select a repository to preview review scope.", id="selection-summary", markup=False)
         yield from self._compose_command_bar()
         yield from self._compose_output_tabs()
         yield Footer()
@@ -149,22 +154,22 @@ class AdkReviewTuiApp(App[int]):
         with Horizontal(id="chain-row"):
             with Collapsible(title="1. Root Workspace Folder", collapsed=False, id="root-box", classes=root_classes):
                 yield Input(placeholder="Filter roots...", id="root-filter", classes="filter-input")
-                yield OptionList(id="root-list")
+                yield OptionList(id="root-list", markup=False)
             with Collapsible(
                 title=f"{self._step(2)}. Local Repository", collapsed=False, id="repo-box", classes="chain-box"
             ):
                 yield Input(placeholder="Filter repos...", id="repo-filter", classes="filter-input")
-                yield OptionList(id="repo-list")
+                yield OptionList(id="repo-list", markup=False)
             with Collapsible(
                 title=f"{self._step(3)}. Branch Under Review", collapsed=False, id="head-box", classes="chain-box"
             ):
                 yield Input(placeholder="Filter branches...", id="head-filter", classes="filter-input")
-                yield OptionList(id="head-list")
+                yield OptionList(id="head-list", markup=False)
             with Collapsible(
                 title=f"{self._step(4)}. Target Branch", collapsed=False, id="base-box", classes="chain-box"
             ):
                 yield Input(placeholder="Filter target branches...", id="base-filter", classes="filter-input")
-                yield OptionList(id="base-list")
+                yield OptionList(id="base-list", markup=False)
 
     def _compose_mid_row(self) -> ComposeResult:
         with Horizontal(id="mid-row"):
@@ -205,7 +210,7 @@ class AdkReviewTuiApp(App[int]):
         default_prof = d.profile if any(p.name == d.profile for p in self.profiles) else self.profiles[0].name
         yield Select(mode_opts, value="branch", allow_blank=False, id="mode-select")
         yield Select(prof_opts, value=default_prof, allow_blank=False, id="profile-select")
-        yield Static(self._profile_detail(default_prof), id="profile-desc", classes="opt-desc")
+        yield Static(self._profile_detail(default_prof), id="profile-desc", classes="opt-desc", markup=False)
         yield Select(fail_on_choices(), value=d.fail_on, allow_blank=False, id="fail-on-select")
         with Horizontal(classes="budget-row"):
             yield Input(placeholder="--check IDs (optional, overrides profile)", id="check-input")
@@ -229,7 +234,7 @@ class AdkReviewTuiApp(App[int]):
 
     def _compose_command_bar(self) -> ComposeResult:
         with Horizontal(id="cmd-bar"):
-            yield Static("adk-review ...", id="cli-preview")
+            yield Static("adk-review ...", id="cli-preview", markup=False)
             yield Button("Dry Run (Ctrl+D)", id="btn-dry-run", variant="default", classes="action-btn")
             yield Button("Run Review (Ctrl+R)", id="btn-run", variant="success", classes="action-btn")
             yield Button("Stop (Ctrl+X)", id="btn-stop", variant="error", classes="action-btn", disabled=True)
@@ -408,7 +413,7 @@ class AdkReviewTuiApp(App[int]):
                 said = fetch_res.message
                 self._log_progress(f"[{project.name}] {said}")
                 if not fetch_res.ok:
-                    self.notify(said, severity="warning", timeout=4)
+                    self.notify(said, severity="warning", timeout=4, markup=False)
             branches = await asyncio.to_thread(list_branches, project.path)
         finally:
             head_list.loading = False
@@ -525,7 +530,8 @@ class AdkReviewTuiApp(App[int]):
                 )
                 self._log_progress(outcome.message)
                 self._set_banner(outcome.message)
-                self.notify(outcome.message, severity="information" if outcome.ok else "warning", timeout=4)
+                severity = "information" if outcome.ok else "warning"
+                self.notify(outcome.message, severity=severity, timeout=4, markup=False)
                 return outcome.resolved_ref
             return status.local_branch
         if status.kind == "diverged":
@@ -576,8 +582,8 @@ class AdkReviewTuiApp(App[int]):
             excl_list.clear_options()
             for folder, label in folders:
                 is_excl = folder in chosen_excludes
-                path_list.add_option(Selection(label, folder, folder in chosen_paths and not is_excl))
-                excl_list.add_option(Selection(label, folder, is_excl))
+                path_list.add_option(Selection(Content(label), folder, folder in chosen_paths and not is_excl))
+                excl_list.add_option(Selection(Content(label), folder, is_excl))
         finally:
             self._syncing_paths = False
         prev_file = baseline_path(repo, self.selected_base, self.selected_head, self.selected_mode)
@@ -694,8 +700,8 @@ class AdkReviewTuiApp(App[int]):
         )
         for selector, full_title, short_title in specs:
             box = self.query_one(selector, Collapsible)
-            box.title = short_title if box.collapsed else full_title
-            box.tooltip = full_title
+            box.title = literal(short_title if box.collapsed else full_title)  # a title takes a string alone
+            box.tooltip = Content(full_title)
 
     def select_profile_by_name(self, name: str) -> None:
         """Set `#profile-select` to `name` (used by Command Palette shortcuts)."""
@@ -1027,7 +1033,8 @@ class AdkReviewTuiApp(App[int]):
         table = self.query_one("#findings-table", DataTable)
         table.clear()
         for row in filtered:
-            table.add_row(row.severity, row.tier, row.check, row.location(), row.title)
+            cells = (row.severity, row.tier, row.check, row.location(), row.title)
+            table.add_row(*(Text(cell) for cell in cells))  # a cell given as a string is read as markup
         if filtered:
             self._select_finding_at(0)
         else:

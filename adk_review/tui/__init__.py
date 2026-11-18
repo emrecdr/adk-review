@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from ..core.verdict import EXIT_CLEAN, EXIT_USAGE
-from .config import DEFAULT_CONFIG_PATH, ensure_tui_config
+from .config import DEFAULT_CONFIG_PATH, ensure_tui_config, load_tui_config
 
 
 def build_tui_parser() -> argparse.ArgumentParser:
@@ -52,6 +52,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.init_config:
         sys.stdout.write(f"{ensured}\n")
         return EXIT_CLEAN
+    try:  # read here first: what the file cannot mean is a sentence, where the screen would raise it with a traceback
+        load_tui_config(ensured)
+    except ValueError as exc:
+        sys.stderr.write(f"tui: {exc}\n")
+        return EXIT_USAGE
     try:
         from .app import AdkReviewTuiApp
     except ModuleNotFoundError:
@@ -59,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
         return EXIT_USAGE
     app = AdkReviewTuiApp(config_path=ensured)
     result = app.run()
-    return int(result) if isinstance(result, int) else EXIT_CLEAN
+    return result if isinstance(result, int) else EXIT_CLEAN
 
 
 def run() -> None:
