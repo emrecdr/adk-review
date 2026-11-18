@@ -12,7 +12,7 @@ def literal(text: str) -> str:
 
 APP_CSS = """
 #config-line {
-    height: 1;
+    height: auto;
     padding: 0 1;
     color: $text-muted;
 }

@@ -157,7 +157,7 @@ class AdkReviewTuiApp(App[int]):
         # read nor the folder. Its first line names both.
         folders = ", ".join(root.path for root in self.tui_config.root_dirs)
         yield Static(
-            f"Config: {self.tui_config.config_path}  |  Folders of repositories: {folders}",
+            f"Config: {self.tui_config.config_path}\nFolders of repositories: {folders}",  # each on a line of its own
             id="config-line",
             markup=False,
         )

@@ -1,8 +1,9 @@
 """Interactive Textual front-end shell (`adk-review-tui`) for `adk-review`.
 
-An application of its own on top of the reviewer, `tui/` in the reviewer's checkout, a uv workspace member with its
-own project file: it imports `adk_review` as any user would, and its config and state live in the person's own
-folders (`config.py`). An install of `adk-review` for a pipeline takes none of its code, command or UI package.
+An application of its own on top of the reviewer, `tui/` in the reviewer's checkout, a uv workspace member with its own
+project file: it imports `adk_review` as any user would. Its config is `tui/.tui.toml` in a checkout and `tui.toml` in
+the person's own folder for an installed copy, its state in their own state folder (`config.py`). An install of
+`adk-review` for a pipeline takes none of its code, command or UI package.
 """
 
 from __future__ import annotations

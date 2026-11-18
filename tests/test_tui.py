@@ -32,8 +32,10 @@ def _state_apart(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     monkeypatch.setattr(options, "CACHE_DIR", state / "cache")
     monkeypatch.setattr(config, "DEFAULT_CONFIG_PATH", state / "config" / "tui.toml")
     monkeypatch.setattr(config, "OUTPUTS_DIR", state / "outputs")
-    # Never a person's own: the config a checkout kept before, which a first run copies.
+    # Never a person's own: the config a checkout kept before, and the one in their own folder, which a first run reads.
     monkeypatch.setattr(config, "LEGACY_CONFIG_PATH", state / "no-checkout" / ".tui.toml", raising=False)
+    monkeypatch.setattr(config, "USER_CONFIG_PATH", state / "user-config" / "tui.toml", raising=False)
+    monkeypatch.setattr(config, "STATE_DIR", state)
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -141,8 +143,9 @@ class TestTuiConfig:
         from adk_review_tui import config
 
         checkout = tmp_path / "adk-review"
-        (checkout / ".git").mkdir(parents=True)
+        (checkout / "tui").mkdir(parents=True)  # no `.git`: a ZIP download is a checkout too
         (checkout / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        (checkout / "tui" / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
         monkeypatch.setattr(config, "TUI_DIR", checkout / "tui" / "adk_review_tui")
         assert config.default_config_path() == checkout / "tui" / ".tui.toml"
         installed = tmp_path / "tools" / "adk-review-tui" / "lib" / "python3.14" / "site-packages"
@@ -158,9 +161,10 @@ class TestTuiConfig:
         from adk_review_tui import config
 
         checkout = tmp_path / "projects" / "adk-review"
-        (checkout / ".git").mkdir(parents=True)
+        (checkout / "tui").mkdir(parents=True)
         (checkout / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
-        monkeypatch.setattr(config, "TUI_DIR", checkout / "adk_review" / "tui")
+        (checkout / "tui" / "pyproject.toml").write_text("[project]\n", encoding="utf-8")
+        monkeypatch.setattr(config, "TUI_DIR", checkout / "tui" / "adk_review_tui")
         assert config.default_root_folder() == str(tmp_path / "projects")
         installed = tmp_path / "tools" / "adk-review" / "lib" / "python3.14" / "site-packages"
         monkeypatch.setattr(config, "TUI_DIR", installed / "adk_review" / "tui")
@@ -276,13 +280,12 @@ class TestTuiConfig:
         assert reloaded.projects["payments-service"] == preset
         assert saved.projects["payments-service"] == preset
 
-        # Non-numeric workspace ints fall back cleanly instead of raising
+        # A number the config cannot use is said, never clamped or replaced in silence (see the review's tests below)
         cfg_file.write_text(
-            '[workspace]\nroot_dirs = ["' + root_a.as_posix() + '"]\nscan_depth = "invalid"\nfetch_timeout_s = false\n',
-            encoding="utf-8",
+            '[workspace]\nroot_dirs = ["' + root_a.as_posix() + '"]\nscan_depth = "invalid"\n', encoding="utf-8"
         )
-        safe = load_tui_config(cfg_file)
-        assert safe.scan_depth == 2 and safe.fetch_timeout_s == 15
+        with pytest.raises(ValueError, match="scan_depth is 'invalid'"):
+            load_tui_config(cfg_file)
 
     def test_a_config_the_screen_cannot_show_is_one_sentence_and_exit_2(self, tmp_path: Path, capsys) -> None:
         """Read by review, and reproduced: a `fail_on` no severity names raised `InvalidSelectValueError` with a
@@ -1461,6 +1464,164 @@ class TestWhatTheCodeReviewFound:
             await pilot.pause()
             shown = str(app.query_one("#finding-detail").render())
             assert "**Shout**" in shown and "[the fix](https://attacker.example/?q=x)" in shown, shown
+
+
+class TestTheConfigReview:
+    """A code review of the config's move into the checkout, and the owner's report that the old folder stayed."""
+
+    def test_the_first_run_leaves_no_trace_of_the_old_folder(self, tmp_path: Path, monkeypatch) -> None:
+        """Reported by the owner: `adk_review/adk_review/tui/` was still there after the front end moved to `tui/`.
+        It held only what git ignores: the old config, the state's folders and Python's cache. The first run moves
+        the config, moves each saved file into the state folder, removes Python's old cache and every folder left
+        empty, and the old folder is gone; a file it does not know stays, with its folder."""
+        from adk_review_tui import config
+
+        old = tmp_path / "checkout" / "adk_review" / "tui"
+        (old / ".state" / "outputs").mkdir(parents=True)
+        (old / ".state" / "cache").mkdir()
+        (old / "__pycache__").mkdir()
+        (old / "__pycache__" / "app.cpython-314.pyc").write_bytes(b"\0")
+        (old / ".state" / "outputs" / "comment-old.md").write_text("an old comment\n", encoding="utf-8")
+        (old / ".tui.toml").write_text('[workspace]\nroot_dirs = ["~/Projects"]\n', encoding="utf-8")
+        monkeypatch.setattr(config, "LEGACY_CONFIG_PATH", old / ".tui.toml")
+        target = config.ensure_tui_config()
+        assert 'root_dirs = ["~/Projects"]' in target.read_text(encoding="utf-8")
+        assert not old.exists(), sorted(p.name for p in old.rglob("*"))
+        assert (config.STATE_DIR / "outputs" / "comment-old.md").read_text(encoding="utf-8") == "an old comment\n"
+        # A folder left with only its empty folders, its config moved by an earlier run, goes too.
+        (old / ".state" / "baselines").mkdir(parents=True)
+        config.ensure_tui_config()
+        assert not old.exists()
+        (old).mkdir(parents=True)
+        (old / "notes.txt").write_text("mine\n", encoding="utf-8")
+        config.ensure_tui_config()
+        assert (old / "notes.txt").is_file(), "a file it does not know is never removed"
+
+    def test_a_checkout_takes_the_config_last_edited_in_the_persons_own_folder(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by review: from bd92a0a the config of a checkout lived in the person's own folder, where they edited
+        it; after it moved into the checkout, that file was read no more and named nowhere, its folder of
+        repositories and its presets lost. The first run takes the one edited last, the old checkout's or the person's
+        own, and leaves the person's own file, which an installed copy reads."""
+        import os
+
+        from adk_review_tui import config
+
+        user = config.USER_CONFIG_PATH
+        user.parent.mkdir(parents=True)
+        user.write_text('[workspace]\nroot_dirs = ["~/Projects"]\n\n[projects."my-service"]\nbase = "develop"\n')
+        target = config.ensure_tui_config()
+        assert config.load_tui_config(target).projects["my-service"].base == "develop" and user.is_file()
+        target.unlink()
+        legacy = tmp_path / "checkout" / ".tui.toml"
+        legacy.parent.mkdir()
+        legacy.write_text('[workspace]\nroot_dirs = ["~/Old"]\n', encoding="utf-8")
+        os.utime(legacy, (1_000_000_000, 1_000_000_000))  # edited before the person's own
+        monkeypatch.setattr(config, "LEGACY_CONFIG_PATH", legacy)
+        target = config.ensure_tui_config()
+        assert '"~/Projects"' in target.read_text(encoding="utf-8") and not legacy.exists()
+
+    def test_an_old_output_dir_inside_the_package_is_dropped_however_it_was_written(
+        self, monkeypatch, tmp_path
+    ) -> None:
+        """Read by review: before bd92a0a a saved config held `output_dir` as the full path into the package, which the
+        move kept, and each review's files went on landing in `adk_review/tui/`. Written relative or absolute, on
+        macOS or Windows, it is dropped, and the state folder's `outputs` holds."""
+        from adk_review_tui import config
+
+        legacy = tmp_path / "old" / ".tui.toml"
+        legacy.parent.mkdir()
+        for written in (
+            "adk_review/tui/.state/outputs",
+            "/Users/me/Projects/adk-review/adk_review/tui/.state/outputs",
+            "C:\\\\Users\\\\me\\\\adk-review\\\\adk_review\\\\tui\\\\.state\\\\outputs",
+        ):
+            legacy.parent.mkdir(exist_ok=True)  # the run before removed it, emptied
+            legacy.write_text(f'[workspace]\nroot_dirs = ["~/Projects"]\noutput_dir = "{written}"\n', encoding="utf-8")
+            monkeypatch.setattr(config, "LEGACY_CONFIG_PATH", legacy)
+            config.DEFAULT_CONFIG_PATH.unlink(missing_ok=True)
+            target = config.ensure_tui_config()
+            assert config.load_tui_config(target).output_dir == str(config.OUTPUTS_DIR), written
+
+    def test_an_old_config_that_cannot_be_removed_still_starts_the_screen(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review: removing the old file after the move could fail, on Windows a read-only file or one another
+        program holds, and the start ended in a bare `WinError`, the new config written. It starts, and says nothing:
+        the screen names the file it reads."""
+        from adk_review_tui import config
+
+        legacy = tmp_path / "old" / ".tui.toml"
+        legacy.parent.mkdir()
+        legacy.write_text('[workspace]\nroot_dirs = ["~/Projects"]\n', encoding="utf-8")
+        monkeypatch.setattr(config, "LEGACY_CONFIG_PATH", legacy)
+        unlink = Path.unlink
+
+        def held(self: Path, *args: object, **kwargs: object) -> None:
+            if self == legacy:
+                raise PermissionError(13, "The process cannot access the file", str(self))
+            unlink(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", held)
+        assert config.ensure_tui_config().is_file()
+
+    def test_a_config_it_cannot_read_is_one_sentence_naming_what_to_write(self, tmp_path: Path, capsys) -> None:
+        """Read by review, each reproduced: `projects = "x"` ended in a traceback; `[[workspace]]`, `workspace = "x"`
+        and `defaults = 3` were left out, the default folder listed in silence; `verify = "no"` turned `--verify` on, a
+        string being true; a number out of range was clamped, a word replaced; an empty key passed; a setting before
+        any table was called a table; and a bad `projects_dir` was reported as `root_dirs`."""
+        from adk_review_tui import main as tui_main
+
+        cfg = tmp_path / ".tui.toml"
+        for body, said in (
+            ('projects = "x"\n', "[projects] must be a table"),
+            ("projects = [1]\n", "[projects] must be a table"),
+            ("[projects]\nmy-service = 1\n", "[projects.my-service] must be a table"),
+            ('[[workspace]]\nroot_dirs = ["/nowhere"]\n', "[workspace] must be a table"),
+            ('workspace = "x"\n', "[workspace] must be a table"),
+            ("defaults = 3\n", "[defaults] must be a table"),
+            ('[defaults]\nverify = "no"\n', "[defaults] verify is 'no'. Write true or false"),
+            ('[projects."a"]\ncomment = "false"\n', "[projects.a] comment is 'false'. Write true or false"),
+            ("[workspace]\nscan_depth = 99\n", "[workspace] scan_depth is 99. Write a whole number from 1 to 5"),
+            ('[workspace]\nscan_depth = "deep"\n', "[workspace] scan_depth is 'deep'"),
+            ("[workspace]\nfetch_timeout_s = false\n", "[workspace] fetch_timeout_s is False"),
+            ('[workspace]\n"" = 1\n', "[workspace] has no setting ''"),
+            ("scan_dept = 2\n", "the config has no setting 'scan_dept'"),
+            ("[workspace]\nprojects_dir = 3\n", "projects_dir lists the folders"),
+        ):
+            cfg.write_text(body, encoding="utf-8")
+            assert tui_main(["--config", str(cfg)]) == 2, body
+            err = capsys.readouterr().err
+            assert said in err and "Traceback" not in err, (body, err)
+
+    def test_a_config_saved_with_a_byte_order_mark_is_read(self, tmp_path: Path) -> None:
+        """Read by review: PowerShell 5's `Out-File -Encoding utf8` writes a BOM first, and the config could not be
+        read: `Invalid statement`, with no hint. It is read as the reviewer reads its own, `utf-8-sig`."""
+        from adk_review_tui.config import load_tui_config
+
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{tmp_path.as_posix()}"]\n', encoding="utf-8-sig")
+        assert load_tui_config(cfg).root_dirs[0].path == str(tmp_path.resolve())
+
+    @pytest.mark.asyncio
+    async def test_the_screen_shows_the_config_and_the_folders_at_80_columns(self, tmp_path: Path) -> None:
+        """Read by review, measured: on one line of one row, the config's path cut the folders off at 80 and 120
+        columns, the part the owner asked to see. Each has a line of its own."""
+        pytest.importorskip("textual")
+        from adk_review_tui.app import AdkReviewTuiApp
+
+        _init_repo_with_remote(tmp_path)
+        cfg = tmp_path / "a" / "rather" / "long" / "folder" / "for" / "the" / "config" / ".tui.toml"
+        cfg.parent.mkdir(parents=True)
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(80, 40)) as pilot:
+            await pilot.pause()
+            line = app.query_one("#config-line")
+            drawn = ["".join(segment.text for segment in line.render_line(y)) for y in range(line.size.height)]
+            assert any(row.lstrip().startswith("Folders of repositories:") for row in drawn), drawn
+            assert any("Config:" in row for row in drawn), drawn
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
 
 
 async def _wait_for_branches(app, pilot) -> None:

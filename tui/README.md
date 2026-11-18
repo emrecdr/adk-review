@@ -31,7 +31,7 @@ adk-review-tui
 It installs the reviewer with it, from the same commit. `uv tool install` reads no lock, so `--exclude-newer P3D`
 keeps the three days' cooldown the lock keeps.
 
-In a pipeline, install the reviewer as [GUIDE.md](../../GUIDE.md) says, with no extra: no UI package is installed.
+In a pipeline, install the reviewer as [GUIDE.md](../GUIDE.md) says, with no extra: no UI package is installed.
 
 ## Its config
 
@@ -48,11 +48,16 @@ reports, the cache and each review's files, is in your state folder in either ca
 Windows, `~/.local/state/adk-review-tui` elsewhere, or under `$XDG_STATE_HOME`.
 
 The first run writes the config where it is missing, and names a folder of repositories for you: in a checkout, the
-folder that holds the checkout, where its neighbours are; in an installed copy, the folder the command starts in.
-Change `root_dirs` there to list your own, as `root_dirs = ["~/Projects"]`. `--init-config` writes the file and prints
-its path, and `--config FILE` reads another file. A checkout's old config, `adk_review/tui/.tui.toml`, from when the
-front end lived in the reviewer's package, moves to `tui/.tui.toml` once, so one file holds it. `tui.example.toml`, in
-`tui/`, shows every setting.
+folder that holds the checkout, where its neighbours are; in an installed copy, the folder the command starts in. Change
+`root_dirs` there to list your own, as `root_dirs = ["~/Projects"]`. `--init-config` writes the file and prints its
+path, and `--config FILE` reads another file. A checkout is known by the reviewer's project file and
+`tui/pyproject.toml`, so a ZIP download is one too.
+
+A checkout that still holds the old config, `adk_review/tui/.tui.toml`, from when the front end lived in the reviewer's
+package, or one in your own folder from an earlier version, gets the one you edited last, in `tui/.tui.toml`. The old
+file moves, so one file holds the config; the one in your own folder stays, for an installed copy. Then the old folder
+goes: its saved reviews move to your state folder, Python's old cache is removed, and so is every folder left empty. A
+file there that the front end did not write stays, with its folder. `tui.example.toml`, in `tui/`, shows every setting.
 
 | Setting | What it sets |
 |---|---|
@@ -63,8 +68,10 @@ front end lived in the reviewer's package, moves to `tui/.tui.toml` once, so one
 | `[defaults]` | The profile, the `--fail-on` bar, and which outputs and options are on. |
 | `[projects."<name>"]` | One repository's saved choices, written at each review the screen runs. |
 
-A `fail_on` that names no severity, a `root_dirs` that names no folder, a table or a setting the config does not
-know, or a file that is no TOML, stops the start with one sentence that says what to write, and exit 2.
+A `fail_on` that names no severity, a `root_dirs` that names no folder, a switch that is not `true` or `false`, a
+number out of its range, a table or a setting the config does not know, or a file that is no TOML, stops the start
+with one sentence that says what to write, and exit 2. A file saved with a byte order mark, as Notepad and
+PowerShell 5 save one, is read.
 
 The state folder holds the last report of each target, which marks findings new or resolved, and the review cache.
 A target's last report moves on only where a review found other findings, so the same review run a third time is
@@ -144,4 +151,4 @@ It runs in cmd, in PowerShell and in Windows Terminal alike.
 | `clipboard.py` | Copying, through the terminal and through Windows' own clipboard |
 | `styles.py` | The screen's styles, and `literal`, which draws a `[` as written |
 
-The rules for changing this folder are in [CLAUDE.md](../../CLAUDE.md), under "Front end".
+The rules for changing this folder are in [CLAUDE.md](../CLAUDE.md), under "Front end".

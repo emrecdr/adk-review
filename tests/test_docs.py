@@ -62,6 +62,15 @@ def test_the_front_ends_guide_names_each_of_its_modules_and_each_key_it_binds() 
     assert (unnamed, missing) == ([], []), f"tui/README.md never names: {unnamed + missing}"
 
 
+def test_the_front_ends_guide_links_only_to_files_the_working_tree_holds() -> None:
+    """Read by review: moved from `adk_review/tui/` to `tui/`, its links to `../../GUIDE.md` and `../../CLAUDE.md` led
+    out of the repository; the backticked paths the other test reads were right."""
+    guide = ROOT / "tui" / "README.md"
+    links = re.findall(r"\]\(([^)#\s]+)[^)]*\)", guide.read_text(encoding="utf-8"))
+    broken = [link for link in links if "://" not in link and not (guide.parent / link).resolve().exists()]
+    assert broken == [], broken
+
+
 def test_the_readme_names_every_module_at_the_packages_root() -> None:
     text = (ROOT / "README.md").read_text(encoding="utf-8")
     unnamed = [p.name for p in sorted(PACKAGE.glob("*.py")) if f"`{p.name}`" not in text]

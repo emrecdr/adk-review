@@ -1,14 +1,18 @@
-"""The front end's config, `tui.toml`, and where it and the front end's state live: the person's own folders.
+"""The front end's config and where it and its state live: `tui/.tui.toml` in a checkout, which the person edits,
+and for an installed copy `tui.toml` in the person's own config folder; the state in their own state folder.
 
 Reproduced on a copy installed with `uv tool install`: the config and the saved reviews lived inside the tool's own
-environment, which an uninstall removed, choices and all, and where no one finds a comment; and its first run named
-that environment's `lib/python3.14` as the folder of repositories. Each lives where its system keeps a person's own now.
+environment, which an uninstall removed, choices and all; and its first run named that environment's `lib/python3.14`
+as the folder of repositories. Reported by the owner: in a checkout, the `.tui.toml` they edited was read no more once
+the config lived in their own folder there too, and the old folder in the reviewer's package stayed after the move.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
+import shutil
 import tempfile
 import tomllib
 from dataclasses import dataclass, field
@@ -45,10 +49,11 @@ TUI_DIR = Path(__file__).resolve().parent
 
 
 def _checkout() -> Path | None:
-    """The adk-review checkout the front end runs from, its root holding `.git` and the reviewer's project file; None
-    for an installed copy."""
+    """The adk-review checkout the front end runs from: its root holds the reviewer's project file and `tui/` the
+    front end's, which no install holds, with `.git` or without, as a ZIP download has none. None for an installed
+    copy. Read by review: known by `.git` alone, a ZIP download was read as an installed copy, its config elsewhere."""
     root = TUI_DIR.parent.parent
-    return root if (root / ".git").exists() and (root / "pyproject.toml").is_file() else None
+    return root if (TUI_DIR.parent / "pyproject.toml").is_file() and (root / "pyproject.toml").is_file() else None
 
 
 def default_config_path() -> Path:
@@ -60,12 +65,16 @@ def default_config_path() -> Path:
 
 
 DEFAULT_CONFIG_PATH = default_config_path()
-#: Where a checkout kept the config before, when the front end was a part of the reviewer's package: a first run
-#: that finds none at `DEFAULT_CONFIG_PATH` copies it there. Git moved the front end's files, never this one, which
-#: it ignores.
+#: The config in the person's own folder: an installed copy's, and from bd92a0a a checkout's too.
+USER_CONFIG_PATH = config_home() / APP / "tui.toml"
+#: Where a checkout kept the config when the front end was a part of the reviewer's package. Git moved the front
+#: end's files, never this one, which it ignores: a checkout's first run takes it, or the person's own if edited later.
 LEGACY_CONFIG_PATH = TUI_DIR.parent.parent / "adk_review" / "tui" / ".tui.toml"
-#: Its old `output_dir`, a path inside the package, which the copy leaves out so the new default holds.
-_LEGACY_OUTPUT_DIR = re.compile(r'(?m)^output_dir\s*=\s*"adk_review/tui/\.state/outputs"[ \t]*\n?')
+#: An old `output_dir`, a path inside the package however it was written, which the move leaves out so the default
+#: holds. Read by review: before bd92a0a a saved config held it as the full path, macOS's or Windows'.
+_LEGACY_OUTPUT_DIR = re.compile(
+    r'(?m)^output_dir\s*=\s*"[^"\n]*adk_review[/\\]+tui[/\\]+\.state[/\\]+outputs"[ \t]*\n?'
+)
 STATE_DIR = state_home() / APP
 CACHE_DIR = STATE_DIR / "cache"
 BASELINES_DIR = STATE_DIR / "baselines"
@@ -142,19 +151,57 @@ def _toml_list(items: tuple[str, ...]) -> str:
 
 
 def ensure_tui_config(path: Path | None = None) -> Path:
-    """`path`, by default `DEFAULT_CONFIG_PATH`, written with the defaults where it is missing. A checkout's old config,
-    `adk_review/tui/.tui.toml`, moves there once in their place, its saved choices kept: moved, never copied, so one
-    file holds the config. Reported by the owner: a copy left the old file to edit, and the screen read the other."""
+    """`path`, by default `DEFAULT_CONFIG_PATH`, written where it is missing: in a checkout from the config edited
+    last, the old `adk_review/tui/.tui.toml` or the person's own, else with the defaults. The old file moves, never
+    copied, so one file holds the config; the person's own stays, for an installed copy. Then the old folder goes.
+    Reported by the owner: a copy left the old file to edit, the screen read the other, and the old folder stayed."""
     target = (path or DEFAULT_CONFIG_PATH).expanduser().resolve()
-    if target.is_file():
-        return target
-    target.parent.mkdir(parents=True, exist_ok=True)
-    if target == DEFAULT_CONFIG_PATH.expanduser().resolve() and LEGACY_CONFIG_PATH.is_file():
-        write_atomic(target, _LEGACY_OUTPUT_DIR.sub("", LEGACY_CONFIG_PATH.read_text(encoding="utf-8")))
-        LEGACY_CONFIG_PATH.unlink()  # its text is the new file's now
-        return target
+    default = target == DEFAULT_CONFIG_PATH.expanduser().resolve()
+    if not target.is_file():
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if default and (source := _last_edited(target)) is not None:
+            write_atomic(target, _LEGACY_OUTPUT_DIR.sub("", source.read_text(encoding="utf-8-sig")))
+            with contextlib.suppress(OSError):  # read-only, or held by another program: the screen names its file
+                LEGACY_CONFIG_PATH.unlink(missing_ok=True)
+        else:
+            write_atomic(target, _defaults_text())
+    if default:
+        _clear_old_folder()
+    return target
+
+
+def _last_edited(target: Path) -> Path | None:
+    """The config a first run takes where none is at `target`: the old checkout's or the person's own, the one edited
+    last, and never `target` itself. Read by review: the person's own, edited since bd92a0a, was dropped in silence."""
+    found = [one for one in (LEGACY_CONFIG_PATH, USER_CONFIG_PATH) if one.is_file() and one.resolve() != target]
+    return max(found, key=lambda one: one.stat().st_mtime) if found else None
+
+
+def _clear_old_folder() -> None:
+    """The old folder, `adk_review/tui/` in a checkout, emptied of what the front end left there and removed: each
+    saved file moved into the state folder where none is in its place, Python's old cache removed, and every folder
+    left empty. A file it does not know stays, and its folder with it; nothing here fails a start."""
+    old = LEGACY_CONFIG_PATH.parent
+    if not old.is_dir() or LEGACY_CONFIG_PATH.exists():
+        return
+    with contextlib.suppress(OSError):
+        saved = old / ".state"
+        for file in sorted(saved.rglob("*")) if saved.is_dir() else []:
+            if file.is_file() and not (place := STATE_DIR / file.relative_to(saved)).exists():
+                place.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(file, place)
+        for compiled in list(old.rglob("__pycache__/*.pyc")):
+            compiled.unlink()
+        folders = sorted((one for one in old.rglob("*") if one.is_dir()), key=lambda one: len(one.parts), reverse=True)
+        for folder in [*folders, old]:
+            if not any(folder.iterdir()):
+                folder.rmdir()
+
+
+def _defaults_text() -> str:
+    """The config a first run writes where it has none to take."""
     root = default_root_folder().replace("\\", "/")
-    content = (
+    return (
         "# Configuration for `adk-review-tui`.\n"
         "# Add multiple paths to `root_dirs` to select a root workspace folder first.\n\n"
         "[workspace]\n"
@@ -173,8 +220,6 @@ def ensure_tui_config(path: Path | None = None) -> Path:
         "auto_previous = true\n\n"
         "[projects]\n"
     )
-    write_atomic(target, content)
-    return target
 
 
 def load_tui_config(path: Path | None = None) -> TuiConfig:
@@ -182,15 +227,15 @@ def load_tui_config(path: Path | None = None) -> TuiConfig:
     the reviewer reads its own: a table or a setting it does not know is said and named, never left out in silence."""
     target = ensure_tui_config(path)
     try:
-        raw = tomllib.loads(target.read_text(encoding="utf-8"))
+        raw = tomllib.loads(target.read_text(encoding="utf-8-sig"))  # as Notepad and PowerShell 5 save it, a BOM first
     except (OSError, tomllib.TOMLDecodeError) as exc:
         raise ValueError(f"could not read {target}: {exc}") from None
     try:
         _known(raw)
         workspace = raw.get("workspace") if isinstance(raw.get("workspace"), dict) else {}
         roots = _parse_roots(workspace)
-        depth = _int_in_range(workspace.get("scan_depth", 2), 2, 1, 5)
-        timeout = _int_in_range(workspace.get("fetch_timeout_s", 15), 15, 3, 120)
+        depth = _number("[workspace]", "scan_depth", workspace.get("scan_depth"), 2, 1, 5)
+        timeout = _number("[workspace]", "fetch_timeout_s", workspace.get("fetch_timeout_s"), 15, 3, 120)
         output_dir = _resolve_output_dir(workspace.get("output_dir"), target.parent)
         defaults = _parse_defaults(raw.get("defaults"))
         projects = _parse_projects(raw.get("projects"))
@@ -207,15 +252,22 @@ def load_tui_config(path: Path | None = None) -> TuiConfig:
     )
 
 
-def _int_in_range(value: object, default: int, minimum: int, maximum: int) -> int:
-    """Parse an integer config setting safely, returning `default` on non-numeric input."""
-    if isinstance(value, bool) or not isinstance(value, int | str):
+def _number(table: str, name: str, value: object, default: int, low: int, high: int) -> int:
+    """`table`'s whole number `name`, `default` where it is not given, from `low` to `high`; anything else is said.
+    Read by review: one out of range was clamped, and a word replaced by the default, in silence."""
+    if value is None:
         return default
-    try:
-        parsed = int(value)
-    except ValueError:
-        return default
-    return max(minimum, min(maximum, parsed))
+    if isinstance(value, int) and not isinstance(value, bool) and low <= value <= high:
+        return value
+    raise ValueError(f"{table} {name} is {value!r}. Write a whole number from {low} to {high}")
+
+
+def _switch(table: str, name: str, value: object, default: bool | None) -> bool | None:
+    """`table`'s switch `name`, `default` where it is not given. Read by review: `verify = "no"` turned `--verify` on,
+    a string being true, and its model calls spent."""
+    if value is None or isinstance(value, bool):
+        return default if value is None else value
+    raise ValueError(f"{table} {name} is {value!r}. Write true or false")
 
 
 def _fail_on(value: object, table: str, default: str) -> str:
@@ -245,23 +297,33 @@ _WORKSPACE = ("root_dirs", "projects_dir", "scan_depth", "fetch_timeout_s", "out
 
 
 def _known(raw: dict) -> None:
-    """`ValueError` naming a table or a setting the config does not know, with those it does. Read by review: a
-    setting misspelt, `root_dir`, fell back in silence to the default, and the screen listed another folder."""
-    tables = {"workspace": _WORKSPACE, "defaults": tuple(ReviewDefaults.__dataclass_fields__), "projects": None}
+    """`ValueError` naming a table or a setting the config does not know, or a table that is none, with what to write.
+    Read by review: a setting misspelt, `root_dir`, fell back in silence to the default, and the screen listed another
+    folder; `[[workspace]]` and `defaults = 3` were left out the same way, and `projects = "x"` raised a traceback."""
+    defaults = tuple(ReviewDefaults.__dataclass_fields__)
+    tables = {"workspace": _WORKSPACE, "defaults": defaults, "projects": None}
     for key, value in raw.items():
-        if key in _WORKSPACE:
-            raise ValueError(f"{key} belongs under [workspace]. Write it there")
-        if key not in tables:
+        if key in tables:
+            if not isinstance(value, dict):
+                raise ValueError(f"[{key}] must be a table. Write [{key}] on a line of its own, its settings below it")
+            if (settings := tables[key]) is not None:
+                _settings_known(f"[{key}]", value, settings)
+        elif isinstance(value, dict):
             raise ValueError(f"the config has no table {key!r}. Its tables are [workspace], [defaults] and [projects]")
-        if (settings := tables[key]) is not None and isinstance(value, dict):
-            _settings_known(f"[{key}]", value, settings)
-    for name, preset in (raw.get("projects") or {}).items():
-        if isinstance(preset, dict):
-            _settings_known(f"[projects.{name}]", preset, tuple(RepoPreset.__dataclass_fields__))
+        elif key in _WORKSPACE or key in defaults:
+            raise ValueError(
+                f"{key} belongs under [{'workspace' if key in _WORKSPACE else 'defaults'}]. Write it there"
+            )
+        else:
+            raise ValueError(f"the config has no setting {key!r}. A setting goes under [workspace] or [defaults]")
+    for name, preset in raw.get("projects", {}).items():
+        if not isinstance(preset, dict):
+            raise ValueError(f'[projects.{name}] must be a table. Write [projects."{name}"], its settings below it')
+        _settings_known(f"[projects.{name}]", preset, tuple(RepoPreset.__dataclass_fields__))
 
 
 def _settings_known(table: str, given: dict, settings: tuple[str, ...]) -> None:
-    if unknown := next((key for key in given if key not in settings), None):
+    if (unknown := next((key for key in given if key not in settings), None)) is not None:
         *most, last = (s for s in settings if s != "projects_dir")
         raise ValueError(f"{table} has no setting {unknown!r}. Its settings are {', '.join(most)} and {last}")
 
@@ -269,16 +331,15 @@ def _settings_known(table: str, given: dict, settings: tuple[str, ...]) -> None:
 def _parse_roots(workspace: dict) -> tuple[RootDir, ...]:
     """The folders of repositories, `root_dirs`, or the default where none is named: one folder written as a string
     is one folder. Read by review: one that was no list fell back in silence to the default folder."""
-    given = workspace.get("root_dirs")
-    if given is None and "projects_dir" in workspace:
-        given = workspace["projects_dir"]
+    name = "projects_dir" if "root_dirs" not in workspace and "projects_dir" in workspace else "root_dirs"
+    given = workspace.get(name)
     if given is None:
         given = [default_root_folder()]
     elif isinstance(given, str):
         given = [given]
     if not isinstance(given, list) or not given:
         raise ValueError(
-            "root_dirs lists the folders that hold your repositories. Write it under [workspace] as root_dirs = "
+            f"{name} lists the folders that hold your repositories. Write it under [workspace] as root_dirs = "
             '["~/Projects"]'
         )
     roots: list[RootDir] = []
@@ -286,7 +347,7 @@ def _parse_roots(workspace: dict) -> tuple[RootDir, ...]:
     for item in given:
         if (root := _one_root(item)) is None:
             raise ValueError(
-                f'root_dirs holds {item!r}, which names no folder. Write a path, or {{ label = "...", path = "..." }}'
+                f'{name} holds {item!r}, which names no folder. Write a path, or {{ label = "...", path = "..." }}'
             )
         if (key := os.path.normcase(root.path)) not in seen:
             seen.add(key)
@@ -314,11 +375,11 @@ def _parse_defaults(section: object) -> ReviewDefaults:
     return ReviewDefaults(
         profile=str(section.get("profile", "default")),
         fail_on=_fail_on(section.get("fail_on"), "[defaults]", "blocker"),
-        comment=bool(section.get("comment", True)),
-        handoff=bool(section.get("handoff", False)),
-        verify=bool(section.get("verify", False)),
-        use_cache=bool(section.get("use_cache", True)),
-        auto_previous=bool(section.get("auto_previous", True)),
+        comment=bool(_switch("[defaults]", "comment", section.get("comment"), True)),
+        handoff=bool(_switch("[defaults]", "handoff", section.get("handoff"), False)),
+        verify=bool(_switch("[defaults]", "verify", section.get("verify"), False)),
+        use_cache=bool(_switch("[defaults]", "use_cache", section.get("use_cache"), True)),
+        auto_previous=bool(_switch("[defaults]", "auto_previous", section.get("auto_previous"), True)),
     )
 
 
@@ -328,19 +389,18 @@ def _parse_projects(section: object) -> dict[str, RepoPreset]:
         return {}
     presets: dict[str, RepoPreset] = {}
     for name, data in section.items():
-        if not isinstance(data, dict):
-            continue
+        table = f"[projects.{name}]"
         presets[str(name)] = RepoPreset(
             base=str(data.get("base", "")),
             profile=str(data.get("profile", "")),
             fail_on=_fail_on(data.get("fail_on"), f"[projects.{name}]", ""),
-            comment=data["comment"] if isinstance(data.get("comment"), bool) else None,
-            handoff=data["handoff"] if isinstance(data.get("handoff"), bool) else None,
-            verify=data["verify"] if isinstance(data.get("verify"), bool) else None,
+            comment=_switch(table, "comment", data.get("comment"), None),
+            handoff=_switch(table, "handoff", data.get("handoff"), None),
+            verify=_switch(table, "verify", data.get("verify"), None),
             path=_str_tuple(data.get("path")),
             path_exclude=_str_tuple(data.get("path_exclude")),
             checks=_str_tuple(data.get("checks")),
-            diff_cap=_int_in_range(data.get("diff_cap", 0), 0, 0, 10_000_000),
+            diff_cap=_number(table, "diff_cap", data.get("diff_cap"), 0, 0, 10_000_000),
         )
     return presets
 
