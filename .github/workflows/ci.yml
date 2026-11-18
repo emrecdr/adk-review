@@ -35,7 +35,7 @@ jobs:
         with:
           version: "0.13.6" # pinned: read as a floor, `required-version` took the newest uv every run
       - run: git --version
-      - run: uv sync --locked
+      - run: uv sync --locked --extra tui
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run pyrefly check

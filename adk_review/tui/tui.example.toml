@@ -1,5 +1,5 @@
-# Configuration for `adk-review-tui` (copied to `adk_review/tui/.tui.toml` on first run).
-# All TUI-specific configuration and state live under `adk_review/tui/`.
+# Every setting of `adk-review-tui`, as an example: its first run writes `.tui.toml` beside this file, with the folder
+# above the checkout as the folder of repositories. Copy what you need from here into it.
 #
 # Keybindings in the TUI:
 #   Ctrl+R  Run Review        Ctrl+D  Dry Run            Ctrl+X  Stop Running Review

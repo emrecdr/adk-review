@@ -13,7 +13,6 @@ from ..core.findings import RANK
 
 TUI_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = TUI_DIR / ".tui.toml"
-EXAMPLE_CONFIG_PATH = TUI_DIR / "tui.example.toml"
 STATE_DIR = TUI_DIR / ".state"
 CACHE_DIR = STATE_DIR / "cache"
 BASELINES_DIR = STATE_DIR / "baselines"

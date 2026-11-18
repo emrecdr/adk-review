@@ -28,7 +28,7 @@ and `GUIDE.md` the user's: every flag, check, JSON field and limit, held to the 
 ## Commands
 
 ```bash
-uv sync --locked                           # install what the lock pins (make sync)
+uv sync --locked --extra tui               # install what the lock pins, the front end's Textual too (make sync)
 uv run pytest -q                           # full offline suite, no key needed (make test)
 uv run pytest -q tests/test_rules.py       # one file
 uv run ruff check . && uv run ruff format --check .   # lint (make lint); `make format` fixes
@@ -42,6 +42,7 @@ uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # 
 uv run adk-review <demo repo> --head feature/orders --base main --profile rules-only   # each rule finds its own planted defect, exit 1; no model call
 uv run adk-review <demo repo> --head feature/orders --base main --profile full --verify   # all six guidelines judge their planted targets, a second model checks each finding
 uv run adk-review-login                          # one-time GitHub device-flow login for the Copilot arm
+uv run adk-review-tui                            # the terminal front end, with the tui extra; F5 fetches
 uv run adk web --no_use_local_storage .          # the chat in a browser, over the same graph; sessions in memory, never on disk
 # the commit hook, after `make install`: GUIDE.md's "Before a commit" lines, what a commit holds (`git commit -a` and `<paths>` included) with default-rules; pre-commit's adk-review-commit hook runs the same
 # the pre-push hook, after `make install`: GUIDE.md's "Before a push" lines, which keep a pre-push hook already there (Git LFS's) and run it after the review; default-rules on what a push sends, push-history's credential rules on each commit and message; pre-commit's adk-review hook runs the same; --no-verify skips
@@ -229,6 +230,14 @@ Load-bearing rules the tests enforce:
   before it builds anything, and while the arm cannot run answers the turn with its sentence before any agent runs, and
   after `StopAtRateLimit`, `OneTurn`, which gives each judging agent one fixed turn, `review`, as the command's read:
   ADK would hand the verdict the guidelines' findings unfenced as a turn.
+- **Front end.** `tui/`, the terminal front end on Textual, imports `core`, `collect` and `judge`, and nothing imports
+  it; the cache key leaves its folder out. Textual is the `tui` extra, never a dependency or in the `dev` group, so a
+  pipeline's `uv sync --locked` or `uv tool install` installs no UI package; CI, Copilot's setup and `make sync` ask for
+  it, so the suite and the type check read the screen, and pyrefly reads Textual as `Any` where it is missing. It reads
+  git only through `collect`'s `read_only`, under a review's own environment, and writes into a repository only at the
+  person's F5, a fetch, or their answer to a branch behind its remote, `git branch -f` on a branch no working tree has
+  checked out. Every string a repository, a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a
+  tag.
 - **Layering** (`tests/test_layering.py`): `core` → `collect` → `judge` → `deliver`, with imports pointing one way
   only, never spelled from the top (`adk_review.…`), `deliver/` importing `core` alone, a guideline importing `core`
   alone, and a rule importing one door, `judge/rule_helpers/`, alone, which imports `core` alone and lists in `__all__`

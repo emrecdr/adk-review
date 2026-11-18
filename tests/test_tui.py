@@ -398,7 +398,9 @@ class TestOptionsAndCliBuilder:
         monkeypatch.setitem(sys.modules, "textual", None)
         monkeypatch.delitem(sys.modules, "adk_review.tui.app", raising=False)
         assert tui_main(["--config", str(cfg)]) == 2
-        assert "textual is not installed" in capsys.readouterr().err
+        err = capsys.readouterr().err
+        assert "textual is not installed" in err and "run `uv sync --locked --extra tui`" in err, err
+        assert "An installed copy needs the `tui` extra" in err, err
 
     @pytest.mark.asyncio
     async def test_textual_app_chain_of_selects_mounts_and_updates_cli_preview(self, tmp_path: Path) -> None:

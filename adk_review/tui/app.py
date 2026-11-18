@@ -349,7 +349,7 @@ class AdkReviewTuiApp(App[int]):
         repo_list = self.query_one("#repo-list", OptionList)
         target_key = os.path.normcase(repo_path)
         for idx in range(repo_list.option_count):
-            if os.path.normcase(str(repo_list.get_option_at_index(idx).id or "")) == target_key:
+            if os.path.normcase(repo_list.get_option_at_index(idx).id or "") == target_key:
                 repo_list.highlighted = idx
                 break
 
@@ -737,14 +737,14 @@ class AdkReviewTuiApp(App[int]):
 
     @on(OptionList.OptionSelected, "#root-list")
     def _on_root_selected(self, event: OptionList.OptionSelected) -> None:
-        root_key = os.path.normcase(str(event.option.id or ""))
+        root_key = os.path.normcase(event.option.id or "")
         root = next((r for r in self.tui_config.root_dirs if os.path.normcase(r.path) == root_key), None)
         if root is not None:
             self._select_root(root)
 
     @on(OptionList.OptionSelected, "#repo-list")
     def _on_repo_selected(self, event: OptionList.OptionSelected) -> None:
-        repo_key = os.path.normcase(str(event.option.id or ""))
+        repo_key = os.path.normcase(event.option.id or "")
         proj = next((p for p in self.projects if os.path.normcase(p.path) == repo_key), None)
         if proj is not None:
             self._on_project_chosen(proj)
@@ -753,7 +753,7 @@ class AdkReviewTuiApp(App[int]):
     def _on_head_selected(self, event: OptionList.OptionSelected) -> None:
         if self._suppress_branch_events:
             return
-        branch_name = str(event.option.id or "")
+        branch_name = event.option.id or ""
         if branch_name:
             self._sync_chosen_branch("head", branch_name)
 
@@ -761,7 +761,7 @@ class AdkReviewTuiApp(App[int]):
     def _on_base_selected(self, event: OptionList.OptionSelected) -> None:
         if self._suppress_branch_events:
             return
-        branch_name = str(event.option.id or "")
+        branch_name = event.option.id or ""
         if branch_name:
             self._sync_chosen_branch("base", branch_name)
 

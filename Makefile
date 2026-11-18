@@ -24,7 +24,7 @@ help:
 	@echo "make test / lint / typecheck / format / ci"
 
 sync:
-	uv sync --locked
+	uv sync --locked --extra tui
 
 # Measured: `uv tool install .` alone took a LiteLLM three days old or less, where the lock holds an older one; and,
 # reading no [tool.uv] of the project, it took the build backend's newest release: --exclude-newer keeps the wait.

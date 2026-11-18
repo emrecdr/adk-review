@@ -51,7 +51,8 @@ miss: a new flag, check, JSON field or limit the guide does not say.
 
 ## Commands
 
-- `uv sync --locked` installs what the lock pins. `uv run ruff check . && uv run ruff format --check .` lints
+- `uv sync --locked --extra tui` installs what the lock pins, the terminal front end's Textual too (`make sync`); a
+  pipeline leaves the extra out and installs no UI package. `uv run ruff check . && uv run ruff format --check .` lints
   (`make lint`); `uv run pyrefly check` checks the types of the package and the scripts, held to no error
   (`make typecheck`); `uv run pytest -q` runs the whole offline suite, no key needed (`make test`; `make ci` is all
   three). Run all three before calling anything done, and report what they printed.
@@ -83,6 +84,9 @@ miss: a new flag, check, JSON field or limit the guide does not say.
 - Imports point one way, `core` → `collect` → `judge` → `deliver`, relative and never spelled from the top
   (`tests/test_layering.py`); `deliver/` imports `core` alone, a guideline `core` alone, a rule the door alone. `core/`,
   the checks and the helpers import no network, process or model module and must import with ADK absent.
+- `adk_review/tui/`, the terminal front end, reads git only through `collect`'s `read_only` and writes into a
+  repository only at the person's F5, a fetch, or their answer to a branch behind its remote. It draws every string a
+  repository, a branch or a model wrote with no markup.
 - The docs are tested (`tests/test_docs.py`): every guide names only paths the working tree has, `README.md` names each
   module at the package's root, and `GUIDE.md` holds every flag, check, JSON field and limit as the code has them.
 - `root_agent.name` equals the folder name, `adk_review`. Never name a sub-package module `agent.py`: ADK's nested

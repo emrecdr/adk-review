@@ -29,8 +29,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Installed only where the interactive terminal shell is wanted (`uv sync --extra tui` or `uv tool install ".[tui]"`),
-# never in CI or a headless install of `adk-review`.
+# The terminal front end's, which no review imports: installed only where it is asked for, `uv sync --locked --extra tui`
+# in a checkout, or `"adk-review[tui] @ git+…"` for `uv tool install`. A pipeline's `uv sync --locked` or
+# `uv tool install` takes no UI package. This repository's own CI asks for it, so the suite tests the screen.
 tui = [
     "textual>=8.0,<9.0",
 ]
@@ -113,8 +114,10 @@ max-complexity = 10
 [tool.pyrefly]
 # The tests are not type checked, in `make typecheck`, CI or an editor: they hand the code partial and wrong values on
 # purpose, an entry of two keys or a severity off the scale. An editor still resolves, hovers and completes in them.
-# `adk_review/tui/` imports `textual`, an optional extra CI does not install.
-project-excludes = ["tests/**", "adk_review/tui/**"]
+project-excludes = ["tests/**"]
+# The terminal front end's, the `tui` extra a review never needs: checked whole where it is installed, as CI installs it,
+# and read as `Any` where it is not, so the check passes in a checkout synced without the extra.
+ignore-missing-imports = ["textual", "textual.*", "rich", "rich.*"]
 search-path = [".", "scripts"]
 
 [tool.pyrefly.errors]

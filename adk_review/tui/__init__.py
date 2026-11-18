@@ -60,7 +60,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         from .app import AdkReviewTuiApp
     except ModuleNotFoundError:
-        sys.stderr.write('tui: textual is not installed. Run `uv sync --extra tui` or `uv tool install ".[tui]"`\n')
+        # Named as the lock installs it: `uv tool install ".[tui]"`, said before, reads no lock and no cooldown.
+        sys.stderr.write("tui: textual is not installed. In the checkout, run `uv sync --locked --extra tui`.\n")
+        sys.stderr.write("An installed copy needs the `tui` extra: GUIDE.md shows the command\n")
         return EXIT_USAGE
     app = AdkReviewTuiApp(config_path=ensured)
     result = app.run()
