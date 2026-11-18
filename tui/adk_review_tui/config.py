@@ -14,7 +14,7 @@ import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ..core.findings import RANK
+from adk_review.core.findings import RANK
 
 #: The folder each of the front end's folders is named after.
 APP = "adk-review-tui"
@@ -43,8 +43,10 @@ def state_home(*, windows: bool = os.name == "nt") -> Path:
 
 TUI_DIR = Path(__file__).resolve().parent
 DEFAULT_CONFIG_PATH = config_home() / APP / "tui.toml"
-#: Where a checkout kept the config before: a first run that finds none at `DEFAULT_CONFIG_PATH` copies it there.
-LEGACY_CONFIG_PATH = TUI_DIR / ".tui.toml"
+#: Where a checkout kept the config before, when the front end was a part of the reviewer's package: a first run
+#: that finds none at `DEFAULT_CONFIG_PATH` copies it there. Git moved the front end's files, never this one, which
+#: it ignores.
+LEGACY_CONFIG_PATH = TUI_DIR.parent.parent / "adk_review" / "tui" / ".tui.toml"
 #: Its old `output_dir`, a path inside the package, which the copy leaves out so the new default holds.
 _LEGACY_OUTPUT_DIR = re.compile(r'(?m)^output_dir\s*=\s*"adk_review/tui/\.state/outputs"[ \t]*\n?')
 STATE_DIR = state_home() / APP

@@ -1,8 +1,8 @@
 """Interactive Textual front-end shell (`adk-review-tui`) for `adk-review`.
 
-Its code lives in this subpackage, and its config and state in the person's own folders (`config.py`). `textual`
-is an optional dependency (`[project.optional-dependencies] tui`), so an install of `adk-review` for a pipeline takes
-no UI package.
+An application of its own on top of the reviewer, `tui/` in the reviewer's checkout, a uv workspace member with its
+own project file: it imports `adk_review` as any user would, and its config and state live in the person's own
+folders (`config.py`). An install of `adk-review` for a pipeline takes none of its code, command or UI package.
 """
 
 from __future__ import annotations
@@ -11,7 +11,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from ..core.verdict import EXIT_CLEAN, EXIT_USAGE
+from adk_review.core.verdict import EXIT_CLEAN, EXIT_USAGE
+
 from .config import DEFAULT_CONFIG_PATH, ensure_tui_config, load_tui_config
 
 
@@ -61,8 +62,8 @@ def main(argv: list[str] | None = None) -> int:
         from .app import AdkReviewTuiApp
     except ModuleNotFoundError:
         # Named as the lock installs it: `uv tool install ".[tui]"`, said before, reads no lock and no cooldown.
-        sys.stderr.write("tui: textual is not installed. In the checkout, run `uv sync --locked --extra tui`.\n")
-        sys.stderr.write("An installed copy needs the `tui` extra: GUIDE.md shows the command\n")
+        sys.stderr.write("tui: textual is not installed. In the checkout, run `uv sync --locked --all-packages`.\n")
+        sys.stderr.write("Install the front end as its own tool: tui/README.md shows the command\n")
         return EXIT_USAGE
     app = AdkReviewTuiApp(config_path=ensured)
     result = app.run()

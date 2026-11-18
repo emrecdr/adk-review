@@ -7,8 +7,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..core.findings import RANK
-from ..judge.catalog import CONFIG, catalog, explained, load_config
+from adk_review.core.findings import RANK
+from adk_review.judge.catalog import CONFIG, catalog, explained, load_config
 
 
 @dataclass(frozen=True)

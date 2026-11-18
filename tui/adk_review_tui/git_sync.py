@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
-from ..collect.git import GitError, checked_out, default_base, on_path, read_only
+from adk_review.collect.git import GitError, checked_out, default_base, on_path, read_only
 
 SKIP_DIRS = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", ".mypy_cache", ".ruff_cache"})
 _AHEAD = re.compile(r"\bahead (\d+)\b")

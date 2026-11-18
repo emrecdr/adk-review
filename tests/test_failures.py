@@ -1689,7 +1689,6 @@ def test_the_reviewer_installs_as_one_command_that_runs_from_any_folder() -> Non
         "adk-review-push": "adk_review.push:run",
         "adk-review-commit": "adk_review.commit:run",
         "adk-review-login": "adk_review.login:run",
-        "adk-review-tui": "adk_review.tui:run",
     }
     hooks = (ROOT / ".pre-commit-hooks.yaml").read_text(encoding="utf-8")
     assert "\n  entry: adk-review-push\n" in hooks and "\n  stages: [pre-push]\n" in hooks

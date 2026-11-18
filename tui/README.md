@@ -5,28 +5,31 @@ repository, the branch to review and its target, the folders, the profile or the
 the review and shows the report, the findings, the comment and the hand-off in tabs. A review it runs is the command's
 own: the same checks, the same exit codes and the same files.
 
-It is optional. A review never imports it, and a pipeline never needs it.
+It is an application of its own on top of the reviewer, here in `tui/` with its own project file, a uv workspace
+member beside the reviewer, and one lock for both. It imports the reviewer as any user would. A review never imports
+it, and an install of the reviewer, a pipeline's among them, takes none of its code, its command or Textual.
 
 ## Install
 
 In a checkout of adk-review:
 
 ```bash
-uv sync --locked --extra tui     # the reviewer and Textual; make sync does the same
-uv run adk-review-tui            # start it
+uv sync --locked --all-packages   # the reviewer, the front end and Textual; make sync does the same
+uv run adk-review-tui             # start it
 ```
 
-`uv sync --locked` without `--extra tui` removes Textual again: uv makes the environment match the lock exactly.
+`uv sync --locked` without `--all-packages` installs the reviewer alone, and removes the front end again: uv makes the
+environment match the lock exactly.
 
 As an installed command, with no checkout:
 
 ```bash
-uv tool install --exclude-newer P3D "adk-review[tui] @ git+https://github.com/emrecdr/adk-review"
+uv tool install --exclude-newer P3D "adk-review-tui @ git+https://github.com/emrecdr/adk-review#subdirectory=tui"
 adk-review-tui
 ```
 
-`uv tool install` reads no lock, so `--exclude-newer P3D` keeps the three days' cooldown the lock keeps. Without the
-`tui` extra, `adk-review-tui` says how to install it and stops.
+It installs the reviewer with it, from the same commit. `uv tool install` reads no lock, so `--exclude-newer P3D`
+keeps the three days' cooldown the lock keeps.
 
 In a pipeline, install the reviewer as [GUIDE.md](../../GUIDE.md) says, with no extra: no UI package is installed.
 
@@ -42,8 +45,8 @@ The first run writes `tui.toml` in your own config folder, which an update, a re
 `--init-config` writes the file where it is missing and prints its path, and `--config FILE` reads another file. The
 first run names a folder of repositories for you: in a checkout, the folder that holds the checkout, where its
 neighbours are; in an installed copy, the folder the command starts in. A checkout's old config,
-`adk_review/tui/.tui.toml`, is copied to the new place once, and left where it is. `tui.example.toml`, in
-`adk_review/tui/`, shows every setting.
+`adk_review/tui/.tui.toml`, is copied to the new place once, and left where it is. `tui.example.toml`, in `tui/`,
+shows every setting.
 
 | Setting | What it sets |
 |---|---|

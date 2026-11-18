@@ -19,7 +19,7 @@ PACKAGE = ROOT / "adk_review"
 GUIDES = [
     ROOT / "CLAUDE.md",
     ROOT / "GUIDE.md",
-    PACKAGE / "tui" / "README.md",
+    ROOT / "tui" / "README.md",
     *sorted((ROOT / ".github").rglob("*.md")),
 ]
 #: A backticked path with a folder in it: a file by the dot in its name, a folder by its trailing slash.
@@ -48,8 +48,8 @@ def test_a_guide_names_only_paths_in_the_working_tree(guide: Path) -> None:
 def test_the_front_ends_guide_names_each_of_its_modules_and_each_key_it_binds() -> None:
     """The terminal front end has a guide of its own. Read by review: its keys changed, Ctrl+M to Ctrl+T, and the guides
     and the example config still named the old one. A module or a key the guide does not name fails here."""
-    folder = PACKAGE / "tui"
-    guide = (folder / "README.md").read_text(encoding="utf-8")
+    folder = ROOT / "tui" / "adk_review_tui"
+    guide = (ROOT / "tui" / "README.md").read_text(encoding="utf-8")
     unnamed = [p.name for p in sorted(folder.glob("*.py")) if f"`{p.name}`" not in guide]
     keys = re.findall(r'Binding\("([^"]+)"', (folder / "app.py").read_text(encoding="utf-8"))
 
@@ -59,7 +59,7 @@ def test_the_front_ends_guide_names_each_of_its_modules_and_each_key_it_binds() 
         return "+".join([*(part.capitalize() for part in held), last])
 
     missing = [f"`{written(key)}`" for key in keys if not key.isdigit() and f"`{written(key)}`" not in guide]
-    assert (unnamed, missing) == ([], []), f"adk_review/tui/README.md never names: {unnamed + missing}"
+    assert (unnamed, missing) == ([], []), f"tui/README.md never names: {unnamed + missing}"
 
 
 def test_the_readme_names_every_module_at_the_packages_root() -> None:

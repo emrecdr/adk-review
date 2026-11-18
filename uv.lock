@@ -6,6 +6,12 @@ requires-python = "==3.14.*"
 exclude-newer = "0001-01-01T00:00:00Z" # This has no effect and is included for backwards compatibility when using relative exclude-newer values.
 exclude-newer-span = "P3D"
 
+[manifest]
+members = [
+    "adk-review",
+    "adk-review-tui",
+]
+
 [[package]]
 name = "adk-review"
 version = "0.1.0"
@@ -17,11 +23,6 @@ dependencies = [
     { name = "python-dotenv" },
     { name = "ruff" },
     { name = "truststore" },
-]
-
-[package.optional-dependencies]
-tui = [
-    { name = "textual" },
 ]
 
 [package.dev-dependencies]
@@ -37,15 +38,28 @@ requires-dist = [
     { name = "pyrefly", specifier = "==1.4.1" },
     { name = "python-dotenv", specifier = ">=1.0" },
     { name = "ruff", specifier = "==0.17.5" },
-    { name = "textual", marker = "extra == 'tui'", specifier = ">=8.0,<9.0" },
     { name = "truststore", specifier = ">=0.10" },
 ]
-provides-extras = ["tui"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-asyncio", specifier = ">=0.24" },
+]
+
+[[package]]
+name = "adk-review-tui"
+version = "0.1.0"
+source = { editable = "tui" }
+dependencies = [
+    { name = "adk-review" },
+    { name = "textual" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "adk-review", editable = "." },
+    { name = "textual", specifier = ">=8.0,<9.0" },
 ]
 
 [[package]]

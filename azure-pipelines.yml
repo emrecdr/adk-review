@@ -33,7 +33,7 @@ jobs:
       - script: python -m pip install uv==0.13.6 # pinned, as the GitHub workflows pin it
         displayName: install uv
       - script: git --version
-      - script: uv sync --locked --extra tui
+      - script: uv sync --locked --all-packages
       - script: uv run ruff check .
       - script: uv run ruff format --check .
       - script: uv run pyrefly check

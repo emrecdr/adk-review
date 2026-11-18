@@ -1266,7 +1266,8 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
     here = Path(__file__).parent
     for path in sorted(here.rglob("*")):
         # Each path from this folder down: read whole, a checkout under a folder named `tui` left every file out. Not
-        # the terminal front end, which no review runs and which keeps its own config and state in its folder.
+        # `tui/` here, the terminal front end's old folder, where a checkout keeps a person's old config after the
+        # front end moved to an application of its own, `tui/` at the root: no review reads it.
         inside = path.relative_to(here)
         if path.suffix in (".py", ".toml") and "__pycache__" not in inside.parts and inside.parts[0] != "tui":
             digest.update(inside.as_posix().encode() + b"\0" + path.read_bytes())

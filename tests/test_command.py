@@ -3034,9 +3034,10 @@ class TestWhatAReviewKeeps:
     def test_the_cache_key_reads_the_reviewers_own_source_wherever_the_checkout_lies(
         self, cli, tmp_path: Path, monkeypatch
     ) -> None:
-        """The key leaves out the terminal front end, which no review runs and which keeps its own config in its folder.
-        Read by review, and reproduced: the test for that folder read the checkout's whole path, so under a folder named
-        `tui` every file was left out, and a review kept before an update of the reviewer was served after it."""
+        """The key leaves out the front end's old folder in the package, `tui/`, where a checkout keeps a person's old
+        config after the front end moved out: no review reads it. Read by review, and reproduced: the test for that
+        folder read the checkout's whole path, so under a folder named `tui` every file was left out, and a review kept
+        before an update of the reviewer was served after it."""
         import argparse
         from types import SimpleNamespace
 

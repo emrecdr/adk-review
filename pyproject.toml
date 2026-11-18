@@ -28,23 +28,14 @@ dependencies = [
     "pyrefly==1.4.1",
 ]
 
-[project.optional-dependencies]
-# The terminal front end's, which no review imports: installed only where it is asked for, `uv sync --locked --extra tui`
-# in a checkout, or `"adk-review[tui] @ git+…"` for `uv tool install`. A pipeline's `uv sync --locked` or
-# `uv tool install` takes no UI package. This repository's own CI asks for it, so the suite tests the screen.
-tui = [
-    "textual>=8.0,<9.0",
-]
-
 # `adk-review`: the command, installed where it is needed — `uv tool install <this repository>` — and run from any
-# folder, with `adk-review-push`, its pre-push hook, `adk-review-commit`, its commit hook, `adk-review-login`, the
-# Copilot arm's one-time login, and `adk-review-tui`, the optional Textual front-end shell.
+# folder, with `adk-review-push`, its pre-push hook, `adk-review-commit`, its commit hook, and `adk-review-login`, the
+# Copilot arm's one-time login.
 [project.scripts]
 adk-review = "adk_review.review:run"
 adk-review-push = "adk_review.push:run"
 adk-review-commit = "adk_review.commit:run"
 adk-review-login = "adk_review.login:run"
-adk-review-tui = "adk_review.tui:run"
 
 [build-system]
 requires = ["hatchling>=1.27"]
@@ -70,7 +61,7 @@ asyncio_default_fixture_loop_scope = "function"
 faulthandler_timeout = 300
 faulthandler_exit_on_timeout = true
 testpaths = ["tests"]
-pythonpath = ["."]
+pythonpath = [".", "tui"]  # the front end's package too, for its tests where it is not installed
 filterwarnings = [
     "ignore::DeprecationWarning",
     "ignore:.*EXPERIMENTAL.*:UserWarning",
@@ -80,6 +71,12 @@ filterwarnings = [
     "ignore:Items 'device_code', 'user_code', 'verification_uri' on TypedDict class '_DeviceCode':UserWarning",
     "ignore:Items 'access_token', 'error' on TypedDict class '_AccessTokenPoll':UserWarning",
 ]
+
+[tool.uv.workspace]
+# The terminal front end, `adk-review-tui`: an application of its own on top of the reviewer, in `tui/`, with its own
+# project file and Textual, one lock for both. Asked by the owner, who runs the reviewer in pipelines: `uv sync --locked`
+# and `uv tool install` of the reviewer take none of its code, command or UI package; `--all-packages` adds it.
+members = ["tui"]
 
 [tool.uv]
 # A release is taken three days after it is published, never sooner: measured, LiteLLM 1.82.7 and 1.82.8 shipped a
@@ -118,7 +115,7 @@ project-excludes = ["tests/**"]
 # The terminal front end's, the `tui` extra a review never needs: checked whole where it is installed, as CI installs it,
 # and read as `Any` where it is not, so the check passes in a checkout synced without the extra.
 ignore-missing-imports = ["textual", "textual.*", "rich", "rich.*"]
-search-path = [".", "scripts"]
+search-path = [".", "scripts", "tui"]
 
 [tool.pyrefly.errors]
 # ADK declares LlmAgent(BaseAgent, abc.ABC) with no abstract method; AnyRule is still held by bad-instantiation

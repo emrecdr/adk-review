@@ -28,7 +28,7 @@ and `GUIDE.md` the user's: every flag, check, JSON field and limit, held to the 
 ## Commands
 
 ```bash
-uv sync --locked --extra tui               # install what the lock pins, the front end's Textual too (make sync)
+uv sync --locked --all-packages            # install what the lock pins, the front end in tui/ too (make sync)
 uv run pytest -q                           # full offline suite, no key needed (make test)
 uv run pytest -q tests/test_rules.py       # one file
 uv run ruff check . && uv run ruff format --check .   # lint (make lint); `make format` fixes
@@ -42,7 +42,7 @@ uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # 
 uv run adk-review <demo repo> --head feature/orders --base main --profile rules-only   # each rule finds its own planted defect, exit 1; no model call
 uv run adk-review <demo repo> --head feature/orders --base main --profile full --verify   # all six guidelines judge their planted targets, a second model checks each finding
 uv run adk-review-login                          # one-time GitHub device-flow login for the Copilot arm
-uv run adk-review-tui                            # the terminal front end, with the tui extra; F5 fetches
+uv run adk-review-tui                            # the terminal front end, tui/, after --all-packages; F5 fetches
 uv run adk web --no_use_local_storage .          # the chat in a browser, over the same graph; sessions in memory, never on disk
 # the commit hook, after `make install`: GUIDE.md's "Before a commit" lines, what a commit holds (`git commit -a` and `<paths>` included) with default-rules; pre-commit's adk-review-commit hook runs the same
 # the pre-push hook, after `make install`: GUIDE.md's "Before a push" lines, which keep a pre-push hook already there (Git LFS's) and run it after the review; default-rules on what a push sends, push-history's credential rules on each commit and message; pre-commit's adk-review hook runs the same; --no-verify skips
@@ -231,20 +231,21 @@ Load-bearing rules the tests enforce:
   before it builds anything, and while the arm cannot run answers the turn with its sentence before any agent runs, and
   after `StopAtRateLimit`, `OneTurn`, which gives each judging agent one fixed turn, `review`, as the command's read:
   ADK would hand the verdict the guidelines' findings unfenced as a turn.
-- **Front end.** `tui/`, the terminal front end on Textual, imports `core`, `collect`, `judge` and `deliver`'s
-  `windows_word`, and nothing imports it; the cache key leaves its folder out, and `adk_review/tui/README.md` is its
-  guide. Its config and state live in the person's own folders, `%APPDATA%` and `%LOCALAPPDATA%` on Windows, the XDG
-  folders elsewhere, never in the package, which an installed copy holds in its tool's environment. A review it runs is
-  `review_command`'s, `python -P`, so the folder it started in is never on the import path, and with `--progress`.
-  Textual is the `tui` extra, never a dependency or in the `dev` group, so a pipeline's `uv sync --locked` or `uv tool
-  install` installs no UI package; CI, Copilot's setup and `make sync` ask for it, so the suite and the type check read
-  the screen, and pyrefly reads Textual as `Any` where it is missing. It reads git only through `collect`'s `read_only`,
-  under a review's own environment, and writes into a repository only at the person's F5, a fetch, or their answer to a
-  branch behind its remote, `git branch -f` on a branch no working tree has checked out. Every string a repository, a
-  branch or a model wrote is drawn with no markup: Textual reads `[name]` as a tag. On Windows, from cmd and PowerShell
-  alike: the command it shows is quoted by `windows_word`, or not shown; no key is one a terminal sends as another or
-  the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first and none but Stop runs behind a dialog; a
-  review it runs gets UTF-8 streams; and a copy goes to Windows' own clipboard too.
+- **Front end.** `tui/`, the terminal front end on Textual, is an application of its own on top of the reviewer: a uv
+  workspace member, `adk-review-tui`, with its own project file and package, `adk_review_tui`, which imports
+  `adk_review` as any user would, its `core`, `collect`, `judge` and `deliver`'s `windows_word`; nothing in `adk_review`
+  imports it, and `tui/README.md` is its guide. Textual is the member's dependency alone, never the reviewer's, so `uv
+  sync --locked` and `uv tool install` of the reviewer take none of its code, command or UI package; CI, Copilot's setup
+  and `make sync` sync `--all-packages`, so the suite and the type check read the screen, and pyrefly reads Textual as
+  `Any` where it is missing. Its config and state live in the person's own folders, `%APPDATA%` and `%LOCALAPPDATA%` on
+  Windows, the XDG folders elsewhere. A review it runs is `review_command`'s, `python -P`, with `--progress`. It reads
+  git only through `collect`'s `read_only`, under a review's own environment, and writes into a repository only at the
+  person's F5, a fetch, or their answer to a branch behind its remote, `git branch -f` on a branch no working tree has
+  checked out. Every string a repository, a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a
+  tag. On Windows, from cmd and PowerShell alike: the command it shows is quoted by `windows_word`, or not shown; no key
+  is one a terminal sends as another or the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first and
+  none but Stop runs behind a dialog; a review it runs gets UTF-8 streams; and a copy goes to Windows' own clipboard
+  too. `adk_review/` still leaves a `tui/` folder out of the cache key: a checkout keeps a person's old config there.
 - **Layering** (`tests/test_layering.py`): `core` → `collect` → `judge` → `deliver`, with imports pointing one way
   only, never spelled from the top (`adk_review.…`), `deliver/` importing `core` alone, a guideline importing `core`
   alone, and a rule importing one door, `judge/rule_helpers/`, alone, which imports `core` alone and lists in `__all__`

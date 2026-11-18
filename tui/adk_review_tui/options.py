@@ -14,11 +14,12 @@ from dataclasses import dataclass
 from pathlib import Path, PureWindowsPath
 from typing import Literal
 
-from ..core.findings import RANK
-from ..core.profiles import DEFAULT, expanded
-from ..core.verdict import EXIT_CLEAN, EXIT_FINDINGS
-from ..deliver.report import windows_word
-from ..judge.catalog import CONFIG, catalog, load_config
+from adk_review.core.findings import RANK
+from adk_review.core.profiles import DEFAULT, expanded
+from adk_review.core.verdict import EXIT_CLEAN, EXIT_FINDINGS
+from adk_review.deliver.report import windows_word
+from adk_review.judge.catalog import CONFIG, catalog, load_config
+
 from .config import BASELINES_DIR, CACHE_DIR, OUTPUTS_DIR, write_atomic
 
 type ReviewMode = Literal["branch", "staged", "all"]
