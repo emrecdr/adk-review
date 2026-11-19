@@ -10,7 +10,9 @@ bundle's code between two strings. Weighed so, 4 are left, each a value that loo
 token. Of 37 credentials written as projects write them, in code, JSON, YAML, `.env` and shell, none is let go that the
 name alone found, and one more is found: every named value on a line is weighed, not the first alone. A scheme before
 a token is no part of it, and only an unquoted value can be code: of 8 more credentials in formats those lack, 5 are
-found where none was, and the twelve projects' 4 are the same 4.
+found where none was, and the twelve projects' 4 are the same 4. An `Authorization` header's token is a named value
+too, the header its name: read by an audit, `"Authorization": "Bearer ..."` named none, and what `Basic` carries is a
+password in base64, weighed as the password it decodes to.
 
 Not read, as known limits: a docker-compose file's list item, `- DB_PASSWORD=...`, a Dockerfile's `ENV` line continued
 with a backslash, a value in triple quotes or split over lines, as a parenthesized concatenation writes it, and a
@@ -83,6 +85,8 @@ class NamedSecrets(Rule):
         ("settings.yaml", "api_key: 4f8a1c2e9b7d6035"),
         '{"token_type": "bearer", "access_token": "9f8e7d6c5b4a3f2e"}',
         ("Dockerfile", "ENV DB_PASSWORD=Sup3rS3cret-db9"),
+        'headers = {"Authorization": "Bearer ' + "9f8e7d6c5b4a3f2e" + '"}',
+        ("deploy.sh", 'curl -H "Authorization: Basic ' + "ZGVwbG95OmNvcnJlY3QgaG9yc2U=" + '" "$URL"'),
     )
     good = (
         'token_url = "https://auth.example.com/token"',
@@ -97,6 +101,8 @@ class NamedSecrets(Rule):
         "refresh_token=auth_credential.oauth2.refresh_token,",
         ("config.yaml", "input_cost_per_token: 0.00000015"),
         'api_key="hf_..."',
+        'headers = {"Authorization": f"Bearer {token}"}',
+        ("README.md", "Authorization: Basic dXNlcjpwYXNzd29yZA=="),
     )
 
     def check(self, path: str, line: str) -> bool:

@@ -13,6 +13,7 @@ shows a credential's shape, an example, `without_examples` blanks for the rules;
 
 from __future__ import annotations
 
+import base64
 import re
 from typing import Any
 
@@ -20,8 +21,9 @@ from typing import Any
 #: `"OPENAI_API_KEY"` or `"Show password"`.
 SECRET_WORDS = r"api[_-]?key|secret|token|passw(?:or)?d|pwd"
 #: A run each spelling of a word above holds, casefolded, none with the `i` a shape also reads in U+0130 and U+0131:
-#: a line holding none is not searched, `named-secrets` over 1.61 million lines taking 2.9 s where it took 5.6.
-_WORD_CORES = ("key", "secret", "token", "passw", "pwd")
+#: a line holding none is not searched, `named-secrets` over 1.61 million lines taking 2.9 s where it took 5.6. The
+#: last is the header's, `Authorization`, whose token no word above names.
+_WORD_CORES = ("key", "secret", "token", "passw", "pwd", "author")
 #: (kind, pattern, replacement).
 #: The name a secret goes by, prefixed and suffixed as code spells it (`DB_PASSWORD`, `client_secret`, `SECRET_KEY`),
 #: never inside a longer word: `tokenizer` names none. Its suffix is possessive: what follows a name in every shape,
@@ -258,6 +260,24 @@ _QUERY_SECRET = re.compile(
     + _QUERY_VALUE
     + r"{8,})"
 )
+#: A character of an authorization header's token: none that ends a string, a word or a call around it.
+_HEADER_VALUE = r"[^\s\"'`<>(){}\[\],;\\]"
+#: An `Authorization` header's token after its scheme, as code, a config or a command writes the header:
+#: `"Authorization": "Bearer ..."`, `Authorization: Basic ...`, `.header("Proxy-Authorization", "Token ...")`. Read by
+#: an audit, and reproduced: the header's name holds no word a secret goes by, so the token was named by no rule and
+#: reached the model and the report. Between the name and the scheme stand the marks a language puts there, eight at
+#: most. The token holds a digit, or base64's `=`, within 255 characters, as a query's value holds a digit: a word
+#: after the scheme, `Basic authentication`, is none, and a `Basic` pair whose base64 holds neither is missed.
+#: Measured over 2.99 million lines of the installed packages: 10 lines, each a documentation's.
+_HEADER = re.compile(
+    r"(?i)((?<![a-z0-9])authorization[\"'\]:=,( \t]{1,8}+(?:bearer|basic|token)[ \t]++)(?="
+    + _HEADER_VALUE
+    + r"{0,255}?[\d=])"
+    + _STAND_IN
+    + r"("
+    + _HEADER_VALUE
+    + r"{8,})"
+)
 #: A value a name alone says is secret, with no vendor's shape: what `named-secrets` weighs. Read by validation, a
 #: URL's query parameter was neither: `?api_key=`, `access_token=` and `password=` reached the model and the report.
 _GENERIC = (
@@ -280,7 +300,11 @@ _GENERIC = (
         r"\1[REDACTED]",
     ),
     ("generic_secret", _QUERY_SECRET, r"\1[REDACTED]"),  # a URL's query parameter, `?api_key=...`, holding a digit
+    ("generic_secret", _HEADER, r"\1[REDACTED]"),  # an authorization header's token, holding a digit
 )
+#: The shapes whose value is a literal, in quotes or a header's token, where no code can stand: `"Bearer " + token`
+#: and `f"Bearer {token}"` hold no token for the header's shape to read.
+_LITERAL = (_GENERIC[0][1], _HEADER)
 #: A named value in quotes running to the end of a text cut from a longer one, its closing quote past the cut: read
 #: only where the text was cut there. Read by review: a scrub that read as far as a cut and a credential crossing it
 #: could run found no closing quote for a token longer than that, and its first 385 characters were printed as a rule's
@@ -408,9 +432,24 @@ _NAME = re.compile(r"(?i)[+ -]?\s*(?:(?:export|env|arg)\s+)?([\w.-]+)")
 
 
 def _named(found: re.Match[str]) -> tuple[str, str, bool]:
-    """A generic shape's match as `(name, value, quoted)`: the first shape is the quoted one."""
+    """A generic shape's match as `(name, value, quoted)`, `quoted` for each shape whose value is a literal. What
+    `Basic` carries is a password by another spelling, base64 of a name, a colon and the password: read as that
+    password, which a person chose, and as a blank, which holds none, where it decodes as no such pair. Measured:
+    `Basic base64_encoded_creds`, a documentation's words, was a finding."""
+    value = found.group(found.lastindex or 0)
+    if found.re is _HEADER and found.group(1).rstrip().lower().endswith("basic"):
+        return "password", _basic(value), True
     name = _NAME.match(found.group(1))
-    return (name.group(1) if name else found.group(1)), found.group(found.lastindex or 0), found.re is _GENERIC[0][1]
+    return (name.group(1) if name else found.group(1)), value, found.re in _LITERAL
+
+
+def _basic(value: str) -> str:
+    """The password of the pair `value` carries as `Basic` does, or "" where it is no such pair."""
+    try:
+        name, _colon, password = base64.b64decode(value, validate=True).decode("utf-8").partition(":")
+    except ValueError:  # no base64, or no text
+        return ""
+    return password if name else ""
 
 
 #: A value that only stands for a secret: a run of one character, `****` or `...` among them; the word that names its

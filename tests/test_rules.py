@@ -113,6 +113,75 @@ class TestTheSecretShapes:
         NamedSecrets().check("app.py", hostile)
         assert time.perf_counter() - started < 1.0, "a URL with no query is read in one pass"
 
+    def test_an_authorization_headers_token_is_named_and_hidden(self) -> None:
+        """Read by an audit, and reproduced: a token written after `Bearer`, `Basic` or `Token` in an `Authorization`
+        header was left as it was by the redaction and named by neither rule, since the header's name holds no word a
+        secret goes by; a JWT there, a vendor's shape, was the one token found. The token is weighed as any named value
+        is, a template, a placeholder, a short one and one with no digit left alone, and it is a literal whatever its
+        dots: `"Bearer " + token` holds none to read as code. What `Basic` carries is a name and a password in base64,
+        the audit's own example with no digit in it: the password is weighed as one a person wrote."""
+        import time
+
+        from adk_review.core.secrets import scrub
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.named_secrets import NamedSecrets
+        from adk_review.judge.rules.secrets import Secrets
+
+        value, basic = "live_9a8b7c6d5e4f3a2b1c0d", "dXNlcjpwYXNzMTIzNA=="
+        named = [
+            f'headers = {{"Authorization": "Bearer {value}"}}',
+            f'curl -H "Authorization: Basic {basic}" https://api.acme.io/v1',
+            f"request.headers['Authorization'] = 'Token {value}'",
+            f'.header("Proxy-Authorization", "Basic {basic}")',
+            f"Authorization: Bearer {value}",
+            f'client.get("/v1", HTTP_AUTHORIZATION="Token {value}")',
+            f'proxy_set_header Authorization "Bearer {value}";',
+            f'"authorization": "bearer v2.local.{value}"',  # dotted words: code, were it no literal
+        ]
+        left = [
+            'headers = {"Authorization": f"Bearer {token}"}',
+            'headers = {"Authorization": "Bearer " + token}',
+            'curl -H "Authorization: Bearer $TOKEN" https://api.acme.io/v1',
+            'curl -H "Authorization: Bearer <token>" https://api.acme.io/v1',
+            '"Authorization": "Bearer %s" % token',
+            "Authorization: Bearer YOUR_ACCESS_TOKEN",
+            "Authorization: Bearer ab12",
+            "The Authorization header: Basic authentication is refused.",
+            "Authorization: Basic authentication is refused.",
+            'authorization_url = "https://auth.acme.io/authorize"',
+        ]
+        # A documentation's pair, `user:password` and `admin:changeme`, and what is no pair at all, measured in
+        # LiteLLM's own words: hidden as any pair is, and no finding, since `Basic` carries nothing else.
+        examples = [
+            "Authorization: Basic dXNlcjpwYXNzd29yZA==",
+            "Authorization: Basic YWRtaW46Y2hhbmdlbWU=",
+            "- x-mcp-deepwiki-authorization: Basic base64_encoded_creds",
+        ]
+        found = lines_hit(NamedSecrets(), "src/client.py", "\n".join([*named, *left, *examples]) + "\n")
+        assert found == list(range(1, len(named) + 1)), found
+        assert all("[REDACTED]" in scrub(line)[0] for line in examples), examples
+        for line in named:
+            hidden, count = scrub(line)
+            assert value not in hidden and basic not in hidden and count == 1, hidden
+        for line in left:
+            assert scrub(line)[0] == line, line
+        # A test's own header is a fixture's, as its password is.
+        assert lines_hit(NamedSecrets(), "tests/test_api.py", named[5] + "\n") == []
+        # A JWT there stays the vendor's finding: one credential, one finding, hidden once.
+        jwt = ".".join(["eyJhbGciOiJIUzI1NiJ9", "eyJzdWIiOiIxMjM0In0", "dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U"])
+        held = f'headers = {{"Authorization": "Bearer {jwt}"}}\n'
+        assert (
+            lines_hit(Secrets(), "src/client.py", held) == [1]
+            and lines_hit(NamedSecrets(), "src/client.py", held) == []
+        )
+        assert scrub(held)[1] == 1, scrub(held)
+        # Each run the shape reads is bounded or read once: a line of headers, and one long token with no digit.
+        started = time.perf_counter()
+        scrub("Authorization: Bearer " * 5_000)
+        scrub("Authorization: Bearer " + "a" * 80_000)
+        NamedSecrets().check("app.py", "Authorization: Bearer " + "a" * 80_000 + "1")
+        assert time.perf_counter() - started < 1.0, "the shape reads a line in one pass"
+
     def test_an_examples_credential_is_blanked_and_a_real_one_beside_it_found(self) -> None:
         """Measured on twelve real projects: all eleven credentials the rule found in their source were examples, each
         a blocker — a URL whose password names its field at a local host, a documentation host, a private key's header

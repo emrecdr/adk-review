@@ -345,7 +345,8 @@ findings change how code reads and never what it does; the instruction around th
 The rules shipped with the reviewer are written as a project writes its own:
 
 - for any project: `secrets` (a vendor's credential shape in an added line), `named-secrets` (a value assigned to a name
-  that says secret, a URL's query parameter among them, `?api_key=`, where no vendor's shape is), `lint` (what ruff reports, at a severity and with a fix for each code,
+  that says secret, a URL's query parameter, `?api_key=`, and an `Authorization` header's token among them, where no
+  vendor's shape is), `lint` (what ruff reports, at a severity and with a fix for each code,
   a line's length, E501, left to the project's formatter), `reviewer-instructions` (text that tries to instruct the
   reviewing model, read as a model reads it: across wrapped lines, through hidden and full-width characters, and in a
   file's name), `encoding-declaration` (a source encoding that turns plain text into other code: a hole, since no rule
