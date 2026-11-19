@@ -128,23 +128,24 @@ class CommentModal(ModalScreen[tuple[bool, str]]):
     #: The most lines shown of those a suggestion replaces: the rest are counted.
     REPLACED_SHOWN = 12
 
-    def __init__(self, text: str, target: str, replaced: Sequence[str] = ()) -> None:
+    def __init__(self, text: str, target: str, lines: Sequence[str] = ()) -> None:
         super().__init__()
         self.text = text
         self.target = target
-        self.replaced = tuple(replaced)
+        self.lines = tuple(lines)  # what the comment stands on, as the commit reviewed holds them
 
     def compose(self) -> ComposeResult:
         with Vertical(id="comment-dialog"):
             yield Label("Comment on the Pull Request", classes="chain-title")
             yield Static(self.target, id="comment-target", markup=False)
-            if self.replaced:
-                more = len(self.replaced) - self.REPLACED_SHOWN
-                lines = [_seen(line) for line in self.replaced[: self.REPLACED_SHOWN]]
+            if self.lines:
+                # Always in view, whatever the text holds now: read by review, shown only where the draft opened
+                # with a suggestion, one typed in the editor was posted with nothing to check it against.
+                more = len(self.lines) - self.REPLACED_SHOWN
+                lines = [_seen(line) for line in self.lines[: self.REPLACED_SHOWN]]
                 shown = [*lines, *([f"({more} more lines)"] if more > 0 else [])]
                 yield Static(
-                    '"Apply changes" replaces these lines with the suggestion block. '
-                    "Check that it fits, or delete the block.",
+                    "Your comment stands on these lines. A suggestion block replaces them when its author applies it.",
                     id="comment-replaces",
                     markup=False,
                 )

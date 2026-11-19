@@ -36,6 +36,9 @@ RESOURCE = "499b84ac-1321-427f-aa17-267ca6975798"
 AZ_TIMEOUT_S = 30
 #: A token is asked again this long before it expires, so none expires on its way.
 _EARLY_S = 120
+#: How long a token is kept where `az` names no second it expires at, as an older one names none: `az` gives no token
+#: with less than five minutes left.
+_UNDATED_S = 180
 #: The REST version every call names: Azure DevOps answers each version in its own shape.
 API_VERSION = "7.1"
 HTTP_TIMEOUT_S = 20
@@ -48,12 +51,20 @@ _PAGE = 2000
 _TENANT = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 #: Where a call may go: Azure DevOps over HTTPS, or this machine's own address, where the tests' fake answers.
 _HTTPS, _LOCAL = "https://", "http://127.0.0.1:"
+#: Said where a post may have arrived though no answer says so. Pressing c again finds it by its mark.
+_MAYBE_POSTED = "The comment may be posted: press c again to check."
 #: A server's own words in a sentence: one line, this long at most.
 _SAID_MAX_CHARS = 200
 
 
 class AzureError(Exception):
-    """What went wrong and what to do next, as sentences for the person. Its text never holds a token."""
+    """What went wrong and what to do next, as sentences for the person. Its text never holds a token. `unsure`
+    says a post may have arrived all the same: its answer did not come back whole, or a gateway answered for Azure
+    DevOps. The screen then never says "not posted"."""
+
+    def __init__(self, said: str, *, unsure: bool = False) -> None:
+        super().__init__(said)
+        self.unsure = unsure
 
 
 class Credential(Protocol):
@@ -89,15 +100,16 @@ class AzLogin:
 
     def __call__(self) -> str:
         if self._clock() >= self._until:
-            self._token, self._until = self._asked()
+            self._token, expires = self._asked()
+            self._until = self._clock() + _UNDATED_S if expires is None else expires - _EARLY_S
         return f"Bearer {self._token}"
 
     def forget(self) -> None:
         self._token, self._until = "", 0.0
 
-    def _asked(self) -> tuple[str, float]:
-        """A token and the time to ask for the next one, from `az` by its full path, found on PATH's absolute
-        entries alone as the reviewer finds git: Windows looks for a bare name in the current folder first."""
+    def _asked(self) -> tuple[str, int | None]:
+        """A token and the second it expires at, where `az` names one, from `az` by its full path, found on PATH's
+        absolute entries alone as the reviewer finds git: Windows looks for a bare name in the current folder first."""
         az = on_path("az")
         if az == "az":
             raise AzureError("The Azure CLI is not on PATH. Install it, then run `az login`.")
@@ -112,9 +124,9 @@ class AzLogin:
         return _token(done)
 
 
-def _token(done: subprocess.CompletedProcess[str]) -> tuple[str, float]:
-    """The token `az` printed and when to ask again, or the sentence that names the login. What `az` said is never
-    repeated: it is the one text here that can hold a token."""
+def _token(done: subprocess.CompletedProcess[str]) -> tuple[str, int | None]:
+    """The token `az` printed and the second it expires at, or the sentence that names the login. What `az` said is
+    never repeated: it is the one text here that can hold a token."""
     try:
         answer = json.loads(done.stdout or "") if done.returncode == 0 else None
     except ValueError:
@@ -123,7 +135,7 @@ def _token(done: subprocess.CompletedProcess[str]) -> tuple[str, float]:
     if not isinstance(token, str) or not token.isascii() or not token.isprintable() or " " in token or not token:
         raise AzureError("The Azure CLI gave no token. Run `az login`, then post again.")
     expires = answer.get("expires_on") if isinstance(answer, dict) else None
-    return token, (expires - _EARLY_S if type(expires) is int else 0.0)
+    return token, (expires if type(expires) is int else None)
 
 
 def _opener() -> urllib.request.OpenerDirector:
@@ -211,7 +223,7 @@ class Client:
         """`payload` posted as a new thread: its id."""
         thread = self._call("POST", self._pr.api("threads"), body=payload).get("id")
         if type(thread) is not int:
-            raise AzureError("Azure DevOps answered with no thread. Check the pull request before you post again.")
+            raise AzureError(f"Azure DevOps answered with no thread. {_MAYBE_POSTED}", unsure=True)
         return thread
 
     def _call(self, method: str, url: str, *, body: dict | None = None, query: Mapping[str, str] | None = None) -> dict:
@@ -233,11 +245,12 @@ class Client:
                 with self._opener.open(request, timeout=HTTP_TIMEOUT_S) as answer:
                     return self._answered(answer.status, answer.read())
             except urllib.error.HTTPError as refused:
-                self._sleep(self._wait(refused, waited=waited))
+                self._sleep(self._wait(refused, waited=waited, posting=data is not None))
             except (OSError, http.client.HTTPException) as failed:
                 # No route, no answer in time, a certificate, or an answer cut short or no HTTP at all, which is
                 # none of the network's own errors. Uncaught, it ended the screen with this call's headers shown.
-                raise AzureError(_unreached(failed)) from None
+                # A post sent this way may have arrived.
+                raise AzureError(_unreached(failed), unsure=data is not None) from None
         raise AssertionError("a second 429 is a sentence")
 
     def _answered(self, status: int, raw: bytes) -> dict:
@@ -251,8 +264,9 @@ class Client:
             raise self._no_login(None)
         return answer
 
-    def _wait(self, refused: urllib.error.HTTPError, *, waited: bool) -> float:
-        """The seconds to wait before one more try, or the refusal as its sentence."""
+    def _wait(self, refused: urllib.error.HTTPError, *, waited: bool, posting: bool) -> float:
+        """The seconds to wait before one more try, or the refusal as its sentence. A post a server failed on, a
+        gateway before Azure DevOps among them, may have arrived: Azure DevOps' own refusals, the 4xx, are sure."""
         code = refused.code
         if code == HTTPStatus.UNAUTHORIZED or HTTPStatus.MULTIPLE_CHOICES <= code < HTTPStatus.BAD_REQUEST:
             raise self._no_login(refused.headers) from None  # refused, or sent elsewhere to sign in
@@ -268,7 +282,9 @@ class Client:
             if waited or seconds > RETRY_AFTER_MAX_S:
                 raise AzureError(f"Azure DevOps asked to wait {seconds} s. Post again after that.") from None
             return float(seconds)
-        raise AzureError(f"Azure DevOps answered {code}: {_said(refused)}. Nothing was posted.") from None
+        unsure = posting and code >= HTTPStatus.INTERNAL_SERVER_ERROR
+        ended = _MAYBE_POSTED if unsure else "Nothing was posted."
+        raise AzureError(f"Azure DevOps answered {code}: {_said(refused)}. {ended}", unsure=unsure) from None
 
     def _no_login(self, headers: Message | None) -> AzureError:
         """The sentence for a login Azure DevOps did not accept, the token forgotten: the person logs in again, and

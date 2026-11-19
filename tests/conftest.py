@@ -1013,6 +1013,12 @@ class FakeAdo:
         sent = raw if raw is not None else b"" if body is None else json.dumps(body).encode("utf-8")
         self._answers.setdefault((method, self.root + tail), []).append((status, headers or {}, sent, broken))
 
+    def instead(self, method: str, tail: str, body: object = None, **how: object) -> None:
+        """What a route answers from now on, in place of what it answered: as the pull request stands after a
+        post. `answer` adds to a route's turns, and a turn already served once is served again before a new one."""
+        self._answers.pop((method, self.root + tail), None)
+        self.answer(method, tail, body, **how)
+
     def answered(self, seen: Seen) -> tuple[int, dict[str, str], bytes, str]:
         """The answer to one request, which is kept; a route no test named is a 404, as Azure DevOps answers one."""
         self.seen.append(seen)

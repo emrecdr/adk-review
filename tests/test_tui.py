@@ -2639,6 +2639,7 @@ class TestAzureDevOpsOnTheScreen:
             await pilot.press("p")
             await pilot.pause()
             azure_state.keep_posted(pr, "1a2b3c4d5e6f7a8b", 148)
+            app._refresh_posted()
             app._render_findings_table()
             await pilot.pause()
             assert str(table.get_row_at(0)[-1]) == "148", "the thread it was posted as"
@@ -2725,9 +2726,7 @@ class TestACommentOnThePullRequest:
             text = editor.query_one("#comment-text", TextArea).text
             assert text.startswith("**major**: `charge()` adds tax twice") and "```suggestion" in text
             assert "src/app.py, line 2, pull request 123" in str(editor.query_one("#comment-target", Static).render())
-            assert TAXED in str(editor.query_one("#comment-replaced", Static).render()), (
-                "the line a suggestion replaces"
-            )
+            assert TAXED in str(editor.query_one("#comment-replaced", Static).render()), "the line it stands on"
             await pilot.click("#btn-comment-cancel")
             await pilot.pause()
             assert not isinstance(app.screen, CommentModal) and fake_ado.seen == []
@@ -2758,7 +2757,8 @@ class TestACommentOnThePullRequest:
             await pilot.pause()
             assert isinstance(app.screen, CommentModal)
             assert app.screen.query_one("#comment-text", TextArea).text == "my own words"
-            assert not app.screen.query("#comment-replaced"), "no suggestion in the text now: nothing is replaced"
+            shown = str(app.screen.query_one("#comment-replaced", Static).render())
+            assert TAXED in shown, "the lines stay in view: a suggestion typed in the editor replaces them too"
             assert fake_ado.seen == []
 
     @pytest.mark.asyncio
@@ -2787,8 +2787,15 @@ class TestACommentOnThePullRequest:
             assert said[-1] == "Posted as thread 148. Press p to open it."
             assert str(app.query_one("#findings-table", DataTable).get_row_at(0)[-1]) == "148"
             assert azure_state.posted_thread(fake_ado.pr, "1a2b3c4d5e6f7a8b") == 148
+            held = {
+                "id": 148,
+                "comments": [
+                    {"content": "my own words\n\n*adk-review, guideline.correctness, finding 1a2b3c4d5e6f7a8b*"}
+                ],
+            }
+            fake_ado.instead("GET", "/threads", {"value": [held]})  # as Azure DevOps holds it now
             await pilot.press("c")
-            await pilot.pause()
+            await _posted(app, pilot)
             assert said[-1] == "This finding is posted as thread 148. Press p to open it."
             assert len([seen for seen in fake_ado.seen if seen.method == "POST"]) == 1, "no editor, and no second post"
 
@@ -2970,7 +2977,10 @@ class TestACommentOnThePullRequest:
             await pilot.pause()
             await pilot.click("#btn-post-yes")
             await _posted(app, pilot)
-            assert said[-1] == "Azure DevOps answered 500: [/bold] closes [nothing. Nothing was posted."
+            said_last = (
+                "Azure DevOps answered 500: [/bold] closes [nothing. The comment may be posted: press c again to check."
+            )
+            assert said[-1] == said_last
 
 
 class TestWhatTheBranchsReviewFound:
@@ -3146,3 +3156,141 @@ class TestWhatTheBranchsReviewFound:
             assert "Action: Comment on Finding in Its Pull Request (c)" in named
             named["Action: Open Finding's Lines (o)"]()
             assert opened == [line_link(parse_pr_url(PR_ADDRESS), "a" * 40, "src/app.py", 42, 57)]
+
+
+class TestWhatTheFirstRoundOfReviewFound:
+    """What a code review of the branch reproduced on the screen, each held here."""
+
+    @pytest.mark.asyncio
+    async def test_a_post_whose_answer_did_not_come_is_never_said_to_be_unposted(
+        self, tmp_path: Path, fake_ado
+    ) -> None:
+        """Reproduced by review: the post arrived, a gateway answered 502 for it, and the screen said "not
+        posted". The person then pastes the comment by hand, or posts again with the mark taken out: two threads."""
+        pytest.importorskip("textual")
+        from textual.widgets import DataTable, Static
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            fake_ado.answer("POST", "/threads", status=502, raw=b"<html>Bad Gateway</html>")
+            said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            await _editor(app, pilot)
+            await pilot.click("#btn-comment-post")
+            await pilot.pause()
+            await pilot.click("#btn-post-yes")
+            await _posted(app, pilot)
+            assert (
+                said[-1] == "Azure DevOps answered 502: Bad Gateway. The comment may be posted: press c again to check."
+            )
+            banner = str(app.query_one("#status-banner", Static).render())
+            assert "may be posted" in banner and "not posted" not in banner, banner
+            assert str(app.query_one("#findings-table", DataTable).get_row_at(0)[-1]) == "", "not known to be posted"
+            arrived = {
+                "id": 77,
+                "comments": [{"content": "*adk-review, guideline.correctness, finding 1a2b3c4d5e6f7a8b*"}],
+            }
+            fake_ado.instead("GET", "/threads", {"value": [arrived]})  # it had arrived
+            await _editor(app, pilot)
+            await pilot.click("#btn-comment-post")
+            await pilot.pause()
+            await pilot.click("#btn-post-yes")
+            await _posted(app, pilot)
+            assert said[-1] == "This finding was posted before, as thread 77. Nothing was posted."
+            assert [seen.method for seen in fake_ado.seen].count("POST") == 1
+
+    @pytest.mark.asyncio
+    async def test_a_thread_deleted_in_azure_devops_can_be_posted_again(self, tmp_path: Path, fake_ado) -> None:
+        """Reproduced by review: what the screen kept was final, so a finding whose thread the person deleted in the
+        browser could not be posted again, short of deleting the whole state file and every address with it. What is
+        kept is a convenience: the pull request's own threads say what is posted."""
+        pytest.importorskip("textual")
+        from textual.widgets import DataTable
+
+        from tui import azure_state
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            azure_state.keep_posted(fake_ado.pr, "1a2b3c4d5e6f7a8b", 148)
+            app._refresh_posted()
+            app._render_findings_table()
+            await pilot.pause()
+            assert str(app.query_one("#findings-table", DataTable).get_row_at(0)[-1]) == "148"
+            await _editor(app, pilot)  # the fake holds no such thread: the editor opens
+            assert said[-1] == "Thread 148 is gone from the pull request. You can post the finding again."
+            assert azure_state.posted_thread(fake_ado.pr, "1a2b3c4d5e6f7a8b") is None
+            assert str(app.query_one("#findings-table", DataTable).get_row_at(0)[-1]) == ""
+            assert all(seen.method == "GET" for seen in fake_ado.seen)
+
+    @pytest.mark.asyncio
+    async def test_a_finding_one_line_past_its_files_end_is_not_placed(self, tmp_path: Path, fake_ado) -> None:
+        """Reproduced by review: the newline that ends a file was counted as a line of its own, so a finding one
+        past the last line passed, and its comment was placed on a line the file does not have."""
+        pytest.importorskip("textual")
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha, line=4, lines=[4, 4])
+            await pilot.press("c")
+            await _posted(app, pilot)
+            assert said[-1] == "This clone does not hold the reviewed commit's file. Fetch, then press c again."
+            assert fake_ado.seen == []
+
+    @pytest.mark.asyncio
+    async def test_an_opened_link_is_shown_too_for_a_terminal_with_no_browser(self, tmp_path: Path) -> None:
+        """Read by review: over SSH or in a container no browser opens, and the key then did nothing a person
+        could see. The link stays on the screen, to copy."""
+        pytest.importorskip("textual")
+        from textual.widgets import Input, Static
+
+        from tui.azure import files_link, line_link, parse_pr_url
+
+        app = await _payments_screen(tmp_path)
+        pr = parse_pr_url(PR_ADDRESS)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.open_url = lambda _url, **_how: None  # as where no browser opens
+            app.query_one("#pr-url", Input).value = PR_ADDRESS
+            await _show_findings(app, pilot, _pull_request_report(tmp_path))
+            await pilot.press("o")
+            await pilot.pause()
+            banner = app.query_one("#status-banner", Static)
+            assert str(banner.render()) == "Opening in your browser: " + line_link(pr, "a" * 40, "src/app.py", 42, 57)
+            await pilot.press("p")
+            await pilot.pause()
+            assert str(banner.render()) == "Opening in your browser: " + files_link(pr, "src/app.py")
+
+    @pytest.mark.asyncio
+    async def test_the_state_file_is_read_and_written_when_the_pull_request_changes_and_not_at_each_key(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Measured by review: each key in the findings' search field drew the table again, and each drawing read
+        and parsed the state file on the screen's own loop. Each digit of a typed address wrote the file."""
+        pytest.importorskip("textual")
+        from textual.widgets import Input
+
+        from tui import app as screen
+
+        reads: list[str] = []
+        writes: list[str] = []
+        read, write = screen.posted_threads, screen.keep_pull_request_url
+        monkeypatch.setattr(screen, "posted_threads", lambda pr: reads.append(pr.web) or read(pr))
+        monkeypatch.setattr(screen, "keep_pull_request_url", lambda *kept: writes.append(kept[2]) or write(*kept))
+        app = await _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            field = app.query_one("#pr-url", Input)
+            field.value = PR_ADDRESS
+            await _show_findings(app, pilot, _pull_request_report(tmp_path))
+            assert (reads, writes) == ([PR_ADDRESS], [PR_ADDRESS])
+            search = app.query_one("#finding-search", Input)
+            for typed in ("c", "ch", "cha", ""):
+                search.value = typed
+                await pilot.pause()
+            field.value = PR_ADDRESS + "?_a=files"  # the same pull request, spelled another way
+            await pilot.pause()
+            field.value = "not an address"  # being edited: what is kept stays
+            await pilot.pause()
+            assert (reads, writes) == ([PR_ADDRESS], [PR_ADDRESS]), "one read and one write a pull request"
+            field.value = ""
+            await pilot.pause()
+            assert writes == [PR_ADDRESS, ""], "emptied: forgotten, though the field held no address just before"

@@ -73,6 +73,13 @@ def posted_thread(pr: PullRequest, fingerprint: str) -> int | None:
     return posted_threads(pr).get(fingerprint)
 
 
+def forget_posted(pr: PullRequest, fingerprint: str) -> None:
+    """The finding `fingerprint` is no thread of `pr` any more: its thread was deleted there."""
+    kept = _kept()
+    if kept["posted"].get(pr.web, {}).pop(fingerprint, None) is not None:
+        _keep(kept)
+
+
 def keep_posted(pr: PullRequest, fingerprint: str, thread: int) -> None:
     """The finding `fingerprint` is thread `thread` of `pr`."""
     kept = _kept()

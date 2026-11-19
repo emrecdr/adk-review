@@ -122,11 +122,14 @@ when you ask. The reviewer itself posts nothing, as before: this is the screen's
 | `p` | The pull request at the finding's file, or at its comment once posted |
 | `c` | The comment's draft, in an editor |
 
+`o` and `p` also show the link in the line under the steps, to copy where no browser opens, as over SSH.
+
 The draft is the finding's own words: its severity and title, its reason, what to change, and its corrected code.
 Edit it as you like: you are its author. Where the finding stands on lines the change added, the code is a
-`suggestion` block, which the pull request's author applies with one click. The editor shows the lines it would
-replace: check that it fits, or delete the block. The last line names the tool, the check and the finding. Keep it:
-it finds the comment again, so a finding is never posted twice, by you or by a teammate.
+`suggestion` block, which the pull request's author applies with one click. The editor shows the lines your comment
+stands on, which a suggestion replaces: check that it fits, or delete the block. Code the report cut, or changed to
+keep its own output safe, is shown and never a suggestion. The last line names the tool, the check and the finding.
+Keep it: it finds the comment again, so a finding is never posted twice, by you or by a teammate.
 
 **Post** asks once more, naming the file, the lines and the pull request. Then one comment is posted, as you, on
 those lines. **Copy** gives you the text to paste by hand. Nothing is sent before the confirmation, and never more
@@ -143,6 +146,7 @@ A post is refused, with what to do next, where:
 | The pull request does not change the file | Nothing: no line there can hold a comment |
 | The pull request is completed or abandoned | Nothing: it takes no new comment from here |
 | This clone does not hold the reviewed commit's file | Fetch, then press `c` again |
+| The comment may be posted | Press `c` again: the answer did not come back, and a comment that arrived is found, with no second one sent |
 
 Your edit is kept after a refusal, and when you close the editor: press `c` again. To start from the draft again,
 empty the editor and close it.
@@ -154,8 +158,8 @@ What it sends and keeps:
 - The token comes from `az account get-access-token`, stays in memory, and is asked again when it expires. A login
   Azure DevOps refuses is forgotten, so the next post asks `az` again.
 - `azure.json` in the state folder holds the address you gave for each branch, and the thread each finding was
-  posted as. You may delete it: a finding posted before is found by its comment's last line. Delete it too where
-  you deleted a comment in Azure DevOps and want to post that finding again.
+  posted as. You may delete it: a finding posted before is found by its comment's last line. Where you deleted a
+  comment in Azure DevOps, press `c` on its finding: the screen asks the pull request, and lets you post it again.
 - A company proxy's certificate is trusted where your system trusts it, as for the reviewer. `SSL_CERT_FILE` names a
   bundle where it does not.
 

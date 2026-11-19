@@ -32,6 +32,9 @@ _FENCE = "```"
 SUGGESTION = f"{_FENCE}suggestion"
 #: What the report puts where it hid a credential: with `CUT_MARK`, text that is the report's and not the code's.
 _HIDDEN = "[REDACTED"
+#: What the report leaves of a pipeline's command opener or an HTML comment's in a line of code, a space put in:
+#: `##vso [`, `: :` opening a line, `<! --`. Code that holds one may be the report's safety rule at work, not the code.
+_INERT = re.compile(r"<! --|^[^\S\n]*: :|#[^ -~]*#[^ -~]*(?:vso)? \[", re.MULTILINE)
 
 _NOT_ONE = (
     "This is not a pull request's address. "
@@ -147,16 +150,17 @@ def marked(text: str) -> str | None:
 def suggests(row: FindingRow) -> bool:
     """Whether `row`'s corrected code is drafted as a `suggestion` block, which the author applies with one click:
     only where the finding stands on lines the change added, as the owner chose, and its code is whole and the
-    code's own. A fence in it would close the block early. Where the report cut it, or hid a credential in it, the
-    report's own mark stands in the code, and "Apply changes" would write that mark into the file."""
-    whole = not any(mark in row.code for mark in (_FENCE, CUT_MARK, _HIDDEN))
+    code's own. A fence in it would close the block early. Where the report cut it, hid a credential in it, or made
+    a line of it inert, the report's own hand is in the code, and "Apply changes" would write that into the file."""
+    whole = not any(mark in row.code for mark in (_FENCE, CUT_MARK, _HIDDEN)) and not _INERT.search(row.code)
     return bool(row.code.strip()) and row.on_added_line is True and row.span() is not None and whole
 
 
 def draft(row: FindingRow) -> str:
     """The comment drafted from `row`'s own fields, for the person to edit: its severity and title, its reason, what
     to change, its corrected code, and its mark. Each line of prose is the reviewer's `prose`, so `@name`, `#12` and
-    `!7` notify no one and link nothing. The code is never changed: "Apply changes" writes it into the file."""
+    `!7` notify no one and link nothing. The code is drawn as the report holds it and never changed here: "Apply
+    changes" writes it into the file, so `suggests` says where the report's own safety already changed it."""
     parts = [f"**{prose(row.severity)}**: {prose(row.title) or prose(row.check)}"]
     if why := prose(row.why):
         parts.append(why)

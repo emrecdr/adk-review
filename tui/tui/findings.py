@@ -109,9 +109,19 @@ def _read(json_path: Path) -> dict | None:
 
 
 def load_reviewed(json_path: Path) -> Reviewed | None:
-    """What the report at `json_path` reviewed, or None where it does not say: no line is linked to, and no comment
-    placed, on a commit the report did not name whole."""
-    seen = (_read(json_path) or {}).get("reviewed")
+    """What the report at `json_path` reviewed, or None where it does not say."""
+    return load_report(json_path)[1]
+
+
+def load_findings_from_json(json_path: Path) -> list[FindingRow]:
+    """Load `findings`, `old_findings`, and `resolved` entries from a JSON report, sorted by priority."""
+    return load_report(json_path)[0]
+
+
+def _reviewed(raw: dict) -> Reviewed | None:
+    """What a report says it reviewed, or None where it does not say: no line is linked to, and no comment placed,
+    on a commit the report did not name whole."""
+    seen = raw.get("reviewed")
     if not isinstance(seen, dict):
         return None
     repository, head, head_sha = seen.get("repository"), seen.get("head"), seen.get("head_sha")
@@ -125,11 +135,15 @@ def load_reviewed(json_path: Path) -> Reviewed | None:
     return None
 
 
-def load_findings_from_json(json_path: Path) -> list[FindingRow]:
-    """Load `findings`, `old_findings`, and `resolved` entries from a JSON report, sorted by priority."""
+def load_report(json_path: Path) -> tuple[list[FindingRow], Reviewed | None]:
+    """A report's findings, sorted by priority, and what it reviewed, from one read of the file: the screen shows
+    the two together, and a commit read apart from its findings was, for a moment, the last review's."""
     raw = _read(json_path)
-    if raw is None:
-        return []
+    return ([], None) if raw is None else (_rows(raw), _reviewed(raw))
+
+
+def _rows(raw: dict) -> list[FindingRow]:
+    """A report's `findings`, `old_findings` and `resolved` entries, sorted by priority."""
     rows: list[FindingRow] = []
     _extend_rows(rows, raw.get("findings"))
     _extend_rows(rows, raw.get("old_findings"), "Old")

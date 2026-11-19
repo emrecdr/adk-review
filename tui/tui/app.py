@@ -41,9 +41,9 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 from textual.widgets.selection_list import Selection
 
-from .azure import SUGGESTION, Place, PullRequest, draft, files_link, line_link, parse_pr_url, thread_link
+from .azure import Place, PullRequest, draft, files_link, line_link, parse_pr_url, thread_link
 from .azure_client import AzLogin, AzureError, Client, Credential, post_comment
-from .azure_state import keep_posted, keep_pull_request_url, posted_threads, pull_request_url
+from .azure_state import forget_posted, keep_posted, keep_pull_request_url, posted_threads, pull_request_url
 from .clipboard import copy_text
 from .commands import ReviewCommandProvider
 from .config import RepoPreset, RootDir, TuiConfig, load_tui_config, save_repo_preset
@@ -52,8 +52,7 @@ from .findings import (
     Reviewed,
     filter_findings,
     format_finding_detail,
-    load_findings_from_json,
-    load_reviewed,
+    load_report,
 )
 from .git_sync import (
     BranchInfo,
@@ -214,6 +213,8 @@ class AdkReviewTuiApp(App[int]):
         self._reviewed: Reviewed | None = None  # what the findings' report reviewed: their lines are counted in it
         self._pull_request: PullRequest | None = None  # the address field's, where it reads as one
         self._pull_request_of: tuple[str, str] | None = None  # the repository and branch the field was restored for
+        self._kept_address: str = ""  # what the state holds for that pair, so it is written when it changes alone
+        self._posted_threads: dict[str, int] = {}  # the pull request's posted findings, read when it changes
         self._credential: Credential = AzLogin()  # the person's own `az` login, asked only when a comment is posted
         self._clients: dict[str, Client] = {}  # one a pull request, by its address: what it read once is kept
         self._drafts: dict[str, str] = {}  # an edit a refused post left, by finding, so no words are lost
@@ -786,8 +787,7 @@ class AdkReviewTuiApp(App[int]):
         """Populate or clear `2. Findings Explorer` from any saved `--previous` baseline for `(project, target)`."""
         tabs = self.query_one("#output-tabs", TabbedContent)
         if has_prev:
-            rows = await asyncio.to_thread(load_findings_from_json, prev_file)
-            reviewed = await asyncio.to_thread(load_reviewed, prev_file)
+            rows, reviewed = await asyncio.to_thread(load_report, prev_file)
             if (
                 self.selected_project != project
                 or baseline_path(project.path, self.selected_base, self.selected_head, self.selected_mode) != prev_file
@@ -1095,14 +1095,17 @@ class AdkReviewTuiApp(App[int]):
         # repository is the new one while the branch is still the last one's, for the whole fetch, and a paste then
         # was kept as the new repository's under the last one's branch.
         pair = (self.selected_project.path if self.selected_project else "", self.selected_head)
-        if keep and pair == self._pull_request_of and (self._pull_request is not None or not pasted):
-            kept = self._pull_request.web if self._pull_request is not None else ""
+        wanted = self._pull_request.web if self._pull_request is not None else ""
+        whole = self._pull_request is not None or not pasted  # an address being edited keeps what was kept
+        if keep and pair == self._pull_request_of and whole and wanted != self._kept_address:
             try:
-                keep_pull_request_url(*pair, kept)
+                keep_pull_request_url(*pair, wanted)
+                self._kept_address = wanted
             except OSError as failed:
                 reason = failed.strerror or type(failed).__name__
                 self.notify(f"The address could not be kept: {reason}.", severity="warning", markup=False)
-        if self._pull_request != before:  # the threads posted are a pull request's own: drawn again for another
+        if self._pull_request != before:  # the threads posted are a pull request's own: read and drawn for another
+            self._refresh_posted()
             self._render_findings_table(keep=self._selected_finding)
 
     def _forget_pull_request(self) -> None:
@@ -1120,14 +1123,25 @@ class AdkReviewTuiApp(App[int]):
         if pair == self._pull_request_of or not self._has_dom("#pr-url"):
             return
         self._pull_request_of = pair
-        kept = pull_request_url(*pair)
+        kept = self._kept_address = pull_request_url(*pair)
         with self.prevent(Input.Changed):
             self.query_one("#pr-url", Input).value = kept
         self._read_pull_request(kept, keep=False)
 
+    def _refresh_posted(self) -> None:
+        """What the state holds of the pull request's posted findings, read once for it: measured by review, read at
+        each drawing of the table, the file was read and parsed at each key of the findings' search field."""
+        self._posted_threads = posted_threads(self._pull_request) if self._pull_request is not None else {}
+
     def _posted(self) -> dict[str, int]:
         """Each finding's thread in the pull request the field names, by fingerprint."""
-        return posted_threads(self._pull_request) if self._pull_request is not None else {}
+        return self._posted_threads
+
+    def _open(self, url: str) -> None:
+        """`url` opened in the person's browser, and shown too: over SSH or in a container none opens, and the key
+        would then do nothing a person could see."""
+        self.open_url(url)
+        self._set_banner(f"Opening in your browser: {url}")
 
     def _finding_to_open(self) -> tuple[FindingRow, PullRequest] | None:
         """The finding chosen and the pull request to open it in, or a notice of which is missing."""
@@ -1150,7 +1164,7 @@ class AdkReviewTuiApp(App[int]):
         if span is None or self._reviewed is None:
             self.notify(NO_COMMIT if self._reviewed is None else "This finding names no line.", timeout=6, markup=False)
             return
-        self.open_url(line_link(pr, self._reviewed.head_sha, row.file, *span))
+        self._open(line_link(pr, self._reviewed.head_sha, row.file, *span))
 
     def action_open_pull_request(self) -> None:
         """Open the pull request at the chosen finding: its thread once posted, else its file in the Files tab."""
@@ -1158,7 +1172,7 @@ class AdkReviewTuiApp(App[int]):
             return
         row, pr = ready
         thread = self._posted().get(row.fingerprint)
-        self.open_url(files_link(pr, row.file) if thread is None else thread_link(pr, thread))
+        self._open(files_link(pr, row.file) if thread is None else thread_link(pr, thread))
 
     def _no_comment(self, row: FindingRow) -> str:
         """Why `row` takes no comment, as a sentence, or nothing where it takes one."""
@@ -1168,11 +1182,7 @@ class AdkReviewTuiApp(App[int]):
             return "This finding is resolved. There is nothing to comment on."
         if self._reviewed is None or self.selected_project is None:
             return NO_COMMIT
-        if row.span() is None:
-            return "This finding names no line."
-        if (thread := self._posted().get(row.fingerprint)) is not None:
-            return f"This finding is posted as thread {thread}. Press p to open it."
-        return ""
+        return "This finding names no line." if row.span() is None else ""
 
     def action_comment(self) -> None:
         """Draft a comment on the chosen finding, for the person to edit, confirm and post to the pull request."""
@@ -1200,6 +1210,8 @@ class AdkReviewTuiApp(App[int]):
         if span is None or reviewed is None or project is None:
             return
         first, last = span
+        if row.fingerprint in self._posted() and not await self._gone(row, pr):
+            return
         lines = await asyncio.to_thread(file_lines, project.path, reviewed.head_sha, row.file)
         if lines is None or last > len(lines):
             said = "This clone does not hold the reviewed commit's file. Fetch, then press c again."
@@ -1210,6 +1222,33 @@ class AdkReviewTuiApp(App[int]):
         if text is not None:
             place = Place(row.file, first, last, lines[last - 1])
             await self._post(row, pr, text, place, reviewed.head_sha)
+
+    def _client(self, pr: PullRequest) -> Client:
+        """The one client of `pr` for this run of the screen: what it read once, an iteration's files, is kept."""
+        if pr.web not in self._clients:
+            self._clients[pr.web] = Client(pr, self._credential)
+        return self._clients[pr.web]
+
+    async def _gone(self, row: FindingRow, pr: PullRequest) -> bool:
+        """Whether a finding the state holds as posted has no thread in the pull request any more, asked of Azure
+        DevOps itself: what the state holds is a convenience, and a thread the person deleted there is posted again
+        from here. Where the thread stands, or cannot be asked for, the sentence says so."""
+        kept = self._posted()[row.fingerprint]
+        try:
+            thread = await asyncio.to_thread(self._client(pr).thread_of, row.fingerprint)
+        except AzureError as refused:
+            self.notify(str(refused), severity="error", timeout=12, markup=False)
+            return False
+        if thread is not None:
+            self.notify(f"This finding is posted as thread {thread}. Press p to open it.", timeout=6, markup=False)
+            return False
+        with contextlib.suppress(OSError):  # not forgotten: asked again at the next c, and answered the same
+            forget_posted(pr, row.fingerprint)
+        self._refresh_posted()
+        self._render_findings_table(keep=row)
+        said = f"Thread {kept} is gone from the pull request. You can post the finding again."
+        self.notify(said, timeout=6, markup=False)
+        return True
 
     @staticmethod
     def _draft_key(row: FindingRow) -> str:
@@ -1222,8 +1261,7 @@ class AdkReviewTuiApp(App[int]):
         kept, drafted = self._draft_key(row), draft(row)
         text = self._drafts.get(kept) or drafted
         while True:
-            replaced = lines if SUGGESTION in text else ()
-            post, text = await self.push_screen_wait(CommentModal(text, target, replaced))
+            post, text = await self.push_screen_wait(CommentModal(text, target, lines))
             if not post:
                 self._drafts.pop(kept, None)
                 if text.strip() and text != drafted:
@@ -1236,14 +1274,17 @@ class AdkReviewTuiApp(App[int]):
         """One post, off the screen's own loop, and what it answered: the thread kept and shown, or the refusal as
         its sentence, the person's text kept for the next try."""
         self._set_banner(f"Posting the comment to pull request {pr.number}.")
-        client = self._clients.setdefault(pr.web, Client(pr, self._credential))
         try:
             posted = await asyncio.to_thread(
-                post_comment, client, text=text, place=place, commit=commit, fingerprint=row.fingerprint
+                post_comment, self._client(pr), text=text, place=place, commit=commit, fingerprint=row.fingerprint
             )
         except AzureError as refused:
             self._drafts[self._draft_key(row)] = text
-            self._set_banner("The comment was not posted. Press c to open your text again.")
+            # Never "not posted" where the post may have arrived: read by review, the person then pasted it by hand.
+            unsure = "The comment may be posted. Press c again: one that arrived is found, and no second one is sent."
+            self._set_banner(
+                unsure if refused.unsure else "The comment was not posted. Press c to open your text again."
+            )
             self.notify(str(refused), severity="error", timeout=12, markup=False)
             return
         self._drafts.pop(self._draft_key(row), None)
@@ -1256,6 +1297,7 @@ class AdkReviewTuiApp(App[int]):
             except OSError as failed:
                 reason = failed.strerror or type(failed).__name__
                 self.notify(f"The thread could not be kept: {reason}.", severity="warning", markup=False)
+        self._refresh_posted()
         self._render_findings_table(keep=row)
         self._set_banner(said)
         self.notify(said, severity="information", timeout=8, markup=False)
@@ -1502,8 +1544,7 @@ class AdkReviewTuiApp(App[int]):
         tabs = self.query_one("#output-tabs", TabbedContent)
         json_path = outputs.get("json")
         if json_path and json_path.is_file():
-            self.findings_rows = await asyncio.to_thread(load_findings_from_json, json_path)
-            self._reviewed = await asyncio.to_thread(load_reviewed, json_path)
+            self.findings_rows, self._reviewed = await asyncio.to_thread(load_report, json_path)
             count = len(self.findings_rows)
             tabs.get_tab("tab-findings").label = f"2. Findings Explorer ({count})" if count else "2. Findings Explorer"
             self._render_findings_table()

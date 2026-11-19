@@ -265,6 +265,26 @@ class TestTheDraftOfAComment:
                 shown
             )
 
+    @pytest.mark.parametrize(
+        "code",
+        [
+            'echo "##vso [task.setvariable variable=tag]$(v)"',
+            "    : :set-output name=tag::v1",
+            "x = 1  # <! -- kept for the template -->",
+            "echo '## [group]build'",
+        ],
+    )
+    def test_code_the_report_made_inert_is_never_a_suggestion(self, azure: ModuleType, row, code: str) -> None:
+        """Reproduced by review: the report breaks a pipeline's command openers and an HTML comment's in every line
+        of corrected code, a space put in. A suggestion drafted from that text would commit the broken line."""
+        from adk_review.deliver.report import safe_code
+
+        assert safe_code(code) == code, "the form the report leaves: its own safety rule does not change it again"
+        shown = replace(row, code=code)
+        assert not azure.suggests(shown) and "```suggestion" not in azure.draft(shown)
+        whole = replace(row, code='echo "##[group]build"\nprint("<!-- ok -->")')  # as a report never holds it
+        assert azure.suggests(whole)
+
     def test_a_blank_line_that_opens_the_code_is_kept(self, azure: ModuleType, row) -> None:
         opened = replace(row, code="\n    total = with_tax(subtotal)\n\n")
         assert "```suggestion\n\n    total = with_tax(subtotal)\n```" in azure.draft(opened)
@@ -310,7 +330,11 @@ class TestAFilesLinesAtACommit:
 
         _git_in(tmp_path, "init", "-q", "-b", "main")
         head = _committed(tmp_path, "src/a b.py", "\n\nx = '\u00f6'\r\ny = 2\n".encode())
-        assert file_lines(str(tmp_path), head, "src/a b.py") == ["", "", "x = '\u00f6'", "y = 2", ""]
+        assert file_lines(str(tmp_path), head, "src/a b.py") == ["", "", "x = '\u00f6'", "y = 2"]
+        ragged = _committed(tmp_path, "ragged.py", b"a\nb")
+        assert file_lines(str(tmp_path), ragged, "ragged.py") == ["a", "b"], "no newline ends the file: two lines too"
+        empty = _committed(tmp_path, "empty.py", b"")
+        assert file_lines(str(tmp_path), empty, "empty.py") == [], "a file's last newline starts no line"
         _committed(tmp_path, "src/a b.py", b"y = 3\n")
         assert file_lines(str(tmp_path), head, "src/a b.py")[3] == "y = 2", "the commit reviewed, not the branch's tip"
 
@@ -450,12 +474,19 @@ class TestTheLoginsToken:
         assert login() == "Bearer tok-3" and fake_az.calls == 3
 
     @pytest.mark.parametrize("expires_on", [None, "4600", 4600.5, True])
-    def test_a_token_that_names_no_whole_second_to_expire_at_is_not_kept(
+    def test_a_token_that_names_no_whole_second_to_expire_at_is_kept_three_minutes(
         self, client: ModuleType, fake_az: FakeAz, expires_on: object
     ) -> None:
+        """Reproduced by review: an older Azure CLI names no `expires_on`, and such a token was asked for again at
+        each of a post's five calls, seconds each. `az` gives no token with less than five minutes left."""
         fake_az.expires_on = expires_on
-        login = client.AzLogin(run=fake_az, clock=lambda: 1000.0)
-        assert (login(), login()) == ("Bearer tok-1", "Bearer tok-2")
+        now = [1000.0]
+        login = client.AzLogin(run=fake_az, clock=lambda: now[0])
+        assert (login(), login()) == ("Bearer tok-1", "Bearer tok-1")
+        now[0] = 1179.0
+        assert login() == "Bearer tok-1"
+        now[0] = 1181.0
+        assert login() == "Bearer tok-2"
 
     @pytest.mark.parametrize(
         ("answer", "said"),
@@ -698,6 +729,44 @@ class TestTheClient:
             asked.post({"comments": []}) if method == "POST" else asked.status()
         assert "tok-secret" not in str(failed.value) and len(fake_ado.seen) == 1, "said once, and sent once"
 
+    @pytest.mark.parametrize(
+        ("answer", "said"),
+        [
+            ({"broken": "cut"}, "did not answer whole"),
+            (
+                {"status": 502, "raw": b"<html>Bad Gateway</html>"},
+                "answered 502: Bad Gateway. The comment may be posted",
+            ),
+            ({"status": 504}, "answered 504: Gateway Timeout. The comment may be posted"),
+        ],
+    )
+    def test_a_post_that_may_have_arrived_is_never_said_to_be_unposted(
+        self, client: ModuleType, fake_ado: FakeAdo, answer: dict, said: str
+    ) -> None:
+        """Reproduced by review: the post reached Azure DevOps and its answer did not come back, and the screen
+        said "nothing was posted". The person pasted the comment by hand: two threads for one finding."""
+        fake_ado.answer("POST", "/threads", {"id": 148}, **answer)
+        with pytest.raises(client.AzureError, match=re.escape(said)) as failed:
+            client.Client(fake_ado.pr, FakeToken()).post({"comments": []})
+        assert failed.value.unsure and "Nothing was posted" not in str(failed.value)
+
+    @pytest.mark.parametrize("status", [401, 403, 404, 429, 400])
+    def test_a_post_azure_devops_refused_is_known_to_be_unposted(
+        self, client: ModuleType, fake_ado: FakeAdo, status: int
+    ) -> None:
+        fake_ado.answer("POST", "/threads", status=status, headers={"Retry-After": "120"})
+        with pytest.raises(client.AzureError) as failed:
+            client.Client(fake_ado.pr, FakeToken()).post({"comments": []})
+        assert not failed.value.unsure
+
+    def test_a_read_that_failed_posted_nothing(self, client: ModuleType, fake_ado: FakeAdo) -> None:
+        fake_ado.answer("GET", "", status=502)
+        with pytest.raises(
+            client.AzureError, match=re.escape("answered 502: Bad Gateway. Nothing was posted")
+        ) as failed:
+            client.Client(fake_ado.pr, FakeToken()).status()
+        assert not failed.value.unsure
+
     def test_a_refusals_own_body_broken_on_its_way_is_still_its_sentence(
         self, client: ModuleType, fake_ado: FakeAdo
     ) -> None:
@@ -862,6 +931,16 @@ class TestWhatTheScreenRemembers:
             "posted",
         }
 
+    def test_a_posted_thread_is_forgotten_alone(self, state: ModuleType, azure: ModuleType) -> None:
+        one = _pr(azure)
+        state.keep_pull_request_url("/work/payments", "feature/orders", one.web)
+        state.keep_posted(one, "ab" * 8, 148)
+        state.keep_posted(one, "cd" * 8, 149)
+        state.forget_posted(one, "ab" * 8)
+        state.forget_posted(one, "ee" * 8)  # none kept: nothing to forget
+        assert state.posted_threads(one) == {"cd" * 8: 149}
+        assert state.pull_request_url("/work/payments", "feature/orders") == one.web, "the address stays"
+
     def test_a_thread_that_is_no_whole_number_is_none(
         self, state: ModuleType, azure: ModuleType, tmp_path: Path
     ) -> None:
@@ -1009,3 +1088,25 @@ class TestACompanysOwnRoot:
             server.wait(timeout=10)
             if server.stdout is not None:
                 server.stdout.close()
+
+
+class TestAReportReadOnce:
+    """`load_report`: a report's findings and what it reviewed, from one read."""
+
+    def test_the_findings_and_the_commit_come_from_one_read(
+        self, findings: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reproduced by review: the screen read the report twice, off its own loop each time, and between the two
+        its findings were the new review's and its commit the last one's."""
+        good = {"repository": "/work/payments", "head": "feature/orders", "head_sha": "a" * 40}
+        report = _report(tmp_path, [{"file": "a.py", "line": 3, "fingerprint": "ab" * 8}], good)
+        reads = []
+        read = Path.read_text
+        monkeypatch.setattr(Path, "read_text", lambda path, **how: reads.append(path) or read(path, **how))
+        rows, reviewed = findings.load_report(report)
+        assert reads == [report]
+        assert (rows[0].fingerprint, reviewed) == (
+            "ab" * 8,
+            findings.Reviewed("/work/payments", "feature/orders", "a" * 40),
+        )
+        assert findings.load_report(tmp_path / "missing.json") == ([], None)
