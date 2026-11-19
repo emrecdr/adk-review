@@ -876,7 +876,7 @@ class TestFindingsExplorer:
             explain_check_markdown,
             filter_findings,
             format_finding_detail,
-            load_findings_from_json,
+            load_report,
         )
 
         report = tmp_path / "report.json"
@@ -932,7 +932,7 @@ class TestFindingsExplorer:
             ),
             encoding="utf-8",
         )
-        rows = load_findings_from_json(report)
+        rows = load_report(report)[0]
         assert [r.tier for r in rows] == ["NEW", "Active", "Old", "Resolved"]
         assert len(filter_findings(rows, severity="blocker")) == 1
         assert len(filter_findings(rows, tier="Old")) == 1
@@ -963,7 +963,7 @@ class TestFindingsExplorer:
             ),
             encoding="utf-8",
         )
-        explained = format_finding_detail(load_findings_from_json(report)[0])
+        explained = format_finding_detail(load_report(report)[0][0])
         assert "Why it matters: The coupon path adds the tax again" in explained, explained
         assert "Corrected code:\n    def charge(total):\n        return total" in explained, explained
         assert "rule.secrets" in explain_check_markdown("rule.secrets")
@@ -2453,6 +2453,7 @@ def _pull_request_report(folder: Path, head_sha: str = "a" * 40, **changed: obje
         "line": 42,
         "lines": [42, 57],
         "on_added_line": True,
+        "suggestable": True,
         "severity": "major",
         "title": "`charge()` adds tax twice",
         "evidence": "+ total = with_tax(total)",
@@ -3303,3 +3304,108 @@ class TestWhatTheFirstRoundOfReviewFound:
             await app.workers.wait_for_complete()
             await pilot.pause()
             assert (app._pull_request, app._posted_threads) == (None, {})
+
+
+class TestWhatTheSecondRoundOfReviewFound:
+    """What the second code review of the branch read or reproduced on the screen, each held here."""
+
+    @pytest.mark.asyncio
+    async def test_the_address_waits_for_a_repositorys_own_branch(self, tmp_path: Path) -> None:
+        """Reproduced by review: while another repository loaded, a change of the mode ran the folders' refresh,
+        which put the address back for the new repository under the last one's branch, and a paste then was kept
+        there. Until the repository's own branch is chosen, the field takes nothing."""
+        pytest.importorskip("textual")
+        from textual.widgets import Input
+
+        from tui.app import AdkReviewTuiApp
+
+        _repository(tmp_path / "workspace" / "a_payments", ("main", "feature/orders"), "feature/orders")
+        _repository(tmp_path / "workspace" / "b_billing", ("main", "feature/bills"), "feature/bills")
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            field = app.query_one("#pr-url", Input)
+            assert not field.disabled
+            billing = next(project for project in app.projects if project.name == "b_billing")
+            app._on_project_chosen(billing, picked=False)
+            app._restore_pull_request()  # as the folders' refresh a change of the mode starts
+            assert app._pull_request_of is None and field.disabled, "no pair yet: its branch is not chosen"
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert app._pull_request_of == (billing.path, "feature/bills") and not field.disabled
+
+    @pytest.mark.asyncio
+    async def test_o_on_a_resolved_finding_opens_nothing(self, tmp_path: Path) -> None:
+        """Read by review: a resolved finding's lines were counted in an earlier review's commit, and the link
+        showed that line number in this one's, which is other code."""
+        pytest.importorskip("textual")
+        import json
+
+        from textual.widgets import Input
+
+        app = _payments_screen(tmp_path)
+        said: list[str] = []
+        opened: list[str] = []
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.notify = _plainly(said)
+            app.open_url = lambda url, **_how: opened.append(url)
+            app.query_one("#pr-url", Input).value = PR_ADDRESS
+            report = json.loads(_pull_request_report(tmp_path).read_text(encoding="utf-8"))
+            gone = {"schema": 2, "findings": [], "resolved": report["findings"], "reviewed": report["reviewed"]}
+            (tmp_path / "report.json").write_text(json.dumps(gone), encoding="utf-8")
+            await _show_findings(app, pilot, tmp_path / "report.json")
+            await pilot.press("o")
+            await pilot.pause()
+            assert said == ["This finding is resolved. Its lines are of an earlier commit."] and opened == []
+
+    @pytest.mark.asyncio
+    async def test_an_edit_kept_for_one_commit_does_not_come_back_for_another(self, tmp_path: Path, fake_ado) -> None:
+        """Read by review: an edit a refused post left was kept by the finding alone. After the next review the
+        finding is the same and its lines or its code may not be, and the old text, its suggestion with it, opened
+        for the new lines."""
+        pytest.importorskip("textual")
+        from textual.widgets import TextArea
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            editor = await _editor(app, pilot)
+            drafted = editor.query_one("#comment-text", TextArea).text
+            editor.query_one("#comment-text", TextArea).text = "for the first commit"
+            await pilot.press("escape")
+            await pilot.pause()
+            app._reviewed = "c" * 40  # as the next review's commit
+            assert app._drafts and app._draft_key(app._selected_finding, fake_ado.pr, "c" * 40) not in app._drafts
+            app._reviewed = sha
+            editor = await _editor(app, pilot)
+            assert editor.query_one("#comment-text", TextArea).text == "for the first commit"
+            assert drafted != "for the first commit"
+
+    @pytest.mark.asyncio
+    async def test_no_comment_opens_while_a_review_runs_and_ctrl_x_cuts_in_the_editor(
+        self, tmp_path: Path, fake_ado
+    ) -> None:
+        """Read by review: the editor is the screen's first field of many lines, where Ctrl+X cuts. The same key
+        stops a running review from anywhere, so a cut in the editor ended a paid run and cut nothing."""
+        pytest.importorskip("textual")
+        from textual.widgets import TextArea
+
+        from tui.modals import CommentModal
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            app._reviewing = True
+            await pilot.press("c")
+            await pilot.pause()
+            assert said[-1] == "A review is running. Comment when it ends." and not isinstance(app.screen, CommentModal)
+            app._reviewing = False
+            editor = await _editor(app, pilot)
+            area = editor.query_one("#comment-text", TextArea)
+            area.text = "cut me"
+            area.select_all()
+            await pilot.press("ctrl+x")
+            await pilot.pause()
+            assert area.text == "", "the editor's own cut, since no review can run behind it"

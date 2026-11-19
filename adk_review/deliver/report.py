@@ -23,7 +23,7 @@ from ..core.health import Health, found_by_rule, grade
 from ..core.paths import in_scope, no_such_path
 from ..core.profiles import guideline_id, rule_id
 from ..core.secrets import scrub
-from ..core.text import EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, short_ref, squash
+from ..core.text import CUT_MARK, EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, short_ref, squash
 from ..core.verdict import DELETED_QUOTED, Outcome, Sourced, at_bar, without_fences
 
 #: What a terminal runs or reorders, and what a reader cannot see: escape sequences, C0 and C1 controls (U+009B is
@@ -1923,9 +1923,26 @@ def _found(item: Sourced, added: Mapping[str, frozenset[int]], identity: str = "
         # major: reported by the owner, the front end, which reads this report, showed a major as one short line.
         "why": safe_line(f.why),
         "code": safe_code(f.code),
+        # Whether that code can stand as a suggestion on those lines, which a pull request's page applies with one
+        # click by replacing them: asked by the front end, which could only guess it from what the code looked like.
+        "suggestable": _suggestable(item, placed, added.get(f.file, frozenset())),
         # Whether its suggested code is what replaced the deleted lines it quotes: the change may have done it already.
         "already_held": item.done,
     }
+
+
+def _suggestable(item: Sourced, placed: Sequence[int], added: frozenset[int]) -> bool:
+    """Whether a finding's corrected code can replace the lines it stands on, as a pull request's page does when its
+    author applies a suggestion: every one of them a line the change added, none quoted as deleted, since such a
+    quote stands on the line before it, the change not having done it already, and the code the model's own, with
+    nothing of the report's in it. Reproduced by review of the front end: the JSON's code holds a placeholder where
+    a credential stood, a space where a character no reader sees did, a broken opener where a pipeline's command
+    began, and its cut where it ran long, and each was applied as written."""
+    code = item.finding.code
+    if not code.strip() or CUT_MARK in code or item.deleted or item.done:
+        return False
+    written = "\n".join(line.rstrip() for line in without_fences(code.strip("\n").splitlines())).strip("\n")
+    return bool(placed) and all(line in added for line in placed) and safe_code(code) == written
 
 
 def _reasoned(

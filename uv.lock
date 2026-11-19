@@ -54,12 +54,14 @@ source = { editable = "tui" }
 dependencies = [
     { name = "adk-review" },
     { name = "textual" },
+    { name = "truststore" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "adk-review", editable = "." },
     { name = "textual", specifier = ">=8.0,<9.0" },
+    { name = "truststore", specifier = ">=0.10" },
 ]
 
 [[package]]

@@ -150,6 +150,11 @@ def findings() -> ModuleType:
     return importlib.import_module("tui.findings")
 
 
+def _rows_of(findings: ModuleType, report: Path) -> list:
+    """A report's findings as the screen reads them."""
+    return findings.load_report(report)[0]
+
+
 def _report(folder: Path, found: list[dict], reviewed: object = None) -> Path:
     """A review's JSON report in `folder`, holding `found` and what it says it reviewed."""
     path = folder / "report.json"
@@ -164,9 +169,9 @@ class TestWhatAReportSaysOfAFinding:
         self, findings: ModuleType, tmp_path: Path
     ) -> None:
         found = {"check": "rule.lint", "file": "a.py", "line": 42, "severity": "major", "title": "t"}
-        found |= {"fingerprint": "ab" * 8, "lines": [42, 57], "on_added_line": True}
-        row = findings.load_findings_from_json(_report(tmp_path, [found]))[0]
-        assert (row.fingerprint, row.lines, row.on_added_line, row.span()) == ("ab" * 8, (42, 57), True, (42, 57))
+        found |= {"fingerprint": "ab" * 8, "lines": [42, 57], "suggestable": True}
+        row = _rows_of(findings, _report(tmp_path, [found]))[0]
+        assert (row.fingerprint, row.lines, row.suggestable, row.span()) == ("ab" * 8, (42, 57), True, (42, 57))
 
     @pytest.mark.parametrize(
         "lines", [None, "42-57", [42], [42, 57, 60], [57, 42], [0, 3], [True, 2], ["1", "2"], [1.0, 2.0], {"a": 1}]
@@ -174,16 +179,16 @@ class TestWhatAReportSaysOfAFinding:
     def test_lines_that_are_no_range_are_none_and_the_span_falls_back_to_the_line(
         self, findings: ModuleType, tmp_path: Path, lines: object
     ) -> None:
-        row = findings.load_findings_from_json(_report(tmp_path, [{"file": "a.py", "line": 9, "lines": lines}]))[0]
+        row = _rows_of(findings, _report(tmp_path, [{"file": "a.py", "line": 9, "lines": lines}]))[0]
         assert row.lines is None and row.span() == (9, 9)
 
     def test_a_finding_with_no_line_has_no_span_and_an_old_report_reads_as_before(
         self, findings: ModuleType, tmp_path: Path
     ) -> None:
-        old = {"file": "a.py", "on_added_line": "yes", "fingerprint": 7}
-        row = findings.load_findings_from_json(_report(tmp_path, [old]))[0]
-        assert (row.span(), row.fingerprint, row.on_added_line, row.lines) == (None, "", None, None)
-        zero = findings.load_findings_from_json(_report(tmp_path, [{"file": "b.py", "line": 0}]))[0]
+        old = {"file": "a.py", "suggestable": "yes", "fingerprint": 7}
+        row = _rows_of(findings, _report(tmp_path, [old]))[0]
+        assert (row.span(), row.fingerprint, row.suggestable, row.lines) == (None, "", False, None)
+        zero = _rows_of(findings, _report(tmp_path, [{"file": "b.py", "line": 0}]))[0]
         assert zero.span() is None, "no file has a line 0"
 
     def test_the_reviewed_commit_is_read_from_the_report(self, findings: ModuleType, tmp_path: Path) -> None:
@@ -213,7 +218,7 @@ def row(findings: ModuleType):  # the module's own type
         code="total = with_tax(apply_coupon(subtotal, coupon))",
         fingerprint="1a2b3c4d5e6f7a8b",
         lines=(42, 42),
-        on_added_line=True,
+        suggestable=True,
     )
 
 
@@ -239,51 +244,38 @@ class TestTheDraftOfAComment:
         bare = replace(minor, title="", suggestion="", fingerprint="")
         assert azure.draft(bare) == "**minor**: guideline.correctness", "a finding with no title is named by its check"
 
-    @pytest.mark.parametrize(
-        "change", [{"on_added_line": False}, {"on_added_line": None}, {"lines": None, "line": None}]
-    )
-    def test_code_off_the_added_lines_is_shown_and_cannot_be_applied(
+    @pytest.mark.parametrize("change", [{"suggestable": False}, {"lines": None, "line": None}])
+    def test_code_the_report_does_not_call_suggestable_is_shown_and_cannot_be_applied(
         self, azure: ModuleType, row, change: dict
     ) -> None:
-        """A `suggestion` block replaces the lines its comment stands on, when the author applies it: only a finding
-        on lines the change added gets one, as the owner chose."""
+        """A `suggestion` block replaces the lines its comment stands on, when the author applies it. Whether the
+        code can stand there is the report's to say, and its test's to hold: here its word decides. An older report
+        says nothing, and gets none."""
         text = azure.draft(replace(row, **change))
         assert not azure.suggests(replace(row, **change))
         assert "```suggestion" not in text and "Corrected code:\n\n```\ntotal = with_tax(" in text
 
-    def test_code_the_reviewer_cut_or_hid_a_credential_in_is_never_a_suggestion(self, azure: ModuleType, row) -> None:
-        """The report cuts long code where it says so, and hides a credential behind a placeholder. "Apply changes"
-        would write either into the file."""
-        from adk_review.core.text import CUT_MARK
+    def test_a_report_of_the_reviewer_drafts_a_suggestion_only_where_it_says_so(
+        self, azure: ModuleType, findings: ModuleType, tmp_path: Path
+    ) -> None:
+        """The two ends together: the reviewer's own report, read by the front end's own loader."""
+        from conftest import as_json
 
-        for code in (f"x = 1\ny = [{CUT_MARK}1,200 characters]", 'key = "[REDACTED:github_token]"', "k = [REDACTED]"):
-            shown = replace(row, code=code)
-            assert not azure.suggests(shown), code
-            assert "```suggestion" not in azure.draft(shown) and f"Corrected code:\n\n```\n{code}\n```" in azure.draft(
-                shown
-            )
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
 
-    @pytest.mark.parametrize(
-        "written",
-        [
-            'echo "##vso[task.setvariable variable=tag]$(v)"',
-            "    ::set-output name=tag::v1",
-            "x = 1  # <!-- kept for the template -->",
-            "echo '##[group]build'",
-        ],
-    )
-    def test_code_the_report_made_inert_is_never_a_suggestion(self, azure: ModuleType, row, written: str) -> None:
-        """Reproduced by review: the report breaks a pipeline's command openers and an HTML comment's in every line
-        of corrected code, a space put in. A suggestion drafted from that text would commit the broken line. Each
-        case is made by the report's own rule: where that rule changes, and the front end's reading of it does not,
-        this test fails."""
-        from adk_review.deliver.report import safe_code
+        def found(code: str) -> Sourced:
+            said = Finding(file="a.py", line=3, severity="major", title="t", evidence="e", suggestion="s", code=code)
+            return Sourced("guideline.correctness", said, (3, 3))
 
-        reported = safe_code(written)
-        assert reported != written, "the report changed it"
-        shown = replace(row, code=reported)
-        assert not azure.suggests(shown) and "```suggestion" not in azure.draft(shown)
-        assert azure.suggests(replace(row, code=written)), "as written, which a report never holds, it would apply"
+        outcome = Outcome(kept=[found("x = 2"), found('echo "##vso[task.setvariable variable=a]b"')])
+        data = as_json(outcome, [{"path": "a.py", "added_at": frozenset({3})}], checks=("guideline.correctness",))
+        (tmp_path / "report.json").write_text(json.dumps(data), encoding="utf-8")
+        drafts = [azure.draft(row) for row in findings.load_report(tmp_path / "report.json")[0]]
+        assert sorted("```suggestion" in draft for draft in drafts) == [False, True]
+        assert any('Corrected code:\n\n```\necho "##vso [task' in draft for draft in drafts), (
+            "inert, and shown as it is"
+        )
 
     def test_a_blank_line_that_opens_the_code_is_kept(self, azure: ModuleType, row) -> None:
         opened = replace(row, code="\n    total = with_tax(subtotal)\n\n")
@@ -592,6 +584,23 @@ class TestTheClient:
         assert [asked.thread_of(mark * 8) for mark in ("ab", "cd", "ef")] == [5, None, None]
         assert asked.thread_of("") is None and len(fake_ado.seen) == 3, "a finding with no identity asks nothing"
 
+    def test_a_thread_is_found_by_its_own_words_where_its_mark_is_gone(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        """Read by review: the person deletes the mark's line, the post arrives and its answer does not, and the
+        screen says to press c again. With no mark to find, the same words were posted a second time."""
+        said = "**major**: `charge()` adds tax twice\n\nThe coupon path taxes a taxed total."
+        other = {
+            "id": 4,
+            "comments": [{"content": said + " And more."}, {"content": said}],
+        }  # a reply is no thread's own
+        same = {"id": 9, "comments": [{"content": said + "\n"}]}
+        fake_ado.answer("GET", "/threads", {"value": [other, same]})
+        asked = client.Client(fake_ado.pr, FakeToken())
+        assert asked.thread_of("", said) == 9, "its first comment says the same, the space at its ends aside"
+        assert asked.thread_of("ab" * 8, "other words") is None
+        assert asked.thread_of("", "") is None and len(fake_ado.seen) == 2, "nothing to find by: nothing asked"
+
     def test_a_post_sends_the_payload_as_utf_8_and_answers_the_threads_id(
         self, client: ModuleType, fake_ado: FakeAdo
     ) -> None:
@@ -619,8 +628,9 @@ class TestTheClient:
             (401, {"X-VSS-ResourceTenant": "x; rm -rf"}, b"", "Run `az login`, then post again"),
             (401, {"X-VSS-ResourceTenant": "00000000-0000-0000-0000-000000000000"}, b"", "Run `az login`, then"),
             (203, {"Content-Type": "text/html"}, b"<html>Sign in</html>", "Run `az login`, then post again"),
-            (200, {"Content-Type": "text/html"}, b"<html>Sign in</html>", "Run `az login`, then post again"),
-            (200, {}, b"[1, 2]", "Run `az login`, then post again"),
+            (200, {"Content-Type": "text/html"}, b"<html>Blocked</html>", "answered with no answer of its own"),
+            (200, {}, b"[1, 2]", "answered with no answer of its own"),
+            (200, {}, b"", "A proxy or a sign-in page may stand before it"),
             (403, {}, b"", 'Ask for the "Contribute to pull requests" permission'),
             (404, {}, b"", "found no such pull request. Check the address"),
             (
@@ -654,6 +664,21 @@ class TestTheClient:
             with pytest.raises(client.AzureError):
                 call()
         assert token.forgot == 2, "a 403 is no refused login: the same token is right"
+
+    def test_a_page_where_an_answer_was_due_is_no_refused_login(self, client: ModuleType, fake_ado: FakeAdo) -> None:
+        """Read by review: a company's proxy answers 200 with its own page, and the client called it a refused
+        login and forgot a good token. The person logged in again to no effect, and each call after started `az`
+        again. A post answered so may have arrived."""
+        token = FakeToken()
+        fake_ado.answer("GET", "", raw=b"<html>Blocked by policy</html>")
+        fake_ado.answer("POST", "/threads", raw=b"<html>Blocked by policy</html>")
+        asked = client.Client(fake_ado.pr, token)
+        with pytest.raises(client.AzureError, match="run `az login`") as read:
+            asked.status()
+        with pytest.raises(client.AzureError) as posted:
+            asked.post({"comments": []})
+        assert token.forgot == 0 and not read.value.unsure and posted.value.unsure
+        _short_sentences(str(read.value))
 
     def test_a_redirect_is_never_followed_so_the_token_goes_nowhere_else(
         self, client: ModuleType, fake_ado: FakeAdo
@@ -858,14 +883,18 @@ class TestOnePost:
         assert posted == client.Posted(5, already=True)
         assert all(seen.method == "GET" for seen in fake_ado.seen)
 
-    def test_a_finding_with_no_identity_is_posted_with_no_search_for_its_like(
+    def test_the_same_words_are_never_posted_twice_whatever_the_mark(
         self, client: ModuleType, fake_ado: FakeAdo
     ) -> None:
         _ready_to_comment(fake_ado, "b" * 40)
+        fake_ado.instead("GET", "/threads", {"value": [{"id": 9, "comments": [{"content": "my own words"}]}]})
         asked = client.Client(fake_ado.pr, FakeToken())
-        assert client.post_comment(asked, text="t", place=_place(), commit="b" * 40, fingerprint="").thread == 148
-        assert [seen.method for seen in fake_ado.seen].count("POST") == 1
-        assert ("GET", fake_ado.root + "/threads") not in [(seen.method, seen.path) for seen in fake_ado.seen]
+        for fingerprint in ("", "ab" * 8):
+            posted = client.post_comment(
+                asked, text="my own words", place=_place(), commit="b" * 40, fingerprint=fingerprint
+            )
+            assert posted == client.Posted(9, already=True)
+        assert all(seen.method == "GET" for seen in fake_ado.seen)
 
 
 @pytest.fixture

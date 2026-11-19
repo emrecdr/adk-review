@@ -2458,6 +2458,42 @@ class TestTheJsonReport:
         data = as_json(outcome, [{"path": "a.py", "added_at": frozenset({3})}], checks=("rule.lint",))
         assert [f["on_added_line"] for f in data["findings"]] == [True, False, None, True]
 
+    def test_the_json_says_whether_a_findings_code_can_stand_as_a_suggestion_on_its_lines(self) -> None:
+        """A pull request's page applies a suggestion with one click: it replaces the lines the comment stands on
+        with the code. Reproduced by three reviews of the front end, which guessed it from marks left in the text:
+        a quote that holds a deleted line stands on the line before it, which the change left alone, and that line
+        was replaced too; code the report had hidden a credential in, made inert, or put a space in for a character
+        no reader sees was written into the file as the report left it. Only the report knows each of these."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+
+        def at(lines, code="x = 2", **said) -> Sourced:
+            line = lines[0] if lines else None
+            found = Finding(
+                file="a.py", line=line, severity="major", title="t", evidence="e", suggestion="s", code=code
+            )
+            return Sourced("guideline.correctness", found, lines, **said)
+
+        key = "AKIA" + "Q" * 16  # joined here: no line of this file holds a key's shape
+        cases = {
+            "every line added, the code as written": (at((3, 4)), True),
+            "one added line": (at((3, 3), "    return total\n"), True),
+            "a fence of the model's own around it": (at((3, 4), "```python\nx = 2\n```"), True),
+            "a line the change left alone": (at((2, 3)), False),
+            "a deleted line in its quote": (at((3, 4), deleted=True), False),
+            "what the change already did": (at((3, 4), done=True), False),
+            "no code": (at((3, 4), ""), False),
+            "no line": (at(None), False),
+            "a pipeline's command made inert": (at((3, 4), 'echo "##vso[task.setvariable variable=a]b"'), False),
+            "an HTML comment made inert": (at((3, 4), "x = 1  # <!-- kept -->"), False),
+            "a character no reader sees": (at((3, 4), 'x = "' + chr(0x200B) + '"'), False),
+            "a credential hidden": (at((3, 4), f'key = "{key}"'), False),
+        }
+        files = [{"path": "a.py", "added_at": frozenset({3, 4})}]
+        data = as_json(Outcome(kept=[item for item, _fits in cases.values()]), files, checks=("guideline.correctness",))
+        said = dict(zip(cases, (found["suggestable"] for found in data["findings"]), strict=True))
+        assert said == {name: fits for name, (_item, fits) in cases.items()}
+
     def test_a_real_review_says_which_findings_stand_on_an_added_line(self, cli, demo_repo, tmp_path) -> None:
         """Measured: the checks node let go of each file's added lines before the JSON read them, so no finding of a
         real review stood on an added line. Their numbers are kept apart; the planted key is on an added line."""

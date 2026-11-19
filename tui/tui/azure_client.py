@@ -165,7 +165,7 @@ class Client:
 
     def __init__(self, pr: PullRequest, credential: Credential, *, sleep: Callable[[float], None] = time.sleep) -> None:
         self._pr, self._credential, self._sleep = pr, credential, sleep
-        self._opener = _opener()
+        self._opener: urllib.request.OpenerDirector | None = None  # built at the first call, off the screen's loop
         self._changed: dict[int, dict[str, int]] = {}  # an iteration's files, read once: its changes never change
 
     def status(self) -> str:
@@ -203,18 +203,22 @@ class Client:
                 return found
             skip = onward
 
-    def thread_of(self, fingerprint: str) -> int | None:
-        """A thread whose comment carries this finding's mark, anyone's: a teammate's post of it is a duplicate
-        too. A deleted thread or comment is none."""
-        if not fingerprint:
+    def thread_of(self, fingerprint: str, text: str = "") -> int | None:
+        """A thread that is this finding's already: one whose comment carries its mark, anyone's, since a teammate's
+        post of it is a duplicate too, or one that opens with the very words of `text`. Read by review: the person
+        may take the mark out, and a post that arrived with no answer was then posted again. A deleted thread or
+        comment is none, and a reply that says the same is no thread of its own."""
+        words = text.strip()
+        if not fingerprint and not words:
             return None
         for thread in _dicts(self._call("GET", self._pr.api("threads")).get("value")):
             if thread.get("isDeleted") or type(thread.get("id")) is not int:
                 continue
-            for comment in _dicts(thread.get("comments")):
-                said = comment.get("content")
-                if not comment.get("isDeleted") and isinstance(said, str) and marked(said) == fingerprint:
-                    return thread["id"]
+            kept = [comment for comment in _dicts(thread.get("comments")) if not comment.get("isDeleted")]
+            said = [comment["content"] for comment in kept if isinstance(comment.get("content"), str)]
+            marks = fingerprint and any(marked(one) == fingerprint for one in said)
+            if marks or (words and said and said[0].strip() == words):
+                return thread["id"]
         return None
 
     def post(self, payload: dict) -> int:
@@ -240,8 +244,10 @@ class Client:
         for waited in (False, True):
             request = _request(full, data, headers, method)
             try:
+                if self._opener is None:
+                    self._opener = _opener()
                 with self._opener.open(request, timeout=HTTP_TIMEOUT_S) as answer:
-                    return self._answered(answer.status, answer.read())
+                    return self._answered(answer.status, answer.read(), posting=data is not None)
             except urllib.error.HTTPError as refused:
                 self._sleep(self._wait(refused, waited=waited, posting=data is not None))
             except (OSError, http.client.HTTPException) as failed:
@@ -251,12 +257,20 @@ class Client:
                 raise AzureError(_unreached(failed), unsure=data is not None) from None
         raise AssertionError("a second 429 is a sentence")
 
-    def _answered(self, status: int, raw: bytes) -> dict:
-        """A 2xx's JSON object. A 203, or any other body, is Azure DevOps' sign-in page: it answers a login it does
-        not accept with one, where another service would answer 401."""
-        answer = None if status == HTTPStatus.NON_AUTHORITATIVE_INFORMATION else _object(raw)
-        if answer is None:
+    def _answered(self, status: int, raw: bytes, *, posting: bool) -> dict:
+        """A 2xx's JSON object. A 203 is Azure DevOps' sign-in page: it answers a login it does not accept with one,
+        where another service would answer 401. Any other body that is no object is not known to be its own: read
+        by review, a company's proxy answers 200 with its own page, and called a refused login it cost a good token
+        and sent the person to log in to no effect. A post answered so may have arrived."""
+        if status == HTTPStatus.NON_AUTHORITATIVE_INFORMATION:
             raise self._no_login(None)
+        answer = _object(raw)
+        if answer is None:
+            said = (
+                "Azure DevOps answered with no answer of its own. A proxy or a sign-in page may stand before it. "
+                "Check the network, or run `az login`, then post again."
+            )
+            raise AzureError(said, unsure=posting)
         return answer
 
     def _wait(self, refused: urllib.error.HTTPError, *, waited: bool, posting: bool) -> float:
@@ -327,7 +341,7 @@ def post_comment(client: Client, *, text: str, place: Place, commit: str, finger
             )
         raise AzureError(f"The pull request never held commit {commit[:7]}. Check the address and the branch reviewed.")
     iteration = pushed[-1][0]
-    if (thread := client.thread_of(fingerprint)) is not None:
+    if (thread := client.thread_of(fingerprint, text)) is not None:
         return Posted(thread, already=True)
     if (change := client.change_of(iteration, place.path)) is None:
         raise AzureError(f"The pull request does not change {place.path}. No line can hold the comment.")

@@ -191,6 +191,9 @@ class AdkReviewTuiApp(App[int]):
             return False
         if action in self.ON_A_FINDING and not self._on_findings_tab():
             return False
+        if action == "stop_review" and isinstance(self.screen, CommentModal):
+            # Ctrl+X is the editor's own cut there, and nothing runs to stop: no comment opens while a review runs.
+            return False
         return not (action in self.BEHIND_NO_DIALOG and isinstance(self.screen, ModalScreen))
 
     def _run_waits(self) -> bool:
@@ -215,10 +218,11 @@ class AdkReviewTuiApp(App[int]):
         self._pull_request: PullRequest | None = None  # the address field's, where it reads as one
         self._pull_request_of: tuple[str, str] | None = None  # the repository and branch the field was restored for
         self._kept_address: str = ""  # what the state holds for that pair, so it is written when it changes alone
+        self._head_chosen: bool = False  # whether the branch under review is the picked repository's own yet
         self._posted_threads: dict[str, int] = {}  # the pull request's posted findings, read when it changes
         self._credential: Credential = AzLogin()  # the person's own `az` login, asked only when a comment is posted
         self._clients: dict[str, Client] = {}  # one a pull request, by its address: what it read once is kept
-        self._drafts: dict[str, str] = {}  # an edit a refused post left, by finding, so no words are lost
+        self._drafts: dict[tuple[str, str, str], str] = {}  # an edit left for later: where it belongs, and its text
         self._commenting: bool = False  # a comment from its key to its answer: one at a time
         self.selected_root: RootDir = self.tui_config.root_dirs[0]
         self.selected_project: ProjectInfo | None = None
@@ -480,6 +484,7 @@ class AdkReviewTuiApp(App[int]):
             # branches, a repository set every option back to its preset, a switch turned on among them.
             self._repo_loaded_path = ""
             self.branches = []
+            self._head_chosen = False
             self._forget_pull_request()
             if prev_path:
                 self._reset_outputs()
@@ -605,6 +610,7 @@ class AdkReviewTuiApp(App[int]):
             base_default = preferred_base_branch(project.path, branches, head_default, preset.base if preset else "")
         self.selected_head = head_default
         self.selected_base = base_default
+        self._head_chosen = True
         self._render_branch_lists()
         self._set_banner(f"{project.name}: {said} | Head: {self.selected_head} | Base: {self.selected_base}")
         await self._refresh_folders()
@@ -1111,20 +1117,26 @@ class AdkReviewTuiApp(App[int]):
         threads did, and a finding of the same identity in a second clone showed as posted."""
         self._pull_request_of = None
         if self._has_dom("#pr-url", "#pr-status"):
+            field = self.query_one("#pr-url", Input)
             with self.prevent(Input.Changed):
-                self.query_one("#pr-url", Input).value = ""
+                field.value = ""
+            field.disabled = True  # until the repository's own branch is chosen: an address is a branch's
             self._read_pull_request("", keep=False)
 
     def _restore_pull_request(self) -> None:
         """The address kept for the repository and branch now chosen, put back in its field: once for a pair, so
         nothing the person types is replaced by a later refresh."""
         pair = self._pair()
-        if pair == self._pull_request_of or not self._has_dom("#pr-url"):
+        # Never while another repository loads: reproduced by review, a change of the mode then ran the folders'
+        # refresh, the branch still the last repository's, and an address was put back, and kept, for that pair.
+        if pair == self._pull_request_of or not self._head_chosen or not self._has_dom("#pr-url"):
             return
         self._pull_request_of = pair
         kept = self._kept_address = pull_request_url(*pair)
+        field = self.query_one("#pr-url", Input)
         with self.prevent(Input.Changed):
-            self.query_one("#pr-url", Input).value = kept
+            field.value = kept
+        field.disabled = False
         self._read_pull_request(kept, keep=False)
 
     def _pair(self) -> tuple[str, str]:
@@ -1170,6 +1182,11 @@ class AdkReviewTuiApp(App[int]):
             return
         row, pr = ready
         span = row.span()
+        if (
+            row.tier == "Resolved"
+        ):  # counted in an earlier review's commit: this one's line of that number is other code
+            self.notify("This finding is resolved. Its lines are of an earlier commit.", timeout=6, markup=False)
+            return
         if span is None or self._reviewed is None:
             self.notify(NO_COMMIT if self._reviewed is None else NO_LINE, timeout=6, markup=False)
             return
@@ -1187,6 +1204,8 @@ class AdkReviewTuiApp(App[int]):
         """Why `row` takes no comment, as a sentence, or nothing where it takes one."""
         if self._commenting:
             return "A comment is on its way. Wait for its answer."
+        if self._reviewing:  # Ctrl+X stops a review from anywhere, and cuts in the editor: never both at once
+            return "A review is running. Comment when it ends."
         if row.tier == "Resolved":
             return "This finding is resolved. There is nothing to comment on."
         if self._reviewed is None or self.selected_project is None:
@@ -1227,7 +1246,9 @@ class AdkReviewTuiApp(App[int]):
             self.notify(said, severity="warning", timeout=8, markup=False)
             return
         where = f"line {first}" if first == last else f"lines {first} to {last}"
-        text = await self._edited(row, f"{row.file}, {where}, pull request {pr.number}", lines[first - 1 : last])
+        kept = self._draft_key(row, pr, reviewed)
+        target = f"{row.file}, {where}, pull request {pr.number}"
+        text = await self._edited(row, kept, target, lines[first - 1 : last])
         if text is not None:
             place = Place(row.file, first, last, lines[last - 1])
             await self._post(row, pr, text, place, reviewed)
@@ -1260,14 +1281,18 @@ class AdkReviewTuiApp(App[int]):
         return True
 
     @staticmethod
-    def _draft_key(row: FindingRow) -> str:
-        """What an edit left for later is kept under: the finding's identity, or its place where it has none."""
-        return row.fingerprint or row.location()
+    def _draft_key(row: FindingRow, pr: PullRequest, commit: str) -> tuple[str, str, str]:
+        """What an edit left for later is kept under: its pull request, the commit reviewed, and the finding's
+        identity, or its place where it has none. Read by review: kept by the finding alone, an edit came back after
+        the next review, the same finding on other lines, and in another pull request."""
+        return pr.web, commit, row.fingerprint or row.location()
 
-    async def _edited(self, row: FindingRow, target: str, lines: Sequence[str]) -> str | None:
+    async def _edited(
+        self, row: FindingRow, kept: tuple[str, str, str], target: str, lines: Sequence[str]
+    ) -> str | None:
         """The comment as the person edited it and said yes to, or None where they closed the editor. An edit they
         closed is kept for the next `c`. A draft left as it was, or emptied, is drafted again."""
-        kept, drafted = self._draft_key(row), draft(row)
+        drafted = draft(row)
         text = self._drafts.get(kept) or drafted
         while True:
             post, text = await self.push_screen_wait(CommentModal(text, target, lines))
@@ -1288,7 +1313,7 @@ class AdkReviewTuiApp(App[int]):
                 post_comment, self._client(pr), text=text, place=place, commit=commit, fingerprint=row.fingerprint
             )
         except AzureError as refused:
-            self._drafts[self._draft_key(row)] = text
+            self._drafts[self._draft_key(row, pr, commit)] = text
             # Never "not posted" where the post may have arrived: read by review, the person then pasted it by hand.
             # The client says what happened, and the screen names its own key for what to do.
             check = "Press c again: one that arrived is found, and no second one is sent."
@@ -1297,7 +1322,7 @@ class AdkReviewTuiApp(App[int]):
             said = f"{refused} {check}" if refused.unsure else str(refused)
             self.notify(said, severity="error", timeout=12, markup=False)
             return
-        self._drafts.pop(self._draft_key(row), None)
+        self._drafts.pop(self._draft_key(row, pr, commit), None)
         said = f"Posted as thread {posted.thread}. Press p to open it."
         if posted.already:
             said = f"This finding was posted before, as thread {posted.thread}. Nothing was posted."

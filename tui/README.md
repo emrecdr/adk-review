@@ -122,14 +122,19 @@ when you ask. The reviewer itself posts nothing, as before: this is the screen's
 | `p` | The pull request at the finding's file, or at its comment once posted |
 | `c` | The comment's draft, in an editor |
 
-`o` and `p` also show the link in the line under the steps, to copy where no browser opens, as over SSH.
+`o` and `p` also show the link in the line under the steps, to copy where no browser opens, as over SSH. The
+address field takes nothing while a repository's branches load. No comment opens while a review runs: `Ctrl+X` stops
+a review from anywhere, and in the editor it cuts.
 
 The draft is the finding's own words: its severity and title, its reason, what to change, and its corrected code.
-Edit it as you like: you are its author. Where the finding stands on lines the change added, the code is a
-`suggestion` block, which the pull request's author applies with one click. The editor shows the lines your comment
-stands on, which a suggestion replaces: check that it fits, or delete the block. Code the report cut, or changed to
-keep its own output safe, is shown and never a suggestion. The last line names the tool, the check and the finding.
-Keep it: it finds the comment again, so a finding is never posted twice, by you or by a teammate.
+Edit it as you like: you are its author. Where the review's report calls the code `suggestable`, it is a `suggestion`
+block, which the pull request's author applies with one click. The report says so only where every line the finding
+stands on is one the change added, its quote holds no deleted line, and the code is the model's own, with nothing
+cut, hidden or changed by the report. Any other code is shown and cannot be applied. The editor shows the lines your
+comment stands on, which a suggestion replaces: check that it fits, or delete the block. The last line names the
+tool, the check and the finding. Keep it: it finds the comment again. A comment with the same words is found too, so
+a finding is not posted twice, by you or by a teammate. A report written before this field was added drafts no
+suggestion: review the branch again.
 
 **Post** asks once more, naming the file, the lines and the pull request. Then one comment is posted, as you, on
 those lines. **Copy** gives you the text to paste by hand. Nothing is sent before the confirmation, and never more

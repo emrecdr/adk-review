@@ -28,12 +28,12 @@ class FindingRow:
     #: The finding's reason, at any severity, and the corrected code where a model gave one: empty where none.
     why: str = ""
     code: str = ""
-    #: The finding's identity across reviews, the lines the diff places it on, and whether the change added one of
-    #: them: what a link, a comment's mark and its place in a pull request are built from. Empty or None where the
-    #: report holds none.
+    #: The finding's identity across reviews, the lines the diff places it on, and whether its corrected code can
+    #: stand as a suggestion on them, as the report says: what a link, a comment's mark, its place in a pull request
+    #: and its draft are built from. Empty, None or False where the report holds none, as an older one holds none.
     fingerprint: str = ""
     lines: tuple[int, int] | None = None
-    on_added_line: bool | None = None
+    suggestable: bool = False
 
     def location(self) -> str:
         """Display location formatted as `file:line` or `file`."""
@@ -64,7 +64,7 @@ def _row_from_item(item: dict, tier: str) -> FindingRow:
         code=str(item.get("code") or ""),
         fingerprint=fingerprint if isinstance(fingerprint := item.get("fingerprint"), str) else "",
         lines=_range(item.get("lines")),
-        on_added_line=added if isinstance(added := item.get("on_added_line"), bool) else None,
+        suggestable=item.get("suggestable") is True,
     )
 
 
@@ -94,11 +94,6 @@ def _read(json_path: Path) -> dict | None:
     except OSError, json.JSONDecodeError, UnicodeDecodeError:
         return None
     return raw if isinstance(raw, dict) else None
-
-
-def load_findings_from_json(json_path: Path) -> list[FindingRow]:
-    """Load `findings`, `old_findings`, and `resolved` entries from a JSON report, sorted by priority."""
-    return load_report(json_path)[0]
 
 
 def _commit(raw: dict) -> str | None:
