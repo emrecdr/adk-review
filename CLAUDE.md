@@ -260,9 +260,10 @@ Load-bearing rules the tests enforce:
   fake Azure DevOps on a local port, and a fake `az`. Every string a
   repository, a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a tag. On Windows, from cmd
   and PowerShell alike: the command it shows is quoted by `windows_word`, or not shown; no key is one a terminal sends
-  as another or the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first and none but Stop runs behind a
-  dialog; a review it runs gets UTF-8 streams; and a copy goes to Windows' own clipboard too. `adk_review/` still leaves
-  a `tui/` folder out of the cache key: a checkout keeps a person's old config there.
+  as another or the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first, Stop while a review runs
+  alone, since Ctrl+X is a text field's cut, and none but Stop runs behind a dialog; a review it runs gets UTF-8
+  streams; and a copy goes to Windows' own clipboard too. `adk_review/` still leaves a `tui/` folder out of the cache
+  key: a checkout keeps a person's old config there.
 - **Layering** (`tests/test_layering.py`): `core` → `collect` → `judge` → `deliver`, with imports pointing one way
   only, never spelled from the top (`adk_review.…`), `deliver/` importing `core` alone, a guideline importing `core`
   alone, and a rule importing one door, `judge/rule_helpers/`, alone, which imports `core` alone and lists in `__all__`

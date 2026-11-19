@@ -126,8 +126,8 @@ when you ask. The reviewer itself posts nothing, as before: this is the screen's
 | `c` | The comment's draft, in an editor |
 
 `o` and `p` also show the link in the line under the steps, to copy where no browser opens, as over SSH. The
-address field takes nothing while a repository's branches load. No comment opens while a review runs: `Ctrl+X` stops
-a review from anywhere, and in the editor it cuts.
+address field takes nothing while a repository's branches load. No comment opens while a review runs, so in the
+editor `Ctrl+X` is always its own cut.
 
 The draft is the finding's own words: its severity and title, its reason, what to change, and its corrected code.
 Edit it as you like: you are its author. Where the review's report calls the code `suggestable`, it is a `suggestion`
@@ -199,7 +199,7 @@ As the reviewer does, the screen reads a repository, and writes into it only whe
 |---|---|
 | `Ctrl+R` | Run the review |
 | `Ctrl+D` | Run a `--dry-run`: what the review would cover and run, nothing run |
-| `Ctrl+X` | Stop a running review |
+| `Ctrl+X` | Stop a running review. With no review running, it cuts the chosen text in a text field |
 | `Ctrl+T` | Minimize every panel |
 | `Ctrl+O` | Restore every panel |
 | `Ctrl+Y` | Copy the open tab: the report, a finding, the comment or the hand-off |
@@ -211,10 +211,12 @@ As the reviewer does, the screen reads a repository, and writes into it only whe
 | `c` | Comment on the chosen finding in its pull request: a draft to edit, a confirmation, then one post |
 | `q` | Quit |
 
-The action keys work wherever the focus is, a text field included. While a dialog is open, only `Ctrl+X` works,
-and while a review runs, `Ctrl+R` and `Ctrl+D` wait for it to end: they never restart it. `o`, `p` and `c` are plain
-letters: they act on the Findings tab alone, where no text field has the focus, and they need the pull request's
-address in the field above the table.
+The action keys work wherever the focus is, a text field included. `Ctrl+X` stops a review while one runs, and
+only then: with none running it is a text field's own cut. While a dialog is open, only `Ctrl+X` works, and while a
+review runs, `Ctrl+R` and `Ctrl+D` wait for it to end: they never restart it. The line under the screen shows the
+keys that act now: Stop while a review runs, Run and Dry Run while none does. `o`, `p` and `c` are plain letters:
+they act on the Findings tab alone, where no text field has the focus, and they need the pull request's address in
+the field above the table.
 
 ## On Windows
 

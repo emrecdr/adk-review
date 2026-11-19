@@ -1119,7 +1119,9 @@ class TestWindowsAndItsShells:
         """Read by review: Ctrl+M, Minimize/Expand All, is the Enter a terminal sends, which Textual reads as Enter
         and a list takes to choose its item, and which the classic Windows console keeps for its mark mode; and in a
         text field Textual's own Ctrl+D deletes and Ctrl+X cuts, so Dry Run and Stop did nothing while a filter had
-        the focus. Ctrl+T folds the sections now, and each action key goes first wherever the focus is."""
+        the focus. Ctrl+T folds the sections now, and each action key goes first wherever the focus is. Stop goes
+        first while a review runs, and only then: with none running it stopped nothing and took the cut from every
+        field, so the key is the field's own there."""
         pytest.importorskip("textual")
         from textual.widgets import Collapsible, Input
 
@@ -1143,7 +1145,11 @@ class TestWindowsAndItsShells:
             await _wait_for_branches(app, pilot)
             app.query_one("#repo-filter", Input).focus()
             await pilot.press("ctrl+d", "ctrl+x", "ctrl+r")
-            assert ran == [True, "stop", False], ran
+            assert ran == [True, False], f"no review runs, so there is none to stop: {ran}"
+            app._reviewing = True
+            await pilot.press("ctrl+x")
+            assert ran == [True, False, "stop"], f"a review runs: Stop goes first, in a text field too: {ran}"
+            app._reviewing = False
             app.query_one("#repo-list").focus()
             await pilot.press("ctrl+t")
             await pilot.pause()
@@ -1156,7 +1162,12 @@ class TestWindowsAndItsShells:
             await pilot.pause()
             await pilot.press("ctrl+r", "ctrl+d", "ctrl+t", "ctrl+x")
             await pilot.pause()
+            assert ran == [] and isinstance(app.screen, SyncBranchModal), ran
+            app._reviewing = True
+            await pilot.press("ctrl+r", "ctrl+d", "ctrl+t", "ctrl+x")
+            await pilot.pause()
             assert ran == ["stop"] and isinstance(app.screen, SyncBranchModal), ran
+            app._reviewing = False
             assert all(box.collapsed for box in shown), "nor did Ctrl+T unfold the sections behind it"
             await pilot.press("ctrl+o")
             await pilot.pause()
@@ -1704,6 +1715,108 @@ class TestWhatTheCodeReviewFound:
             release.set()
             await pilot.pause()
             await app.workers.wait_for_complete()
+
+    @pytest.mark.asyncio
+    async def test_ctrl_x_stops_a_running_review_and_is_a_text_fields_cut_otherwise(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The owner's decision: Stop went first wherever the focus was, a review running or none. With none running
+        it stopped nothing, wrote "Review stopped by user." and took Ctrl+X from every text field, a filter's and
+        the pull request's address among them: no text could be cut. It goes first while a review runs alone now,
+        and the line under the screen shows it then alone, as it shows Run and Dry Run while none runs."""
+        pytest.importorskip("textual")
+        import asyncio
+
+        from textual.widgets import Input
+        from textual.widgets._footer import FooterKey
+
+        from tui.app import AdkReviewTuiApp
+
+        _init_repo_with_remote(tmp_path)
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        started: list[list[str]] = []
+        stopped: list[str] = []
+        release = asyncio.Event()
+
+        async def slow(cmd: list[str]) -> tuple[int, str]:
+            started.append(cmd)
+            await release.wait()
+            return 0, ""
+
+        monkeypatch.setattr(AdkReviewTuiApp, "action_stop_review", lambda _self: stopped.append("stop"))
+        app = AdkReviewTuiApp(config_path=cfg)
+
+        def shown() -> set[str]:
+            return {key.action for key in app.query(FooterKey)} & {"stop_review", "run_review", "run_dry"}
+
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            app.selected_base = "origin/main"
+            monkeypatch.setattr(app, "_stream_subprocess", slow)
+            field = app.query_one("#repo-filter", Input)
+            field.focus()
+            field.value = "my"  # part of the repository's name: the list keeps it
+            field.select_all()
+            await pilot.press("ctrl+x")
+            await pilot.pause()
+            assert (field.value, stopped) == ("", []), "no review runs: the field's own cut"
+            assert shown() == {"run_review", "run_dry"}, "and the line under the screen offers no Stop"
+            await pilot.press("ctrl+r")
+            await pilot.pause(0.2)
+            assert len(started) == 1 and shown() == {"stop_review"}, shown()
+            field.value = "serv"
+            field.select_all()
+            await pilot.press("ctrl+x")
+            await pilot.pause()
+            assert (field.value, stopped) == ("serv", ["stop"]), "a review runs: Stop goes first, and nothing is cut"
+            release.set()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert shown() == {"run_review", "run_dry"}, "the review ended: Run and Dry Run again, and no Stop"
+
+    @pytest.mark.asyncio
+    async def test_a_review_the_closing_screen_cuts_short_ends_cleanly(self, tmp_path: Path, monkeypatch) -> None:
+        """The line under the screen is redrawn where a review ends, and a review ends too where the closing screen
+        cancels it. Measured: on a screen that closed, Textual's redraw raises `ScreenStackError`, which a worker
+        turns into `WorkerFailed`. A test's harness cancels a worker after it closes the screens, as here; nothing is
+        redrawn there."""
+        pytest.importorskip("textual")
+        import asyncio
+
+        from tui.app import AdkReviewTuiApp
+
+        _init_repo_with_remote(tmp_path)
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        started: list[list[str]] = []
+
+        async def never_ends(cmd: list[str]) -> tuple[int, str]:
+            started.append(cmd)
+            await asyncio.Event().wait()
+            return 0, ""
+
+        app = AdkReviewTuiApp(config_path=cfg)
+        close_the_screens = app._close_all
+
+        async def close_then_cancel_the_review() -> None:
+            await close_the_screens()
+            reviews = [worker for worker in app.workers if worker.group == "review_exec"]
+            app.workers.cancel_group(app, "review_exec")
+            await asyncio.wait_for(asyncio.gather(*(w.wait() for w in reviews), return_exceptions=True), 10)
+
+        monkeypatch.setattr(app, "_close_all", close_then_cancel_the_review)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            app.selected_base = "origin/main"
+            monkeypatch.setattr(app, "_stream_subprocess", never_ends)
+            await pilot.press("ctrl+r")
+            await pilot.pause(0.2)
+            assert len(started) == 1 and app._reviewing
+        assert app._reviewing is False
 
     def test_moving_a_branch_to_its_remote_writes_no_tracking_into_its_config(self, tmp_path: Path) -> None:
         """Read by review: `git branch -f x origin/x` also made `x` track `origin/x`, a line in the repository's config

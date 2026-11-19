@@ -191,9 +191,11 @@ class AdkReviewTuiApp(App[int]):
             return False
         if action in self.ON_A_FINDING and not self._on_findings_tab():
             return False
-        if action == "stop_review" and isinstance(self.screen, CommentModal):
-            # Ctrl+X is the editor's own cut there, and nothing runs to stop: no comment opens while a review runs.
-            return False
+        if action == "stop_review":
+            # Stop goes first while a review runs, and only then: with none running it stopped nothing and took
+            # Ctrl+X, a text field's own cut, from every field. No comment opens while a review runs, so the key is
+            # the comment editor's own too.
+            return self._reviewing
         return not (action in self.BEHIND_NO_DIALOG and isinstance(self.screen, ModalScreen))
 
     def _run_waits(self) -> bool:
@@ -1466,7 +1468,7 @@ class AdkReviewTuiApp(App[int]):
             self._set_banner("Branch Under Review and Target Branch cannot be the same.")
             return
         label = "dry-run" if dry_run else "review"
-        self._reviewing = True
+        self._set_reviewing(True)
         try:
             await self._run_review(dry_run=dry_run, label=label)
         except (OSError, ValueError) as exc:
@@ -1475,7 +1477,15 @@ class AdkReviewTuiApp(App[int]):
             self._set_banner(f"The {label} could not run: {exc}")
             self.notify(f"The {label} could not run: {exc}", severity="error", timeout=8, markup=False)
         finally:
-            self._reviewing = False
+            self._set_reviewing(False)
+
+    def _set_reviewing(self, on: bool) -> None:
+        """Whether a review runs, and the line under the screen redrawn for it: it shows the keys that act now, Stop
+        while one runs and the two runs while none does. Nothing is redrawn once the screen has closed: measured,
+        Textual's redraw raises `ScreenStackError` there, where a closing screen cut a review short."""
+        self._reviewing = on
+        if self.is_running:
+            self.refresh_bindings()
 
     async def _run_review(self, *, dry_run: bool, label: str) -> None:
         project, target = self.selected_project, self._target()
