@@ -8,6 +8,7 @@ mark, is what stops a second post."""
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 from . import config
@@ -45,32 +46,33 @@ def _keep(kept: dict[str, dict[str, dict]]) -> None:
     config.write_atomic(_file(), json.dumps(kept, indent=2, sort_keys=True) + "\n")
 
 
+def _place(repo: str) -> str:
+    """A repository's path as the file system reads it: on Windows, however its case and slashes are spelled, as
+    everything else the front end keeps for a repository is kept."""
+    return os.path.normcase(repo)
+
+
 def pull_request_url(repo: str, branch: str) -> str:
     """The pull request's address kept for `branch` of the repository at `repo`, or `""`."""
-    return _kept()["pull_requests"].get(repo, {}).get(branch, "")
+    return _kept()["pull_requests"].get(_place(repo), {}).get(branch, "")
 
 
 def keep_pull_request_url(repo: str, branch: str, url: str) -> None:
     """`url` kept for `branch` of `repo`; an empty one forgets it."""
-    kept = _kept()
-    held = kept["pull_requests"].setdefault(repo, {})
+    kept, place = _kept(), _place(repo)
+    held = kept["pull_requests"].setdefault(place, {})
     if url:
         held[branch] = url
     else:
         held.pop(branch, None)
     if not held:
-        del kept["pull_requests"][repo]
+        del kept["pull_requests"][place]
     _keep(kept)
 
 
 def posted_threads(pr: PullRequest) -> dict[str, int]:
     """Each finding's thread in `pr`, by fingerprint, where this screen posted or found it: one read for a table."""
     return _kept()["posted"].get(pr.web, {})
-
-
-def posted_thread(pr: PullRequest, fingerprint: str) -> int | None:
-    """The thread the finding `fingerprint` was posted as in `pr`."""
-    return posted_threads(pr).get(fingerprint)
 
 
 def forget_posted(pr: PullRequest, fingerprint: str) -> None:

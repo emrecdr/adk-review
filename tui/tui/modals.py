@@ -128,7 +128,7 @@ class CommentModal(ModalScreen[tuple[bool, str]]):
     #: The most lines shown of those a suggestion replaces: the rest are counted.
     REPLACED_SHOWN = 12
 
-    def __init__(self, text: str, target: str, lines: Sequence[str] = ()) -> None:
+    def __init__(self, text: str, target: str, lines: Sequence[str]) -> None:
         super().__init__()
         self.text = text
         self.target = target
@@ -138,18 +138,14 @@ class CommentModal(ModalScreen[tuple[bool, str]]):
         with Vertical(id="comment-dialog"):
             yield Label("Comment on the Pull Request", classes="chain-title")
             yield Static(self.target, id="comment-target", markup=False)
-            if self.lines:
-                # Always in view, whatever the text holds now: read by review, shown only where the draft opened
-                # with a suggestion, one typed in the editor was posted with nothing to check it against.
-                more = len(self.lines) - self.REPLACED_SHOWN
-                lines = [_seen(line) for line in self.lines[: self.REPLACED_SHOWN]]
-                shown = [*lines, *([f"({more} more lines)"] if more > 0 else [])]
-                yield Static(
-                    "Your comment stands on these lines. A suggestion block replaces them when its author applies it.",
-                    id="comment-replaces",
-                    markup=False,
-                )
-                yield Static("\n".join(shown), id="comment-replaced", markup=False)
+            # Always in view, whatever the text holds now: read by review, shown only where the draft opened with a
+            # suggestion, one typed in the editor was posted with nothing to check it against.
+            more = len(self.lines) - self.REPLACED_SHOWN
+            lines = [_seen(line) for line in self.lines[: self.REPLACED_SHOWN]]
+            shown = [*lines, *([f"({more} more lines)"] if more > 0 else [])]
+            said = "Your comment stands on these lines. A suggestion block replaces them when its author applies it."
+            yield Static(said, id="comment-replaces", markup=False)
+            yield Static("\n".join(shown), id="comment-replaced", markup=False)
             yield TextArea(self.text, id="comment-text")
             with Horizontal(id="modal-buttons"):
                 yield Button("Post", id="btn-comment-post", variant="primary")

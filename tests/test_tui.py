@@ -2479,7 +2479,7 @@ async def _show_findings(app, pilot, report: Path) -> None:
     await pilot.pause()
 
 
-async def _payments_screen(tmp_path: Path):  # the application, not yet running
+def _payments_screen(tmp_path: Path):  # the application, not yet running
     """The screen over one repository, `payments`, its branch `feature/orders` checked out."""
     from tui.app import AdkReviewTuiApp
 
@@ -2497,7 +2497,7 @@ class TestAzureDevOpsOnTheScreen:
 
         from tui.app import AdkReviewTuiApp
 
-        app = await _payments_screen(tmp_path)
+        app = _payments_screen(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             assert app.selected_head == "feature/orders"
@@ -2526,7 +2526,7 @@ class TestAzureDevOpsOnTheScreen:
 
         from tui import azure_state
 
-        app = await _payments_screen(tmp_path)
+        app = _payments_screen(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             field, status = app.query_one("#pr-url", Input), app.query_one("#pr-status", Static)
@@ -2555,7 +2555,7 @@ class TestAzureDevOpsOnTheScreen:
 
         from tui.azure import line_link, parse_pr_url
 
-        app = await _payments_screen(tmp_path)
+        app = _payments_screen(tmp_path)
         opened: list[str] = []
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
@@ -2571,7 +2571,7 @@ class TestAzureDevOpsOnTheScreen:
         pytest.importorskip("textual")
         from textual.widgets import Input, TabbedContent
 
-        app = await _payments_screen(tmp_path)
+        app = _payments_screen(tmp_path)
         opened: list[str] = []
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
@@ -2595,7 +2595,7 @@ class TestAzureDevOpsOnTheScreen:
         pytest.importorskip("textual")
         from textual.widgets import DataTable, Input, TabbedContent
 
-        app = await _payments_screen(tmp_path)
+        app = _payments_screen(tmp_path)
         opened: list[str] = []
         said: list[str] = []
         async with app.run_test(size=(140, 45)) as pilot:
@@ -2626,7 +2626,7 @@ class TestAzureDevOpsOnTheScreen:
         from tui import azure_state
         from tui.azure import files_link, parse_pr_url, thread_link
 
-        app = await _payments_screen(tmp_path)
+        app = _payments_screen(tmp_path)
         opened: list[str] = []
         pr = parse_pr_url(PR_ADDRESS)
         async with app.run_test(size=(140, 45)) as pilot:
@@ -2655,14 +2655,12 @@ TAXED = "    total = with_tax(total)"
 
 def _payments_with_code(tmp_path: Path):  # the application, not yet running, and the commit that holds the file
     """The screen over `payments`, its branch `feature/orders` holding `src/app.py` at the commit answered."""
+    from conftest import _committed
+
     from tui.app import AdkReviewTuiApp
 
     repo = _repository(tmp_path / "workspace" / "payments", ("main", "feature/orders"), "feature/orders")
-    (repo / "src").mkdir()
-    (repo / "src" / "app.py").write_text(CODE, encoding="utf-8", newline="\n")
-    _git(repo, "add", ".")
-    _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "code")
-    return AdkReviewTuiApp(config_path=_screen_config(tmp_path)), _git(repo, "rev-parse", "HEAD")
+    return AdkReviewTuiApp(config_path=_screen_config(tmp_path)), _committed(repo, "src/app.py", CODE)
 
 
 def _plainly(said: list[str]):  # what stands in for the screen's `notify`
@@ -2707,6 +2705,14 @@ async def _posted(app, pilot) -> None:
     """Until the post's worker has ended and the screen has drawn what it answered."""
     await app.workers.wait_for_complete()
     await pilot.pause()
+
+
+async def _post_and_confirm(app, pilot) -> None:
+    """Post pressed in the editor, yes said to the question after it, and the post's answer waited for."""
+    await pilot.click("#btn-comment-post")
+    await pilot.pause()
+    await pilot.click("#btn-post-yes")
+    await _posted(app, pilot)
 
 
 class TestACommentOnThePullRequest:
@@ -2776,17 +2782,14 @@ class TestACommentOnThePullRequest:
             said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
             editor = await _editor(app, pilot)
             editor.query_one("#comment-text", TextArea).text = "my own words"
-            await pilot.click("#btn-comment-post")
-            await pilot.pause()
-            await pilot.click("#btn-post-yes")
-            await _posted(app, pilot)
+            await _post_and_confirm(app, pilot)
             posts = [seen for seen in fake_ado.seen if seen.method == "POST"]
             assert len(posts) == 1
             assert json.loads(posts[0].body) == thread_payload("my own words", Place("src/app.py", 2, 2, TAXED), 2, 7)
             assert posts[0].headers["authorization"] == "Bearer tok"
             assert said[-1] == "Posted as thread 148. Press p to open it."
             assert str(app.query_one("#findings-table", DataTable).get_row_at(0)[-1]) == "148"
-            assert azure_state.posted_thread(fake_ado.pr, "1a2b3c4d5e6f7a8b") == 148
+            assert azure_state.posted_threads(fake_ado.pr).get("1a2b3c4d5e6f7a8b") == 148
             held = {
                 "id": 148,
                 "comments": [
@@ -2810,10 +2813,7 @@ class TestACommentOnThePullRequest:
             said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
             editor = await _editor(app, pilot)
             editor.query_one("#comment-text", TextArea).text = "my own words"
-            await pilot.click("#btn-comment-post")
-            await pilot.pause()
-            await pilot.click("#btn-post-yes")
-            await _posted(app, pilot)
+            await _post_and_confirm(app, pilot)
             assert (
                 said[-1] == 'Your account may not comment here. Ask for the "Contribute to pull requests" permission.'
             )
@@ -2835,10 +2835,7 @@ class TestACommentOnThePullRequest:
             fake_ado.answer("GET", "/threads", {"value": [{"id": 5, "comments": [{"content": mark}]}]})
             said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
             await _editor(app, pilot)
-            await pilot.click("#btn-comment-post")
-            await pilot.pause()
-            await pilot.click("#btn-post-yes")
-            await _posted(app, pilot)
+            await _post_and_confirm(app, pilot)
             assert said[-1] == "This finding was posted before, as thread 5. Nothing was posted."
             assert all(seen.method == "GET" for seen in fake_ado.seen)
             assert str(app.query_one("#findings-table", DataTable).get_row_at(0)[-1]) == "5"
@@ -2973,14 +2970,9 @@ class TestACommentOnThePullRequest:
             editor = await _editor(app, pilot)
             assert "[bold]x[/] and [/red]" in editor.query_one("#comment-text", TextArea).text
             assert "src/app.py" in str(editor.query_one("#comment-target", Static).render())
-            await pilot.click("#btn-comment-post")
-            await pilot.pause()
-            await pilot.click("#btn-post-yes")
-            await _posted(app, pilot)
-            said_last = (
-                "Azure DevOps answered 500: [/bold] closes [nothing. The comment may be posted: press c again to check."
-            )
-            assert said[-1] == said_last
+            await _post_and_confirm(app, pilot)
+            check = "Press c again: one that arrived is found, and no second one is sent."
+            assert said[-1] == f"Azure DevOps answered 500: [/bold] closes [nothing. The comment may be posted. {check}"
 
 
 class TestWhatTheBranchsReviewFound:
@@ -3030,7 +3022,7 @@ class TestWhatTheBranchsReviewFound:
 
         from textual.widgets import DataTable, Input
 
-        app = await _payments_screen(tmp_path)
+        app = _payments_screen(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             report = json.loads(_pull_request_report(tmp_path).read_text(encoding="utf-8"))
@@ -3087,6 +3079,7 @@ class TestWhatTheBranchsReviewFound:
         """Reproduced by review: the lines a suggestion replaces are the branch's own, and one that held a
         terminal's commands, a screen cleared or the clipboard written, reached the terminal as written."""
         pytest.importorskip("textual")
+        from conftest import _committed
         from textual.widgets import Static
 
         from tui.app import AdkReviewTuiApp
@@ -3094,15 +3087,10 @@ class TestWhatTheBranchsReviewFound:
         escape, bell = chr(27), chr(7)
         hostile = f"    total = 1  # {escape}[2J{escape}]52;c;aGk={bell} and {chr(0x202E)}gnp.exe"
         repo = _repository(tmp_path / "workspace" / "payments", ("main", "feature/orders"), "feature/orders")
-        (repo / "src").mkdir()
-        (repo / "src" / "app.py").write_text(
-            f"def charge(total):\n{hostile}\n\treturn total\n", encoding="utf-8", newline="\n"
-        )
-        _git(repo, "add", ".")
-        _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "code")
+        sha = _committed(repo, "src/app.py", f"def charge(total):\n{hostile}\n\treturn total\n")
         app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
         async with app.run_test(size=(140, 45)) as pilot:
-            await _ready_screen(app, pilot, tmp_path, fake_ado, _git(repo, "rev-parse", "HEAD"), lines=[2, 3])
+            await _ready_screen(app, pilot, tmp_path, fake_ado, sha, lines=[2, 3])
             editor = await _editor(app, pilot)
             shown = str(editor.query_one("#comment-replaced", Static).render())
             assert "total = 1  #  [2J ]52;c;aGk=  and  gnp.exe" in shown, shown
@@ -3118,7 +3106,7 @@ class TestWhatTheBranchsReviewFound:
 
         from textual.widgets import Input
 
-        app = await _payments_screen(tmp_path)
+        app = _payments_screen(tmp_path)
         said: list[str] = []
         opened: list[str] = []
         async with app.run_test(size=(140, 45)) as pilot:
@@ -3144,7 +3132,7 @@ class TestWhatTheBranchsReviewFound:
         from tui.azure import line_link, parse_pr_url
         from tui.commands import ReviewCommandProvider
 
-        app = await _payments_screen(tmp_path)
+        app = _payments_screen(tmp_path)
         opened: list[str] = []
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
@@ -3175,13 +3163,9 @@ class TestWhatTheFirstRoundOfReviewFound:
             fake_ado.answer("POST", "/threads", status=502, raw=b"<html>Bad Gateway</html>")
             said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
             await _editor(app, pilot)
-            await pilot.click("#btn-comment-post")
-            await pilot.pause()
-            await pilot.click("#btn-post-yes")
-            await _posted(app, pilot)
-            assert (
-                said[-1] == "Azure DevOps answered 502: Bad Gateway. The comment may be posted: press c again to check."
-            )
+            await _post_and_confirm(app, pilot)
+            check = "Press c again: one that arrived is found, and no second one is sent."
+            assert said[-1] == f"Azure DevOps answered 502: Bad Gateway. The comment may be posted. {check}"
             banner = str(app.query_one("#status-banner", Static).render())
             assert "may be posted" in banner and "not posted" not in banner, banner
             assert str(app.query_one("#findings-table", DataTable).get_row_at(0)[-1]) == "", "not known to be posted"
@@ -3191,10 +3175,7 @@ class TestWhatTheFirstRoundOfReviewFound:
             }
             fake_ado.instead("GET", "/threads", {"value": [arrived]})  # it had arrived
             await _editor(app, pilot)
-            await pilot.click("#btn-comment-post")
-            await pilot.pause()
-            await pilot.click("#btn-post-yes")
-            await _posted(app, pilot)
+            await _post_and_confirm(app, pilot)
             assert said[-1] == "This finding was posted before, as thread 77. Nothing was posted."
             assert [seen.method for seen in fake_ado.seen].count("POST") == 1
 
@@ -3218,7 +3199,7 @@ class TestWhatTheFirstRoundOfReviewFound:
             assert str(app.query_one("#findings-table", DataTable).get_row_at(0)[-1]) == "148"
             await _editor(app, pilot)  # the fake holds no such thread: the editor opens
             assert said[-1] == "Thread 148 is gone from the pull request. You can post the finding again."
-            assert azure_state.posted_thread(fake_ado.pr, "1a2b3c4d5e6f7a8b") is None
+            assert azure_state.posted_threads(fake_ado.pr).get("1a2b3c4d5e6f7a8b") is None
             assert str(app.query_one("#findings-table", DataTable).get_row_at(0)[-1]) == ""
             assert all(seen.method == "GET" for seen in fake_ado.seen)
 
@@ -3244,7 +3225,7 @@ class TestWhatTheFirstRoundOfReviewFound:
 
         from tui.azure import files_link, line_link, parse_pr_url
 
-        app = await _payments_screen(tmp_path)
+        app = _payments_screen(tmp_path)
         pr = parse_pr_url(PR_ADDRESS)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
@@ -3275,7 +3256,7 @@ class TestWhatTheFirstRoundOfReviewFound:
         read, write = screen.posted_threads, screen.keep_pull_request_url
         monkeypatch.setattr(screen, "posted_threads", lambda pr: reads.append(pr.web) or read(pr))
         monkeypatch.setattr(screen, "keep_pull_request_url", lambda *kept: writes.append(kept[2]) or write(*kept))
-        app = await _payments_screen(tmp_path)
+        app = _payments_screen(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             field = app.query_one("#pr-url", Input)
@@ -3294,3 +3275,31 @@ class TestWhatTheFirstRoundOfReviewFound:
             field.value = ""
             await pilot.pause()
             assert writes == [PR_ADDRESS, ""], "emptied: forgotten, though the field held no address just before"
+
+    @pytest.mark.asyncio
+    async def test_another_repository_shows_none_of_the_last_pull_requests_threads(self, tmp_path: Path) -> None:
+        """Reproduced by review: a pick of another repository emptied the address and kept the last pull request's
+        posted threads, so a finding of the same identity there, as a second clone has, showed as posted."""
+        pytest.importorskip("textual")
+        from textual.widgets import Input
+
+        from tui import azure_state
+        from tui.app import AdkReviewTuiApp
+        from tui.azure import parse_pr_url
+
+        _repository(tmp_path / "workspace" / "a_payments", ("main", "feature/orders"), "feature/orders")
+        _repository(tmp_path / "workspace" / "b_billing", ("main", "feature/bills"), "feature/bills")
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            azure_state.keep_posted(parse_pr_url(PR_ADDRESS), "1a2b3c4d5e6f7a8b", 148)
+            app.query_one("#pr-url", Input).value = PR_ADDRESS
+            await pilot.pause()
+            assert app._posted_threads == {"1a2b3c4d5e6f7a8b": 148}
+            app._on_project_chosen(
+                next(project for project in app.projects if project.name == "b_billing"), picked=False
+            )
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            assert (app._pull_request, app._posted_threads) == (None, {})

@@ -3,16 +3,13 @@
 from __future__ import annotations
 
 import json
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from adk_review.collect.git import OBJECT_ID
 from adk_review.core.findings import RANK
 from adk_review.judge.catalog import CONFIG, catalog, explained, load_config
-
-#: A commit as git names it whole, SHA-1 or SHA-256: what a report's `head_sha` holds, and what a link may carry.
-COMMIT = re.compile(r"[0-9a-f]{40}(?:[0-9a-f]{24})?")
 
 
 @dataclass(frozen=True)
@@ -47,15 +44,6 @@ class FindingRow:
         if self.lines is not None:
             return self.lines
         return (self.line, self.line) if self.line is not None and self.line >= 1 else None
-
-
-@dataclass(frozen=True)
-class Reviewed:
-    """What a report says it reviewed: the clone, the branch, and the commit its findings' lines are counted in."""
-
-    repository: str
-    head: str
-    head_sha: str
 
 
 def _row_from_item(item: dict, tier: str) -> FindingRow:
@@ -108,38 +96,24 @@ def _read(json_path: Path) -> dict | None:
     return raw if isinstance(raw, dict) else None
 
 
-def load_reviewed(json_path: Path) -> Reviewed | None:
-    """What the report at `json_path` reviewed, or None where it does not say."""
-    return load_report(json_path)[1]
-
-
 def load_findings_from_json(json_path: Path) -> list[FindingRow]:
     """Load `findings`, `old_findings`, and `resolved` entries from a JSON report, sorted by priority."""
     return load_report(json_path)[0]
 
 
-def _reviewed(raw: dict) -> Reviewed | None:
-    """What a report says it reviewed, or None where it does not say: no line is linked to, and no comment placed,
-    on a commit the report did not name whole."""
+def _commit(raw: dict) -> str | None:
+    """The commit a report says it reviewed, whole, or None where it names none: a line is linked to, and a comment
+    placed, in a commit the report named, as git names one."""
     seen = raw.get("reviewed")
-    if not isinstance(seen, dict):
-        return None
-    repository, head, head_sha = seen.get("repository"), seen.get("head"), seen.get("head_sha")
-    if (
-        isinstance(repository, str)
-        and isinstance(head, str)
-        and isinstance(head_sha, str)
-        and COMMIT.fullmatch(head_sha)
-    ):
-        return Reviewed(repository, head, head_sha)
-    return None
+    head = seen.get("head_sha") if isinstance(seen, dict) else None
+    return head if isinstance(head, str) and OBJECT_ID.fullmatch(head) else None
 
 
-def load_report(json_path: Path) -> tuple[list[FindingRow], Reviewed | None]:
-    """A report's findings, sorted by priority, and what it reviewed, from one read of the file: the screen shows
-    the two together, and a commit read apart from its findings was, for a moment, the last review's."""
+def load_report(json_path: Path) -> tuple[list[FindingRow], str | None]:
+    """A report's findings, sorted by priority, and the commit it reviewed, from one read of the file: the screen
+    shows the two together, and a commit read apart from its findings was, for a moment, the last review's."""
     raw = _read(json_path)
-    return ([], None) if raw is None else (_rows(raw), _reviewed(raw))
+    return ([], None) if raw is None else (_rows(raw), _commit(raw))
 
 
 def _rows(raw: dict) -> list[FindingRow]:

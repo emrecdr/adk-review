@@ -19,7 +19,7 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
-from conftest import FakeAdo, FakeToken, _ready_to_comment
+from conftest import FakeAdo, FakeToken, _long, _ready_to_comment
 
 
 @pytest.fixture
@@ -29,10 +29,8 @@ def azure() -> ModuleType:
 
 
 def _short_sentences(said: str) -> None:
-    """What the front end shows a person is ASD-STE100, as CLAUDE.md asks: each sentence at most 20 words, and no
-    `;` joining two."""
-    for sentence in said.split(". "):
-        assert len(sentence.split()) <= 20 and ";" not in sentence, sentence
+    """What the front end shows a person is ASD-STE100, as CLAUDE.md asks, by the suite's own guard."""
+    assert _long([("the front end", said)]) == []
 
 
 def _pr(azure: ModuleType, origin: str = "https://dev.azure.com/contoso"):  # the module's own type
@@ -190,13 +188,13 @@ class TestWhatAReportSaysOfAFinding:
 
     def test_the_reviewed_commit_is_read_from_the_report(self, findings: ModuleType, tmp_path: Path) -> None:
         good = {"repository": "/work/payments", "head": "feature/orders", "head_sha": "a" * 40}
-        read = findings.load_reviewed(_report(tmp_path, [], good))
-        assert read == findings.Reviewed("/work/payments", "feature/orders", "a" * 40)
-        for bad in ({**good, "head_sha": "main"}, {**good, "head": 7}, {**good, "repository": None}, None, [good]):
-            assert findings.load_reviewed(_report(tmp_path, [], bad)) is None, bad
-        assert findings.load_reviewed(tmp_path / "missing.json") is None
+        assert findings.load_report(_report(tmp_path, [], good))[1] == "a" * 40
+        assert findings.load_report(_report(tmp_path, [], {"head_sha": "b" * 64}))[1] == "b" * 64, "its commit alone"
+        for bad in ({**good, "head_sha": "main"}, {**good, "head_sha": 7}, {**good, "head_sha": None}, None, [good]):
+            assert findings.load_report(_report(tmp_path, [], bad))[1] is None, bad
+        assert findings.load_report(tmp_path / "missing.json") == ([], None)
         (tmp_path / "broken.json").write_text("{", encoding="utf-8")
-        assert findings.load_reviewed(tmp_path / "broken.json") is None
+        assert findings.load_report(tmp_path / "broken.json") == ([], None)
 
 
 @pytest.fixture
@@ -266,24 +264,26 @@ class TestTheDraftOfAComment:
             )
 
     @pytest.mark.parametrize(
-        "code",
+        "written",
         [
-            'echo "##vso [task.setvariable variable=tag]$(v)"',
-            "    : :set-output name=tag::v1",
-            "x = 1  # <! -- kept for the template -->",
-            "echo '## [group]build'",
+            'echo "##vso[task.setvariable variable=tag]$(v)"',
+            "    ::set-output name=tag::v1",
+            "x = 1  # <!-- kept for the template -->",
+            "echo '##[group]build'",
         ],
     )
-    def test_code_the_report_made_inert_is_never_a_suggestion(self, azure: ModuleType, row, code: str) -> None:
+    def test_code_the_report_made_inert_is_never_a_suggestion(self, azure: ModuleType, row, written: str) -> None:
         """Reproduced by review: the report breaks a pipeline's command openers and an HTML comment's in every line
-        of corrected code, a space put in. A suggestion drafted from that text would commit the broken line."""
+        of corrected code, a space put in. A suggestion drafted from that text would commit the broken line. Each
+        case is made by the report's own rule: where that rule changes, and the front end's reading of it does not,
+        this test fails."""
         from adk_review.deliver.report import safe_code
 
-        assert safe_code(code) == code, "the form the report leaves: its own safety rule does not change it again"
-        shown = replace(row, code=code)
+        reported = safe_code(written)
+        assert reported != written, "the report changed it"
+        shown = replace(row, code=reported)
         assert not azure.suggests(shown) and "```suggestion" not in azure.draft(shown)
-        whole = replace(row, code='echo "##[group]build"\nprint("<!-- ok -->")')  # as a report never holds it
-        assert azure.suggests(whole)
+        assert azure.suggests(replace(row, code=written)), "as written, which a report never holds, it would apply"
 
     def test_a_blank_line_that_opens_the_code_is_kept(self, azure: ModuleType, row) -> None:
         opened = replace(row, code="\n    total = with_tax(subtotal)\n\n")
@@ -690,7 +690,8 @@ class TestTheClient:
         closed = replace(fake_ado.pr, origin=f"http://127.0.0.1:{_closed_port()}/contoso")
         with pytest.raises(client.AzureError, match="did not answer") as failed:
             client.Client(closed, FakeToken("Bearer tok-secret")).status()
-        assert "tok-secret" not in str(failed.value) and "press c again" in str(failed.value)
+        assert "tok-secret" not in str(failed.value) and "then post again" in str(failed.value)
+        assert " c " not in str(failed.value), "the client names no key: the screen does"
         with pytest.raises(client.AzureError, match="did not answer"):
             client.Client(closed, FakeToken()).post({"comments": []})
 
@@ -737,7 +738,7 @@ class TestTheClient:
                 {"status": 502, "raw": b"<html>Bad Gateway</html>"},
                 "answered 502: Bad Gateway. The comment may be posted",
             ),
-            ({"status": 504}, "answered 504: Gateway Timeout. The comment may be posted"),
+            ({"status": 504}, "answered 504: Gateway Timeout. The comment may be posted."),
         ],
     )
     def test_a_post_that_may_have_arrived_is_never_said_to_be_unposted(
@@ -901,14 +902,14 @@ class TestWhatTheScreenRemembers:
 
     def test_a_posted_thread_is_kept_per_pull_request_and_finding(self, state: ModuleType, azure: ModuleType) -> None:
         one, other = _pr(azure), replace(_pr(azure), number=124)
-        assert state.posted_thread(one, "ab" * 8) is None
+        assert state.posted_threads(one).get("ab" * 8) is None
         state.keep_posted(one, "ab" * 8, 148)
         state.keep_posted(other, "ab" * 8, 7)
         state.keep_posted(one, "cd" * 8, 149)
         found = [
-            state.posted_thread(one, "ab" * 8),
-            state.posted_thread(other, "ab" * 8),
-            state.posted_thread(one, "cd" * 8),
+            state.posted_threads(one).get("ab" * 8),
+            state.posted_threads(other).get("ab" * 8),
+            state.posted_threads(one).get("cd" * 8),
         ]
         assert found == [148, 7, 149]
 
@@ -922,14 +923,27 @@ class TestWhatTheScreenRemembers:
         (tmp_path / "state").mkdir()
         (tmp_path / "state" / "azure.json").write_bytes(damaged)
         assert (
-            state.pull_request_url("/work/payments", "main") == "" and state.posted_thread(_pr(azure), "ab" * 8) is None
+            state.pull_request_url("/work/payments", "main") == ""
+            and state.posted_threads(_pr(azure)).get("ab" * 8) is None
         )
         state.keep_posted(_pr(azure), "ab" * 8, 148)
-        assert state.posted_thread(_pr(azure), "ab" * 8) == 148
+        assert state.posted_threads(_pr(azure)).get("ab" * 8) == 148
         assert set(json.loads((tmp_path / "state" / "azure.json").read_text(encoding="utf-8"))) == {
             "pull_requests",
             "posted",
         }
+
+    def test_an_address_is_found_again_however_the_repositorys_path_is_spelled(
+        self, state: ModuleType, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Read by review: every other thing the front end keeps for a repository is kept under its path as the
+        file system reads it. On Windows, a root spelled in another case lost the address."""
+        monkeypatch.setattr(state.os.path, "normcase", lambda path: path.replace("/", "\\").lower())  # as Windows'
+        address = "https://dev.azure.com/c/a/_git/b/pullrequest/1"
+        state.keep_pull_request_url("C:/Work/Payments", "feature/orders", address)
+        assert state.pull_request_url("c:\\work\\payments", "feature/orders") == address
+        state.keep_pull_request_url("C:\\WORK\\PAYMENTS", "feature/orders", "")
+        assert state.pull_request_url("C:/Work/Payments", "feature/orders") == ""
 
     def test_a_posted_thread_is_forgotten_alone(self, state: ModuleType, azure: ModuleType) -> None:
         one = _pr(azure)
@@ -947,7 +961,7 @@ class TestWhatTheScreenRemembers:
         held = {"posted": {_pr(azure).web: {"aa": "148", "bb": True, "cc": 12}}, "pull_requests": {"/r": {"b": 7}}}
         (tmp_path / "state").mkdir()
         (tmp_path / "state" / "azure.json").write_text(json.dumps(held), encoding="utf-8")
-        assert [state.posted_thread(_pr(azure), name) for name in ("aa", "bb", "cc")] == [None, None, 12]
+        assert [state.posted_threads(_pr(azure)).get(name) for name in ("aa", "bb", "cc")] == [None, None, 12]
         assert state.pull_request_url("/r", "b") == ""
 
     def test_only_what_was_given_is_written(self, state: ModuleType, azure: ModuleType, tmp_path: Path) -> None:
@@ -1105,8 +1119,5 @@ class TestAReportReadOnce:
         monkeypatch.setattr(Path, "read_text", lambda path, **how: reads.append(path) or read(path, **how))
         rows, reviewed = findings.load_report(report)
         assert reads == [report]
-        assert (rows[0].fingerprint, reviewed) == (
-            "ab" * 8,
-            findings.Reviewed("/work/payments", "feature/orders", "a" * 40),
-        )
+        assert (rows[0].fingerprint, reviewed) == ("ab" * 8, "a" * 40)
         assert findings.load_report(tmp_path / "missing.json") == ([], None)

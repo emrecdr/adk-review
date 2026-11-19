@@ -11,10 +11,11 @@ import re
 from dataclasses import dataclass
 from urllib.parse import quote, unquote, urlsplit
 
+from adk_review.collect.git import OBJECT_ID
 from adk_review.core.text import CUT_MARK
 from adk_review.deliver.report import prose
 
-from .findings import COMMIT, FindingRow
+from .findings import FindingRow
 
 #: Azure DevOps Services' host, and its older one with the organization as its first label.
 _HOST = "dev.azure.com"
@@ -113,7 +114,7 @@ def line_link(pr: PullRequest, commit: str, path: str, first: int, last: int) ->
     """The repository's file view at `commit` with lines `first` to `last` chosen whole: the range ends where the
     next line starts, as the page's own links end one. The commit is pinned, since a branch moves with its next push,
     and its lines with it."""
-    if not COMMIT.fullmatch(commit):
+    if not OBJECT_ID.fullmatch(commit):
         raise ValueError("no link: a commit is 40 or 64 hex digits")
     query = f"path={_path(path)}&version=GC{commit}&line={first}&lineEnd={last + 1}"
     return f"{pr.repository_web}?{query}&lineStartColumn=1&lineEndColumn=1&_a=contents"
@@ -129,9 +130,15 @@ def thread_link(pr: PullRequest, thread: int) -> str:
     return f"{pr.web}?discussionId={thread}"
 
 
+def rooted(path: str) -> str:
+    """A repository's path as Azure DevOps names a file: from the root, with its `/`. One spelling for a link, a
+    thread's place and the change it is looked up by, which must be the same file."""
+    return "/" + path.lstrip("/")
+
+
 def _path(path: str) -> str:
     """A repository's path as these pages take it: from the root, encoded whole."""
-    return _quoted("/" + path.lstrip("/"))
+    return _quoted(rooted(path))
 
 
 def mark(row: FindingRow) -> str:
@@ -205,7 +212,7 @@ def thread_payload(text: str, place: Place, iteration: int, change: int) -> dict
         "comments": [{"parentCommentId": 0, "content": text, "commentType": 1}],
         "status": 1,
         "threadContext": {
-            "filePath": "/" + place.path.lstrip("/"),
+            "filePath": rooted(place.path),
             "leftFileStart": None,
             "leftFileEnd": None,
             "rightFileStart": {"line": place.first, "offset": 1},

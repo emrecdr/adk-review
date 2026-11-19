@@ -26,8 +26,9 @@ from urllib.parse import urlencode
 import truststore
 
 from adk_review.collect.git import on_path
+from adk_review.core.text import squash
 
-from .azure import Place, PullRequest, marked, thread_payload
+from .azure import Place, PullRequest, marked, rooted, thread_payload
 from .git_sync import bounded
 
 #: Azure DevOps' own application in Microsoft Entra: the resource `az` is asked a token for.
@@ -51,8 +52,8 @@ _PAGE = 2000
 _TENANT = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 #: Where a call may go: Azure DevOps over HTTPS, or this machine's own address, where the tests' fake answers.
 _HTTPS, _LOCAL = "https://", "http://127.0.0.1:"
-#: Said where a post may have arrived though no answer says so. Pressing c again finds it by its mark.
-_MAYBE_POSTED = "The comment may be posted: press c again to check."
+#: Said where a post may have arrived though no answer says so. The screen names the key that checks.
+_MAYBE_POSTED = "The comment may be posted."
 #: A server's own words in a sentence: one line, this long at most.
 _SAID_MAX_CHARS = 200
 
@@ -127,14 +128,11 @@ class AzLogin:
 def _token(done: subprocess.CompletedProcess[str]) -> tuple[str, int | None]:
     """The token `az` printed and the second it expires at, or the sentence that names the login. What `az` said is
     never repeated: it is the one text here that can hold a token."""
-    try:
-        answer = json.loads(done.stdout or "") if done.returncode == 0 else None
-    except ValueError:
-        answer = None
-    token = answer.get("accessToken") if isinstance(answer, dict) else None
+    answer = (_object(done.stdout or "") if done.returncode == 0 else None) or {}
+    token = answer.get("accessToken")
     if not isinstance(token, str) or not token.isascii() or not token.isprintable() or " " in token or not token:
         raise AzureError("The Azure CLI gave no token. Run `az login`, then post again.")
-    expires = answer.get("expires_on") if isinstance(answer, dict) else None
+    expires = answer.get("expires_on")
     return token, (expires if type(expires) is int else None)
 
 
@@ -188,7 +186,7 @@ class Client:
         change the file: a thread on a file's line must name it."""
         if iteration not in self._changed:
             self._changed[iteration] = self._changes(iteration)
-        return self._changed[iteration].get("/" + path.lstrip("/"))
+        return self._changed[iteration].get(rooted(path))
 
     def _changes(self, iteration: int) -> dict[str, int]:
         found: dict[str, int] = {}
@@ -256,11 +254,8 @@ class Client:
     def _answered(self, status: int, raw: bytes) -> dict:
         """A 2xx's JSON object. A 203, or any other body, is Azure DevOps' sign-in page: it answers a login it does
         not accept with one, where another service would answer 401."""
-        try:
-            answer = json.loads(raw) if status != HTTPStatus.NON_AUTHORITATIVE_INFORMATION else None
-        except ValueError:
-            answer = None
-        if not isinstance(answer, dict):
+        answer = None if status == HTTPStatus.NON_AUTHORITATIVE_INFORMATION else _object(raw)
+        if answer is None:
             raise self._no_login(None)
         return answer
 
@@ -323,7 +318,7 @@ def post_comment(client: Client, *, text: str, place: Place, commit: str, finger
     the finding's mark already is answered instead of a second one."""
     status = client.status()
     if status != "active":
-        raise AzureError(f"The pull request is {' '.join(status.split())[:40]}. Nothing was posted.")
+        raise AzureError(f"The pull request is {squash(status)[:40]}. Nothing was posted.")
     pushed = client.iterations()
     if not pushed or pushed[-1][1] != commit:
         if any(held == commit for _number, held in pushed):
@@ -347,23 +342,31 @@ def _dicts(value: object) -> list[dict]:
 def _said(refused: urllib.error.HTTPError) -> str:
     """Azure DevOps' own message for a refusal, else the status's words: one line, cut."""
     try:
-        told = json.loads(refused.read())
-    except ValueError, OSError, http.client.HTTPException:  # no JSON, or a body cut short
-        told = None
-    message = told.get("message") if isinstance(told, dict) else None
-    words = " ".join((message if isinstance(message, str) and message.strip() else refused.reason).split())
+        message = (_object(refused.read()) or {}).get("message")
+    except OSError, http.client.HTTPException:  # a body cut short
+        message = None
+    words = squash(message if isinstance(message, str) and message.strip() else refused.reason)
     return words[:_SAID_MAX_CHARS].rstrip(".")
+
+
+def _object(raw: str | bytes) -> dict | None:
+    """`raw` as the JSON object it is, or None where it is no JSON or no object: a page, a list, nothing."""
+    try:
+        answer = json.loads(raw)
+    except ValueError:
+        return None
+    return answer if isinstance(answer, dict) else None
 
 
 def _unreached(failed: Exception) -> str:
     """The sentence for a call that got no whole answer, with what to check."""
     if isinstance(failed, http.client.HTTPException):  # its text is the other side's own bytes: not repeated
-        return "Azure DevOps did not answer whole. Check the network and the proxy, then press c again."
+        return "Azure DevOps did not answer whole. Check the network and the proxy, then post again."
     reason = getattr(failed, "reason", failed)
     if isinstance(reason, ssl.SSLCertVerificationError):
         return (
             "Azure DevOps' certificate was not trusted. "
-            "Set SSL_CERT_FILE to a PEM bundle that holds your proxy's root, then press c again."
+            "Set SSL_CERT_FILE to a PEM bundle that holds your proxy's root, then post again."
         )
-    why = f"no answer within {HTTP_TIMEOUT_S} s" if isinstance(reason, TimeoutError) else " ".join(str(reason).split())
-    return f"Azure DevOps did not answer: {why[:_SAID_MAX_CHARS]}. Check the network and the proxy, then press c again."
+    why = f"no answer within {HTTP_TIMEOUT_S} s" if isinstance(reason, TimeoutError) else squash(str(reason))
+    return f"Azure DevOps did not answer: {why[:_SAID_MAX_CHARS]}. Check the network and the proxy, then post again."
