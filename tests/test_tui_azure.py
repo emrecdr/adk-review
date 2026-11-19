@@ -6,19 +6,22 @@ what it reads where it runs, as `tests/test_tui.py` says why."""
 
 from __future__ import annotations
 
+import http.server
 import importlib
 import json
 import os
 import re
 import socket
+import ssl
 import subprocess
-import sys
+import threading
 import time
 from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
 
 import pytest
+import truststore
 from conftest import FakeAdo, FakeToken, _long, _ready_to_comment
 
 
@@ -1053,34 +1056,42 @@ def _a_root_and_its_certificate(folder: Path) -> tuple[Path, Path, Path]:
     return files
 
 
-#: An HTTPS server in a process of its own, on a port it prints: its certificate and key are its two arguments. In the
-#: suite's own process the reviewer's engine, once a test loads it, puts truststore's context in place of Python's, a
-#: client's, and a server built from that one resets each connection. Seen in a full run, never in this file alone.
-_HTTPS_SERVER = """
-import http.server, ssl, sys
+def _pythons_own_tls_server(certificate: Path, key: Path) -> ssl.SSLContext:
+    """A server's TLS context of Python's own class, whatever stands in `ssl` for it now. Once a test loads the
+    reviewer's engine, truststore's context stands there: a client's, and a server built from it reset each
+    connection. Seen in a full run, eight times of eight after `tests/test_git_tools.py`, never in this file alone.
+    truststore's own two calls take it out and put it back."""
+    injected = ssl.SSLContext is truststore.SSLContext
+    if injected:
+        truststore.extract_from_ssl()
+    try:
+        secure = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    finally:
+        if injected:
+            truststore.inject_into_ssl()
+    secure.load_cert_chain(certificate, key)
+    return secure
 
-class Answers(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
+
+class _OneAnswer(http.server.BaseHTTPRequestHandler):
+    """An active pull request, to any request."""
+
+    def do_GET(self) -> None:  # http.server's own name
         sent = b'{"status": "active"}'
         self.send_response(200)
         self.send_header("Content-Length", str(len(sent)))
         self.end_headers()
         self.wfile.write(sent)
 
-    def log_message(self, *args):
-        pass
+    def log_message(self, format: str, *args: object) -> None:  # http.server's own names
+        """Nothing printed: the suite's output stays its own."""
 
-class Quiet(http.server.ThreadingHTTPServer):
-    def handle_error(self, request, client_address):
-        pass  # a client that trusts no such root ends the handshake, as the test asks
 
-server = Quiet(("127.0.0.1", 0), Answers)
-secure = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-secure.load_cert_chain(sys.argv[1], sys.argv[2])
-server.socket = secure.wrap_socket(server.socket, server_side=True)
-print(server.server_address[1], flush=True)
-server.serve_forever()
-"""
+class _QuietServer(http.server.ThreadingHTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request: object, client_address: object) -> None:
+        """Nothing printed: a client that trusts no such root ends the handshake, as the test asks."""
 
 
 class TestACompanysOwnRoot:
@@ -1095,17 +1106,13 @@ class TestACompanysOwnRoot:
         from conftest import _no_proxy
 
         root, served, key = _a_root_and_its_certificate(tmp_path)
-        server = subprocess.Popen(
-            [sys.executable, "-I", "-c", _HTTPS_SERVER, str(served), str(key)],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            encoding="utf-8",
-        )
+        server = _QuietServer(("127.0.0.1", 0), _OneAnswer)
+        server.socket = _pythons_own_tls_server(served, key).wrap_socket(server.socket, server_side=True)
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+        thread.start()
         try:
-            assert server.stdout is not None
-            port = int(server.stdout.readline())
             _no_proxy(monkeypatch)
-            pr = azure.PullRequest(f"https://127.0.0.1:{port}/contoso", "Web", "payments", 123)
+            pr = azure.PullRequest(f"https://127.0.0.1:{server.server_address[1]}/contoso", "Web", "payments", 123)
             monkeypatch.delenv("SSL_CERT_FILE", raising=False)
             monkeypatch.delenv("SSL_CERT_DIR", raising=False)
             with pytest.raises(client.AzureError, match=re.escape("certificate was not trusted. Set SSL_CERT_FILE")):
@@ -1113,10 +1120,9 @@ class TestACompanysOwnRoot:
             monkeypatch.setenv("SSL_CERT_FILE", str(root))
             assert client.Client(pr, FakeToken()).status() == "active"
         finally:
-            server.kill()
-            server.wait(timeout=10)
-            if server.stdout is not None:
-                server.stdout.close()
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)
 
 
 class TestAReportReadOnce:
