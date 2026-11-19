@@ -28,7 +28,7 @@ import truststore
 from adk_review.collect.git import on_path
 from adk_review.core.text import squash
 
-from .azure import Place, PullRequest, marked, rooted, thread_payload
+from .azure import Place, PullRequest, posted_as, rooted, thread_payload
 from .git_sync import bounded
 
 #: Azure DevOps' own application in Microsoft Entra: the resource `az` is asked a token for.
@@ -52,8 +52,6 @@ _PAGE = 2000
 _TENANT = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
 #: Where a call may go: Azure DevOps over HTTPS, or this machine's own address, where the tests' fake answers.
 _HTTPS, _LOCAL = "https://", "http://127.0.0.1:"
-#: Said where a post may have arrived though no answer says so. The screen names the key that checks.
-_MAYBE_POSTED = "The comment may be posted."
 #: A server's own words in a sentence: one line, this long at most.
 _SAID_MAX_CHARS = 200
 
@@ -203,29 +201,21 @@ class Client:
                 return found
             skip = onward
 
-    def thread_of(self, fingerprint: str, text: str = "") -> int | None:
-        """A thread that is this finding's already: one whose comment carries its mark, anyone's, since a teammate's
-        post of it is a duplicate too, or one that opens with the very words of `text`. Read by review: the person
-        may take the mark out, and a post that arrived with no answer was then posted again. A deleted thread or
-        comment is none, and a reply that says the same is no thread of its own."""
-        words = text.strip()
-        if not fingerprint and not words:
-            return None
+    def threads(self) -> list[tuple[int, list[str]]]:
+        """The pull request's live threads, each its number and its comments' words in order: a deleted thread or
+        comment is none. `azure.posted_as` says which is a finding's."""
+        live = []
         for thread in _dicts(self._call("GET", self._pr.api("threads")).get("value")):
-            if thread.get("isDeleted") or type(thread.get("id")) is not int:
-                continue
-            kept = [comment for comment in _dicts(thread.get("comments")) if not comment.get("isDeleted")]
-            said = [comment["content"] for comment in kept if isinstance(comment.get("content"), str)]
-            marks = fingerprint and any(marked(one) == fingerprint for one in said)
-            if marks or (words and said and said[0].strip() == words):
-                return thread["id"]
-        return None
+            if not thread.get("isDeleted") and type(thread.get("id")) is int:
+                kept = [comment for comment in _dicts(thread.get("comments")) if not comment.get("isDeleted")]
+                live.append((thread["id"], [one["content"] for one in kept if isinstance(one.get("content"), str)]))
+        return live
 
     def post(self, payload: dict) -> int:
         """`payload` posted as a new thread: its id."""
         thread = self._call("POST", self._pr.api("threads"), body=payload).get("id")
         if type(thread) is not int:
-            raise AzureError(f"Azure DevOps answered with no thread. {_MAYBE_POSTED}", unsure=True)
+            raise AzureError("Azure DevOps answered with no thread.", unsure=True)
         return thread
 
     def _call(self, method: str, url: str, *, body: dict | None = None, query: Mapping[str, str] | None = None) -> dict:
@@ -239,7 +229,8 @@ class Client:
             )
         data = None if body is None else json.dumps(body).encode("utf-8")
         headers = {"Authorization": self._credential(), "Accept": "application/json", "User-Agent": "adk-review-tui"}
-        if data is not None:
+        posting = data is not None  # a call that sends something: what it sent may have arrived, answer or none
+        if posting:
             headers["Content-Type"] = "application/json"  # UTF-8, as JSON is by its own standard
         for waited in (False, True):
             request = _request(full, data, headers, method)
@@ -247,14 +238,14 @@ class Client:
                 if self._opener is None:
                     self._opener = _opener()
                 with self._opener.open(request, timeout=HTTP_TIMEOUT_S) as answer:
-                    return self._answered(answer.status, answer.read(), posting=data is not None)
+                    return self._answered(answer.status, answer.read(), posting=posting)
             except urllib.error.HTTPError as refused:
-                self._sleep(self._wait(refused, waited=waited, posting=data is not None))
+                self._sleep(self._wait(refused, waited=waited, posting=posting))
             except (OSError, http.client.HTTPException) as failed:
                 # No route, no answer in time, a certificate, or an answer cut short or no HTTP at all, which is
                 # none of the network's own errors. Uncaught, it ended the screen with this call's headers shown.
                 # A post sent this way may have arrived.
-                raise AzureError(_unreached(failed), unsure=data is not None) from None
+                raise AzureError(_unreached(failed), unsure=posting) from None
         raise AssertionError("a second 429 is a sentence")
 
     def _answered(self, status: int, raw: bytes, *, posting: bool) -> dict:
@@ -291,9 +282,10 @@ class Client:
             if waited or seconds > RETRY_AFTER_MAX_S:
                 raise AzureError(f"Azure DevOps asked to wait {seconds} s. Post again after that.") from None
             return float(seconds)
+        # A post a server failed on may have arrived: the screen says so, and what to press. A read posted nothing.
         unsure = posting and code >= HTTPStatus.INTERNAL_SERVER_ERROR
-        ended = _MAYBE_POSTED if unsure else "Nothing was posted."
-        raise AzureError(f"Azure DevOps answered {code}: {_said(refused)}. {ended}", unsure=unsure) from None
+        ended = "" if unsure else " Nothing was posted."
+        raise AzureError(f"Azure DevOps answered {code}: {_said(refused)}.{ended}", unsure=unsure) from None
 
     def _no_login(self, headers: Message | None) -> AzureError:
         """The sentence for a login Azure DevOps did not accept, the token forgotten: the person logs in again, and
@@ -341,7 +333,7 @@ def post_comment(client: Client, *, text: str, place: Place, commit: str, finger
             )
         raise AzureError(f"The pull request never held commit {commit[:7]}. Check the address and the branch reviewed.")
     iteration = pushed[-1][0]
-    if (thread := client.thread_of(fingerprint, text)) is not None:
+    if (thread := posted_as(client.threads(), fingerprint, text)) is not None:
         return Posted(thread, already=True)
     if (change := client.change_of(iteration, place.path)) is None:
         raise AzureError(f"The pull request does not change {place.path}. No line can hold the comment.")

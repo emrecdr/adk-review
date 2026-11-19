@@ -150,11 +150,6 @@ def findings() -> ModuleType:
     return importlib.import_module("tui.findings")
 
 
-def _rows_of(findings: ModuleType, report: Path) -> list:
-    """A report's findings as the screen reads them."""
-    return findings.load_report(report)[0]
-
-
 def _report(folder: Path, found: list[dict], reviewed: object = None) -> Path:
     """A review's JSON report in `folder`, holding `found` and what it says it reviewed."""
     path = folder / "report.json"
@@ -170,7 +165,7 @@ class TestWhatAReportSaysOfAFinding:
     ) -> None:
         found = {"check": "rule.lint", "file": "a.py", "line": 42, "severity": "major", "title": "t"}
         found |= {"fingerprint": "ab" * 8, "lines": [42, 57], "suggestable": True}
-        row = _rows_of(findings, _report(tmp_path, [found]))[0]
+        row = findings.load_report(_report(tmp_path, [found]))[0][0]
         assert (row.fingerprint, row.lines, row.suggestable, row.span()) == ("ab" * 8, (42, 57), True, (42, 57))
 
     @pytest.mark.parametrize(
@@ -179,16 +174,16 @@ class TestWhatAReportSaysOfAFinding:
     def test_lines_that_are_no_range_are_none_and_the_span_falls_back_to_the_line(
         self, findings: ModuleType, tmp_path: Path, lines: object
     ) -> None:
-        row = _rows_of(findings, _report(tmp_path, [{"file": "a.py", "line": 9, "lines": lines}]))[0]
+        row = findings.load_report(_report(tmp_path, [{"file": "a.py", "line": 9, "lines": lines}]))[0][0]
         assert row.lines is None and row.span() == (9, 9)
 
     def test_a_finding_with_no_line_has_no_span_and_an_old_report_reads_as_before(
         self, findings: ModuleType, tmp_path: Path
     ) -> None:
         old = {"file": "a.py", "suggestable": "yes", "fingerprint": 7}
-        row = _rows_of(findings, _report(tmp_path, [old]))[0]
+        row = findings.load_report(_report(tmp_path, [old]))[0][0]
         assert (row.span(), row.fingerprint, row.suggestable, row.lines) == (None, "", False, None)
-        zero = _rows_of(findings, _report(tmp_path, [{"file": "b.py", "line": 0}]))[0]
+        zero = findings.load_report(_report(tmp_path, [{"file": "b.py", "line": 0}]))[0][0]
         assert zero.span() is None, "no file has a line 0"
 
     def test_the_reviewed_commit_is_read_from_the_report(self, findings: ModuleType, tmp_path: Path) -> None:
@@ -244,15 +239,15 @@ class TestTheDraftOfAComment:
         bare = replace(minor, title="", suggestion="", fingerprint="")
         assert azure.draft(bare) == "**minor**: guideline.correctness", "a finding with no title is named by its check"
 
-    @pytest.mark.parametrize("change", [{"suggestable": False}, {"lines": None, "line": None}])
     def test_code_the_report_does_not_call_suggestable_is_shown_and_cannot_be_applied(
-        self, azure: ModuleType, row, change: dict
+        self, azure: ModuleType, row
     ) -> None:
         """A `suggestion` block replaces the lines its comment stands on, when the author applies it. Whether the
         code can stand there is the report's to say, and its test's to hold: here its word decides. An older report
         says nothing, and gets none."""
-        text = azure.draft(replace(row, **change))
-        assert not azure.suggests(replace(row, **change))
+        plain = replace(row, suggestable=False)
+        text = azure.draft(plain)
+        assert not azure.suggests(plain)
         assert "```suggestion" not in text and "Corrected code:\n\n```\ntotal = with_tax(" in text
 
     def test_a_report_of_the_reviewer_drafts_a_suggestion_only_where_it_says_so(
@@ -572,34 +567,28 @@ class TestTheClient:
         fake_ado.answer("GET", "/iterations/4/changes", {"changeEntries": [], "nextSkip": 2000})  # the same, each time
         assert client.Client(fake_ado.pr, FakeToken()).change_of(4, "a.py") is None and len(fake_ado.seen) == 3
 
-    def test_a_thread_is_found_by_its_mark_and_a_deleted_one_is_not(
-        self, client: ModuleType, fake_ado: FakeAdo
-    ) -> None:
-        live = {"id": 5, "comments": [{"content": "x\n\n*adk-review, rule.lint, finding " + "ab" * 8 + "*"}]}
+    def test_the_live_threads_are_listed_with_their_comments_words(self, client: ModuleType, fake_ado: FakeAdo) -> None:
+        live = {
+            "id": 5,
+            "comments": [{"content": "first"}, {"isDeleted": True, "content": "gone"}, {"content": "last"}],
+        }
         gone = {"id": 6, "isDeleted": True, "comments": [{"content": "adk-review, rule.lint, finding " + "cd" * 8}]}
-        wiped = {"id": 7, "comments": [{"isDeleted": True, "content": "adk-review, rule.lint, finding " + "ef" * 8}]}
         system = {"id": 8, "comments": [{"commentType": "system", "content": None}, "no comment", None]}
-        fake_ado.answer("GET", "/threads", {"value": [system, wiped, gone, live, None]})
-        asked = client.Client(fake_ado.pr, FakeToken())
-        assert [asked.thread_of(mark * 8) for mark in ("ab", "cd", "ef")] == [5, None, None]
-        assert asked.thread_of("") is None and len(fake_ado.seen) == 3, "a finding with no identity asks nothing"
+        fake_ado.answer("GET", "/threads", {"value": [system, gone, live, None, {"id": "9"}]})
+        assert client.Client(fake_ado.pr, FakeToken()).threads() == [(8, []), (5, ["first", "last"])]
 
-    def test_a_thread_is_found_by_its_own_words_where_its_mark_is_gone(
-        self, client: ModuleType, fake_ado: FakeAdo
-    ) -> None:
+    def test_a_thread_is_a_findings_by_its_mark_or_by_its_own_words(self, azure: ModuleType) -> None:
         """Read by review: the person deletes the mark's line, the post arrives and its answer does not, and the
         screen says to press c again. With no mark to find, the same words were posted a second time."""
         said = "**major**: `charge()` adds tax twice\n\nThe coupon path taxes a taxed total."
-        other = {
-            "id": 4,
-            "comments": [{"content": said + " And more."}, {"content": said}],
-        }  # a reply is no thread's own
-        same = {"id": 9, "comments": [{"content": said + "\n"}]}
-        fake_ado.answer("GET", "/threads", {"value": [other, same]})
-        asked = client.Client(fake_ado.pr, FakeToken())
-        assert asked.thread_of("", said) == 9, "its first comment says the same, the space at its ends aside"
-        assert asked.thread_of("ab" * 8, "other words") is None
-        assert asked.thread_of("", "") is None and len(fake_ado.seen) == 2, "nothing to find by: nothing asked"
+        marked = "x\n\n*adk-review, rule.lint, finding " + "ab" * 8 + "*"
+        threads = [(4, [said + " And more.", said]), (5, [marked]), (9, [said + "\n"]), (8, [])]
+        assert azure.posted_as(threads, "ab" * 8) == 5, "by its mark, whoever posted it"
+        assert azure.posted_as(threads, "", said) == 9, "its first comment says the same, the space at its ends aside"
+        assert azure.posted_as(threads, "cd" * 8, "other words") is None, (
+            "a reply that says the same is no thread's own"
+        )
+        assert azure.posted_as(threads, "", "") is None and azure.posted_as([], "ab" * 8, said) is None
 
     def test_a_post_sends_the_payload_as_utf_8_and_answers_the_threads_id(
         self, client: ModuleType, fake_ado: FakeAdo
@@ -660,7 +649,7 @@ class TestTheClient:
         fake_ado.answer("GET", "/threads", raw=b"<html>Sign in</html>", status=203)
         fake_ado.answer("GET", "/iterations", status=403)
         asked = client.Client(fake_ado.pr, token)
-        for call in (asked.status, lambda: asked.thread_of("ab" * 8), asked.iterations):
+        for call in (asked.status, asked.threads, asked.iterations):
             with pytest.raises(client.AzureError):
                 call()
         assert token.forgot == 2, "a 403 is no refused login: the same token is right"
@@ -700,7 +689,7 @@ class TestTheClient:
         assert client.Client(fake_ado.pr, FakeToken(), sleep=waited.append).status() == "active" and waited == [2.0]
         fake_ado.answer("GET", "/threads", status=429, headers={"Retry-After": "120"})
         with pytest.raises(client.AzureError, match=re.escape("asked to wait 120 s. Post again after that")):
-            client.Client(fake_ado.pr, FakeToken(), sleep=waited.append).thread_of("ab" * 8)
+            client.Client(fake_ado.pr, FakeToken(), sleep=waited.append).threads()
         fake_ado.answer("GET", "/iterations", status=429, headers={"Retry-After": "1"})  # and again after the wait
         with pytest.raises(client.AzureError, match="asked to wait 1 s"):
             client.Client(fake_ado.pr, FakeToken(), sleep=waited.append).iterations()
@@ -759,11 +748,8 @@ class TestTheClient:
         ("answer", "said"),
         [
             ({"broken": "cut"}, "did not answer whole"),
-            (
-                {"status": 502, "raw": b"<html>Bad Gateway</html>"},
-                "answered 502: Bad Gateway. The comment may be posted",
-            ),
-            ({"status": 504}, "answered 504: Gateway Timeout. The comment may be posted."),
+            ({"status": 502, "raw": b"<html>Bad Gateway</html>"}, "Azure DevOps answered 502: Bad Gateway."),
+            ({"status": 504}, "Azure DevOps answered 504: Gateway Timeout."),
         ],
     )
     def test_a_post_that_may_have_arrived_is_never_said_to_be_unposted(

@@ -1845,7 +1845,12 @@ def safe_code(code: str) -> str:
 def _unfenced(code: str) -> str:
     """A model's corrected code with a fence it wrapped it in unwrapped and each credential hidden: what the JSON and
     the comment show of it, each made safe its own way after."""
-    return scrub("\n".join(without_fences(code.strip("\n").splitlines())))[0]
+    return scrub(_unwrapped(code))[0]
+
+
+def _unwrapped(code: str) -> str:
+    """A model's corrected code with a fence it wrapped it in unwrapped, and nothing else of it changed."""
+    return "\n".join(without_fences(code.strip("\n").splitlines()))
 
 
 def safe_value(value: Any) -> Any:
@@ -1922,27 +1927,28 @@ def _found(item: Sourced, added: Mapping[str, frozenset[int]], identity: str = "
         # The finding's reason, which a guideline writes for every finding, and its corrected code, for a blocker or a
         # major: reported by the owner, the front end, which reads this report, showed a major as one short line.
         "why": safe_line(f.why),
-        "code": safe_code(f.code),
+        "code": (code := safe_code(f.code)),
         # Whether that code can stand as a suggestion on those lines, which a pull request's page applies with one
         # click by replacing them: asked by the front end, which could only guess it from what the code looked like.
-        "suggestable": _suggestable(item, placed, added.get(f.file, frozenset())),
+        "suggestable": _suggestable(item, code, placed, added.get(f.file, frozenset())),
         # Whether its suggested code is what replaced the deleted lines it quotes: the change may have done it already.
         "already_held": item.done,
     }
 
 
-def _suggestable(item: Sourced, placed: Sequence[int], added: frozenset[int]) -> bool:
+def _suggestable(item: Sourced, shown: str, placed: Sequence[int], added: frozenset[int]) -> bool:
     """Whether a finding's corrected code can replace the lines it stands on, as a pull request's page does when its
     author applies a suggestion: every one of them a line the change added, none quoted as deleted, since such a
     quote stands on the line before it, the change not having done it already, and the code the model's own, with
     nothing of the report's in it. Reproduced by review of the front end: the JSON's code holds a placeholder where
     a credential stood, a space where a character no reader sees did, a broken opener where a pipeline's command
-    began, and its cut where it ran long, and each was applied as written."""
+    began, and its cut where it ran long, and each was applied as written. `shown` is the code as the JSON holds it:
+    where it is the model's own, it is what the model wrote with its fence and its lines' trailing spaces gone."""
     code = item.finding.code
-    if not code.strip() or CUT_MARK in code or item.deleted or item.done:
+    if not shown or CUT_MARK in code or item.deleted or item.done:
         return False
-    written = "\n".join(line.rstrip() for line in without_fences(code.strip("\n").splitlines())).strip("\n")
-    return bool(placed) and all(line in added for line in placed) and safe_code(code) == written
+    written = "\n".join(line.rstrip() for line in _unwrapped(code).splitlines()).strip("\n")
+    return bool(placed) and all(line in added for line in placed) and shown == written
 
 
 def _reasoned(

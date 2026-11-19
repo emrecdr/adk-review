@@ -2443,8 +2443,9 @@ async def _wait_for_branches(app, pilot) -> None:
 PR_ADDRESS = "https://dev.azure.com/contoso/Web/_git/payments/pullrequest/123"
 
 
-def _pull_request_report(folder: Path, head_sha: str = "a" * 40, **changed: object) -> Path:
-    """A review's JSON report in `folder`: one major on `src/app.py`, lines 42 to 57, of the commit `head_sha`."""
+def _pull_request_report(folder: Path, head_sha: str = "a" * 40, *, resolved: bool = False, **changed: object) -> Path:
+    """A review's JSON report in `folder`: one major on `src/app.py`, lines 42 to 57, of the commit `head_sha`, or,
+    `resolved`, that finding as one an earlier review found and this one did not."""
     import json
 
     found = {
@@ -2452,7 +2453,6 @@ def _pull_request_report(folder: Path, head_sha: str = "a" * 40, **changed: obje
         "file": "src/app.py",
         "line": 42,
         "lines": [42, 57],
-        "on_added_line": True,
         "suggestable": True,
         "severity": "major",
         "title": "`charge()` adds tax twice",
@@ -2465,7 +2465,8 @@ def _pull_request_report(folder: Path, head_sha: str = "a" * 40, **changed: obje
     }
     reviewed = {"repository": str(folder / "workspace" / "payments"), "head": "feature/orders", "head_sha": head_sha}
     path = folder / "report.json"
-    path.write_text(json.dumps({"schema": 2, "findings": [found], "reviewed": reviewed}), encoding="utf-8")
+    held = {"findings": [], "resolved": [found]} if resolved else {"findings": [found]}
+    path.write_text(json.dumps({"schema": 2, **held, "reviewed": reviewed}), encoding="utf-8")
     return path
 
 
@@ -2716,6 +2717,20 @@ async def _post_and_confirm(app, pilot) -> None:
     await _posted(app, pilot)
 
 
+def _two_repositories(tmp_path: Path):  # the application, not yet running
+    """The screen over two repositories: `a_payments`, which it picks as it opens, and `b_billing`."""
+    from tui.app import AdkReviewTuiApp
+
+    _repository(tmp_path / "workspace" / "a_payments", ("main", "feature/orders"), "feature/orders")
+    _repository(tmp_path / "workspace" / "b_billing", ("main", "feature/bills"), "feature/bills")
+    return AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+
+
+def _billing(app):  # the second repository, as the screen lists it
+    """The repository a test picks to leave the first one."""
+    return next(project for project in app.projects if project.name == "b_billing")
+
+
 class TestACommentOnThePullRequest:
     """`c`: the draft, the person's edit, a confirmation, and one post, to the file's line in the pull request."""
 
@@ -2930,7 +2945,6 @@ class TestACommentOnThePullRequest:
     @pytest.mark.asyncio
     async def test_a_finding_no_comment_fits_gets_a_sentence_and_no_editor(self, tmp_path: Path, fake_ado) -> None:
         pytest.importorskip("textual")
-        import json
 
         from tui.modals import CommentModal
 
@@ -2948,13 +2962,10 @@ class TestACommentOnThePullRequest:
             await pilot.press("c")
             await _posted(app, pilot)
             assert said[-1] == "This clone does not hold the reviewed commit's file. Fetch, then press c again."
-            report = json.loads(_pull_request_report(tmp_path, sha).read_text(encoding="utf-8"))
-            gone = {"schema": 2, "findings": [], "resolved": report["findings"], "reviewed": report["reviewed"]}
-            (tmp_path / "report.json").write_text(json.dumps(gone), encoding="utf-8")
-            await _show_findings(app, pilot, tmp_path / "report.json")
+            await _show_findings(app, pilot, _pull_request_report(tmp_path, sha, resolved=True))
             await pilot.press("c")
             await pilot.pause()
-            assert said[-1] == "This finding is resolved. There is nothing to comment on."
+            assert said[-1] == "This finding is resolved. Its lines are of an earlier commit."
             assert not isinstance(app.screen, CommentModal) and fake_ado.seen == []
 
     @pytest.mark.asyncio
@@ -2990,15 +3001,12 @@ class TestWhatTheBranchsReviewFound:
         from textual.widgets import Input
 
         from tui import config
-        from tui.app import AdkReviewTuiApp
 
-        _repository(tmp_path / "workspace" / "a_payments", ("main", "feature/orders"), "feature/orders")
-        _repository(tmp_path / "workspace" / "b_billing", ("main", "feature/bills"), "feature/bills")
-        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        app = _two_repositories(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             assert app.selected_project.name == "a_payments"
-            billing = next(project for project in app.projects if project.name == "b_billing")
+            billing = _billing(app)
             app._on_project_chosen(billing, picked=False)
             field = app.query_one("#pr-url", Input)
             field.value = PR_ADDRESS  # typed before the new repository's branches are listed
@@ -3285,21 +3293,16 @@ class TestWhatTheFirstRoundOfReviewFound:
         from textual.widgets import Input
 
         from tui import azure_state
-        from tui.app import AdkReviewTuiApp
         from tui.azure import parse_pr_url
 
-        _repository(tmp_path / "workspace" / "a_payments", ("main", "feature/orders"), "feature/orders")
-        _repository(tmp_path / "workspace" / "b_billing", ("main", "feature/bills"), "feature/bills")
-        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        app = _two_repositories(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             azure_state.keep_posted(parse_pr_url(PR_ADDRESS), "1a2b3c4d5e6f7a8b", 148)
             app.query_one("#pr-url", Input).value = PR_ADDRESS
             await pilot.pause()
             assert app._posted_threads == {"1a2b3c4d5e6f7a8b": 148}
-            app._on_project_chosen(
-                next(project for project in app.projects if project.name == "b_billing"), picked=False
-            )
+            app._on_project_chosen(_billing(app), picked=False)
             await _wait_for_branches(app, pilot)
             await app.workers.wait_for_complete()
             await pilot.pause()
@@ -3315,32 +3318,32 @@ class TestWhatTheSecondRoundOfReviewFound:
         which put the address back for the new repository under the last one's branch, and a paste then was kept
         there. Until the repository's own branch is chosen, the field takes nothing."""
         pytest.importorskip("textual")
-        from textual.widgets import Input
+        from textual.widgets import Input, Select
 
-        from tui.app import AdkReviewTuiApp
-
-        _repository(tmp_path / "workspace" / "a_payments", ("main", "feature/orders"), "feature/orders")
-        _repository(tmp_path / "workspace" / "b_billing", ("main", "feature/bills"), "feature/bills")
-        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        app = _two_repositories(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             field = app.query_one("#pr-url", Input)
             assert not field.disabled
-            billing = next(project for project in app.projects if project.name == "b_billing")
+            billing = _billing(app)
+            pairs: list[object] = []
+            restore = app._restore_pull_request
+            app._restore_pull_request = lambda: (restore(), pairs.append(app._pull_request_of))
             app._on_project_chosen(billing, picked=False)
-            app._restore_pull_request()  # as the folders' refresh a change of the mode starts
             assert app._pull_request_of is None and field.disabled, "no pair yet: its branch is not chosen"
+            app.query_one("#mode-select", Select).value = "all"  # its refresh of the folders runs while the list loads
+            await pilot.pause()
             await _wait_for_branches(app, pilot)
             await app.workers.wait_for_complete()
             await pilot.pause()
-            assert app._pull_request_of == (billing.path, "feature/bills") and not field.disabled
+            assert (billing.path, "feature/orders") not in pairs, "never the new repository under the last one's branch"
+            assert pairs and pairs[-1] == (billing.path, "feature/bills") and not field.disabled
 
     @pytest.mark.asyncio
     async def test_o_on_a_resolved_finding_opens_nothing(self, tmp_path: Path) -> None:
         """Read by review: a resolved finding's lines were counted in an earlier review's commit, and the link
         showed that line number in this one's, which is other code."""
         pytest.importorskip("textual")
-        import json
 
         from textual.widgets import Input
 
@@ -3352,10 +3355,7 @@ class TestWhatTheSecondRoundOfReviewFound:
             app.notify = _plainly(said)
             app.open_url = lambda url, **_how: opened.append(url)
             app.query_one("#pr-url", Input).value = PR_ADDRESS
-            report = json.loads(_pull_request_report(tmp_path).read_text(encoding="utf-8"))
-            gone = {"schema": 2, "findings": [], "resolved": report["findings"], "reviewed": report["reviewed"]}
-            (tmp_path / "report.json").write_text(json.dumps(gone), encoding="utf-8")
-            await _show_findings(app, pilot, tmp_path / "report.json")
+            await _show_findings(app, pilot, _pull_request_report(tmp_path, resolved=True))
             await pilot.press("o")
             await pilot.pause()
             assert said == ["This finding is resolved. Its lines are of an earlier commit."] and opened == []
@@ -3409,3 +3409,23 @@ class TestWhatTheSecondRoundOfReviewFound:
             await pilot.press("ctrl+x")
             await pilot.pause()
             assert area.text == "", "the editor's own cut, since no review can run behind it"
+
+    @pytest.mark.asyncio
+    async def test_a_posted_thread_that_lost_its_mark_is_still_posted(self, tmp_path: Path, fake_ado) -> None:
+        """Read by review: asked by its mark alone, a thread the person had posted with the mark taken out was said
+        to be gone from the pull request, and forgotten. The screen holds the thread's own number: it asks for that."""
+        pytest.importorskip("textual")
+        from tui import azure_state
+        from tui.modals import CommentModal
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            azure_state.keep_posted(fake_ado.pr, "1a2b3c4d5e6f7a8b", 148)
+            app._refresh_posted()
+            fake_ado.instead("GET", "/threads", {"value": [{"id": 148, "comments": [{"content": "my own words"}]}]})
+            await pilot.press("c")
+            await _posted(app, pilot)
+            assert said[-1] == "This finding is posted as thread 148. Press p to open it."
+            assert not isinstance(app.screen, CommentModal)
+            assert azure_state.posted_threads(fake_ado.pr) == {"1a2b3c4d5e6f7a8b": 148}

@@ -2483,6 +2483,7 @@ class TestTheJsonReport:
             "a deleted line in its quote": (at((3, 4), deleted=True), False),
             "what the change already did": (at((3, 4), done=True), False),
             "no code": (at((3, 4), ""), False),
+            "a fence with nothing in it": (at((3, 4), "```python\n```"), False),
             "no line": (at(None), False),
             "a pipeline's command made inert": (at((3, 4), 'echo "##vso[task.setvariable variable=a]b"'), False),
             "an HTML comment made inert": (at((3, 4), "x = 1  # <!-- kept -->"), False),

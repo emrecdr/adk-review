@@ -8,6 +8,7 @@ other, so an address on any other host is refused here, before a token is asked 
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass
 from urllib.parse import quote, unquote, urlsplit
 
@@ -147,13 +148,27 @@ def marked(text: str) -> str | None:
     return found.group(1) if found else None
 
 
+def posted_as(threads: Sequence[tuple[int, Sequence[str]]], fingerprint: str, text: str = "") -> int | None:
+    """The thread that is this finding's already, among a pull request's live `threads`, each its number and its
+    comments' words: one whose comment carries the finding's mark, anyone's, since a teammate's post of it is a
+    duplicate too, or one that opens with the very words of `text`. Read by review: the person may take the mark
+    out, and a post that arrived with no answer was then posted again. A reply that says the same is no thread of
+    its own."""
+    words = text.strip()
+    for number, said in threads:
+        marks = fingerprint and any(marked(one) == fingerprint for one in said)
+        if marks or (words and said and said[0].strip() == words):
+            return number
+    return None
+
+
 def suggests(row: FindingRow) -> bool:
     """Whether `row`'s corrected code is drafted as a `suggestion` block, which the author applies with one click:
     where the report says the code can stand on the finding's lines. Only the report knows: whether the change added
     each line, whether the quote holds a deleted one, and whether its own safety rules left the code the model's.
     Read by three reviews: guessed here from what the code looked like, each guess had a case it missed. A fence in
     the code would close the block early, which is this file's own to know."""
-    return row.suggestable and bool(row.code.strip()) and row.span() is not None and _FENCE not in row.code
+    return row.suggestable and _FENCE not in row.code
 
 
 def draft(row: FindingRow) -> str:
