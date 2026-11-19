@@ -12,6 +12,7 @@ import os
 import re
 import socket
 import subprocess
+import sys
 import time
 from dataclasses import replace
 from pathlib import Path
@@ -944,6 +945,36 @@ def _a_root_and_its_certificate(folder: Path) -> tuple[Path, Path, Path]:
     return files
 
 
+#: An HTTPS server in a process of its own, on a port it prints: its certificate and key are its two arguments. In the
+#: suite's own process the reviewer's engine, once a test loads it, puts truststore's context in place of Python's, a
+#: client's, and a server built from that one resets each connection. Seen in a full run, never in this file alone.
+_HTTPS_SERVER = """
+import http.server, ssl, sys
+
+class Answers(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        sent = b'{"status": "active"}'
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(sent)))
+        self.end_headers()
+        self.wfile.write(sent)
+
+    def log_message(self, *args):
+        pass
+
+class Quiet(http.server.ThreadingHTTPServer):
+    def handle_error(self, request, client_address):
+        pass  # a client that trusts no such root ends the handshake, as the test asks
+
+server = Quiet(("127.0.0.1", 0), Answers)
+secure = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+secure.load_cert_chain(sys.argv[1], sys.argv[2])
+server.socket = secure.wrap_socket(server.socket, server_side=True)
+print(server.server_address[1], flush=True)
+server.serve_forever()
+"""
+
+
 class TestACompanysOwnRoot:
     """HTTPS through a proxy that signs each host with the company's own root: trusted where the person says so."""
 
@@ -953,39 +984,20 @@ class TestACompanysOwnRoot:
         """Reproduced by review on macOS: the client's own context read `SSL_CERT_FILE` on Linux alone, while its
         sentence for a certificate nobody trusts told the person to set it."""
         pytest.importorskip("cryptography")
-        import http.server
-        import ssl
-        import threading
-
         from conftest import _no_proxy
 
         root, served, key = _a_root_and_its_certificate(tmp_path)
-
-        class Answers(http.server.BaseHTTPRequestHandler):
-            def do_GET(self) -> None:  # http.server's own name
-                sent = b'{"status": "active"}'
-                self.send_response(200)
-                self.send_header("Content-Length", str(len(sent)))
-                self.end_headers()
-                self.wfile.write(sent)
-
-            def log_message(self, format: str, *args: object) -> None:  # http.server's own names
-                """Nothing printed."""
-
-        class Quiet(http.server.ThreadingHTTPServer):
-            def handle_error(self, request: object, client_address: object) -> None:
-                """Nothing printed: a client that trusts no such root ends the handshake, as the test asks."""
-
-        server = Quiet(("127.0.0.1", 0), Answers)
-        server.daemon_threads = True
-        secure = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
-        secure.load_cert_chain(served, key)
-        server.socket = secure.wrap_socket(server.socket, server_side=True)
-        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
-        thread.start()
-        _no_proxy(monkeypatch)
-        pr = azure.PullRequest(f"https://127.0.0.1:{server.server_address[1]}/contoso", "Web", "payments", 123)
+        server = subprocess.Popen(
+            [sys.executable, "-I", "-c", _HTTPS_SERVER, str(served), str(key)],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            encoding="utf-8",
+        )
         try:
+            assert server.stdout is not None
+            port = int(server.stdout.readline())
+            _no_proxy(monkeypatch)
+            pr = azure.PullRequest(f"https://127.0.0.1:{port}/contoso", "Web", "payments", 123)
             monkeypatch.delenv("SSL_CERT_FILE", raising=False)
             monkeypatch.delenv("SSL_CERT_DIR", raising=False)
             with pytest.raises(client.AzureError, match=re.escape("certificate was not trusted. Set SSL_CERT_FILE")):
@@ -993,6 +1005,7 @@ class TestACompanysOwnRoot:
             monkeypatch.setenv("SSL_CERT_FILE", str(root))
             assert client.Client(pr, FakeToken()).status() == "active"
         finally:
-            server.shutdown()
-            server.server_close()
-            thread.join(timeout=5)
+            server.kill()
+            server.wait(timeout=10)
+            if server.stdout is not None:
+                server.stdout.close()
