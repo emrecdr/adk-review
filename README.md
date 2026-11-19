@@ -733,6 +733,8 @@ and last the next steps, by the verdict and what was kept. "The report" in `GUID
   in a fenced block that keeps its lines where it spans several, and the whole holds at most 60,000 characters, under
   the 65,536 GitHub takes in a comment, the most severe points first and the rest counted. The reviewer posts nothing
   and prints no command that would: asked by the owner, who reviews others' branches and pastes each comment by hand.
+  The terminal front end posts one finding's comment to an Azure DevOps pull request, on the person's click and after
+  their edit: [its own guide](tui/README.md) says how.
   With no file named, it is `comment-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md` in the current folder, its
   prefix the flag's own name as the hand-off's is, every name lower case, each branch's name without `refs/heads/`,
   `refs/remotes/` or `refs/tags/`, made safe for a file name and cut at 40 characters, the commit the 12 characters of
@@ -1169,7 +1171,8 @@ assistant may read it. Nothing here calls a model by itself; a review whose prof
   hunk, and git's three lines showed an edit deep in a method without its `def`, its arguments or its other branches.
   Each hunk header is left bare: git follows one with its guess at the function around the hunk, a line from above it
   cut at 80 bytes, and a credential there, its closing quote past the cut, reached every model. Every line shown can be
-  quoted, so a finding may stand on an unchanged line of a function the change touched, and `on_added_line` says so.
+  quoted, so a finding may stand on an unchanged line of a function the change touched, and `on_added_line` says so;
+  `suggestable` says whether its corrected code can replace the lines it stands on, as a pull request's page does.
   Measured over this repository's last 31 commits, the Python diffs grew 1.7 times and one file of 191 went past the
   diff cap, 16,000 then: a file the widening pushes past 16,000 characters, `WIDEN_CAP_CHARS`, or past the diff cap is
   read as git prints it, and so is every widened file where the block, counted as the block counts, leaves out a file

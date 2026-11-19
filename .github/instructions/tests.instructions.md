@@ -14,7 +14,9 @@ applyTo: "tests/**"
   a branch per way a change once hid from the review; and `fake_provider.raises_when` / `answers_when` / `calls_when`,
   which make the provider fail, answer or call a tool on a text in the system instruction; `confirms`, chat's intake
   confirming a scope with its tool; `Chat`, one conversation over several turns, under a `run_config` where a test names
-  one, its last turn's events in `events`; and `asked`, each request as it was sent. A test is named as the sentence it
+  one, its last turn's events in `events`; `asked`, each request as it was sent; and, for the front end's Azure DevOps
+  side, `fake_ado`, a fake service on a local port whose routes a test answers and whose requests it keeps,
+  `FakeToken`, a login, and `_ready_to_comment`, a pull request that takes a comment. A test is named as the sentence it
   proves (`test_the_gate_runs_before_any_model`), and an async one carries `@pytest.mark.asyncio`, since
   `asyncio_mode = "strict"`. A test still running after `faulthandler_timeout` prints every thread's stack and ends the
   run, so a hang names itself.

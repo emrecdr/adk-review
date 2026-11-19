@@ -89,7 +89,8 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   repository only where the person acts: their pick of a repository, a fetch that removes nothing, F5, a fetch with
   `--prune`, or their answer to a branch behind its remote. It posts one comment to an Azure DevOps pull request
   only on the person's click, after their edit and a confirmation, with a token from their own `az` login, asked
-  with fixed arguments and never stored; the reviewer posts nothing. It draws every string a
+  with fixed arguments and never stored; the reviewer posts nothing. A `suggestion` block is drafted only where the
+  report's JSON calls the finding's code `suggestable`. It draws every string a
   repository, a branch or a model wrote with no markup. Its own guide is `tui/README.md`.
 - The docs are tested (`tests/test_docs.py`): every guide names only paths the working tree has, `README.md` names each
   module at the package's root, and `GUIDE.md` holds every flag, check, JSON field and limit as the code has them.

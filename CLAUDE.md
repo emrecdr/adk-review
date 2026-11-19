@@ -253,7 +253,11 @@ Load-bearing rules the tests enforce:
   through cmd.exe, kept in memory and written nowhere. The token goes to `dev.azure.com` or a `visualstudio.com`
   organization alone, and no redirect is followed: `urllib` sends `Authorization` again to a redirect's target. A
   comment's prose passes through `prose`, and its corrected code is never changed, since "Apply changes" writes it
-  into the file. Its tests are offline: a fake Azure DevOps on a local port, and a fake `az`. Every string a
+  into the file. Whether that code is drafted as a `suggestion` block is the report's word, the JSON's `suggestable`,
+  never a guess from the code's look: only the report knows whether the change added each line, whether the quote
+  holds a deleted one, and whether its own safety rules left the code the model's. A post whose answer did not come
+  back is never said to be unposted: the next try finds it by its mark, or by its own words. Its tests are offline: a
+  fake Azure DevOps on a local port, and a fake `az`. Every string a
   repository, a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a tag. On Windows, from cmd
   and PowerShell alike: the command it shows is quoted by `windows_word`, or not shown; no key is one a terminal sends
   as another or the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first and none but Stop runs behind a
@@ -354,11 +358,16 @@ would, `Chat(module)` holds one conversation over several turns, under the `run_
 Token Streaming does, its last turn's events in `chat.events`, and the `asked` fixture records each request as it was
 sent. `demo_repo` is a session-scoped real repository from `scripts/make_demo_repo.py`, its two planted branches
 `feature/payments` and `feature/orders`, the second holding a defect for each rule, and `hostile_repo` a branch per
-way a change once hid from the review. A hook's script is written with `_script` (LF ends, the execute bit) and run
-through `_git_shell()`, git's own `sh`, as Git for Windows runs a hook. `asyncio_mode = "strict"`, so async tests need
-`@pytest.mark.asyncio`. A test still running after `faulthandler_timeout` prints every thread's stack and ends the run.
-Tests live only in `tests/`. A test is named as the sentence it proves (`test_the_gate_runs_before_any_model`), and a
-helper several tests need goes into `tests/conftest.py`, never into the package.
+way a change once hid from the review. `fake_ado` is a fake Azure DevOps on a local port, one pull request whose
+routes a test answers (`answer`, and `instead` for what a route answers from then on) and whose requests it keeps
+(`seen`), `FakeToken` a login that counts how often it was asked and refused, and `_ready_to_comment` a pull request
+that takes a comment: the front end's tests post through them, with no network and no `az`. A screen test runs under
+`tests/test_tui.py`'s own state folder, never a person's. A hook's script is written with `_script` (LF ends, the
+execute bit) and run through `_git_shell()`, git's own `sh`, as Git for Windows runs a hook. `asyncio_mode = "strict"`,
+so async tests need `@pytest.mark.asyncio`. A test still running after `faulthandler_timeout` prints every thread's
+stack and ends the run. Tests live only in `tests/`. A test is named as the sentence it proves
+(`test_the_gate_runs_before_any_model`), and a helper several tests need goes into `tests/conftest.py`, never into the
+package.
 
 ## The docs are tested, so update them with the code
 

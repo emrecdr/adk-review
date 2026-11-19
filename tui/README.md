@@ -3,7 +3,9 @@
 `adk-review-tui` is a screen for the terminal, built on [Textual](https://textual.textualize.io/). It picks a
 repository, the branch to review and its target, the folders, the profile or the checks, and the outputs. Then it runs
 the review and shows the report, the findings, the comment and the hand-off in tabs. A review it runs is the command's
-own: the same checks, the same exit codes and the same files.
+own: the same checks, the same exit codes and the same files. On your key it also opens a finding at its lines in an
+Azure DevOps pull request, and posts the comment you edited to that line: "Comment on an Azure DevOps pull request",
+below, says how.
 
 It is an application of its own on top of the reviewer, here in `tui/` with its own project file, a uv workspace
 member beside the reviewer, and one lock for both. It imports the reviewer as any user would. A review never imports
@@ -44,8 +46,8 @@ The screen's first line names the config it reads and the folders of repositorie
 | An installed copy, on macOS and Linux | `~/.config/adk-review-tui/tui.toml`, or under `$XDG_CONFIG_HOME` |
 
 An installed copy's config is in your own folder, which a reinstall or an uninstall leaves alone. Its state, the saved
-reports, the cache and each review's files, is in your state folder in either case: `%LOCALAPPDATA%\adk-review-tui` on
-Windows, `~/.local/state/adk-review-tui` elsewhere, or under `$XDG_STATE_HOME`.
+reports, the cache, each review's files and what it keeps of Azure DevOps, is in your state folder in either case:
+`%LOCALAPPDATA%\adk-review-tui` on Windows, `~/.local/state/adk-review-tui` elsewhere, or under `$XDG_STATE_HOME`.
 
 The first run writes the config where it is missing, and names a folder of repositories for you: in a checkout, the
 folder that holds the checkout, where its neighbours are; in an installed copy, the folder the command starts in. Change
@@ -75,7 +77,8 @@ number out of its range, a table or a setting the config does not know, or a fil
 with one sentence that says what to write, and exit 2. A file saved with a byte order mark, as Notepad and
 PowerShell 5 save one, is read.
 
-The state folder holds the last report of each target, which marks findings new or resolved, and the review cache.
+The state folder holds the last report of each target, which marks findings new or resolved, the review cache, and
+`azure.json`: the pull request's address you gave for each branch, and the thread each finding was posted as.
 A target's last report moves on only where a review found other findings, so the same review run a third time is
 served from the cache with no model call.
 
@@ -225,6 +228,8 @@ It runs in cmd, in PowerShell and in Windows Terminal alike.
   itself: `Ctrl+A`, `Ctrl+C`, `Ctrl+F`, `Ctrl+M` and `Ctrl+V`.
 - A review it runs writes its text in UTF-8, so a branch's or a file's name reads as written.
 - Stopping a review stops its whole process tree.
+- The Azure CLI is `az.cmd` there: it is found on PATH and run with fixed arguments alone, and one that does not
+  answer is stopped with its whole process tree.
 
 ## Its modules
 
@@ -233,9 +238,9 @@ It runs in cmd, in PowerShell and in Windows Terminal alike.
 | `__init__.py`, `__main__.py` | The `adk-review-tui` command: `--config`, `--init-config`, and the config read before the screen opens |
 | `app.py` | The screen: the steps, the tabs, the keys, and the review it runs |
 | `config.py` | `tui.toml` and where it and the state live: the folders of repositories, the defaults and each repository's saved choices |
-| `git_sync.py` | The repositories under a folder, their branches and how each stands to its remote, and the fetch |
+| `git_sync.py` | The repositories under a folder, their branches and how each stands to its remote, the fetch, a file's lines at a commit, and the one runner that stops a program whole past its timeout, git or the Azure CLI |
 | `options.py` | The profiles, the command a selection makes, and the report `--previous` reads |
-| `findings.py` | A `--json` report read for the findings tab, its filters, and a check's explanation |
+| `findings.py` | A `--json` report read for the findings tab, with the commit it reviewed, its filters, and a check's explanation |
 | `azure.py` | Azure DevOps, with no call made: a pull request's address read, a finding's links built, the comment drafted from a finding, with the mark that finds it again, and the thread it is posted as |
 | `azure_client.py` | The calls to Azure DevOps and their login: a token from `az`, with fixed arguments, kept in memory alone, and one comment's post, with the checks before it |
 | `azure_state.py` | `azure.json` in the state folder: the pull request's address given for a branch, and the thread each finding was posted as |
