@@ -4373,6 +4373,58 @@ class TestTheShippedRules:
             lines_hit(rule, path, flow("pull_request_target", "") + line + "\n")
             assert time.perf_counter() - started < 1.0, line[:40]
 
+    def test_a_ref_on_the_lines_under_its_key_and_a_pull_of_the_pull_request_are_named(self) -> None:
+        """Read by an audit, and reproduced: a checkout's `ref:` written as YAML writes a long value, `ref: >-` and the
+        expression on the line under it, named none, since the key and its value were read on one line; nor did
+        `git pull origin pull/7/head`, a fetch and a merge in one, where `git fetch` of the same ref did. Each hands
+        the pull request's code to a job that holds the base's token. The line named is the one that names the head."""
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.script_injection import ScriptInjection
+
+        rule, path = ScriptInjection(), ".github/workflows/build.yml"
+        opened = "on:\n  pull_request_target:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
+        sha = "${{ github.event.pull_request.head.sha }}"
+
+        def flow(value: str, trigger: str = "pull_request_target") -> str:
+            checkout = f"      - uses: actions/checkout@v4\n        with:\n          {value}"
+            return f"{opened.replace('pull_request_target', trigger)}{checkout}      - run: npm ci\n"
+
+        under = "            "
+        for value, line in (
+            (f"ref: >-\n{under}{sha}\n", 10),
+            (f"ref: |\n{under}{sha}\n", 10),
+            (f"ref:\n{under}{sha}\n", 10),
+            (f"ref: >-  # the head\n{under}refs/pull/${{{{ github.event.number }}}}/merge\n", 10),
+            (f"ref: >-\n{under}${{{{\n{under}  github.head_ref\n{under}}}}}\n", 11),
+            (f"repository: >-\n{under}${{{{ github.event.pull_request.head.repo.full_name }}}}\n", 10),
+        ):
+            assert lines_hit(rule, path, flow(value)) == [line], value
+        assert lines_hit(rule, path, flow(f"ref: >-\n{under}${{{{ github.sha }}}}\n")) == [], "the base's commit"
+        assert lines_hit(rule, path, flow(f"ref: >-\n{under}{sha}\n", "pull_request")) == [], "no secrets there"
+        # The value ends where a line stands as far left as its key: a later step's own words are none of it.
+        later = flow("ref:\n          fetch-depth: 0\n").replace(
+            "      - run: npm ci\n", f"      - uses: acme/notify@v1\n        with:\n          sha: {sha}\n"
+        )
+        assert lines_hit(rule, path, later) == [], later
+        # A change that adds the value's line alone, under a key that was there, is the change's.
+        edited = {**_entry(path, flow(f"ref: >-\n{under}{sha}\n")), "status": "M", "added": [(10, under + sha)]}
+        found = run_rules({"files": [edited], "tree": None}, [rule])["rule.script-injection"].findings
+        assert [f.line for f in found] == [10], found
+        for script, named in (
+            ("git pull origin pull/${{ github.event.pull_request.number }}/head", True),
+            ("git pull --no-rebase origin refs/pull/7/merge", True),
+            ("git pull origin main", False),
+        ):
+            assert lines_hit(rule, path, flow("fetch-depth: 0\n").replace("npm ci", script)) == [10] * named, script
+        # A key's line is read once, whatever follows its colon, and no further under it than a ref's value goes.
+        import time
+
+        for value in ("ref:" + " " * 40_000 + "x\n", "ref:\n" + f"{under}x\n" * 40_000):
+            started = time.perf_counter()
+            assert lines_hit(rule, path, flow(value)) == []
+            assert time.perf_counter() - started < 1.0, value[:20]
+
     def test_tojson_inside_a_string_of_the_script_is_named_wherever_the_string_opens(self) -> None:
         """Read by review of another tool's report, and reproduced: `toJSON` was named where a quote stood right
         before the expression, so one word between them, `` `Issue: ${{ toJSON(…) }}` ``, was enough to pass. JSON's

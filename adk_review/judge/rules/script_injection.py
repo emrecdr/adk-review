@@ -60,9 +60,13 @@ HEAD = re.compile(
     r"|head_ref)\b|refs/pull/",
     re.IGNORECASE,
 )
-#: A script that checks out the pull request's code itself: `gh pr checkout`, or a fetch, then its ref.
+#: A checkout key whose value stands on the lines under it: nothing after the colon, or a block scalar's header, `|`
+#: or `>` with its indicators, `>-`. How many of those lines are read: a ref is a line or two, an expression a few.
+BELOW = re.compile(r":[ \t]*+(?:[|>][-+0-9]{0,2}[ \t]*+)?$")
+VALUE_LINES_MAX = 20
+#: A script that checks out the pull request's code itself: `gh pr checkout`, or a fetch or a pull, then its ref.
 GH_CHECKOUT = re.compile(r"\bgh\s+pr\s+checkout\b", re.IGNORECASE)
-GIT_FETCH = re.compile(r"\bgit\s+fetch\b", re.IGNORECASE)
+GIT_FETCH = re.compile(r"\bgit\s+(?:fetch|pull)\b", re.IGNORECASE)
 PULL_REF = re.compile(r"\b(?:refs/)?pull/", re.IGNORECASE)
 #: Where GitHub reads a workflow's triggers: a workflow, never an action's metadata.
 WORKFLOWS = READ[:2]
@@ -95,8 +99,9 @@ class ScriptInjection(FileRule):
     `${{ env.NAME }}`; and `toJSON` in a template that a line above its own opened. And under
     `pull_request_target`, which runs with the base's token and secrets, a checkout of the pull request's own code,
     its head or the merge GitHub makes of it, the "pwn request" GitHub's guide names: read by validation, no rule named
-    it. Named where the change added the trigger, the checkout or its `ref:`; not read in a workflow too large to read
-    whole, nor a checkout whose ref an expression builds from another value."""
+    it. Named where the change added the trigger, the checkout or its `ref:`, the value on its key's line or on the
+    lines under it; not read in a workflow too large to read whole, nor a checkout whose ref an expression builds from
+    another value."""
 
     id = "script-injection"
     severity = "major"
@@ -144,10 +149,10 @@ class ScriptInjection(FileRule):
 
 def _checked_out(file: ChangedFile) -> list[Hit]:
     """Each step of a workflow `pull_request_target` runs that checks out the pull request's own code, once a step: a
-    checkout's `ref:` or `repository:`, or a script's `gh pr checkout` or fetch of its ref, where the change added the
-    trigger, the step's `uses:` or that line, or moved the workflow into place. Of a file not read whole, a hole where
-    a line its diff adds may be one, its trigger past what the diff shows, and none where none is. Read by review: none
-    at all was a review that said nothing of a checkout it could not judge."""
+    checkout's `ref:` or `repository:`, or a script's `gh pr checkout`, fetch or pull of its ref, where the change
+    added the trigger, the step's `uses:` or that line, or moved the workflow into place. Of a file not read whole, a
+    hole where a line its diff adds may be one, its trigger past what the diff shows, and none where none is. Read by
+    review: none at all was a review that said nothing of a checkout it could not judge."""
     if not matches(file.path, *WORKFLOWS):
         return []  # an action's metadata names no trigger
     if not file.read_whole:
@@ -164,19 +169,20 @@ def _checked_out(file: ChangedFile) -> list[Hit]:
     trigger_added = not added.isdisjoint(triggers)
     found, steps, held = [], set(), {}
     for number, text in enumerate(lines, 1):
-        if CHECKOUT_KEY.match(text) and _names_head(text):
+        if CHECKOUT_KEY.match(text) and (where := _head_named(lines, number)):
             step = _step_of(lines, number)
             uses = [at for at in step if CHECKOUT.match(lines[at - 1])]
-            named = bool(uses) and step.start not in steps and (trigger_added or not added.isdisjoint({number, *uses}))
+            mine = {*range(number, where + 1), *uses}  # the key, its value as far as the name, and the checkout
+            named = bool(uses) and step.start not in steps and (trigger_added or not added.isdisjoint(mine))
         elif trigger_added or number in added:
-            step = range(number, number + 1)
+            step, where = range(number, number + 1), number
             named = _fetches_head(text) and _script_of(file, number, text, held) is not None
         else:
             continue
         if named:
             steps.add(step.start)
-            quoted = ("+" if number in file.added else " ") + text
-            found.append(Hit(file.path, number, quoted, title=CHECKOUT_TITLE, fix=CHECKOUT_FIX, why=CHECKOUT_WHY))
+            quoted = ("+" if where in file.added else " ") + lines[where - 1]  # the line that names the head
+            found.append(Hit(file.path, where, quoted, title=CHECKOUT_TITLE, fix=CHECKOUT_FIX, why=CHECKOUT_WHY))
     return found
 
 
@@ -209,8 +215,30 @@ def _names_head(text: str) -> bool:
     return False
 
 
+def _head_named(lines: tuple[str, ...], number: int) -> int | None:
+    """The line where the checkout key on line `number` names the pull request's own code, or None: its own line, or
+    one of the lines under it, more indented, where its value stands there, `ref: >-` and the expression on the next
+    line. Read by an audit, and reproduced: the key and its value were read on one line, so that spelling named
+    none."""
+    text = _uncommented(lines[number - 1])
+    if _names_head(text):
+        return number
+    if not BELOW.search(text):
+        return None
+    depth, value = _indent(lines[number - 1]), text
+    for at in range(number + 1, min(number + VALUE_LINES_MAX, len(lines)) + 1):
+        under = lines[at - 1]
+        if under.strip() and _indent(under) <= depth:
+            return None
+        value += " " + _uncommented(under)  # an expression can open on one line and name the head on the next
+        if _names_head(value):
+            return at
+    return None
+
+
 def _fetches_head(text: str) -> bool:
-    """Whether a script line checks out the pull request's code: `gh pr checkout`, or a `git fetch` of `pull/`."""
+    """Whether a script line checks out the pull request's code: `gh pr checkout`, or a `git fetch` or a `git pull`
+    of `pull/`."""
     value = _uncommented(text)
     fetch = GIT_FETCH.search(value)
     return bool(GH_CHECKOUT.search(value) or (fetch and PULL_REF.search(value, fetch.end())))
