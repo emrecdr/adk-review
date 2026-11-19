@@ -916,7 +916,8 @@ class TestWhatTheScreenRemembers:
         state.keep_pull_request_url("/work/other", "feature/orders", "")
         assert state.pull_request_url("/work/payments", "feature/orders") == ""
         kept = json.loads((tmp_path / "state" / "azure.json").read_text(encoding="utf-8"))
-        assert list(kept["pull_requests"]) == ["/work/payments"], "a repository with no address left is not listed"
+        listed = [os.path.normcase("/work/payments")]  # the key is the path as the file system reads it
+        assert list(kept["pull_requests"]) == listed, "a repository with no address left is not listed"
 
     def test_a_posted_thread_is_kept_per_pull_request_and_finding(self, state: ModuleType, azure: ModuleType) -> None:
         one, other = _pr(azure), replace(_pr(azure), number=124)
@@ -988,7 +989,7 @@ class TestWhatTheScreenRemembers:
         state.keep_pull_request_url("/work/payments", "feature/orders", _pr(azure).web)
         written = (tmp_path / "state" / "azure.json").read_text(encoding="utf-8")
         assert json.loads(written) == {
-            "pull_requests": {"/work/payments": {"feature/orders": _pr(azure).web}},
+            "pull_requests": {os.path.normcase("/work/payments"): {"feature/orders": _pr(azure).web}},
             "posted": {},
         }
         assert written.endswith("\n") and "\r" not in written

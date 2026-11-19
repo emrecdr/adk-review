@@ -1320,6 +1320,90 @@ class TestWindowsAndItsShells:
         finally:
             closed.set()
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("slow", ["list_branches", "changed_folders", "is_file"])
+    async def test_a_listing_that_ends_as_the_screen_closes_draws_nothing(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, slow: str
+    ) -> None:
+        """Read on the Windows runner, in two of main's four runs and in a branch's: a test left its screen while git
+        still read the repository's branches. Textual's test harness takes the widgets away before it cancels the
+        app's workers, so the listing came back to a screen with no branch list, `NoMatches`, raised as `WorkerFailed`.
+        A person's quit cancels the workers first, as a probe showed, and met none of it. Reproduced here with a
+        reading that ends between the two: the branches', the folders', and the saved report's."""
+        pytest.importorskip("textual")
+        import asyncio
+
+        from tui import app as screen
+
+        _init_repo_with_remote(tmp_path)
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        reading, widgets_gone = asyncio.Event(), asyncio.Event()
+        in_a_thread = asyncio.to_thread
+
+        async def held(call: object, /, *args: object, **kwargs: object) -> object:
+            read = await in_a_thread(call, *args, **kwargs)
+            if getattr(call, "__name__", "") == slow:
+                reading.set()
+                await widgets_gone.wait()
+            return read
+
+        monkeypatch.setattr(screen.asyncio, "to_thread", held)
+        app = screen.AdkReviewTuiApp(config_path=cfg)
+        close_the_screens = app._close_all
+
+        async def close_and_let_the_listing_end() -> None:
+            await close_the_screens()
+            widgets_gone.set()
+            listings = [worker.wait() for worker in app.workers if worker.group == "git_load"]
+            await asyncio.wait_for(asyncio.gather(*listings, return_exceptions=True), 10)
+
+        monkeypatch.setattr(app, "_close_all", close_and_let_the_listing_end)
+        async with app.run_test(size=(140, 45)):
+            await asyncio.wait_for(reading.wait(), 10)
+
+    @pytest.mark.asyncio
+    async def test_a_listing_that_ends_behind_a_dialog_is_drawn(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The other side of the test above: its check for a screen that closed must not take an open dialog for one.
+        A listing that ends while a dialog is up is drawn behind it, the branches, the folders and the banner's count
+        of changed files, which is written last."""
+        pytest.importorskip("textual")
+        import asyncio
+
+        from textual.widgets import OptionList, Static
+
+        from tui import app as screen
+        from tui.modals import ExplainCheckModal
+
+        _init_repo_with_remote(tmp_path)
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        reading, dialog_up = asyncio.Event(), asyncio.Event()
+        in_a_thread = asyncio.to_thread
+
+        async def held(call: object, /, *args: object, **kwargs: object) -> object:
+            read = await in_a_thread(call, *args, **kwargs)
+            if call is screen.list_branches:
+                reading.set()
+                await dialog_up.wait()
+            return read
+
+        monkeypatch.setattr(screen.asyncio, "to_thread", held)
+        app = screen.AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await asyncio.wait_for(reading.wait(), 10)
+            app.push_screen(ExplainCheckModal("rule.secrets"))
+            await pilot.pause()
+            assert isinstance(app.screen, ExplainCheckModal)
+            dialog_up.set()
+            listings = [worker.wait() for worker in app.workers if worker.group == "git_load"]
+            await asyncio.wait_for(asyncio.gather(*listings), 10)
+            behind = app.screen_stack[0]
+            assert behind.query_one("#head-list", OptionList).option_count > 0
+            assert "changed file(s)" in str(behind.query_one("#status-banner", Static).render())
+
     def test_copying_uses_windows_own_clipboard_and_the_terminals(self, monkeypatch) -> None:
         """Textual copies through the terminal alone (OSC 52), which Windows Terminal reads and the classic console
         window does not: there Ctrl+Y said "Copied" and copied nothing. On Windows the text goes to Windows' own
@@ -3020,7 +3104,7 @@ class TestWhatTheBranchsReviewFound:
             field.value = PR_ADDRESS  # and once the branches are listed, it is the new repository's
             await pilot.pause()
             held = json.loads(kept.read_text(encoding="utf-8"))["pull_requests"]
-            assert held == {billing.path: {"feature/bills": PR_ADDRESS}}
+            assert held == {os.path.normcase(billing.path): {"feature/bills": PR_ADDRESS}}
 
     @pytest.mark.asyncio
     async def test_editing_the_address_leaves_the_chosen_finding_chosen(self, tmp_path: Path) -> None:

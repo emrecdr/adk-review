@@ -589,7 +589,7 @@ class AdkReviewTuiApp(App[int]):
             branches = await asyncio.to_thread(list_branches, project.path)
         finally:
             self._set_loading(False, head_list, base_list)
-        if self.selected_project != project:
+        if self._left(project, "#head-list", "#base-list"):
             return
         self.branches = branches
         names = {b.name for b in branches}
@@ -762,7 +762,7 @@ class AdkReviewTuiApp(App[int]):
             folders, changed_count = await asyncio.to_thread(changed_folders, repo, base, head, self.selected_mode)
         finally:
             self._set_loading(False, path_list, excl_list)
-        if self.selected_project != project:
+        if self._left(project, "#path-list", "#exclude-list"):
             return
         listed = {folder for folder, _label in folders}
         chosen_paths, chosen_excludes = self._path_selection_sets(project, path_list, excl_list, listed)
@@ -778,7 +778,7 @@ class AdkReviewTuiApp(App[int]):
             self._syncing_paths = False
         prev_file = baseline_path(repo, self.selected_base, self.selected_head, self.selected_mode)
         has_prev = await asyncio.to_thread(prev_file.is_file)
-        if self.selected_project != project:
+        if self._left(project, "#output-tabs"):
             return
         prev_badge = "prior baseline available" if has_prev else "no prior baseline yet"
         self._set_banner(
@@ -839,6 +839,13 @@ class AdkReviewTuiApp(App[int]):
     def _has_dom(self, *selectors: str) -> bool:
         """Whether the app is mounted and every widget in `selectors` still exists in the active screen."""
         return self.is_running and all(bool(self.query(sel)) for sel in selectors)
+
+    def _left(self, project: ProjectInfo, *selectors: str) -> bool:
+        """Whether what a listing read for `project` has no place to be drawn now: another repository was picked
+        meanwhile, or the screen closed and took `selectors` away. Textual's test harness closes the widgets before
+        it cancels a worker, where a person's quit cancels first: on a slow runner a test that left mid-listing
+        failed there, `NoMatches`."""
+        return self.selected_project != project or not self._has_dom(*selectors)
 
     def _update_cli_preview(self) -> None:
         if self.selected_project is None or not self._has_dom("#path-list", "#cli-preview"):
