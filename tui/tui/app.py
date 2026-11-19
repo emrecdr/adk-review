@@ -1537,8 +1537,7 @@ class AdkReviewTuiApp(App[int]):
         self.last_report_md = stdout_text
         if stdout_text:
             report_log.write(stdout_text.rstrip("\n"))
-        if not dry_run:  # a dry run reviews nothing: the last review's findings, comment and hand-off stay as they are
-            await self._load_generated_files(outputs)
+        await self._load_generated_files(outputs)
         self.query_one("#output-tabs", TabbedContent).active = "tab-report"
         self._set_banner(f"Finished {label} on {project.name} (exit code {code}).")
         self.notify(
@@ -1608,26 +1607,29 @@ class AdkReviewTuiApp(App[int]):
                 await asyncio.wait_for(proc.wait(), timeout=2.0)
 
     async def _load_generated_files(self, outputs: dict[str, Path]) -> None:
-        tabs = self.query_one("#output-tabs", TabbedContent)
+        """What a decided review wrote, on its three tabs: its findings, and its comment and hand-off or that it wrote
+        none. A run that decided nothing wrote no report, a dry run or a review the reviewer refused, and leaves the
+        tabs as the last review left them. Read by an audit, and confirmed: a review with the comment switched off set
+        the tab's name back and left the earlier review's comment under it, for Ctrl+Y to copy as its own."""
         json_path = outputs.get("json")
-        if json_path and json_path.is_file():
-            self.findings_rows, self._reviewed = await asyncio.to_thread(load_report, json_path)
-            count = len(self.findings_rows)
-            tabs.get_tab("tab-findings").label = f"2. Findings Explorer ({count})" if count else "2. Findings Explorer"
-            self._render_findings_table()
-        # What this review wrote, or that it wrote none: read by an audit, a review with the switch off set the tab's
-        # name back and left the earlier review's text under it, for Ctrl+Y to copy as its own.
+        if json_path is None or not await asyncio.to_thread(json_path.is_file):
+            return
+        self.findings_rows, self._reviewed = await asyncio.to_thread(load_report, json_path)
+        count = len(self.findings_rows)
+        tabs = self.query_one("#output-tabs", TabbedContent)
+        tabs.get_tab("tab-findings").label = f"2. Findings Explorer ({count})" if count else "2. Findings Explorer"
+        self._render_findings_table()
         self.last_comment_md = await self._shown(outputs.get("comment"), "comment", "3. Author Comment")
         self.last_handoff_md = await self._shown(outputs.get("handoff"), "handoff", "4. Agent Handoff")
 
     async def _shown(self, written: Path | None, flag: str, title: str) -> str:
         """The text a review wrote for the tab `flag` names, drawn there, or "" and the tab saying it wrote none."""
-        has = written is not None and await asyncio.to_thread(written.is_file)
-        text = await asyncio.to_thread(written.read_text, encoding="utf-8") if written is not None and has else ""
-        await self.query_one(f"#{flag}-md", Markdown).update(text if has else f"*No `--{flag}` generated yet.*")
-        self.query_one("#output-tabs", TabbedContent).get_tab(f"tab-{flag}").label = (
-            f"{title} (ready)" if has else f"{title} (--{flag})"
-        )
+        tab = self.query_one("#output-tabs", TabbedContent).get_tab(f"tab-{flag}")
+        if written is None or not await asyncio.to_thread(written.is_file):
+            text, tab.label = "", f"{title} (--{flag})"
+        else:
+            text, tab.label = await asyncio.to_thread(written.read_text, encoding="utf-8"), f"{title} (ready)"
+        await self.query_one(f"#{flag}-md", Markdown).update(text or f"*No `--{flag}` generated yet.*")
         return text
 
     def _render_findings_table(self, *, keep: FindingRow | None = None) -> None:

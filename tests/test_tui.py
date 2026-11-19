@@ -1618,13 +1618,14 @@ class TestWhatTheCodeReviewFound:
         _git(local, "fetch", "origin")  # the screen fetches only at F5
         cfg = tmp_path / ".tui.toml"
         cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
-        comment = tmp_path / "comment.md"
+        comment, report = tmp_path / "comment.md", tmp_path / "report.json"
         comment.write_text("the last review's comment\n", encoding="utf-8")
+        report.write_text('{"schema": 2, "findings": []}', encoding="utf-8")  # a decided review writes its report
         app = AdkReviewTuiApp(config_path=cfg)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             await app.workers.wait_for_complete()
-            await app._load_generated_files({"comment": comment})
+            await app._load_generated_files({"json": report, "comment": comment})
             assert app.last_comment_md and "ready" in str(app.query_one(TabbedContent).get_tab("tab-comment").label)
             app._sync_chosen_branch("head", "origin/feat-remote")
             await pilot.pause()
@@ -3789,15 +3790,21 @@ class TestWhatAnAuditFound:
 
         ran: list[list[str]] = []
 
-        def written(cmd: list[str]) -> None:  # the files a review writes where its flags name them
+        def written(cmd: list[str]) -> None:  # the files a decided review writes where its flags name them
+            Path(cmd[cmd.index("--json") + 1]).write_text('{"schema": 2, "findings": []}', encoding="utf-8")
             for flag, words in (("--comment", "the comment of review"), ("--handoff", "the hand-off of review")):
                 if flag in cmd:
                     Path(cmd[cmd.index(flag) + 1]).write_text(f"{words} {len(ran)}\n", encoding="utf-8")
 
         async def review(cmd: list[str]) -> tuple[int, str]:
+            if refused or "--dry-run" in cmd:  # no review is decided: nothing is written
+                ran.append(cmd)
+                return (2 if refused else 0), "review: nothing was reviewed\n"
             written(cmd)
             ran.append(cmd)
             return 0, "## Verdict: APPROVED\n"
+
+        refused: list[bool] = []
 
         async def run(key: str) -> None:
             await pilot.press(key)
@@ -3825,6 +3832,11 @@ class TestWhatAnAuditFound:
             assert app.last_comment_md == "", "the earlier review's comment, under a tab that says there is none"
             assert "generated yet" in comment.source, comment.source
             assert app.last_handoff_md == "the hand-off of review 2\n", "what this review did write is shown"
+            # A review the reviewer refuses, exit 2, decides nothing and writes no report: it takes none away either.
+            refused.append(True)
+            await run("ctrl+r")
+            assert len(ran) == 4 and app.last_handoff_md == "the hand-off of review 2\n", "a review that was refused"
+            assert "ready" in str(tabs.get_tab("tab-handoff").label)
 
     @pytest.mark.asyncio
     async def test_ctrl_y_copies_the_open_tab_and_no_other(self, tmp_path: Path, monkeypatch) -> None:
