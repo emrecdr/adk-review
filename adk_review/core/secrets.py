@@ -498,9 +498,11 @@ def without_examples(text: str) -> str:
     return _KEY_HINT.sub(_BLANK, _URL_CREDENTIAL.sub(_unless_example, _URL_QUERY.sub(_query_unless_example, text)))
 
 
-#: A URL with a query, its host the first group: where a documentation host's example credential is blanked.
+#: A URL with a query or a fragment, its host the first group and what follows its path the second: where a
+#: documentation host's example credential is blanked. Read by an audit, and reproduced: read to its `#`, an example's
+#: `#access_token=` was a blocker where its `?access_token=` was none.
 _URL_QUERY = re.compile(
-    r"(?i)\b[a-z][a-z0-9+.-]{0,40}://(?:[^\s/?#@\"'<>]*+@)?([^\s/?#:@\"'<>]++)[^\s?#\"'<>]*+\?[^\s#\"'<>]*+"
+    r"(?i)\b[a-z][a-z0-9+.-]{0,40}://(?:[^\s/?#@\"'<>]*+@)?([^\s/?#:@\"'<>]++)[^\s?#\"'<>]*+([?#][^\s\"'<>]*+)"
 )
 
 
@@ -511,7 +513,7 @@ def _query_unless_example(found: re.Match[str]) -> str:
     a URL its query holds, a redirect's target, has a host of its own, so neither is blanked. The pattern reads each
     part once, none giving back what it read: an overlap of host and path took 17 s over a line of 80,000 characters."""
     url = found.group(0)
-    if not _EXAMPLE_HOST.fullmatch(found.group(1)) or "://" in url.partition("?")[2]:
+    if not _EXAMPLE_HOST.fullmatch(found.group(1)) or "://" in found.group(2):
         return url
     return _QUERY_SECRET.sub(lambda named: named[0] if vendor_shape(named[2]) else f"{named[1]}[REDACTED]", url)
 

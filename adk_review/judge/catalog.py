@@ -115,7 +115,7 @@ def _rule_problem(rule: AnyRule) -> str | None:
         return f"{type(rule).__name__} needs an id, a title and a fix, and has no {' and no '.join(missing)}"
     if (severity := getattr(rule, "severity", None)) not in RANK:
         return f"{rule.id!r} has severity {severity!r}, not {' or '.join(RANK)}"
-    if flagged := _flag_problem(rule, "reads_tests", "cleanup"):
+    if flagged := _flag_problem(rule, "reads_tests", "cleanup", "reads_every_kind", "security"):
         return flagged
     if (tool := getattr(rule, "tool", None)) is not None and tool not in TOOLS:
         return f"{rule.id!r} names the tool {tool!r}, which no adapter runs. There are {', '.join(sorted(TOOLS))}"

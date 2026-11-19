@@ -367,6 +367,23 @@ def test_a_rule_says_whether_it_reads_tests_with_true_or_false_or_is_refused(rul
         catalog()
 
 
+@pytest.mark.parametrize("flag", ["security", "reads_every_kind"])
+def test_a_rule_says_each_of_its_flags_with_true_or_false_or_is_refused(rules_folder, flag: str) -> None:
+    """Read by an audit, and confirmed: two of a rule's four flags were held to True or False, and `security = "no"`
+    or `reads_every_kind = "no"` read as true, the rule's finding never dropped by a verifier, or every kind of file
+    read, where its author meant neither."""
+    rule = (
+        '"""A rule saying one of its flags in words."""\n\nfrom __future__ import annotations\n\n'
+        "from ..rule_helpers import Rule\n\n\nclass Worded(Rule):\n"
+        '    """Says it in words."""\n\n    id = "worded"\n    severity = "minor"\n    title = "a word"\n'
+        f'    fix = "Remove it."\n    {flag} = "no"\n\n'
+        "    def check(self, path: str, line: str) -> bool:\n        return False\n"
+    )
+    rules_folder("worded", rule)
+    with pytest.raises(ValueError, match=f"'worded' has {flag} 'no', not True or False"):
+        catalog()
+
+
 def test_a_check_says_whether_it_is_a_cleanup_with_true_or_false_or_is_refused(rules_folder) -> None:
     """`cleanup = "no"` would read as true, and a hand-off would list a defect as a tidy and hold it back."""
     from adk_review.core.guidelines import Guideline

@@ -10,8 +10,9 @@ from ..rule_helpers import ChangedFile, FileRule, matches
 READ = (".github/workflows/*.yml", ".github/workflows/*.yaml", "action.yml", "action.yaml")
 #: A `uses:` value as a step (`- uses:`) or a job (`uses:`) writes it, quoted or not, a comment after it: the action or
 #: reusable workflow, then the ref after its `@`. A local action, `./…`, names no ref, and a Docker image no `@` but a
-#: digest's, which is read and passed.
-USES = re.compile(r"^\s*(?:-\s+)?uses:\s*[\"']?([^\s\"'#@]+)@([^\s\"'#]+)")
+#: digest's, which is read and passed. The key in quotes, or with a space before its colon, is the same key: read by
+#: an audit, `"uses": actions/checkout@v4` and `uses : actions/setup-python@v5` named none.
+USES = re.compile(r"""^\s*(?:-\s+)?(?:uses|"uses"|'uses')\s*:\s*["']?([^\s"'#@]+)@([^\s"'#]+)""")
 #: The one ref that cannot be moved: a full commit SHA. GitHub refuses a shorter one.
 SHA = re.compile(r"[0-9a-f]{40}")
 

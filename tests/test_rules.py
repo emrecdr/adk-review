@@ -182,6 +182,29 @@ class TestTheSecretShapes:
         NamedSecrets().check("app.py", "Authorization: Bearer " + "a" * 80_000 + "1")
         assert time.perf_counter() - started < 1.0, "the shape reads a line in one pass"
 
+    def test_a_documentation_hosts_fragment_is_an_example_as_its_query_is(self) -> None:
+        """Read by an audit, and reproduced: `https://app.example.com/callback#access_token=...` was a blocker, where
+        the same token in the host's query, `?access_token=`, was an example. A fragment's parameter is read as a
+        credential since the second review; the blanking of an example read a URL's query alone, to its `#`. A real
+        host's fragment stays a finding, and so does a real URL an example's fragment holds."""
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.named_secrets import NamedSecrets
+
+        value = "9f8a7d6c5b4a3e2d"
+        lines = [
+            f"https://app.example.com/callback#access_token={value}",
+            f"https://app.example.com/callback?state=x#access_token={value}&token_type=bearer",
+            f"https://app.example.com/callback?access_token={value}",
+            f"https://app.acme.io/callback#access_token={value}",
+            f"https://docs.example.com/go#to=https://api.acme.io/v1?token={value}",
+        ]
+        assert lines_hit(NamedSecrets(), "README.md", "\n".join(lines) + "\n") == [4, 5]
+        import time
+
+        started = time.perf_counter()
+        NamedSecrets().check("app.py", "x = 'https://docs.example.com/a#token=9f8a7d6c5b4a' " + "#a?" * 30_000)
+        assert time.perf_counter() - started < 1.0, "a URL's query and fragment are read in one pass"
+
     def test_an_examples_credential_is_blanked_and_a_real_one_beside_it_found(self) -> None:
         """Measured on twelve real projects: all eleven credentials the rule found in their source were examples, each
         a blocker — a URL whose password names its field at a local host, a documentation host, a private key's header
@@ -4190,6 +4213,25 @@ class TestTheShippedRules:
         assert [hit.line for hit in try_rule(rule, {"tools/setup/action.yml": composite})] == [4]
         assert try_rule(rule, {"docs/ci.md": workflow}) == [], "a workflow or an action alone is read"
         assert self_check(rule) == []
+
+    def test_a_uses_key_in_quotes_or_with_a_space_before_its_colon_is_read(self) -> None:
+        """Read by an audit, and reproduced: `"uses": actions/checkout@v4` and `uses : actions/setup-python@v5`, each
+        a key as YAML allows one, named none, where the workflow rule beside this one reads both spellings of its own
+        keys. A key spelled so runs the same action at the same tag."""
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.pinned_actions import PinnedActions
+
+        rule, sha = PinnedActions(), "11bd71901bbe5b1630ceea73d27597364c9af683"
+        workflow = (
+            "jobs:\n  build:\n    steps:\n"
+            '      - "uses": actions/checkout@v4\n'
+            "      - uses : actions/setup-python@v5\n"
+            "      - 'uses' : \"actions/cache@main\"\n"
+            f'      - "uses": actions/cache@{sha}\n'
+            "      - \"uses': actions/checkout@v4\n"
+            "      - name: uses : not/an-action@v1\n"
+        )
+        assert lines_hit(rule, ".github/workflows/ci.yml", workflow) == [4, 5, 6]
 
     def test_a_workflow_script_that_expands_what_an_outsider_writes_is_named(self) -> None:
         """GitHub writes an expression's value into a step's script before it runs, so a pull request's title can run
