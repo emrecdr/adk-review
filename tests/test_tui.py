@@ -3861,3 +3861,27 @@ class TestWhatAnAuditFound:
             assert copied[-1].endswith("$ adk-review payments\nguideline.security: started"), copied[-1]
             for tab, words in (("tab-findings", "No finding"), ("tab-comment", "comment"), ("tab-handoff", "hand-off")):
                 assert words in await copy_from(tab) and len(copied) == 2, (tab, said[-1], copied)
+
+    def test_a_profile_no_review_has_is_refused_with_the_profiles_there_are(self, tmp_path: Path) -> None:
+        """Read by an audit, and reproduced: `profile = "typo"` in `[defaults]`, and `profile = 123`, were taken as
+        written, and the screen opened on the first profile it lists with no word; a preset's was passed over the same
+        way. Each is refused as the config is read, as a `fail_on` no severity names is, with the profiles there are:
+        the screen's start makes of it one sentence and exit 2."""
+        from tui.config import load_tui_config
+
+        cfg = tmp_path / ".tui.toml"
+        for body, said in (
+            ('[defaults]\nprofile = "typo"\n', r"\[defaults\] profile is 'typo'\. Give .*default-rules.* or "),
+            ("[defaults]\nprofile = 123\n", r"\[defaults\] profile is 123\. Give "),
+            ('[projects."my-service"]\nprofile = "rules"\n', r"\[projects\.my-service\] profile is 'rules'\. Give "),
+        ):
+            cfg.write_text(body, encoding="utf-8")
+            with pytest.raises(ValueError, match=said):
+                load_tui_config(cfg)
+        cfg.write_text(
+            '[defaults]\nprofile = "rules-only"\n\n[projects."my-service"]\nprofile = "full"\n', encoding="utf-8"
+        )
+        held = load_tui_config(cfg)
+        assert held.defaults.profile == "rules-only" and held.projects["my-service"].profile == "full"
+        cfg.write_text('[projects."my-service"]\nbase = "main"\n', encoding="utf-8")
+        assert load_tui_config(cfg).projects["my-service"].profile == "", "a preset that names none"

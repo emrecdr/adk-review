@@ -19,6 +19,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from adk_review.core.findings import RANK
+from adk_review.judge.catalog import CONFIG, load_config
 
 #: The folder each of the front end's folders is named after.
 APP = "adk-review-tui"
@@ -293,6 +294,19 @@ def _fail_on(value: object, table: str, default: str) -> str:
     return value
 
 
+def _profile(value: object, table: str, default: str) -> str:
+    """`table`'s `profile` where one of the reviewer's profiles names it, and `default` where the table gives none.
+    Any other value is refused and named with the profiles there are. Read by an audit, and reproduced: `"typo"` and
+    `123` were taken as written, and the screen opened on the first profile it lists, with no word."""
+    if value is None or value == "":
+        return default
+    names = sorted(load_config(CONFIG)["profiles"])
+    if not isinstance(value, str) or value not in names:
+        *most, last = names
+        raise ValueError(f"{table} profile is {value!r}. Give {', '.join(most)} or {last}")
+    return value
+
+
 def _resolve_output_dir(out_raw: object, beside: Path) -> str:
     """Where the reviews' files go: the state folder's `outputs` where the config names none, and a relative path
     read from the config's own folder, `beside`. Read by review: it was read from the checkout's root, which an
@@ -384,7 +398,7 @@ def _parse_defaults(section: object) -> ReviewDefaults:
     if not isinstance(section, dict):
         return ReviewDefaults()
     return ReviewDefaults(
-        profile=str(section.get("profile", "default")),
+        profile=_profile(section.get("profile"), "[defaults]", "default"),
         fail_on=_fail_on(section.get("fail_on"), "[defaults]", "blocker"),
         comment=bool(_switch("[defaults]", "comment", section.get("comment"), True)),
         handoff=bool(_switch("[defaults]", "handoff", section.get("handoff"), False)),
@@ -403,7 +417,7 @@ def _parse_projects(section: object) -> dict[str, RepoPreset]:
         table = f"[projects.{name}]"
         presets[str(name)] = RepoPreset(
             base=str(data.get("base", "")),
-            profile=str(data.get("profile", "")),
+            profile=_profile(data.get("profile"), table, ""),
             fail_on=_fail_on(data.get("fail_on"), f"[projects.{name}]", ""),
             comment=_switch(table, "comment", data.get("comment"), None),
             handoff=_switch(table, "handoff", data.get("handoff"), None),

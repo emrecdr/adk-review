@@ -72,10 +72,10 @@ file there that the front end did not write stays, with its folder. The package'
 | `[defaults]` | The profile, the `--fail-on` bar, and which outputs and options are on. |
 | `[projects."<name>"]` | One repository's saved choices, written at each review the screen runs. |
 
-A `fail_on` that names no severity, a `root_dirs` that names no folder, a switch that is not `true` or `false`, a
-number out of its range, a table or a setting the config does not know, or a file that is no TOML, stops the start
-with one sentence that says what to write, and exit 2. A file saved with a byte order mark, as Notepad and
-PowerShell 5 save one, is read.
+A `fail_on` that names no severity, a `profile` the reviewer has not, a `root_dirs` that names no folder, a switch
+that is not `true` or `false`, a number out of its range, a table or a setting the config does not know, or a file
+that is no TOML, stops the start with one sentence that says what to write, and exit 2. A file saved with a byte
+order mark, as Notepad and PowerShell 5 save one, is read.
 
 The state folder holds the last report of each target, which marks findings new or resolved, the review cache, and
 `azure.json`: the pull request's address you gave for each branch, and the thread each finding was posted as.
