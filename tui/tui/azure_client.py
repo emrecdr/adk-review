@@ -7,7 +7,9 @@ of `az`: on Windows it is `az.cmd`, which runs through cmd.exe, and Python escap
 
 from __future__ import annotations
 
+import http.client
 import json
+import os
 import re
 import ssl
 import subprocess
@@ -26,6 +28,7 @@ import truststore
 from adk_review.collect.git import on_path
 
 from .azure import Place, PullRequest, marked, thread_payload
+from .git_sync import bounded
 
 #: Azure DevOps' own application in Microsoft Entra: the resource `az` is asked a token for.
 RESOURCE = "499b84ac-1321-427f-aa17-267ca6975798"
@@ -65,6 +68,12 @@ class Credential(Protocol):
         ...
 
 
+def _az(argv: list[str]) -> subprocess.CompletedProcess[str]:
+    """The Azure CLI run with the person's own environment and nothing to read, and stopped whole past its timeout:
+    `az` starts a Python of its own, which a stop of `az.cmd` alone leaves running, the screen waiting on it."""
+    return bounded(argv, dict(os.environ), AZ_TIMEOUT_S, stdin=subprocess.DEVNULL)
+
+
 class AzLogin:
     """The login `az login` made, as a `Credential`: a token from `az account get-access-token`, kept until two
     minutes before it expires. A plain class, never a dataclass: its text names no field, and so no token."""
@@ -72,7 +81,7 @@ class AzLogin:
     def __init__(
         self,
         *,
-        run: Callable[..., subprocess.CompletedProcess[str]] = subprocess.run,
+        run: Callable[[list[str]], subprocess.CompletedProcess[str]] = _az,
         clock: Callable[[], float] = time.time,
     ) -> None:
         self._run, self._clock = run, clock
@@ -94,15 +103,7 @@ class AzLogin:
             raise AzureError("The Azure CLI is not on PATH. Install it, then run `az login`.")
         argv = [az, "account", "get-access-token", "--resource", RESOURCE, "--output", "json"]
         try:
-            done = self._run(
-                argv,
-                capture_output=True,
-                encoding="utf-8",
-                errors="replace",
-                stdin=subprocess.DEVNULL,  # a login that needs the person asks in their own terminal
-                timeout=AZ_TIMEOUT_S,
-                check=False,
-            )
+            done = self._run(argv)  # a login that needs the person asks in their own terminal, never here
         except subprocess.TimeoutExpired:
             said = f"The Azure CLI did not answer within {AZ_TIMEOUT_S} s. Run `az account show` to check it."
             raise AzureError(said) from None
@@ -132,7 +133,11 @@ def _opener() -> urllib.request.OpenerDirector:
     host. None opens a file, an FTP address or a `data:` one. Certificates are verified through the operating
     system's store, as the reviewer verifies its own, so a company proxy's root the machine trusts is trusted here."""
     opener = urllib.request.OpenerDirector()
-    secure = urllib.request.HTTPSHandler(context=truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT))
+    trusted = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    # As `ssl.create_default_context` does for the reviewer's own calls: without it `SSL_CERT_FILE` names a bundle on
+    # Linux alone, and the sentence that tells a person to set it is no help on macOS or Windows.
+    trusted.load_default_certs()
+    secure = urllib.request.HTTPSHandler(context=trusted)
     for handler in (
         urllib.request.ProxyHandler(),
         urllib.request.HTTPHandler(),
@@ -229,7 +234,9 @@ class Client:
                     return self._answered(answer.status, answer.read())
             except urllib.error.HTTPError as refused:
                 self._sleep(self._wait(refused, waited=waited))
-            except (urllib.error.URLError, OSError) as failed:  # no route, no answer in time, a certificate
+            except (OSError, http.client.HTTPException) as failed:
+                # No route, no answer in time, a certificate, or an answer cut short or no HTTP at all, which is
+                # none of the network's own errors. Uncaught, it ended the screen with this call's headers shown.
                 raise AzureError(_unreached(failed)) from None
         raise AssertionError("a second 429 is a sentence")
 
@@ -325,15 +332,17 @@ def _said(refused: urllib.error.HTTPError) -> str:
     """Azure DevOps' own message for a refusal, else the status's words: one line, cut."""
     try:
         told = json.loads(refused.read())
-    except ValueError, OSError:
+    except ValueError, OSError, http.client.HTTPException:  # no JSON, or a body cut short
         told = None
     message = told.get("message") if isinstance(told, dict) else None
     words = " ".join((message if isinstance(message, str) and message.strip() else refused.reason).split())
     return words[:_SAID_MAX_CHARS].rstrip(".")
 
 
-def _unreached(failed: OSError) -> str:
-    """The sentence for a call that got no answer, with what to check."""
+def _unreached(failed: Exception) -> str:
+    """The sentence for a call that got no whole answer, with what to check."""
+    if isinstance(failed, http.client.HTTPException):  # its text is the other side's own bytes: not repeated
+        return "Azure DevOps did not answer whole. Check the network and the proxy, then press c again."
     reason = getattr(failed, "reason", failed)
     if isinstance(reason, ssl.SSLCertVerificationError):
         return (

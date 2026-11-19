@@ -144,7 +144,8 @@ A post is refused, with what to do next, where:
 | The pull request is completed or abandoned | Nothing: it takes no new comment from here |
 | This clone does not hold the reviewed commit's file | Fetch, then press `c` again |
 
-Your edit is kept after a refusal: press `c` again.
+Your edit is kept after a refusal, and when you close the editor: press `c` again. To start from the draft again,
+empty the editor and close it.
 
 What it sends and keeps:
 
@@ -153,7 +154,8 @@ What it sends and keeps:
 - The token comes from `az account get-access-token`, stays in memory, and is asked again when it expires. A login
   Azure DevOps refuses is forgotten, so the next post asks `az` again.
 - `azure.json` in the state folder holds the address you gave for each branch, and the thread each finding was
-  posted as. You may delete it: a finding posted before is found by its comment's last line.
+  posted as. You may delete it: a finding posted before is found by its comment's last line. Delete it too where
+  you deleted a comment in Azure DevOps and want to post that finding again.
 - A company proxy's certificate is trusted where your system trusts it, as for the reviewer. `SSL_CERT_FILE` names a
   bundle where it does not.
 

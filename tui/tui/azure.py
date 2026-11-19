@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass
 from urllib.parse import quote, unquote, urlsplit
 
+from adk_review.core.text import CUT_MARK
 from adk_review.deliver.report import prose
 
 from .findings import COMMIT, FindingRow
@@ -27,6 +28,10 @@ _NUMBER = re.compile(r"[1-9][0-9]{0,9}")
 MARK = re.compile(r"adk-review, [\w.-]+, finding ([0-9a-f]{16})")
 #: A fence opens a code block in a comment, and closes the one it stands in.
 _FENCE = "```"
+#: What opens a block the pull request's author applies with one click: it replaces the lines its comment stands on.
+SUGGESTION = f"{_FENCE}suggestion"
+#: What the report puts where it hid a credential: with `CUT_MARK`, text that is the report's and not the code's.
+_HIDDEN = "[REDACTED"
 
 _NOT_ONE = (
     "This is not a pull request's address. "
@@ -98,7 +103,7 @@ def parse_pr_url(text: str) -> PullRequest:
 
 def _no_name(name: str) -> bool:
     """Whether a part of an address's path is none Azure DevOps gives a project or a repository."""
-    return name in ("", ".", "..") or "/" in name or "\\" in name
+    return name in ("", ".", "..") or "/" in name or "\\" in name or not name.isprintable()
 
 
 def line_link(pr: PullRequest, commit: str, path: str, first: int, last: int) -> str:
@@ -141,9 +146,11 @@ def marked(text: str) -> str | None:
 
 def suggests(row: FindingRow) -> bool:
     """Whether `row`'s corrected code is drafted as a `suggestion` block, which the author applies with one click:
-    only where the finding stands on lines the change added, as the owner chose, and its code holds no fence, which
-    would close the block early."""
-    return bool(row.code.strip()) and row.on_added_line is True and row.span() is not None and _FENCE not in row.code
+    only where the finding stands on lines the change added, as the owner chose, and its code is whole and the
+    code's own. A fence in it would close the block early. Where the report cut it, or hid a credential in it, the
+    report's own mark stands in the code, and "Apply changes" would write that mark into the file."""
+    whole = not any(mark in row.code for mark in (_FENCE, CUT_MARK, _HIDDEN))
+    return bool(row.code.strip()) and row.on_added_line is True and row.span() is not None and whole
 
 
 def draft(row: FindingRow) -> str:
@@ -155,8 +162,8 @@ def draft(row: FindingRow) -> str:
         parts.append(why)
     if fix := prose(row.suggestion):
         parts.append(f"Suggested fix: {fix}")
-    if code := row.code.strip("\n"):
-        parts.append(_block(code, applies=suggests(row)))
+    if row.code.strip():  # a blank line that opens the code is the code's own: only what trails it goes
+        parts.append(_block(row.code.rstrip("\n"), applies=suggests(row)))
     if sign := mark(row):
         parts.append(sign)
     return "\n\n".join(parts)
@@ -166,7 +173,7 @@ def _block(code: str, *, applies: bool) -> str:
     """`code` as a block of a comment: one the author can apply, one to read, or, where it holds a fence itself,
     indented, which needs none."""
     if applies:
-        return f"{_FENCE}suggestion\n{code}\n{_FENCE}"
+        return f"{SUGGESTION}\n{code}\n{_FENCE}"
     if _FENCE in code:
         return "Corrected code:\n\n" + "\n".join(f"    {line}" for line in code.split("\n"))
     return f"Corrected code:\n\n{_FENCE}\n{code}\n{_FENCE}"

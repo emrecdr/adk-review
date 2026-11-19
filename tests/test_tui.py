@@ -1448,7 +1448,7 @@ class TestWhatTheCodeReviewFound:
         import os
         import time
 
-        from tui.git_sync import _bounded
+        from tui.git_sync import bounded
 
         grandchild = "import time; time.sleep(30)"
         child = (
@@ -1456,7 +1456,7 @@ class TestWhatTheCodeReviewFound:
         )
         started = time.monotonic()
         with pytest.raises(subprocess.TimeoutExpired):
-            _bounded([sys.executable, "-c", child], dict(os.environ), timeout_s=1)
+            bounded([sys.executable, "-c", child], dict(os.environ), timeout_s=1)
         assert time.monotonic() - started < 10, "the screen waited on a process git started"
 
     def test_the_palette_draws_a_name_with_brackets_as_written(self) -> None:
@@ -2054,10 +2054,10 @@ class TestThePickAndTheDockAsReviewed:
 
         monkeypatch.setattr(git_sync.subprocess, "Popen", Started)
         monkeypatch.setattr(git_sync.sys, "platform", "win32")
-        git_sync._bounded(["git", "fetch"], {}, 5)
+        git_sync.bounded(["git", "fetch"], {}, 5)
         assert int(seen.get("creationflags") or 0) & 0x08000000 and not seen["start_new_session"], seen
         monkeypatch.setattr(git_sync.sys, "platform", "darwin")
-        git_sync._bounded(["git", "fetch"], {}, 5)
+        git_sync.bounded(["git", "fetch"], {}, 5)
         assert seen["start_new_session"] and not seen.get("creationflags"), seen
 
     @pytest.mark.asyncio
@@ -2601,7 +2601,7 @@ class TestAzureDevOpsOnTheScreen:
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             app.open_url = lambda url, **_how: opened.append(url)
-            app.notify = lambda message, **_options: said.append(str(message))
+            app.notify = _plainly(said)
             app.query_one("#output-tabs", TabbedContent).active = "tab-findings"
             await pilot.pause()
             app.query_one("#findings-table", DataTable).focus()
@@ -2664,6 +2664,17 @@ def _payments_with_code(tmp_path: Path):  # the application, not yet running, an
     return AdkReviewTuiApp(config_path=_screen_config(tmp_path)), _git(repo, "rev-parse", "HEAD")
 
 
+def _plainly(said: list[str]):  # what stands in for the screen's `notify`
+    """A `notify` that keeps each notice in `said` and holds it to `markup=False`: a notice here can hold a
+    repository's path or Azure DevOps' own message, and Textual reads `[name]` in one as a tag."""
+
+    def notify(message: str, **options: object) -> None:
+        assert options.get("markup") is False, f"drawn as markup: {message!r}"
+        said.append(str(message))
+
+    return notify
+
+
 async def _ready_screen(app, pilot, tmp_path: Path, fake, sha: str, **changed: object) -> list[str]:
     """The finding of line 2 shown, the fake pull request taking a comment on `sha`, and a login that needs no
     `az`: the notices the screen then raises."""
@@ -2671,7 +2682,7 @@ async def _ready_screen(app, pilot, tmp_path: Path, fake, sha: str, **changed: o
 
     said: list[str] = []
     await _wait_for_branches(app, pilot)
-    app.notify = lambda message, **_options: said.append(str(message))
+    app.notify = _plainly(said)
     app._credential = FakeToken()
     app._pull_request = fake.pr
     _ready_to_comment(fake, sha)
@@ -2960,3 +2971,155 @@ class TestACommentOnThePullRequest:
             await pilot.click("#btn-post-yes")
             await _posted(app, pilot)
             assert said[-1] == "Azure DevOps answered 500: [/bold] closes [nothing. Nothing was posted."
+
+
+class TestWhatTheBranchsReviewFound:
+    """What an independent review of the branch reproduced on the screen, each held here."""
+
+    @pytest.mark.asyncio
+    async def test_an_address_pasted_while_another_repository_loads_is_kept_for_none(self, tmp_path: Path) -> None:
+        """Reproduced by review: after a pick the repository is the new one while the branch and the field are
+        still the last one's, for the whole fetch. A paste then was kept as the new repository's, under the last
+        one's branch, and the field was emptied when the load ended."""
+        pytest.importorskip("textual")
+        import json
+
+        from textual.widgets import Input
+
+        from tui import config
+        from tui.app import AdkReviewTuiApp
+
+        _repository(tmp_path / "workspace" / "a_payments", ("main", "feature/orders"), "feature/orders")
+        _repository(tmp_path / "workspace" / "b_billing", ("main", "feature/bills"), "feature/bills")
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            assert app.selected_project.name == "a_payments"
+            billing = next(project for project in app.projects if project.name == "b_billing")
+            app._on_project_chosen(billing, picked=False)
+            field = app.query_one("#pr-url", Input)
+            field.value = PR_ADDRESS  # typed before the new repository's branches are listed
+            await pilot.pause()
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            kept = config.STATE_DIR / "azure.json"
+            held = json.loads(kept.read_text(encoding="utf-8"))["pull_requests"] if kept.is_file() else {}
+            assert held == {}, "kept for no repository: the pair it was pasted for was never whole"
+            field.value = PR_ADDRESS  # and once the branches are listed, it is the new repository's
+            await pilot.pause()
+            held = json.loads(kept.read_text(encoding="utf-8"))["pull_requests"]
+            assert held == {billing.path: {"feature/bills": PR_ADDRESS}}
+
+    @pytest.mark.asyncio
+    async def test_editing_the_address_leaves_the_chosen_finding_chosen(self, tmp_path: Path) -> None:
+        """Reproduced by review: each key in the address field drew the table again and chose its first row, and
+        the notice "paste the address first" leads the person straight into it."""
+        pytest.importorskip("textual")
+        import json
+
+        from textual.widgets import DataTable, Input
+
+        app = await _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            report = json.loads(_pull_request_report(tmp_path).read_text(encoding="utf-8"))
+            second = {
+                **report["findings"][0],
+                "file": "src/later.py",
+                "fingerprint": "ffffffffffffffff",
+                "title": "later",
+            }
+            report["findings"].append(second)
+            (tmp_path / "report.json").write_text(json.dumps(report), encoding="utf-8")
+            await _show_findings(app, pilot, tmp_path / "report.json")
+            table = app.query_one("#findings-table", DataTable)
+            table.move_cursor(row=1)
+            await pilot.pause()
+            assert app._selected_finding.file == "src/later.py"
+            field = app.query_one("#pr-url", Input)
+            for typed in (PR_ADDRESS[:-1], PR_ADDRESS, PR_ADDRESS + "x", ""):
+                field.value = typed
+                await pilot.pause()
+                assert (app._selected_finding.file, table.cursor_row) == ("src/later.py", 1), typed
+
+    @pytest.mark.asyncio
+    async def test_a_cancelled_edit_comes_back_and_an_untouched_draft_is_not_kept(
+        self, tmp_path: Path, fake_ado
+    ) -> None:
+        """Reproduced by review: Escape threw a written comment away with no question."""
+        pytest.importorskip("textual")
+        from textual.widgets import TextArea
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            editor = await _editor(app, pilot)
+            drafted = editor.query_one("#comment-text", TextArea).text
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app._drafts == {}, "nothing was written: nothing is kept"
+            editor = await _editor(app, pilot)
+            editor.query_one("#comment-text", TextArea).text = "half a thought"
+            await pilot.click("#btn-comment-cancel")
+            await pilot.pause()
+            editor = await _editor(app, pilot)
+            assert editor.query_one("#comment-text", TextArea).text == "half a thought"
+            editor.query_one("#comment-text", TextArea).text = "   "
+            await pilot.press("escape")
+            await pilot.pause()
+            editor = await _editor(app, pilot)
+            assert editor.query_one("#comment-text", TextArea).text == drafted, "emptied, then closed: the draft again"
+            assert fake_ado.seen == []
+
+    @pytest.mark.asyncio
+    async def test_a_lines_escape_sequences_are_drawn_as_spaces_in_the_editor(self, tmp_path: Path, fake_ado) -> None:
+        """Reproduced by review: the lines a suggestion replaces are the branch's own, and one that held a
+        terminal's commands, a screen cleared or the clipboard written, reached the terminal as written."""
+        pytest.importorskip("textual")
+        from textual.widgets import Static
+
+        from tui.app import AdkReviewTuiApp
+
+        escape, bell = chr(27), chr(7)
+        hostile = f"    total = 1  # {escape}[2J{escape}]52;c;aGk={bell} and {chr(0x202E)}gnp.exe"
+        repo = _repository(tmp_path / "workspace" / "payments", ("main", "feature/orders"), "feature/orders")
+        (repo / "src").mkdir()
+        (repo / "src" / "app.py").write_text(
+            f"def charge(total):\n{hostile}\n\treturn total\n", encoding="utf-8", newline="\n"
+        )
+        _git(repo, "add", ".")
+        _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-m", "code")
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _ready_screen(app, pilot, tmp_path, fake_ado, _git(repo, "rev-parse", "HEAD"), lines=[2, 3])
+            editor = await _editor(app, pilot)
+            shown = str(editor.query_one("#comment-replaced", Static).render())
+            assert "total = 1  #  [2J ]52;c;aGk=  and  gnp.exe" in shown, shown
+            assert not [letter for letter in shown if not letter.isprintable() and letter != "\n"], shown
+            assert "    return total" in shown, "a tab is drawn as the spaces it stands for"
+
+    @pytest.mark.asyncio
+    async def test_findings_of_a_review_that_named_no_commit_say_so(self, tmp_path: Path) -> None:
+        """Read by review: findings of what is staged have no commit, and each key answered "Run a review first",
+        right after one."""
+        pytest.importorskip("textual")
+        import json
+
+        from textual.widgets import Input
+
+        app = await _payments_screen(tmp_path)
+        said: list[str] = []
+        opened: list[str] = []
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.notify = _plainly(said)
+            app.open_url = lambda url, **_how: opened.append(url)
+            app.query_one("#pr-url", Input).value = PR_ADDRESS
+            report = json.loads(_pull_request_report(tmp_path).read_text(encoding="utf-8"))
+            (tmp_path / "report.json").write_text(json.dumps({**report, "reviewed": None}), encoding="utf-8")
+            await _show_findings(app, pilot, tmp_path / "report.json")
+            await pilot.press("o", "c")
+            await pilot.pause()
+            assert said == ["This review read no commit. Review the pull request's branch, then try again."] * 2
+            assert opened == []

@@ -993,7 +993,7 @@ class FakeAdo:
         self.pr = azure.PullRequest(f"http://127.0.0.1:{port}/contoso", "Web", "payments", 123)
         self.root = "/contoso/Web/_apis/git/repositories/payments/pullRequests/123"
         self.seen: list[Seen] = []
-        self._answers: dict[tuple[str, str], list[tuple[int, dict[str, str], bytes]]] = {}
+        self._answers: dict[tuple[str, str], list[tuple[int, dict[str, str], bytes, str]]] = {}
 
     def answer(
         self,
@@ -1004,28 +1004,36 @@ class FakeAdo:
         status: int = 200,
         headers: dict[str, str] | None = None,
         raw: bytes | None = None,
+        broken: str = "",
     ) -> None:
         """What `method` on the pull request's `tail` answers: `""`, `"/iterations"`, `"/iterations/3/changes"`,
-        `"/threads"`. Several answers for one route are served in turn, and the last one again after that."""
+        `"/threads"`. Several answers for one route are served in turn, and the last one again after that. `broken`
+        is how the answer fails on its way: `"cut"`, its body shorter than it says, or `"garbage"`, no HTTP at all,
+        as a proxy or a dropped line answers."""
         sent = raw if raw is not None else b"" if body is None else json.dumps(body).encode("utf-8")
-        self._answers.setdefault((method, self.root + tail), []).append((status, headers or {}, sent))
+        self._answers.setdefault((method, self.root + tail), []).append((status, headers or {}, sent, broken))
 
-    def answered(self, seen: Seen) -> tuple[int, dict[str, str], bytes]:
+    def answered(self, seen: Seen) -> tuple[int, dict[str, str], bytes, str]:
         """The answer to one request, which is kept; a route no test named is a 404, as Azure DevOps answers one."""
         self.seen.append(seen)
         waiting = self._answers.get((seen.method, seen.path))
         if not waiting:
-            return 404, {}, b'{"message": "the fake holds no such route"}'
+            return 404, {}, b'{"message": "the fake holds no such route"}', ""
         return waiting.pop(0) if len(waiting) > 1 else waiting[0]
+
+
+def _no_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """This machine's own address reached with no proxy, whatever the person's settings name for other hosts."""
+    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
+    monkeypatch.setenv("no_proxy", "127.0.0.1")
 
 
 @pytest.fixture
 def fake_ado(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeAdo]:
     """A fake Azure DevOps on a local port, reached with no proxy: a machine's own proxy settings name none for it."""
-    for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy"):
-        monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("NO_PROXY", "127.0.0.1")
-    monkeypatch.setenv("no_proxy", "127.0.0.1")
+    _no_proxy(monkeypatch)
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def _serve(self) -> None:
@@ -1033,11 +1041,14 @@ def fake_ado(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeAdo]:
             body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
             headers = {name.lower(): value for name, value in self.headers.items()}
             query = {name: values[-1] for name, values in parse_qs(address.query).items()}
-            status, extra, sent = fake.answered(Seen(self.command, address.path, query, headers, body))
+            status, extra, sent, broken = fake.answered(Seen(self.command, address.path, query, headers, body))
+            if broken == "garbage":
+                self.wfile.write(b"this is no HTTP\r\n\r\n")
+                return
             self.send_response(status)
             for name, value in {"Content-Type": "application/json", **extra}.items():
                 self.send_header(name, value)
-            self.send_header("Content-Length", str(len(sent)))
+            self.send_header("Content-Length", str(len(sent) + (10 if broken == "cut" else 0)))
             self.end_headers()
             self.wfile.write(sent)
 

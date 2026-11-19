@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 import re
 import socket
 import subprocess
+import time
 from dataclasses import replace
 from pathlib import Path
 from types import ModuleType
@@ -23,6 +25,13 @@ from conftest import FakeAdo, FakeToken, _ready_to_comment
 def azure() -> ModuleType:
     """`tui.azure`, imported where the test runs."""
     return importlib.import_module("tui.azure")
+
+
+def _short_sentences(said: str) -> None:
+    """What the front end shows a person is ASD-STE100, as CLAUDE.md asks: each sentence at most 20 words, and no
+    `;` joining two."""
+    for sentence in said.split(". "):
+        assert len(sentence.split()) <= 20 and ";" not in sentence, sentence
 
 
 def _pr(azure: ModuleType, origin: str = "https://dev.azure.com/contoso"):  # the module's own type
@@ -79,6 +88,10 @@ class TestAPullRequestsAddress:
             "https://dev.azure.com/contoso/Web/_git/pay%2Fments/pullrequest/1",
             "https://dev.azure.com/contoso/Web/extra/_git/payments/pullrequest/1",
             "https://dev.azure.com/_git/payments/pullrequest/1",  # no organization
+            "https://dev.azure.com/contoso/Web/_git/pay%1B%5B2Jments/pullrequest/1",  # an escape sequence in a name
+            "https://dev.azure.com/contoso/We%00b/_git/payments/pullrequest/1",
+            "https://dev.azure.com/con%0Atoso/Web/_git/payments/pullrequest/1",
+            "https://dev.azure.com/contoso/Web/_git/pay%E2%80%AEments/pullrequest/1",  # a right-to-left override
         ],
     )
     def test_any_other_address_is_refused_with_what_to_paste(self, azure: ModuleType, pasted: str) -> None:
@@ -104,8 +117,7 @@ class TestAPullRequestsAddress:
         for pasted in ("", "https://tfs.example.test/tfs/Web/_git/payments/pullrequest/1"):
             with pytest.raises(ValueError, match="not a pull request") as refused:
                 azure.parse_pr_url(pasted)
-            for sentence in str(refused.value).split(". "):
-                assert len(sentence.split()) <= 20 and ";" not in sentence, sentence
+            _short_sentences(str(refused.value))
 
 
 class TestAFindingsLinks:
@@ -240,6 +252,22 @@ class TestTheDraftOfAComment:
         assert not azure.suggests(replace(row, **change))
         assert "```suggestion" not in text and "Corrected code:\n\n```\ntotal = with_tax(" in text
 
+    def test_code_the_reviewer_cut_or_hid_a_credential_in_is_never_a_suggestion(self, azure: ModuleType, row) -> None:
+        """The report cuts long code where it says so, and hides a credential behind a placeholder. "Apply changes"
+        would write either into the file."""
+        from adk_review.core.text import CUT_MARK
+
+        for code in (f"x = 1\ny = [{CUT_MARK}1,200 characters]", 'key = "[REDACTED:github_token]"', "k = [REDACTED]"):
+            shown = replace(row, code=code)
+            assert not azure.suggests(shown), code
+            assert "```suggestion" not in azure.draft(shown) and f"Corrected code:\n\n```\n{code}\n```" in azure.draft(
+                shown
+            )
+
+    def test_a_blank_line_that_opens_the_code_is_kept(self, azure: ModuleType, row) -> None:
+        opened = replace(row, code="\n    total = with_tax(subtotal)\n\n")
+        assert "```suggestion\n\n    total = with_tax(subtotal)\n```" in azure.draft(opened)
+
     def test_code_that_holds_a_fence_is_indented_and_never_a_suggestion(self, azure: ModuleType, row) -> None:
         text = azure.draft(replace(row, code="```python\nx = 1\n```"))
         assert "```suggestion" not in text and "Corrected code:\n\n    ```python\n    x = 1\n    ```" in text
@@ -343,13 +371,12 @@ class FakeAz:
     def __init__(self) -> None:
         self.calls = 0
         self.argv: list[str] = []
-        self.kwargs: dict = {}
         self.expires_on: object = 4600
         self.answer: dict = {}
 
-    def __call__(self, argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def __call__(self, argv: list[str]) -> subprocess.CompletedProcess[str]:
         self.calls += 1
-        self.argv, self.kwargs = argv, kwargs
+        self.argv = argv
         if "raises" in self.answer:
             raise self.answer["raises"]
         token = {"accessToken": f"tok-{self.calls}", "expires_on": self.expires_on, "tokenType": "Bearer"}
@@ -372,14 +399,43 @@ class TestTheLoginsToken:
         assert client.AzLogin(run=fake_az, clock=lambda: 1000.0)() == "Bearer tok-1"
         resource = "499b84ac-1321-427f-aa17-267ca6975798"
         assert fake_az.argv == ["/bin/az", "account", "get-access-token", "--resource", resource, "--output", "json"]
-        assert fake_az.kwargs == {
-            "capture_output": True,
-            "encoding": "utf-8",
-            "errors": "replace",
-            "stdin": subprocess.DEVNULL,
-            "timeout": 30,
-            "check": False,
-        }
+
+    def test_the_real_az_on_path_is_run_and_its_token_read(
+        self, client: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """No fake between `AzLogin` and the program: on Windows `az` is a batch file, found by `PATHEXT` and run
+        through cmd.exe, and elsewhere a script. The one on PATH here prints what `az` prints."""
+        from conftest import _script
+
+        folder = tmp_path / "bin"
+        folder.mkdir()
+        printed = '{"accessToken": "tok-real", "expires_on": 4600, "tokenType": "Bearer"}'
+        if os.name == "nt":
+            (folder / "az.cmd").write_text(f"@echo off\r\necho {printed}\r\n", encoding="utf-8", newline="")
+        else:
+            _script(folder / "az", f"echo '{printed}'\n")
+        monkeypatch.setenv("PATH", str(folder))
+        assert client.AzLogin(clock=lambda: 1000.0)() == "Bearer tok-real"
+
+    def test_an_az_that_never_answers_is_stopped_whole_and_said(
+        self, client: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """`az` starts a Python of its own. On Windows, stopping the batch file alone leaves that child holding the
+        output open, and the screen would wait on it past any timeout, a comment under way for good."""
+        from conftest import _script
+
+        folder = tmp_path / "bin"
+        folder.mkdir()
+        if os.name == "nt":
+            (folder / "az.cmd").write_text("@echo off\r\nping -n 30 127.0.0.1 >NUL\r\n", encoding="utf-8", newline="")
+        else:
+            _script(folder / "az", "sleep 30\n")
+        monkeypatch.setenv("PATH", os.pathsep.join([str(folder), os.environ.get("PATH", "")]))
+        monkeypatch.setattr(client, "AZ_TIMEOUT_S", 1)
+        started = time.monotonic()
+        with pytest.raises(client.AzureError, match="did not answer within 1 s"):
+            client.AzLogin()()
+        assert time.monotonic() - started < 15, "the wait ends with the timeout, not with the program"
 
     def test_a_token_is_kept_until_two_minutes_before_it_expires(self, client: ModuleType, fake_az: FakeAz) -> None:
         now = [1000.0]
@@ -420,8 +476,7 @@ class TestTheLoginsToken:
         fake_az.answer = answer
         with pytest.raises(client.AzureError, match=said) as failed:
             client.AzLogin(run=fake_az)()
-        for sentence in str(failed.value).split(". "):
-            assert len(sentence.split()) <= 20 and ";" not in sentence, sentence
+        _short_sentences(str(failed.value))
 
     def test_az_missing_from_path_is_said(
         self, client: ModuleType, fake_az: FakeAz, monkeypatch: pytest.MonkeyPatch
@@ -628,6 +683,27 @@ class TestTheClient:
             client.Client(replace(fake_ado.pr, origin=origin), token).status()
         assert token.asked == 0 and fake_ado.seen == []
 
+    @pytest.mark.parametrize("broken", ["cut", "garbage"])
+    @pytest.mark.parametrize("method", ["GET", "POST"])
+    def test_an_answer_broken_on_its_way_is_a_sentence_and_never_ends_the_screen(
+        self, client: ModuleType, fake_ado: FakeAdo, method: str, broken: str
+    ) -> None:
+        """A body shorter than it says, or no HTTP at all, as a proxy or a dropped line answers: neither is an
+        error of the network's own kind, so neither was caught. The post's worker then failed, the screen ended,
+        and its traceback printed the call's own headers."""
+        fake_ado.answer(method, "/threads" if method == "POST" else "", {"id": 148, "status": "active"}, broken=broken)
+        asked = client.Client(fake_ado.pr, FakeToken("Bearer tok-secret"))
+        with pytest.raises(client.AzureError, match="did not answer") as failed:
+            asked.post({"comments": []}) if method == "POST" else asked.status()
+        assert "tok-secret" not in str(failed.value) and len(fake_ado.seen) == 1, "said once, and sent once"
+
+    def test_a_refusals_own_body_broken_on_its_way_is_still_its_sentence(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        fake_ado.answer("GET", "", status=500, raw=b'{"message": "TF4', broken="cut")
+        with pytest.raises(client.AzureError, match="answered 500: Internal Server Error"):
+            client.Client(fake_ado.pr, FakeToken()).status()
+
     def test_a_login_that_az_cannot_give_ends_the_call_before_it_is_made(
         self, client: ModuleType, fake_ado: FakeAdo
     ) -> None:
@@ -684,8 +760,7 @@ class TestOnePost:
                 fingerprint="ab" * 8,
             )
         assert all(seen.method == "GET" for seen in fake_ado.seen)
-        for sentence in str(refused.value).split(". "):
-            assert len(sentence.split()) <= 20 and ";" not in sentence, sentence
+        _short_sentences(str(refused.value))
 
     def test_a_pull_request_with_no_push_listed_takes_no_comment(self, client: ModuleType, fake_ado: FakeAdo) -> None:
         fake_ado.answer("GET", "", {"status": "active"})
@@ -805,3 +880,119 @@ class TestWhatTheScreenRemembers:
             "posted": {},
         }
         assert written.endswith("\n") and "\r" not in written
+
+
+def _a_root_and_its_certificate(folder: Path) -> tuple[Path, Path, Path]:
+    """A root of the test's own, and a certificate it signed for `127.0.0.1`, as a company's proxy signs a host's:
+    the root's file, then the server's certificate and key."""
+    import datetime
+    import ipaddress
+
+    from cryptography import x509
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.x509.oid import ExtendedKeyUsageOID, NameOID
+
+    now = datetime.datetime.now(datetime.UTC)
+    since, until = now - datetime.timedelta(days=1), now + datetime.timedelta(days=2)
+    root_key, key = ec.generate_private_key(ec.SECP256R1()), ec.generate_private_key(ec.SECP256R1())
+    issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "a test's own root")])
+    signs = x509.KeyUsage(
+        digital_signature=True,
+        key_cert_sign=True,
+        crl_sign=True,
+        content_commitment=False,
+        key_encipherment=False,
+        data_encipherment=False,
+        key_agreement=False,
+        encipher_only=False,
+        decipher_only=False,
+    )
+    root = (
+        x509.CertificateBuilder()
+        .subject_name(issuer)
+        .issuer_name(issuer)
+        .public_key(root_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(since)
+        .not_valid_after(until)
+        .add_extension(x509.BasicConstraints(ca=True, path_length=None), critical=True)
+        .add_extension(signs, critical=True)
+        .add_extension(x509.SubjectKeyIdentifier.from_public_key(root_key.public_key()), critical=False)
+        .sign(root_key, hashes.SHA256())
+    )
+    served = (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "127.0.0.1")]))
+        .issuer_name(issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(since)
+        .not_valid_after(until)
+        .add_extension(x509.SubjectAlternativeName([x509.IPAddress(ipaddress.ip_address("127.0.0.1"))]), critical=False)
+        .add_extension(x509.BasicConstraints(ca=False, path_length=None), critical=True)
+        .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+        .add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(root_key.public_key()), critical=False)
+        .sign(root_key, hashes.SHA256())
+    )
+    pem = serialization.Encoding.PEM
+    files = folder / "root.pem", folder / "served.pem", folder / "served.key"
+    files[0].write_bytes(root.public_bytes(pem))
+    files[1].write_bytes(served.public_bytes(pem))
+    plain = serialization.NoEncryption()
+    files[2].write_bytes(key.private_bytes(pem, serialization.PrivateFormat.PKCS8, plain))
+    return files
+
+
+class TestACompanysOwnRoot:
+    """HTTPS through a proxy that signs each host with the company's own root: trusted where the person says so."""
+
+    def test_a_bundle_ssl_cert_file_names_is_trusted_and_without_it_the_sentence_names_it(
+        self, client: ModuleType, azure: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Reproduced by review on macOS: the client's own context read `SSL_CERT_FILE` on Linux alone, while its
+        sentence for a certificate nobody trusts told the person to set it."""
+        pytest.importorskip("cryptography")
+        import http.server
+        import ssl
+        import threading
+
+        from conftest import _no_proxy
+
+        root, served, key = _a_root_and_its_certificate(tmp_path)
+
+        class Answers(http.server.BaseHTTPRequestHandler):
+            def do_GET(self) -> None:  # http.server's own name
+                sent = b'{"status": "active"}'
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(sent)))
+                self.end_headers()
+                self.wfile.write(sent)
+
+            def log_message(self, format: str, *args: object) -> None:  # http.server's own names
+                """Nothing printed."""
+
+        class Quiet(http.server.ThreadingHTTPServer):
+            def handle_error(self, request: object, client_address: object) -> None:
+                """Nothing printed: a client that trusts no such root ends the handshake, as the test asks."""
+
+        server = Quiet(("127.0.0.1", 0), Answers)
+        server.daemon_threads = True
+        secure = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        secure.load_cert_chain(served, key)
+        server.socket = secure.wrap_socket(server.socket, server_side=True)
+        thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True)
+        thread.start()
+        _no_proxy(monkeypatch)
+        pr = azure.PullRequest(f"https://127.0.0.1:{server.server_address[1]}/contoso", "Web", "payments", 123)
+        try:
+            monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+            monkeypatch.delenv("SSL_CERT_DIR", raising=False)
+            with pytest.raises(client.AzureError, match=re.escape("certificate was not trusted. Set SSL_CERT_FILE")):
+                client.Client(pr, FakeToken()).status()
+            monkeypatch.setenv("SSL_CERT_FILE", str(root))
+            assert client.Client(pr, FakeToken()).status() == "active"
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=5)

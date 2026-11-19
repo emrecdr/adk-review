@@ -41,7 +41,7 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 from textual.widgets.selection_list import Selection
 
-from .azure import Place, PullRequest, draft, files_link, line_link, parse_pr_url, thread_link
+from .azure import SUGGESTION, Place, PullRequest, draft, files_link, line_link, parse_pr_url, thread_link
 from .azure_client import AzLogin, AzureError, Client, Credential, post_comment
 from .azure_state import keep_posted, keep_pull_request_url, posted_threads, pull_request_url
 from .clipboard import copy_text
@@ -87,6 +87,9 @@ from .options import (
 )
 from .styles import APP_CSS, literal
 
+#: Said where the findings shown are of no commit, as a review of what is staged: a line is linked to, and a comment
+#: placed, in a commit the pull request holds.
+NO_COMMIT = "This review read no commit. Review the pull request's branch, then try again."
 #: The panels, in their steps' order: each docks as a chip while minimized.
 PANELS = ("#root-box", "#repo-box", "#head-box", "#base-box", "#paths-pane", "#profile-pane", "#output-options-pane")
 #: What leads a docked panel's chip: the mark Textual's Collapsible draws for a folded section.
@@ -475,6 +478,7 @@ class AdkReviewTuiApp(App[int]):
             # branches, a repository set every option back to its preset, a switch turned on among them.
             self._repo_loaded_path = ""
             self.branches = []
+            self._forget_pull_request()
             if prev_path:
                 self._reset_outputs()
             self._apply_repo_preset(project.name)
@@ -1078,6 +1082,7 @@ class AdkReviewTuiApp(App[int]):
         """The address field read: the pull request it names, or the sentence that says what to paste. A whole
         address is kept for the repository and branch chosen, as Azure DevOps shows it and never as pasted, which can
         hold a credential; an emptied field forgets it, and a wrong one keeps what was kept."""
+        before = self._pull_request
         pasted, said, self._pull_request = text.strip(), "", None
         if pasted:
             try:
@@ -1086,14 +1091,27 @@ class AdkReviewTuiApp(App[int]):
             except ValueError as refused:
                 said = str(refused)
         self.query_one("#pr-status", Static).update(said)
-        if keep and self.selected_project is not None and (self._pull_request is not None or not pasted):
+        # Kept for the pair the field was put back for, and for no other. Reproduced by review: after a pick the
+        # repository is the new one while the branch is still the last one's, for the whole fetch, and a paste then
+        # was kept as the new repository's under the last one's branch.
+        pair = (self.selected_project.path if self.selected_project else "", self.selected_head)
+        if keep and pair == self._pull_request_of and (self._pull_request is not None or not pasted):
             kept = self._pull_request.web if self._pull_request is not None else ""
             try:
-                keep_pull_request_url(self.selected_project.path, self.selected_head, kept)
+                keep_pull_request_url(*pair, kept)
             except OSError as failed:
                 reason = failed.strerror or type(failed).__name__
                 self.notify(f"The address could not be kept: {reason}.", severity="warning", markup=False)
-        self._render_findings_table()  # the threads posted are a pull request's own
+        if self._pull_request != before:  # the threads posted are a pull request's own: drawn again for another
+            self._render_findings_table(keep=self._selected_finding)
+
+    def _forget_pull_request(self) -> None:
+        """The address field emptied, as another repository is picked: its own comes back with its branches."""
+        self._pull_request, self._pull_request_of = None, None
+        if self._has_dom("#pr-url", "#pr-status"):
+            with self.prevent(Input.Changed):
+                self.query_one("#pr-url", Input).value = ""
+            self.query_one("#pr-status", Static).update("")
 
     def _restore_pull_request(self) -> None:
         """The address kept for the repository and branch now chosen, put back in its field: once for a pair, so
@@ -1130,8 +1148,7 @@ class AdkReviewTuiApp(App[int]):
         row, pr = ready
         span = row.span()
         if span is None or self._reviewed is None:
-            said = "This finding names no line." if span is None else "Run a review first."
-            self.notify(said, timeout=4, markup=False)
+            self.notify(NO_COMMIT if self._reviewed is None else "This finding names no line.", timeout=6, markup=False)
             return
         self.open_url(line_link(pr, self._reviewed.head_sha, row.file, *span))
 
@@ -1150,7 +1167,7 @@ class AdkReviewTuiApp(App[int]):
         if row.tier == "Resolved":
             return "This finding is resolved. There is nothing to comment on."
         if self._reviewed is None or self.selected_project is None:
-            return "Run a review first."
+            return NO_COMMIT
         if row.span() is None:
             return "This finding names no line."
         if (thread := self._posted().get(row.fingerprint)) is not None:
@@ -1178,6 +1195,7 @@ class AdkReviewTuiApp(App[int]):
             self._commenting = False
 
     async def _comment_on(self, row: FindingRow, pr: PullRequest) -> None:
+        """The three steps of one comment: the file's lines read, the person's edit and their yes, the post."""
         span, reviewed, project = row.span(), self._reviewed, self.selected_project
         if span is None or reviewed is None or project is None:
             return
@@ -1188,30 +1206,47 @@ class AdkReviewTuiApp(App[int]):
             self.notify(said, severity="warning", timeout=8, markup=False)
             return
         where = f"line {first}" if first == last else f"lines {first} to {last}"
-        target = f"{row.file}, {where}, pull request {pr.number}"
-        kept = row.fingerprint or row.location()
-        text = self._drafts.get(kept) or draft(row)
+        text = await self._edited(row, f"{row.file}, {where}, pull request {pr.number}", lines[first - 1 : last])
+        if text is not None:
+            place = Place(row.file, first, last, lines[last - 1])
+            await self._post(row, pr, text, place, reviewed.head_sha)
+
+    @staticmethod
+    def _draft_key(row: FindingRow) -> str:
+        """What an edit left for later is kept under: the finding's identity, or its place where it has none."""
+        return row.fingerprint or row.location()
+
+    async def _edited(self, row: FindingRow, target: str, lines: Sequence[str]) -> str | None:
+        """The comment as the person edited it and said yes to, or None where they closed the editor. An edit they
+        closed is kept for the next `c`. A draft left as it was, or emptied, is drafted again."""
+        kept, drafted = self._draft_key(row), draft(row)
+        text = self._drafts.get(kept) or drafted
         while True:
-            replaced = lines[first - 1 : last] if "```suggestion" in text else ()
-            edited = await self.push_screen_wait(CommentModal(text, target, replaced))
-            if edited is None:
-                return
-            text = edited
+            replaced = lines if SUGGESTION in text else ()
+            post, text = await self.push_screen_wait(CommentModal(text, target, replaced))
+            if not post:
+                self._drafts.pop(kept, None)
+                if text.strip() and text != drafted:
+                    self._drafts[kept] = text
+                return None
             if await self.push_screen_wait(ConfirmPostModal(target)):
-                break
+                return text
+
+    async def _post(self, row: FindingRow, pr: PullRequest, text: str, place: Place, commit: str) -> None:
+        """One post, off the screen's own loop, and what it answered: the thread kept and shown, or the refusal as
+        its sentence, the person's text kept for the next try."""
         self._set_banner(f"Posting the comment to pull request {pr.number}.")
         client = self._clients.setdefault(pr.web, Client(pr, self._credential))
-        place = Place(row.file, first, last, lines[last - 1])
         try:
             posted = await asyncio.to_thread(
-                post_comment, client, text=text, place=place, commit=reviewed.head_sha, fingerprint=row.fingerprint
+                post_comment, client, text=text, place=place, commit=commit, fingerprint=row.fingerprint
             )
         except AzureError as refused:
-            self._drafts[kept] = text
+            self._drafts[self._draft_key(row)] = text
             self._set_banner("The comment was not posted. Press c to open your text again.")
             self.notify(str(refused), severity="error", timeout=12, markup=False)
             return
-        self._drafts.pop(kept, None)
+        self._drafts.pop(self._draft_key(row), None)
         said = f"Posted as thread {posted.thread}. Press p to open it."
         if posted.already:
             said = f"This finding was posted before, as thread {posted.thread}. Nothing was posted."

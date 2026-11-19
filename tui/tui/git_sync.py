@@ -121,7 +121,7 @@ def _run_git(repo: str, args: list[str], timeout_s: int = 15) -> subprocess.Comp
     through `_read`, never through here."""
     if (git := on_path("git")) == "git":
         raise OSError("git is not on PATH")
-    return _bounded([git, "-C", repo, *args], _git_env(), timeout_s)
+    return bounded([git, "-C", repo, *args], _git_env(), timeout_s)
 
 
 #: Windows' flag for a process with no console: `subprocess` holds it there alone.
@@ -150,13 +150,17 @@ def _fetch_key(repo: str) -> str:
     return os.path.normcase(os.path.abspath(folder))
 
 
-def _bounded(argv: list[str], env: dict[str, str], timeout_s: int) -> subprocess.CompletedProcess[str]:
+def bounded(
+    argv: list[str], env: dict[str, str], timeout_s: int, *, stdin: int | None = None
+) -> subprocess.CompletedProcess[str]:
     """`argv` run with `env`, decoded as UTF-8, and stopped whole past `timeout_s`: on Windows its process tree, as Git
     for Windows' `git.exe` runs the real git as its child, and elsewhere its process group, which git's own children
     join, ssh or its https helper. Reproduced by review: git killed alone left such a child holding the output open,
-    and the screen waited on it, 6 s against a timeout of 1 s."""
+    and the screen waited on it, 6 s against a timeout of 1 s. The Azure CLI is run the same way: `az.cmd` starts a
+    Python of its own. `stdin` is what the program reads: the screen's own input where none is named."""
     with subprocess.Popen(
         argv,
+        stdin=stdin,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,

@@ -111,10 +111,18 @@ class ExplainCheckModal(ModalScreen[None]):
         self.dismiss(None)
 
 
-class CommentModal(ModalScreen[str | None]):
-    """A finding's comment, for the person to edit before it is posted: the text as it will be sent, or None where
-    they cancel. Nothing leaves the machine from here. A model drafted the words, and the person is their author:
-    every string a model, a repository or a person wrote is drawn as text, never as markup."""
+def _seen(line: str) -> str:
+    """A file's line as the screen may draw it: a tab as the spaces it stands for, and every character a reader
+    cannot see as a space. Reproduced by review: a branch's own line that held a terminal's commands, the screen
+    cleared or the clipboard written, reached the terminal as written."""
+    return "".join(letter if letter.isprintable() else " " for letter in line.expandtabs(4))
+
+
+class CommentModal(ModalScreen[tuple[bool, str]]):
+    """A finding's comment, for the person to edit before it is posted: whether to post it, and the text as it
+    stands, which is kept where they cancel, so no words are lost. Nothing leaves the machine from here. A model
+    drafted the words, and the person is their author: every string a model, a repository or a person wrote is
+    drawn as text, never as markup."""
 
     BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Cancel")]
     #: The most lines shown of those a suggestion replaces: the rest are counted.
@@ -132,7 +140,8 @@ class CommentModal(ModalScreen[str | None]):
             yield Static(self.target, id="comment-target", markup=False)
             if self.replaced:
                 more = len(self.replaced) - self.REPLACED_SHOWN
-                shown = [*self.replaced[: self.REPLACED_SHOWN], *([f"({more} more lines)"] if more > 0 else [])]
+                lines = [_seen(line) for line in self.replaced[: self.REPLACED_SHOWN]]
+                shown = [*lines, *([f"({more} more lines)"] if more > 0 else [])]
                 yield Static(
                     '"Apply changes" replaces these lines with the suggestion block. '
                     "Check that it fits, or delete the block.",
@@ -155,7 +164,7 @@ class CommentModal(ModalScreen[str | None]):
     @on(Button.Pressed, "#btn-comment-post")
     def _post(self) -> None:
         if self._edited().strip():
-            self.dismiss(self._edited())
+            self.dismiss((True, self._edited()))
         else:
             self.app.notify("The comment is empty. Write it, or cancel.", severity="warning", timeout=4, markup=False)
 
@@ -168,8 +177,8 @@ class CommentModal(ModalScreen[str | None]):
 
     @on(Button.Pressed, "#btn-comment-cancel")
     def action_cancel(self) -> None:
-        """Close the editor and post nothing."""
-        self.dismiss(None)
+        """Close the editor and post nothing: the text goes back as it stands."""
+        self.dismiss((False, self._edited()))
 
 
 class ConfirmPostModal(ModalScreen[bool]):
