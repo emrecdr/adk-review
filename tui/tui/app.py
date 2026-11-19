@@ -147,6 +147,14 @@ def _fitted(choices: list[str], room: int) -> list[str]:
     return [choice if cell_len(choice) <= cap else set_cell_size(choice, cap - 1) + "\u2026" for choice in choices]
 
 
+#: What Ctrl+Y says on a tab that holds no text of its own, where running a review is not the whole answer.
+NOTHING_TO_COPY = {
+    "tab-findings": "No finding is chosen, so there is nothing to copy.",
+    "tab-comment": "No comment to copy. Switch the comment on and run a review.",
+    "tab-handoff": "No hand-off to copy. Switch the hand-off on and run a review.",
+}
+
+
 class AdkReviewTuiApp(App[int]):
     """Interactive Textual front-end shell for `adk-review`."""
 
@@ -234,6 +242,7 @@ class AdkReviewTuiApp(App[int]):
         self.last_report_md: str = ""
         self.last_comment_md: str = ""
         self.last_handoff_md: str = ""
+        self._progress: list[str] = []  # the progress tab's lines as written, for a copy: the log holds them wrapped
         self._suppress_branch_events: bool = False
         self._repo_loaded_path: str = ""
         self._syncing_paths: bool = False
@@ -1405,29 +1414,34 @@ class AdkReviewTuiApp(App[int]):
                 section.collapsed = collapsed  # each panel's message lays the dock out
 
     def action_copy_active_tab(self) -> None:
-        """Copy the active output tab's text or selected finding detail to the clipboard."""
-        tabs = self.query_one("#output-tabs", TabbedContent)
-        active = tabs.active
-        text = self.last_report_md
-        if active == "tab-findings" and self._selected_finding is not None:
-            text = format_finding_detail(self._selected_finding)
-        elif active == "tab-comment":
-            text = self.last_comment_md
-        elif active == "tab-handoff":
-            text = self.last_handoff_md
-        if text:
-            name = active.removeprefix("tab-")
-            if copy_text(self, text):
-                self._set_banner(f"Copied {name} content to the clipboard ({len(text):,} chars).")
-                self.notify("Copied active tab to the clipboard.", severity="information", timeout=3)
-            else:  # through the terminal alone, which no program can check
-                self._set_banner(f"Sent {name} content to the clipboard through the terminal ({len(text):,} chars).")
-                self.notify(
-                    "Sent to the clipboard through the terminal. "
-                    "If nothing pastes, use Windows Terminal, iTerm2 or kitty.",
-                    severity="information",
-                    timeout=6,
-                )
+        """Copy the open tab's own text to the clipboard: the report, the chosen finding, the comment, the hand-off or
+        the progress lines. Read by an audit, and confirmed: it started from the report's text, so the progress tab and
+        the findings with none chosen copied the report and named themselves; a tab with nothing to copy says so."""
+        active = self.query_one("#output-tabs", TabbedContent).active
+        chosen = format_finding_detail(self._selected_finding) if self._selected_finding is not None else ""
+        text = {
+            "tab-report": self.last_report_md,
+            "tab-findings": chosen,
+            "tab-comment": self.last_comment_md,
+            "tab-handoff": self.last_handoff_md,
+            "tab-log": "\n".join(self._progress),
+        }.get(active, "")
+        if not text:
+            self.notify(
+                NOTHING_TO_COPY.get(active, "Nothing to copy yet. Run a review first."), timeout=4, markup=False
+            )
+            return
+        name = active.removeprefix("tab-")
+        if copy_text(self, text):
+            self._set_banner(f"Copied {name} content to the clipboard ({len(text):,} chars).")
+            self.notify("Copied active tab to the clipboard.", severity="information", timeout=3)
+        else:  # through the terminal alone, which no program can check
+            self._set_banner(f"Sent {name} content to the clipboard through the terminal ({len(text):,} chars).")
+            self.notify(
+                "Sent to the clipboard through the terminal. If nothing pastes, use Windows Terminal, iTerm2 or kitty.",
+                severity="information",
+                timeout=6,
+            )
 
     def _save_current_preset(self, sel: ReviewSelection) -> None:
         if self.selected_project is None:
@@ -1523,7 +1537,8 @@ class AdkReviewTuiApp(App[int]):
         self.last_report_md = stdout_text
         if stdout_text:
             report_log.write(stdout_text.rstrip("\n"))
-        await self._load_generated_files(outputs)
+        if not dry_run:  # a dry run reviews nothing: the last review's findings, comment and hand-off stay as they are
+            await self._load_generated_files(outputs)
         self.query_one("#output-tabs", TabbedContent).active = "tab-report"
         self._set_banner(f"Finished {label} on {project.name} (exit code {code}).")
         self.notify(
@@ -1600,20 +1615,20 @@ class AdkReviewTuiApp(App[int]):
             count = len(self.findings_rows)
             tabs.get_tab("tab-findings").label = f"2. Findings Explorer ({count})" if count else "2. Findings Explorer"
             self._render_findings_table()
-        comment_path = outputs.get("comment")
-        if comment_path and comment_path.is_file():
-            self.last_comment_md = await asyncio.to_thread(comment_path.read_text, encoding="utf-8")
-            await self.query_one("#comment-md", Markdown).update(self.last_comment_md)
-            tabs.get_tab("tab-comment").label = "3. Author Comment (ready)"
-        else:
-            tabs.get_tab("tab-comment").label = "3. Author Comment (--comment)"
-        handoff_path = outputs.get("handoff")
-        if handoff_path and handoff_path.is_file():
-            self.last_handoff_md = await asyncio.to_thread(handoff_path.read_text, encoding="utf-8")
-            await self.query_one("#handoff-md", Markdown).update(self.last_handoff_md)
-            tabs.get_tab("tab-handoff").label = "4. Agent Handoff (ready)"
-        else:
-            tabs.get_tab("tab-handoff").label = "4. Agent Handoff (--handoff)"
+        # What this review wrote, or that it wrote none: read by an audit, a review with the switch off set the tab's
+        # name back and left the earlier review's text under it, for Ctrl+Y to copy as its own.
+        self.last_comment_md = await self._shown(outputs.get("comment"), "comment", "3. Author Comment")
+        self.last_handoff_md = await self._shown(outputs.get("handoff"), "handoff", "4. Agent Handoff")
+
+    async def _shown(self, written: Path | None, flag: str, title: str) -> str:
+        """The text a review wrote for the tab `flag` names, drawn there, or "" and the tab saying it wrote none."""
+        has = written is not None and await asyncio.to_thread(written.is_file)
+        text = await asyncio.to_thread(written.read_text, encoding="utf-8") if written is not None and has else ""
+        await self.query_one(f"#{flag}-md", Markdown).update(text if has else f"*No `--{flag}` generated yet.*")
+        self.query_one("#output-tabs", TabbedContent).get_tab(f"tab-{flag}").label = (
+            f"{title} (ready)" if has else f"{title} (--{flag})"
+        )
+        return text
 
     def _render_findings_table(self, *, keep: FindingRow | None = None) -> None:
         if not self._has_dom("#finding-sev-filter", "#finding-tier-filter", "#finding-search", "#findings-table"):
@@ -1660,4 +1675,5 @@ class AdkReviewTuiApp(App[int]):
 
     def _log_progress(self, line: str) -> None:
         if self._has_dom("#progress-log"):
+            self._progress.append(line)
             self.query_one("#progress-log", RichLog).write(line)

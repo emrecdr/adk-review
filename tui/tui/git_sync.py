@@ -343,17 +343,19 @@ def _checked_out(repo: str) -> str | None:
 
 
 def list_branches(repo: str) -> list[BranchInfo]:
-    """List all local and remote branches in `repo` with ahead/behind counts."""
+    """List all local and remote branches in `repo` with ahead/behind counts. Each of a branch's fields ends at a NUL,
+    `%00`, which no name can hold. Read by an audit, and reproduced: with `|` between them, `feat/a|b`, a name git
+    allows, split in six and was left out of both lists, with no word."""
     done = _read(
         repo,
         "for-each-ref",
-        "--format=%(refname)|%(refname:short)|%(upstream:short)|%(upstream:track,nobracket)",
+        "--format=%(refname)%00%(refname:short)%00%(upstream:short)%00%(upstream:track,nobracket)",
         "refs/heads",
         "refs/remotes",
     )
     if done is None:
         return []
-    locals_found, remotes_found = _parse_ref_lines(repo, done[1].splitlines())
+    locals_found, remotes_found = _parse_ref_lines(repo, done[1].split("\n"))  # git's own line end, and no other
     current = _checked_out(repo)
     locals_sorted = sorted(locals_found, key=lambda b: (0 if b.name == current else 1, b.name.lower()))
     remotes_sorted = sorted(remotes_found, key=lambda b: b.name.lower())
@@ -403,7 +405,7 @@ def _parse_ref_lines(repo: str, lines: list[str]) -> tuple[list[BranchInfo], lis
     remote_shorts: set[str] = set()
     raw_rows: list[tuple[str, str, str, str]] = []
     for line in lines:
-        parts = line.rstrip("\r\n").split("|")
+        parts = line.rstrip("\r\n").split("\0")
         if len(parts) == 4:
             raw_rows.append((parts[0], parts[1], parts[2], parts[3]))
             if parts[0].startswith("refs/remotes/") and not parts[0].endswith("/HEAD"):

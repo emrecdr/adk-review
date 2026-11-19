@@ -3732,3 +3732,132 @@ class TestWhatAnAuditFound:
             await app.workers.wait_for_complete()
             assert ran == [], "no review runs where its files have no folder"
             assert said and str(outputs) in said[-1] and "output_dir" in said[-1], said
+
+    def test_a_branch_named_with_a_bar_is_listed(self, tmp_path: Path) -> None:
+        """Read by an audit, and reproduced: the branches were asked of git with `|` between a branch's name and its
+        remote's, and a line was kept only where it split in four. Git allows `|` in a branch's name, so `feat/a|b`
+        split in six and was left out of both lists, with no word. Packed here, as a fetch can leave a branch on any
+        system: Windows holds no file named with a `|`, so `git branch` cannot make one there."""
+        from tui.git_sync import list_branches
+
+        repo = _repository(tmp_path / "payments", ("main", "feat/plain"), "main")
+        _git(repo, "pack-refs", "--all")
+        packed = repo / ".git" / "packed-refs"
+        header, *refs = packed.read_text(encoding="utf-8").splitlines()
+        refs.append(f"{_git(repo, 'rev-parse', 'main')} refs/heads/feat/a|b")
+        refs.sort(key=lambda line: line.split(" ", 1)[1])  # git reads the file as sorted by name
+        packed.write_text("\n".join([header, *refs]) + "\n", encoding="utf-8", newline="\n")
+        assert "feat/a|b" in _git(repo, "for-each-ref", "--format=%(refname:short)", "refs/heads").split("\n")
+        assert [branch.name for branch in list_branches(str(repo))] == ["main", "feat/a|b", "feat/plain"]
+
+    @pytest.mark.asyncio
+    async def test_the_palette_finds_a_branch_past_the_fortieth(self, tmp_path: Path) -> None:
+        """Read by an audit, and confirmed: the palette offered the first forty branches and searched those alone, so
+        in a repository of the 306 to 354 branches the owner's own hold, a name typed in full found nothing for most
+        of them. Every branch is searched; what the palette shows before a key is typed stays the first twelve."""
+        pytest.importorskip("textual")
+        from tui.app import AdkReviewTuiApp
+        from tui.commands import ReviewCommandProvider
+        from tui.git_sync import BranchInfo
+
+        _init_repo_with_remote(tmp_path)
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            names = [f"feature/n{number:03}" for number in range(60)]
+            app.branches = [BranchInfo(name, False, "", name, "") for name in names]
+            palette = ReviewCommandProvider(app.screen)
+            found = [hit.text async for hit in palette.search("feature/n059")]
+            assert "Head Branch: feature/n059" in found and "Base Branch: feature/n059" in found, found
+            assert len([hit async for hit in palette.discover()]) == 12
+
+    @pytest.mark.asyncio
+    async def test_a_review_that_writes_no_comment_shows_none_and_a_dry_run_keeps_the_last(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by an audit, and confirmed: a review of the same target that wrote no comment, its switch off, set
+        the tab's name back and left the earlier review's comment under it, for Ctrl+Y to copy as this review's. The
+        tab shows what the last review wrote, or that it wrote none. A dry run reviews nothing and writes none of the
+        three: it leaves them as the last review left them, names and all."""
+        pytest.importorskip("textual")
+        from textual.widgets import Markdown, Switch, TabbedContent
+
+        from tui.app import AdkReviewTuiApp
+
+        _init_repo_with_remote(tmp_path)
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+
+        ran: list[list[str]] = []
+
+        def written(cmd: list[str]) -> None:  # the files a review writes where its flags name them
+            for flag, words in (("--comment", "the comment of review"), ("--handoff", "the hand-off of review")):
+                if flag in cmd:
+                    Path(cmd[cmd.index(flag) + 1]).write_text(f"{words} {len(ran)}\n", encoding="utf-8")
+
+        async def review(cmd: list[str]) -> tuple[int, str]:
+            written(cmd)
+            ran.append(cmd)
+            return 0, "## Verdict: APPROVED\n"
+
+        async def run(key: str) -> None:
+            await pilot.press(key)
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            monkeypatch.setattr(app, "_stream_subprocess", review)
+            app.selected_base = "origin/main"  # a target to review against
+            tabs, comment = app.query_one("#output-tabs", TabbedContent), app.query_one("#comment-md", Markdown)
+            app.query_one("#sw-comment", Switch).value = True
+            app.query_one("#sw-handoff", Switch).value = True
+            await run("ctrl+r")
+            assert app.last_comment_md == "the comment of review 0\n" and app.last_handoff_md, "the first review's"
+            await run("ctrl+d")
+            assert app.last_comment_md == "the comment of review 0\n", "a dry run writes none, and takes none away"
+            assert "ready" in str(tabs.get_tab("tab-comment").label) and "ready" in str(
+                tabs.get_tab("tab-handoff").label
+            )
+            app.query_one("#sw-comment", Switch).value = False
+            await run("ctrl+r")
+            assert "--comment" not in ran[-1] and "ready" not in str(tabs.get_tab("tab-comment").label)
+            assert app.last_comment_md == "", "the earlier review's comment, under a tab that says there is none"
+            assert "generated yet" in comment.source, comment.source
+            assert app.last_handoff_md == "the hand-off of review 2\n", "what this review did write is shown"
+
+    @pytest.mark.asyncio
+    async def test_ctrl_y_copies_the_open_tab_and_no_other(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by an audit, and confirmed: Ctrl+Y started from the report's text, so on the progress tab, and on the
+        findings with none chosen, it copied the report and said it had copied "log content" or "findings content".
+        Each tab copies its own text, the progress tab its lines, and a tab with nothing to copy says what to do."""
+        pytest.importorskip("textual")
+        from textual.widgets import TabbedContent
+
+        from tui import app as screen
+
+        _init_repo_with_remote(tmp_path)
+        app = screen.AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        copied: list[str] = []
+        monkeypatch.setattr(screen, "copy_text", lambda _app, text: copied.append(text) or True)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            said: list[str] = []
+            app.notify = lambda message, **_how: said.append(str(message))
+            tabs = app.query_one("#output-tabs", TabbedContent)
+            app.last_report_md = "the report\n"
+            app._log_progress("$ adk-review payments")
+            app._log_progress("guideline.security: started")
+
+            async def copy_from(tab: str) -> str:
+                tabs.active = tab
+                await pilot.pause()
+                await pilot.press("ctrl+y")
+                await pilot.pause()
+                return said[-1]
+
+            assert "Copied" in await copy_from("tab-report") and copied == ["the report\n"]
+            await copy_from("tab-log")
+            assert copied[-1].endswith("$ adk-review payments\nguideline.security: started"), copied[-1]
+            for tab, words in (("tab-findings", "No finding"), ("tab-comment", "comment"), ("tab-handoff", "hand-off")):
+                assert words in await copy_from(tab) and len(copied) == 2, (tab, said[-1], copied)

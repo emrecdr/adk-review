@@ -94,7 +94,7 @@ class ReviewCommandProvider(Provider):
             ),
         ]
         items.extend((f"Repo: {proj.label()}", _call_project(host, proj), proj.path) for proj in host.projects)
-        for branch in host.branches[:40]:
+        for branch in host.branches:  # every one: a search of the first forty found most of 354 branches nowhere
             items.append((f"Head Branch: {branch.name}", _call_branch(host, "head", branch.name), branch.label()))
             items.append((f"Base Branch: {branch.name}", _call_branch(host, "base", branch.name), branch.label()))
         items.extend(

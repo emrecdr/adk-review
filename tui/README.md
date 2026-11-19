@@ -101,7 +101,8 @@ Click a chip, or press its number, to restore that panel; `Ctrl+T` minimizes eve
 
 The line under the steps shows the command it will run, ready to paste. While a review runs, its progress shows in
 the last tab. Its results stay with the target they came from: choose another branch, mode or repository, and the
-tabs clear.
+tabs clear. The comment and the hand-off tabs show what the last review wrote, or that it wrote none; a dry run
+reviews nothing, and leaves them and the findings as they are.
 
 A finding is drawn as plain text, with its reason, "Why it matters", and its corrected code where there are
 some: a reason at any severity, and the corrected code where a model gave one. A guideline's words are a model's, and
@@ -203,8 +204,8 @@ As the reviewer does, the screen reads a repository, and writes into it only whe
 | `Ctrl+X` | Stop a running review. With no review running, it cuts the chosen text in a text field |
 | `Ctrl+T` | Minimize every panel |
 | `Ctrl+O` | Restore every panel |
-| `Ctrl+Y` | Copy the open tab: the report, a finding, the comment or the hand-off |
-| `Ctrl+P` | Open the command palette: a repository, a branch, a profile or an action by name |
+| `Ctrl+Y` | Copy the open tab: the report, the chosen finding, the comment, the hand-off or the progress lines. A tab with nothing to copy says so |
+| `Ctrl+P` | Open the command palette: a repository, any of its branches, a profile or an action by name |
 | `F5` | Fetch the chosen repository with `--prune` and list its branches again, the branches you chose kept where they are still there |
 | A number key | Minimize or restore the panel of that number, where no text field has the focus |
 | `o` | Open the chosen finding's lines in Azure DevOps, in the file as the commit reviewed holds it |
