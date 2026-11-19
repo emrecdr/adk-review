@@ -4262,6 +4262,27 @@ class TestTheShippedRules:
         assert try_rule(rule, {"docs/ci.md": workflow}) == [], "a workflow or an action alone is read"
         assert self_check(rule) == []
 
+    def test_a_line_of_white_space_is_read_in_one_pass(self) -> None:
+        """Measured while another fix was tested: the spaces GitHub's lexer skips beside a `.` or a `(` were left out
+        by a pattern that opened on the run, so a run with neither after it was read again from each of its characters.
+        On a workflow's line of 20,000 spaces that took 8 s for a script's line and 13.7 s for a checkout's `ref:`,
+        four times as long for each doubling, and no deadline stops a rule. What the pass leaves out is unchanged."""
+        import time
+
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.script_injection import ScriptInjection
+
+        rule, path = ScriptInjection(), ".github/workflows/build.yml"
+        head = "on:\n  pull_request_target:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
+        for line in ("      - run: echo" + " " * 40_000 + "x", "          ref:" + " " * 40_000 + "x"):
+            started = time.perf_counter()
+            assert lines_hit(rule, path, f"{head}{line}\n") == []
+            assert time.perf_counter() - started < 1.0, line[:20]
+        spaced = '      - run: echo "${{ github . event . pull_request . title }}"\n'
+        assert lines_hit(rule, path, head + spaced) == [7], "spaces around a dot are the lexer's to skip"
+        called = "      - run: echo ${{ toJSON (github . head_ref) }}\n"
+        assert lines_hit(rule, path, head + called) == [7], "and before a bracket"
+
     def test_a_pull_request_target_job_that_checks_out_the_pull_requests_own_code_is_named(self) -> None:
         """Read by validation: under `pull_request_target`, a job runs with the base's token and secrets, and a checkout
         of the pull request's own head hands an outsider's code to the steps after it, the "pwn request" GitHub's guide

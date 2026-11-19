@@ -37,9 +37,9 @@ UNTRUSTED = re.compile(
     rf"|\btojson\(github(?:\.event(?:\.{_AUTHORED}[\w.\[\]*]*)?)?\s*\))",
     re.IGNORECASE,
 )
-#: The spaces GitHub's lexer skips between an expression's tokens, around a `.` and before a `(`, left out before the
-#: search: `github . head_ref` is the branch's name.
-_SPACED = re.compile(r"\s*([.(])\s*")
+#: A run of white space: the spaces GitHub's lexer skips between an expression's tokens, around a `.` and before a
+#: `(`, are left out before the search, since `github . head_ref` is the branch's name (`_unspaced`).
+_SPACE = re.compile(r"\s+")
 #: A key whose value is code a step runs, `run:` for a shell and `script:` for `actions/github-script`, as a step
 #: (`- run:`) or a key writes it, its name quoted or not: GitHub puts the expression's value into that code before it
 #: runs. What comes before the key's name, the indent and a list item's dash, is captured: its length is the key's
@@ -124,7 +124,7 @@ class ScriptInjection(FileRule):
         held: dict[int, str | None] = {}  # each line asked, and the script key that holds it
         for number in file.new_lines(*READ):  # a workflow moved into place adds no line, and every line of it runs now
             line = file.near(number) or ""
-            text = _SPACED.sub(r"\1", line)
+            text = _unspaced(line)
             if not UNTRUSTED.search(text) or (key := _script_of(file, number, line, held)) is None:
                 continue
             # How far the line is read, and the string it stands in there: read once, however many values it holds.
@@ -183,7 +183,19 @@ def _checked_out(file: ChangedFile) -> list[Hit]:
 def _uncommented(text: str) -> str:
     """A line with its comment, YAML's ` #` to its end, left out, GitHub's lexer's spaces around a `.` too: read by the
     second review, `ref: main  # not ${{ github.head_ref }}` and `head . sha` misled it each way."""
-    return _SPACED.sub(r"\1", re.split(r"(?:^|\s)#", text, maxsplit=1)[0])
+    return _unspaced(re.split(r"(?:^|\s)#", text, maxsplit=1)[0])
+
+
+def _unspaced(text: str) -> str:
+    """`text` with each run of white space beside a `.` or a `(` left out, as GitHub's lexer skips it. One pass over
+    the runs: measured, a pattern that opened on the run read it again from each of its characters where neither
+    followed, 13.7 s over a `ref:` line of 20,000 spaces and four times as long for each doubling."""
+
+    def kept(run: re.Match[str]) -> str:
+        beside = text[max(run.start() - 1, 0) : run.start()] + text[run.end() : run.end() + 1]
+        return "" if "." in beside or "(" in beside else run[0]
+
+    return _SPACE.sub(kept, text)
 
 
 def _names_head(text: str) -> bool:
