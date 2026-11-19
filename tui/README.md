@@ -241,7 +241,7 @@ It runs in cmd, in PowerShell and in Windows Terminal alike.
 | `git_sync.py` | The repositories under a folder, their branches and how each stands to its remote, the fetch, a file's lines at a commit, and the one runner that stops a program whole past its timeout, git or the Azure CLI |
 | `options.py` | The profiles, the command a selection makes, and the report `--previous` reads |
 | `findings.py` | A `--json` report read for the findings tab, with the commit it reviewed, its filters, and a check's explanation |
-| `azure.py` | Azure DevOps, with no call made: a pull request's address read, a finding's links built, the comment drafted from a finding, with the mark that finds it again, and the thread it is posted as |
+| `azure.py` | Azure DevOps, with no call made: a pull request's address read, a finding's links built, the comment drafted from a finding, with the mark that finds it again, the thread it is posted as, and which of a pull request's threads is a finding's already |
 | `azure_client.py` | The calls to Azure DevOps and their login: a token from `az`, with fixed arguments, kept in memory alone, and one comment's post, with the checks before it |
 | `azure_state.py` | `azure.json` in the state folder: the pull request's address given for a branch, and the thread each finding was posted as |
 | `modals.py` | The dialogs: a branch behind or apart from its remote, a check's explanation, and a comment's editor and the question before its post |
