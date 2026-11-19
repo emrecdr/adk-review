@@ -445,16 +445,17 @@ def _named(found: re.Match[str]) -> tuple[str, str, bool]:
 def _basic(value: str) -> tuple[str, str]:
     """What `Basic` carries, as the name and the value to weigh: base64 of a name, a colon and a password. The
     password, which a person chose, whatever the name, since Azure DevOps takes a token with none; the name as a
-    token where no password follows, as a service that takes a key alone writes it; and a blank, which holds no
-    secret, where it decodes as no such pair. Measured: `Basic base64_encoded_creds`, a documentation's words, was a
-    finding; and read by the branch's review, a pair with no name or no password was none."""
+    token where no password follows, as a service that takes a key alone writes it, unless it is an address, which
+    names a person; and a blank, which holds no secret, where it decodes as no such pair. Measured: `Basic
+    base64_encoded_creds`, a documentation's words, was a finding; and read by the branch's reviews, a pair with no
+    name or no password was none, and then `john.doe2@acme.io:` was one."""
     try:
         name, colon, password = base64.b64decode(value, validate=True).decode("utf-8").partition(":")
     except ValueError:  # no base64, or no text
         return "password", ""
     if not colon or password:
         return "password", password
-    return "token", name
+    return "token", "" if "@" in name else name
 
 
 #: A value that only stands for a secret: a run of one character, `****` or `...` among them; the word that names its
@@ -505,12 +506,12 @@ def without_examples(text: str) -> str:
 
 #: A URL with a query or a fragment, its host the first group and what follows its path the second: where a
 #: documentation host's example credential is blanked. Read by an audit, and reproduced: read to its `#`, an example's
-#: `#access_token=` was a blocker where its `?access_token=` was none. Its path ends before a URL it holds, `://`,
-#: which is then read by its own host: read by the branch's review, and reproduced on main, a real URL in an example's
-#: path had its token blanked, and a path read to the line's end from each scheme's start took 4.5 s over 78 KB.
+#: `#access_token=` was a blocker where its `?access_token=` was none. Its path is read 255 characters far, as a
+#: query's digit is looked for: measured by the branch's review, on main too, a path read to the line's end from each
+#: scheme's start took 4.5 s over 78 KB. A longer path's example is a finding, never a credential passed over.
 _URL_QUERY = re.compile(
     r"(?i)\b[a-z][a-z0-9+.-]{0,40}://(?:[^\s/?#@\"'<>]*+@)?([^\s/?#:@\"'<>]++)"
-    r"(?:[^\s?#\"'<>:]++|:(?!//))*+([?#][^\s\"'<>]*+)"
+    r"[^\s?#\"'<>]{0,255}+([?#][^\s\"'<>]*+)"
 )
 
 

@@ -4,6 +4,7 @@ runs."""
 from __future__ import annotations
 
 import contextlib
+import functools
 import re
 
 from ..rule_helpers import ChangedFile, FileRule, Hit, UnreadError, matches
@@ -102,7 +103,7 @@ class ScriptInjection(FileRule):
     its head or the merge GitHub makes of it, the "pwn request" GitHub's guide names: read by validation, no rule named
     it. Named where the change added the trigger, the checkout or its `ref:`, the value on its key's line or on the
     lines under it; not read in a workflow too large to read whole, nor a checkout whose ref an expression builds from
-    another value."""
+    another value, nor a name split over two lines at one of its dots."""
 
     id = "script-injection"
     severity = "major"
@@ -187,6 +188,7 @@ def _checked_out(file: ChangedFile) -> list[Hit]:
     return found
 
 
+@functools.lru_cache(maxsize=64)  # a line under several keys is read once: `_head_named` reads those under each
 def _uncommented(text: str) -> str:
     """A line with its comment, YAML's ` #` to its end, left out, GitHub's lexer's spaces around a `.` too: read by the
     second review, `ref: main  # not ${{ github.head_ref }}` and `head . sha` misled it each way."""
@@ -205,6 +207,7 @@ def _unspaced(text: str) -> str:
     return _SPACE.sub(kept, text)
 
 
+@functools.lru_cache(maxsize=128)  # each line of a value once for each way an expression can reach it, open or not
 def _head_in(text: str, opened: bool = False) -> tuple[bool, bool]:
     """Whether `text`, a checkout key's value or one line of it, names the pull request's own code, in an expression
     or as a ref of `pull/`, and whether an expression is left open at its end; `opened` says one was open at its start,
@@ -232,7 +235,9 @@ def _head_named(lines: tuple[str, ...], number: int) -> int | None:
     one of the lines under it, more indented, which YAML reads as its value too. Read by an audit, and reproduced: the
     key and its value were read on one line, so `ref: >-` with the expression on the next line named none; and by the
     branch's review, nor did an expression that opens on the key's line and names the head on the next, or a value
-    after a comment. The value ends at the first line that stands as far left as its key, a comment's aside."""
+    after a comment. The value ends at the first line that stands as far left as its key, a comment's aside. Not
+    read: a name split over two lines at one of its dots, each half no name. Measured by the branch's second review:
+    with keys under keys, each line was read again for every key above it, 16 s over 879 KB, so a line is read once."""
     depth, opened = _indent(lines[number - 1]), False
     for at in range(number, min(number + VALUE_LINES_MAX, len(lines)) + 1):
         text = lines[at - 1]

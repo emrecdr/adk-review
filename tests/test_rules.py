@@ -168,6 +168,7 @@ class TestTheSecretShapes:
             "Authorization: Basic YWRtaW46Y2hhbmdlbWU=",
             "- x-mcp-deepwiki-authorization: Basic base64_encoded_creds",
             f"Authorization: Basic {pair('deployer:')}",  # a name and no password: no secret in it
+            f"Authorization: Basic {pair('john.doe2@acme.io:')}",  # nor in an address, a digit in it or not
         ]
         found = lines_hit(NamedSecrets(), "src/client.py", "\n".join([*named, *left, *examples]) + "\n")
         assert found == list(range(1, len(named) + 1)), found
@@ -209,16 +210,17 @@ class TestTheSecretShapes:
             f"https://app.example.com/callback?access_token={value}",
             f"https://app.acme.io/callback#access_token={value}",
             f"https://docs.example.com/go#to=https://api.acme.io/v1?token={value}",
-            # Read by the branch's review, and reproduced on main: a real URL in an example's path was read as the
-            # example's, its token blanked, where the same URL in the example's query was a finding. Each URL is
-            # read by its own host: an example in a real host's path is an example still.
-            f"https://docs.example.com/go/https://api.acme.io/v1?token={value}",
-            f"https://web.archive.org/web/2020/https://example.com/login?token={value}",
+            # Read by the branch's second review, and reproduced: a URL is its first host's, whatever URL its path
+            # holds, since that host is sent its query. Read by the URL in its path, a token sent through a real
+            # proxy to an example was blanked, where main names it.
+            f"https://cors.acme.io/https://example.com/x?token={value}",
+            f"https://r.acme.io/go/https://docs.example.com?api_key={value}",
         ]
-        assert lines_hit(NamedSecrets(), "README.md", "\n".join(lines) + "\n") == [4, 5, 6]
+        assert lines_hit(NamedSecrets(), "README.md", "\n".join(lines) + "\n") == [4, 5, 6, 7]
         import time
 
-        # Measured by that review, on main too: read to the line's end from each scheme's start, 4.5 s over 78 KB.
+        # Measured by the branch's review, on main too: a path read to the line's end from each scheme's start,
+        # 4.5 s over 78 KB. A path is read 255 characters far, as a query's digit is looked for.
         for hostile in ("x = 'https://docs.example.com/a#token=9f8a7d6c5b4a' " + "#a?" * 30_000, "a://b" * 16_000):
             started = time.perf_counter()
             NamedSecrets().check("app.py", 'token = "9f8a7d6c5b4a" ' + hostile)
@@ -4498,6 +4500,8 @@ class TestTheShippedRules:
             "ref:\n" + f"{under}x\n" * 40_000,
             "ref: >-\n" + f"{under}{named}\n" * 19,
             "ref: " + named * 19 + "\n",
+            # Read by the branch's second review: keys under keys, each line read again for every key above it.
+            "".join(" " * deeper + "ref: " + "a " * 5_000 + "\n" for deeper in range(20)),
         ):
             started = time.perf_counter()
             assert lines_hit(rule, path, flow(value)) == []
