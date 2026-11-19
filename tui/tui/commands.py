@@ -30,6 +30,9 @@ class _PaletteHost(Protocol):
     def action_minimize_all(self) -> None: ...
     def action_restore_all(self) -> None: ...
     def action_explain_selected_check(self) -> None: ...
+    def action_open_lines(self) -> None: ...
+    def action_open_pull_request(self) -> None: ...
+    def action_comment(self) -> None: ...
 
 
 def _call_project(host: _PaletteHost, project: ProjectInfo) -> Callable[[], None]:
@@ -73,6 +76,21 @@ class ReviewCommandProvider(Provider):
                 "Action: Explain Selected Finding Check",
                 host.action_explain_selected_check,
                 "Show documentation for the check in Findings Explorer",
+            ),
+            (
+                "Action: Open Finding's Lines (o)",
+                host.action_open_lines,
+                "Open the chosen finding's lines in Azure DevOps",
+            ),
+            (
+                "Action: Open Finding in Its Pull Request (p)",
+                host.action_open_pull_request,
+                "Open the pull request at the finding's file, or at its comment once posted",
+            ),
+            (
+                "Action: Comment on Finding in Its Pull Request (c)",
+                host.action_comment,
+                "Draft a comment to edit, confirm and post to the finding's lines",
             ),
         ]
         items.extend((f"Repo: {proj.label()}", _call_project(host, proj), proj.path) for proj in host.projects)

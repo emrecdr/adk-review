@@ -3123,3 +3123,26 @@ class TestWhatTheBranchsReviewFound:
             await pilot.pause()
             assert said == ["This review read no commit. Review the pull request's branch, then try again."] * 2
             assert opened == []
+
+    @pytest.mark.asyncio
+    async def test_the_palette_names_each_action_on_a_finding_and_runs_it(self, tmp_path: Path) -> None:
+        """Read while checking the branch was whole: the palette named every other action of the screen, a review, a
+        fetch, a check's explanation, and none of the three that act on a finding in its pull request."""
+        pytest.importorskip("textual")
+        from textual.widgets import Input
+
+        from tui.azure import line_link, parse_pr_url
+        from tui.commands import ReviewCommandProvider
+
+        app = await _payments_screen(tmp_path)
+        opened: list[str] = []
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.open_url = lambda url, **_how: opened.append(url)
+            app.query_one("#pr-url", Input).value = PR_ADDRESS
+            await _show_findings(app, pilot, _pull_request_report(tmp_path))
+            named = {label: run for label, run, _help in ReviewCommandProvider(app.screen)._entries()}
+            assert {"Action: Open Finding's Lines (o)", "Action: Open Finding in Its Pull Request (p)"} <= set(named)
+            assert "Action: Comment on Finding in Its Pull Request (c)" in named
+            named["Action: Open Finding's Lines (o)"]()
+            assert opened == [line_link(parse_pr_url(PR_ADDRESS), "a" * 40, "src/app.py", 42, 57)]
