@@ -147,11 +147,12 @@ def _fitted(choices: list[str], room: int) -> list[str]:
     return [choice if cell_len(choice) <= cap else set_cell_size(choice, cap - 1) + "\u2026" for choice in choices]
 
 
-#: What Ctrl+Y says on a tab that holds no text of its own, where running a review is not the whole answer.
+#: What Ctrl+Y says on a tab that holds no text of its own, where running a review is not the whole answer: each true
+#: whether the tab's switch is on or off, since the last review may have run with it off.
 NOTHING_TO_COPY = {
-    "tab-findings": "No finding is chosen, so there is nothing to copy.",
-    "tab-comment": "No comment to copy. Switch the comment on and run a review.",
-    "tab-handoff": "No hand-off to copy. Switch the hand-off on and run a review.",
+    "tab-findings": "No finding to copy. Run a review, or change the filters above the table.",
+    "tab-comment": "No comment to copy yet. Run a review with the comment switched on.",
+    "tab-handoff": "No hand-off to copy yet. Run a review with the hand-off switched on.",
 }
 
 
@@ -1510,7 +1511,7 @@ class AdkReviewTuiApp(App[int]):
         sel = self.current_selection(dry_run=dry_run)
         if not dry_run:
             await asyncio.to_thread(self._save_current_preset, sel)
-            await asyncio.to_thread(make_output_dir, sel)
+            await asyncio.to_thread(make_output_dir, sel, self.tui_config.config_path)
         argv, outputs = build_review_argv(sel)
         report_log = self.query_one("#report-log", RichLog)
         report_log.clear()

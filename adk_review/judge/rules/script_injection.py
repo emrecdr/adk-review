@@ -60,13 +60,14 @@ HEAD = re.compile(
     r"|head_ref)\b|refs/pull/",
     re.IGNORECASE,
 )
-#: A checkout key whose value stands on the lines under it: nothing after the colon, or a block scalar's header, `|`
-#: or `>` with its indicators, `>-`. How many of those lines are read: a ref is a line or two, an expression a few.
-BELOW = re.compile(r":[ \t]*+(?:[|>][-+0-9]{0,2}[ \t]*+)?$")
+#: An expression's opener and its closer, and what names the pull request's own code: read in one pass along a value.
+_TOKEN = re.compile(r"\$\{\{|\}\}|" + HEAD.pattern, re.IGNORECASE)
+#: How many lines under a checkout key are read as its value: a ref is a line or two, an expression a few.
 VALUE_LINES_MAX = 20
 #: A script that checks out the pull request's code itself: `gh pr checkout`, or a fetch or a pull, then its ref.
+#: The command's own word ends there: `git pull-request`, git-extras', is another.
 GH_CHECKOUT = re.compile(r"\bgh\s+pr\s+checkout\b", re.IGNORECASE)
-GIT_FETCH = re.compile(r"\bgit\s+(?:fetch|pull)\b", re.IGNORECASE)
+GIT_FETCH = re.compile(r"\bgit\s+(?:fetch|pull)(?![\w-])", re.IGNORECASE)
 PULL_REF = re.compile(r"\b(?:refs/)?pull/", re.IGNORECASE)
 #: Where GitHub reads a workflow's triggers: a workflow, never an action's metadata.
 WORKFLOWS = READ[:2]
@@ -204,34 +205,41 @@ def _unspaced(text: str) -> str:
     return _SPACE.sub(kept, text)
 
 
+def _head_in(text: str, opened: bool = False) -> tuple[bool, bool]:
+    """Whether `text`, a checkout key's value or one line of it, names the pull request's own code, in an expression
+    or as a ref of `pull/`, and whether an expression is left open at its end; `opened` says one was open at its start,
+    on a line above. One pass over the openers, the closers and the names: read by the branch's review, and measured,
+    a search back from each name for its opener took 3.8 s over one `ref:` line of 297 KB, and the lines under a key,
+    each read again with those above it, 32 s."""
+    for token in _TOKEN.finditer(_uncommented(text)):
+        word = token[0]
+        if word == "${{":
+            opened = True
+        elif word == "}}":
+            opened = False
+        elif opened or word.lower() == "refs/pull/":
+            return True, opened
+    return False, opened
+
+
 def _names_head(text: str) -> bool:
-    """Whether a checkout key's value names the pull request's own code, in an expression or as a ref of `pull/`."""
-    value = _uncommented(text)
-    for named in HEAD.finditer(value):
-        if named[0].lower() == "refs/pull/" or value.rfind("${{", 0, named.start()) > value.rfind(
-            "}}", 0, named.start()
-        ):
-            return True
-    return False
+    """Whether a checkout key's value, on its own line, names the pull request's own code."""
+    return _head_in(text)[0]
 
 
 def _head_named(lines: tuple[str, ...], number: int) -> int | None:
     """The line where the checkout key on line `number` names the pull request's own code, or None: its own line, or
-    one of the lines under it, more indented, where its value stands there, `ref: >-` and the expression on the next
-    line. Read by an audit, and reproduced: the key and its value were read on one line, so that spelling named
-    none."""
-    text = _uncommented(lines[number - 1])
-    if _names_head(text):
-        return number
-    if not BELOW.search(text):
-        return None
-    depth, value = _indent(lines[number - 1]), text
-    for at in range(number + 1, min(number + VALUE_LINES_MAX, len(lines)) + 1):
-        under = lines[at - 1]
-        if under.strip() and _indent(under) <= depth:
+    one of the lines under it, more indented, which YAML reads as its value too. Read by an audit, and reproduced: the
+    key and its value were read on one line, so `ref: >-` with the expression on the next line named none; and by the
+    branch's review, nor did an expression that opens on the key's line and names the head on the next, or a value
+    after a comment. The value ends at the first line that stands as far left as its key, a comment's aside."""
+    depth, opened = _indent(lines[number - 1]), False
+    for at in range(number, min(number + VALUE_LINES_MAX, len(lines)) + 1):
+        text = lines[at - 1]
+        if at > number and _uncommented(text).strip() and _indent(text) <= depth:
             return None
-        value += " " + _uncommented(under)  # an expression can open on one line and name the head on the next
-        if _names_head(value):
+        named, opened = _head_in(text, opened)
+        if named:
             return at
     return None
 

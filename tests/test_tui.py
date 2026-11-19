@@ -452,7 +452,7 @@ class TestOptionsAndCliBuilder:
         assert "comment" in outputs and "handoff" in outputs and "json" in outputs and "baseline" in outputs
         assert outputs["json"] != outputs["baseline"], "baseline is kept separate until the run succeeds"
         assert not (tmp_path / "outputs").exists(), "building the command writes nothing"
-        make_output_dir(sel)  # as a review does when it starts
+        make_output_dir(sel, tmp_path / ".tui.toml")  # as a review does when it starts
 
         # Once baseline JSON file exists on disk, a subsequent run passes `--previous` while writing `--json` elsewhere
         base_file = baseline_path(str(tmp_path), "develop", "feat/x", "branch")
@@ -3733,6 +3733,7 @@ class TestWhatAnAuditFound:
             await app.workers.wait_for_complete()
             assert ran == [], "no review runs where its files have no folder"
             assert said and str(outputs) in said[-1] and "output_dir" in said[-1], said
+            assert str(app.tui_config.config_path) in said[-1], "the file that holds the setting is named too"
 
     def test_a_branch_named_with_a_bar_is_listed(self, tmp_path: Path) -> None:
         """Read by an audit, and reproduced: the branches were asked of git with `|` between a branch's name and its
@@ -3873,6 +3874,7 @@ class TestWhatAnAuditFound:
             assert copied[-1].endswith("$ adk-review payments\nguideline.security: started"), copied[-1]
             for tab, words in (("tab-findings", "No finding"), ("tab-comment", "comment"), ("tab-handoff", "hand-off")):
                 assert words in await copy_from(tab) and len(copied) == 2, (tab, said[-1], copied)
+                assert "Run a review" in said[-1], "what to do next, true whether a switch is on or off"
 
     def test_a_profile_no_review_has_is_refused_with_the_profiles_there_are(self, tmp_path: Path) -> None:
         """Read by an audit, and reproduced: `profile = "typo"` in `[defaults]`, and `profile = 123`, were taken as

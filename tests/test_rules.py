@@ -120,6 +120,7 @@ class TestTheSecretShapes:
         is, a template, a placeholder, a short one and one with no digit left alone, and it is a literal whatever its
         dots: `"Bearer " + token` holds none to read as code. What `Basic` carries is a name and a password in base64,
         the audit's own example with no digit in it: the password is weighed as one a person wrote."""
+        import base64
         import time
 
         from adk_review.core.secrets import scrub
@@ -128,6 +129,10 @@ class TestTheSecretShapes:
         from adk_review.judge.rules.secrets import Secrets
 
         value, basic = "live_9a8b7c6d5e4f3a2b1c0d", "dXNlcjpwYXNzMTIzNA=="
+
+        def pair(text: str) -> str:  # as `Basic` carries it
+            return base64.b64encode(text.encode()).decode()
+
         named = [
             f'headers = {{"Authorization": "Bearer {value}"}}',
             f'curl -H "Authorization: Basic {basic}" https://api.acme.io/v1',
@@ -137,6 +142,12 @@ class TestTheSecretShapes:
             f'client.get("/v1", HTTP_AUTHORIZATION="Token {value}")',
             f'proxy_set_header Authorization "Bearer {value}";',
             f'"authorization": "bearer v2.local.{value}"',  # dotted words: code, were it no literal
+            # Read by the branch's review: PHP's and Ruby's arrow and a template's backtick stood between the name
+            # and the scheme, and a pair with no name, as Azure DevOps takes a token, or no password, a key alone.
+            f"'Authorization' => 'Bearer {value}'",
+            f"Authorization: `Bearer {value}`",
+            f"Authorization: Basic {pair(':' + value)}",
+            f"Authorization: Basic {pair(value + ':')}",
         ]
         left = [
             'headers = {"Authorization": f"Bearer {token}"}',
@@ -156,6 +167,7 @@ class TestTheSecretShapes:
             "Authorization: Basic dXNlcjpwYXNzd29yZA==",
             "Authorization: Basic YWRtaW46Y2hhbmdlbWU=",
             "- x-mcp-deepwiki-authorization: Basic base64_encoded_creds",
+            f"Authorization: Basic {pair('deployer:')}",  # a name and no password: no secret in it
         ]
         found = lines_hit(NamedSecrets(), "src/client.py", "\n".join([*named, *left, *examples]) + "\n")
         assert found == list(range(1, len(named) + 1)), found
@@ -197,13 +209,20 @@ class TestTheSecretShapes:
             f"https://app.example.com/callback?access_token={value}",
             f"https://app.acme.io/callback#access_token={value}",
             f"https://docs.example.com/go#to=https://api.acme.io/v1?token={value}",
+            # Read by the branch's review, and reproduced on main: a real URL in an example's path was read as the
+            # example's, its token blanked, where the same URL in the example's query was a finding. Each URL is
+            # read by its own host: an example in a real host's path is an example still.
+            f"https://docs.example.com/go/https://api.acme.io/v1?token={value}",
+            f"https://web.archive.org/web/2020/https://example.com/login?token={value}",
         ]
-        assert lines_hit(NamedSecrets(), "README.md", "\n".join(lines) + "\n") == [4, 5]
+        assert lines_hit(NamedSecrets(), "README.md", "\n".join(lines) + "\n") == [4, 5, 6]
         import time
 
-        started = time.perf_counter()
-        NamedSecrets().check("app.py", "x = 'https://docs.example.com/a#token=9f8a7d6c5b4a' " + "#a?" * 30_000)
-        assert time.perf_counter() - started < 1.0, "a URL's query and fragment are read in one pass"
+        # Measured by that review, on main too: read to the line's end from each scheme's start, 4.5 s over 78 KB.
+        for hostile in ("x = 'https://docs.example.com/a#token=9f8a7d6c5b4a' " + "#a?" * 30_000, "a://b" * 16_000):
+            started = time.perf_counter()
+            NamedSecrets().check("app.py", 'token = "9f8a7d6c5b4a" ' + hostile)
+            assert time.perf_counter() - started < 1.0, "a URL's path, query and fragment are read in one pass"
 
     def test_an_examples_credential_is_blanked_and_a_real_one_beside_it_found(self) -> None:
         """Measured on twelve real projects: all eleven credentials the rule found in their source were examples, each
@@ -4440,8 +4459,15 @@ class TestTheShippedRules:
             (f"ref: >-  # the head\n{under}refs/pull/${{{{ github.event.number }}}}/merge\n", 10),
             (f"ref: >-\n{under}${{{{\n{under}  github.head_ref\n{under}}}}}\n", 11),
             (f"repository: >-\n{under}${{{{ github.event.pull_request.head.repo.full_name }}}}\n", 10),
+            # Read by the branch's review: a value that opens on its key's line and names the head on the next, as
+            # a condition written over two lines does, in quotes or not, and a comment between a key and its value.
+            (f"ref: ${{{{ github.event_name == 'pull_request_target' &&\n{under}{sha[4:]}\n", 10),
+            (f'ref: "${{{{\n{under}{sha[4:]}"\n', 10),
+            (f"ref:\n          # the head\n{under}{sha}\n", 11),
         ):
             assert lines_hit(rule, path, flow(value)) == [line], value
+        closed = flow(f"ref: ${{{{ github.sha }}}}\n{under}github.head_ref\n")
+        assert lines_hit(rule, path, closed) == [], "a name under an expression that closed is a word"
         assert lines_hit(rule, path, flow(f"ref: >-\n{under}${{{{ github.sha }}}}\n")) == [], "the base's commit"
         assert lines_hit(rule, path, flow(f"ref: >-\n{under}{sha}\n", "pull_request")) == [], "no secrets there"
         # The value ends where a line stands as far left as its key: a later step's own words are none of it.
@@ -4457,12 +4483,22 @@ class TestTheShippedRules:
             ("git pull origin pull/${{ github.event.pull_request.number }}/head", True),
             ("git pull --no-rebase origin refs/pull/7/merge", True),
             ("git pull origin main", False),
+            ("git pull-request -m title && ls pull/", False),  # another command, git-extras' own
         ):
             assert lines_hit(rule, path, flow("fetch-depth: 0\n").replace("npm ci", script)) == [10] * named, script
         # A key's line is read once, whatever follows its colon, and no further under it than a ref's value goes.
         import time
 
-        for value in ("ref:" + " " * 40_000 + "x\n", "ref:\n" + f"{under}x\n" * 40_000):
+        # Nor is a name read again for each name after it: measured by the branch's review, a search back from each
+        # name for its expression's opener took 3.8 s over one line of 297 KB, as main does, and 32 s over the lines
+        # under a key, each read again with those above it.
+        named = "github.head_ref " * 1_000
+        for value in (
+            "ref:" + " " * 40_000 + "x\n",
+            "ref:\n" + f"{under}x\n" * 40_000,
+            "ref: >-\n" + f"{under}{named}\n" * 19,
+            "ref: " + named * 19 + "\n",
+        ):
             started = time.perf_counter()
             assert lines_hit(rule, path, flow(value)) == []
             assert time.perf_counter() - started < 1.0, value[:20]

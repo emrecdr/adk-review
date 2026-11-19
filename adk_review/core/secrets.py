@@ -266,11 +266,12 @@ _HEADER_VALUE = r"[^\s\"'`<>(){}\[\],;\\]"
 #: `"Authorization": "Bearer ..."`, `Authorization: Basic ...`, `.header("Proxy-Authorization", "Token ...")`. Read by
 #: an audit, and reproduced: the header's name holds no word a secret goes by, so the token was named by no rule and
 #: reached the model and the report. Between the name and the scheme stand the marks a language puts there, eight at
-#: most. The token holds a digit, or base64's `=`, within 255 characters, as a query's value holds a digit: a word
+#: most, PHP's and Ruby's `=>` and a template's backtick among them, which the branch's review found missing. The
+#: token holds a digit, or base64's `=`, within 255 characters, as a query's value holds a digit: a word
 #: after the scheme, `Basic authentication`, is none, and a `Basic` pair whose base64 holds neither is missed.
 #: Measured over 2.99 million lines of the installed packages: 10 lines, each a documentation's.
 _HEADER = re.compile(
-    r"(?i)((?<![a-z0-9])authorization[\"'\]:=,( \t]{1,8}+(?:bearer|basic|token)[ \t]++)(?="
+    r"(?i)((?<![a-z0-9])authorization[\"'`\]:=>,( \t]{1,8}+(?:bearer|basic|token)[ \t]++)(?="
     + _HEADER_VALUE
     + r"{0,255}?[\d=])"
     + _STAND_IN
@@ -433,23 +434,27 @@ _NAME = re.compile(r"(?i)[+ -]?\s*(?:(?:export|env|arg)\s+)?([\w.-]+)")
 
 def _named(found: re.Match[str]) -> tuple[str, str, bool]:
     """A generic shape's match as `(name, value, quoted)`, `quoted` for each shape whose value is a literal. What
-    `Basic` carries is a password by another spelling, base64 of a name, a colon and the password: read as that
-    password, which a person chose, and as a blank, which holds none, where it decodes as no such pair. Measured:
-    `Basic base64_encoded_creds`, a documentation's words, was a finding."""
+    `Basic` carries is read as what it decodes to (`_basic`)."""
     value = found.group(found.lastindex or 0)
     if found.re is _HEADER and found.group(1).rstrip().lower().endswith("basic"):
-        return "password", _basic(value), True
+        return (*_basic(value), True)
     name = _NAME.match(found.group(1))
     return (name.group(1) if name else found.group(1)), value, found.re in _LITERAL
 
 
-def _basic(value: str) -> str:
-    """The password of the pair `value` carries as `Basic` does, or "" where it is no such pair."""
+def _basic(value: str) -> tuple[str, str]:
+    """What `Basic` carries, as the name and the value to weigh: base64 of a name, a colon and a password. The
+    password, which a person chose, whatever the name, since Azure DevOps takes a token with none; the name as a
+    token where no password follows, as a service that takes a key alone writes it; and a blank, which holds no
+    secret, where it decodes as no such pair. Measured: `Basic base64_encoded_creds`, a documentation's words, was a
+    finding; and read by the branch's review, a pair with no name or no password was none."""
     try:
-        name, _colon, password = base64.b64decode(value, validate=True).decode("utf-8").partition(":")
+        name, colon, password = base64.b64decode(value, validate=True).decode("utf-8").partition(":")
     except ValueError:  # no base64, or no text
-        return ""
-    return password if name else ""
+        return "password", ""
+    if not colon or password:
+        return "password", password
+    return "token", name
 
 
 #: A value that only stands for a secret: a run of one character, `****` or `...` among them; the word that names its
@@ -500,9 +505,12 @@ def without_examples(text: str) -> str:
 
 #: A URL with a query or a fragment, its host the first group and what follows its path the second: where a
 #: documentation host's example credential is blanked. Read by an audit, and reproduced: read to its `#`, an example's
-#: `#access_token=` was a blocker where its `?access_token=` was none.
+#: `#access_token=` was a blocker where its `?access_token=` was none. Its path ends before a URL it holds, `://`,
+#: which is then read by its own host: read by the branch's review, and reproduced on main, a real URL in an example's
+#: path had its token blanked, and a path read to the line's end from each scheme's start took 4.5 s over 78 KB.
 _URL_QUERY = re.compile(
-    r"(?i)\b[a-z][a-z0-9+.-]{0,40}://(?:[^\s/?#@\"'<>]*+@)?([^\s/?#:@\"'<>]++)[^\s?#\"'<>]*+([?#][^\s\"'<>]*+)"
+    r"(?i)\b[a-z][a-z0-9+.-]{0,40}://(?:[^\s/?#@\"'<>]*+@)?([^\s/?#:@\"'<>]++)"
+    r"(?:[^\s?#\"'<>:]++|:(?!//))*+([?#][^\s\"'<>]*+)"
 )
 
 

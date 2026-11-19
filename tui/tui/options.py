@@ -271,18 +271,18 @@ def _output_dir(sel: ReviewSelection) -> Path:
     return Path(sel.output_dir).expanduser().resolve()
 
 
-def make_output_dir(sel: ReviewSelection) -> None:
+def make_output_dir(sel: ReviewSelection, config: Path) -> None:
     """The folder a review's files go to, made as the review starts: the reviewer refuses a file whose folder is not
     there. Read by an audit, and reproduced: made where the command was built, it was made again at every key typed,
     and one that could not be made, a drive not there or a file in the way, ended the screen in a traceback as it
-    opened. An `OSError` that names the folder and the setting to change."""
+    opened. An `OSError` that names the folder, the setting to change and `config`, the file that holds it."""
     out_dir = _output_dir(sel)
     try:
         out_dir.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         why = exc.strerror or type(exc).__name__
         raise OSError(
-            f"the output folder {out_dir} cannot be made: {why}. Set output_dir to a folder you can write"
+            f"the output folder {out_dir} cannot be made: {why}. Set output_dir in {config} to a folder you can write"
         ) from exc
 
 
