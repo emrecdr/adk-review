@@ -258,7 +258,9 @@ Load-bearing rules the tests enforce:
   holds a deleted one, and whether its own safety rules left the code the model's. A post whose answer did not come
   back is never said to be unposted: the next try finds it by its mark, or by its own words. Its tests are offline: a
   fake Azure DevOps on a local port, and a fake `az`. Every string a
-  repository, a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a tag. On Windows, from cmd
+  repository, a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a tag. No link in a
+  model's words opens on a click: a finding is plain text, and the comment and the hand-off open none. On Windows,
+  from cmd
   and PowerShell alike: the command it shows is quoted by `windows_word`, or not shown; no key is one a terminal sends
   as another or the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first, Stop while a review runs
   alone, since Ctrl+X is a text field's cut, and none but Stop runs behind a dialog; a review it runs gets UTF-8

@@ -105,7 +105,8 @@ tabs clear.
 
 A finding is drawn as plain text, with its reason, "Why it matters", and its corrected code where there are
 some: a reason at any severity, and the corrected code where a model gave one. A guideline's words are a model's, and
-no link in them can be clicked.
+no link in them can be clicked: the comment and the hand-off, drawn as Markdown, show an address as a link and open
+none.
 
 ## Comment on an Azure DevOps pull request
 

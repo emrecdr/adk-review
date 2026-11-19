@@ -398,10 +398,11 @@ class AdkReviewTuiApp(App[int]):
                 yield DataTable(id="findings-table", cursor_type="row")
                 with VerticalScroll(id="finding-detail-scroll"):
                     yield Static("Run a review to see its findings.", id="finding-detail", markup=False)
+            # No link opens on a click: Markdown makes one of an address in a finding's words, which are a model's.
             with TabPane("3. Author Comment (--comment)", id="tab-comment"), VerticalScroll():
-                yield Markdown("*No `--comment` generated yet.*", id="comment-md")
+                yield Markdown("*No `--comment` generated yet.*", id="comment-md", open_links=False)
             with TabPane("4. Agent Handoff (--handoff)", id="tab-handoff"), VerticalScroll():
-                yield Markdown("*No `--handoff` generated yet.*", id="handoff-md")
+                yield Markdown("*No `--handoff` generated yet.*", id="handoff-md", open_links=False)
             with TabPane("5. Live Progress & Git Log", id="tab-log"):
                 yield RichLog(id="progress-log", wrap=True, highlight=True, markup=False)
 

