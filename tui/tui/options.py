@@ -190,7 +190,9 @@ def review_command(argv: Sequence[str]) -> list[str]:
 
 
 def build_review_argv(sel: ReviewSelection) -> tuple[list[str], dict[str, Path]]:
-    """Build the validated `adk-review` CLI argument list and output file map for `sel`."""
+    """Build the validated `adk-review` CLI argument list and output file map for `sel`. Nothing is written: the line
+    that shows the command builds it at every key typed, and a review makes its folder as it starts
+    (`make_output_dir`)."""
     if sel.mode == "branch" and sel.head and sel.base == sel.head:
         raise ValueError("branch under review and target branch cannot be the same")
     argv: list[str] = [sel.repo]
@@ -239,14 +241,12 @@ def _target_flags(sel: ReviewSelection) -> list[str]:
 def _output_flags(sel: ReviewSelection, argv: list[str]) -> dict[str, Path]:
     """Append `--cache`, `--previous`, `--json`, `--comment`, and `--handoff` flags for a full review run."""
     outputs: dict[str, Path] = {}
-    out_dir = Path(sel.output_dir).expanduser().resolve()
-    out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir = _output_dir(sel)
     stamp = time.strftime("%Y%m%d-%H%M%S")
     repo_slug = _safe_slug(Path(sel.repo).name or "repo")
     base_slug = _safe_slug(sel.base if sel.mode == "branch" else sel.mode)
     head_slug = _safe_slug("staged" if sel.mode == "staged" else (sel.head or sel.mode))
-    if sel.use_cache:
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    if sel.use_cache:  # the reviewer makes the folder, for the operator alone: its answers quote the code
         argv.extend(["--cache", str(CACHE_DIR)])
     base_json = baseline_path(sel.repo, sel.base, sel.head, sel.mode)
     if sel.use_previous and base_json.is_file():
@@ -264,6 +264,26 @@ def _output_flags(sel: ReviewSelection, argv: list[str]) -> dict[str, Path]:
         argv.extend(["--handoff", str(handoff_file)])
         outputs["handoff"] = handoff_file
     return outputs
+
+
+def _output_dir(sel: ReviewSelection) -> Path:
+    """Where the files of the review `sel` chooses go."""
+    return Path(sel.output_dir).expanduser().resolve()
+
+
+def make_output_dir(sel: ReviewSelection) -> None:
+    """The folder a review's files go to, made as the review starts: the reviewer refuses a file whose folder is not
+    there. Read by an audit, and reproduced: made where the command was built, it was made again at every key typed,
+    and one that could not be made, a drive not there or a file in the way, ended the screen in a traceback as it
+    opened. An `OSError` that names the folder and the setting to change."""
+    out_dir = _output_dir(sel)
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        why = exc.strerror or type(exc).__name__
+        raise OSError(
+            f"the output folder {out_dir} cannot be made: {why}. Set output_dir to a folder you can write"
+        ) from exc
 
 
 def _marks(path: Path) -> tuple | None:

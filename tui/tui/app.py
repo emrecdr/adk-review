@@ -77,6 +77,7 @@ from .options import (
     fail_on_choices,
     format_cli_command,
     load_profile_options,
+    make_output_dir,
     parse_csv_checks,
     parse_csv_paths,
     parse_diff_cap,
@@ -1495,6 +1496,7 @@ class AdkReviewTuiApp(App[int]):
         sel = self.current_selection(dry_run=dry_run)
         if not dry_run:
             await asyncio.to_thread(self._save_current_preset, sel)
+            await asyncio.to_thread(make_output_dir, sel)
         argv, outputs = build_review_argv(sel)
         report_log = self.query_one("#report-log", RichLog)
         report_log.clear()

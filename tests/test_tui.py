@@ -416,6 +416,7 @@ class TestOptionsAndCliBuilder:
             baseline_path,
             build_review_argv,
             load_profile_options,
+            make_output_dir,
             parse_csv_paths,
             promote_baseline,
         )
@@ -450,6 +451,8 @@ class TestOptionsAndCliBuilder:
         assert "--verify" in argv and "--comment" in argv and "--handoff" in argv
         assert "comment" in outputs and "handoff" in outputs and "json" in outputs and "baseline" in outputs
         assert outputs["json"] != outputs["baseline"], "baseline is kept separate until the run succeeds"
+        assert not (tmp_path / "outputs").exists(), "building the command writes nothing"
+        make_output_dir(sel)  # as a review does when it starts
 
         # Once baseline JSON file exists on disk, a subsequent run passes `--previous` while writing `--json` elsewhere
         base_file = baseline_path(str(tmp_path), "develop", "feat/x", "branch")
@@ -3656,3 +3659,76 @@ class TestWhatAnAuditFound:
                 await shown.query(MarkdownBlock).first().action_link("https://evil.example/?q=what-the-model-read")
                 await pilot.pause()
             assert opened == [], "a click on a link a model wrote opens nothing"
+
+    @pytest.mark.asyncio
+    async def test_the_command_shown_makes_no_folder_and_a_review_makes_its_own(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by an audit, and counted: the line that shows the command built it with the folders a review writes
+        to, so each key typed made the output folder and the cache's again, 22 calls for 11 keys. Showing a command
+        writes nothing; the review makes the output folder as it starts, and the reviewer makes its own cache's, the
+        operator's alone."""
+        pytest.importorskip("textual")
+        from textual.widgets import Input
+
+        from tui import options
+        from tui.app import AdkReviewTuiApp
+
+        _init_repo_with_remote(tmp_path)
+        outputs = tmp_path / "reviews" / "here"
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path, f'output_dir = "{outputs.as_posix()}"'))
+        there: list[bool] = []
+
+        async def ran(_cmd: list[str]) -> tuple[int, str]:
+            there.append(outputs.is_dir())
+            return 0, "## Verdict: APPROVED\n"
+
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.query_one("#extra-path", Input).focus()
+            await pilot.press(*"src")
+            await pilot.pause()
+            assert not outputs.exists() and not options.CACHE_DIR.exists(), "the command shown made a folder"
+            monkeypatch.setattr(app, "_stream_subprocess", ran)
+            app.selected_base = "origin/main"  # a target to review against
+            await pilot.press("ctrl+r")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert there == [True], "the review's own folder, made before it ran"
+            assert not options.CACHE_DIR.exists(), "the reviewer makes the cache's folder, for the operator alone"
+
+    @pytest.mark.asyncio
+    async def test_an_output_folder_that_cannot_be_made_is_said_and_the_screen_stays(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by an audit, and reproduced: with `output_dir` on a path no folder can be made at, a drive not there
+        or a file in the way, the line that shows the command raised and the whole screen ended in a traceback as it
+        opened. The screen opens, and the review that cannot write there says so, with the folder and the setting."""
+        pytest.importorskip("textual")
+        from textual.widgets import Static
+
+        from tui.app import AdkReviewTuiApp
+
+        _init_repo_with_remote(tmp_path)
+        in_the_way = tmp_path / "a-file"
+        in_the_way.write_text("no folder\n", encoding="utf-8")
+        outputs = in_the_way / "reviews"
+        app = AdkReviewTuiApp(config_path=_screen_config(tmp_path, f'output_dir = "{outputs.as_posix()}"'))
+        ran: list[list[str]] = []
+
+        async def run(cmd: list[str]) -> tuple[int, str]:
+            ran.append(cmd)
+            return 0, ""
+
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            said: list[str] = []
+            app.notify = _plainly(said)
+            assert "adk-review" in str(app.query_one("#cli-preview", Static).render()), "the command is still shown"
+            monkeypatch.setattr(app, "_stream_subprocess", run)
+            app.selected_base = "origin/main"  # a target to review against
+            await pilot.press("ctrl+r")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            assert ran == [], "no review runs where its files have no folder"
+            assert said and str(outputs) in said[-1] and "output_dir" in said[-1], said
