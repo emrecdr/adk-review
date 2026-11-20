@@ -43,11 +43,14 @@ def keep_private(token: Path) -> None:
     """The token, the key LiteLLM caches beside it, and their folder, readable by their owner alone. Measured before:
     written with the default umask, both token files were 0644 in a 0755 folder, readable by every account on the
     machine. No other file of the folder is touched: it is any folder `GITHUB_COPILOT_TOKEN_DIR` names, a home folder
-    among them, where a script would lose its execute bit."""
-    token.parent.chmod(0o700)
+    among them, where a script would lose its execute bit. The files first, and a folder this account does not own,
+    `/tmp` say, keeps the modes its owner set: read by an audit, and reproduced, its refusal came first, and ended a
+    login that worked in a traceback, both files left readable by every account."""
     for path in (token, token.parent / copilot_key().name):  # the key beside the token, as LiteLLM keeps it
         if path.is_file():
             path.chmod(0o600)
+    with contextlib.suppress(OSError):
+        token.parent.chmod(0o700)
 
 
 def unreachable(exc: Exception) -> int:

@@ -976,6 +976,31 @@ def test_the_copilot_login_keeps_its_files_to_their_owner(tmp_path) -> None:
     assert modes == {"access-token": "0o600", "api-key.json": "0o600", "run.sh": "0o755"}, "the token's files alone"
 
 
+def test_a_folder_not_ones_own_still_leaves_the_tokens_files_to_their_owner(tmp_path, monkeypatch) -> None:
+    """Read by an outside audit, and reproduced: in a folder this account does not own, `/tmp` say, narrowing the
+    folder's mode was refused before either file's, so after a login that worked a traceback ended it, and the token
+    and its key were left as they were, 0644, readable by every account. The files are narrowed first now, and the
+    folder keeps the modes its owner set. The refusal is made here, since a test run as root is refused nothing."""
+    from adk_review import login as copilot_login
+
+    (tmp_path / "access-token").write_text("t", encoding="utf-8")
+    (tmp_path / "api-key.json").write_text("{}", encoding="utf-8")
+    for path in tmp_path.iterdir():
+        path.chmod(0o644)
+    narrow = Path.chmod
+
+    def refused_for_the_folder(path: Path, mode: int, **options: bool) -> None:
+        if path == tmp_path:
+            raise PermissionError(1, "Operation not permitted")
+        narrow(path, mode, **options)
+
+    monkeypatch.setattr(Path, "chmod", refused_for_the_folder)
+    copilot_login.keep_private(tmp_path / "access-token")
+    if sys.platform != "win32":  # a Windows file has no owner, group and other modes to narrow
+        modes = {path.name: oct(path.stat().st_mode & 0o777) for path in tmp_path.iterdir()}
+        assert modes == {"access-token": "0o600", "api-key.json": "0o600"}, modes
+
+
 @pytest.mark.parametrize(("arm", "said"), [("gemini", "needs GOOGLE_API_KEY"), ("copilot", "needs a cached token")])
 def test_an_arm_that_cannot_run_is_a_sentence(arm: str, said: str, monkeypatch, tmp_path) -> None:
     """Measured by coverage: neither refusal ran in a test. A key missing, or no token cached, is named before
