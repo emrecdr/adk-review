@@ -920,7 +920,10 @@ In VS Code, `.vscode/` recommends Copilot Chat beside Ruff, Pyrefly and SonarQub
 show Pyrefly's type errors (Pyrefly's own extension turns Pylance off), and lets an agent run the offline gate without
 asking each time: `uv run ruff check`, `ruff format --check`, `pyrefly check` and `pytest`, and `make lint`,
 `typecheck`, `test` and `ci`. Any other command asks first, and one that names `.env` always does, since neither
-assistant may read it. Nothing here calls a model by itself; a review whose profile names a guideline does.
+assistant may read it. These rules hold in VS Code's Local agent sessions. A Copilot session reads such rules from
+your User settings alone, and may run a read-only command with no rule asked, as VS Code's own guide says: there the
+guard on `.env` is the instructions' word, so copy the rules into your User settings too. Nothing here calls a model
+by itself; a review whose profile names a guideline does.
 
 ## Design notes
 

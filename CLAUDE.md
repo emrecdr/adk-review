@@ -393,7 +393,8 @@ VS Code and the cloud agent read this file too, so a rule that changes here chan
 holds those files to their format. `.vscode/` recommends Copilot Chat beside Ruff, Pyrefly and SonarQube for IDE, has
 Pylance, where it runs, show Pyrefly's type errors (Pyrefly's own extension turns Pylance off), and lets an agent run
 the offline gate (`uv run ruff check`, `ruff format --check`, `pyrefly check`, `pytest`, and the `make` targets `lint`,
-`typecheck`, `test` and `ci`) without asking; any command naming `.env` always asks.
+`typecheck`, `test` and `ci`) without asking; any command naming `.env` always asks. Both hold in VS Code's Local
+agent sessions alone: a Copilot session reads such rules from User settings, and may run a read-only command unasked.
 
 Claude Code loads none of them by itself, and they hold procedures this file does not repeat. Before adding a rule,
 read `.github/skills/new-rule/SKILL.md` and `.github/instructions/reviewer.instructions.md` (a rule's constants,
