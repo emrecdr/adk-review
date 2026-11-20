@@ -5,12 +5,14 @@ such as `utf_7` or `unicode_escape` reads plain ASCII as other characters: `+AGk
 reviewer reads every file as UTF-8, as git stores it, so lint, the syntax-tree rules and the secrets rule all read the
 encoded text. Measured: a `shell=True` call written in `utf_7` ran under Python, and no rule named it; the same call
 written plainly is a lint major. A file with such a declaration is a hole, never a finding below the bar: no one read
-the code it runs.
+the code it runs. So is one whose text goes past ASCII in a codec that reads a byte past ASCII and a plain one after
+it as one character, as Shift JIS does: the quote or backslash UTF-8 shows is then part of another character.
 """
 
 from __future__ import annotations
 
 import codecs
+import functools
 import re
 
 from ..rule_helpers import ChangedFile, FileRule, UnreadError, is_python
@@ -60,6 +62,31 @@ class EncodingDeclaration(FileRule):
         if not is_python(file.path, lambda: file.line(1)):
             return []
         for line in PYTHON_BREAK.split("\n".join(file.lines[:2]))[:2]:  # Python's first two lines
-            if (found := DECLARATION.match(line)) and rewrites(found.group(1)):
+            if (found := DECLARATION.match(line)) and _misread(found.group(1), file):
                 raise UnreadError(f"{file.path} declares {found.group(1)}: Python runs code no rule read")
         return []
+
+
+def _misread(codec: str, file: ChangedFile) -> bool:
+    """Whether Python, decoding the file with `codec`, reads other code than its plain text: a codec that rewrites
+    plain text, or one that joins a byte past ASCII with the plain one after it, where the file's text holds such a
+    byte."""
+    return rewrites(codec) or (joins(codecs.lookup(codec).name) and not all(line.isascii() for line in file.lines))
+
+
+@functools.cache  # by the codec's own name, one of those Python ships, however a file spells it
+def joins(codec: str) -> bool:
+    """Whether `codec` reads a byte past ASCII and a plain one after it as one character. Read by the simplify pass,
+    and reproduced: a file declared `shift_jis` ran a call that, read as UTF-8, sat in a string, since the backslash
+    UTF-8 shows ended a character there. Measured over the 80 codecs `rewrites` passes: nine join, each Chinese,
+    Japanese or Korean, and asking all 80 took 0.8 s, one at most a few milliseconds."""
+    return any(_one_character(bytes((lead, plain)), codec) for lead in range(0x80, 0x100) for plain in range(0x80))
+
+
+def _one_character(pair: bytes, codec: str) -> bool:
+    """Whether `codec` decodes the two bytes as one character, as Python decodes source: a pair it refuses is none,
+    since Python runs no file it cannot decode."""
+    try:
+        return len(pair.decode(codec)) == 1
+    except UnicodeDecodeError:
+        return False

@@ -505,6 +505,27 @@ class TestTheRuleKinds:
         with pytest.raises(UnreadError):
             try_rule(EncodingDeclaration(), {"hidden.py": hidden})
 
+    def test_a_codec_that_joins_a_byte_with_the_plain_one_after_it_is_a_hole_for_text_past_ascii(self) -> None:
+        """Read by the simplify pass, and reproduced: Shift JIS reads the last byte of a `sa` written in UTF-8 and the
+        backslash after it as one character, so the string UTF-8 reads on to the line's end closes there, and the call
+        after it runs. No probe of plain text can show it, since only a byte past ASCII starts such a pair: a file in
+        ASCII alone passes, and so does text past ASCII in a codec that never joins two bytes."""
+        from adk_review.judge.rule_helpers import UnreadError, try_rule
+        from adk_review.judge.rules.encoding_declaration import EncodingDeclaration
+
+        hidden = '# coding: shift_jis\nx = "' + chr(0x3055) + '\\" + str(ran.append(1)) + "#"\n'
+        space: dict = {"ran": []}
+        exec(compile(hidden.encode("utf-8"), "hidden.py", "exec"), space)  # the bytes git holds, as Python runs them
+        assert space["ran"] == [1], "Python runs the call that, read as UTF-8, sits in a string"
+        with pytest.raises(UnreadError):
+            try_rule(EncodingDeclaration(), {"hidden.py": hidden})
+        plain = (
+            "# coding: shift_jis\nx = 1\n",
+            "# coding: latin-1\nx = '" + chr(0xE9) + "'\n",
+            "x = '" + chr(0x3055) + "'\n",
+        )
+        assert [text for text in plain if try_rule(EncodingDeclaration(), {"m.py": text})] == []
+
     def test_a_file_rule_could_not_look_only_at_the_file_whose_text_it_asked_for(self) -> None:
         """An unread file is the hole of the rule that asks for its text, and only of that one; what the rule found on
         the files it could read stands beside it. Measured before: one unread lock file made every file rule a hole,
