@@ -26,12 +26,29 @@ PIPELINES = [*WORKFLOWS, ROOT / "README.md"]
 UV = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["tool"]["uv"]
 
 
-def _front_matter(path: Path) -> dict[str, str]:
-    """The `key: value` pairs between the `---` fences at the top of `path`."""
+def _front_matter(path: Path) -> dict:
+    """What stands between the `---` fences at the top of `path`, as YAML reads it, which is how its readers do."""
     match = re.match(r"---\n(.*?)\n---\n", path.read_text(encoding="utf-8"), re.DOTALL)
-    assert match, f"{path.relative_to(ROOT)}: no front matter"
-    pairs = [line.split(":", 1) for line in match.group(1).splitlines() if ":" in line]
-    return {key.strip(): value.strip().strip("'\"") for key, value in pairs}
+    assert match, f"{path.name}: no front matter"
+    try:
+        front = yaml.safe_load(match.group(1))
+    except yaml.YAMLError as exc:
+        raise AssertionError(f"{path.name}: front matter that is no YAML: {exc}") from None
+    assert isinstance(front, dict), f"{path.name}: front matter that holds no key"
+    return front
+
+
+def test_front_matter_is_read_as_yaml_reads_it(tmp_path: Path) -> None:
+    """Read by an outside audit, and reproduced: the front matter was split at each line's first colon, so a folded
+    description, `description: >`, read as `>` and passed the length limit at any length, and one that is no YAML,
+    `Use when: ...` unquoted, passed where its reader refuses the file."""
+    folded = tmp_path / "SKILL.md"
+    folded.write_text("---\nname: x\ndescription: >\n  " + "word " * 300 + "\n---\nbody\n", encoding="utf-8")
+    assert len(_front_matter(folded)["description"]) > 1024
+    broken = tmp_path / "broken.md"
+    broken.write_text("---\nname: x\ndescription: Use when: a reviewer asks\n---\nbody\n", encoding="utf-8")
+    with pytest.raises(AssertionError, match="no YAML"):
+        _front_matter(broken)
 
 
 def test_each_helper_folder_holds_a_file_or_the_checks_below_would_pass_over_nothing() -> None:
@@ -41,7 +58,8 @@ def test_each_helper_folder_holds_a_file_or_the_checks_below_would_pass_over_not
 @pytest.mark.parametrize("path", INSTRUCTIONS, ids=lambda p: p.name)
 def test_each_path_instruction_applies_to_files_the_repository_has(path: Path) -> None:
     present = [PurePosixPath(p) for p in in_the_working_tree()]
-    for glob in [g.strip() for g in _front_matter(path)["applyTo"].split(",")]:
+    named = _front_matter(path)["applyTo"]  # one string, a comma between two globs, or a list of them
+    for glob in [g.strip() for g in (named if isinstance(named, list) else named.split(","))]:
         assert any(p.full_match(glob) for p in present), f"{path.name}: applyTo {glob!r} matches no file"
 
 
