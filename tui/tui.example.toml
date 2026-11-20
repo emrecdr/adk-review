@@ -44,3 +44,5 @@ handoff = false
 verify = false
 path = []
 path_exclude = ["docs/reports"]
+checks = []      # check ids to run alone, as --check takes them: ["rule.secrets"]; none runs the profile
+diff_cap = 0     # the most characters of one file's diff a guideline reads, as --diff-cap; 0 keeps the reviewer's own

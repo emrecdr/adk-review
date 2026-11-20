@@ -2280,6 +2280,31 @@ class TestTheConfigReview:
         preset = load_tui_config(cfg).projects["a"]
         assert (preset.path, preset.path_exclude, preset.checks) == (("src",), ("tests",), ("rule.secrets",))
 
+    def test_the_example_config_names_every_setting_the_loader_reads(self) -> None:
+        """Read by an outside audit, and reproduced: the example says it holds every setting, and a repository's
+        `checks` and `diff_cap`, which the loader reads, stood in none of its lines. Held to the loader's own names
+        now, each on a line of its table or a commented one, the name it still reads for an old config aside; and the
+        loader reads the example as it reads a config."""
+        import re
+        import tomllib
+
+        from tui import config
+
+        path = Path(config.__file__).resolve().parents[1] / "tui.example.toml"
+        text = path.read_text(encoding="utf-8")
+        tables = {
+            "workspace": set(config._WORKSPACE) - {"projects_dir"},
+            "defaults": set(config.ReviewDefaults.__dataclass_fields__),
+            "projects": set(config.RepoPreset.__dataclass_fields__),
+        }
+        for table, settings in tables.items():
+            start = text.index(f"\n[{table}")
+            end = text.find("\n[", start + 1)
+            named = set(re.findall(r"^#? ?(\w+) = ", text[start : end if end > 0 else None], re.MULTILINE))
+            assert settings <= named, (table, sorted(settings - named))
+        assert set(tomllib.loads(text)) == set(tables), "and no other table"
+        assert config.load_tui_config(path).projects, "the loader reads it whole"
+
     def test_a_config_it_cannot_read_is_one_sentence_naming_what_to_write(self, tmp_path: Path, capsys) -> None:
         """Read by review, each reproduced: `projects = "x"` ended in a traceback; `[[workspace]]`, `workspace = "x"`
         and `defaults = 3` were left out, the default folder listed in silence; `verify = "no"` turned `--verify` on, a

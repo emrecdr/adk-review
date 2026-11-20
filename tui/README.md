@@ -66,7 +66,7 @@ file there that the front end did not write stays, with its folder. The package'
 |---|---|
 | `[workspace] root_dirs` | The folders that hold your repositories: a path, or `{ label = "...", path = "..." }`. With more than one, the screen asks for the folder first. |
 | `scan_depth` | How many folders deep it looks for repositories, from 1 to 5. |
-| `fetch_timeout_s` | How long a fetch may run, in seconds. |
+| `fetch_timeout_s` | How long a fetch may run, in seconds, from 3 to 120. |
 | `fetch_on_select` | Whether picking a repository fetches the branches its remote got since: `true` unless set to `false`. |
 | `output_dir` | Where each review's JSON report, comment and hand-off go: by default the state folder's `outputs`, and a relative path is read from the config's own folder. A review makes the folder as it starts, and says so where it cannot. |
 | `[defaults]` | The profile, the `--fail-on` bar, and which outputs and options are on. |
