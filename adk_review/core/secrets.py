@@ -210,6 +210,9 @@ _VENDOR = (
         re.compile(r"(?<![\w~.-])[A-Za-z0-9_~.]{3}\dQ~[A-Za-z0-9_~.-]{31,34}(?![\w~.-])"),
         "[REDACTED:azure_client_secret]",
     ),
+    # Azure DevOps' personal access token, as Microsoft publishes its shape: 84 characters, `AZDO` after the 76th. Read
+    # by an audit, and reproduced: such a token in `pat = "…"`, a URL or Azure CLI's own `AZURE_DEVOPS_EXT_PAT` passed.
+    ("azure_devops_pat", re.compile(r"\b[A-Za-z0-9]{76}AZDO[A-Za-z0-9]{4}\b"), "[REDACTED:azure_devops_pat]"),
     (
         "discord_webhook",
         re.compile(r"https://(?:ptb\.|canary\.)?discord(?:app)?\.com/api/webhooks/\d{17,20}/[A-Za-z0-9_-]{60,}"),

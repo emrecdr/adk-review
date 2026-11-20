@@ -406,6 +406,7 @@ class TestTheSecretShapes:
             "huggingface_token": "api_org_" + made(letters, 34),
             "aws_bedrock_key": "AB" + "SK" + made(b64, 132),
             "azure_client_secret": made(alnum, 3) + "8Q~" + made(alnum + "_~.-", 34),
+            "azure_devops_pat": made(alnum, 76) + "AZ" + "DO" + made(alnum, 4),
             "azure_shared_access_key": "Endpoint=sb://ns.servicebus.windows.net/;SharedAccessKeyName=Root;"
             + "SharedAccessKey="
             + made(b64, 43)
