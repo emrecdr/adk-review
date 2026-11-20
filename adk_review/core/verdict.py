@@ -137,18 +137,24 @@ def _unmarked(line: str, markers: bool = True) -> str:
     return _visible(line[1:] if markers and line[:1] in "+- " else line)
 
 
-#: The variation selectors, which pick a glyph's form and are no character a reader sees.
-_SELECTORS = frozenset((*range(0xFE00, 0xFE10), *range(0xE0100, 0xE01F0)))
+#: What no reader sees and Unicode files as a mark, a letter or a symbol: the variation selectors, Mongolian's among
+#: them, which pick a glyph's form, the grapheme joiner, Khmer's inherent vowels, the Hangul fillers and the blank
+#: Braille pattern.
+_BLANK = frozenset(
+    (*range(0xFE00, 0xFE10), *range(0xE0100, 0xE01F0), *range(0x180B, 0x1810), 0x034F, 0x115F, 0x1160)
+) | {0x17B4, 0x17B5, 0x2800, 0x3164, 0xFFA0}
 
 
 def _visible(text: str) -> str:
     """`text` as a model can quote it, without what no reader sees: Unicode's format characters, the tag characters a
-    whole sentence can hide in among them, and the variation selectors. Measured live on Gemini: a payload in tag
-    characters left its comment quoted as `#`, and the quote of the shell call beside it dropped, the review a hole.
-    A text in ASCII alone, nearly every line of a diff, is passed over."""
+    whole sentence can hide in among them, the points it leaves unassigned, and the blanks it files as marks, letters
+    or symbols. Measured live on Gemini: a payload in tag characters left its comment quoted as `#`, and the quote of
+    the shell call beside it dropped, the review a hole. Read by an audit, and reproduced: a grapheme joiner or a Hangul
+    filler in a line did the same to a real finding there. A test holds this to the report's own table. A text in ASCII
+    alone, nearly every line of a diff, is passed over."""
     if text.isascii():
         return text
-    return "".join(ch for ch in text if unicodedata.category(ch) != "Cf" and ord(ch) not in _SELECTORS)
+    return "".join(ch for ch in text if unicodedata.category(ch) not in ("Cf", "Cn") and ord(ch) not in _BLANK)
 
 
 #: The lines grounding reads on from where a quote could start, in one view of a hunk: past them, the places found by
