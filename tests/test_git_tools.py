@@ -692,6 +692,25 @@ class TestWhatABranchCannotHide:
         files = {entry["path"]: entry for entry in collect_evidence(str(repo), BASE, HEAD)["files"]}
         assert files["keys.py"].get("unread") == change.BINARY_UNREAD, files["keys.py"]
 
+    def test_a_binary_file_only_moved_or_given_a_mode_is_no_hole(self, tmp_path: Path) -> None:
+        """Read by review of the fix above, and reproduced: git prints no line of a binary file a change only moves or
+        gives another mode, so its diff names it binary nowhere, and the fix named it not read, a hole where the change
+        showed nothing to read. Only a binary file git printed as text is named so."""
+        from adk_review.collect.git import collect_evidence
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "certs/a.p12", bytes(range(256)))
+        _committed(repo, "bin/tool", bytes(range(256)))
+        _git_in(repo, "checkout", "-q", "-b", HEAD)
+        _git_in(repo, "mv", "certs/a.p12", "certs/b.p12")
+        _git_in(repo, "update-index", "--chmod=+x", "bin/tool")
+        _git_in(repo, "commit", "-q", "-m", "move one, make one executable")
+        files = collect_evidence(str(repo), BASE, HEAD)["files"]
+        assert {entry["path"] for entry in files} == {"bin/tool", "certs/b.p12"}, files
+        assert [entry["path"] for entry in files if entry.get("unread")] == [], "nothing named not read"
+
     @pytest.mark.usefixtures("reviewers_git_config")
     def test_the_reviewers_git_config_moves_no_line(self, hostile_repo: Path, cli, capsys) -> None:
         """`diff.suppressBlankEmpty` prints a blank context line as nothing at all: measured before, the gate put the

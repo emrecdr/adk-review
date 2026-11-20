@@ -1087,7 +1087,9 @@ def read_texts(
             if entry["text"] is None:
                 entry["unread_text"] = _unread_why(blobs[entry["path"]][1])
                 unread.append(entry)
-            elif isinstance(entry["text"], _Binary):  # read by an audit: the base's `diff` attribute printed it as text
+            # Read by an audit: a binary file the base's `diff` attribute printed as text. Only where git printed a line
+            # of it: read by review, one a change only moved or gave a mode shows none, and was made a hole.
+            elif isinstance(entry["text"], _Binary) and next(hunk_lines(unreleased(entry["diff"])), None) is not None:
                 entry["text"] = None
                 _not_read(entry, BINARY_UNREAD, skipped)
             elif pointer_text(entry["text"]):  # read by review: one its diff showed no opening of was linted as Python
