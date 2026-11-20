@@ -26,6 +26,7 @@ from typing import Any, NoReturn
 import truststore
 from dotenv import dotenv_values
 
+from .core.verdict import EXIT_INTERRUPTED
 from .judge.settings import copilot_key, pin_copilot_dir
 
 # The token's path as the reviewer reads it, one spelling for both, from the module that reads the environment and
@@ -217,8 +218,13 @@ def _stored(auth: Any, token: Path, access_token: str) -> int:
 
 
 def run() -> int:
-    """The process boundary of the installed `adk-review-login`."""
-    return main(sys.argv[1:])
+    """The process boundary of the installed `adk-review-login`. Ctrl-C, as while it waits for the person's approval, is
+    one sentence and 130, as the review says it: read by an audit, it ended in a traceback."""
+    try:
+        return main(sys.argv[1:])
+    except KeyboardInterrupt:
+        print("[copilot] interrupted: the login did not finish", file=sys.stderr)
+        return EXIT_INTERRUPTED
 
 
 if __name__ == "__main__":

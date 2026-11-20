@@ -676,6 +676,28 @@ def test_the_copilot_login_reads_an_empty_token_file_as_none(tmp_path, monkeypat
     assert "already authenticated" not in capsys.readouterr().out
 
 
+def test_a_login_stopped_with_ctrl_c_says_so_in_one_sentence(tmp_path, monkeypatch, capsys) -> None:
+    """Ctrl-C while the login waits for the person's approval, up to fifteen minutes, is one sentence and 130, as the
+    review and the hooks say it. Read by an audit: it ended in a traceback, and no token is kept."""
+    from litellm.llms.github_copilot import authenticator
+
+    from adk_review import login as copilot_login
+
+    monkeypatch.setattr(copilot_login, "token_path", lambda: tmp_path / "token")
+    code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
+    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
+
+    def pressed(_seconds):  # Ctrl-C while it waits, before it asks GitHub again
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(copilot_login.time, "sleep", pressed)
+    monkeypatch.setattr(sys, "argv", ["adk-review-login"])
+    assert copilot_login.run() == 130
+    err = capsys.readouterr().err
+    assert err == "[copilot] interrupted: the login did not finish\n", err
+    assert not (tmp_path / "token").exists()
+
+
 def test_the_copilot_login_names_a_network_it_cannot_reach_and_the_certificate_fix(
     tmp_path, monkeypatch, capsys
 ) -> None:
