@@ -6,6 +6,7 @@ added, and a tag's message. Read-only git, as `git.py` runs it, and nothing a re
 from __future__ import annotations
 
 import re
+import string
 from collections.abc import Iterator, Sequence
 from itertools import batched
 
@@ -132,7 +133,9 @@ def _read_parts(patch: bytes, found: dict[str, list[dict]], *, merged: bool) -> 
     for commit, body in zip(parts[1::2], parts[2::2], strict=True):
         files = found.setdefault(commit.decode(), [])
         for piece in _A_FILE.split(b"\n" + body)[1:]:
-            part = readable(_text(piece, strip=False))  # whole: a merge's part opens on its path, a space too
+            # Whole at its start, where a merge's part opens on its path, a space too; trimmed at its end, as `diff_of`
+            # reads a file: the split took the line break after its last line, and a CRLF file's `\r` stood alone.
+            part = readable(_text(piece, strip=False).rstrip(string.whitespace))
             if merged and (written := written_binary(part)) is not None:
                 files.append({"path": written, "added": [], "binary": True})
                 continue
