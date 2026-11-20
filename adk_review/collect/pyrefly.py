@@ -31,7 +31,7 @@ from ..core.evidence import Change, Entry, Evidence, unreleased
 from ..core.rules import Diagnostic, UnreadError, is_python_text
 from ..core.text import squash
 from .diff import base_line
-from .git import GitError, base_files, on_path
+from .git import GitError, base_files, on_path, watched
 from .ruff import Rows, laid_out, rows_of
 
 PYREFLY_TIMEOUT_S = 60
@@ -146,6 +146,7 @@ def _answer(argv: list[str], cwd: str) -> tuple[str, str]:
     with (
         tempfile.TemporaryFile() as said,
         subprocess.Popen(argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=said) as running,
+        watched(running),
     ):
         late = threading.Event()
         watch = threading.Timer(PYREFLY_TIMEOUT_S, lambda: (late.set(), running.kill()))

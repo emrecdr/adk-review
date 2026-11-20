@@ -13,6 +13,7 @@ tools that wrap these live in `judge/tools.py`.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import hashlib
 import os
@@ -21,6 +22,7 @@ import shutil
 import string
 import subprocess
 import tempfile
+import threading
 import uuid
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -157,13 +159,49 @@ def _found(name: str, path: str) -> str:
     return shutil.which(name, path=absolute) or name
 
 
+#: Each program the review runs, git, ruff and pyrefly, held while it runs, and whether the review was stopped: one
+#: waited on in a thread, which no signal reaches, outlived a stopped review, and the review waited for it.
+_RUNNING: set[subprocess.Popen[Any]] = set()
+_STOPPED = threading.Event()
+
+
+@contextlib.contextmanager
+def watched(process: subprocess.Popen[Any]) -> Iterator[None]:
+    """`process` held while it runs, for `stop_programs` to end, and ended at once where the review was stopped before
+    it started. Measured: a SIGTERM while pyrefly read the base's tree in its thread ended the review 29.5 s later,
+    when pyrefly did."""
+    _RUNNING.add(process)
+    if _STOPPED.is_set():  # read after the add: a stop between the two finds it held
+        process.kill()
+    try:
+        yield
+    finally:
+        _RUNNING.discard(process)
+
+
+def stop_programs() -> None:
+    """Each program the review runs, ended, and each one a thread starts after it: a stopped review's, which the
+    thread waiting on it would wait for to its end."""
+    _STOPPED.set()
+    for process in list(_RUNNING):
+        with contextlib.suppress(OSError):  # one that ended already
+            process.kill()
+
+
 def _run(argv: list[str], env: dict[str, str], stdin: bytes | None = None) -> subprocess.CompletedProcess[bytes]:
     """One command, bytes in and out, stopped whole past `GIT_TIMEOUT_S`. Git for Windows' `git.exe` runs the real
     git as its child, which holds the output open; `subprocess.run` kills only the first and then, on Windows, reads
     the output to its end, so a git past its timeout hung the review. There the whole tree is stopped first."""
-    with subprocess.Popen(
-        argv, stdin=None if stdin is None else subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
-    ) as process:
+    with (
+        subprocess.Popen(
+            argv,
+            stdin=None if stdin is None else subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+        ) as process,
+        watched(process),
+    ):
         try:
             out, err = process.communicate(stdin, timeout=GIT_TIMEOUT_S)
         except subprocess.TimeoutExpired:

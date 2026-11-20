@@ -86,7 +86,15 @@ UNLOADED: str | None = None
 try:
     from dotenv import load_dotenv
 
-    from .collect.git import MAX_FILE_BYTES, GitError, checked_out, collect_evidence, default_base, is_repository
+    from .collect.git import (
+        MAX_FILE_BYTES,
+        GitError,
+        checked_out,
+        collect_evidence,
+        default_base,
+        is_repository,
+        stop_programs,
+    )
     from .core.evidence import Evidence, unreleased
     from .core.findings import RANK
     from .core.guidelines import Guideline
@@ -630,6 +638,7 @@ class Terminated(BaseException):  # named for what happened to the run, as Keybo
 
 
 def _terminated(_signal: int, _frame: object) -> None:
+    stop_programs()  # those a thread waits on too, which no signal reaches
     raise Terminated
 
 

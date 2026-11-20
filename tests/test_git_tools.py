@@ -9,6 +9,7 @@ import random
 import re
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -367,6 +368,22 @@ class TestTheScopeLivesInState:
         assert "AKIA" in diff and "slash = 1" not in diff, diff
         specs = importlib.import_module("adk_review.collect.git")._literally("cfg\\keys.py")
         assert all(spec.startswith(":(top,") for spec in specs), "from the top, git leaves a path as spelled"
+
+
+def test_a_stop_ends_each_program_running_and_each_started_after_it(monkeypatch) -> None:
+    """A stopped review ends each program it runs, git, ruff and pyrefly, whatever thread waits on it: no signal
+    reaches a thread, and the review waited for the program to end. One a thread starts after the stop ends at once:
+    a rule's thread can reach its next tool before the stop reaches the thread."""
+    git = importlib.import_module("adk_review.collect.git")
+    monkeypatch.setattr(git, "_RUNNING", set())
+    monkeypatch.setattr(git, "_STOPPED", threading.Event())
+    sleeps = [sys.executable, "-c", "import time; time.sleep(30)"]
+    with subprocess.Popen(sleeps) as running, git.watched(running):
+        git.stop_programs()
+        assert running.wait(timeout=10) != 0, "stopped as it ran"
+    with subprocess.Popen(sleeps) as later, git.watched(later):
+        assert later.wait(timeout=10) != 0, "stopped as it started"
+    assert not git._RUNNING, "none is held once it ended"
 
 
 class TestGitPastItsTimeout:

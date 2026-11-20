@@ -71,7 +71,8 @@ cap or past the guidelines' block cap — unless the skip list names it, named u
 refused (a verifier's leaves its finding unverified), a `--json`, `--handoff` or `--comment` file that cannot be
 written, any error nothing else names (`main` wraps the command: a sentence, never Python's own exit 1, which would read
 as a blocker), a reader that closes the pipe early, and a reviewer that cannot load (a broken install). Ctrl-C is one
-sentence and 130, the shell's own code for it, and a job's SIGTERM 143.
+sentence and 130, the shell's own code for it, and a job's SIGTERM 143, which stops the git, ruff and pyrefly the
+review runs too (`stop_programs`): a thread that waits on one is reached by no signal.
 
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so. A

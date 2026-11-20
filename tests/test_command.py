@@ -13,6 +13,7 @@ import shlex
 import signal
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -29,6 +30,7 @@ from conftest import (
     _committed,
     _git_in,
     _long,
+    _script,
     as_json,
     branched,
     catalog,
@@ -3568,6 +3570,51 @@ class TestAStoppedReview:
             child.kill()
         assert child.returncode == 143, err
         assert "terminated: the review did not finish" in err and "Verdict" not in out
+
+    @pytest.mark.skipif(sys.platform == "win32", reason="Windows ends a process without a signal its code can catch")
+    def test_a_stopped_review_stops_the_tool_its_thread_runs(self, demo_repo: Path, tmp_path: Path) -> None:
+        """Pyrefly reads the base's tree in a thread, which no signal reaches, and the rules run in one where a
+        guideline follows. Measured before: a SIGTERM while a stand-in pyrefly slept 30 s ended the review 29.5 s
+        later, when the stand-in did, and the screen's Stop, which waits 2 s, left that review running."""
+        ran = tmp_path / "ran"  # each stand-in's process id, as it starts
+        stand_in = _script(
+            tmp_path / "pyrefly",
+            'case "$1" in --version) echo "pyrefly 0.0.0"; exit 0;; esac\n'
+            f'echo $$ >> "{ran.as_posix()}"\nexec sleep 60\n',
+        )
+        argv = ["adk-review", str(demo_repo), *PLANTED, "--check", "rule.radius-types"]
+        code = (
+            "import sys\n"
+            "from adk_review.collect import pyrefly\n"
+            f"pyrefly.beside = lambda: {str(stand_in)!r}\n"
+            "import adk_review.review as review\n"
+            "review.load_dotenv = lambda *args, **kwargs: False\n"
+            f"sys.argv = {argv!r}\n"
+            "sys.exit(review.run())\n"
+        )
+        child = subprocess.Popen(
+            [sys.executable, "-c", code], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+        try:
+            for _ in range(600):  # until both trees' runs began: the head's here, the base's in its thread
+                if ran.exists() and len(ran.read_text().split()) == 2:
+                    break
+                time.sleep(0.05)
+            else:
+                pytest.fail(f"pyrefly did not start twice, exit {child.poll()}")
+            child.send_signal(signal.SIGTERM)
+            started = time.monotonic()
+            _out, err = child.communicate(timeout=20)
+            assert child.returncode == 143, err
+            assert time.monotonic() - started < 5, "the review ended as it was stopped, not as its tool did"
+            for pid in ran.read_text().split():
+                with pytest.raises(ProcessLookupError):
+                    os.kill(int(pid), 0)
+        finally:  # nothing of a failed run is left behind
+            child.kill()
+            for pid in ran.read_text().split() if ran.exists() else ():
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(int(pid), signal.SIGKILL)
 
 
 class TestWhatTheReportPrints:
