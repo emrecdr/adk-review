@@ -4105,6 +4105,32 @@ class TestTheShippedRules:
         assert named('source = { registry = "https://pypi.org/simple" }') == [], "and as one does"
         assert named(":git: https://github.com/CocoaPods/Specs.git", "ios/Podfile.lock") == [], "a key is no scheme"
 
+    def test_a_lockfile_source_is_named_by_the_host_a_url_parser_fetches_from(self) -> None:
+        """Read by an audit, and reproduced: `https://evil.example?@pypi.corp.example.com/simple` read as the company's
+        host, past a `?` or a `#`, where every URL parser fetches from `evil.example`: with the company's domain set it
+        passed, and without, the finding named the wrong host. Each spelling's host is held to Python's own parser."""
+        from urllib.parse import urlsplit
+
+        from adk_review.judge.rule_helpers import try_rule
+        from adk_review.judge.rules.lockfile_sources import ORIGIN, LockfileSources
+
+        for url in (
+            "https://evil.example?@pypi.corp.example.com/simple",
+            "https://evil.example#@pypi.corp.example.com/simple",
+            "https://evil.example/@pypi.corp.example.com/simple",
+            "https://user:p@ss@pypi.corp.example.com/simple",
+            "https://user@pypi.corp.example.com:8443/simple",
+            "https://pypi.org?@evil.example/simple",
+            "git+https://evil.example#@github.com/owner/repo",
+        ):
+            found = ORIGIN.match(url)
+            assert found and found[2] == urlsplit(url).hostname, url
+        rule = LockfileSources()
+        rule.own_registries = ("*.corp.example.com",)
+        line = 'source = { registry = "https://evil.example?@pypi.corp.example.com/simple" }\n'
+        found = [hit.title for hit in try_rule(rule, {"uv.lock": line})]
+        assert found == ["uv.lock fetches from https://evil.example, outside its public registry"], found
+
     def test_a_lockfiles_string_written_as_no_package_manager_writes_one_is_named(self) -> None:
         """Reproduced with uv the same way: an address written with an escape, `\\u0068ttps`, or over two lines of one
         string, was installed from, and no reader of single lines sees it. Measured over 17 projects' lockfiles, of

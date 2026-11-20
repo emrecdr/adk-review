@@ -46,9 +46,11 @@ SOURCE = re.compile(
     r"|\b(?:github|gitlab|bitbucket):[^\s\"',}\]#]+"
 )
 #: Where a source fetches from: its scheme and its host, without a user or a password a URL can carry, read to the
-#: last `@` before the host, as redaction reads one: a password may hold an `@`, and its tail is no host. In each
-#: spelling `SOURCE` takes, so none is printed whole; a host's shorthand has none, and is named as it stands.
-ORIGIN = re.compile(r"(?i)((?:\w+\+)?(?:https?|git|ssh)):[/\\]*(?:[^/\\\s]*@)?([^/\\:?#\s]+)")
+#: last `@` before the host, as redaction reads one: a password may hold an `@`, and its tail is no host. Never past a
+#: `?` or a `#`, which end the host: read by an audit, `https://evil.example?@pypi.corp.example.com` read as the
+#: company's host, where every URL parser fetches from `evil.example`. In each spelling `SOURCE` takes, so none is
+#: printed whole; a host's shorthand has none, and is named as it stands.
+ORIGIN = re.compile(r"(?i)((?:\w+\+)?(?:https?|git|ssh)):[/\\]*(?:[^/\\?#\s]*@)?([^/\\:?#\s]+)")
 #: A backslash in a line, with what it stands before: a quote's and a backslash's own are how Poetry writes a marker and
 #: Windows a path, and any other, `\u0068ttps`, `ht\ttps`, or one that ends the line, writes an address in pieces.
 ESCAPE = re.compile(r"\\(.?)")
