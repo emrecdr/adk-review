@@ -2892,16 +2892,23 @@ async def _ready_screen(app, pilot, tmp_path: Path, fake, sha: str, **changed: o
     return said
 
 
+async def _shown(app, pilot, kind):  # a dialog, ready for a click
+    """Until a dialog of `kind` is the screen and built. Textual makes a dialog the screen before it builds its widgets:
+    reproduced by reading a file's lines late, as a loaded machine does, a test that clicked in between found no
+    button, and three tests failed in one run of the suite."""
+    for _ in range(200):
+        await pilot.pause(0.02)
+        if isinstance(app.screen, kind) and app.screen.is_mounted:
+            return app.screen
+    raise AssertionError(f"no {kind.__name__} opened")
+
+
 async def _editor(app, pilot):  # the dialog `c` opened
     """`c` pressed, and the editor it opens once the file's lines are read."""
     from tui.modals import CommentModal
 
     await pilot.press("c")
-    for _ in range(200):
-        await pilot.pause(0.02)
-        if isinstance(app.screen, CommentModal):
-            return app.screen
-    raise AssertionError("no editor opened")
+    return await _shown(app, pilot, CommentModal)
 
 
 async def _posted(app, pilot) -> None:
@@ -2910,10 +2917,17 @@ async def _posted(app, pilot) -> None:
     await pilot.pause()
 
 
+async def _asked(app, pilot):  # the question Post asks
+    """Post pressed in the editor, and the question it asks before anything is sent."""
+    from tui.modals import ConfirmPostModal
+
+    await pilot.click("#btn-comment-post")
+    return await _shown(app, pilot, ConfirmPostModal)
+
+
 async def _post_and_confirm(app, pilot) -> None:
     """Post pressed in the editor, yes said to the question after it, and the post's answer waited for."""
-    await pilot.click("#btn-comment-post")
-    await pilot.pause()
+    await _asked(app, pilot)
     await pilot.click("#btn-post-yes")
     await _posted(app, pilot)
 
@@ -2963,22 +2977,18 @@ class TestACommentOnThePullRequest:
         pytest.importorskip("textual")
         from textual.widgets import Static, TextArea
 
-        from tui.modals import CommentModal, ConfirmPostModal
+        from tui.modals import CommentModal
 
         app, sha = _payments_with_code(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
             await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
             editor = await _editor(app, pilot)
             editor.query_one("#comment-text", TextArea).text = "my own words"
-            await pilot.click("#btn-comment-post")
-            await pilot.pause()
-            assert isinstance(app.screen, ConfirmPostModal)
-            asked = str(app.screen.query_one("#confirm-post", Static).render())
+            asked = str((await _asked(app, pilot)).query_one("#confirm-post", Static).render())
             assert asked == "Post this comment as you, on src/app.py, line 2, pull request 123?"
             assert app.focused is not None and app.focused.id == "btn-post-no", "Enter by habit posts nothing"
             await pilot.click("#btn-post-no")
-            await pilot.pause()
-            assert isinstance(app.screen, CommentModal)
+            await _shown(app, pilot, CommentModal)
             assert app.screen.query_one("#comment-text", TextArea).text == "my own words"
             shown = str(app.screen.query_one("#comment-replaced", Static).render())
             assert TAXED in shown, "the lines stay in view: a suggestion typed in the editor replaces them too"
@@ -3113,8 +3123,7 @@ class TestACommentOnThePullRequest:
             said = await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
             app._credential = Held()
             await _editor(app, pilot)
-            await pilot.click("#btn-comment-post")
-            await pilot.pause()
+            await _asked(app, pilot)
             await pilot.click("#btn-post-yes")
             for _ in range(200):
                 await pilot.pause(0.02)
