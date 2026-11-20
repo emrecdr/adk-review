@@ -710,7 +710,7 @@ class TestOptionsAndCliBuilder:
         )
         app = AdkReviewTuiApp(config_path=cfg)
         async with app.run_test(size=(140, 45)) as pilot:
-            from textual.widgets import Input, OptionList, Select, SelectionList, Switch
+            from textual.widgets import Input, OptionList, Select, SelectionList, Static, Switch
 
             await _wait_for_branches(app, pilot)
             assert app.selected_project is not None and app.selected_project.path == str(local.resolve())
@@ -734,11 +734,14 @@ class TestOptionsAndCliBuilder:
             path_list = app.query_one("#path-list", SelectionList)
             excl_list = app.query_one("#exclude-list", SelectionList)
             if path_list.option_count:
+                # Each tick waits for its handler, which acts after it: read on the Windows runner, a fixed 0.05 s
+                # passed before the first ran, the include list's handler ran last and undid the exclude's tick.
+                preview = app.query_one("#cli-preview", Static)
                 target_folder = path_list.get_option_at_index(0).value
                 path_list.select(target_folder)
-                await pilot.pause(0.05)
+                await _until(pilot, lambda: f"--path {target_folder}" in str(preview.render()), "the include tick")
                 excl_list.select(target_folder)
-                await pilot.pause(0.05)
+                await _until(pilot, lambda: target_folder not in path_list.selected, "the include tick undone")
                 assert target_folder in excl_list.selected and target_folder not in path_list.selected
 
             sel = app.current_selection(dry_run=False)
