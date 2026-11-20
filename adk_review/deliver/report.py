@@ -34,9 +34,9 @@ from ..core.verdict import DELETED_QUOTED, Outcome, Sourced, at_bar, without_fen
 #: printed whole, invisible, in the report and the JSON.
 _CONTROL = re.compile(
     r"\x1b\[[0-?]*[ -/]*[@-~]|[\x00-\x1f\x7f-\x9f"
-    r"\u00ad\u0600-\u0605\u061c\u06dd\u070f\u0890-\u0891\u08e2\u180e\u200b-\u200f\u202a-\u202e\u2060-\u2064"
-    r"\u2066-\u206f\ufeff\ufff9-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3"
-    r"\U0001d173-\U0001d17a\U000e0001\U000e0020-\U000e007f\ufe00-\ufe0f\U000e0100-\U000e01ef"
+    r"\u00ad\u0600-\u0605\u061c\u06dd\u070f\u0890-\u0891\u08e2\u180e\u200b-\u200f\u202a-\u202e\u2060-\u206f"
+    r"\ufeff\ufff0-\ufffb\U000110bd\U000110cd\U00013430-\U0001343f\U0001bca0-\U0001bca3"
+    r"\U0001d173-\U0001d17a\U000e0000-\U000e0fff\ufe00-\ufe0f"
     r"\u115f\u1160\u3164\uffa0\u034f\u17b4\u17b5\u180b-\u180f\u2800]"
 )
 

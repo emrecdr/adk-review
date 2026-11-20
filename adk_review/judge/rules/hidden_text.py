@@ -18,11 +18,13 @@ import re
 
 from ..rule_helpers import Rule
 
-#: The characters, by code point, so this file holds none of them: the tag characters; the bidirectional embeddings,
-#: overrides and isolates; the supplementary variation selectors; the invisible operators; and the Hangul fillers.
+#: The characters, by code point, so this file holds none of them: the tag plane, its tag characters, supplementary
+#: variation selectors and the points left unassigned there; the bidirectional embeddings, overrides and isolates; the
+#: invisible operators; and the Hangul fillers. Unicode keeps U+2065 and U+FFF0 to U+FFF8 invisible too, unassigned,
+#: and no text uses them: read by an audit, and reproduced, U+2065 inside `ignore` hid an order from both rules.
 HIDDEN = frozenset(
     chr(point)
-    for first, last in ((0xE0000, 0xE007F), (0x202A, 0x202E), (0x2066, 0x2069), (0xE0100, 0xE01EF), (0x2061, 0x2064))
+    for first, last in ((0xE0000, 0xE0FFF), (0x202A, 0x202E), (0x2061, 0x2069), (0xFFF0, 0xFFF8))
     for point in range(first, last + 1)
 ) | frozenset(map(chr, (0x115F, 0x1160, 0x3164, 0xFFA0)))
 #: Two or more basic variation selectors in a row: an emoji takes one, smuggled text strings them.
