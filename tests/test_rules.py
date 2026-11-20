@@ -3081,7 +3081,9 @@ class TestTheCallersRule:
         (repo / "vendor").mkdir()
         _git_in(repo, "mv", "pkg/util.py", moved_to)
         _git_in(repo, "commit", "-q", "-m", "move it where no review reads")
-        evidence = collect_evidence(str(repo), BASE, "change", scan=("*.py",), third_party=("**/vendor/**", "vendor/**"))
+        evidence = collect_evidence(
+            str(repo), BASE, "change", scan=("*.py",), third_party=("**/vendor/**", "vendor/**")
+        )
         found = run_rules(evidence, [Callers()])["rule.callers"].findings
         assert [(hit.file, hit.line) for hit in found] == [("app.py", 1)], found
 
@@ -3201,6 +3203,20 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         answer = run_rules(evidence, [RadiusTypes()])["rule.radius-types"]
         assert answer.could_not_look is None, answer.could_not_look
         return sorted((f.file, f.line, f.severity, f"{f.title} | {f.evidence}") for f in answer.findings)
+
+    def test_a_file_renamed_to_python_is_read_as_one_the_change_touched(self, tmp_path: Path) -> None:
+        """Read by an outside audit, and reproduced: the rule asked whether a file was Python's of its old path alone,
+        so a script with no suffix renamed `shop/caller.py`, a wrong call into another file added to it, ran nothing,
+        where the same file added anew was named."""
+        calls = "def one() -> int:\n    return add(1)\n\n\ndef two() -> int:\n    return add(2)\n"
+        draft = f"from shop.util import add\n\n\n{calls}"
+        repo = self.branch(tmp_path, {"shop/util.py": "def add(x: int) -> int:\n    return x\n", "draft": draft}, {})
+        _git_in(repo, "mv", "draft", "shop/caller.py")
+        wrong = draft + "\n\ndef three() -> int:\n    return add(1, 2, 3)\n"
+        (repo / "shop" / "caller.py").write_text(wrong, encoding="utf-8", newline="\n")
+        _git_in(repo, "commit", "-q", "-a", "-m", "the draft becomes a module, and calls add wrongly")
+        found = self.found(repo)
+        assert [(file, line) for file, line, *_ in found] == [("shop/caller.py", 13)], found
 
     def test_a_module_moved_into_the_tests_is_named_where_the_source_still_reads_it(self, tmp_path: Path) -> None:
         """Read by an outside audit, and reproduced: a change that moved `shop/util.py` to `tests/util.py` was read as a

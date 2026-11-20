@@ -240,7 +240,7 @@ def radius(
     python = [
         f
         for f in evidence["files"]
-        if f.get("old", f["path"]).endswith(".py")
+        if (f["path"].endswith(".py") or f.get("old", "").endswith(".py"))  # renamed to Python's suffix, or from it
         and (tests or not (is_test(f["path"]) and is_test(f.get("old", f["path"]))))
     ]
     # A file the change only added is read too: read by validation, a wrong call it makes into another file was named

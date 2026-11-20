@@ -105,9 +105,10 @@ class RadiusTypes(TreeRule):
         """A Python file the change touched: what depends on one it modified, moved or removed is in the head alone,
         and what one it added calls too. Not a test's, whose findings the rule reads none of and its runs leave out:
         read by review, on ADK a commit that edited one test read and parsed the whole project for nothing. A module
-        moved into the tests was a source's: read by an audit, and reproduced, its callers were read by no run."""
+        moved into the tests was a source's: read by an audit, and reproduced, its callers were read by no run. Nor
+        was a file renamed to Python's suffix, asked of its old path alone."""
         return any(
-            item.get("old", item["path"]).endswith(".py")
+            (item["path"].endswith(".py") or item.get("old", "").endswith(".py"))
             and not (is_test(item["path"]) and is_test(item.get("old", item["path"])))
             for item in files
         )
