@@ -44,6 +44,7 @@ from .diagnostics import PER_FILE, UNPACKED_EXTRA, family, fix_of, listed, tier
 from .lines import calls, comment_of, tokens, words
 from .syntax import argument, calls_in, classes, defined, functions_in, imports_in, name_of, nodes_in, parameters
 from .testing import lines_hit, self_check, self_test, try_rule
+from .workflows import USES_KEY, USES_OPEN, uses_joined
 
 __all__ = [
     "PASSED_ON",
@@ -51,6 +52,8 @@ __all__ = [
     "RANK",
     "SECRET_WORDS",
     "UNPACKED_EXTRA",
+    "USES_KEY",
+    "USES_OPEN",
     "ChangedFile",
     "Diagnostic",
     "Entry",
@@ -93,6 +96,7 @@ __all__ = [
     "tier",
     "tokens",
     "try_rule",
+    "uses_joined",
     "vendor_shape",
     "without_examples",
     "words",

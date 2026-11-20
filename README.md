@@ -554,8 +554,8 @@ class RequiredPaths(TreeRule):
 
 The door passes on the contract — `Rule`, `FileRule`, `TreeRule`, `ChangedFile`, `Diagnostic`, `Tree`, `Hit`, `Entry`, a
 changed file as `needs_head` reads it, `UnreadError` and the severity scale, `Severity` and `RANK` — and the helpers:
-each in a module named after what it reads (`lines.py`, `syntax.py`, `diagnostics.py`) or tries a rule with
-(`testing.py`), or passed on from `core/` where a review reads it too — `matches` and `matching` from `paths.py`,
+each in a module named after what it reads (`lines.py`, `syntax.py`, `diagnostics.py`, `workflows.py`) or tries a rule
+with (`testing.py`), or passed on from `core/` where a review reads it too — `matches` and `matching` from `paths.py`,
 `is_test`, `parse` and `PASSED_ON`, how far a name a package passes on is followed, from `blast.py`, `is_python` from
 `rules.py`, and a credential's shape from `secrets.py`:
 

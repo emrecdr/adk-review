@@ -7,7 +7,7 @@ import contextlib
 import functools
 import re
 
-from ..rule_helpers import ChangedFile, FileRule, Hit, UnreadError, matches
+from ..rule_helpers import USES_KEY, USES_OPEN, ChangedFile, FileRule, Hit, UnreadError, matches, uses_joined
 
 #: Where GitHub runs a step's script: a workflow, and an action's own metadata, whose composite steps run them too.
 READ = (".github/workflows/*.yml", ".github/workflows/*.yaml", "action.yml", "action.yaml")
@@ -54,7 +54,7 @@ ON = re.compile(r"""^(["']?)on\1\s*:""")
 #: the merge GitHub makes of it, or the fork it comes from, as an expression holds it among others, `head.sha ||
 #: github.sha`. Read in two steps, the key and then the name, each once along the line: read by the second review, one
 #: pattern for both took 4.6 s over a line of 40,000 characters.
-CHECKOUT = re.compile(r"""^\s*(?:-\s+)?(["']?)uses\1\s*:\s*["']?actions/checkout@""", re.IGNORECASE)
+CHECKOUT = re.compile(USES_KEY + r"""["']?actions/checkout@""", re.IGNORECASE)
 CHECKOUT_KEY = re.compile(r"""^\s*(["']?)(?:ref|repository)\1\s*:""", re.IGNORECASE)
 #: A line that holds a key of its own, a job's `concurrency:` `group:` or a step's `if:` say: no checkout's value.
 KEYED = re.compile(r"""^\s*(?:-\s+)?(["']?)[\w.-]+\1\s*:(?:\s|$)""")
@@ -181,8 +181,9 @@ def _checked_out(file: ChangedFile) -> list[Hit]:
     for number, text in enumerate(lines, 1):
         if CHECKOUT_KEY.match(text) and (where := _head_named(lines, number)):
             step = _step_of(lines, number)
-            uses = [at for at in step if CHECKOUT.match(lines[at - 1])]
-            mine = {*range(number, where + 1), *uses}  # the key, its value as far as the name, and the checkout
+            uses = [at for at in step if CHECKOUT.match(uses_joined(lines[at - 1], file.near(at + 1)))]
+            values = [at + 1 for at in uses if USES_OPEN.match(lines[at - 1])]  # a value YAML reads under its key
+            mine = {*range(number, where + 1), *uses, *values}  # the key, its value as far as the name, the checkout
             named = bool(uses) and step.start not in steps and (trigger_added or not added.isdisjoint(mine))
         elif trigger_added or number in added:
             step, where = range(number, number + 1), number

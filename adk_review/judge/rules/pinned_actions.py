@@ -4,19 +4,13 @@ from __future__ import annotations
 
 import re
 
-from ..rule_helpers import ChangedFile, FileRule, matches
+from ..rule_helpers import USES_KEY, USES_OPEN, ChangedFile, FileRule, matches, uses_joined
 
 #: Where GitHub reads `uses:`: a workflow, and an action's own metadata, whose composite steps run other actions.
 READ = (".github/workflows/*.yml", ".github/workflows/*.yaml", "action.yml", "action.yaml")
-#: A `uses:` value as a step (`- uses:`) or a job (`uses:`) writes it, quoted or not, a comment after it: the action or
-#: reusable workflow, then the ref after its `@`. A local action, `./…`, names no ref, and a Docker image no `@` but a
-#: digest's, which is read and passed. The key in quotes, or with a space before its colon, is the same key: read by
-#: an audit, `"uses": actions/checkout@v4` and `uses : actions/setup-python@v5` named none.
-USES = re.compile(r"""^\s*(?:-\s+)?(?:uses|"uses"|'uses')\s*:\s*["']?([^\s"'#@]+)@([^\s"'#]+)""")
-#: A `uses:` key whose value YAML reads from the line under it: nothing after the key, or a folded or literal block's
-#: `>` or `|`, a comment after it. Read by an audit, and reproduced: `uses:` on one line and `actions/checkout@v4` on
-#: the next was read as no key at all.
-OPEN = re.compile(r"""^\s*(?:-\s+)?(?:uses|"uses"|'uses')\s*:\s*(?:[>|][-+]?\s*)?(?:#.*)?$""")
+#: A `uses:` key's value, quoted or not, a comment after it: the action or reusable workflow, then the ref after its
+#: `@`. A local action, `./…`, names no ref, and a Docker image no `@` but a digest's, which is read and passed.
+USES = re.compile(USES_KEY + r"""["']?([^\s"'#@]+)@([^\s"'#]+)""")
 #: The one ref that cannot be moved: a full commit SHA. GitHub refuses a shorter one.
 SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -60,12 +54,10 @@ class PinnedActions(FileRule):
         return found
 
 
-def _with_value(file: ChangedFile, number: int, new: set[int]) -> str:
-    """Line `number` as `USES` reads it: a key whose value YAML reads from the line under it, with that value; and that
-    value's line, under a key the change kept, as the key with its value. Its own line where neither holds."""
+def _with_value(file: ChangedFile, number: int, added: set[int]) -> str:
+    """Line `number` as `USES` reads it, with its value where YAML reads it from the line under it; and that value's
+    line, under a key the change kept, as the key it is the value of."""
     line = file.near(number) or ""
-    if OPEN.match(line):
-        return "uses: " + (file.near(number + 1) or "").strip()
-    if number - 1 not in new and OPEN.match(file.near(number - 1) or ""):
-        return "uses: " + line.strip()
-    return line
+    if not USES_OPEN.match(line) and number - 1 not in added and USES_OPEN.match(file.near(number - 1) or ""):
+        line, number = file.near(number - 1) or "", number - 1
+    return uses_joined(line, file.near(number + 1))

@@ -4454,6 +4454,24 @@ class TestTheShippedRules:
         )
         assert lines_hit(rule, path, defaults) == [], defaults
 
+    def test_a_checkout_whose_uses_value_stands_on_the_line_under_its_key_is_named(self) -> None:
+        """Read by the simplify pass, and reproduced: YAML reads `uses:` with its value on the next line as one key, and
+        the rule beside this one was taught so while this one read the key's line alone, so a `pull_request_target` job
+        that checked out the pull request's head that way passed. Both rules read the key through one helper now."""
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.script_injection import ScriptInjection
+
+        rule, path = ScriptInjection(), ".github/workflows/build.yml"
+        head = "on:\n  pull_request_target:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
+        ref = "        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n"
+        for key in ("      - uses:\n", "      - uses: >-\n"):
+            assert lines_hit(rule, path, f"{head}{key}          actions/checkout@v4\n{ref}") == [10], key
+        text = f"{head}      - uses:\n          actions/checkout@v4\n{ref}"
+        kept = {**_entry(path, text), "status": "M", "added": [(8, "          actions/checkout@v4")]}
+        found = run_rules({"files": [kept], "tree": None}, [rule])["rule.script-injection"].findings
+        assert [hit.line for hit in found] == [10], "the value changed alone, under a key the change kept"
+
     def test_a_checkout_key_over_two_lines_in_a_workflow_too_large_to_read_is_a_hole(self) -> None:
         """Read by an audit, and reproduced: where the diff of a workflow too large to read adds `ref: >-` and the head
         on the line under it, the rule saw no checkout on either line and said nothing, where the same key on one line
