@@ -439,6 +439,51 @@ class TestGitSyncEngine:
         assert not ran.exists(), "no read started the program"
         assert (index.read_bytes(), index.stat().st_mtime_ns) == held, "and none rewrote the index"
 
+    def test_a_tag_named_as_a_branch_never_stands_in_for_it(self, tmp_path: Path) -> None:
+        """Read by an audit, and reproduced: with a tag `release` beside the branch `release`, the screen read the tag
+        where it meant the branch. Picking `origin/release` said the branch was behind where it held a commit of its
+        own, and the answer moved it to the remote's, the commit left in the reflog alone; and the branch itself, which
+        git lists as `heads/release`, was moved as a new branch of that name. Each is read as the branch's own ref."""
+        from tui.git_sync import fast_forward_local_branch, inspect_branch_sync, list_branches
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        _git(local, "fetch", "-q")
+        _git(local, "update-ref", "refs/remotes/origin/release", "origin/main")
+        _git(local, "tag", "release", "main")
+        _git(local, "switch", "-q", "-c", "release", "main")
+        _git(local, "branch", "-q", "-u", "origin/release")
+        (local / "mine.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
+        _git(local, "add", "mine.py")
+        _git(local, "commit", "-q", "-m", "a commit of its own")
+        _git(local, "switch", "-q", "main")
+        by = {branch.name: branch for branch in list_branches(str(local))}
+        for picked in ("origin/release", "heads/release"):
+            status = inspect_branch_sync(str(local), by[picked])
+            assert (status.kind, status.ahead, status.behind) == ("diverged", 1, 1), (picked, status)
+            assert status.local_branch == "heads/release", "the name a review reads the branch by, and no tag"
+
+        _git(local, "branch", "-f", "release", "main")  # no commit of its own now: behind its remote
+        for picked in ("origin/release", "heads/release"):
+            status = inspect_branch_sync(str(local), by[picked])
+            assert status.kind == "behind", (picked, status)
+            done = fast_forward_local_branch(str(local), status.local_branch, status.upstream_branch)
+            assert done.ok and done.resolved_ref == "heads/release", done
+            assert _git(local, "rev-parse", "refs/heads/release") == _git(local, "rev-parse", "origin/release")
+            assert _git(local, "for-each-ref", "--format=%(refname)", "refs/heads/heads") == "", "no branch made"
+            _git(local, "branch", "-f", "release", "main")
+
+    def test_the_target_origin_head_names_is_preferred_where_no_main_is_held(self, tmp_path: Path) -> None:
+        """Read by an audit, and reproduced: with no local `main` or `master`, the reviewer's own default target is
+        the branch `origin/HEAD` names, by its full name, which the screen's list holds as `origin/main`; the screen
+        then fell back to `develop`. It takes the default by the name its list shows."""
+        from tui.git_sync import list_branches, preferred_base_branch
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        _git(local, "switch", "-q", "-c", "feat")
+        _git(local, "branch", "-q", "develop")
+        _git(local, "branch", "-q", "-D", "main")
+        assert preferred_base_branch(str(local), list_branches(str(local)), "feat") == "origin/main"
+
     @pytest.mark.asyncio
     async def test_the_banner_tells_the_commits_and_each_kind_of_change_before_a_review_runs(
         self, tmp_path: Path

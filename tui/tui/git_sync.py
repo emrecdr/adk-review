@@ -32,7 +32,7 @@ from adk_review.collect.git import (
     preflight_staged,
     read_only,
 )
-from adk_review.core.text import lines_of
+from adk_review.core.text import lines_of, short_ref
 
 SKIP_DIRS = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", ".mypy_cache", ".ruff_cache"})
 _AHEAD = re.compile(r"\bahead (\d+)\b")
@@ -382,26 +382,30 @@ def _parse_track(track: str) -> tuple[int, int]:
     )
 
 
-def _local_branch_info(repo: str, short: str, upstream: str, track: str, remote_shorts: set[str]) -> BranchInfo:
-    """Build a `BranchInfo` for a local branch, reusing `track` when upstream is configured."""
+def _local_branch_info(
+    repo: str, short: str, own: str, upstream: str, track: str, remote_shorts: set[str]
+) -> BranchInfo:
+    """Build a `BranchInfo` for a local branch, reusing `track` when upstream is configured: `short` the name the
+    screen shows and a review reads, git's own, which is `heads/x` where a tag is named `x` too, and `own` the
+    branch's own name, which git's commands read it by."""
     if upstream:
         ahead, behind = _parse_track(track)
         return BranchInfo(
             name=short,
             is_remote=False,
             remote_name=upstream,
-            local_name=short,
+            local_name=own,
             upstream=upstream,
             ahead=ahead,
             behind=behind,
         )
-    inferred = f"origin/{short}" if f"origin/{short}" in remote_shorts else ""
-    ahead, behind = branch_divergence(repo, short, inferred) if inferred else (0, 0)
+    inferred = f"origin/{own}" if f"origin/{own}" in remote_shorts else ""
+    ahead, behind = branch_divergence(repo, own, inferred) if inferred else (0, 0)
     return BranchInfo(
         name=short,
         is_remote=False,
         remote_name=inferred,
-        local_name=short,
+        local_name=own,
         upstream=inferred,
         ahead=ahead,
         behind=behind,
@@ -422,9 +426,10 @@ def _parse_ref_lines(repo: str, lines: list[str]) -> tuple[list[BranchInfo], lis
                 remote_shorts.add(parts[1])
     for full, short, upstream, track in raw_rows:
         if full.startswith("refs/heads/"):
-            local_map[short] = _local_branch_info(repo, short, upstream, track, remote_shorts)
+            own = full.removeprefix("refs/heads/")
+            local_map[short] = _local_branch_info(repo, short, own, upstream, track, remote_shorts)
         elif full.startswith("refs/remotes/") and not full.endswith("/HEAD") and "/" in short:
-            _remote_prefix, local_name = short.split("/", 1)
+            _remote_prefix, _, local_name = full.removeprefix("refs/remotes/").partition("/")
             remote_list.append(
                 BranchInfo(
                     name=short,
@@ -437,9 +442,12 @@ def _parse_ref_lines(repo: str, lines: list[str]) -> tuple[list[BranchInfo], lis
     return list(local_map.values()), remote_list
 
 
-def branch_divergence(repo: str, local_ref: str, upstream_ref: str) -> tuple[int, int]:
-    """Return `(ahead, behind)` commits between `local_ref` and `upstream_ref`."""
-    done = _read(repo, "rev-list", "--left-right", "--count", "--end-of-options", f"{local_ref}...{upstream_ref}")
+def branch_divergence(repo: str, local_branch: str, upstream_ref: str) -> tuple[int, int]:
+    """Return `(ahead, behind)` commits between the local branch named `local_branch`, its own name, and
+    `upstream_ref`. The branch is read by its full ref: read by an audit, and reproduced, a tag of the same name stood
+    in for it, and a branch with a commit of its own was called behind."""
+    span = f"refs/heads/{local_branch}...{upstream_ref}"
+    done = _read(repo, "rev-list", "--left-right", "--count", "--end-of-options", span)
     parts = done[1].split() if done is not None else []
     if len(parts) != 2:
         return 0, 0
@@ -456,11 +464,18 @@ def inspect_branch_sync(repo: str, branch: BranchInfo) -> SyncStatus:
         if held is None or held[0] != 0:
             return SyncStatus("remote_only", branch.local_name, branch.name, 0, 0)
         ahead, behind = branch_divergence(repo, branch.local_name, branch.name)
-        return _classify_counts(branch.local_name, branch.name, ahead, behind)
+        return _classify_counts(_shown(repo, branch.local_name), branch.name, ahead, behind)
     if not branch.upstream:
         return SyncStatus("local_only", branch.name, "", 0, 0)
-    ahead, behind = branch_divergence(repo, branch.name, branch.upstream)
+    ahead, behind = branch_divergence(repo, branch.local_name, branch.upstream)
     return _classify_counts(branch.name, branch.upstream, ahead, behind)
+
+
+def _shown(repo: str, own: str) -> str:
+    """The name the list shows the local branch `own` by, and a review reads it by: git's own short name, which is
+    `heads/x` where a tag is named `x` too and `x` would name the tag."""
+    done = _read(repo, "rev-parse", "--abbrev-ref", f"refs/heads/{own}")
+    return done[1] if done is not None and done[1] else own
 
 
 def _classify_counts(local_branch: str, upstream_branch: str, ahead: int, behind: int) -> SyncStatus:
@@ -477,15 +492,24 @@ def fast_forward_local_branch(repo: str, local_branch: str, upstream_ref: str) -
     """Move `local_branch` to `upstream_ref` where that is a fast-forward: the person's own `git branch -f`, asked for
     at the question. A branch the repository has checked out is left as it is, its files too, and the remote's is
     reviewed by its own name. Read by review: there the answer ran `git merge --ff-only`, which rewrote the files of a
-    working tree the question had said would stay untouched."""
-    ancestor = _read(repo, "merge-base", "--is-ancestor", "--end-of-options", local_branch, upstream_ref, ok=(0, 1))
+    working tree the question had said would stay untouched. `local_branch` is read as the branch it names, by its
+    full ref: read by an audit, and reproduced, `heads/x`, git's name for a branch `x` beside a tag `x`, was moved as
+    a new branch of that name."""
+    named = _read(
+        repo, "rev-parse", "--verify", "--quiet", "--symbolic-full-name", "--end-of-options", local_branch, ok=(0, 1)
+    )
+    full = named[1] if named is not None and named[0] == 0 else ""
+    if not full.startswith("refs/heads/"):
+        return SyncOutcome(ok=False, resolved_ref=local_branch, message=f"'{local_branch}' names no local branch")
+    ancestor = _read(repo, "merge-base", "--is-ancestor", "--end-of-options", full, upstream_ref, ok=(0, 1))
     if ancestor is None or ancestor[0] != 0:
         return SyncOutcome(
             ok=False,
             resolved_ref=local_branch,
             message=f"'{local_branch}' cannot be fast-forwarded cleanly to '{upstream_ref}'",
         )
-    if _checked_out(repo) == local_branch:
+    held = _read(repo, "symbolic-ref", "--quiet", "HEAD", ok=(0, 1))
+    if held is not None and held[1] == full:
         return SyncOutcome(
             ok=True,
             resolved_ref=upstream_ref,
@@ -494,7 +518,7 @@ def fast_forward_local_branch(repo: str, local_branch: str, upstream_ref: str) -
     try:
         # `--no-track`: the branch moves, and nothing else. Read by review: it also made the branch track the remote's,
         # a line in the repository's config no one asked for, where the screen had inferred the upstream.
-        args = ["branch", "-f", "--no-track", "--end-of-options", local_branch, upstream_ref]
+        args = ["branch", "-f", "--no-track", "--end-of-options", full.removeprefix("refs/heads/"), upstream_ref]
         done = _run_git(repo, args, timeout_s=10)
     except (OSError, subprocess.TimeoutExpired) as exc:
         return SyncOutcome(ok=False, resolved_ref=upstream_ref, message=f"Branch sync failed: {exc}")
@@ -516,6 +540,8 @@ def preferred_base_branch(repo: str, branches: list[BranchInfo], head_ref: str, 
         detected = default_base(repo)
     except GitError:
         detected = None
+    # By the name the list shows: `origin/HEAD`'s branch is named in full, where no local `main` is held.
+    detected = short_ref(detected) if detected else None
     if detected and detected in names and detected != head_ref:
         return detected
     for candidate in ("develop", "main", "master", "origin/develop", "origin/main", "origin/master"):
