@@ -22,7 +22,6 @@ import shutil
 import string
 import subprocess
 import tempfile
-import threading
 import uuid
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
@@ -162,7 +161,9 @@ def _found(name: str, path: str) -> str:
 #: Each program the review runs, git, ruff and pyrefly, held while it runs, and whether the review was stopped: one
 #: waited on in a thread, which no signal reaches, outlived a stopped review, and the review waited for it.
 _RUNNING: set[subprocess.Popen[Any]] = set()
-_STOPPED = threading.Event()
+#: A plain flag, which takes no lock: reproduced by review, a second SIGTERM inside the first one's handler, as it set
+#: a `threading.Event`, waited for ever on the lock the handler held, and the review never ended.
+_STOPPED = False
 
 
 @contextlib.contextmanager
@@ -171,7 +172,7 @@ def watched(process: subprocess.Popen[Any]) -> Iterator[None]:
     it started. Measured: a SIGTERM while pyrefly read the base's tree in its thread ended the review 29.5 s later,
     when pyrefly did."""
     _RUNNING.add(process)
-    if _STOPPED.is_set():  # read after the add: a stop between the two finds it held
+    if _STOPPED:  # read after the add: a stop between the two finds it held
         process.kill()
     try:
         yield
@@ -182,7 +183,8 @@ def watched(process: subprocess.Popen[Any]) -> Iterator[None]:
 def stop_programs() -> None:
     """Each program the review runs, ended, and each one a thread starts after it: a stopped review's, which the
     thread waiting on it would wait for to its end."""
-    _STOPPED.set()
+    global _STOPPED
+    _STOPPED = True
     for process in list(_RUNNING):
         with contextlib.suppress(OSError):  # one that ended already
             process.kill()

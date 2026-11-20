@@ -9,7 +9,6 @@ import random
 import re
 import subprocess
 import sys
-import threading
 import time
 from pathlib import Path
 
@@ -376,7 +375,7 @@ def test_a_stop_ends_each_program_running_and_each_started_after_it(monkeypatch)
     a rule's thread can reach its next tool before the stop reaches the thread."""
     git = importlib.import_module("adk_review.collect.git")
     monkeypatch.setattr(git, "_RUNNING", set())
-    monkeypatch.setattr(git, "_STOPPED", threading.Event())
+    monkeypatch.setattr(git, "_STOPPED", False)
     sleeps = [sys.executable, "-c", "import time; time.sleep(30)"]
     with subprocess.Popen(sleeps) as running, git.watched(running):
         git.stop_programs()
