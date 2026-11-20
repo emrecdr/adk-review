@@ -98,8 +98,8 @@ Before you run a review, the banner says what it would read, as the review's own
 since the merge base with the target, and the changed files, how many the change added, modified, deleted or
 renamed. Where the review would stop before it reads, as for two branches that share no history, the banner gives
 the review's own sentence. The review's log names the same commits. Its count of the files it read can be lower:
-it sets aside the files no check reads, of a kind `[review] scan` does not name or under a third-party folder, and
-those outside `--path`, and names how many.
+it counts apart the files of a kind `[review] scan` does not name, which only the credential rules read, those under
+a third-party folder, and those outside `--path` or under `--path-exclude`, and names how many.
 
 Each step is a panel. A panel you minimize leaves its row and docks into one line at the top, as a chip that names
 its step and its choice, `▶ 2 Review: main`; a row with no open panel goes, so the results take the screen. On a
