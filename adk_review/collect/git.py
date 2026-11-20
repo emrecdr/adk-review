@@ -940,9 +940,21 @@ def _split(
 ) -> tuple[list[dict], list[dict], list[str]]:
     """The changed files a review reads; the project's own of every other kind, for the credential rules alone, never
     a submodule or another project's code; and the paths of every file the review ignores. A file moved or copied out
-    of one its readers never saw is read whole, as one the change adds: no review read it where it lay."""
+    of one its readers never saw is read whole, as one the change adds: no review read it where it lay. One moved out
+    of what a review reads, into another project's folder or to a kind no check reads, is read as one the change
+    removed: read by an audit, and reproduced, known by its new path alone it left the review, and a file that still
+    imported it passed."""
     own = [entry for entry in entries if _reviewed(entry, scan, third_party)]
     kept = {entry["path"] for entry in own}
+    own += [
+        {"path": entry["old"], "status": "D", "mode": "000000"}
+        for entry in entries
+        if entry["path"] not in kept
+        and entry["status"] == "R"
+        and entry["mode"] != SUBMODULE_MODE
+        and in_review(entry["old"], scan, third_party)
+    ]
+    own.sort(key=lambda entry: entry["path"])
     others = [
         entry
         for entry in entries

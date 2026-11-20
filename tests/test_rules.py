@@ -3060,6 +3060,31 @@ class TestTheCallersRule:
         assert all(hit.text[1:] in files[hit.path] for hit in hits), hits
         return sorted((hit.path, hit.line, hit.title, hit.fix) for hit in hits)
 
+    @pytest.mark.parametrize("moved_to", ["vendor/util.py", "pkg/util.txt"])
+    def test_a_module_moved_where_no_review_reads_it_is_named_where_code_still_imports_it(
+        self, tmp_path: Path, moved_to: str
+    ) -> None:
+        """Read by an outside audit, and reproduced: a module moved into a third-party folder, or to a name of a kind
+        no check reads, left the files a review reads, known by its new path alone, so no rule knew its old path was
+        gone, and a file that still imported it passed, where the same module moved elsewhere or removed was named."""
+        from adk_review.collect.git import collect_evidence
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.callers import Callers
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "pkg/__init__.py", "")
+        _committed(repo, "pkg/util.py", "def helper():\n    return 1\n")
+        _committed(repo, "app.py", "from pkg.util import helper\n")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        (repo / "vendor").mkdir()
+        _git_in(repo, "mv", "pkg/util.py", moved_to)
+        _git_in(repo, "commit", "-q", "-m", "move it where no review reads")
+        evidence = collect_evidence(str(repo), BASE, "change", scan=("*.py",), third_party=("**/vendor/**", "vendor/**"))
+        found = run_rules(evidence, [Callers()])["rule.callers"].findings
+        assert [(hit.file, hit.line) for hit in found] == [("app.py", 1)], found
+
     def test_a_module_the_change_moved_or_removed_is_named_where_code_still_imports_it(self) -> None:
         """Asked by the owner: the review acts on the blast radius. Measured before: a branch moved `pkg/repo.py`, or
         removed it, three files it left alone still imported it, and every rule approved what raises
