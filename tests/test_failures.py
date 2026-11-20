@@ -1345,21 +1345,21 @@ def test_a_merges_own_lines_are_read_whatever_its_parents_and_a_binary_file_it_w
     _git_in(repo, "init", "-q", "-b", "main")
     for name in "fgh":
         _committed(repo, f"{name}.py", f"{name} = 1\n")
-    _committed(repo, "data.bin", bytes(range(256)))
+    _committed(repo, " data.bin", bytes(range(256)))  # a leading space, which git keeps: read by review
     for side, name in (("x", "f"), ("y", "g"), ("z", "h")):
         _git_in(repo, "checkout", "-q", "-b", side, "main")
         _committed(repo, f"{name}.py", f"{name} = 2\n")
     _git_in(repo, "checkout", "-q", "-b", "octopus", "main")
     _git_in(repo, "merge", "-q", "--no-commit", "x", "y", "z")
     (repo / "f.py").write_text("f = 2\nown = 1\n", encoding="utf-8", newline="\n")
-    (repo / "data.bin").write_bytes(bytes(2))
-    _git_in(repo, "add", "f.py", "data.bin")
+    (repo / " data.bin").write_bytes(bytes(2))
+    _git_in(repo, "add", "f.py", " data.bin")
     _git_in(repo, "commit", "-q", "-m", "merge three")
     merge = _git_in(repo, "rev-parse", "HEAD")
     assert len(_git_in(repo, "rev-list", "--parents", "-1", merge).split()) == 4, "three parents"
     files = {commit: found for commit, _said, found in sent(str(repo), None, "octopus", "main")}[merge]
     assert files == [
-        {"path": "data.bin", "added": [], "binary": True},
+        {"path": " data.bin", "added": [], "binary": True},
         {"path": "f.py", "added": [(2, "own = 1")]},
     ], files
 

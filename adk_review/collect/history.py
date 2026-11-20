@@ -118,7 +118,8 @@ def _added_by(repo: str, commits: Sequence[str], attributes: str) -> dict[str, l
         files = found.setdefault(commit.decode(), [])
         opened = _A_FILE.split(b"\n" + body)[1:]  # each file's kind, then its part
         for kind, piece in zip(opened[::2], opened[1::2], strict=True):
-            diff = own_lines(readable(_text(piece))) if kind == b"cc" else readable(_text(piece))
+            # A merge's part whole: its first line is the path, which a leading space may open. Read by review.
+            diff = own_lines(readable(_text(piece, strip=False))) if kind == b"cc" else readable(_text(piece))
             if (file := file_added(diff)) is not None:
                 # A Git LFS pointer's lines are not the file: Git LFS's own hook uploads the file it names. Read by
                 # review: a key store's pointer one commit added and the next took out passed unnamed, uploaded.
