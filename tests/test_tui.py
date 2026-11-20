@@ -726,8 +726,9 @@ class TestOptionsAndCliBuilder:
 
             # Switching mode to --staged disables branch pickers and refreshes path lists
             app.query_one("#mode-select", Select).value = "staged"
-            await pilot.pause(0.1)
-            assert app.query_one("#base-list", OptionList).disabled is True
+            # Its handler and the folders' refresh it starts run after it, as each tick's below does: waited for.
+            await _until(pilot, lambda: app.query_one("#base-list", OptionList).disabled, "staged mode applied")
+            await app.workers.wait_for_complete()
             assert app.query_one("#head-list", OptionList).disabled is True
 
             # Selecting the same folder in #exclude-list deselects it from #path-list
