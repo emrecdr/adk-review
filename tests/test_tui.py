@@ -2973,6 +2973,33 @@ class TestACommentOnThePullRequest:
             assert not isinstance(app.screen, CommentModal) and fake_ado.seen == [], "Escape cancels too"
 
     @pytest.mark.asyncio
+    async def test_each_dialog_fits_a_terminal_of_80_columns(self, tmp_path: Path, fake_ado) -> None:
+        """macOS Terminal opens at 80 columns by 24 lines. Read by an audit, and measured: there the editor was 100
+        columns wide, its Cancel button past the screen's edge and the right of the text being edited out of sight,
+        and the check's own dialog cut its Close button."""
+        pytest.importorskip("textual")
+        from textual.widgets import Button, TextArea
+
+        from tui.modals import ExplainCheckModal
+
+        def fits(dialog, frame: str) -> None:
+            for widget in (dialog.query_one(frame), *dialog.query(Button), *dialog.query(TextArea)):
+                assert widget.region.right <= 80 and widget.region.bottom <= 24, (widget.id, widget.region)
+
+        app, sha = _payments_with_code(tmp_path)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _ready_screen(app, pilot, tmp_path, fake_ado, sha)
+            app.action_explain_selected_check()
+            fits(await _shown(app, pilot, ExplainCheckModal), "#explain-dialog")
+            await pilot.press("escape")
+            for _ in range(200):
+                await pilot.pause(0.02)
+                if not isinstance(app.screen, ExplainCheckModal):
+                    break
+            fits(await _editor(app, pilot), "#comment-dialog")
+            fits(await _asked(app, pilot), "#modal-dialog")
+
+    @pytest.mark.asyncio
     async def test_go_back_returns_to_the_editor_with_the_edit(self, tmp_path: Path, fake_ado) -> None:
         pytest.importorskip("textual")
         from textual.widgets import Static, TextArea

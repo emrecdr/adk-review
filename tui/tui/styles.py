@@ -204,6 +204,7 @@ ModalScreen {
 }
 #modal-dialog {
     width: 72;
+    max-width: 100%;  /* macOS Terminal opens at 80 columns */
     height: auto;
     border: thick $accent;
     background: $surface;
@@ -211,6 +212,7 @@ ModalScreen {
 }
 #explain-dialog {
     width: 84;
+    max-width: 100%;  /* macOS Terminal opens at 80 columns */
     height: 80%;
     border: thick $accent;
     background: $surface;
@@ -221,6 +223,7 @@ ModalScreen {
 }
 #comment-dialog {
     width: 100;
+    max-width: 100%;  /* macOS Terminal opens at 80 columns */
     height: 85%;
     border: thick $accent;
     background: $surface;

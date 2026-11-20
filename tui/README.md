@@ -97,6 +97,8 @@ served from the cache with no model call.
 Each step is a panel. A panel you minimize leaves its row and docks into one line at the top, as a chip that names
 its step and its choice, `▶ 2 Review: main`; a row with no open panel goes, so the results take the screen. On a
 narrow screen the chips keep the step's number and its choice, and the step's name moves to the chip's tooltip.
+A dialog wider than the screen, the comment's editor at macOS Terminal's 80 columns among them, takes the screen's
+width, its buttons in view.
 Click a chip, or press its number, to restore that panel; `Ctrl+T` minimizes every panel and `Ctrl+O` restores them.
 
 The line under the steps shows the command it will run, ready to paste. While a review runs, its progress shows in
