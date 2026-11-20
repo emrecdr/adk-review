@@ -1793,6 +1793,50 @@ class TestWhatTheCodeReviewFound:
             assert code == 0 and said[-1] == "after" and len(said[0]) >= 64_000, [len(line) for line in said]
 
     @pytest.mark.asyncio
+    async def test_a_review_saves_its_choices_under_the_repository_it_reviews(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Read by an audit: the choices a review saves were filed under the repository picked when the save's thread
+        ran, not the one the review started for, so a pick made while it waited took the review's choices. The name is
+        taken as the review starts now, and the thread writes the file alone."""
+        pytest.importorskip("textual")
+        import dataclasses
+
+        from tui import app as screen
+
+        _init_repo_with_remote(tmp_path)
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        saved: list[str] = []
+
+        def saved_as(config: object, name: str, _preset: object) -> object:
+            saved.append(name)
+            return config
+
+        def stop(*_args: object) -> None:
+            raise PermissionError(13, "Permission denied", str(cfg))
+
+        monkeypatch.setattr(screen, "save_repo_preset", saved_as)
+        monkeypatch.setattr(screen, "make_output_dir", stop)
+        app = screen.AdkReviewTuiApp(config_path=cfg)
+        in_a_thread = screen.asyncio.to_thread
+
+        async def picked_meanwhile(call: object, /, *args: object, **kwargs: object) -> object:
+            # Another repository picked while each thread waits to run, whatever the thread does.
+            app.selected_project = dataclasses.replace(app.selected_project, name="another-repo")
+            return await in_a_thread(call, *args, **kwargs)
+
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            app.selected_base = "origin/main"
+            monkeypatch.setattr(screen.asyncio, "to_thread", picked_meanwhile)
+            await pilot.press("ctrl+r")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+        assert saved == ["my-service"], saved
+
+    @pytest.mark.asyncio
     async def test_results_stay_with_the_target_they_came_from(self, tmp_path: Path, monkeypatch) -> None:
         """Read by review: a change of branch kept the last review's comment and hand-off, marked ready, which Ctrl+Y
         then copied for another branch's pull request; and a review that ended after the person chose another target
@@ -2221,6 +2265,18 @@ class TestTheConfigReview:
         monkeypatch.setattr(Path, "unlink", held)
         assert config.ensure_tui_config().is_file()
 
+    def test_a_projects_folders_and_checks_may_be_one_name_written_alone(self, tmp_path: Path) -> None:
+        """Read by an audit, and reproduced: `path = "src"`, one folder written as a string where a list was meant,
+        read as no folder at all, with no word, and so did `path_exclude` and `checks`. One name stands for a list of
+        one, as `root_dirs` reads it."""
+        from tui.config import load_tui_config
+
+        cfg = tmp_path / ".tui.toml"
+        body = '[projects."a"]\npath = "src"\npath_exclude = "tests"\nchecks = "rule.secrets"\n'
+        cfg.write_text(body, encoding="utf-8")
+        preset = load_tui_config(cfg).projects["a"]
+        assert (preset.path, preset.path_exclude, preset.checks) == (("src",), ("tests",), ("rule.secrets",))
+
     def test_a_config_it_cannot_read_is_one_sentence_naming_what_to_write(self, tmp_path: Path, capsys) -> None:
         """Read by review, each reproduced: `projects = "x"` ended in a traceback; `[[workspace]]`, `workspace = "x"`
         and `defaults = 3` were left out, the default folder listed in silence; `verify = "no"` turned `--verify` on, a
@@ -2244,6 +2300,8 @@ class TestTheConfigReview:
             ('[workspace]\n"" = 1\n', "[workspace] has no setting ''"),
             ("scan_dept = 2\n", "the config has no setting 'scan_dept'"),
             ("[workspace]\nprojects_dir = 3\n", "projects_dir lists the folders"),
+            ('[projects."a"]\npath = 3\n', "[projects.a] path is 3. Write a list of names"),
+            ('[projects."a"]\nchecks = [1]\n', "[projects.a] checks is [1]. Write a list of names"),
         ):
             cfg.write_text(body, encoding="utf-8")
             assert tui_main(["--config", str(cfg)]) == 2, body

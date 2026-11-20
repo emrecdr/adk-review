@@ -1450,10 +1450,10 @@ class AdkReviewTuiApp(App[int]):
                 timeout=6,
             )
 
-    def _save_current_preset(self, sel: ReviewSelection) -> None:
-        if self.selected_project is None:
-            return
-        preset = RepoPreset(
+    @staticmethod
+    def _preset(sel: ReviewSelection) -> RepoPreset:
+        """The choices a review saves for its repository."""
+        return RepoPreset(
             base=sel.base,
             profile=sel.profile,
             fail_on=sel.fail_on,
@@ -1465,7 +1465,6 @@ class AdkReviewTuiApp(App[int]):
             checks=sel.checks,
             diff_cap=sel.diff_cap,
         )
-        self.tui_config = save_repo_preset(self.tui_config, self.selected_project.name, preset)
 
     @staticmethod
     def _set_loading(on: bool, *widgets: Widget) -> None:
@@ -1516,7 +1515,11 @@ class AdkReviewTuiApp(App[int]):
             return
         sel = self.current_selection(dry_run=dry_run)
         if not dry_run:
-            await asyncio.to_thread(self._save_current_preset, sel)
+            # Under the repository the review started for, named here; the thread writes the file alone. Read by an
+            # audit: the thread read the repository picked when it ran, so a pick made meanwhile took these choices.
+            self.tui_config = await asyncio.to_thread(
+                save_repo_preset, self.tui_config, project.name, self._preset(sel)
+            )
             await asyncio.to_thread(make_output_dir, sel, self.tui_config.config_path)
         argv, outputs = build_review_argv(sel)
         report_log = self.query_one("#report-log", RichLog)

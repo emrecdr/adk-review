@@ -422,18 +422,27 @@ def _parse_projects(section: object) -> dict[str, RepoPreset]:
             comment=_switch(table, "comment", data.get("comment"), None),
             handoff=_switch(table, "handoff", data.get("handoff"), None),
             verify=_switch(table, "verify", data.get("verify"), None),
-            path=_str_tuple(data.get("path")),
-            path_exclude=_str_tuple(data.get("path_exclude")),
-            checks=_str_tuple(data.get("checks")),
+            path=_str_tuple(table, "path", data.get("path")),
+            path_exclude=_str_tuple(table, "path_exclude", data.get("path_exclude")),
+            checks=_str_tuple(table, "checks", data.get("checks")),
             diff_cap=_number(table, "diff_cap", data.get("diff_cap"), 0, 0, 10_000_000),
         )
     return presets
 
 
-def _str_tuple(value: object) -> tuple[str, ...]:
-    if not isinstance(value, list):
+#: What each list of names holds, for the sentence that refuses one.
+_NAMED = {"path": '"src"', "path_exclude": '"tests"', "checks": '"rule.secrets"'}
+
+
+def _str_tuple(table: str, key: str, value: object) -> tuple[str, ...]:
+    """A list of names, folders or checks, or one name written alone, as `root_dirs` reads one. Read by an audit, and
+    reproduced: `path = "src"` read as no folder at all, with no word, and a list of numbers as their digits."""
+    if value is None:
         return ()
-    return tuple(str(item).strip() for item in value if str(item).strip())
+    names = [value] if isinstance(value, str) else value
+    if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
+        raise ValueError(f"{table} {key} is {value!r}. Write a list of names, as {key} = [{_NAMED[key]}]")
+    return tuple(name.strip() for name in names if name.strip())
 
 
 def save_repo_preset(config: TuiConfig, repo_name: str, preset: RepoPreset) -> TuiConfig:
