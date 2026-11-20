@@ -56,6 +56,8 @@ ON = re.compile(r"""^(["']?)on\1\s*:""")
 #: pattern for both took 4.6 s over a line of 40,000 characters.
 CHECKOUT = re.compile(r"""^\s*(?:-\s+)?(["']?)uses\1\s*:\s*["']?actions/checkout@""", re.IGNORECASE)
 CHECKOUT_KEY = re.compile(r"""^\s*(["']?)(?:ref|repository)\1\s*:""", re.IGNORECASE)
+#: A line that holds a key of its own, a job's `concurrency:` `group:` or a step's `if:` say: no checkout's value.
+KEYED = re.compile(r"""^\s*(?:-\s+)?(["']?)[\w.-]+\1\s*:(?:\s|$)""")
 HEAD = re.compile(
     r"github\.(?:event\.pull_request\.(?:head\.(?:sha|ref|repo\.(?:full_name|clone_url|ssh_url))|merge_commit_sha)"
     r"|head_ref)\b|refs/pull/",
@@ -159,9 +161,13 @@ def _checked_out(file: ChangedFile) -> list[Hit]:
         return []  # an action's metadata names no trigger
     if not file.read_whole:
         shown = (file.near(number) or "" for number in sorted(file.added))
-        # A line that names the head may be a checkout key's value, the key on a line above: read by an audit, `ref: >-`
-        # and the head under it were added, and neither line was a checkout on its own.
-        if any(TARGET.search(text) or _checkout_line(text) or _names_head(text) for text in shown):
+        # A line that names the head and holds no key may be a checkout key's value, the key on a line above: read by an
+        # audit, `ref: >-` and the head under it were added, and neither line was a checkout on its own. Read by the
+        # branch's review: a key's own line, the common concurrency group among them, was a hole.
+        if any(
+            TARGET.search(text) or _checkout_line(text) or (_names_head(text) and not KEYED.match(text))
+            for text in shown
+        ):
             with contextlib.suppress(UnreadError):  # asked, it marks the file missed: a hole, the script findings kept
                 file.lines  # noqa: B018
         return []

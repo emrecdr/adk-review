@@ -521,7 +521,8 @@ def _own_init(node: ast.ClassDef) -> ast.FunctionDef | None:
 def _header(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[int]:
     """The lines a function's parameters are written on: its `def` line to the line before its body, or to the last
     line its parameters and its return annotation take, where its body begins there. Read by an audit, and reproduced:
-    `b, c): return a + b + c` was left out, and a required parameter added on it read as a change to the body."""
+    `b, c): return a + b + c` was left out, and a required parameter added on it read as a change to the body. A lone
+    `/` on that line has no node of its own, and is left out: rare, and read by the branch's review."""
     parts = [*ast.walk(node.args), *([node.returns] if node.returns else [])]
     last = max((getattr(part, "end_lineno", None) or node.lineno for part in parts), default=node.lineno)
     return set(range(node.lineno, max(last, node.body[0].lineno - 1) + 1))

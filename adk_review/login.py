@@ -197,16 +197,16 @@ def _stored(auth: Any, token: Path, access_token: str) -> int:
     from litellm.llms.github_copilot.common_utils import GetAPIKeyError
 
     try:
-        try:
-            auth._ensure_token_dir()
-            token.write_text(access_token, encoding="utf-8")
-        except OSError as exc:  # no token is left half written
-            with contextlib.suppress(OSError):
-                token.unlink(missing_ok=True)
-            return _unwritable(token.parent, exc)
+        auth._ensure_token_dir()
         # The key cached for the token before, another account's after `--force`, would answer the exchange in this
-        # one's place: read by an audit, and reproduced, calls went on billed to the account logged in before.
+        # one's place: read by an audit, and reproduced, calls went on billed to the account logged in before. It goes
+        # first, so a file that cannot be written leaves both as they were: read by the branch's review, a key the
+        # folder kept stood beside a new token, and a token this account could not write was removed.
         Path(auth.api_key_file).unlink(missing_ok=True)
+        token.write_text(access_token, encoding="utf-8")
+    except OSError as exc:
+        return _unwritable(exc, token)
+    try:
         auth.get_api_key()
     except KeyboardInterrupt:  # read by review: a token no key was had for read as ready, to the next login too
         token.unlink(missing_ok=True)
@@ -225,11 +225,14 @@ def _stored(auth: Any, token: Path, access_token: str) -> int:
     return 0
 
 
-def _unwritable(folder: Path, exc: OSError) -> int:
-    """Exit 1, said, where the token's folder cannot be written. Read by an audit, and reproduced: a folder this
-    account cannot write ended the login in a traceback, after the person had approved it at GitHub."""
-    print(f"[copilot] could not cache the token in {folder}: {exc.strerror or exc}", file=sys.stderr)
-    print("[copilot] set GITHUB_COPILOT_TOKEN_DIR to a folder you can write. Then run this again", file=sys.stderr)
+def _unwritable(exc: OSError, token: Path) -> int:
+    """Exit 1, said, where the token or its key cannot be written, the file named. Read by an audit, and reproduced: a
+    folder this account cannot write ended the login in a traceback, after the person had approved it at GitHub."""
+    print(f"[copilot] could not write {exc.filename or token}: {exc.strerror or exc}", file=sys.stderr)
+    print(
+        "[copilot] make it writable, or set GITHUB_COPILOT_TOKEN_DIR to a folder you own. Then run this again",
+        file=sys.stderr,
+    )
     return 1
 
 

@@ -3,6 +3,7 @@ what was never gathered."""
 
 from __future__ import annotations
 
+import errno
 import importlib
 import json
 import os
@@ -743,8 +744,47 @@ def test_a_login_that_cannot_write_its_token_says_where_and_what_to_do(tmp_path,
     monkeypatch.setattr(sys, "argv", ["adk-review-login"])
     assert copilot_login.run() == 1
     err = capsys.readouterr().err
-    assert f"[copilot] could not cache the token in {tmp_path}:" in err, err
+    assert f"[copilot] could not write {tmp_path / 'access-token'}:" in err, err
     assert "GITHUB_COPILOT_TOKEN_DIR" in err and "Traceback" not in err, err
+
+
+def test_a_login_that_cannot_replace_the_token_keeps_the_old_one_and_says_so(tmp_path, monkeypatch, capsys) -> None:
+    """Read by the branch's review, and reproduced: under `--force`, a token file this account cannot write was removed
+    after the write failed, a valid token lost; and the key cached beside it, which a folder may refuse to give up,
+    ended the login in a traceback after the new token was written, the old account's key kept beside it. The key goes
+    first, and a failure on either leaves the files as they were, said in one sentence that names the file."""
+    from litellm.llms.github_copilot import authenticator
+
+    from adk_review import login as copilot_login
+
+    _cached_copilot_token(monkeypatch, tmp_path, "the old token")
+    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
+    monkeypatch.delenv("GITHUB_COPILOT_API_KEY_FILE", raising=False)
+    code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
+    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
+    monkeypatch.setattr(copilot_login.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(copilot_login, "_polled", lambda *_args: {"access_token": "approved"})
+    monkeypatch.setattr(sys, "argv", ["adk-review-login", "--force"])
+    token = tmp_path / "access-token"
+    write_text = Path.write_text
+
+    def refused(
+        self: Path, *args, **kwargs
+    ) -> int:  # a file this account cannot write; root, in a container, writes any
+        if self == token:
+            raise PermissionError(errno.EACCES, "Permission denied", str(self))
+        return write_text(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "write_text", refused)
+    assert copilot_login.run() == 1
+    assert token.read_text(encoding="utf-8") == "the old token", "a token this account cannot write is kept"
+    assert f"[copilot] could not write {token}:" in capsys.readouterr().err
+    (tmp_path / "api-key.json").mkdir()  # a key the folder will not give up, as a folder stands where its file would
+    (tmp_path / "api-key.json" / "held").write_text("x", encoding="utf-8")
+    assert copilot_login.run() == 1
+    assert token.read_text(encoding="utf-8") == "the old token", "nothing written once the old key cannot go"
+    err = capsys.readouterr().err
+    assert f"[copilot] could not write {tmp_path / 'api-key.json'}:" in err and "Traceback" not in err, err
 
 
 def test_the_copilot_login_names_a_network_it_cannot_reach_and_the_certificate_fix(

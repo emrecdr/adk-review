@@ -2493,9 +2493,7 @@ class TestTheCallersRule:
     def test_a_call_is_named_exactly_where_python_refuses_to_bind_it(self) -> None:
         """Read by an audit, and reproduced: with `**kwargs`, a keyword that names a position-only parameter goes into
         `**kwargs`, so `api(1, 2, x=9)` fits and `api(y=2, x=9)` raises, and the rule said each the other way round.
-        Each call of a matrix is held to Python's own binding, `inspect.Signature.bind`."""
-        import inspect
-
+        Each call of a matrix is held to what Python does with it: the call itself, to a function that does nothing."""
         from adk_review.judge.rule_helpers import try_rule
         from adk_review.judge.rules.callers import Callers
 
@@ -2514,12 +2512,11 @@ class TestTheCallersRule:
         for signature in signatures:
             space: dict = {}
             exec(f"def f({signature}):\n    pass\n", space)
-            bind = inspect.signature(space["f"]).bind
             source = f"def f({signature}):\n    pass\n\n\n" + "\n".join(f"f{call}" for call in calls) + "\n"
             named = {hit.line for hit in try_rule(Callers(), {"m.py": source})}
             for line, call in enumerate(calls, 5):
                 try:
-                    eval(f"bind{call}", {"bind": bind})
+                    eval(f"f{call}", space)  # a literal call of the matrix, to a function that does nothing
                     refused = False
                 except TypeError:
                     refused = True
@@ -4469,6 +4466,14 @@ class TestTheShippedRules:
         unread = {**_entry(path, None, unread="past the cap"), "status": "M", "added": added, "shown": dict(added)}
         checked = run_rules({"files": [unread], "tree": None}, [ScriptInjection()])["rule.script-injection"]
         assert checked.could_not_look is not None, checked
+        # Read by the branch's review: a line that holds a key of its own is no checkout's value, the common concurrency
+        # group among them, and was a hole.
+        group = "  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}"
+        for line in (group, "    if: ${{ github.head_ref }}"):
+            keyed = {**_entry(path, None, unread="past the cap"), "status": "M", "added": [(4, line)]}
+            keyed["shown"] = {4: line}
+            checked = run_rules({"files": [keyed], "tree": None}, [ScriptInjection()])["rule.script-injection"]
+            assert checked.could_not_look is None, line
 
     def test_a_pull_request_target_job_that_checks_out_the_pull_requests_own_code_is_named(self) -> None:
         """Read by validation: under `pull_request_target`, a job runs with the base's token and secrets, and a checkout
