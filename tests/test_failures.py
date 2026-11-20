@@ -1364,6 +1364,25 @@ def test_a_merges_own_lines_are_read_whatever_its_parents_and_a_binary_file_it_w
     ], files
 
 
+def test_a_binary_file_a_merge_deletes_is_no_hole(tmp_path) -> None:
+    """Read by review of the fix above, and reproduced: a combined diff prints `Binary files differ` for a binary file
+    the merge deleted too, and it was named as one the merge wrote, a hole that stopped a clean push."""
+    from adk_review.collect.history import sent
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_in(repo, "init", "-q", "-b", "main")
+    _committed(repo, "store.p12", bytes(range(256)))
+    for side in ("x", "y"):
+        _git_in(repo, "checkout", "-q", "-b", side, "main")
+        _committed(repo, "store.p12", bytes(range(256)) + side.encode())
+    _git_in(repo, "merge", "-q", "-s", "ours", "--no-commit", "x")
+    _git_in(repo, "rm", "-q", "store.p12")
+    _git_in(repo, "commit", "-q", "-m", "neither side's: deleted")
+    merge = _git_in(repo, "rev-parse", "HEAD")
+    assert {commit: found for commit, _said, found in sent(str(repo), None, "y", "main")}[merge] == []
+
+
 def test_the_pre_push_hook_reads_each_commit_a_push_sends_for_credentials(tmp_path, monkeypatch, capsys, cli) -> None:
     """The change as a whole is reviewed, and each commit it is made of is read by the credential rules, what it says
     too: the history the remote receives holds what one commit adds and a later one takes out. Measured by review: a

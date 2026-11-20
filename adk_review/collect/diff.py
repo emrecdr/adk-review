@@ -129,12 +129,14 @@ def own_lines(diff: str) -> str:
     every parent's column, which no parent holds and the merge's own resolution wrote, marked `+`; one marked `-` in
     any, which the merge does not hold, `-`; and one a parent brought, ` `, since that parent's own commit adds it. A
     binary file it prints only where the merge wrote bytes no parent holds, in a line naming no path: named as one a
-    commit adds, from the path that opens its part."""
+    commit adds, from the path that opens its part. Not one the merge deleted, which git prints so too: read by review,
+    and reproduced, it was named as written, a hole that stopped a clean push."""
     out, columns = [], 0
     named = diff.split("\n", 1)[0]
     spelled = f'"b/{named[1:]}' if named.startswith('"') else f"b/{named}"
+    gone = "\ndeleted file mode " in header(diff)
     for raw in diff.split("\n"):
-        if raw == "Binary files differ" and not columns:
+        if raw == "Binary files differ" and not columns and not gone:
             out.append(f"Binary files /dev/null and {spelled} differ")
             continue
         if match := _COMBINED_START.match(raw):
