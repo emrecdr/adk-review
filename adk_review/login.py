@@ -196,9 +196,14 @@ def _stored(auth: Any, token: Path, access_token: str) -> int:
     Copilot serves the account no key, the token then removed, since the reviewer would read it as ready."""
     from litellm.llms.github_copilot.common_utils import GetAPIKeyError
 
-    auth._ensure_token_dir()
     try:
-        token.write_text(access_token, encoding="utf-8")
+        try:
+            auth._ensure_token_dir()
+            token.write_text(access_token, encoding="utf-8")
+        except OSError as exc:  # no token is left half written
+            with contextlib.suppress(OSError):
+                token.unlink(missing_ok=True)
+            return _unwritable(token.parent, exc)
         # The key cached for the token before, another account's after `--force`, would answer the exchange in this
         # one's place: read by an audit, and reproduced, calls went on billed to the account logged in before.
         Path(auth.api_key_file).unlink(missing_ok=True)
@@ -218,6 +223,14 @@ def _stored(auth: Any, token: Path, access_token: str) -> int:
     keep_private(token)
     print(f"[copilot] done: token cached at {token}")
     return 0
+
+
+def _unwritable(folder: Path, exc: OSError) -> int:
+    """Exit 1, said, where the token's folder cannot be written. Read by an audit, and reproduced: a folder this
+    account cannot write ended the login in a traceback, after the person had approved it at GitHub."""
+    print(f"[copilot] could not cache the token in {folder}: {exc.strerror or exc}", file=sys.stderr)
+    print("[copilot] set GITHUB_COPILOT_TOKEN_DIR to a folder you can write. Then run this again", file=sys.stderr)
+    return 1
 
 
 def run() -> int:

@@ -724,6 +724,29 @@ def test_a_login_stopped_while_it_trades_the_token_for_a_key_keeps_no_token(tmp_
     assert capsys.readouterr().err == "[copilot] interrupted: no new token was cached. Run this again\n"
 
 
+def test_a_login_that_cannot_write_its_token_says_where_and_what_to_do(tmp_path, monkeypatch, capsys) -> None:
+    """Read by an audit, and reproduced: a token folder this account cannot write ended the login in a traceback,
+    after the person had approved it at GitHub. It is one sentence naming the folder and the setting that moves it,
+    and exit 1. Here a folder stands where the token's file would, which every system refuses to write."""
+    from litellm.llms.github_copilot import authenticator
+
+    from adk_review import login as copilot_login
+
+    _cached_copilot_token(monkeypatch, tmp_path, None)
+    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
+    monkeypatch.delenv("GITHUB_COPILOT_API_KEY_FILE", raising=False)
+    (tmp_path / "access-token").mkdir()
+    code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
+    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
+    monkeypatch.setattr(copilot_login.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(copilot_login, "_polled", lambda *_args: {"access_token": "approved"})
+    monkeypatch.setattr(sys, "argv", ["adk-review-login"])
+    assert copilot_login.run() == 1
+    err = capsys.readouterr().err
+    assert f"[copilot] could not cache the token in {tmp_path}:" in err, err
+    assert "GITHUB_COPILOT_TOKEN_DIR" in err and "Traceback" not in err, err
+
+
 def test_the_copilot_login_names_a_network_it_cannot_reach_and_the_certificate_fix(
     tmp_path, monkeypatch, capsys
 ) -> None:
