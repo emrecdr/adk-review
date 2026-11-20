@@ -728,7 +728,9 @@ class TestOptionsAndCliBuilder:
             app.query_one("#mode-select", Select).value = "staged"
             # Its handler and the folders' refresh it starts run after it, as each tick's below does: waited for.
             await _until(pilot, lambda: app.query_one("#base-list", OptionList).disabled, "staged mode applied")
-            await app.workers.wait_for_complete()
+            # Each worker finished, a cancelled one among them: read by review, `wait_for_complete` raises for a refresh
+            # the mode's handler cancelled while the list still holds it.
+            await _until(pilot, lambda: all(worker.is_finished for worker in app.workers), "the folders' refresh")
             assert app.query_one("#head-list", OptionList).disabled is True
 
             # Selecting the same folder in #exclude-list deselects it from #path-list
