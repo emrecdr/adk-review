@@ -94,6 +94,10 @@ served from the cache with no model call.
    or `--check`; `--fail-on`; `--diff-cap`.
 7. The outputs: `--comment`, `--handoff`, `--verify`, the cache and `--previous`.
 
+Before you run a review, the banner says what it would read: the commits the branch holds over its target, and
+the changed files, how many the change added, modified, deleted or renamed. The review tells the same first, in
+its log.
+
 Each step is a panel. A panel you minimize leaves its row and docks into one line at the top, as a chip that names
 its step and its choice, `▶ 2 Review: main`; a row with no open panel goes, so the results take the screen. On a
 narrow screen the chips keep the step's number and its choice, and the step's name moves to the chip's tooltip.

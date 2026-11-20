@@ -2954,10 +2954,35 @@ class TestWhatTheCommandTells:
         assert self._review(cli, tmp_path, "x = 1\n", "--progress") == 0
         said = capsys.readouterr().err.splitlines()
         phases = [line for line in said if not line.startswith("review: still ")]
-        assert phases[:2] == ["review: reading feature against main", "review: read 1 file(s), 0 ignored"], said
-        assert phases[2].startswith("review: running ") and phases[2].endswith(" rule(s)"), said
-        assert phases[3].startswith("review: rules done in ") and phases[3].endswith(" s") and len(phases) == 4, said
+        assert phases[0] == "review: reading feature against main", said
+        assert re.fullmatch(r"review: repository repo: feature @ [0-9a-f]{9} against main @ [0-9a-f]{9}", phases[1])
+        assert re.fullmatch(r"review: 1 commit\(s\) since the merge base [0-9a-f]{9}", phases[2]), said
+        assert phases[3] == "review: read 1 file(s) (1 added), 0 ignored", said
+        assert phases[4].startswith("review: running ") and phases[4].endswith(" rule(s)"), said
+        assert phases[5].startswith("review: rules done in ") and phases[5].endswith(" s") and len(phases) == 6, said
         assert any(line.startswith("review: still running the rules: ") for line in said), said
+
+    def test_progress_tells_what_the_change_holds_before_any_check_runs(self, cli, tmp_path: Path, capsys) -> None:
+        """Asked by the owner: before the checks run, a person sees the repository and both sides the review reads, the
+        commits since the merge base, and how many files the change added, modified and deleted, with those it leaves
+        out. Each is read from what the review collected already, so the summary costs no call of its own."""
+        repo = _branch_off_empty(tmp_path / "shop", "feature", base="main")
+        _git_in(repo, "checkout", "-q", "main")
+        _committed(repo, "src/kept.py", "x = 1\n")
+        _committed(repo, "src/gone.py", "y = 1\n")
+        _git_in(repo, "checkout", "-q", "-B", "feature")
+        _committed(repo, "src/kept.py", "x = 2\n")
+        _committed(repo, "src/new.py", "z = 1\n")
+        _git_in(repo, "rm", "-q", "src/gone.py")
+        _git_in(repo, "commit", "-qm", "gone")
+        _committed(repo, "docs/notes.py", "w = 1\n")
+        argv = [str(repo), "--head", "feature", "--base", "main", "--profile", "default-rules", "--path", "src"]
+        assert cli.main([*argv, "--progress"]) == 0
+        said = [line for line in capsys.readouterr().err.splitlines() if not line.startswith("review: still ")]
+        assert re.fullmatch(r"review: repository shop: feature @ [0-9a-f]{9} against main @ [0-9a-f]{9}", said[1])
+        assert re.fullmatch(r"review: 4 commit\(s\) since the merge base [0-9a-f]{9}", said[2]), said
+        assert said[3] == "review: read 3 file(s) (1 added, 1 modified, 1 deleted), 0 ignored, 1 outside the scope"
+        assert cli.main([*argv, "--quiet"]) == 0 and capsys.readouterr().err == "", "a pipeline's log stays the report"
 
     def test_a_closed_stderr_still_ends_in_the_verdict(self, cli, tmp_path: Path, monkeypatch, capsys) -> None:
         """Read by review: with stderr closed (`2>&-`), Python's `sys.stderr` is None. A sentence written to it raised

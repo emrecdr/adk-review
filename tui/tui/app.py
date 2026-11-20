@@ -41,6 +41,8 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 from textual.widgets.selection_list import Selection
 
+from adk_review.core.text import kinds_of
+
 from .azure import Place, PullRequest, draft, files_link, line_link, parse_pr_url, thread_link
 from .azure_client import AzLogin, AzureError, Client, Credential, post_comment
 from .azure_state import forget_posted, keep_posted, keep_pull_request_url, posted_threads, pull_request_url
@@ -58,6 +60,7 @@ from .git_sync import (
     ProjectInfo,
     SyncStatus,
     changed_folders,
+    commits_ahead,
     discover_projects,
     fast_forward_local_branch,
     fetch_remote,
@@ -773,7 +776,8 @@ class AdkReviewTuiApp(App[int]):
         path_list.loading = True
         excl_list.loading = True
         try:
-            folders, changed_count = await asyncio.to_thread(changed_folders, repo, base, head, self.selected_mode)
+            folders, kinds = await asyncio.to_thread(changed_folders, repo, base, head, self.selected_mode)
+            ahead = await asyncio.to_thread(commits_ahead, repo, base, head) if base else None
         finally:
             self._set_loading(False, path_list, excl_list)
         if self._left(project, "#path-list", "#exclude-list"):
@@ -795,9 +799,12 @@ class AdkReviewTuiApp(App[int]):
         if self._left(project, "#output-tabs"):
             return
         prev_badge = "prior baseline available" if has_prev else "no prior baseline yet"
+        # Asked by the owner: what a review would read, told before it runs, from what git answers here already.
+        commits = "" if ahead is None else f"{ahead} commit(s), "
+        by_kind = f" ({told})" if (told := kinds_of(kinds)) else ""
         self._set_banner(
-            f"{project.name} ({self.selected_base or self.selected_mode} -> {self.selected_head}): "
-            f"{changed_count} changed file(s) across {len(folders)} folder(s) | {prev_badge} | F5 fetches"
+            f"{project.name} ({self.selected_base or self.selected_mode} -> {self.selected_head}): {commits}"
+            f"{len(kinds)} changed file(s){by_kind} across {len(folders)} folder(s) | {prev_badge} | F5 fetches"
         )
         await self._sync_prior_baseline_findings(project, prev_file, has_prev=has_prev)
         self._update_cli_preview()

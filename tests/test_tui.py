@@ -315,6 +315,7 @@ class TestGitSyncEngine:
         from adk_review.collect.git import checked_out
         from tui.git_sync import (
             changed_folders,
+            commits_ahead,
             discover_projects,
             fast_forward_local_branch,
             fetch_remote,
@@ -359,15 +360,16 @@ class TestGitSyncEngine:
         assert "feat-remote" not in _git(local, "for-each-ref", "--format=%(refname:short)", "refs/heads").split()
 
         # 4. Changed folders between `main` and `feat-remote`, and in `--staged` mode
-        folders, file_count = changed_folders(str(local), "main", "origin/feat-remote")
+        folders, kinds = changed_folders(str(local), "main", "origin/feat-remote")
         folder_names = [f for f, _label in folders]
-        assert file_count == 1 and "tests" in folder_names and "src" in folder_names
+        assert kinds == ["A"] and "tests" in folder_names and "src" in folder_names
+        assert commits_ahead(str(local), "main", "origin/feat-remote") == 1
         assert preferred_base_branch(str(local), list_branches(str(local)), "origin/feat-remote") == "main"
 
         (local / "src" / "staged_new.py").write_text("y = 1\n", encoding="utf-8")
         _git(local, "add", "src/staged_new.py")
-        staged_folders, staged_count = changed_folders(str(local), "main", "feat-local", mode="staged")
-        assert staged_count == 1
+        staged_folders, staged_kinds = changed_folders(str(local), "main", "feat-local", mode="staged")
+        assert staged_kinds == ["A"]
         assert ("src", "src  (1 changed)") in staged_folders
 
     def test_a_checked_out_branch_behind_its_remote_is_left_as_it_is(self, tmp_path: Path) -> None:
@@ -1419,6 +1421,31 @@ class TestWindowsAndItsShells:
             behind = app.screen_stack[0]
             assert behind.query_one("#head-list", OptionList).option_count > 0
             assert "changed file(s)" in str(behind.query_one("#status-banner", Static).render())
+
+    @pytest.mark.asyncio
+    async def test_the_banner_tells_the_commits_and_each_kind_of_change_before_a_review_runs(
+        self, tmp_path: Path
+    ) -> None:
+        """Asked by the owner: before a review runs, the screen says how many commits and files a review would read,
+        and how many of them the change added, modified and deleted, from what git answers it already."""
+        pytest.importorskip("textual")
+        from textual.widgets import Static
+
+        from tui.app import AdkReviewTuiApp
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        _git(local, "fetch", "-q")  # `main` one commit behind its remote, which `feat-remote` holds, and its own
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            app.selected_base, app.selected_head = "main", "origin/feat-remote"
+            await app._refresh_folders()
+            banner = str(app.query_one("#status-banner", Static).render())
+        said = "(main -> origin/feat-remote): 2 commit(s), 2 changed file(s) (1 added, 1 modified) across "
+        assert said in banner, banner
 
     def test_copying_uses_windows_own_clipboard_and_the_terminals(self, monkeypatch) -> None:
         """Textual copies through the terminal alone (OSC 52), which Windows Terminal reads and the classic console

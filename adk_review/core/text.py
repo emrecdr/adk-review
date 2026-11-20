@@ -9,6 +9,7 @@ and `deliver` cuts a quote before a person does.
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Iterable
 
 from .secrets import CREDENTIAL_REACH, spans
@@ -124,3 +125,15 @@ def short_ref(ref: str) -> str:
     and read by review, its folder took a file name's 20 characters and stood in a sentence where the name alone
     reads."""
     return re.sub(r"^refs/(heads|remotes|tags)/", "", ref)
+
+
+#: What each of git's status letters says a change did to a file, in the order a summary names them.
+KINDS = {"A": "added", "M": "modified", "D": "deleted", "R": "renamed", "C": "copied", "T": "changed in type"}
+
+
+def kinds_of(statuses: Iterable[str]) -> str:
+    """How many files a change added, modified, deleted or renamed, by git's status letter for each: `2 added, 1
+    deleted`, each kind it holds in that order, and any other letter, a conflict's say, counted as `other`."""
+    counts = Counter(status[:1] for status in statuses)
+    said = [f"{counts.pop(letter)} {kind}" for letter, kind in KINDS.items() if letter in counts]
+    return ", ".join([*said, f"{counts.total()} other"] if counts else said)

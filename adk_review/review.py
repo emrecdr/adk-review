@@ -101,7 +101,7 @@ try:
     from .core.health import Health, measured
     from .core.paths import matches
     from .core.profiles import DEFAULT, expanded
-    from .core.text import short_ref
+    from .core.text import kinds_of, short_ref
     from .core.verdict import (
         EXIT_CLEAN,
         EXIT_DEGRADED,
@@ -460,7 +460,8 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
     told.add_argument(
         "--progress",
         action="store_true",
-        help="tell each phase on stderr, and every few seconds what the review still waits on. On at a terminal",
+        help="tell each phase on stderr, and every few seconds what the review still waits on. First it names the "
+        "repository, both sides, the commits since the merge base and the files by kind. On at a terminal",
     )
     told.add_argument(
         "--quiet",
@@ -906,8 +907,7 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
             evidence["error_message"] += rescope
         _say(evidence["error_message"] + (narrowed if evidence.get("narrowed") else ""))
         return EXIT_USAGE
-    if say is not None:
-        say(f"read {len(evidence['files'])} file(s), {len(evidence.get('ignored', ()))} ignored")
+    _tell_started(say, evidence)
     # What every report says of the review itself, a dry run's too: with no guideline there is no model to name; an
     # arm that is not ready names no model either: `why` says why.
     shown = {"model": model, "profile": chosen.name, "off": chosen.off, "checks": chosen.ids()}
@@ -1232,6 +1232,29 @@ def _safe_name(name: str) -> str:
     and `/`, `$` and a backtick are legal in one."""
     safe = re.sub(r"_+", "_", re.sub(r"[^a-z0-9._-]+", "-", name.lower())).strip("._-")
     return safe[:COMMENT_NAME_CHARS].rstrip("._-") or "branch"
+
+
+def _tell_started(say: Callable[[str], None] | None, evidence: Evidence) -> None:
+    """Tell `say`, where one is, what the review reads before any check runs, as the owner asked: the repository, both
+    sides at their commits, the commits since the merge base, and the files by kind, with those it leaves out. All of
+    it is what the review collected already, so it costs no call of its own."""
+    if say is None:
+        return
+    pre, files = evidence["preflight"], evidence["files"]
+    head = pre["head"] if pre.get("staged") else f"{pre['head']} @ {pre['head_sha'][:9]}"
+    whole = evidence.get("whole") or pre.get("unborn")
+    base = "the empty tree" if whole else f"{pre['base']} @ {pre['base_sha'][:9]}"
+    say(f"repository {Path(pre['repo']).name or pre['repo']}: {head} against {base}")
+    if not (whole or pre.get("staged")):  # the index's base is HEAD itself, and the empty tree has no merge base
+        say(f"{pre['commits_ahead']} commit(s) since the merge base {pre['merge_base'][:9]}")
+    kinds = kinds_of(entry["status"] for entry in files)
+    outside = evidence.get("outside")
+    say(
+        f"read {len(files)} file(s)"
+        + (f" ({kinds})" if kinds else "")
+        + f", {len(evidence.get('ignored', ()))} ignored"
+        + (f", {outside} outside the scope" if outside else "")
+    )
 
 
 @contextlib.contextmanager
