@@ -10,7 +10,7 @@ from collections.abc import Iterator, Sequence
 from itertools import batched
 
 from .change import lfs_pointer
-from .diff import file_added, own_lines, readable
+from .diff import as_one_parent, file_added, readable, written_binary
 
 # git.py's own verbs: this module was its push half, split off for its weight, and reads git as it does.
 from .git import _PLAIN, OBJECT_ID, OFF_DISK, GitError, _empty_tree, _git, _git_raw, _sha, _text
@@ -70,14 +70,15 @@ def _commit(repo: str, ref: str) -> str:
 HISTORY_BATCH = 500
 _A_COMMIT = re.compile(rb"^(" + OBJECT_ID.pattern.encode() + rb")\n", re.MULTILINE)
 #: Where a file's part of a commit's patch opens: `git` for a commit of one parent, `cc` for a merge's combined one.
-_A_FILE = re.compile(rb"\ndiff --(git|cc) ")
+_A_FILE = re.compile(rb"\ndiff --(?:git|cc) ")
 
 
 def sent(
     repo: str, remote: str | None, head: str, held: str | None, read: Sequence[str] = ()
 ) -> Iterator[tuple[str, str, list[dict]]]:
     """Each commit a push of `head` sends, newest first, as `(commit, message, files)`: what it says, and each file it
-    adds lines to against its first parent, `{"path", "added"}` as a rule reads a change. What one commit adds and a
+    adds lines to, `{"path", "added"}` as a rule reads a change: a commit's against its parent, a merge's against
+    every parent, so a line a side brought is that side's. What one commit adds and a
     later one takes out is in the history the remote receives, though the change as a whole no longer holds it. The
     commits are `push_scope`'s new ones, less those a head in `read` reaches, which the same push read for another of
     its refs; with no remote, those of the range a person named. Read as a review reads a diff: plumbing, no
@@ -104,27 +105,41 @@ _WHOLE = (*(flag for flag in _PLAIN if flag != "-M"), "--no-renames")
 
 
 def _added_by(repo: str, commits: Sequence[str], attributes: str) -> dict[str, list[dict]]:
-    """Each commit's files with the lines it added, a first commit's against the empty tree, in one call:
-    `diff-tree --stdin` names each commit on a line of its own before its patch, a merge's the combined one `--cc`
-    prints, read for its own lines alone."""
+    """Each commit's files with the lines it added, a first commit's against the empty tree: one call reads the commits
+    of one parent, `diff-tree --stdin` naming each on a line of its own before its patch and a merge not at all, and
+    one the merges, by their combined patches, each against every parent, with a file a side moved found as moved:
+    read by review, and reproduced, a file this side renamed read as new to the other side, and that side's own lines,
+    a key the remote held among them, as the merge's own."""
     found: dict[str, list[dict]] = {}
-    stdin = "".join(f"{commit}\n" for commit in commits).encode()
+    listed = "".join(f"{commit}\n" for commit in commits).encode()
     # Under no index, as a review of commits diffs: git read a checked-out file for its blob where conversion was off.
-    patch = _git_raw(
-        repo, attributes, "diff-tree", "--stdin", "-r", "-p", "--cc", "--root", *_WHOLE, stdin=stdin, away=OFF_DISK
-    ).stdout
+    single = _git_raw(
+        repo, attributes, "diff-tree", "--stdin", "-r", "-p", "--root", *_WHOLE, stdin=listed, away=OFF_DISK
+    )
+    _read_parts(single.stdout, found, merged=False)
+    merges = _git_raw(repo, "rev-list", "--no-walk=unsorted", "--merges", "--stdin", stdin=listed).stdout
+    if merges.strip():
+        both = _git_raw(
+            repo, attributes, "diff-tree", "--stdin", "-r", "-p", "--cc", *_PLAIN, stdin=merges, away=OFF_DISK
+        )
+        _read_parts(both.stdout, found, merged=True)
+    return found
+
+
+def _read_parts(patch: bytes, found: dict[str, list[dict]], *, merged: bool) -> None:
+    """Each commit's files out of `patch`, into `found`: a merge's, `merged`, by what its own resolution wrote."""
     parts = _A_COMMIT.split(patch)  # what came before the first commit's line, then each commit and its patch
     for commit, body in zip(parts[1::2], parts[2::2], strict=True):
         files = found.setdefault(commit.decode(), [])
-        opened = _A_FILE.split(b"\n" + body)[1:]  # each file's kind, then its part
-        for kind, piece in zip(opened[::2], opened[1::2], strict=True):
-            # A merge's part whole: its first line is the path, which a leading space may open. Read by review.
-            diff = own_lines(readable(_text(piece, strip=False))) if kind == b"cc" else readable(_text(piece))
-            if (file := file_added(diff)) is not None:
+        for piece in _A_FILE.split(b"\n" + body)[1:]:
+            part = readable(_text(piece, strip=False))  # whole: a merge's part opens on its path, a space too
+            if merged and (written := written_binary(part)) is not None:
+                files.append({"path": written, "added": [], "binary": True})
+                continue
+            if (file := file_added(diff := as_one_parent(part) if merged else part)) is not None:
                 # A Git LFS pointer's lines are not the file: Git LFS's own hook uploads the file it names. Read by
                 # review: a key store's pointer one commit added and the next took out passed unnamed, uploaded.
                 files.append({"path": file["path"], "added": [], "pointer": True} if lfs_pointer(diff) else file)
-    return found
 
 
 #: How many tags one tag is read through, each made of the next: git warns of a tag made of a tag, and a longer chain is

@@ -1383,6 +1383,61 @@ def test_a_binary_file_a_merge_deletes_is_no_hole(tmp_path) -> None:
     assert {commit: found for commit, _said, found in sent(str(repo), None, "y", "main")}[merge] == []
 
 
+def test_a_merge_is_read_for_what_its_resolution_wrote_and_nothing_a_side_brought(tmp_path) -> None:
+    """Read by review of the merge reading, and reproduced: a file named as a combined hunk header hid the merge's own
+    lines in it; a side's line in a file this side renamed read as the merge's own, so a key the remote held stopped a
+    clean push; and a binary file whose bytes a side wrote, only its mode this side's, was named as the merge's."""
+    from adk_review.collect.history import sent
+
+    def merged(repo: Path, branch: str) -> list[dict]:
+        merge = _git_in(repo, "rev-parse", branch)
+        return {commit: found for commit, _said, found in sent(str(repo), None, branch, "main")}[merge]
+
+    shaped = tmp_path / "shaped"
+    shaped.mkdir()
+    _git_in(shaped, "init", "-q", "-b", "main")
+    _committed(shaped, "a.py")
+    _git_in(shaped, "checkout", "-q", "-b", "side")
+    _committed(shaped, "s.py", "s = 1\n")
+    _git_in(shaped, "checkout", "-q", "-b", "merged", "main")
+    _committed(shaped, "m.py", "m = 1\n")
+    _git_in(shaped, "merge", "-q", "--no-ff", "--no-commit", "side")
+    name = "@@@ -1 -1 +1 @@@.py"
+    (shaped / name).write_text("own = 1\n", encoding="utf-8", newline="\n")
+    _git_in(shaped, "add", "--", name)
+    _git_in(shaped, "commit", "-q", "-m", "merge, and a file of its own")
+    assert merged(shaped, "merged") == [{"path": name, "added": [(1, "own = 1")]}]
+
+    moved = tmp_path / "moved"
+    moved.mkdir()
+    _git_in(moved, "init", "-q", "-b", "main")
+    _committed(moved, "f.py", "a = 1\nb = 2\nc = 3\n")
+    _git_in(moved, "checkout", "-q", "-b", "mate")
+    _committed(moved, "f.py", "a = 1\nb = 2\nc = 3\nk = 4\n", "a side's line")
+    _git_in(moved, "checkout", "-q", "-b", "mine", "main")
+    _git_in(moved, "mv", "f.py", "g.py")
+    _git_in(moved, "commit", "-q", "-m", "this side moves it")
+    _git_in(moved, "merge", "-q", "--no-edit", "mate")
+    assert merged(moved, "mine") == [], "the line is the side's, read in its own commit"
+
+    mode = tmp_path / "mode"
+    mode.mkdir()
+    _git_in(mode, "init", "-q", "-b", "main")
+    old, new = (_git_in(mode, "hash-object", "-w", "--stdin", stdin=chr(0) + text) for text in ("old", "new"))
+
+    def tree(blob: str, kind: str) -> str:
+        return _git_in(mode, "mktree", stdin=f"{kind} blob {blob}\tstore.p12\n")
+
+    def made(of: str, *parents: str) -> str:
+        return _git_in(mode, "commit-tree", of, *(arg for parent in parents for arg in ("-p", parent)), "-m", "x")
+
+    base = made(tree(old, "100644"))
+    ours, side = made(tree(old, "100755"), base), made(tree(new, "100644"), base)
+    _git_in(mode, "update-ref", "refs/heads/main", base)
+    _git_in(mode, "update-ref", "refs/heads/joined", made(tree(new, "100755"), ours, side))
+    assert merged(mode, "joined") == [], "the bytes are the side's, the mode this side's"
+
+
 def test_the_pre_push_hook_reads_each_commit_a_push_sends_for_credentials(tmp_path, monkeypatch, capsys, cli) -> None:
     """The change as a whole is reviewed, and each commit it is made of is read by the credential rules, what it says
     too: the history the remote receives holds what one commit adds and a later one takes out. Measured by review: a

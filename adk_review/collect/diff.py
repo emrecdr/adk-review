@@ -28,6 +28,9 @@ WIDEN_CAP_CHARS = 16_000
 _HUNK_START = re.compile(r"^@@ -\S+ \+(\d+)(,0\b)?")
 #: A merge's combined hunk header, `@@@ -1,2 -1,2 +1,3 @@@`: one `@` more than the merge has parents.
 _COMBINED_START = re.compile(r"^(@{3,}) (?:-\S+ )+(\+\S+) @{3,}")
+#: A merge's combined `index` line, each parent's blob and then the merge's, and git's line for a binary file there.
+_COMBINED_INDEX = re.compile(r"^index ([0-9a-f]+(?:,[0-9a-f]+)+)\.\.([0-9a-f]+)$", re.MULTILINE)
+_BINARY_COMBINED = re.compile(r"^Binary files differ$", re.MULTILINE)
 #: The escapes git writes in a path it quotes, beside a byte's three octal digits.
 _ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
 #: What a reader, or `str.splitlines`, breaks a line at besides "\n": a lone `\r`, a form feed, U+2028 among them.
@@ -124,21 +127,14 @@ def hunk_lines(diff: str) -> Iterator[tuple[int, str]]:
         yield from hunk
 
 
-def own_lines(diff: str) -> str:
+def as_one_parent(part: str) -> str:
     """One file's part of a merge's combined diff, `diff-tree --cc`'s, as a commit's patch reads: a line marked `+` in
     every parent's column, which no parent holds and the merge's own resolution wrote, marked `+`; one marked `-` in
-    any, which the merge does not hold, `-`; and one a parent brought, ` `, since that parent's own commit adds it. A
-    binary file it prints only where the merge wrote bytes no parent holds, in a line naming no path: named as one a
-    commit adds, from the path that opens its part. Not one the merge deleted, which git prints so too: read by review,
-    and reproduced, it was named as written, a hole that stopped a clean push."""
+    any, which the merge does not hold, `-`; and one a parent brought, ` `, since that parent's own commit adds it. The
+    path that opens the part is never read as the diff's own syntax: read by review, and reproduced, a file named as a
+    hunk header hid the merge's lines in it. A binary part is left as git printed it, which names no path."""
     out, columns = [], 0
-    named = diff.split("\n", 1)[0]
-    spelled = f'"b/{named[1:]}' if named.startswith('"') else f"b/{named}"
-    gone = "\ndeleted file mode " in header(diff)
-    for raw in diff.split("\n"):
-        if raw == "Binary files differ" and not columns and not gone:
-            out.append(f"Binary files /dev/null and {spelled} differ")
-            continue
+    for raw in part.partition("\n")[2].split("\n"):
         if match := _COMBINED_START.match(raw):
             columns = len(match.group(1)) - 1
             out.append(f"@@ -0,0 {match.group(2)} @@")
@@ -151,6 +147,23 @@ def own_lines(diff: str) -> str:
         else:
             out.append(("+" if marks == "+" * columns else " ") + raw[columns:])
     return "\n".join(out)
+
+
+def written_binary(part: str) -> str | None:
+    """The path of a binary file whose bytes a merge's own resolution wrote, from its part of the merge's combined diff,
+    or None: git prints `Binary files differ`, naming no path, for every binary file it shows, one the merge deleted or
+    changed the mode of alone among them, so its `index` line decides: the merge's blob is none of its parents', and is
+    no file at all where the merge deleted it. Read by review, and reproduced: either was named as written, a hole that
+    stopped a clean push."""
+    named, _, rest = part.partition("\n")
+    top = header(rest)
+    if not _BINARY_COMBINED.search(top):
+        return None
+    if ids := _COMBINED_INDEX.search(top):
+        parents, blob = ids.group(1).split(","), ids.group(2)
+        if not blob.strip("0") or any(blob.startswith(was) or was.startswith(blob) for was in parents):
+            return None
+    return _unquoted(named)
 
 
 def added_lines(diff: str) -> list[tuple[int, str]]:
