@@ -238,7 +238,7 @@ class Client:
                 if self._opener is None:
                     self._opener = _opener()
                 with self._opener.open(request, timeout=HTTP_TIMEOUT_S) as answer:
-                    return self._answered(answer.status, answer.read(), posting=posting)
+                    return self._answered(answer.status, answer.read(), answer.headers, posting=posting)
             except urllib.error.HTTPError as refused:
                 self._sleep(self._wait(refused, waited=waited, posting=posting))
             except (OSError, http.client.HTTPException) as failed:
@@ -248,13 +248,14 @@ class Client:
                 raise AzureError(_unreached(failed), unsure=posting) from None
         raise AssertionError("a second 429 is a sentence")
 
-    def _answered(self, status: int, raw: bytes, *, posting: bool) -> dict:
+    def _answered(self, status: int, raw: bytes, headers: Message, *, posting: bool) -> dict:
         """A 2xx's JSON object. A 203 is Azure DevOps' sign-in page: it answers a login it does not accept with one,
         where another service would answer 401. Any other body that is no object is not known to be its own: read
         by review, a company's proxy answers 200 with its own page, and called a refused login it cost a good token
-        and sent the person to log in to no effect. A post answered so may have arrived."""
+        and sent the person to log in to no effect. A post answered so may have arrived. A 203 names the
+        organization's tenant as a 401 does, read by an audit: it was left out, and the sentence named none."""
         if status == HTTPStatus.NON_AUTHORITATIVE_INFORMATION:
-            raise self._no_login(None)
+            raise self._no_login(headers)
         answer = _object(raw)
         if answer is None:
             said = (
@@ -287,12 +288,12 @@ class Client:
         ended = "" if unsure else " Nothing was posted."
         raise AzureError(f"Azure DevOps answered {code}: {_said(refused)}.{ended}", unsure=unsure) from None
 
-    def _no_login(self, headers: Message | None) -> AzureError:
+    def _no_login(self, headers: Message) -> AzureError:
         """The sentence for a login Azure DevOps did not accept, the token forgotten: the person logs in again, and
         the one kept in memory is the one just refused. The organization's tenant is named where the answer names
         one, since a login in another tenant is the usual cause."""
         self._credential.forget()
-        tenant = (headers.get("X-VSS-ResourceTenant") or "").strip().lower() if headers is not None else ""
+        tenant = (headers.get("X-VSS-ResourceTenant") or "").strip().lower()
         named = f" --tenant {tenant}" if _TENANT.fullmatch(tenant) and tenant.strip("0-") else ""
         return AzureError(f"Azure DevOps did not accept your login. Run `az login{named}`, then post again.")
 

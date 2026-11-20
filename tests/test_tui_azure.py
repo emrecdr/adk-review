@@ -620,6 +620,12 @@ class TestTheClient:
             (401, {"X-VSS-ResourceTenant": "x; rm -rf"}, b"", "Run `az login`, then post again"),
             (401, {"X-VSS-ResourceTenant": "00000000-0000-0000-0000-000000000000"}, b"", "Run `az login`, then"),
             (203, {"Content-Type": "text/html"}, b"<html>Sign in</html>", "Run `az login`, then post again"),
+            (
+                203,
+                {"Content-Type": "text/html", "X-VSS-ResourceTenant": "72f988bf-86f1-41af-91ab-2d7cd011db47"},
+                b"<html>Sign in</html>",
+                "Run `az login --tenant 72f988bf-86f1-41af-91ab-2d7cd011db47`, then post again",
+            ),
             (200, {"Content-Type": "text/html"}, b"<html>Blocked</html>", "answered with no answer of its own"),
             (200, {}, b"[1, 2]", "answered with no answer of its own"),
             (200, {}, b"", "A proxy or a sign-in page may stand before it"),
