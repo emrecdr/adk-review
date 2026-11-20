@@ -100,6 +100,36 @@ def _init_repo_with_remote(tmp_path: Path) -> tuple[Path, Path]:
     return remote, local
 
 
+#: A folder whose name goes past ASCII, `cekirdek` with a cedilla: git quotes such a path where it prints it whole.
+FOLDER_PAST_ASCII = chr(0xE7) + "ekirdek"
+
+
+def _branches_the_banner_misread(local: Path) -> None:
+    """Three picks the banner once read apart from the review, made in `local` from `main`: `past-ascii` adds a file
+    under `FOLDER_PAST_ASCII`; `unrelated` shares no history with `main`; and `crossed-base` and `crossed-head` each
+    merged the other's first commit, so the two have two merge bases."""
+
+    def commit(name: str) -> None:
+        target = local / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("x = 1\n", encoding="utf-8", newline="\n")
+        _git(local, "add", "--", name)
+        _git(local, "commit", "-q", "-m", f"add {name}")
+
+    _git(local, "switch", "-q", "-c", "past-ascii", "main")
+    commit(f"{FOLDER_PAST_ASCII}/b.py")
+    _git(local, "switch", "-q", "--orphan", "unrelated")
+    commit("alone.py")
+    _git(local, "switch", "-q", "-c", "crossed-base", "main")
+    commit("src/a.py")
+    _git(local, "switch", "-q", "-c", "crossed-head", "main")
+    commit("src/b.py")
+    _git(local, "merge", "-q", "--no-ff", "--no-edit", "crossed-base")
+    _git(local, "switch", "-q", "crossed-base")
+    _git(local, "merge", "-q", "--no-ff", "--no-edit", "crossed-head~1")
+    _git(local, "switch", "-q", "main")
+
+
 class TestTuiConfig:
     """`tui/.tui.toml` loading, multi-root workspace parsing, and preset persistence."""
 
@@ -314,8 +344,6 @@ class TestGitSyncEngine:
     def test_discover_projects_and_zero_checkout_sync_preserve_dirty_working_tree(self, tmp_path: Path) -> None:
         from adk_review.collect.git import checked_out
         from tui.git_sync import (
-            changed_folders,
-            commits_ahead,
             discover_projects,
             fast_forward_local_branch,
             fetch_remote,
@@ -323,6 +351,7 @@ class TestGitSyncEngine:
             is_dirty,
             list_branches,
             preferred_base_branch,
+            read_change,
         )
 
         _remote, local = _init_repo_with_remote(tmp_path)
@@ -359,18 +388,18 @@ class TestGitSyncEngine:
         assert remote_status.kind == "remote_only" and remote_status.upstream_branch == "origin/feat-remote"
         assert "feat-remote" not in _git(local, "for-each-ref", "--format=%(refname:short)", "refs/heads").split()
 
-        # 4. Changed folders between `main` and `feat-remote`, and in `--staged` mode
-        folders, kinds = changed_folders(str(local), "main", "origin/feat-remote")
-        folder_names = [f for f, _label in folders]
-        assert kinds == ["A"] and "tests" in folder_names and "src" in folder_names
-        assert commits_ahead(str(local), "main", "origin/feat-remote") == 1
+        # 4. The change between `main` and `feat-remote`, and in `--staged` mode
+        change = read_change(str(local), "main", "origin/feat-remote")
+        folder_names = [f for f, _label in change.folders]
+        assert change.statuses == ["A"] and "tests" in folder_names and "src" in folder_names
+        assert change.commits == 1 and change.refused == "", change
         assert preferred_base_branch(str(local), list_branches(str(local)), "origin/feat-remote") == "main"
 
         (local / "src" / "staged_new.py").write_text("y = 1\n", encoding="utf-8")
         _git(local, "add", "src/staged_new.py")
-        staged_folders, staged_kinds = changed_folders(str(local), "main", "feat-local", mode="staged")
-        assert staged_kinds == ["A"]
-        assert ("src", "src  (1 changed)") in staged_folders
+        staged = read_change(str(local), "main", "feat-local", mode="staged")
+        assert staged.statuses == ["A"] and staged.commits is None, staged
+        assert ("src", "src  (1 changed)") in staged.folders
 
     def test_a_checked_out_branch_behind_its_remote_is_left_as_it_is(self, tmp_path: Path) -> None:
         """The question a person answers says their files stay untouched. Read by review: on a clean checkout the
@@ -391,7 +420,7 @@ class TestGitSyncEngine:
         """The scan reads every repository under a root, one a person was handed among them. Read by review, and
         reproduced: `git status` there started the program its `core.fsmonitor` names, the moment the screen opened.
         Each read runs under a review's own environment now, where that setting is fixed, and takes no lock."""
-        from tui.git_sync import changed_folders, discover_projects, is_dirty, list_branches
+        from tui.git_sync import discover_projects, is_dirty, list_branches, read_change
 
         _remote, local = _init_repo_with_remote(tmp_path)
         ran, script = tmp_path / "ran.txt", tmp_path / "named.py"
@@ -405,10 +434,74 @@ class TestGitSyncEngine:
         assert [project.name for project in discover_projects(str(tmp_path / "workspace"))] == ["my-service"]
         assert is_dirty(str(local)) is False
         assert list_branches(str(local))[0].name == "main"
-        changed_folders(str(local), "origin/main", "main")
-        changed_folders(str(local), None, "main", mode="staged")
+        read_change(str(local), "origin/main", "main")
+        read_change(str(local), None, "main", mode="staged")
         assert not ran.exists(), "no read started the program"
         assert (index.read_bytes(), index.stat().st_mtime_ns) == held, "and none rewrote the index"
+
+    @pytest.mark.asyncio
+    async def test_the_banner_tells_the_commits_and_each_kind_of_change_before_a_review_runs(
+        self, tmp_path: Path
+    ) -> None:
+        """Asked by the owner: before a review runs, the screen says how many commits and files a review would read,
+        and how many of them the change added, modified and deleted, from what git answers it already."""
+        pytest.importorskip("textual")
+        from textual.widgets import Static
+
+        from tui.app import AdkReviewTuiApp
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        _git(local, "fetch", "-q")  # `main` one commit behind its remote, which `feat-remote` holds, and its own
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            app.selected_base, app.selected_head = "main", "origin/feat-remote"
+            await app._refresh_folders()
+            banner = str(app.query_one("#status-banner", Static).render())
+        said = "(main -> origin/feat-remote): 2 commit(s), 2 changed file(s) (1 added, 1 modified) across "
+        assert said in banner, banner
+
+    @pytest.mark.asyncio
+    async def test_the_banner_reads_the_change_as_the_review_does(self, tmp_path: Path) -> None:
+        """Read by review, and reproduced: the banner asked git with calls of its own, and three picks told what no
+        review reads. A folder past ASCII came back quoted in octal, as git prints a path it is not told to keep whole;
+        branches that share no history read as 0 files, where a review stops before it reads; and merges crossed both
+        ways counted the commits past the target, where a review counts those past the merge base. The banner now
+        reads the change through the review's own collector."""
+        pytest.importorskip("textual")
+        from textual.widgets import SelectionList, Static
+
+        from adk_review.collect.git import preflight
+        from tui.app import AdkReviewTuiApp
+
+        _remote, local = _init_repo_with_remote(tmp_path)
+        _branches_the_banner_misread(local)
+        cfg = tmp_path / ".tui.toml"
+        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
+        app = AdkReviewTuiApp(config_path=cfg)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+
+            async def banner(base: str, head: str) -> str:
+                app.selected_base, app.selected_head = base, head
+                await app._refresh_folders()
+                return str(app.query_one("#status-banner", Static).render())
+
+            past_ascii = await banner("main", "past-ascii")
+            boxes = app.query_one("#path-list", SelectionList)
+            folders = [boxes.get_option_at_index(at).value for at in range(boxes.option_count)]
+            unrelated = await banner("main", "unrelated")
+            crossed = await banner("crossed-base", "crossed-head")
+        assert ": 1 commit(s), 1 changed file(s) (1 added) across " in past_ascii, past_ascii
+        assert FOLDER_PAST_ASCII in folders and not any('"' in str(folder) for folder in folders), folders
+        assert "'main' and 'unrelated' share no history: no change to review" in unrelated, unrelated
+        review = preflight(str(local), "crossed-base", "crossed-head")["commits_ahead"]
+        assert review != int(_git(local, "rev-list", "--count", "crossed-base..crossed-head")), "the merges cross"
+        assert f": {review} commit(s), " in crossed, crossed
 
 
 class TestOptionsAndCliBuilder:
@@ -1339,7 +1432,7 @@ class TestWindowsAndItsShells:
             closed.set()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("slow", ["list_branches", "changed_folders", "is_file"])
+    @pytest.mark.parametrize("slow", ["list_branches", "read_change", "is_file"])
     async def test_a_listing_that_ends_as_the_screen_closes_draws_nothing(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, slow: str
     ) -> None:
@@ -1421,31 +1514,6 @@ class TestWindowsAndItsShells:
             behind = app.screen_stack[0]
             assert behind.query_one("#head-list", OptionList).option_count > 0
             assert "changed file(s)" in str(behind.query_one("#status-banner", Static).render())
-
-    @pytest.mark.asyncio
-    async def test_the_banner_tells_the_commits_and_each_kind_of_change_before_a_review_runs(
-        self, tmp_path: Path
-    ) -> None:
-        """Asked by the owner: before a review runs, the screen says how many commits and files a review would read,
-        and how many of them the change added, modified and deleted, from what git answers it already."""
-        pytest.importorskip("textual")
-        from textual.widgets import Static
-
-        from tui.app import AdkReviewTuiApp
-
-        _remote, local = _init_repo_with_remote(tmp_path)
-        _git(local, "fetch", "-q")  # `main` one commit behind its remote, which `feat-remote` holds, and its own
-        cfg = tmp_path / ".tui.toml"
-        cfg.write_text(f'[workspace]\nroot_dirs = ["{(tmp_path / "workspace").as_posix()}"]\n', encoding="utf-8")
-        app = AdkReviewTuiApp(config_path=cfg)
-        async with app.run_test(size=(140, 45)) as pilot:
-            await _wait_for_branches(app, pilot)
-            await app.workers.wait_for_complete()
-            app.selected_base, app.selected_head = "main", "origin/feat-remote"
-            await app._refresh_folders()
-            banner = str(app.query_one("#status-banner", Static).render())
-        said = "(main -> origin/feat-remote): 2 commit(s), 2 changed file(s) (1 added, 1 modified) across "
-        assert said in banner, banner
 
     def test_copying_uses_windows_own_clipboard_and_the_terminals(self, monkeypatch) -> None:
         """Textual copies through the terminal alone (OSC 52), which Windows Terminal reads and the classic console

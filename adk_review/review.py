@@ -460,8 +460,9 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
     told.add_argument(
         "--progress",
         action="store_true",
-        help="tell each phase on stderr, and every few seconds what the review still waits on. First it names the "
-        "repository, both sides, the commits since the merge base and the files by kind. On at a terminal",
+        help="tell each phase on stderr, and every few seconds what the review still waits on. After it reads the "
+        "change, it names the repository, both sides and the files by kind. For a branch, it also names the commits "
+        "since the merge base. On at a terminal",
     )
     told.add_argument(
         "--quiet",

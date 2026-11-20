@@ -1,7 +1,8 @@
 """Git discovery, the person's own fetch, and branch states for the TUI.
 
 The screen reads a repository as the reviewer does: each read runs under a review's own environment (`read_only`),
-where a repository's config names no program for git to start, and takes no lock. Three commands write, each only
+where a repository's config names no program for git to start, and takes no lock, and the change a review would
+read is read by the review's own collector (`read_change`). Three commands write, each only
 where the person acts: `git fetch --no-prune` as they pick a repository, which adds the branches its remote got since
 and removes none, unless `fetch_on_select = false`; `git fetch --prune` at F5; and `git branch -f` at the question a
 branch behind its remote raises, never on a branch a working tree holds. They run with the person's own environment,
@@ -21,7 +22,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 
-from adk_review.collect.git import GitError, checked_out, default_base, on_path, read_only
+from adk_review.collect.git import (
+    GitError,
+    checked_out,
+    default_base,
+    list_changed,
+    on_path,
+    preflight,
+    preflight_staged,
+    read_only,
+)
 from adk_review.core.text import lines_of
 
 SKIP_DIRS = frozenset({".git", ".venv", "venv", "node_modules", "__pycache__", ".tox", ".mypy_cache", ".ruff_cache"})
@@ -514,14 +524,45 @@ def preferred_base_branch(repo: str, branches: list[BranchInfo], head_ref: str, 
     return next((b.name for b in branches if b.name != head_ref), "")
 
 
-def changed_folders(
-    repo: str, base: str | None, head: str, mode: str = "branch"
-) -> tuple[list[tuple[str, str]], list[str]]:
-    """Return `[(folder_path, badge), ...]` and each changed file's status letter, git's `A`, `M`, `D` or `R`, for
-    `mode`, `base`, and `head`: one list, so the banner counts what the folders count."""
-    changed = _changed_files(repo, base, head, mode)
+@dataclass(frozen=True)
+class Change:
+    """What a review of a pick would read, for the banner and the folder lists: each folder with its badge, each
+    changed file's status letter, git's `A`, `M`, `D` or `R`, the commits since the merge base for a branch, and the
+    collector's own sentence where the review would stop before it reads."""
+
+    folders: list[tuple[str, str]]
+    statuses: list[str] = field(default_factory=list)
+    commits: int | None = None
+    refused: str = ""
+
+
+def read_change(repo: str, base: str | None, head: str, mode: str = "branch") -> Change:
+    """The change a review of `mode`, `base` and `head` reads, through the review's own `preflight` and `list_changed`,
+    so the banner and the review never count apart. Read by review, and reproduced: the screen's own git calls quoted
+    a folder past ASCII, read branches with no shared history as no change, and counted the commits past the base
+    where merges crossed. Measured: 0.1 s a pick on a Mac, where those calls took 0.03 s, and in a thread."""
+    base = (base or None) if mode == "branch" else None  # no target: the whole project, as `--all` reads it
+    resolved = preflight_staged(repo) if mode == "staged" else preflight(repo, base, head)
+    refused: str = resolved.get("error_message", "")
+    changed: list[dict[str, str]] = []
+    if not refused:
+        try:
+            changed = list_changed(resolved)
+        except GitError as exc:  # the change half read is not the change, as the review says too
+            refused = str(exc)
+    return Change(
+        folders=_folders(repo, [entry["path"] for entry in changed]),
+        statuses=[entry["status"] for entry in changed],
+        commits=resolved["commits_ahead"] if base and not refused else None,
+        refused=refused,
+    )
+
+
+def _folders(repo: str, paths: list[str]) -> list[tuple[str, str]]:
+    """`[(folder_path, badge), ...]`: each folder and subfolder the changed `paths` lie in, with how many, then every
+    other top folder of `repo`, for `--path` and `--path-exclude`."""
     folder_counts: dict[str, int] = {}
-    for _status, file_path in changed:
+    for file_path in paths:
         parts = [p for p in file_path.split("/") if p]
         if len(parts) > 1:
             top = parts[0]
@@ -536,29 +577,7 @@ def changed_folders(
     ]
     seen = set(folder_counts)
     results.extend((top_dir, f"{top_dir}  (repo folder)") for top_dir in _repo_top_folders(repo) if top_dir not in seen)
-    return results, [status for status, _path in changed]
-
-
-def commits_ahead(repo: str, base: str, head: str) -> int | None:
-    """How many commits `head` holds that `base` does not, the commits a review of the branch reads, or None where git
-    cannot say: one count, so the banner tells it before a review runs."""
-    done = _read(repo, "rev-list", "--count", "--end-of-options", f"{base}..{head}")
-    return int(done[1]) if done is not None and done[1].strip().isdigit() else None
-
-
-def _changed_files(repo: str, base: str | None, head: str, mode: str = "branch") -> list[tuple[str, str]]:
-    """List `(status, path)` for each changed file in `staged`, `all`, or `branch` mode: git's status letter, a
-    rename found with `-M` as the review finds it, and every file at the head added under `all`."""
-    if mode == "all" or (mode != "staged" and not base):
-        done = _read(repo, "ls-tree", "-r", "--name-only", "--end-of-options", head)
-        return [] if done is None else [("A", line.strip()) for line in done[1].splitlines() if line.strip()]
-    if mode == "staged":
-        args = ("diff", "--cached", "--name-status", "-M")
-    else:
-        args = ("diff", "--name-status", "-M", "--end-of-options", f"{base}...{head}")
-    done = _read(repo, *args)
-    rows = [] if done is None else [line.split("\t") for line in done[1].splitlines() if line.strip()]
-    return [(row[0][:1], row[-1].strip()) for row in rows if len(row) > 1]
+    return results
 
 
 def _repo_top_folders(repo: str) -> list[str]:

@@ -94,9 +94,11 @@ served from the cache with no model call.
    or `--check`; `--fail-on`; `--diff-cap`.
 7. The outputs: `--comment`, `--handoff`, `--verify`, the cache and `--previous`.
 
-Before you run a review, the banner says what it would read: the commits the branch holds over its target, and
-the changed files, how many the change added, modified, deleted or renamed. The review tells the same first, in
-its log.
+Before you run a review, the banner says what it would read, as the review's own collector reads it: the commits
+since the merge base with the target, and the changed files, how many the change added, modified, deleted or
+renamed. Where the review would stop before it reads, as for two branches that share no history, the banner gives
+the review's own sentence. The review's log names the same commits. Its count of the files it read can be lower:
+it sets aside third-party files and those outside `--path`, and names how many.
 
 Each step is a panel. A panel you minimize leaves its row and docks into one line at the top, as a chip that names
 its step and its choice, `▶ 2 Review: main`; a row with no open panel goes, so the results take the screen. On a
@@ -252,7 +254,7 @@ It runs in cmd, in PowerShell and in Windows Terminal alike.
 | `__init__.py`, `__main__.py` | The `adk-review-tui` command: `--config`, `--init-config`, and the config read before the screen opens |
 | `app.py` | The screen: the steps, the tabs, the keys, and the review it runs |
 | `config.py` | `tui.toml` and where it and the state live: the folders of repositories, the defaults and each repository's saved choices |
-| `git_sync.py` | The repositories under a folder, their branches and how each stands to its remote, the fetch, a file's lines at a commit, and the one runner that stops a program whole past its timeout, git or the Azure CLI |
+| `git_sync.py` | The repositories under a folder, their branches and how each stands to its remote, the fetch, the change a review of a pick reads, through the review's own collector, a file's lines at a commit, and the one runner that stops a program whole past its timeout, git or the Azure CLI |
 | `options.py` | The profiles, the command a selection makes, the folder a review's files go to, and the report `--previous` reads |
 | `findings.py` | A `--json` report read for the findings tab, with the commit it reviewed, its filters, and a check's explanation |
 | `azure.py` | Azure DevOps, with no call made: a pull request's address read, a finding's links built, the comment drafted from a finding, with the mark that finds it again, the thread it is posted as, and which of a pull request's threads is a finding's already |

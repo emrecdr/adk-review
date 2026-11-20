@@ -245,7 +245,8 @@ Load-bearing rules the tests enforce:
   `tui.toml` in the person's own folder, `%APPDATA%` on Windows, the XDG one elsewhere; its state is in the person's
   state folder; the screen's first line names the config it reads, and the loader names any key it does not know. A
   review it runs is `review_command`'s, `python -P`, with `--progress`. It reads git only through `collect`'s
-  `read_only`, under a review's own environment, and writes into a repository only where the person acts: their pick of
+  `read_only`, and the change a review reads through its `preflight` and `list_changed`, under a review's own
+  environment, and writes into a repository only where the person acts: their pick of
   a repository, a `git fetch` that adds the branches its remote got since and removes none, unless `fetch_on_select =
   false`, never the pick the screen makes as it opens; F5, a `git fetch --prune`; and their answer to a branch behind
   its remote, `git branch -f` on a branch no working tree has checked out. It writes outside the machine in one place:

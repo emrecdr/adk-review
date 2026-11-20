@@ -59,8 +59,6 @@ from .git_sync import (
     BranchInfo,
     ProjectInfo,
     SyncStatus,
-    changed_folders,
-    commits_ahead,
     discover_projects,
     fast_forward_local_branch,
     fetch_remote,
@@ -68,6 +66,7 @@ from .git_sync import (
     inspect_branch_sync,
     list_branches,
     preferred_base_branch,
+    read_change,
 )
 from .modals import CommentModal, ConfirmPostModal, DivergedBranchModal, ExplainCheckModal, SyncBranchModal
 from .options import (
@@ -776,19 +775,18 @@ class AdkReviewTuiApp(App[int]):
         path_list.loading = True
         excl_list.loading = True
         try:
-            folders, kinds = await asyncio.to_thread(changed_folders, repo, base, head, self.selected_mode)
-            ahead = await asyncio.to_thread(commits_ahead, repo, base, head) if base else None
+            change = await asyncio.to_thread(read_change, repo, base, head, self.selected_mode)
         finally:
             self._set_loading(False, path_list, excl_list)
         if self._left(project, "#path-list", "#exclude-list"):
             return
-        listed = {folder for folder, _label in folders}
+        listed = {folder for folder, _label in change.folders}
         chosen_paths, chosen_excludes = self._path_selection_sets(project, path_list, excl_list, listed)
         self._syncing_paths = True
         try:
             path_list.clear_options()
             excl_list.clear_options()
-            for folder, label in folders:
+            for folder, label in change.folders:
                 is_excl = folder in chosen_excludes
                 path_list.add_option(Selection(Content(label), folder, folder in chosen_paths and not is_excl))
                 excl_list.add_option(Selection(Content(label), folder, is_excl))
@@ -799,12 +797,13 @@ class AdkReviewTuiApp(App[int]):
         if self._left(project, "#output-tabs"):
             return
         prev_badge = "prior baseline available" if has_prev else "no prior baseline yet"
-        # Asked by the owner: what a review would read, told before it runs, from what git answers here already.
-        commits = "" if ahead is None else f"{ahead} commit(s), "
-        by_kind = f" ({told})" if (told := kinds_of(kinds)) else ""
+        # Asked by the owner: what a review would read, told before it runs, as the review's own collector reads it.
+        commits = "" if change.commits is None else f"{change.commits} commit(s), "
+        by_kind = f" ({kinds})" if (kinds := kinds_of(change.statuses)) else ""
+        files = f"{len(change.statuses)} changed file(s){by_kind} across {len(change.folders)} folder(s)"
         self._set_banner(
-            f"{project.name} ({self.selected_base or self.selected_mode} -> {self.selected_head}): {commits}"
-            f"{len(kinds)} changed file(s){by_kind} across {len(folders)} folder(s) | {prev_badge} | F5 fetches"
+            f"{project.name} ({self.selected_base or self.selected_mode} -> {self.selected_head}): "
+            f"{change.refused or commits + files} | {prev_badge} | F5 fetches"
         )
         await self._sync_prior_baseline_findings(project, prev_file, has_prev=has_prev)
         self._update_cli_preview()

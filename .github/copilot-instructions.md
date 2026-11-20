@@ -85,7 +85,7 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   (`tests/test_layering.py`); `deliver/` imports `core` alone, a guideline `core` alone, a rule the door alone. `core/`,
   the checks and the helpers import no network, process or model module and must import with ADK absent.
 - `tui/`, the terminal front end, an application of its own on top of the reviewer, reads git only through
-  `collect`'s `read_only` and writes into a
+  `collect`'s `read_only`, the change a review reads through its `preflight` and `list_changed`, and writes into a
   repository only where the person acts: their pick of a repository, a fetch that removes nothing, F5, a fetch with
   `--prune`, or their answer to a branch behind its remote. It posts one comment to an Azure DevOps pull request
   only on the person's click, after their edit and a confirmation, with a token from their own `az` login, asked
