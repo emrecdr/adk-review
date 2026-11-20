@@ -675,6 +675,23 @@ class TestWhatABranchCannotHide:
         assert token not in scrub(evidence["diff"])[0], "never sent to a model"
         assert run_rules(evidence, [Secrets()])["rule.secrets"].findings, "found"
 
+    def test_a_binary_file_the_bases_attributes_diff_as_text_is_not_read(self, tmp_path: Path) -> None:
+        """Read by an outside audit, and reproduced: where the base's `.gitattributes` sets `diff` on Python files, git
+        prints a file holding NUL bytes as text, so a UTF-16 file of keys, which no credential shape reads through its
+        NULs, was approved, where with no attribute it was a hole. The bytes decide: a file git reads as binary by its
+        own first bytes is named not read, as one a link runs is."""
+        from adk_review.collect import change
+        from adk_review.collect.git import collect_evidence
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, ".gitattributes", "*.py diff\n")
+        _git_in(repo, "checkout", "-q", "-b", HEAD)
+        _committed(repo, "keys.py", 'TOKEN = "x"\n'.encode("utf-16-le"))
+        files = {entry["path"]: entry for entry in collect_evidence(str(repo), BASE, HEAD)["files"]}
+        assert files["keys.py"].get("unread") == change.BINARY_UNREAD, files["keys.py"]
+
     @pytest.mark.usefixtures("reviewers_git_config")
     def test_the_reviewers_git_config_moves_no_line(self, hostile_repo: Path, cli, capsys) -> None:
         """`diff.suppressBlankEmpty` prints a blank context line as nothing at all: measured before, the gate put the

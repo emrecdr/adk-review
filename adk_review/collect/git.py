@@ -1058,7 +1058,8 @@ def read_texts(
     number, the ones added and those kept around them, for a rule that reads no more. A file the head does not hold, a
     binary, a Git LFS pointer, a link naming no text file there or a submodule has neither: nothing for a file rule to
     read, and the report names a binary and a pointer under not read already. A pointer only its text shows, its diff
-    showing none of its opening, is named here, unless the operator's skip list, `skipped`, names it."""
+    showing none of its opening, is named here, and so is a binary file git printed as text, the base's attributes
+    setting `diff` on it, unless the operator's skip list, `skipped`, names it."""
     for entry in files:
         # A link's lines are the file it names: a hole for each rule that reads it until that file is read as text.
         # Read by review, round after round, a link one step of the read passed over was read as its path and approved.
@@ -1086,6 +1087,9 @@ def read_texts(
             if entry["text"] is None:
                 entry["unread_text"] = _unread_why(blobs[entry["path"]][1])
                 unread.append(entry)
+            elif isinstance(entry["text"], _Binary):  # read by an audit: the base's `diff` attribute printed it as text
+                entry["text"] = None
+                _not_read(entry, BINARY_UNREAD, skipped)
             elif pointer_text(entry["text"]):  # read by review: one its diff showed no opening of was linted as Python
                 entry["text"] = None
                 _not_read(entry, POINTER_UNREAD, skipped)
