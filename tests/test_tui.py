@@ -2892,15 +2892,22 @@ async def _ready_screen(app, pilot, tmp_path: Path, fake, sha: str, **changed: o
     return said
 
 
+async def _until(pilot, done, what: str):  # what `done()` gives once it holds
+    """What `done()` gives once it is true, asked for 4 s, or `what` as the failure: the screen changes in steps, and a
+    test that looked once looked between two of them on a loaded machine."""
+    for _ in range(200):
+        await pilot.pause(0.02)
+        if found := done():
+            return found
+    raise AssertionError(what)
+
+
 async def _shown(app, pilot, kind):  # a dialog, ready for a click
     """Until a dialog of `kind` is the screen and built. Textual makes a dialog the screen before it builds its widgets:
     reproduced by reading a file's lines late, as a loaded machine does, a test that clicked in between found no
     button, and three tests failed in one run of the suite."""
-    for _ in range(200):
-        await pilot.pause(0.02)
-        if isinstance(app.screen, kind) and app.screen.is_mounted:
-            return app.screen
-    raise AssertionError(f"no {kind.__name__} opened")
+    built = f"no {kind.__name__} opened"
+    return await _until(pilot, lambda: isinstance(app.screen, kind) and app.screen.is_mounted and app.screen, built)
 
 
 async def _editor(app, pilot):  # the dialog `c` opened
@@ -2992,10 +2999,7 @@ class TestACommentOnThePullRequest:
             app.action_explain_selected_check()
             fits(await _shown(app, pilot, ExplainCheckModal), "#explain-dialog")
             await pilot.press("escape")
-            for _ in range(200):
-                await pilot.pause(0.02)
-                if not isinstance(app.screen, ExplainCheckModal):
-                    break
+            await _until(pilot, lambda: not isinstance(app.screen, ExplainCheckModal), "the check's dialog stayed")
             fits(await _editor(app, pilot), "#comment-dialog")
             fits(await _asked(app, pilot), "#modal-dialog")
 
@@ -3152,10 +3156,7 @@ class TestACommentOnThePullRequest:
             await _editor(app, pilot)
             await _asked(app, pilot)
             await pilot.click("#btn-post-yes")
-            for _ in range(200):
-                await pilot.pause(0.02)
-                if asked.is_set():
-                    break
+            await _until(pilot, asked.is_set, "the post never asked for the login")
             await pilot.press("c")
             await pilot.pause()
             assert said[-1] == "A comment is on its way. Wait for its answer."

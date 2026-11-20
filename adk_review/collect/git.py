@@ -158,31 +158,31 @@ def _found(name: str, path: str) -> str:
     return shutil.which(name, path=absolute) or name
 
 
-#: Each program the review runs, git, ruff and pyrefly, held while it runs, and whether the review was stopped: one
-#: waited on in a thread, which no signal reaches, outlived a stopped review, and the review waited for it.
+#: Each program the review runs while it runs, git, ruff and pyrefly, and whether the review was stopped.
 _RUNNING: set[subprocess.Popen[Any]] = set()
-#: A plain flag, which takes no lock: reproduced by review, a second SIGTERM inside the first one's handler, as it set
-#: a `threading.Event`, waited for ever on the lock the handler held, and the review never ended.
+#: A plain flag, since it is set in a signal's handler: a `threading.Event` takes a lock, and reproduced by review, a
+#: second SIGTERM inside the first one's handler waited for ever on it.
 _STOPPED = False
 
 
 @contextlib.contextmanager
-def watched(process: subprocess.Popen[Any]) -> Iterator[None]:
-    """`process` held while it runs, for `stop_programs` to end, and ended at once where the review was stopped before
-    it started. Measured: a SIGTERM while pyrefly read the base's tree in its thread ended the review 29.5 s later,
-    when pyrefly did."""
-    _RUNNING.add(process)
-    if _STOPPED:  # read after the add: a stop between the two finds it held
-        process.kill()
-    try:
-        yield
-    finally:
-        _RUNNING.discard(process)
+def started(argv: list[str], **options: Any) -> Iterator[subprocess.Popen[Any]]:
+    """`argv` started as `subprocess.Popen` starts it with `options`, and held while it runs, for `stop_programs` to
+    end: the one way the collector starts a program, which a test holds it to."""
+    with subprocess.Popen(argv, **options) as process:
+        _RUNNING.add(process)
+        if _STOPPED:  # read after the add: a stop between the two finds it held
+            process.kill()
+        try:
+            yield process
+        finally:
+            _RUNNING.discard(process)
 
 
 def stop_programs() -> None:
-    """Each program the review runs, ended, and each one a thread starts after it: a stopped review's, which the
-    thread waiting on it would wait for to its end."""
+    """Each program the review runs, ended, and each one started after this: a stopped review's own. No signal reaches
+    a thread waiting on one, and measured, a SIGTERM while pyrefly read the base's tree in its thread ended the review
+    29.5 s later, when pyrefly did."""
     global _STOPPED
     _STOPPED = True
     for process in list(_RUNNING):
@@ -194,16 +194,9 @@ def _run(argv: list[str], env: dict[str, str], stdin: bytes | None = None) -> su
     """One command, bytes in and out, stopped whole past `GIT_TIMEOUT_S`. Git for Windows' `git.exe` runs the real
     git as its child, which holds the output open; `subprocess.run` kills only the first and then, on Windows, reads
     the output to its end, so a git past its timeout hung the review. There the whole tree is stopped first."""
-    with (
-        subprocess.Popen(
-            argv,
-            stdin=None if stdin is None else subprocess.PIPE,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=env,
-        ) as process,
-        watched(process),
-    ):
+    with started(
+        argv, stdin=None if stdin is None else subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env
+    ) as process:
         try:
             out, err = process.communicate(stdin, timeout=GIT_TIMEOUT_S)
         except subprocess.TimeoutExpired:

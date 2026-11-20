@@ -159,6 +159,35 @@ def test_a_check_folder_holds_its_checks_and_nothing_else() -> None:
         assert [check.id for check in checks] == [name.removesuffix(".py").replace("_", "-") for name in entries]
 
 
+def test_every_program_the_collector_starts_is_one_a_stop_reaches() -> None:
+    """A program starts in `collect/` only through `started`, which holds it for a stopped review to end: no signal
+    reaches a thread that waits on one, and a review stopped while pyrefly ran in its thread waited for pyrefly."""
+    starts = []
+    for path in sorted((PACKAGE / "collect").glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        allowed = {
+            id(node)
+            for function in ast.walk(tree)
+            if isinstance(function, ast.FunctionDef) and function.name == "started"
+            for node in ast.walk(function)
+        }
+        starts += [
+            f"{path.name}:{node.lineno}"
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            and node.attr == "Popen"
+            and id(node) not in allowed
+            and isinstance(node.ctx, ast.Load)
+            and _calls(tree, node)
+        ]
+    assert starts == [], f"a program started past `started`: {starts}"
+
+
+def _calls(tree: ast.AST, attribute: ast.Attribute) -> bool:
+    """Whether `attribute` is what a call calls, not a type named in an annotation."""
+    return any(isinstance(node, ast.Call) and node.func is attribute for node in ast.walk(tree))
+
+
 def test_every_group_says_what_it_may_import() -> None:
     """The rule lives in the code as well: each package docstring states its own boundary."""
     for group in GROUPS:

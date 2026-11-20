@@ -377,10 +377,10 @@ def test_a_stop_ends_each_program_running_and_each_started_after_it(monkeypatch)
     monkeypatch.setattr(git, "_RUNNING", set())
     monkeypatch.setattr(git, "_STOPPED", False)
     sleeps = [sys.executable, "-c", "import time; time.sleep(30)"]
-    with subprocess.Popen(sleeps) as running, git.watched(running):
+    with git.started(sleeps) as running:
         git.stop_programs()
         assert running.wait(timeout=10) != 0, "stopped as it ran"
-    with subprocess.Popen(sleeps) as later, git.watched(later):
+    with git.started(sleeps) as later:
         assert later.wait(timeout=10) != 0, "stopped as it started"
     assert not git._RUNNING, "none is held once it ended"
 

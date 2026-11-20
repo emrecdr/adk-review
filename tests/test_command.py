@@ -3592,12 +3592,13 @@ class TestAStoppedReview:
             f"sys.argv = {argv!r}\n"
             "sys.exit(review.run())\n"
         )
+        ran.touch()
         child = subprocess.Popen(
             [sys.executable, "-c", code], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
         )
         try:
             for _ in range(600):  # until both trees' runs began: the head's here, the base's in its thread
-                if ran.exists() and len(ran.read_text().split()) == 2:
+                if len(ran.read_text().split()) == 2:
                     break
                 time.sleep(0.05)
             else:
@@ -3612,7 +3613,7 @@ class TestAStoppedReview:
                     os.kill(int(pid), 0)
         finally:  # nothing of a failed run is left behind
             child.kill()
-            for pid in ran.read_text().split() if ran.exists() else ():
+            for pid in ran.read_text().split():
                 with contextlib.suppress(ProcessLookupError):
                     os.kill(int(pid), signal.SIGKILL)
 

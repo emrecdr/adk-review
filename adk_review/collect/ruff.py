@@ -27,7 +27,7 @@ from ..core.evidence import Change, unreleased
 from ..core.rules import Diagnostic, is_python_text
 from ..core.text import IPYTHON_OPENERS, lines_of, notebook, set_aside, squash
 from .diff import base_line
-from .git import on_path, watched
+from .git import on_path, started
 
 RUFF_TIMEOUT_S = 60
 #: Ruff's answer is read a finding at a time, and past this many none is: what it named past them is a hole. Measured
@@ -311,10 +311,9 @@ def _ruff(argv: list[str], cwd: str) -> Generator[str]:
     env = {name: value for name, value in os.environ.items() if not name.startswith("RUFF_")}
     with (
         tempfile.TemporaryFile() as said,
-        subprocess.Popen(
+        started(
             argv, cwd=cwd, env=env, stdout=subprocess.PIPE, stderr=said, encoding="utf-8", errors="replace"
         ) as running,
-        watched(running),
     ):
         late = threading.Event()
         watch = threading.Timer(RUFF_TIMEOUT_S, lambda: (late.set(), running.kill()))

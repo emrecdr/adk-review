@@ -67,7 +67,7 @@ def run_rules(evidence: Change, rules: Sequence[AnyRule], stop: threading.Event 
     """Every rule over what it reads, each the same way, by its check id: what it found, or why it could not look. A
     file rule that names an outside tool is given its diagnostics on each changed Python file, beside the file, and a
     tree rule on the tree. `stop`, once set, ends the run before the next rule: the rules run in a thread, which no
-    cancel reaches."""
+    cancel reaches. A program a rule's tool has running is the stopped review's own to end, `stop_programs`."""
     answers: dict[str, Checked] = {}
     for rule in rules:
         if stop is not None and stop.is_set():
