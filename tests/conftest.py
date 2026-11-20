@@ -791,6 +791,16 @@ def _held_on_windows(monkeypatch: pytest.MonkeyPatch, folder: Path, suffix: str)
     monkeypatch.setattr(os, "unlink", held)
 
 
+def _device_flow(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The Copilot login's device flow with no network and no wait: GitHub's code for the person to enter, then each
+    poll answered as `_github_answers` says."""
+    from litellm.llms.github_copilot import authenticator
+
+    code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
+    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
+    monkeypatch.setattr(importlib.import_module("adk_review.login").time, "sleep", lambda _seconds: None)
+
+
 def _github_answers(monkeypatch: pytest.MonkeyPatch, reply: object) -> None:
     """GitHub's token endpoint, answering `reply` to each poll of the Copilot login: no network in the suite. A dict
     is the JSON object GitHub sends; an `httpx.Response` is handed over as it is, a page that is no JSON among them."""
@@ -930,6 +940,11 @@ def _entry(path: str, text: str | None, unread: str | None = None) -> dict:
     lines_of = importlib.import_module("adk_review.core.text").lines_of
     added = list(enumerate(lines_of(text), 1)) if text else []
     return {"path": path, "status": "A", "text": text, "unread_text": unread, "added": added, "diff": ""}
+
+
+def _past_the_cap(path: str, added: list[tuple[int, str]]) -> dict:
+    """A changed file held unread, too large to read, of which the diff adds and shows the lines `added`."""
+    return {**_entry(path, None, unread="past the cap"), "status": "M", "added": added, "shown": dict(added)}
 
 
 #: The guidelines a review runs with no --profile: the default's, as the shipped config names them. `full` runs every

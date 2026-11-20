@@ -192,8 +192,9 @@ def _seconds(info: Mapping[str, object], key: str, default: int) -> int:
 
 
 def _stored(auth: Any, token: Path, access_token: str) -> int:
-    """Keep GitHub's token, and exchange it once now, so a failure shows here and not in a review: exit 0, or 1 where
-    Copilot serves the account no key, the token then removed, since the reviewer would read it as ready."""
+    """Keep GitHub's token, and exchange it once now, so a failure shows here and not in a review: exit 0; or 1 where
+    Copilot serves the account no key, the token then removed, since the reviewer would read it as ready, and where the
+    token or its key cannot be written, both then left as they were."""
     from litellm.llms.github_copilot.common_utils import GetAPIKeyError
 
     try:

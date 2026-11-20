@@ -298,10 +298,10 @@ Copilot is the arm this reviewer targets and the default; Gemini is first-class 
 account whose plan lets it choose a model, Copilot Free and Student choosing for themselves, and a one-time
 `uv run adk-review-login`, or `adk-review-login` once installed: it prints a code to enter at GitHub in a browser, then
 caches a token readable by the account alone. Ctrl-C stops it with one sentence and 130, and caches no new token.
-Calls are billed to that seat, as its plan bills Copilot chat. A GitHub
-Enterprise tenant with its own endpoints sets them in `GITHUB_COPILOT_API_BASE` and the login's `GITHUB_COPILOT_*_URL`
-variables, as `.env.example` shows. Certificates are verified through the operating system's own store, so a company
-proxy's root the machine trusts, the reviewer trusts too.
+Calls are billed to that seat, as its plan bills Copilot chat. A GitHub Enterprise tenant with its own endpoints sets
+them in `GITHUB_COPILOT_API_BASE` and the login's `GITHUB_COPILOT_*_URL` variables, as `.env.example` shows.
+Certificates are verified through the operating system's own store, so a company proxy's root the machine trusts, the
+reviewer trusts too.
 
 What a Copilot review can say, and what to do:
 

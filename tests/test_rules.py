@@ -23,6 +23,7 @@ from conftest import (
     _held_on_windows,
     _link_on_branch,
     _link_staged,
+    _past_the_cap,
     _with_profiles,
     branched,
     catalog,
@@ -2494,12 +2495,17 @@ class TestTheCallersRule:
         """Read by an audit, and reproduced: with `**kwargs`, a keyword that names a position-only parameter goes into
         `**kwargs`, so `api(1, 2, x=9)` fits and `api(y=2, x=9)` raises, and the rule said each the other way round.
         Each call of a matrix is held to what Python does with it: the call itself, to a function that does nothing."""
-        from adk_review.judge.rule_helpers import try_rule
-        from adk_review.judge.rules.callers import Callers
-
         signatures = ("x, /, y, **kw", "x, /, y", "x, y=1, *a, z, **kw", "a, b=1, /, c=2, *, d", "x, /, *, y=1, **kw")
-        calls = ("()", "(1)", "(1, 2)", "(1, 2, 3)", "(1, 2, x=9)", "(y=2, x=9)", "(1, y=2)", "(1, z=3)", "(x=1)")
-        calls += (
+        calls = (
+            "()",
+            "(1)",
+            "(1, 2)",
+            "(1, 2, 3)",
+            "(1, 2, x=9)",
+            "(y=2, x=9)",
+            "(1, y=2)",
+            "(1, z=3)",
+            "(x=1)",
             "(1, 2, z=3)",
             "(1, d=1)",
             "(1, c=5, d=1)",
@@ -2510,10 +2516,14 @@ class TestTheCallersRule:
         )
         wrong = []
         for signature in signatures:
-            space: dict = {}
-            exec(f"def f({signature}):\n    pass\n", space)
-            source = f"def f({signature}):\n    pass\n\n\n" + "\n".join(f"f{call}" for call in calls) + "\n"
-            named = {hit.line for hit in try_rule(Callers(), {"m.py": source})}
+            definition, space = f"def f({signature}):\n    pass\n", {}
+            exec(definition, space)
+            named = {
+                line
+                for _path, line, _said in self.found(
+                    {"m.py": definition + "\n\n" + "\n".join(f"f{call}" for call in calls) + "\n"}
+                )
+            }
             for line, call in enumerate(calls, 5):
                 try:
                     eval(f"f{call}", space)  # a literal call of the matrix, to a function that does nothing
@@ -4314,11 +4324,11 @@ class TestTheShippedRules:
         from adk_review.judge.rules.pinned_actions import PinnedActions
 
         rule, path = PinnedActions(), ".github/workflows/ci.yml"
-        assert lines_hit(rule, path, "    steps:\n      - uses:\n          actions/checkout@v4\n") == [2]
-        assert lines_hit(rule, path, "    steps:\n      - uses: >-\n          actions/checkout@v4\n") == [2]
-        sha = "11bd71901bbe5b1630ceea73d27597364c9af683"
-        assert lines_hit(rule, path, f"    steps:\n      - uses:\n          actions/checkout@{sha}\n") == []
         text = "    steps:\n      - uses:\n          actions/checkout@v4\n"
+        assert lines_hit(rule, path, text) == [2]
+        assert lines_hit(rule, path, text.replace("uses:", "uses: >-")) == [2]
+        sha = "11bd71901bbe5b1630ceea73d27597364c9af683"
+        assert lines_hit(rule, path, text.replace("@v4", f"@{sha}")) == []
         kept = {**_entry(path, text), "status": "M", "added": [(3, "          actions/checkout@v4")]}
         found = run_rules({"files": [kept], "tree": None}, [rule])["rule.pinned-actions"].findings
         assert [hit.line for hit in found] == [3], found
@@ -4481,15 +4491,14 @@ class TestTheShippedRules:
 
         path = ".github/workflows/build.yml"
         added = [(9, "          ref: >-"), (10, "            ${{ github.event.pull_request.head.sha }}")]
-        unread = {**_entry(path, None, unread="past the cap"), "status": "M", "added": added, "shown": dict(added)}
+        unread = _past_the_cap(path, added)
         checked = run_rules({"files": [unread], "tree": None}, [ScriptInjection()])["rule.script-injection"]
         assert checked.could_not_look is not None, checked
         # Read by the branch's review: a line that holds a key of its own is no checkout's value, the common concurrency
         # group among them, and was a hole.
         group = "  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}"
         for line in (group, "    if: ${{ github.head_ref }}"):
-            keyed = {**_entry(path, None, unread="past the cap"), "status": "M", "added": [(4, line)]}
-            keyed["shown"] = {4: line}
+            keyed = _past_the_cap(path, [(4, line)])
             checked = run_rules({"files": [keyed], "tree": None}, [ScriptInjection()])["rule.script-injection"]
             assert checked.could_not_look is None, line
 
@@ -4544,12 +4553,7 @@ class TestTheShippedRules:
         assert [
             f.line for f in run_rules({"files": [moved], "tree": None}, [rule])["rule.script-injection"].findings
         ] == [9]
-        unread = {
-            **_entry(path, None, unread="past the cap"),
-            "status": "M",
-            "added": [(3, "jobs:")],
-            "shown": {3: "jobs:"},
-        }
+        unread = _past_the_cap(path, [(3, "jobs:")])
         assert run_rules({"files": [unread], "tree": None}, [rule])["rule.script-injection"].could_not_look is None
         planted = _entry(path, flow("pull_request_target", "${{ github.head_ref }}"))
         found = run_rules({"files": [planted], "tree": None}, [rule])["rule.script-injection"].findings
@@ -4559,7 +4563,7 @@ class TestTheShippedRules:
         # trigger; a comment, a step's name and spaces GitHub's lexer skips misled it; a step was named twice for its
         # fork and its ref; its quote lost the diff's `+`; and its patterns took 4.6 s over a line of 40,000 characters.
         ref = "          ref: ${{ github.head_ref }}"
-        hidden = {**_entry(path, None, unread="past the cap"), "status": "M", "added": [(9, ref)], "shown": {9: ref}}
+        hidden = _past_the_cap(path, [(9, ref)])
         assert run_rules({"files": [hidden], "tree": None}, [rule])["rule.script-injection"].could_not_look is not None
         flush = flow("pull_request_target", "${{ github.event.pull_request.head.sha }}").replace(
             "on:\n  pull_request_target:", "on:\n- pull_request_target"

@@ -28,6 +28,7 @@ from conftest import (
     _cached_copilot_token,
     _committed,
     _cut_reason,
+    _device_flow,
     _file_url,
     _git_in,
     _git_shell,
@@ -666,7 +667,6 @@ def test_the_copilot_login_reads_an_empty_token_file_as_none(tmp_path, monkeypat
     from adk_review import login as copilot_login
 
     _cached_copilot_token(monkeypatch, tmp_path, "")
-    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
 
     def began(_self):  # the device flow's first request: no network in the suite
         raise RuntimeError("the login began")
@@ -680,13 +680,11 @@ def test_the_copilot_login_reads_an_empty_token_file_as_none(tmp_path, monkeypat
 def test_a_login_stopped_with_ctrl_c_says_so_in_one_sentence(tmp_path, monkeypatch, capsys) -> None:
     """Ctrl-C while the login waits for the person's approval, up to fifteen minutes, is one sentence and 130, as the
     review and the hooks say it. Read by an audit: it ended in a traceback, and no token is kept."""
-    from litellm.llms.github_copilot import authenticator
 
     from adk_review import login as copilot_login
 
-    monkeypatch.setattr(copilot_login, "token_path", lambda: tmp_path / "token")
-    code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
-    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
+    _cached_copilot_token(monkeypatch, tmp_path, None)
+    _device_flow(monkeypatch)
 
     def pressed(_seconds):  # Ctrl-C while it waits, before it asks GitHub again
         raise KeyboardInterrupt
@@ -696,7 +694,7 @@ def test_a_login_stopped_with_ctrl_c_says_so_in_one_sentence(tmp_path, monkeypat
     assert copilot_login.run() == 130
     err = capsys.readouterr().err
     assert err == "[copilot] interrupted: no new token was cached. Run this again\n", err
-    assert not (tmp_path / "token").exists()
+    assert not (tmp_path / "access-token").exists()
 
 
 def test_a_login_stopped_while_it_trades_the_token_for_a_key_keeps_no_token(tmp_path, monkeypatch, capsys) -> None:
@@ -708,12 +706,8 @@ def test_a_login_stopped_while_it_trades_the_token_for_a_key_keeps_no_token(tmp_
     from adk_review import login as copilot_login
 
     _cached_copilot_token(monkeypatch, tmp_path, None)
-    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
-    monkeypatch.delenv("GITHUB_COPILOT_API_KEY_FILE", raising=False)
-    code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
-    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
-    monkeypatch.setattr(copilot_login.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(copilot_login, "_polled", lambda *_args: {"access_token": "approved"})
+    _device_flow(monkeypatch)
+    _github_answers(monkeypatch, {"access_token": "approved"})
 
     def pressed(_self):  # Ctrl-C while Copilot is asked for a key
         raise KeyboardInterrupt
@@ -729,18 +723,13 @@ def test_a_login_that_cannot_write_its_token_says_where_and_what_to_do(tmp_path,
     """Read by an audit, and reproduced: a token folder this account cannot write ended the login in a traceback,
     after the person had approved it at GitHub. It is one sentence naming the folder and the setting that moves it,
     and exit 1. Here a folder stands where the token's file would, which every system refuses to write."""
-    from litellm.llms.github_copilot import authenticator
 
     from adk_review import login as copilot_login
 
     _cached_copilot_token(monkeypatch, tmp_path, None)
-    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
-    monkeypatch.delenv("GITHUB_COPILOT_API_KEY_FILE", raising=False)
     (tmp_path / "access-token").mkdir()
-    code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
-    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
-    monkeypatch.setattr(copilot_login.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(copilot_login, "_polled", lambda *_args: {"access_token": "approved"})
+    _device_flow(monkeypatch)
+    _github_answers(monkeypatch, {"access_token": "approved"})
     monkeypatch.setattr(sys, "argv", ["adk-review-login"])
     assert copilot_login.run() == 1
     err = capsys.readouterr().err
@@ -753,24 +742,18 @@ def test_a_login_that_cannot_replace_the_token_keeps_the_old_one_and_says_so(tmp
     after the write failed, a valid token lost; and the key cached beside it, which a folder may refuse to give up,
     ended the login in a traceback after the new token was written, the old account's key kept beside it. The key goes
     first, and a failure on either leaves the files as they were, said in one sentence that names the file."""
-    from litellm.llms.github_copilot import authenticator
 
     from adk_review import login as copilot_login
 
     _cached_copilot_token(monkeypatch, tmp_path, "the old token")
-    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
-    monkeypatch.delenv("GITHUB_COPILOT_API_KEY_FILE", raising=False)
-    code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
-    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
-    monkeypatch.setattr(copilot_login.time, "sleep", lambda _seconds: None)
-    monkeypatch.setattr(copilot_login, "_polled", lambda *_args: {"access_token": "approved"})
+    _device_flow(monkeypatch)
+    _github_answers(monkeypatch, {"access_token": "approved"})
     monkeypatch.setattr(sys, "argv", ["adk-review-login", "--force"])
     token = tmp_path / "access-token"
     write_text = Path.write_text
 
-    def refused(
-        self: Path, *args, **kwargs
-    ) -> int:  # a file this account cannot write; root, in a container, writes any
+    # A file this account cannot write: root, in a container, writes any, so the write is refused here.
+    def refused(self: Path, *args, **kwargs) -> int:
         if self == token:
             raise PermissionError(errno.EACCES, "Permission denied", str(self))
         return write_text(self, *args, **kwargs)
@@ -821,10 +804,7 @@ def test_the_copilot_login_caches_no_token_for_an_account_without_copilot(tmp_pa
     from adk_review import login as copilot_login
 
     _cached_copilot_token(monkeypatch, tmp_path, None)
-    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
-    monkeypatch.setattr(copilot_login.time, "sleep", lambda _s: None)
-    code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
-    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
+    _device_flow(monkeypatch)
 
     def no_seat(_self):
         raise GetAPIKeyError(status_code=403, message="Failed to get API key: 403")
@@ -851,10 +831,7 @@ def test_the_copilot_login_hands_litellm_the_folder_it_writes_and_no_older_key(t
     for name in ("HOME", "USERPROFILE"):
         monkeypatch.setenv(name, str(home))
     monkeypatch.setenv("GITHUB_COPILOT_TOKEN_DIR", "~/tokens")
-    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
-    monkeypatch.setattr(copilot_login.time, "sleep", lambda _s: None)
-    code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
-    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
+    _device_flow(monkeypatch)
     seen: dict = {}
 
     def exchanged(self):
@@ -874,7 +851,6 @@ def test_a_cached_token_in_a_folder_not_ones_own_is_still_authenticated(tmp_path
     from adk_review import login as copilot_login
 
     _cached_copilot_token(monkeypatch, tmp_path)
-    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
 
     def refused(_token):
         raise PermissionError(1, "Operation not permitted")
@@ -915,7 +891,6 @@ def test_the_copilot_login_waits_as_long_and_as_often_as_github_says(tmp_path, m
     from adk_review import login as copilot_login
 
     _cached_copilot_token(monkeypatch, tmp_path, None)
-    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
     slept: list[float] = []
     monkeypatch.setattr(copilot_login.time, "sleep", slept.append)
     code = {
@@ -937,15 +912,11 @@ def test_the_copilot_login_names_a_reply_that_is_no_json_and_never_raises(tmp_pa
     the login read each poll's reply as JSON under a guard for a lost network alone, so one such page ended it in a
     traceback, with any status. A sentence names the status and the next step now, for JSON that is no object too."""
     import httpx
-    from litellm.llms.github_copilot import authenticator
 
     from adk_review import login as copilot_login
 
     _cached_copilot_token(monkeypatch, tmp_path, None)
-    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
-    monkeypatch.setattr(copilot_login.time, "sleep", lambda _s: None)
-    code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
-    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
+    _device_flow(monkeypatch)
     pages = (httpx.Response(502, text="<html>Bad Gateway</html>"), httpx.Response(200, text="<html>Sign in</html>"))
     for reply in (*pages, httpx.Response(200, text='["no", "object"]')):
         _github_answers(monkeypatch, reply)
@@ -969,7 +940,6 @@ def test_the_copilot_login_reads_copilots_settings_from_the_central_env(tmp_path
     )
     monkeypatch.setattr(copilot_login, "ROOT", tmp_path)
     monkeypatch.delenv("GITHUB_COPILOT_TOKEN_DIR", raising=False)
-    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
     monkeypatch.setenv("REVIEW_PROVIDER", "copilot")
     assert copilot_login.main([]) == 0
     assert str(tmp_path / "tokens") in capsys.readouterr().out, "the token dir came from .env"

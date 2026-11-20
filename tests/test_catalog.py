@@ -455,7 +455,9 @@ class TestTheRuleKinds:
             codec for codec in ("utf_7", "unicode_escape", "raw_unicode_escape", "nonesuch") if not rewrites(codec)
         ] == []
         assert [
-            codec for codec in ("utf-8", "ascii", "latin-1", "cp1252", "utf-8-sig", "shift_jis") if rewrites(codec)
+            codec
+            for codec in ("utf-8", "ascii", "latin-1", "cp1252", "utf-8-sig", "shift_jis", "euc_jp", "gbk")
+            if rewrites(codec)
         ] == []
         repo = _branch_off_empty(tmp_path / "repo", HEAD)
         hidden = "# coding: utf_7\nimport subprocess\n#+AAo-subprocess.run(cmd, shell=True)\n"
@@ -473,7 +475,6 @@ class TestTheRuleKinds:
         reads as other characters between two dots."""
         import codecs
         import contextlib
-        import encodings
         import encodings.aliases
         import pkgutil
 
@@ -498,9 +499,6 @@ class TestTheRuleKinds:
 
         missed = sorted(codec for codec in known if misreads(codec) and not rewrites(codec))
         assert missed == [], "a codec that reads plain text as other code passes"
-        assert [
-            codec for codec in ("utf-8", "latin-1", "cp1252", "shift_jis", "euc_jp", "gbk") if rewrites(codec)
-        ] == []
         hidden = '# coding: iso2022_jp\nmsg = "\x1b$B"#\x1b(B"; print("ran")\n'
         with pytest.raises(UnreadError):
             try_rule(EncodingDeclaration(), {"hidden.py": hidden})
