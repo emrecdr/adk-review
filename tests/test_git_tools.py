@@ -710,6 +710,8 @@ class TestWhatABranchCannotHide:
         files = collect_evidence(str(repo), BASE, HEAD)["files"]
         assert {entry["path"] for entry in files} == {"bin/tool", "certs/b.p12"}, files
         assert [entry["path"] for entry in files if entry.get("unread")] == [], "nothing named not read"
+        # Nor read as text: read by review, a binary `.py` only made executable was linted as Python, 971 findings.
+        assert [entry["path"] for entry in files if entry.get("text") is not None] == [], "no rule reads its bytes"
 
     @pytest.mark.usefixtures("reviewers_git_config")
     def test_the_reviewers_git_config_moves_no_line(self, hostile_repo: Path, cli, capsys) -> None:
