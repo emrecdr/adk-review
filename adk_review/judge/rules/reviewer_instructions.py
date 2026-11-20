@@ -65,9 +65,10 @@ _BLANKS: dict[int, str | None] = {
     **dict.fromkeys((0x034F, 0x17B4, 0x17B5, 0x115F, 0x1160, 0x3164, 0xFFA0)),
     0x2800: " ",
 }
-#: Unicode's categories for the rest of what no reader sees: a format character, and a control, which parts no word
-#: once white space has parted the line.
-_UNSEEN = ("Cf", "Cc")
+#: Unicode's categories for the rest of what no reader sees: a format character, a control, which parts no word once
+#: white space has parted the line, and a point Unicode leaves unassigned, which shows nothing. Read by an audit, and
+#: reproduced: U+2065 inside each word of an order in a file's name, which hidden-text does not read, hid it.
+_UNSEEN = ("Cf", "Cc", "Cn")
 #: A control that parts no word, the one thing a line of ASCII can hold that no reader sees.
 _ASCII_CONTROL = re.compile(r"[\x00-\x08\x0e-\x1b\x7f]")
 
