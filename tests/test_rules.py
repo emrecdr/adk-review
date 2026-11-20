@@ -4308,6 +4308,24 @@ class TestTheShippedRules:
         assert try_rule(rule, {"docs/ci.md": workflow}) == [], "a workflow or an action alone is read"
         assert self_check(rule) == []
 
+    def test_a_uses_value_on_the_line_under_its_key_is_read(self) -> None:
+        """Read by an audit, and reproduced: YAML reads `uses:` with its value on the next line, plain or folded, as one
+        key, and the rule read the key's line alone, so an action at a tag passed. The value is read where the change
+        added the key, and where it changed the value alone, under a key it kept."""
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.pinned_actions import PinnedActions
+
+        rule, path = PinnedActions(), ".github/workflows/ci.yml"
+        assert lines_hit(rule, path, "    steps:\n      - uses:\n          actions/checkout@v4\n") == [2]
+        assert lines_hit(rule, path, "    steps:\n      - uses: >-\n          actions/checkout@v4\n") == [2]
+        sha = "11bd71901bbe5b1630ceea73d27597364c9af683"
+        assert lines_hit(rule, path, f"    steps:\n      - uses:\n          actions/checkout@{sha}\n") == []
+        text = "    steps:\n      - uses:\n          actions/checkout@v4\n"
+        kept = {**_entry(path, text), "status": "M", "added": [(3, "          actions/checkout@v4")]}
+        found = run_rules({"files": [kept], "tree": None}, [rule])["rule.pinned-actions"].findings
+        assert [hit.line for hit in found] == [3], found
+
     def test_a_uses_key_in_quotes_or_with_a_space_before_its_colon_is_read(self) -> None:
         """Read by an audit, and reproduced: `"uses": actions/checkout@v4` and `uses : actions/setup-python@v5`, each
         a key as YAML allows one, named none, where the workflow rule beside this one reads both spellings of its own

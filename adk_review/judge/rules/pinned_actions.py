@@ -13,6 +13,10 @@ READ = (".github/workflows/*.yml", ".github/workflows/*.yaml", "action.yml", "ac
 #: digest's, which is read and passed. The key in quotes, or with a space before its colon, is the same key: read by
 #: an audit, `"uses": actions/checkout@v4` and `uses : actions/setup-python@v5` named none.
 USES = re.compile(r"""^\s*(?:-\s+)?(?:uses|"uses"|'uses')\s*:\s*["']?([^\s"'#@]+)@([^\s"'#]+)""")
+#: A `uses:` key whose value YAML reads from the line under it: nothing after the key, or a folded or literal block's
+#: `>` or `|`, a comment after it. Read by an audit, and reproduced: `uses:` on one line and `actions/checkout@v4` on
+#: the next was read as no key at all.
+OPEN = re.compile(r"""^\s*(?:-\s+)?(?:uses|"uses"|'uses')\s*:\s*(?:[>|][-+]?\s*)?(?:#.*)?$""")
 #: The one ref that cannot be moved: a full commit SHA. GitHub refuses a shorter one.
 SHA = re.compile(r"[0-9a-f]{40}")
 
@@ -46,8 +50,21 @@ class PinnedActions(FileRule):
             return []
         found: list[tuple[int | None, str]] = []
         # A workflow moved into place adds no line, and every line of it runs there now.
-        for number in file.new_lines(*READ):
-            used = USES.match(file.near(number) or "")
+        new = file.new_lines(*READ)
+        added = set(new)
+        for number in new:
+            used = USES.match(_with_value(file, number, added))
             if used and not used[1].startswith(("./", "docker://")) and not SHA.fullmatch(used[2]):
                 found.append((number, f"{used[1]} runs at `{used[2]}`, not a full commit SHA"))
         return found
+
+
+def _with_value(file: ChangedFile, number: int, new: set[int]) -> str:
+    """Line `number` as `USES` reads it: a key whose value YAML reads from the line under it, with that value; and that
+    value's line, under a key the change kept, as the key with its value. Its own line where neither holds."""
+    line = file.near(number) or ""
+    if OPEN.match(line):
+        return "uses: " + (file.near(number + 1) or "").strip()
+    if number - 1 not in new and OPEN.match(file.near(number - 1) or ""):
+        return "uses: " + line.strip()
+    return line
