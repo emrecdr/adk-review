@@ -3177,6 +3177,20 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
         assert answer.could_not_look is None, answer.could_not_look
         return sorted((f.file, f.line, f.severity, f"{f.title} | {f.evidence}") for f in answer.findings)
 
+    def test_a_module_moved_into_the_tests_is_named_where_the_source_still_reads_it(self, tmp_path: Path) -> None:
+        """Read by an outside audit, and reproduced: a change that moved `shop/util.py` to `tests/util.py` was read as a
+        test's change alone, so the rule ran nothing, and `shop/caller.py`, which still reads `shop.util`, passed. The
+        same module removed, or moved elsewhere, was named. A file counts as a test's only where it was one before."""
+        caller = "import shop\n\n\ndef run() -> str:\n    return shop.util.greet()\n"
+        repo = self.branch(
+            tmp_path, {"shop/util.py": "def greet() -> str:\n    return 'hi'\n", "shop/caller.py": caller}, {}
+        )
+        (repo / "tests").mkdir()
+        _git_in(repo, "mv", "shop/util.py", "tests/util.py")
+        _git_in(repo, "commit", "-q", "-m", "move the helper into the tests")
+        found = self.found(repo)
+        assert [(file, line) for file, line, *_ in found] == [("shop/caller.py", 5)], found
+
     def test_a_method_the_change_renamed_is_named_where_a_file_it_left_alone_calls_it(self, tmp_path: Path) -> None:
         """Measured over ADK, 31 method edits: 24 named, at 59 call sites and 4 kept lines of the edited file, none
         wrongly; over this repository's last 195 commits, the package's own each type-checked by its CI, none named."""

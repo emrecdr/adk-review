@@ -235,8 +235,13 @@ def radius(
     diagnostic was charged first to the lines the change added; and one true break, a value that may be None passed
     where a string is taken, which the next commit fixed."""
     tree, resolved = evidence.get("tree"), evidence.get("preflight")
+    # A file moved from the source into the tests counts: read by an audit, and reproduced, it ran nothing, and a file
+    # that still read the module passed.
     python = [
-        f for f in evidence["files"] if f.get("old", f["path"]).endswith(".py") and (tests or not is_test(f["path"]))
+        f
+        for f in evidence["files"]
+        if f.get("old", f["path"]).endswith(".py")
+        and (tests or not (is_test(f["path"]) and is_test(f.get("old", f["path"]))))
     ]
     # A file the change only added is read too: read by validation, a wrong call it makes into another file was named
     # by no rule.

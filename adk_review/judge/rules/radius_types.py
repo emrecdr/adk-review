@@ -104,8 +104,13 @@ class RadiusTypes(TreeRule):
     def needs_head(self, files: list[Entry]) -> bool:
         """A Python file the change touched: what depends on one it modified, moved or removed is in the head alone,
         and what one it added calls too. Not a test's, whose findings the rule reads none of and its runs leave out:
-        read by review, on ADK a commit that edited one test read and parsed the whole project for nothing."""
-        return any(item.get("old", item["path"]).endswith(".py") and not is_test(item["path"]) for item in files)
+        read by review, on ADK a commit that edited one test read and parsed the whole project for nothing. A module
+        moved into the tests was a source's: read by an audit, and reproduced, its callers were read by no run."""
+        return any(
+            item.get("old", item["path"]).endswith(".py")
+            and not (is_test(item["path"]) and is_test(item.get("old", item["path"])))
+            for item in files
+        )
 
     def check(self, tree: Tree) -> list[Hit]:
         hits = []
