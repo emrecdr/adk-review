@@ -570,7 +570,8 @@ What the hook cannot see, or stops on:
 - A fork's branch grown from its upstream's newer commits sends those commits to the fork too, and a credential in them
   stops the push, though no rebase of yours can change them: sync the fork with its upstream on the server, run
   `git fetch`, and push again, as the hook's own words say.
-- A file under a folder `[review] third_party` names is read in no commit: a credential there passes. A file `scan`
+- A file under a folder `[review] third_party` names is read in no commit: a credential there passes, and still
+  passes where a merge moves the file out, since a merge's file a side brought is that side's. A file `scan`
   leaves out is read there by the credential rules alone, and a binary one is no hole.
 - A file no rule can read — a binary one, a submodule, a Git LFS pointer, whose content is stored elsewhere — is a hole
   and stops the push, unless `[review] skip` in `config.toml` names it. A review of commits reads each file as its
