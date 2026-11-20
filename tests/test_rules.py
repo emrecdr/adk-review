@@ -4341,7 +4341,8 @@ class TestTheShippedRules:
         rule, path = PinnedActions(), ".github/workflows/ci.yml"
         text = "    steps:\n      - uses:\n          actions/checkout@v4\n"
         assert lines_hit(rule, path, text) == [2]
-        assert lines_hit(rule, path, text.replace("uses:", "uses: >-")) == [2]
+        for header in (">-", ">-2", "|2-", "|-2"):  # a block, its indent given too: read by an audit
+            assert lines_hit(rule, path, text.replace("uses:", f"uses: {header}")) == [2], header
         sha = "11bd71901bbe5b1630ceea73d27597364c9af683"
         assert lines_hit(rule, path, text.replace("@v4", f"@{sha}")) == []
         kept = {**_entry(path, text), "status": "M", "added": [(3, "          actions/checkout@v4")]}
@@ -4490,7 +4491,7 @@ class TestTheShippedRules:
         rule, path = ScriptInjection(), ".github/workflows/build.yml"
         head = "on:\n  pull_request_target:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
         ref = "        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n"
-        for key in ("      - uses:\n", "      - uses: >-\n"):
+        for key in ("      - uses:\n", "      - uses: >-\n", "      - uses: >-2\n", "      - uses: |2-\n"):
             assert lines_hit(rule, path, f"{head}{key}          actions/checkout@v4\n{ref}") == [10], key
         text = f"{head}      - uses:\n          actions/checkout@v4\n{ref}"
         kept = {**_entry(path, text), "status": "M", "added": [(8, "          actions/checkout@v4")]}

@@ -479,6 +479,12 @@ run on 3.14, is no syntax error to `lint`: no check that parses names it, and no
 ruff's rules still read it, but `lint` cannot weigh there a string ruff names as a possible password, S105 to S107,
 and keeps it as a major.
 
+The workflow rules, `pinned-actions` and `script-injection`, read a workflow line by line, as YAML is written: a key
+with its value on its line, or on the line under it, plain or as a block. A spelling written only to hide the value
+passes them: a quoted escape, a tag such as `!!str`, or an anchor. YAML reads each as the same value, and the workflow
+is still in the diff, for a person and the guidelines. `reviewer-instructions` reads an order wrapped over lines from
+the line the change added: an order the base began on a line the change kept, and the change ends, is not named.
+
 ## Before a push
 
 `adk-review-push`, installed beside `adk-review`, is a git pre-push hook. To install it, run these lines in the

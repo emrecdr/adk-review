@@ -15,9 +15,9 @@ import re
 #: `uses : actions/setup-python@v5` named none.
 USES_KEY = r"""^\s*(?:-\s+)?(?:uses|"uses"|'uses')\s*:\s*"""
 #: A `uses:` key whose value YAML reads from the line under it: nothing after the key, or a folded or literal block's
-#: `>` or `|`, a comment after it. Read by an audit, and reproduced: `uses:` on one line and `actions/checkout@v4` on
-#: the next was read as no key at all.
-USES_OPEN = re.compile(USES_KEY + r"(?:[>|][-+]?\s*)?(?:#.*)?$")
+#: `>` or `|`, its chomping sign and its indent's digit in either order, a comment after it. Read by an audit, and
+#: reproduced: `uses:` on one line and `actions/checkout@v4` on the next was read as no key at all, and `uses: >-2`.
+USES_OPEN = re.compile(USES_KEY + r"(?:[>|](?:[1-9][-+]?|[-+][1-9]?)?\s*)?(?:#.*)?$")
 
 
 def uses_joined(line: str, below: str | None) -> str:
