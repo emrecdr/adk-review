@@ -466,6 +466,45 @@ class TestTheRuleKinds:
         out = capsys.readouterr().out
         assert "### rule.encoding-declaration — FAILED: rule encoding-declaration could not look: hidden.py" in out, out
 
+    def test_every_codec_that_reads_plain_text_as_other_code_is_a_hole(self) -> None:
+        """Read by an audit, and reproduced: a file declared `iso2022_jp` ran a call that, read as UTF-8, sat in a
+        comment, and no rule named it, since the probe held no ISO-2022 shift. Every codec Python ships is held to what
+        it does to the shapes that trick one: a shift into another character set, and an IDNA label, which `idna`
+        reads as other characters between two dots."""
+        import codecs
+        import contextlib
+        import encodings
+        import encodings.aliases
+        import pkgutil
+
+        from adk_review.judge.rule_helpers import UnreadError, try_rule
+        from adk_review.judge.rules.encoding_declaration import EncodingDeclaration, rewrites
+
+        tricks = (b'\x1b$B"#\x1b(B', b'\x1b$)C\x0e"#\x0f', b"a.xn--ls8h.b", b"+AGk-", b"\\x69")
+        names = {module.name for module in pkgutil.iter_modules(encodings.__path__)}
+        names |= set(encodings.aliases.aliases) | set(encodings.aliases.aliases.values())
+        known = set()
+        for name in names:
+            with contextlib.suppress(LookupError):
+                known.add(codecs.lookup(name).name)
+
+        def misreads(codec: str) -> bool:
+            try:
+                return any(trick.decode(codec) != trick.decode("ascii") for trick in tricks)
+            except LookupError:  # bytes to bytes, `rot13` or `base64`: no text encoding, which Python refuses for code
+                return False
+            except UnicodeDecodeError, ValueError:
+                return True
+
+        missed = sorted(codec for codec in known if misreads(codec) and not rewrites(codec))
+        assert missed == [], "a codec that reads plain text as other code passes"
+        assert [
+            codec for codec in ("utf-8", "latin-1", "cp1252", "shift_jis", "euc_jp", "gbk") if rewrites(codec)
+        ] == []
+        hidden = '# coding: iso2022_jp\nmsg = "\x1b$B"#\x1b(B"; print("ran")\n'
+        with pytest.raises(UnreadError):
+            try_rule(EncodingDeclaration(), {"hidden.py": hidden})
+
     def test_a_file_rule_could_not_look_only_at_the_file_whose_text_it_asked_for(self) -> None:
         """An unread file is the hole of the rule that asks for its text, and only of that one; what the rule found on
         the files it could read stands beside it. Measured before: one unread lock file made every file rule a hole,

@@ -22,9 +22,13 @@ DECLARATION = re.compile(r"^[ \t\f]*#.*?coding[:=][ \t]*([-\w.]+)")
 #: line of the file's own, and code Python ran as UTF-7 was approved.
 PYTHON_BREAK = re.compile(r"\r\n?|\n")
 #: Plain text no codec Python accepts for code may change, and what the codecs that rewrite code read as other
-#: characters: a UTF-7 shift and three backslash escapes. A backslash on its own is left out: an escape it does not
-#: start is deprecated.
-PROBE = bytes(range(32, 127)).replace(b"\\", b"") + b"\t\n +AGk- \\x69 \\u0069 \\151"
+#: characters: a UTF-7 shift, three backslash escapes, ISO-2022's shifts into a Japanese and a Korean character set,
+#: and a label between two dots, which `idna` reads as Unicode. A backslash on its own is left out: an escape it does
+#: not start is deprecated. Read by an audit, and reproduced: a file declared `iso2022_jp` ran a call that, read as
+#: UTF-8, sat in a comment.
+PROBE = bytes(range(32, 127)).replace(b"\\", b"") + (
+    b'\t\n +AGk- \\x69 \\u0069 \\151 \x1b$B"#\x1b(B \x1b$)C\x0e"#\x0f .xn--ls8h. '
+)
 
 
 def rewrites(codec: str) -> bool:
