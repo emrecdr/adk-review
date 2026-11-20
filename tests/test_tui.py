@@ -37,6 +37,8 @@ def _state_apart(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     monkeypatch.setattr(config, "USER_CONFIG_PATH", state / "user-config" / "tui.toml")
     monkeypatch.setattr(config, "OLD_PACKAGE_DIR", state / "no-checkout" / "adk_review_tui")
     monkeypatch.setattr(config, "STATE_DIR", state)
+    # Nor the person's own clipboard: a screen test that copies runs pbcopy on a Mac, here a program no folder holds.
+    monkeypatch.setattr(importlib.import_module("tui.clipboard"), "PBCOPY", str(state / "no-pbcopy"))
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -1434,8 +1436,52 @@ class TestWindowsAndItsShells:
         sent.clear()
         monkeypatch.setattr(clipboard, "_windows_copy", lambda _text: False)
         assert clipboard.copy_text(app, "a\nb", windows=True) is False, "held open by another program, say"
-        assert clipboard.copy_text(app, "a\nb", windows=False) is False, "the terminal's alone: no way to know"
+        assert clipboard.copy_text(app, "a\nb", windows=False, mac=False) is False, "the terminal's alone"
         assert sent == [("terminal", "a\nb"), ("terminal", "a\nb")], sent
+
+    def test_copying_on_a_mac_uses_its_own_clipboard_and_the_terminals(self, monkeypatch) -> None:
+        """macOS Terminal reads no OSC 52, so Ctrl+Y and the editor's Copy sent the text there and nothing pasted. On a
+        Mac the text goes to its own clipboard too, through pbcopy, unless the screen runs over SSH: there the Mac's
+        clipboard is the far machine's, and the terminal alone reaches the person's."""
+        from types import SimpleNamespace
+
+        from tui import clipboard
+
+        sent: list[object] = []
+        app = SimpleNamespace(copy_to_clipboard=lambda text: sent.append(("terminal", text)))
+        monkeypatch.delenv("SSH_CONNECTION", raising=False)
+        monkeypatch.setattr(clipboard, "_mac_copy", lambda text: sent.append(("mac", text)) or True)
+        assert clipboard.copy_text(app, "a\nb", windows=False, mac=True) is True
+        assert sent == [("terminal", "a\nb"), ("mac", "a\nb")], sent
+        sent.clear()
+        monkeypatch.setenv("SSH_CONNECTION", "192.0.2.1 50000 192.0.2.2 22")
+        assert clipboard.copy_text(app, "a\nb", windows=False, mac=True) is False
+        assert sent == [("terminal", "a\nb")], "over SSH, the terminal alone"
+        monkeypatch.delenv("SSH_CONNECTION")
+        monkeypatch.setattr(clipboard, "_mac_copy", lambda _text: False)
+        assert clipboard.copy_text(app, "a\nb", windows=False, mac=True) is False, "pbcopy refused it, say"
+
+    @pytest.mark.skipif(os.name == "nt", reason="pbcopy is macOS' own, and Windows runs no shell script as a program")
+    def test_the_mac_clipboard_program_is_given_the_text_in_utf8(self, tmp_path: Path, monkeypatch) -> None:
+        """pbcopy reads its input in the locale's encoding: measured, with no locale or LANG=C it read UTF-8 as Mac
+        Roman, an accented letter pasted as two others. It is told UTF-8 through LC_ALL, which wins over every other
+        setting, and a program that refuses the text, or is not there, is no copy."""
+        from conftest import _script
+
+        from tui import clipboard
+
+        body = 'cat > "$0.text"\nprintf %s "$LC_ALL" > "$0.locale"\nexit "${PBCOPY_EXIT:-0}"\n'
+        monkeypatch.setattr(clipboard, "PBCOPY", str(_script(tmp_path / "pbcopy", body)))
+        monkeypatch.setenv("LANG", "C")
+        monkeypatch.setenv("LC_ALL", "C")
+        text = "caf" + chr(0xE9) + " " + chr(0x2192) + " done\nsecond line"
+        assert clipboard._mac_copy(text) is True
+        assert (tmp_path / "pbcopy.text").read_bytes() == text.encode("utf-8")
+        assert (tmp_path / "pbcopy.locale").read_text(encoding="utf-8") == "en_US.UTF-8"
+        monkeypatch.setenv("PBCOPY_EXIT", "1")
+        assert clipboard._mac_copy(text) is False, "the program refused it"
+        monkeypatch.setattr(clipboard, "PBCOPY", str(tmp_path / "missing"))
+        assert clipboard._mac_copy(text) is False, "no such program"
 
     @pytest.mark.skipif(sys.platform != "win32", reason="the Windows clipboard exists only on Windows")
     def test_the_windows_clipboard_holds_what_was_copied(self) -> None:

@@ -1,13 +1,16 @@
-"""The clipboard on every system: through the terminal, as Textual copies, and on Windows through Windows' own too.
+"""The clipboard on every system: through the terminal, as Textual copies, and on Windows and macOS through the
+system's own too.
 
 Textual copies through the terminal alone, with the OSC 52 escape code, which Windows Terminal, iTerm2 and kitty read
 and the classic Windows console window and macOS Terminal do not: there a copy said it was done and copied nothing. On
-Windows the text goes to Windows' own clipboard as well, through its API, which every console reaches.
+Windows the text goes to Windows' own clipboard as well, through its API, which every console reaches, and on macOS to
+the Mac's, through `pbcopy`, unless the screen runs over SSH.
 """
 
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 import time
 from typing import Protocol
@@ -19,12 +22,38 @@ class Copies(Protocol):
     def copy_to_clipboard(self, text: str) -> None: ...
 
 
-def copy_text(app: Copies, text: str, *, windows: bool = os.name == "nt") -> bool:
-    """Copy `text` through the terminal and, on Windows, into Windows' own clipboard, its lines ended in CR LF as
-    Windows ends them. True where the text is known to be there: Windows' clipboard took it. Through the terminal
-    alone no program can know."""
+#: macOS' own clipboard program, by its full path: never one a folder on PATH holds.
+PBCOPY = "/usr/bin/pbcopy"
+
+
+def copy_text(app: Copies, text: str, *, windows: bool = os.name == "nt", mac: bool = sys.platform == "darwin") -> bool:
+    """Copy `text` through the terminal and into the system's own clipboard: on Windows, its lines ended in CR LF as
+    Windows ends them, and on macOS where the screen runs on the Mac itself. Over SSH the Mac's clipboard is the far
+    machine's, and the terminal alone reaches the person's. True where the text is known to be there: the system's
+    clipboard took it. Through the terminal alone no program can know."""
     app.copy_to_clipboard(text)
-    return windows and _windows_copy(text.replace("\r\n", "\n").replace("\n", "\r\n"))
+    if windows:
+        return _windows_copy(text.replace("\r\n", "\n").replace("\n", "\r\n"))
+    return mac and not os.environ.get("SSH_CONNECTION") and _mac_copy(text)
+
+
+def _mac_copy(text: str) -> bool:
+    """`text` into the Mac's own clipboard, through `pbcopy`; False where it did not take it. It reads its input in the
+    locale's encoding: measured, with no locale or `LANG=C` it read UTF-8 as Mac Roman, an accented letter pasted as
+    two others, so it is told UTF-8 through `LC_ALL`, which wins over every other setting."""
+    try:
+        done = subprocess.run(
+            [PBCOPY],
+            input=text.encode("utf-8"),
+            env={**os.environ, "LC_ALL": "en_US.UTF-8"},
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+            check=False,
+        )
+    except OSError, subprocess.SubprocessError:  # not there, or no answer
+        return False
+    return done.returncode == 0
 
 
 if sys.platform == "win32":
