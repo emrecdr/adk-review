@@ -1300,6 +1300,70 @@ def test_the_pre_commit_hook_reviews_the_index_each_way_git_commits(tmp_path, mo
     assert commit.run() == 1, "the installed hook ends as its main does"
 
 
+def test_the_pre_push_hook_reads_the_lines_a_merges_own_resolution_wrote(tmp_path, monkeypatch, capsys, cli) -> None:
+    """Read by an outside audit, and reproduced: a token a merge's own resolution wrote, in neither side, and a later
+    commit took out reached the remote with the hook passing, where the same token added and taken out by two plain
+    commits stopped it, since git prints no patch for a merge unless asked for its combined one. A merge's own lines
+    are read now, those in no side; a line it took from a side is that side's commit's, read there."""
+    import io
+
+    push = importlib.import_module("adk_review.push")
+    remote, work = _pushed_from(tmp_path)
+    token = "ghp_" + "a1B2" * 9
+
+    def pushed(ref: str) -> int:  # git's line, then the hook
+        local = _git_in(work, "rev-parse", ref)
+        monkeypatch.setattr(sys, "stdin", io.StringIO(f"refs/heads/x {local} refs/heads/x {'0' * 40}\n"))
+        return push.main(["origin", str(remote)])
+
+    _committed(work, "a.py")
+    _git_in(work, "push", "-q", "origin", "main")
+    monkeypatch.chdir(work)
+    monkeypatch.setattr(push, "review", cli.main)
+    _git_in(work, "checkout", "-q", "-b", "side")
+    _committed(work, "s.py", "s = 1\n", "on the side")
+    _git_in(work, "checkout", "-q", "-b", "merged", "main")
+    _committed(work, "m.py", "m = 1\n", "on this branch")
+    _git_in(work, "merge", "-q", "--no-ff", "--no-commit", "side")
+    (work / "s.py").write_text(f's = 1\nTOKEN = "{token}"\n', encoding="utf-8", newline="\n")
+    _git_in(work, "add", "s.py")
+    _git_in(work, "commit", "-q", "-m", "merge the side")
+    merge = _git_in(work, "rev-parse", "HEAD")
+    _committed(work, "s.py", "s = 1\n", "take it out")
+    assert pushed("merged") == 1, "the change is clean; its merge is not"
+    assert f"{merge[:9]}, s.py:2: a hard-coded credential (rule.secrets)" in capsys.readouterr().out
+
+
+def test_a_merges_own_lines_are_read_whatever_its_parents_and_a_binary_file_it_wrote_is_named(tmp_path) -> None:
+    """Probed with the fix above: a merge's combined diff gives each parent a column, so an octopus merge's own line is
+    marked in three; and it prints a binary file the merge wrote anew as `Binary files differ`, naming no path, which
+    read as no file. Each is read as a commit of one parent reads it: the line added, the binary file a hole."""
+    from adk_review.collect.history import sent
+
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _git_in(repo, "init", "-q", "-b", "main")
+    for name in "fgh":
+        _committed(repo, f"{name}.py", f"{name} = 1\n")
+    _committed(repo, "data.bin", bytes(range(256)))
+    for side, name in (("x", "f"), ("y", "g"), ("z", "h")):
+        _git_in(repo, "checkout", "-q", "-b", side, "main")
+        _committed(repo, f"{name}.py", f"{name} = 2\n")
+    _git_in(repo, "checkout", "-q", "-b", "octopus", "main")
+    _git_in(repo, "merge", "-q", "--no-commit", "x", "y", "z")
+    (repo / "f.py").write_text("f = 2\nown = 1\n", encoding="utf-8", newline="\n")
+    (repo / "data.bin").write_bytes(bytes(2))
+    _git_in(repo, "add", "f.py", "data.bin")
+    _git_in(repo, "commit", "-q", "-m", "merge three")
+    merge = _git_in(repo, "rev-parse", "HEAD")
+    assert len(_git_in(repo, "rev-list", "--parents", "-1", merge).split()) == 4, "three parents"
+    files = {commit: found for commit, _said, found in sent(str(repo), None, "octopus", "main")}[merge]
+    assert files == [
+        {"path": "data.bin", "added": [], "binary": True},
+        {"path": "f.py", "added": [(2, "own = 1")]},
+    ], files
+
+
 def test_the_pre_push_hook_reads_each_commit_a_push_sends_for_credentials(tmp_path, monkeypatch, capsys, cli) -> None:
     """The change as a whole is reviewed, and each commit it is made of is read by the credential rules, what it says
     too: the history the remote receives holds what one commit adds and a later one takes out. Measured by review: a

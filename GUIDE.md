@@ -542,7 +542,8 @@ that wrote no report, stops the push at once, and an interrupted one ends the ho
 Then the rules `push-history` names, the credential rules `secrets` and `named-secrets`, read each of those commits as
 it was made, and what each says, a pushed tag's words too, those of each tag it was made of, and those of a signed tag a
 merge carries in its own header: a credential one commit adds and a later one takes out stops the push, though the
-change as a whole no longer holds it. A commit is read line by line, so the profile names line rules alone, and a commit
+change as a whole no longer holds it. A merge is read for the lines its own resolution wrote, which neither side
+holds. A commit is read line by line, so the profile names line rules alone, and a commit
 a push sends under two names, a branch and its tag, is reviewed and read once. Any exit but 0 stops the push and prints
 why; so does a `git` the hook cannot find, or a line from git it cannot read. A push that sends nothing new, or commits
 that change nothing, says nothing, and so does a push to this repository itself, `git push . a:b`, which sends nothing
@@ -558,7 +559,7 @@ What the hook cannot see, or stops on:
   commits the remote already holds. A push of several refs is reviewed whole by git's own hook alone.
 - In a commit before the last, only a credential stops the push, or a file no rule can read, a binary one or a Git LFS
   pointer, whose file Git LFS's own hook uploads, unless `[review] skip` names it. A file a commit moves is read whole
-  there, as one it adds. What a merge's own resolution adds and a later commit takes out is read in no commit.
+  there, as one it adds.
 - The remote's branches are as this clone last fetched them: one deleted or rewritten there, or held by the server a
   changed URL named before, still counts as held here, so fetch before a push that follows a rewrite or a new URL, and
   let a fetch prune deleted ones (`git config fetch.prune true`). Where git says the remote holds no branch this clone

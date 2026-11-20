@@ -26,6 +26,8 @@ DIFF_CAP_CHARS = 90_000
 #: function, up to the cap, to each guideline.
 WIDEN_CAP_CHARS = 16_000
 _HUNK_START = re.compile(r"^@@ -\S+ \+(\d+)(,0\b)?")
+#: A merge's combined hunk header, `@@@ -1,2 -1,2 +1,3 @@@`: one `@` more than the merge has parents.
+_COMBINED_START = re.compile(r"^(@{3,}) (?:-\S+ )+(\+\S+) @{3,}")
 #: The escapes git writes in a path it quotes, beside a byte's three octal digits.
 _ESCAPES = {"a": 7, "b": 8, "t": 9, "n": 10, "v": 11, "f": 12, "r": 13, '"': 34, "\\": 92}
 #: What a reader, or `str.splitlines`, breaks a line at besides "\n": a lone `\r`, a form feed, U+2028 among them.
@@ -120,6 +122,33 @@ def hunk_lines(diff: str) -> Iterator[tuple[int, str]]:
     """`(new line number, line)` for every line inside the diff's hunks, one hunk after another."""
     for hunk in _hunks(diff):
         yield from hunk
+
+
+def own_lines(diff: str) -> str:
+    """One file's part of a merge's combined diff, `diff-tree --cc`'s, as a commit's patch reads: a line marked `+` in
+    every parent's column, which no parent holds and the merge's own resolution wrote, marked `+`; one marked `-` in
+    any, which the merge does not hold, `-`; and one a parent brought, ` `, since that parent's own commit adds it. A
+    binary file it prints only where the merge wrote bytes no parent holds, in a line naming no path: named as one a
+    commit adds, from the path that opens its part."""
+    out, columns = [], 0
+    named = diff.split("\n", 1)[0]
+    spelled = f'"b/{named[1:]}' if named.startswith('"') else f"b/{named}"
+    for raw in diff.split("\n"):
+        if raw == "Binary files differ" and not columns:
+            out.append(f"Binary files /dev/null and {spelled} differ")
+            continue
+        if match := _COMBINED_START.match(raw):
+            columns = len(match.group(1)) - 1
+            out.append(f"@@ -0,0 {match.group(2)} @@")
+            continue
+        marks = raw[:columns]
+        if not columns or len(marks) < columns or not set(marks) <= {" ", "+", "-"}:
+            out.append(raw)  # the file's header, or git's line that the file ends with no line break
+        elif "-" in marks:
+            out.append("-" + raw[columns:])
+        else:
+            out.append(("+" if marks == "+" * columns else " ") + raw[columns:])
+    return "\n".join(out)
 
 
 def added_lines(diff: str) -> list[tuple[int, str]]:

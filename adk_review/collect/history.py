@@ -10,7 +10,7 @@ from collections.abc import Iterator, Sequence
 from itertools import batched
 
 from .change import lfs_pointer
-from .diff import file_added, readable
+from .diff import file_added, own_lines, readable
 
 # git.py's own verbs: this module was its push half, split off for its weight, and reads git as it does.
 from .git import _PLAIN, OBJECT_ID, OFF_DISK, GitError, _empty_tree, _git, _git_raw, _sha, _text
@@ -69,6 +69,8 @@ def _commit(repo: str, ref: str) -> str:
 #: 1.6 s and 26.7 MB of patch, so a batch stays well inside a call's timeout and its memory, whatever the push.
 HISTORY_BATCH = 500
 _A_COMMIT = re.compile(rb"^(" + OBJECT_ID.pattern.encode() + rb")\n", re.MULTILINE)
+#: Where a file's part of a commit's patch opens: `git` for a commit of one parent, `cc` for a merge's combined one.
+_A_FILE = re.compile(rb"\ndiff --(git|cc) ")
 
 
 def sent(
@@ -79,9 +81,10 @@ def sent(
     later one takes out is in the history the remote receives, though the change as a whole no longer holds it. The
     commits are `push_scope`'s new ones, less those a head in `read` reaches, which the same push read for another of
     its refs; with no remote, those of the range a person named. Read as a review reads a diff: plumbing, no
-    attributes but none, the branch's own `.gitattributes` unread, so no file it marks hides its lines. A merge's patch
-    is no one commit's, so it adds no file here, only its message. Read a batch at a time, and let go of before the
-    next: a first push sends a project's whole history. `GitError` where git cannot answer."""
+    attributes but none, the branch's own `.gitattributes` unread, so no file it marks hides its lines. A merge adds
+    the lines its own resolution wrote, which no side holds: read by an audit, and reproduced, a token written there
+    and taken out by a later commit passed, a merge's patch read as none. Read a batch at a time, and let go of
+    before the next: a first push sends a project's whole history. `GitError` where git cannot answer."""
     pushed = _commit(repo, head)
     apart = [*_held(repo, remote, held), *read]
     _, listed = _git(
@@ -102,18 +105,21 @@ _WHOLE = (*(flag for flag in _PLAIN if flag != "-M"), "--no-renames")
 
 def _added_by(repo: str, commits: Sequence[str], attributes: str) -> dict[str, list[dict]]:
     """Each commit's files with the lines it added, a first commit's against the empty tree, in one call:
-    `diff-tree --stdin` names each commit on a line of its own before its patch, and a merge not at all."""
+    `diff-tree --stdin` names each commit on a line of its own before its patch, a merge's the combined one `--cc`
+    prints, read for its own lines alone."""
     found: dict[str, list[dict]] = {}
     stdin = "".join(f"{commit}\n" for commit in commits).encode()
     # Under no index, as a review of commits diffs: git read a checked-out file for its blob where conversion was off.
     patch = _git_raw(
-        repo, attributes, "diff-tree", "--stdin", "-r", "-p", "--root", *_WHOLE, stdin=stdin, away=OFF_DISK
+        repo, attributes, "diff-tree", "--stdin", "-r", "-p", "--cc", "--root", *_WHOLE, stdin=stdin, away=OFF_DISK
     ).stdout
     parts = _A_COMMIT.split(patch)  # what came before the first commit's line, then each commit and its patch
     for commit, body in zip(parts[1::2], parts[2::2], strict=True):
         files = found.setdefault(commit.decode(), [])
-        for piece in body.split(b"\ndiff --git "):
-            if (file := file_added(diff := readable(_text(piece)))) is not None:
+        opened = _A_FILE.split(b"\n" + body)[1:]  # each file's kind, then its part
+        for kind, piece in zip(opened[::2], opened[1::2], strict=True):
+            diff = own_lines(readable(_text(piece))) if kind == b"cc" else readable(_text(piece))
+            if (file := file_added(diff)) is not None:
                 # A Git LFS pointer's lines are not the file: Git LFS's own hook uploads the file it names. Read by
                 # review: a key store's pointer one commit added and the next took out passed unnamed, uploaded.
                 files.append({"path": file["path"], "added": [], "pointer": True} if lfs_pointer(diff) else file)
