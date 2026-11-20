@@ -222,15 +222,18 @@ keys that act now: Stop while a review runs, Run and Dry Run while none does. `o
 they act on the Findings tab alone, where no text field has the focus, and they need the pull request's address in
 the field above the table.
 
+`Ctrl+Y` and the comment editor's Copy send the text through the terminal, which Windows Terminal, iTerm2 and kitty
+take. On Windows and on a Mac they also put it into the system's own clipboard, so they work in the classic console
+window and in macOS Terminal too. On a Mac over SSH the terminal alone takes it: the Mac's clipboard is then the far
+machine's.
+
 ## On Windows
 
 It runs in cmd, in PowerShell and in Windows Terminal alike.
 
 - The command it shows reads the same in cmd and in PowerShell. Where an argument holds a character one of them
   reads, such as `$`, `%` or `!`, it says the command cannot be pasted, and `Ctrl+R` still runs it.
-- `Ctrl+Y` copies into Windows' own clipboard, so it works in the classic console window too, and on a Mac into the
-  Mac's own, so it works in macOS Terminal too. Elsewhere, and over SSH, it copies through the terminal: Windows
-  Terminal, iTerm2 and kitty take it.
+- `Ctrl+Y` copies into Windows' own clipboard, so it works in the classic console window too.
 - No key is one a terminal sends as another key, as it sends Enter for `Ctrl+M`, or one the classic console keeps for
   itself: `Ctrl+A`, `Ctrl+C`, `Ctrl+F`, `Ctrl+M` and `Ctrl+V`.
 - A review it runs writes its text in UTF-8, so a branch's or a file's name reads as written.
@@ -253,7 +256,7 @@ It runs in cmd, in PowerShell and in Windows Terminal alike.
 | `azure_state.py` | `azure.json` in the state folder: the pull request's address given for a branch, and the thread each finding was posted as |
 | `modals.py` | The dialogs: a branch behind or apart from its remote, a check's explanation, and a comment's editor and the question before its post |
 | `commands.py` | The command palette |
-| `clipboard.py` | Copying, through the terminal and through Windows' own clipboard |
+| `clipboard.py` | Copying, through the terminal and through the system's own clipboard on Windows and on a Mac |
 | `styles.py` | The screen's styles, and `literal`, which draws a `[` as written |
 
 The rules for changing this folder are in [CLAUDE.md](../CLAUDE.md), under "Front end".

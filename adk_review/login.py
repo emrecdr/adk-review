@@ -197,12 +197,15 @@ def _stored(auth: Any, token: Path, access_token: str) -> int:
     from litellm.llms.github_copilot.common_utils import GetAPIKeyError
 
     auth._ensure_token_dir()
-    token.write_text(access_token, encoding="utf-8")
-    # The key cached for the token before, another account's after `--force`, would answer the exchange in this
-    # one's place: read by an audit, and reproduced, calls went on billed to the account logged in before.
-    Path(auth.api_key_file).unlink(missing_ok=True)
     try:
+        token.write_text(access_token, encoding="utf-8")
+        # The key cached for the token before, another account's after `--force`, would answer the exchange in this
+        # one's place: read by an audit, and reproduced, calls went on billed to the account logged in before.
+        Path(auth.api_key_file).unlink(missing_ok=True)
         auth.get_api_key()
+    except KeyboardInterrupt:  # read by review: a token no key was had for read as ready, to the next login too
+        token.unlink(missing_ok=True)
+        raise
     except GetAPIKeyError as exc:  # GitHub knows the account; Copilot serves it no key
         token.unlink()
         print(f"[copilot] GitHub signed you in, but Copilot gave no key: {exc}", file=sys.stderr)
@@ -223,7 +226,7 @@ def run() -> int:
     try:
         return main(sys.argv[1:])
     except KeyboardInterrupt:
-        print("[copilot] interrupted: the login did not finish", file=sys.stderr)
+        print("[copilot] interrupted: no new token was cached. Run this again", file=sys.stderr)
         return EXIT_INTERRUPTED
 
 

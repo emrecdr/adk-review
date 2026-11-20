@@ -694,8 +694,34 @@ def test_a_login_stopped_with_ctrl_c_says_so_in_one_sentence(tmp_path, monkeypat
     monkeypatch.setattr(sys, "argv", ["adk-review-login"])
     assert copilot_login.run() == 130
     err = capsys.readouterr().err
-    assert err == "[copilot] interrupted: the login did not finish\n", err
+    assert err == "[copilot] interrupted: no new token was cached. Run this again\n", err
     assert not (tmp_path / "token").exists()
+
+
+def test_a_login_stopped_while_it_trades_the_token_for_a_key_keeps_no_token(tmp_path, monkeypatch, capsys) -> None:
+    """GitHub's token is written before Copilot is asked for a key, which can take a while behind a slow proxy. Read by
+    review, and reproduced: Ctrl-C there kept a token no key was had for, which the next login and the reviewer read as
+    ready. It is removed, as a refused key's is."""
+    from litellm.llms.github_copilot import authenticator
+
+    from adk_review import login as copilot_login
+
+    _cached_copilot_token(monkeypatch, tmp_path, None)
+    monkeypatch.delenv("GITHUB_COPILOT_ACCESS_TOKEN_FILE", raising=False)
+    monkeypatch.delenv("GITHUB_COPILOT_API_KEY_FILE", raising=False)
+    code = {"device_code": "d", "user_code": "ABCD-1234", "verification_uri": "https://github.com/login/device"}
+    monkeypatch.setattr(authenticator.Authenticator, "_get_device_code", lambda _self: code)
+    monkeypatch.setattr(copilot_login.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(copilot_login, "_polled", lambda *_args: {"access_token": "approved"})
+
+    def pressed(_self):  # Ctrl-C while Copilot is asked for a key
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(authenticator.Authenticator, "get_api_key", pressed)
+    monkeypatch.setattr(sys, "argv", ["adk-review-login"])
+    assert copilot_login.run() == 130
+    assert not (tmp_path / "access-token").exists(), "a token no key was had for"
+    assert capsys.readouterr().err == "[copilot] interrupted: no new token was cached. Run this again\n"
 
 
 def test_the_copilot_login_names_a_network_it_cannot_reach_and_the_certificate_fix(
