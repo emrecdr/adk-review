@@ -159,7 +159,9 @@ def _checked_out(file: ChangedFile) -> list[Hit]:
         return []  # an action's metadata names no trigger
     if not file.read_whole:
         shown = (file.near(number) or "" for number in sorted(file.added))
-        if any(TARGET.search(text) or _checkout_line(text) for text in shown):
+        # A line that names the head may be a checkout key's value, the key on a line above: read by an audit, `ref: >-`
+        # and the head under it were added, and neither line was a checkout on its own.
+        if any(TARGET.search(text) or _checkout_line(text) or _names_head(text) for text in shown):
             with contextlib.suppress(UnreadError):  # asked, it marks the file missed: a hole, the script findings kept
                 file.lines  # noqa: B018
         return []
@@ -279,7 +281,8 @@ def _triggers(lines: tuple[str, ...]) -> list[int]:
 
 def _step_of(lines: tuple[str, ...], number: int) -> range:
     """The lines of the step that holds line `number`: from the list item above it, `- `, less indented than the line,
-    to the line before the next one as little indented."""
+    to the line before the next one as little indented, a comment's aside: read by an audit, a comment at the step's
+    column, which YAML reads as no line of it, ended the step above its checkout."""
     depth = _indent(lines[number - 1])
     start = next(
         (
@@ -291,7 +294,11 @@ def _step_of(lines: tuple[str, ...], number: int) -> range:
     )
     dash = _indent(lines[start - 1])
     end = next(
-        (at for at in range(start + 1, len(lines) + 1) if lines[at - 1].strip() and _indent(lines[at - 1]) <= dash),
+        (
+            at
+            for at in range(start + 1, len(lines) + 1)
+            if _uncommented(lines[at - 1]).strip() and _indent(lines[at - 1]) <= dash
+        ),
         len(lines) + 1,
     )
     return range(start, end)
@@ -355,7 +362,7 @@ def _defaults(file: ChangedFile, number: int, key: re.Match[str]) -> bool:
         text = file.near(above)
         if text is None:
             return False
-        if text.strip() and _indent(text) < depth:
+        if _uncommented(text).strip() and _indent(text) < depth:  # a comment holds no key: read by an audit
             return bool(DEFAULTS.match(text))
     return False
 

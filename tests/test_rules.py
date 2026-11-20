@@ -4372,6 +4372,39 @@ class TestTheShippedRules:
         called = "      - run: echo ${{ toJSON (github . head_ref) }}\n"
         assert lines_hit(rule, path, head + called) == [7], "and before a bracket"
 
+    def test_a_comment_as_far_left_as_a_step_ends_neither_the_step_nor_the_key_above_it(self) -> None:
+        """Read by an audit, and reproduced: a comment at the step's column or left of it, valid YAML that keeps the
+        step whole, ended the step where the rule read it, so a `pull_request_target` checkout of the head passed; and
+        between `defaults:` and its `run:`, it made a working directory read as a script."""
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.script_injection import ScriptInjection
+
+        rule, path = ScriptInjection(), ".github/workflows/build.yml"
+        head = "on:\n  pull_request_target:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n"
+        step = "        uses: actions/checkout@v4\n        with:\n"
+        step += "          ref: ${{ github.event.pull_request.head.sha }}\n"
+        for comment in ("# check the ref\n", "      # check the ref\n"):
+            flow = f"{head}      - name: Checkout\n{comment}{step}      - run: npm ci\n"
+            assert lines_hit(rule, path, flow) == [11], flow
+        defaults = (
+            "on:\n  push:\njobs:\n  build:\n    runs-on: ubuntu-latest\n    defaults:\n# a note\n      run:\n"
+            "        working-directory: ${{ github.head_ref }}\n    steps:\n      - run: make\n"
+        )
+        assert lines_hit(rule, path, defaults) == [], defaults
+
+    def test_a_checkout_key_over_two_lines_in_a_workflow_too_large_to_read_is_a_hole(self) -> None:
+        """Read by an audit, and reproduced: where the diff of a workflow too large to read adds `ref: >-` and the head
+        on the line under it, the rule saw no checkout on either line and said nothing, where the same key on one line
+        is a hole. A line that names the head is enough to say the rule could not look."""
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.script_injection import ScriptInjection
+
+        path = ".github/workflows/build.yml"
+        added = [(9, "          ref: >-"), (10, "            ${{ github.event.pull_request.head.sha }}")]
+        unread = {**_entry(path, None, unread="past the cap"), "status": "M", "added": added, "shown": dict(added)}
+        checked = run_rules({"files": [unread], "tree": None}, [ScriptInjection()])["rule.script-injection"]
+        assert checked.could_not_look is not None, checked
+
     def test_a_pull_request_target_job_that_checks_out_the_pull_requests_own_code_is_named(self) -> None:
         """Read by validation: under `pull_request_target`, a job runs with the base's token and secrets, and a checkout
         of the pull request's own head hands an outsider's code to the steps after it, the "pwn request" GitHub's guide
