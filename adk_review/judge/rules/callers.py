@@ -519,8 +519,12 @@ def _own_init(node: ast.ClassDef) -> ast.FunctionDef | None:
 
 
 def _header(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[int]:
-    """The lines a function's parameters are written on: its `def` line to the line before its body."""
-    return set(range(node.lineno, max(node.lineno + 1, node.body[0].lineno)))
+    """The lines a function's parameters are written on: its `def` line to the line before its body, or to the last
+    line its parameters and its return annotation take, where its body begins there. Read by an audit, and reproduced:
+    `b, c): return a + b + c` was left out, and a required parameter added on it read as a change to the body."""
+    parts = [*ast.walk(node.args), *([node.returns] if node.returns else [])]
+    last = max((getattr(part, "end_lineno", None) or node.lineno for part in parts), default=node.lineno)
+    return set(range(node.lineno, max(last, node.body[0].lineno - 1) + 1))
 
 
 def _names(
@@ -652,8 +656,11 @@ def _by_keyword(
     said = []
     for keyword in call.keywords:
         name = keyword.arg or ""
-        if name in by_position and params.kwarg is None:
-            said.append((f"{function} takes `{name}` by position only", f"`{name}` goes by position only"))
+        if name in by_position:
+            # With `**kwargs`, a keyword that names a position-only parameter goes into it and fills none: read by an
+            # audit, `api(1, 2, x=9)` was said to pass `x` twice, and `api(y=2, x=9)`, which raises, passed.
+            if params.kwarg is None:
+                said.append((f"{function} takes `{name}` by position only", f"`{name}` goes by position only"))
         elif name in names or name in keywords:
             if name in filled:
                 said.append((f"the call passes `{name}` twice to {function}", f"the call passes `{name}` twice"))

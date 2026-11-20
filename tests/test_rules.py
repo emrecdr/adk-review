@@ -2490,6 +2490,53 @@ class TestTheCallersRule:
         found = self.found(files, {"pkg/repo.py": None})
         assert [(path, line) for path, line, _said in found] == [("etl/load.py", 7)], found
 
+    def test_a_call_is_named_exactly_where_python_refuses_to_bind_it(self) -> None:
+        """Read by an audit, and reproduced: with `**kwargs`, a keyword that names a position-only parameter goes into
+        `**kwargs`, so `api(1, 2, x=9)` fits and `api(y=2, x=9)` raises, and the rule said each the other way round.
+        Each call of a matrix is held to Python's own binding, `inspect.Signature.bind`."""
+        import inspect
+
+        from adk_review.judge.rule_helpers import try_rule
+        from adk_review.judge.rules.callers import Callers
+
+        signatures = ("x, /, y, **kw", "x, /, y", "x, y=1, *a, z, **kw", "a, b=1, /, c=2, *, d", "x, /, *, y=1, **kw")
+        calls = ("()", "(1)", "(1, 2)", "(1, 2, 3)", "(1, 2, x=9)", "(y=2, x=9)", "(1, y=2)", "(1, z=3)", "(x=1)")
+        calls += (
+            "(1, 2, z=3)",
+            "(1, d=1)",
+            "(1, c=5, d=1)",
+            "(1, a=1, d=1)",
+            "(1, y=2, x=3)",
+            "(1, 2, y=3)",
+            "(1, w=0)",
+        )
+        wrong = []
+        for signature in signatures:
+            space: dict = {}
+            exec(f"def f({signature}):\n    pass\n", space)
+            bind = inspect.signature(space["f"]).bind
+            source = f"def f({signature}):\n    pass\n\n\n" + "\n".join(f"f{call}" for call in calls) + "\n"
+            named = {hit.line for hit in try_rule(Callers(), {"m.py": source})}
+            for line, call in enumerate(calls, 5):
+                try:
+                    eval(f"bind{call}", {"bind": bind})
+                    refused = False
+                except TypeError:
+                    refused = True
+                if refused != (line in named):
+                    wrong.append(f"def f({signature}): f{call}")
+        assert wrong == [], wrong
+
+    def test_a_parameter_on_the_line_a_body_shares_is_a_change_to_the_parameters(self) -> None:
+        """Read by an audit, and reproduced: a `def` over several lines whose body begins on its closing line,
+        `b, c): return a + b + c`, kept that line out of its header, so a required parameter added there read as a
+        change to the body, the head was not read, and a branch that broke a caller was approved."""
+        from adk_review.judge.rule_helpers.testing import as_change
+        from adk_review.judge.rules.callers import Callers
+
+        (item,), _tree = as_change({"calc.py": "def calc(\n    a,\n    b, c): return a + b + c\n"})
+        assert Callers().needs_head([{**item, "status": "M", "added_at": frozenset({3}), "diff": ""}])
+
     def test_each_way_a_call_can_miss_its_function_is_named(self) -> None:
         source = "def f(a, b=1, /, c=2, *, d):\n    pass\n\n\n"
         calls = [
