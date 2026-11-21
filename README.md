@@ -517,7 +517,7 @@ class RequiredPaths(TreeRule):
    | Kind | `check` reads | and returns |
    |---|---|---|
    | `Rule` | `path`, `line` | `True` where the line breaks the rule |
-   | `FileRule` | `file.path`, `file.lines`, `file.line(n)`, `file.near(n)`, `file.added`, `file.changed`, `file.arrived(*globs)`, `file.new_lines(*globs)`, `file.module`, and `file.diagnostics` for a rule that names a `tool` | line numbers, the report quoting each line; `(line, what is wrong)` pairs, the line quoted and `what` its title, `None` for the file as a whole; or `Hit`s |
+   | `FileRule` | `file.path`, `file.lines`, `file.line(n)`, `file.near(n)`, `file.added`, `file.changed`, `file.arrived(*globs)`, `file.new_lines(*globs)`, `file.module`, `file.before`, and `file.diagnostics` for a rule that names a `tool` | line numbers, the report quoting each line; `(line, what is wrong)` pairs, the line quoted and `what` its title, `None` for the file as a whole; or `Hit`s |
    | `TreeRule` | `tree.paths`, `tree.has(path)`, a folder as `"tests/"`, `tree.module(path)`, `tree.modules()`, `tree.added`, `tree.imports(path)`, `tree.removed`, `tree.imports_before(path)`, `tree.modified` | `(path, what is wrong)` pairs, `(path, line, what)` triples, the line quoted and `what` its title, or `Hit`s |
 
    `file.added` holds the numbers of the lines the change added, and `file.changed` every path the change touched, for a
@@ -528,7 +528,10 @@ class RequiredPaths(TreeRule):
    added. A file past the size limits is not read whole, and a rule that asks for its `lines` could not look, a hole;
    `file.near(n)` gives line `n` of any file, as far as its diff shows it, or None, for a rule that reads only what a
    change added and the lines around it, as `reviewer-instructions` does. `file.module` and `tree.module(path)` are the
-   file as Python reads it, or a sentence saying why there is none. A `Hit` names its own title, severity or fix, where
+   file as Python reads it, or a sentence saying why there is none. `file.before` is a Python file's text before the
+   change, at its old path where the change moved it, for a rule that weighs the change against what was there, as
+   `cognitive-complexity` does: empty for a file the change added, and None where none was read, a file of another
+   kind among them. A `Hit` names its own title, severity or fix, where
    one rule covers several problems, as `lint` does for ruff's codes. `listed` marks `old` the roll-up of what the base
    held too, which the verdict never reads; a rule sets it on no other hit. Anything else returned is a sentence naming
    what the kind takes, and a rule that raises is named with the line of its own file that raised.
@@ -567,7 +570,7 @@ with (`testing.py`), or passed on from `core/` where a review reads it too — `
 | `comment_of(line)`, `words(line)`, `tokens(line)` | The comment a line ends with; its names, numbers and operators; its tokens |
 | `shape_of(text)`, `vendor_shape(text)`, `named_at(text)`, `named_values(text)`, `SECRET_WORDS`, `is_placeholder(value)`, `names_secret(name)`, `without_examples(text)` | The credential shape a text holds, and a vendor's alone, as `secrets` reads it; the name a generic one is given, whole on a `.env` line and from its secret word on in code, its value and whether the value is quoted, the first or each in turn; the words a secret goes by, as a pattern; whether a value only stands for a secret, `password` or `****`, or is blank; whether a name's last word says its value is a secret, `access_token` and never `token_count`; the text with each example credential blanked, a URL's to `example.com`, or to `localhost` with a placeholder password, never a vendor's key, and a private key's header before an ellipsis, so a rule weighs what is left |
 | `calls_in(code, *names)`, `argument(call, name, position)` | Every call to a named function in a module, in written order; what a call passes for one parameter |
-| `functions_in(code)`, `imports_in(code)`, `nodes_in(code, *kinds)`, `name_of(node)` | Every function; every imported name with its line; every node of a kind; a name as written, dotted |
+| `functions_in(code)`, `imports_in(code)`, `nodes_in(code, *kinds)`, `name_of(node)`, `cognitive(function)` | Every function; every imported name with its line; every node of a kind; a name as written, dotted; how hard a function is to follow, as SonarSource's cognitive complexity counts it |
 | `defined(module)`, `classes(module)`, `parameters(module, function)` | What a module defines; its classes and their parents; a function's parameters |
 | `try_rule`, `lines_hit`, `self_check`, `self_test` | A rule tried on files, on a text, on its own source, on its own examples |
 | `listed(file, rate, fixes, leave_out, passes_over, own)`, `tier(table, code)`, `family(code)`, `fix_of(table, code, offered, label)`, `PER_FILE` | A ruff-backed rule's findings on one file, each diagnostic at the severity `rate` gives it, none for a file that is not Python: a code in `leave_out` dropped first, then what the change caused listed, on its own lines or on one it did not touch, a run of one finding as one finding, the same code and words on lines that follow one another or, for commented-out code, past comment lines alone, at most `PER_FILE`, and the rest counted; what the base held too on an untouched line counted in one old finding, apart and never at the bar, and one not set against the base in one finding at the bar; one `own` names listed as the change's, on a line it did not touch and whatever the base held, as `lint` says of a password's code that covers an added line; a code's entry in a rule's table by the longest key in its family; ruff's own fix with its label, but not a display-only one where the table names the code itself, else the table's sentence |

@@ -120,7 +120,8 @@ their token.
 
 The package is grouped by the steps of a review — `core`, `collect`, `judge`, `deliver` — and every check is one file. A
 rule is one class of three kinds: a `Rule`, `check(path, line)` over each added line; a `FileRule`, `check(file)` over
-each changed file whole at the head, its lines, the lines the change added, its module, and an outside tool's
+each changed file whole at the head, its lines, the lines the change added, its module, a Python file's text before
+the change (`file.before`), and an outside tool's
 diagnostics where it names the tool (`lint`, `pitfalls` and `simplify` name ruff, each with codes no other names, and
 `types` names pyrefly, whose adapters `collect/tools.py` holds, run by `collect/ruff.py` and `collect/pyrefly.py`); a
 `TreeRule`, `check(tree)` over the head's paths and parsed modules, naming a line where it knows one, with the lines the

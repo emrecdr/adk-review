@@ -36,7 +36,8 @@ applyTo: "adk_review/**"
   line; a `FileRule` with `check(file)` returning line numbers, which the report quotes, or `(line, what is wrong)`
   pairs, the line quoted and `what` the finding's title, over each changed file whole at the head (`file.lines`,
   `file.added`, `file.changed`,
-  `file.module`, `file.arrived(*globs)` where a file renamed or copied into a rule's paths brings every line of it
+  `file.module`, `file.before`, a Python file's text before the change, empty for one the change added and None
+  where none was read, `file.arrived(*globs)` where a file renamed or copied into a rule's paths brings every line of it
   there, `file.new_lines(*globs)` the lines a rule over those paths reads, `file.line(n)`, `file.near(n)` for a file
   past the size limits, as far as its diff shows it, and `file.diagnostics`, an outside tool's, for a rule that names
   its `tool`, whose adapter is in `collect/tools.py`); a `TreeRule` with `check(tree)` returning `(path, what)` or

@@ -13,7 +13,8 @@ The shape of a rule — the three kinds, the constants it names, what it may imp
    file not named after its rule. A `Rule` when one added line answers the question (`calls`, `comment_of` and `words`
    read it as Python does, so a word in a comment or a string is not code); a `FileRule` when the answer needs the file
    — a call wrapped over lines, a decorator and its definition, a function's length — through `file.lines`,
-   `file.added`, `file.changed`, `file.module` and `file.arrived(*globs)`, which a file renamed or copied into the paths
+   `file.added`, `file.changed`, `file.module`, `file.before`, the file's text before the change, where the rule weighs
+   the change against what was there, and `file.arrived(*globs)`, which a file renamed or copied into the paths
    a rule reads answers True, every line of it new there, and `file.new_lines(*globs)` the lines to read for them, read
    with `calls_in` and `argument`, or `file.near(n)` where only the lines around what a change added matter, so a file
    past the size limits is read; a `TreeRule` when it needs the head's paths or every module, with `needs_head(files)`
