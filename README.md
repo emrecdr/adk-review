@@ -864,7 +864,8 @@ SonarQube is optional and runs on your own machine: a second reader beside the g
 to ruff, pyrefly and the suite, and nothing here changes what a review does. The checkout carries what it needs:
 `docker-compose.yml` runs a SonarQube server on the H2 database it embeds, no database server beside it, and the scanner
 under the `scanner` profile, each image pinned by its digest as the workflows pin an action by its commit;
-`sonar-project.properties` names the project, `adk-review`, its sources, the package and the scripts, and its tests; and
+`sonar-project.properties` names the project, `adk-review`, its sources, the package, the scripts and the front end's
+package, and its tests; and
 `.vscode/` recommends the SonarQube for IDE extension (SonarLint, as it was called) beside Ruff and Pyrefly, the
 editor's lint and type check the same as CI's, and binds this folder to that project on the local server.
 
