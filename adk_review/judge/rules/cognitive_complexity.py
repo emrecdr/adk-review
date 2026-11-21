@@ -6,7 +6,12 @@ deep read alike to `lint`'s C901, and nothing alike to a person. Measured before
 repository's 43 functions at 15 or more, ruff named none at its defaults.
 
 Weighed against what the file held before, so a function found hard and left as hard is not the change's to answer
-for. Measured over four projects' last 150 commits each: at a bar of 15, 6 of 15 alerts read were marginal, a flat
+for: against the function of its name, and a function renamed or moved with its body as it was is not new. Two
+limits, named and not chased: where a change adds or removes a function of a name the file holds more than one of, a
+property's setter or an overload, each is weighed against the hardest of that name, so a hard one added beside a hard
+one is not named; and a function renamed or moved and edited in one change is read as new.
+
+Measured over four projects' last 150 commits each: at a bar of 15, 6 of 15 alerts read were marginal, a flat
 ladder of checks or a new function at 15 or 16; above 20, 2 of 8. This rule over the same 599 commits, read as a
 review reads a commit: 87 functions in 62 of them, 3 in this repository's 150.
 """
@@ -89,22 +94,12 @@ def _raised(name: str, at: int, now: _Named, was: _Named) -> tuple[int, str] | N
 
 
 def _held(name: str, at: int, now: _Named, was: _Named) -> list[_Function]:
-    """The base's functions `now[name][at]` is weighed against, the hardest deciding. The one in its place, where the
-    base holds as many of its name: a property and its setter, each against its own. Where it holds another count, a
-    stub added above it or a setter beside it, each of its name that no other function of that name still holds as it
-    was: read by review, by place alone two stubs named a function found hard as new, and against every one of its
-    name a setter added beside a hard getter was not named. And for a name the base does not hold, a function of its
-    last name that the head no longer holds, a class renamed or a method moved; none where there is no such."""
-    held = was.get(name)
-    if held is None:
-        last = name.rpartition(".")[2]
-        return [
-            old for other, olds in was.items() if other not in now and other.rpartition(".")[2] == last for old in olds
-        ]
-    if len(held) == len(now[name]):
-        return [held[at]]
-    kept = {_body(function) for place, function in enumerate(now[name]) if place != at}
-    return [old for old in held if _body(old) not in kept]
+    """The base's functions `now[name][at]` is weighed against, the hardest deciding: the one in its place where the
+    base holds as many of its name, a property and its setter each against its own; else every one of its name; and
+    none for a name the base does not hold. Kept this plain on purpose: four reviews each taught it one more case and
+    broke another, and no case of them came up in 599 real commits. The limits are the module's to name."""
+    held = was.get(name, [])
+    return [held[at]] if len(held) == len(now[name]) else held
 
 
 def _moved(function: _Function, now: _Named, was: _Named) -> bool:

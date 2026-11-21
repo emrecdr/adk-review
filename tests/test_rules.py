@@ -549,25 +549,29 @@ class TestTheSecretShapes:
         handled = "try:\n    pass\nexcept ImportError:\n"
         guarded = found(inside(handled, nested("work", 6)), handled + "    pass\n", [6, 7, 8])
         assert [line for line, _said in guarded] == [4], guarded
-        # Read by the third review, each reproduced. A hard setter added beside a hard getter is new: the getter,
-        # which the change left alone, is not what it was before.
+        # Four reviews each taught the weighing one more case and broke another, and none of the cases came up in 599
+        # real commits, so the rule is the plain one and its limits are named. Pinned, so a change to one is meant.
+        # A function is weighed against the hardest of its name where the base holds another count of that name:
         getter = inside("class K:\n", "@property\n" + nested("x", 6))
-        added_setter = found(both(6), getter, list(range(11, 20)))
-        assert [line for line, _said in added_setter] == [12], added_setter
-        # A getter raised while a deleter is added is weighed against the getter, not against its hard setter.
+        assert found(both(6), getter, list(range(11, 20))) == [], "a hard setter added beside a hard getter: a limit"
         with_deleter = both(6) + "    @x.deleter\n    def x(self):\n        pass\n"
-        raised_beside = found(with_deleter, both(1), list(range(3, 11)))
-        assert [line for line, _said in raised_beside] == [3] and "1 before" in raised_beside[0][1], raised_beside
-        # A class renamed, its hard method edited by one point: weighed against the method the old name held.
+        assert found(with_deleter, both(1), list(range(3, 11))) == [], "a getter raised as a deleter is added: a limit"
+        twins = inside("if rows:\n", nested("g", 6)) + inside("else:\n", nested("g", 6))
+        edited = inside("if rows:\n", nested("g", 6, one_more=True)) + inside("else:\n", nested("g", 6))
+        assert found(edited + "def g(rows): ...\n", twins, [9]) == [], "two of one body, one edited by a point"
+        # A name the base does not hold is new, unless its body is a base function's that no longer stands there:
         renamed = found(
             inside("class New:\n", nested("m", 6, one_more=True)), inside("class Old:\n", nested("m", 6)), [8, 9]
         )
-        assert renamed == [], "21 to 22, under a class renamed"
-        # A method moved to another class and raised: named, with what it read at where it was.
+        assert [line for line, _said in renamed] == [2], "a class renamed and its method edited at once: a limit"
         was_in_a = inside("class A:\n", nested("m", 6)) + "\n\nclass B:\n    pass\n"
         now_in_b = "class A:\n    pass\n\n\n" + inside("class B:\n", nested("m", 7))
         moved = found(now_in_b, was_in_a, list(range(5, 15)))
-        assert len(moved) == 1 and "28, 21 before" in moved[0][1], moved
+        assert len(moved) == 1 and "28" in moved[0][1] and "before" not in moved[0][1], moved
+        # And one new function is not hidden by another of its last name that the change removed.
+        page = inside("class Page:\n", nested("render", 6))
+        report = inside("class Report:\n", nested("render", 6, one_more=True))
+        assert [line for line, _said in found(report, page, list(range(1, 11)))] == [2], "new, whatever was removed"
         long = "def join():\n    return " + " + ".join(['"a"'] * 600) + "\n" + nested("work", 6)
         entry = {**_entry("app/work.py", long), "status": "M", "before": "", "added": [(4, "x")]}
         answer = run_rules({"files": [entry], "tree": None}, [CognitiveComplexity()])["rule.cognitive-complexity"]
@@ -601,6 +605,10 @@ class TestTheSecretShapes:
             'logger.info("key %s", settings.SECRET_KEY)',
             'logger.info("key %s", aws_secret_access_key)',
             'weblogger.info("%s", token)',
+            'web_logger.info("%s", token)',
+            'catalogLogger.info("%s", token)',
+            'audit_log.info("%s", token)',
+            'LOG.info("%s", token)',
         )
         left = (
             'logger.info("token %s", token[:8])',
@@ -627,6 +635,10 @@ class TestTheSecretShapes:
             'self.saveDialog.warning("%s", password)',
             'blogger.info("%s", token)',
             'changeLog.info("%s", api_key)',
+            # One word, however it is written: `change_log`, `changeLog` and `changelog` are the same list of changes.
+            'change_log.info("%s", api_key)',
+            'webLog.info("%s", token)',
+            'myBlogger.info("%s", token)',
         )
         for line in named:
             assert lines_hit(rule, "app/auth.py", f"{line}\n") == [1], line

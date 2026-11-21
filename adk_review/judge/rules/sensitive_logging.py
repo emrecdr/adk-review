@@ -23,12 +23,16 @@ from ..rule_helpers import ChangedFile, FileRule, calls_in, is_test, name_of, na
 
 #: A logger's methods that write a record.
 WRITES = ("debug", "info", "warning", "warn", "error", "critical", "exception", "log")
-#: What a logger is named, by its last part: `logger`, `log`, `logging`, `self._log`, a project's own `obslog`.
-LOGGER = re.compile(r"(?i)log(?:ger|ging)?$")
-#: And what only ends as one does. Read by review: `catalog.info(token)` and `dialog.warning(password)` were named.
-NO_LOGGER = re.compile(r"(?i)(?:^|[._])(?:(?:cata|dia|change|back|ana|pro|epi|web|trave)log|blog(?:ger|ging)?)$")
-#: Where one word ends and the next begins inside a name written without `_`: `productCatalog` is a catalog.
-_HUMP = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+#: What a logger's name ends in: `logger`, `log`, `logging`, `self._log`, `LOG`, a project's own `obslog`.
+LOGGER = ("log", "logger", "logging")
+#: And the words that only end so, however they are written: `change_log`, `changeLog` and `changelog` are one list of
+#: changes, and no logger. Read by review: `catalog.info(token)` and `dialog.warning(password)` were named.
+NO_LOGGER = frozenset(
+    {"catalog", "dialog", "changelog", "backlog", "analog", "prolog", "epilog", "weblog", "travelog"}
+    | {"blog", "blogger", "blogging"}
+)
+#: A name's words: at each `_` and at each hump of camelCase.
+_WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+")
 
 
 class SensitiveLogging(FileRule):
@@ -67,10 +71,13 @@ class SensitiveLogging(FileRule):
 
 
 def _logs(receiver: str) -> bool:
-    """Whether what a call is made on is named as a logger is: as written, and word by word, so `changeLog` and
-    `productCatalog` are none, and `weblogger` is one."""
-    words = _HUMP.sub("_", receiver)
-    return LOGGER.search(words) is not None and not (NO_LOGGER.search(receiver) or NO_LOGGER.search(words))
+    """Whether what a call is made on is named as a logger is, by the words of its last part: the last one ends as a
+    logger's does, and no run of its closing words spells one of `NO_LOGGER`. So `weblogger` and `catalogLogger` are
+    loggers, and `webLog`, `myBlogger` and `productCatalog` are none."""
+    words = [word.lower() for word in _WORD.findall(receiver.rpartition(".")[2])]
+    if not words or not words[-1].endswith(LOGGER):
+        return False
+    return not any("".join(words[at:]) in NO_LOGGER for at in range(len(words)))
 
 
 def _handed(call: ast.Call) -> Iterator[ast.Name | ast.Attribute]:
