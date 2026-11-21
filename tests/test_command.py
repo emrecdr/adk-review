@@ -2990,6 +2990,8 @@ class TestWhatTheCommandTells:
         # Read by review: a lock file's 50 lines read as source. Python's files alone are counted.
         lock = {"path": "uv.lock", "added": [(1, "x")] * 50, "diff": ""}
         assert cli._lines([lock], False, True) == (0, 0)
+        stub = {"path": "src/api.pyi", "text": "x: int\n", "added": [(1, "x: int")], "diff": ""}
+        assert cli._lines([stub], False, True) == (1, 0), "a stub is Python's too"
         assert cli.main([*argv, "--quiet"]) == 0 and capsys.readouterr().err == "", "a pipeline's log stays the report"
 
     def test_a_closed_stderr_still_ends_in_the_verdict(self, cli, tmp_path: Path, monkeypatch, capsys) -> None:

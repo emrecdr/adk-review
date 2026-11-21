@@ -8,7 +8,9 @@ about one, `token_dir`. This rule over the same projects, 4,818 files in 5 s: 14
 whole, where lines beside them logged eight characters of it, and one a count.
 
 Not read, as known limits: a count named as a credential is, `total_no_token`; `print`; a logger no name holds,
-`get_logger().info(...)`; and a value passed through a call on its way, `str(token)`.
+`get_logger().info(...)`; a value passed through a call on its way, `str(token)`; and a value on a line the change
+left alone, under a call it made a logger's: read by review, naming it there named each leak a reworded message
+stood over, which the change did not add.
 """
 
 from __future__ import annotations
@@ -24,7 +26,9 @@ WRITES = ("debug", "info", "warning", "warn", "error", "critical", "exception", 
 #: What a logger is named, by its last part: `logger`, `log`, `logging`, `self._log`, a project's own `obslog`.
 LOGGER = re.compile(r"(?i)log(?:ger|ging)?$")
 #: And what only ends as one does. Read by review: `catalog.info(token)` and `dialog.warning(password)` were named.
-NO_LOGGER = re.compile(r"(?i)(?:^|[._])(?:cata|dia|change|back|b|ana|pro|epi|web|trave)log$")
+NO_LOGGER = re.compile(r"(?i)(?:^|[._])(?:cata|dia|change|back|b|ana|pro|epi|web|trave)log(?:ger|ging)?$")
+#: Where one word ends and the next begins inside a name written without `_`: `productCatalog` is a catalog.
+_HUMP = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
 
 class SensitiveLogging(FileRule):
@@ -58,16 +62,14 @@ class SensitiveLogging(FileRule):
             for call in calls_in(file.module, *(f"*.{write}" for write in WRITES))
             if _logs(name_of(call.func).rpartition(".")[0])
             for value in _handed(call)
-            # The value's own line, or the line that made the call a logger's: read by review, `emit(` changed to
-            # `logger.info(` over arguments the change left alone named none of them.
-            if (value.lineno in file.added or call.func.end_lineno in file.added)
-            and names_secret(name_of(value).rpartition(".")[2])
+            if value.lineno in file.added and names_secret(name_of(value).rpartition(".")[2])
         )
 
 
 def _logs(receiver: str) -> bool:
-    """Whether what a call is made on is named as a logger is."""
-    return LOGGER.search(receiver) is not None and NO_LOGGER.search(receiver) is None
+    """Whether what a call is made on is named as a logger is, read word by word."""
+    words = _HUMP.sub("_", receiver)
+    return LOGGER.search(words) is not None and NO_LOGGER.search(words) is None
 
 
 def _handed(call: ast.Call) -> Iterator[ast.Name | ast.Attribute]:

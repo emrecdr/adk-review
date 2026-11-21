@@ -493,12 +493,19 @@ class TestTheSecretShapes:
         from adk_review.judge.checks import run_rules
         from adk_review.judge.rules.cognitive_complexity import CognitiveComplexity
 
-        def nested(name: str, depth: int, more: str = "") -> str:  # a score of depth * (depth + 1) / 2
+        def nested(name: str, depth: int, more: str = "", one_more: bool = False) -> str:
+            """A function that scores depth * (depth + 1) / 2, and 1 more with `one_more`."""
             lines = [f"def {name}(rows):"]
             lines += [
                 f"{'    ' * level}{'for row in rows' if level % 2 else 'if rows'}:" for level in range(1, depth + 1)
             ]
-            return "\n".join([*lines, f"{'    ' * (depth + 1)}rows = rows[1:]{more}"]) + "\n"
+            lines.append(f"{'    ' * (depth + 1)}rows = rows[1:]{more}")
+            if one_more:
+                lines.append(f"{'    ' * (depth + 1)}rows = rows or rows")
+            return "\n".join(lines) + "\n"
+
+        def inside(opening: str, body: str) -> str:
+            return opening + "".join(f"    {line}\n" for line in body.splitlines())
 
         def found(head: str, before: str | None, added: list[int], path: str = "app/work.py") -> list[tuple]:
             text = head.split("\n")
@@ -517,9 +524,8 @@ class TestTheSecretShapes:
         # Read by review, each reproduced. A function renamed, its body as it was, is not new.
         assert found(nested("do_work", 7), nested("work", 7), [1]) == [], "renamed, and left as hard"
         # One under an `if` is read as any other.
-        under = "if True:\n" + "".join(f"    {line}\n" for line in nested("work", 6).splitlines())
-        was = "if True:\n" + "".join(f"    {line}\n" for line in nested("work", 3).splitlines())
-        assert [line for line, _said in found(under, was, [6, 7, 8, 9])] == [2]
+        branch, was = inside("if True:\n", nested("work", 6)), inside("if True:\n", nested("work", 3))
+        assert [line for line, _said in found(branch, was, [6, 7, 8, 9])] == [2]
 
         def both(getter: int) -> str:  # a property and its setter, one name for two functions
             parts = [nested("x", getter), nested("x", 6)]
@@ -532,10 +538,26 @@ class TestTheSecretShapes:
         raised_getter = found(both(6), both(1), list(range(3, 11)))
         assert [line for line, _said in raised_getter] == [3], "the getter, weighed against the getter"
         assert found(nested("work", 6), "def work(:\n", list(range(1, 9))) == [], "a base Python cannot read"
+        # Read by the second review, each reproduced. Two stubs added above a function found hard and touched: it
+        # is weighed against the one the base held, whatever now stands above it.
+        stubs = "def g(rows): ...\n" * 2
+        assert found(stubs + nested("g", 6, one_more=True), nested("g", 6), list(range(3, 12))) == [], "21 to 22"
+        # A copy of a hard function is new, though its body is one the base held: the base's own still holds it.
+        copied = nested("work", 6) + "\n\n" + nested("work_copy", 6)
+        assert [line for line, _said in found(copied, nested("work", 6), list(range(11, 19)))] == [11]
+        # One under an `except` is read too.
+        handled = "try:\n    pass\nexcept ImportError:\n"
+        guarded = found(inside(handled, nested("work", 6)), handled + "    pass\n", [6, 7, 8])
+        assert [line for line, _said in guarded] == [4], guarded
         long = "def join():\n    return " + " + ".join(['"a"'] * 600) + "\n" + nested("work", 6)
         entry = {**_entry("app/work.py", long), "status": "M", "before": "", "added": [(4, "x")]}
         answer = run_rules({"files": [entry], "tree": None}, [CognitiveComplexity()])["rule.cognitive-complexity"]
         assert answer.could_not_look is None, answer.could_not_look
+        # Nor where the base holds such an expression, and the change adds a function to weigh against it.
+        deep = "def join():\n    return " + " + ".join(['"a"'] * 1500) + "\n"
+        entry = {**_entry("app/work.py", deep + nested("work", 6)), "status": "M", "before": deep, "added": [(4, "x")]}
+        answer = run_rules({"files": [entry], "tree": None}, [CognitiveComplexity()])["rule.cognitive-complexity"]
+        assert answer.could_not_look is None and [hit.line for hit in answer.findings] == [3], answer
         assert found(nested("work", 6), None, list(range(1, 9))) == [], "nothing to weigh it against: not read"
         assert found(nested("work", 6), "", list(range(1, 9)), "tests/test_work.py") == [], "a test is not read"
 
@@ -581,6 +603,9 @@ class TestTheSecretShapes:
             'logger.info("from %s", self._starting_token)',
             'logger.info("eos %s", tokenizer.eos_token)',
             'logger.info("hash %s", hashed_token)',
+            'productCatalog.info("%s", token)',
+            'self.saveDialog.warning("%s", password)',
+            'blogger.info("%s", token)',
         )
         for line in named:
             assert lines_hit(rule, "app/auth.py", f"{line}\n") == [1], line
@@ -589,10 +614,10 @@ class TestTheSecretShapes:
         wrapped = 'logger.info(\n    "token %s",\n    access_token,\n)\n'
         assert lines_hit(rule, "app/auth.py", wrapped) == [3], "named where the value stands"
         assert lines_hit(rule, "tests/test_auth.py", f"{named[0]}\n") == [], "a test logs what it made up"
-        # Read by review: `emit(` made `logger.info(` on the call's first line logs each value the lines under it hold.
-        made = {**_entry("app/auth.py", wrapped), "status": "M", "added": [(1, "logger.info(")]}
-        found = run_rules({"files": [made], "tree": None}, [rule])["rule.sensitive-logging"].findings
-        assert [hit.line for hit in found] == [3], found
+        # Read by the second review: a message reworded on a call's first line named the value two lines under it, a
+        # leak the change did not add. A value is named on its own line alone.
+        reworded = {**_entry("app/auth.py", wrapped), "status": "M", "added": [(1, "logger.info(")]}
+        assert run_rules({"files": [reworded], "tree": None}, [rule])["rule.sensitive-logging"].findings == []
         kept = {**_entry("app/auth.py", f"{named[0]}\nx = 1\n"), "status": "M", "added": [(2, "x = 1")]}
         assert run_rules({"files": [kept], "tree": None}, [rule])["rule.sensitive-logging"].findings == []
 

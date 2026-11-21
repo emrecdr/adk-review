@@ -103,6 +103,7 @@ try:
     from .core.health import Health, measured
     from .core.paths import matches
     from .core.profiles import DEFAULT, expanded
+    from .core.rules import is_python_text
     from .core.text import kinds_of, short_ref
     from .core.verdict import (
         EXIT_CLEAN,
@@ -1267,7 +1268,7 @@ def _lines(files: list[Entry], tests: bool, whole: bool) -> tuple[int, int]:
     file's diff, which the review read already. Python's alone: read by review, a lock file's 50 lines read as source.
     A whole project deletes none, and its diffs are not read again for it. Counted and nothing made of them: measured
     over four projects, a ratio of test lines to source lines alarmed falsely in 10 of 15 commits read."""
-    own = [entry for entry in files if entry["path"].endswith(".py") and is_test(entry["path"]) == tests]
+    own = [f for f in files if is_python_text(f["path"], f.get("text")) and is_test(f["path"]) == tests]
     added = sum(len(entry["added"] or ()) for entry in own)
     if whole:
         return added, 0

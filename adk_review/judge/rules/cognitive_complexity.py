@@ -14,9 +14,11 @@ review reads a commit: 87 functions in 62 of them, 3 in this repository's 150.
 from __future__ import annotations
 
 import ast
-from collections import Counter
 
 from ..rule_helpers import ChangedFile, FileRule, cognitive, is_test, parse
+
+type _Function = ast.FunctionDef | ast.AsyncFunctionDef
+type _Named = dict[str, list[_Function]]
 
 #: Above this a function is named: the bar this repository's own SonarQube setup holds a function to.
 BAR = 20
@@ -59,55 +61,76 @@ class CognitiveComplexity(FileRule):
         base = parse(file.before) if file.before else None
         if file.before and base is None:
             return []  # a base Python cannot read: nothing to weigh the change against
-        before = dict(_readers(base))
-        touched = (
-            (name, function)
-            for name, function in _readers(file.module)
+        now, was = _by_name(file.module), _by_name(base)
+        return sorted(
+            said
+            for name, functions in now.items()
+            for at, function in enumerate(functions)
             if not file.added.isdisjoint(range(function.lineno, (function.end_lineno or function.lineno) + 1))
+            and (said := _raised(name, at, now, was)) is not None
         )
-        return [said for name, function in touched if (said := _raised(name, function, before)) is not None]
 
 
-def _raised(
-    name: str,
-    function: ast.FunctionDef | ast.AsyncFunctionDef,
-    before: dict[str, ast.FunctionDef | ast.AsyncFunctionDef],
-) -> tuple[int, str] | None:
-    """What to say of `function`, at its `def`, where the change raised it past the bar, and None where it did not."""
-    now, was = _score(function), _score(before.get(name))
-    if now is None or now <= BAR or (name in before and was is None):
+def _raised(name: str, at: int, now: _Named, was: _Named) -> tuple[int, str] | None:
+    """What to say of `now[name][at]`, at its `def`, where the change raised it past the bar; None where it did not."""
+    function = now[name][at]
+    score = _score(function)
+    if score is None or score <= BAR or (name not in was and _moved(function, now, was)):
         return None
-    # A function renamed or moved, its body as it was, is not new: read by review, each was named as new.
-    if name not in before and any(_body(other) == _body(function) for other in before.values()):
+    before = [_score(old) for old in _held(name, at, now, was)]
+    if None in before:
+        return None  # one of them too deep to walk: nothing to weigh the change against
+    most = max((count for count in before if count is not None), default=None)
+    if score - (most or 0) < RAISED:
         return None
-    if now - (was or 0) < RAISED:
-        return None
-    weighed = "" if was is None else f", {was} before this change"
-    return function.lineno, f"`{name.partition('#')[0]}` reads at cognitive complexity {now}{weighed}"
+    return function.lineno, f"`{name}` reads at cognitive complexity {score}" + (
+        "" if most is None else f", {most} before this change"
+    )
 
 
-def _score(function: ast.FunctionDef | ast.AsyncFunctionDef | None) -> int | None:
-    """What `function` reads at, None for none and for one whose expressions nest past what Python walks: read by
-    review, a string joined from 400 parts ended the rule, and the review a hole."""
-    if function is None:
-        return None
+def _held(name: str, at: int, now: _Named, was: _Named) -> list[_Function]:
+    """The base's functions `now[name][at]` is weighed against: the one in its place where the base holds as many of
+    its name, a property and its setter each against its own; else every one of its name, the hardest deciding, since
+    a stub added above it or one removed moves each place; none for a name the base does not hold. Read by review: by
+    place alone, two stubs added above a function found hard named it as new."""
+    held = was.get(name, [])
+    return [held[at]] if len(held) == len(now[name]) else held
+
+
+def _moved(function: _Function, now: _Named, was: _Named) -> bool:
+    """Whether `function`, under a name the base does not hold, is a base function renamed or moved, its body as it
+    was: one whose own name no longer holds that body. A copy of a function the head still holds is new."""
+    body = _body(function)
+    return body is not None and any(
+        _body(old) == body and all(_body(kept) != body for kept in now.get(name, ()))
+        for name, olds in was.items()
+        for old in olds
+    )
+
+
+def _score(function: _Function) -> int | None:
+    """What `function` reads at, None for one whose expressions nest past what Python walks: read by review, a string
+    joined from 400 parts ended the rule, and the review a hole."""
     try:
         return cognitive(function)
     except RecursionError:
         return None
 
 
-def _body(function: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
-    """A function's body as written, whatever it is named and wherever it stands."""
-    return ast.dump(ast.Module(body=function.body, type_ignores=[]))
+def _body(function: _Function) -> str | None:
+    """A function's body as written, whatever it is named and wherever it stands; None for one too deep to walk,
+    which is the same as no other."""
+    try:
+        return ast.dump(ast.Module(body=function.body, type_ignores=[]))
+    except RecursionError:
+        return None
 
 
-def _readers(module: ast.Module | None) -> list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]]:
-    """Each function a reader meets on its own, by its dotted name, in the order written: a module's, and a class's
-    methods, under an `if` or a `try` too. One inside a function is that function's part, and counts there. Two of one
-    name, a property and its setter, are told apart by their order, `x` and `x#2`: read by review, the setter's
-    score stood for the getter's. None of a module the parser refused."""
-    found: list[tuple[str, ast.FunctionDef | ast.AsyncFunctionDef]] = []
+def _by_name(module: ast.Module | None) -> _Named:
+    """Each function a reader meets on its own, under its dotted name, in the order written: a module's, and a class's
+    methods, under an `if`, a `try`, an `except` or a `case` too. One inside a function is that function's part, and
+    counts there. Two of one name stand together, a property and its setter. None of a module the parser refused."""
+    found: list[tuple[str, _Function]] = []
     pending: list[tuple[ast.AST, str]] = [] if module is None else [(module, "")]
     while pending:
         node, prefix = pending.pop()
@@ -116,11 +139,9 @@ def _readers(module: ast.Module | None) -> list[tuple[str, ast.FunctionDef | ast
                 found.append((prefix + child.name, child))
             elif isinstance(child, ast.ClassDef):
                 pending.append((child, f"{prefix}{child.name}."))
-            elif isinstance(child, ast.stmt):
+            elif isinstance(child, (ast.stmt, ast.excepthandler, ast.match_case)):
                 pending.append((child, prefix))
-    seen: Counter[str] = Counter()
-    keyed = []
+    named: _Named = {}
     for name, function in sorted(found, key=lambda item: item[1].lineno):
-        seen[name] += 1
-        keyed.append((name if seen[name] == 1 else f"{name}#{seen[name]}", function))
-    return keyed
+        named.setdefault(name, []).append(function)
+    return named
