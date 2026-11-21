@@ -3087,6 +3087,36 @@ class TestTheCallersRule:
         found = run_rules(evidence, [Callers()])["rule.callers"].findings
         assert [(hit.file, hit.line) for hit in found] == [("app.py", 1)], found
 
+    def test_only_a_module_in_the_scope_is_read_as_removed_where_it_moved_out_of_a_review(self, tmp_path: Path) -> None:
+        """Read by review of the fix above, and reproduced: every file moved out of what a review reads was added as
+        one removed, so `README` renamed `README.md`, a kind no check reads, made a change of deleted files, and each
+        guideline ran, billed, where none ran before; and a module moved out of a folder `--path-exclude` names, or
+        from outside `--path`, was listed as a file of the review. Only a Python module is added, and only where the
+        scope takes it."""
+        from adk_review.collect.git import collect_evidence
+
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        for path in ("README", "LICENSE", "legacy/x.py", "other/y.py", "pkg/a.py"):
+            _committed(repo, path, f"# {path}\nvalue = 1\n")
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        for folder in ("vendor", "pkg/vendor"):
+            (repo / folder).mkdir(parents=True)
+        for old, new in (("README", "README.md"), ("LICENSE", "LICENSE.txt"), ("legacy/x.py", "vendor/x.py")):
+            _git_in(repo, "mv", old, new)
+        _git_in(repo, "mv", "other/y.py", "pkg/vendor/y.py")
+        _committed(repo, "pkg/a.py", "# pkg/a.py\nvalue = 2\n")  # the moves, staged, go into this commit
+        kinds = {"scan": ("*.py",), "third_party": ("**/vendor/**", "vendor/**")}
+
+        def read(*scope: str, exclude: tuple[str, ...] = ()) -> list[str]:
+            evidence = collect_evidence(str(repo), BASE, "change", scope, exclude=exclude, **kinds)
+            return [entry["path"] for entry in evidence["files"]]
+
+        assert read() == ["legacy/x.py", "other/y.py", "pkg/a.py"], "no README, no LICENSE: neither was a module"
+        assert read(exclude=("legacy",)) == ["other/y.py", "pkg/a.py"]
+        assert read("pkg") == ["pkg/a.py"]
+
     def test_a_module_the_change_moved_or_removed_is_named_where_code_still_imports_it(self) -> None:
         """Asked by the owner: the review acts on the blast radius. Measured before: a branch moved `pkg/repo.py`, or
         removed it, three files it left alone still imported it, and every rule approved what raises
@@ -3207,8 +3237,10 @@ class TestRadiusTypesNamesWhatTheChangeBrokeElsewhere:
     def test_a_file_renamed_to_python_is_read_as_one_the_change_touched(self, tmp_path: Path) -> None:
         """Read by an outside audit, and reproduced: the rule asked whether a file was Python's of its old path alone,
         so a script with no suffix renamed `shop/caller.py`, a wrong call into another file added to it, ran nothing,
-        where the same file added anew was named."""
-        calls = "def one() -> int:\n    return add(1)\n\n\ndef two() -> int:\n    return add(2)\n"
+        where the same file added anew was named. Read by review of that fix: the base's copy was laid out under its
+        old name, which pyrefly reads no Python in, so a wrong call the file held before, on a line the change kept,
+        read as new. It is laid out where the head holds the file, and only what the change added is named."""
+        calls = "def one() -> int:\n    return add(1, 2)\n\n\ndef two() -> int:\n    return add(2)\n"
         draft = f"from shop.util import add\n\n\n{calls}"
         repo = self.branch(tmp_path, {"shop/util.py": "def add(x: int) -> int:\n    return x\n", "draft": draft}, {})
         _git_in(repo, "mv", "draft", "shop/caller.py")

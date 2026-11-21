@@ -936,14 +936,16 @@ def _as_linked(through: list[tuple[Entry, str]], texts: Mapping[str, str], skipp
 
 
 def _split(
-    entries: list[dict], scan: Sequence[str], third_party: Sequence[str]
+    entries: list[dict], scan: Sequence[str], third_party: Sequence[str], wanted: Callable[[str], bool] = lambda _: True
 ) -> tuple[list[dict], list[dict], list[str]]:
     """The changed files a review reads; the project's own of every other kind, for the credential rules alone, never
     a submodule or another project's code; and the paths of every file the review ignores. A file moved or copied out
     of one its readers never saw is read whole, as one the change adds: no review read it where it lay. One moved out
     of what a review reads, into another project's folder or to a kind no check reads, is read as one the change
     removed: read by an audit, and reproduced, known by its new path alone it left the review, and a file that still
-    imported it passed."""
+    imported it passed. A Python module alone, which the rules that follow an import read, and where `wanted`, the
+    review's scope, takes its old path: read by review, a `README` renamed `README.md` made a change of deleted files
+    for each guideline to read, billed, and a module from outside `--path` a file of the review."""
     own = [entry for entry in entries if _reviewed(entry, scan, third_party)]
     kept = {entry["path"] for entry in own}
     own += [
@@ -952,6 +954,8 @@ def _split(
         if entry["path"] not in kept
         and entry["status"] == "R"
         and entry["mode"] != SUBMODULE_MODE
+        and entry["old"].endswith(".py")
+        and wanted(entry["old"])
         and in_review(entry["old"], scan, third_party)
     ]
     own.sort(key=lambda entry: entry["path"])
@@ -1158,7 +1162,7 @@ def gather(
     try:
         listed = list_changed(resolved)
         entries = [entry for entry in listed if in_scope(entry["path"], scope, exclude)]
-        own, others, ignored = _split(entries, scan, third_party)
+        own, others, ignored = _split(entries, scan, third_party, lambda path: in_scope(path, scope, exclude))
         files, block, excluded, left_out, parts = _read_change(
             resolved, own, scope, guidelines=guidelines, diff_cap=diff_cap, skip=skip
         )

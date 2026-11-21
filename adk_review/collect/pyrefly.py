@@ -405,14 +405,17 @@ def _base(
     """The base's tree, the head's with each changed Python file as the base held it, `held` its text as git holds it,
     and where each such file is at the head, by its path before the change. One `held` lacks, a link at the base or a
     file git gave no text of, is left as the head holds it, compared with nothing it never was: measured, a link made
-    a file was rebuilt as the one line it names, and a call wrong before the change read as new."""
+    a file was rebuilt as the one line it names, and a call wrong before the change read as new. One renamed to
+    Python's suffix is laid out where the head holds it: read by review, under its old name pyrefly read no Python in
+    it, and each error it held before read as new."""
     base, renamed = dict(head), {}
     for f in files:
         path, old, status = f["path"], f.get("old", f["path"]), f["status"]
         if status in ("A", "C", "R"):
             base.pop(path, None)  # not there before, or there under another name
         if status in ("M", "T", "R", "D") and old in held:
-            base[old], renamed[old] = held[old], path
+            at = old if old.endswith(".py") or not path.endswith(".py") else path
+            base[at], renamed[at] = held[old], path
     return base, renamed
 
 
