@@ -576,6 +576,8 @@ _CHOSEN = re.compile(r"(?i)passw(?:or)?d|pwd")
 _WORDS = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
 #: A word a name says secret with, among a value's words joined by `_`: a value that holds one names a secret.
 _SECRET_WORD = re.compile(r"(?:^|_)(?:" + SECRET_WORDS + r")(?:_|$)")
+#: The same word as a name's last, which says the value is the secret itself.
+_SECRET_LAST = re.compile(r"(?:^|_)(?:" + SECRET_WORDS + r")$")
 #: What sets a value's words apart, as a label's are: `my_secret_key`, `Show password`.
 _SEPARATOR = re.compile(r"[\s_.\-/]")
 #: Code where a literal would stand: a chain of attributes, `raw_credential.oauth2.client_secret`, or a name passed on
@@ -592,6 +594,14 @@ _CODE_MARK = re.compile(r"[{};]")
 _SCHEME = re.compile(r"(?i)\A(?:bearer|basic|token)\s+(?=\S+$)")
 #: The shortest credential a machine makes: shorter is a documentation's example, `sk-1234`.
 MADE_MIN_CHARS = 8
+
+
+def names_secret(name: str) -> bool:
+    """Whether a variable's or an attribute's own `name` says its value is a secret: its last word is one a secret goes
+    by, `access_token`, `db_password` or `apiKey`, and it is no cursor's or form guard's token. A name that holds the
+    word before its end, `token_count` or `password_hint`, says something about one, and `tokens` counts them."""
+    words = "_".join(_WORDS.findall(name)).lower()
+    return _SECRET_LAST.search(words) is not None and not _NOT_CREDENTIAL.search(name)
 
 
 def holds_no_secret(name: str, value: str, quoted: bool) -> bool:

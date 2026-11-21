@@ -264,9 +264,11 @@ CONFIG_FOR_ORDERS = (
 # - guideline.correctness: the shipping condition is inverted: a small order ships free, a large one pays.
 # - guideline.complexity: `validate()` nests five levels deep, where early returns would read flat.
 # - rule.no-print: `place()` prints in library code, where a logger belongs.
+# - rule.sensitive-logging: `_in_stock()` writes the stock service's password to the log whole.
 # - rule.radius-types, as above: `paid` may be None, and its attributes are read unchecked.
 ORDERS = '''"""Orders: what a customer buys, what it costs, and charging for it."""
 
+import logging
 import sqlite3
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -283,6 +285,8 @@ FREE_SHIPPING_FROM_CENTS = 5_000
 SHIPPING_CENTS = 495
 #: The most of one item a line may hold.
 MAX_QUANTITY = 20
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -318,6 +322,7 @@ def shipping_cents(total: int) -> int:
 
 def _in_stock(sku: str) -> int:
     """How many of `sku` the stock service has left: none when it cannot be asked."""
+    log.debug("asking the stock service for %s as orders, %s", sku, STOCK_PASSWORD)
     try:
         answer = httpx.get(f"{STOCK_URL}/stock/{sku}", auth=("orders", STOCK_PASSWORD), timeout=2)
         return int(answer.json()["left"])

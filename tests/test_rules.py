@@ -458,6 +458,49 @@ class TestTheSecretShapes:
         hidden, _count = scrub("\n".join(f"+{line}" for line in putty) + "\n x = 1\n")
         assert putty[7] not in hidden and putty[8] not in hidden and " x = 1" in hidden, hidden
 
+    def test_a_credential_handed_whole_to_a_log_is_named_and_one_masked_or_counted_is_not(self) -> None:
+        """Measured over seven projects before the rule was written: every logged value whose name held a secret word
+        gave 106 hits, 16 of them a credential logged. The rest were a masked prefix, a test for one, a count, and a
+        name about one. So the rule names a value handed whole under a name that ends in the word, on a line the
+        change added, in a file that is no test."""
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.sensitive_logging import SensitiveLogging
+
+        rule = SensitiveLogging()
+        named = (
+            'logger.info("token %s", access_token)',
+            'log.debug(f"auth={api_key}")',
+            'self.logger.warning("login failed", extra={"password": user.password})',
+            'logging.error("refresh " + refresh_token)',
+            'obslog.info("push", device_token=device_token)',
+            'logger.log(logging.INFO, "secret %s", self.client_secret)',
+            'logger.exception("as %r", (user_id, db_pwd))',
+        )
+        left = (
+            'logger.info("token %s", token[:8])',
+            'logger.info("has token: %s", bool(token))',
+            'logger.info("used %s tokens", tokens)',
+            'logger.info("count %s", token_count)',
+            'logger.info("page %s", page_token)',
+            'logger.info("dir %s", token_dir)',
+            'logger.info("checked %s", check_password(pw))',
+            'logger.info("len %s", len(password))',
+            'logger.info("the token was refused")',
+            "print(token)",
+            "math.log(token)",
+            "cache.set(token)",
+        )
+        for line in named:
+            assert lines_hit(rule, "app/auth.py", f"{line}\n") == [1], line
+        for line in left:
+            assert lines_hit(rule, "app/auth.py", f"{line}\n") == [], line
+        wrapped = 'logger.info(\n    "token %s",\n    access_token,\n)\n'
+        assert lines_hit(rule, "app/auth.py", wrapped) == [3], "named where the value stands"
+        assert lines_hit(rule, "tests/test_auth.py", f"{named[0]}\n") == [], "a test logs what it made up"
+        kept = {**_entry("app/auth.py", f"{named[0]}\nx = 1\n"), "status": "M", "added": [(2, "x = 1")]}
+        assert run_rules({"files": [kept], "tree": None}, [rule])["rule.sensitive-logging"].findings == []
+
     def test_named_secrets_reads_a_dockerfiles_assignments(self) -> None:
         """Found when the owner's goal asked for more: a Dockerfile's `ENV` and `ARG` set a value as `=` does, and
         neither was read, so a password in a Python project's container config passed. Each is read; a path, a
@@ -5208,6 +5251,7 @@ PLANTED_ON_ORDERS: dict[str, tuple[str, ...]] = {
     "reviewer-instructions": ("src/payments/order_db.py",),
     "script-injection": (".github/workflows/orders.yml",),
     "secrets": ("src/payments/config.py",),
+    "sensitive-logging": ("src/payments/orders.py",),
     "simplify": ("src/payments/order_db.py",),
     "steering-files": (".github/workflows/orders.yml", "AGENTS.md"),
     "tests-offline": ("tests/test_orders.py",),
