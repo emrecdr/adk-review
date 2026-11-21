@@ -609,6 +609,10 @@ class TestTheSecretShapes:
             'catalogLogger.info("%s", token)',
             'audit_log.info("%s", token)',
             'LOG.info("%s", token)',
+            # Read by review: a web server's log is a logger, however it is written, and a leak missed costs more than
+            # a blog named once.
+            'web_log.info("%s", token)',
+            'webLog.info("%s", token)',
         )
         left = (
             'logger.info("token %s", token[:8])',
@@ -637,7 +641,6 @@ class TestTheSecretShapes:
             'changeLog.info("%s", api_key)',
             # One word, however it is written: `change_log`, `changeLog` and `changelog` are the same list of changes.
             'change_log.info("%s", api_key)',
-            'webLog.info("%s", token)',
             'myBlogger.info("%s", token)',
         )
         for line in named:

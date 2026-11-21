@@ -487,9 +487,9 @@ with its value on its line, or on the line under it, plain or as a block. A spel
 passes them: a quoted escape, a tag such as `!!str`, or an anchor. YAML reads each as the same value, and the workflow
 is still in the diff, for a person and the guidelines. `reviewer-instructions` reads an order wrapped over lines from
 the line the change added: an order the base began on a line the change kept, and the change ends, is not named.
-`cognitive-complexity` weighs a function against the one of its name the base held: a function renamed or moved and
-edited in one change reads as new, and a hard function added beside a hard one of its name, a property's setter, is
-not named. `sensitive-logging` names a value on a line the change added: one under a call whose first line alone
+`cognitive-complexity` weighs a function against the one of its name its file held: a function moved in from another
+file reads as new, and so does one renamed or moved and edited in one change. Where a change adds or removes a
+function of a name the file holds more than one of, a property's setter, a hard one beside a hard one is not named. `sensitive-logging` names a value on a line the change added: one under a call whose first line alone
 changed is not named, nor one logged through `print` or passed through a call on its way.
 
 ## Before a push

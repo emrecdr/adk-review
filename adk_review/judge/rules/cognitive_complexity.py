@@ -6,10 +6,11 @@ deep read alike to `lint`'s C901, and nothing alike to a person. Measured before
 repository's 43 functions at 15 or more, ruff named none at its defaults.
 
 Weighed against what the file held before, so a function found hard and left as hard is not the change's to answer
-for: against the function of its name, and a function renamed or moved with its body as it was is not new. Two
-limits, named and not chased: where a change adds or removes a function of a name the file holds more than one of, a
-property's setter or an overload, each is weighed against the hardest of that name, so a hard one added beside a hard
-one is not named; and a function renamed or moved and edited in one change is read as new.
+for: against the function of its name, and a function renamed or moved inside its file, its body as it was, is not
+new. Limits, named and not chased: one moved in from another file is read as new, since a file is weighed alone; so
+is one renamed or moved and edited in one change; and where a change adds or removes a function of a name the file
+holds more than one of, a property's setter or an overload, each is weighed against the hardest of that name, so a
+hard one added beside a hard one is not named.
 
 Measured over four projects' last 150 commits each: at a bar of 15, 6 of 15 alerts read were marginal, a flat
 ladder of checks or a new function at 15 or 16; above 20, 2 of 8. This rule over the same 599 commits, read as a

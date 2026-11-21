@@ -28,7 +28,7 @@ LOGGER = ("log", "logger", "logging")
 #: And the words that only end so, however they are written: `change_log`, `changeLog` and `changelog` are one list of
 #: changes, and no logger. Read by review: `catalog.info(token)` and `dialog.warning(password)` were named.
 NO_LOGGER = frozenset(
-    {"catalog", "dialog", "changelog", "backlog", "analog", "prolog", "epilog", "weblog", "travelog"}
+    {"catalog", "dialog", "changelog", "backlog", "analog", "prolog", "epilog", "travelog"}
     | {"blog", "blogger", "blogging"}
 )
 #: A name's words: at each `_` and at each hump of camelCase.
@@ -73,7 +73,8 @@ class SensitiveLogging(FileRule):
 def _logs(receiver: str) -> bool:
     """Whether what a call is made on is named as a logger is, by the words of its last part: the last one ends as a
     logger's does, and no run of its closing words spells one of `NO_LOGGER`. So `weblogger` and `catalogLogger` are
-    loggers, and `webLog`, `myBlogger` and `productCatalog` are none."""
+    loggers, and `myBlogger` and `productCatalog` are none. A `web_log` is a logger: read by review, as a weblog it
+    was none, and a leak missed costs more than a blog named once."""
     words = [word.lower() for word in _WORD.findall(receiver.rpartition(".")[2])]
     if not words or not words[-1].endswith(LOGGER):
         return False
