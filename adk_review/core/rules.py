@@ -226,11 +226,16 @@ class ChangedFile:
         changed: frozenset[str],
         shown: Mapping[int, str] = MappingProxyType({}),
         old: str | None = None,
+        before: str | None = None,
     ) -> None:
         self.path = path
         self.added = frozenset(added)
         #: A renamed or copied file's former path, under git's R and C alone.
         self.old = old
+        #: A Python file's text before the change, at its former path where the change moved it: what a rule that
+        #: weighs the change against what was there reads. Empty for a file the change added, which held nothing, and
+        #: None where the collector read none: a file of another kind, or one git gave no base of.
+        self.before = before
         #: Every path the change touched, this file's among them: what a rule about the change as a whole asks — a
         #: source file changed and no test with it, a manifest changed and its lock file not. One set for every file
         #: of a change, never copied: measured, a copy each made a file rule cost 1.6 s over 10,000 files.
@@ -370,6 +375,7 @@ class FileRule(AnyRule):
                 changed=changed,
                 shown=shown,
                 old=entry.get("old"),
+                before=entry.get("before"),
             )
             try:
                 found += [self._hit(file, item) for item in _each(self.check(file), "file", returns)]

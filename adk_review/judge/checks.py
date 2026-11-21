@@ -106,7 +106,7 @@ def _release(evidence: Evidence) -> None:
     evidence["tree"] = None
     evidence["base_texts"] = None
     for entry in (*evidence.get("files", ()), *evidence.get("unscanned", ())):  # `added_at` stays, for the report
-        entry["text"] = entry["added"] = entry["diff"] = entry["shown"] = None
+        entry["text"] = entry["added"] = entry["diff"] = entry["shown"] = entry["before"] = None
 
 
 async def _checked(

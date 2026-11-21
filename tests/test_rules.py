@@ -458,6 +458,64 @@ class TestTheSecretShapes:
         hidden, _count = scrub("\n".join(f"+{line}" for line in putty) + "\n x = 1\n")
         assert putty[7] not in hidden and putty[8] not in hidden and " x = 1" in hidden, hidden
 
+    def test_cognitive_complexity_counts_each_break_in_the_reading_and_its_depth(self) -> None:
+        """SonarSource's measure, as its definition counts it: one for each `if`, `elif`, `else`, loop, `except`,
+        conditional expression, run of one boolean operator and call of itself, and one more for each level it stands
+        at, a function or lambda inside it a level too. Checked against this repository before it was written in:
+        43 functions at 15 or more and 12 above 20 at one commit, as two other counts of it gave."""
+        import ast
+
+        from adk_review.judge.rule_helpers import cognitive
+
+        def score(body: str) -> int:
+            return cognitive(ast.parse(f"def f(a, b, c, rows):\n{body}").body[0])
+
+        assert score("    return a\n") == 0
+        assert score("    if a:\n        return 1\n    elif b:\n        return 2\n    else:\n        return 3\n") == 3
+        assert score("    for row in rows:\n        if row:\n            if a:\n                return 1\n") == 6
+        assert score("    if a and b and c:\n        return 1\n") == 2, "one run of one operator"
+        assert score("    if a and b or c:\n        return 1\n") == 3, "two runs"
+        assert score("    for row in rows:\n        x = 1 if row else 2\n") == 3, "a conditional expression, one deep"
+        assert score("    try:\n        return a\n    except ValueError:\n        return b\n") == 1, (
+            "try reads straight"
+        )
+        assert score("    def inner():\n        if a:\n            return 1\n    return inner\n") == 2, "a level deeper"
+        assert score("    return f(a, b, c, rows)\n") == 1, "it calls itself"
+        assert score("    return [row for row in rows if row]\n") == 0, "a comprehension reads as one line"
+        assert score("    with a:\n        return b\n") == 0
+
+    def test_a_function_a_change_made_hard_to_follow_is_named_and_one_it_found_so_is_not(self) -> None:
+        """Measured over four projects' last 150 commits before the rule was written: at a bar of 15 a function a
+        change raised was marginal in 6 of 15 read, above 20 in 2 of 8. So the rule names a function the change
+        touched that now stands above 20, this repository's own SonarQube bar, raised by 5 or more: one it found
+        there and left as hard is not the change's."""
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rules.cognitive_complexity import CognitiveComplexity
+
+        def nested(name: str, depth: int, more: str = "") -> str:  # a score of depth * (depth + 1) / 2
+            lines = [f"def {name}(rows):"]
+            lines += [
+                f"{'    ' * level}{'for row in rows' if level % 2 else 'if rows'}:" for level in range(1, depth + 1)
+            ]
+            return "\n".join([*lines, f"{'    ' * (depth + 1)}rows = rows[1:]{more}"]) + "\n"
+
+        def found(head: str, before: str | None, added: list[int], path: str = "app/work.py") -> list[tuple]:
+            text = head.split("\n")
+            entry = {**_entry(path, head), "status": "M", "before": before, "added": [(n, text[n - 1]) for n in added]}
+            answer = run_rules({"files": [entry], "tree": None}, [CognitiveComplexity()])["rule.cognitive-complexity"]
+            return [(hit.line, hit.title) for hit in answer.findings]
+
+        raised = found(nested("work", 6), nested("work", 3), [5, 6, 7, 8])
+        assert [line for line, _said in raised] == [1], raised
+        assert "21" in raised[0][1] and "6 before" in raised[0][1], raised
+        assert found(nested("work", 7, "  # one word"), nested("work", 7), [9]) == [], "found hard, and left so"
+        assert found(nested("work", 6) + "\nx = 1\n", nested("work", 6), [10]) == [], "not touched"
+        assert found(nested("work", 5), nested("work", 2), [4, 5, 6, 7]) == [], "raised, to 15: under the bar"
+        new = found(nested("work", 6), "", list(range(1, 9)))
+        assert [line for line, _said in new] == [1] and "new" in new[0][1], new
+        assert found(nested("work", 6), None, list(range(1, 9))) == [], "nothing to weigh it against: not read"
+        assert found(nested("work", 6), "", list(range(1, 9)), "tests/test_work.py") == [], "a test is not read"
+
     def test_a_credential_handed_whole_to_a_log_is_named_and_one_masked_or_counted_is_not(self) -> None:
         """Measured over seven projects before the rule was written: every logged value whose name held a secret word
         gave 106 hits, 16 of them a credential logged. The rest were a masked prefix, a test for one, a count, and a
@@ -5239,6 +5297,7 @@ class TestTheShippedRules:
 ORDERS = "feature/orders"
 PLANTED_ON_ORDERS: dict[str, tuple[str, ...]] = {
     "callers": ("tests/test_charge.py",),
+    "cognitive-complexity": ("src/payments/orders.py",),
     "hidden-text": ("AGENTS.md",),
     "lint": ("src/payments/orders.py", "src/payments/order_db.py", "src/payments/config.py"),
     "lockfile-sources": ("uv.lock",),

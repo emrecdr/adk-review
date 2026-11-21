@@ -637,6 +637,41 @@ class TestTheRuleKinds:
         assert "src/payments/charge.py" in texts and all(isinstance(t, str) and t for t in texts.values())
         assert all(f["unread_text"] is None for f in evidence["files"])
 
+    def test_a_file_rule_is_handed_a_python_files_text_before_the_change(self, tmp_path: Path) -> None:
+        """A rule that weighs what a change did to a file against what was there asks `file.before`: the text the base
+        held, under its old path where the change moved the file; nothing for a file the change added; and None for a
+        file of another kind, whose base the collector reads none of."""
+        from conftest import _git_in
+
+        from adk_review.collect.git import collect_evidence
+        from adk_review.judge.checks import run_rules
+        from adk_review.judge.rule_helpers import ChangedFile, FileRule
+
+        seen: dict[str, str | None] = {}
+
+        class Before(FileRule):
+            id = "before"
+            title = "what a file held before"
+            fix = "Nothing: this rule only looks."
+
+            def check(self, file: ChangedFile) -> list[int]:
+                seen[file.path] = file.before
+                return []
+
+        moved = "def one():\n    return 1\n\n\ndef two():\n    return 2\n"
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        for path, text in {"a.py": "x = 1\n", "old.py": moved, "conf.toml": "k = 1\n"}.items():
+            _committed(repo, path, text)
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _git_in(repo, "mv", "old.py", "new.py")
+        for path, text in {"a.py": "x = 2\n", "new.py": moved + "three = 3\n", "b.py": "y = 1\n"}.items():
+            _committed(repo, path, text)
+        _committed(repo, "conf.toml", "k = 2\n")
+        run_rules(collect_evidence(str(repo), BASE, "change"), [Before()])
+        assert seen == {"a.py": "x = 1\n", "new.py": moved, "b.py": "", "conf.toml": None}, seen
+
 
 class TestTheProfiles:
     """The profiles choose the checks: a group, a check's id, `default-rules`, `--check` for one run, and a profile that
@@ -778,7 +813,8 @@ class TestTheProfiles:
         assert run_review(cli, demo_repo, "--check", "rule.demo-money-in-cents") == 0, "a major, below the bar"
         out = capsys.readouterr().out
         off = (
-            "rule.callers, rule.demo-derives-from, rule.demo-module-defines, rule.demo-parameters,"
+            "rule.callers, rule.cognitive-complexity, rule.demo-derives-from, rule.demo-module-defines,"
+            " rule.demo-parameters,"
             " rule.demo-required-paths,"
         )
         assert f"- profile      --check rule.demo-money-in-cents (off: {off} rule.encoding-declaration," in out

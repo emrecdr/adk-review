@@ -102,7 +102,8 @@ push-history = ["rule.secrets", "rule.named-secrets"]
 # by its id, as a test holds this list and `full`'s to every rule whose id does not start with `demo-`: a rule written
 # for one project, as the demo's are, would report another project's folders and money missing.
 rules-only = [
-    "rule.callers", "rule.encoding-declaration", "rule.hidden-text", "rule.lint", "rule.lockfile-sources",
+    "rule.callers", "rule.cognitive-complexity", "rule.encoding-declaration", "rule.hidden-text", "rule.lint",
+    "rule.lockfile-sources",
     "rule.named-secrets", "rule.no-print", "rule.pinned-actions", "rule.pitfalls", "rule.private-patch",
     "rule.radius-types", "rule.reviewer-instructions", "rule.script-injection", "rule.secrets",
     "rule.sensitive-logging", "rule.simplify", "rule.steering-files",
@@ -110,7 +111,8 @@ rules-only = [
 ]
 # Every check there is but the payments demo's rules: `rules-only`'s and every guideline.
 full = [
-    "rule.callers", "rule.encoding-declaration", "rule.hidden-text", "rule.lint", "rule.lockfile-sources",
+    "rule.callers", "rule.cognitive-complexity", "rule.encoding-declaration", "rule.hidden-text", "rule.lint",
+    "rule.lockfile-sources",
     "rule.named-secrets", "rule.no-print", "rule.pinned-actions", "rule.pitfalls", "rule.private-patch",
     "rule.radius-types", "rule.reviewer-instructions", "rule.script-injection", "rule.secrets",
     "rule.sensitive-logging", "rule.simplify", "rule.steering-files",

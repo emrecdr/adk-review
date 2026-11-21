@@ -43,7 +43,18 @@ from ...core.secrets import (
 from ...core.text import is_databricks_notebook
 from .diagnostics import PER_FILE, UNPACKED_EXTRA, family, fix_of, listed, tier
 from .lines import calls, comment_of, tokens, words
-from .syntax import argument, calls_in, classes, defined, functions_in, imports_in, name_of, nodes_in, parameters
+from .syntax import (
+    argument,
+    calls_in,
+    classes,
+    cognitive,
+    defined,
+    functions_in,
+    imports_in,
+    name_of,
+    nodes_in,
+    parameters,
+)
 from .testing import lines_hit, self_check, self_test, try_rule
 from .workflows import USES_KEY, USES_OPEN, uses_joined
 
@@ -69,6 +80,7 @@ __all__ = [
     "calls",
     "calls_in",
     "classes",
+    "cognitive",
     "comment_of",
     "defined",
     "family",

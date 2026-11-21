@@ -265,6 +265,7 @@ CONFIG_FOR_ORDERS = (
 # - guideline.complexity: `validate()` nests five levels deep, where early returns would read flat.
 # - rule.no-print: `place()` prints in library code, where a logger belongs.
 # - rule.sensitive-logging: `_in_stock()` writes the stock service's password to the log whole.
+# - rule.cognitive-complexity: `bulk_discount_cents()` nests seven levels deep, where McCabe's count, 9, passes lint.
 # - rule.radius-types, as above: `paid` may be None, and its attributes are read unchecked.
 ORDERS = '''"""Orders: what a customer buys, what it costs, and charging for it."""
 
@@ -347,6 +348,20 @@ def validate(order: Order) -> list[str]:
     else:
         problems.append("an order needs at least one line")
     return problems
+
+
+def bulk_discount_cents(order: Order, prices: dict[str, int]) -> int:
+    """What a large order saves: a tenth of a line's price for each of its bulk steps."""
+    saved = 0
+    if order.lines:
+        for line in order.lines:
+            if line.sku in prices:
+                for step in (10, 20):
+                    if line.quantity >= step:
+                        while saved < prices[line.sku] * line.quantity:
+                            if saved % 2 == 0 or line.quantity > step:
+                                saved += prices[line.sku] // 10
+    return saved
 
 
 def place(db: sqlite3.Connection, order: Order) -> str:

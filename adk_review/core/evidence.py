@@ -26,6 +26,8 @@ class Entry(TypedDict):
     path: str  # repository-relative, as git spells it
     status: str  # A, M, D, R, C or T, as `diff-tree` letters it
     old: NotRequired[str]  # a renamed or copied file's former path, under R and C alone
+    #: A Python file's text before the change, "" for one the change added, None where the collector read none
+    before: NotRequired[str | None]
     diff: str | None  # its whole diff as git printed it, for the rules; None once the checks node let it go
     added: list[tuple[int, str]] | None  # each line the change added, numbered in the new file; None once let go
     added_at: frozenset[int]  # the added lines' numbers, kept for the report after `added` is let go
@@ -78,6 +80,7 @@ def entry(
         "cut": False,
         "text": text,
         "unread_text": None,
+        "before": "" if status == "A" else None,  # an added file held nothing; the collector reads the rest
     }
     if old is not None:
         made["old"] = old

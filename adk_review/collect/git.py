@@ -1197,6 +1197,10 @@ def gather(
         base_texts: dict[str, str] | None = base_files(resolved, olds) if olds else {}
     except GitError:
         base_texts = None
+    # Each file's text before the change, for a rule that weighs the change against it: the same strings, no copy.
+    for file in files:
+        if file["status"] != "A":  # one the change added held nothing, as its entry says
+            file["before"] = (base_texts or {}).get(file.get("old", file["path"]))
     # The head read whole, every Python file parsed, only for what reads it: a tree rule that needs it for this change,
     # which it tells from the changed files' texts, read first, or the radius a guideline is shown, which measures
     # changed Python files alone. The changed files' own texts are read either way, for the file rules.
