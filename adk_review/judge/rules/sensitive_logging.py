@@ -23,6 +23,8 @@ from ..rule_helpers import ChangedFile, FileRule, calls_in, is_test, name_of, na
 WRITES = ("debug", "info", "warning", "warn", "error", "critical", "exception", "log")
 #: What a logger is named, by its last part: `logger`, `log`, `logging`, `self._log`, a project's own `obslog`.
 LOGGER = re.compile(r"(?i)log(?:ger|ging)?$")
+#: And what only ends as one does. Read by review: `catalog.info(token)` and `dialog.warning(password)` were named.
+NO_LOGGER = re.compile(r"(?i)(?:^|[._])(?:cata|dia|change|back|b|ana|pro|epi|web|trave)log$")
 
 
 class SensitiveLogging(FileRule):
@@ -51,14 +53,21 @@ class SensitiveLogging(FileRule):
         """Each value the change added to a logging call whole, under a name that says secret, at the value's line."""
         if not file.path.endswith(".py") or is_test(file.path):
             return []
-        writes = calls_in(file.module, *(f"*.{write}" for write in WRITES))
         return sorted(
             (value.lineno, f"`{name_of(value)}` is written to the log whole")
-            for call in writes
-            if LOGGER.search(name_of(call.func).rpartition(".")[0])
+            for call in calls_in(file.module, *(f"*.{write}" for write in WRITES))
+            if _logs(name_of(call.func).rpartition(".")[0])
             for value in _handed(call)
-            if value.lineno in file.added and names_secret(name_of(value).rpartition(".")[2])
+            # The value's own line, or the line that made the call a logger's: read by review, `emit(` changed to
+            # `logger.info(` over arguments the change left alone named none of them.
+            if (value.lineno in file.added or call.func.end_lineno in file.added)
+            and names_secret(name_of(value).rpartition(".")[2])
         )
+
+
+def _logs(receiver: str) -> bool:
+    """Whether what a call is made on is named as a logger is."""
+    return LOGGER.search(receiver) is not None and NO_LOGGER.search(receiver) is None
 
 
 def _handed(call: ast.Call) -> Iterator[ast.Name | ast.Attribute]:

@@ -117,7 +117,8 @@ class TestTheConfig:
         names = ("default", "default-rules", "simplify", "code-review")
         on = {name: chosen(profiles, name, found.ids(), found.groups()) for name in names}
         cleanup = ["guideline.complexity", "guideline.efficiency", "guideline.altitude"]
-        assert on["simplify"] == ["rule.lint", "rule.pitfalls", "rule.simplify", *cleanup]
+        tidy = ["rule.simplify", "rule.cognitive-complexity"]  # each cleanup rule, as the new-rule procedure says
+        assert on["simplify"] == ["rule.lint", "rule.pitfalls", *tidy, *cleanup]
         bugs = ["guideline.correctness", "guideline.security"]
         assert on["code-review"] == [*on["default-rules"], "rule.simplify", *bugs, *cleanup]
         assert [check for check in on["default"] if check.startswith("guideline.")] == [

@@ -129,7 +129,8 @@ def cognitive(function: ast.FunctionDef | ast.AsyncFunctionDef) -> int:
     """How hard `function` is to follow, as SonarSource's cognitive complexity counts it: one for each break in a
     straight reading, an `if`, `elif`, `else`, loop, `except`, `match`, conditional expression, run of one boolean
     operator and call of itself, and one more for each level it stands at, a function or a lambda inside it a level
-    too. A `try`, a `with` and a comprehension read straight. Checked against this repository at one commit before it
+    too. A `try`, a `with` and a comprehension read straight, and a method that calls a built-in of its own name
+    reads as calling itself. Checked against this repository at one commit before it
     was written in: 43 functions at 15 or more and 12 above 20, as two other counts of the measure gave."""
     return _block(function.body, 0, function.name)
 
@@ -150,7 +151,7 @@ def _cost(node: ast.AST, depth: int, name: str) -> int:
         straight = _block([*node.body, *node.orelse, *node.finalbody], depth, name)
         return straight + sum(1 + depth + _block(handler.body, depth + 1, name) for handler in node.handlers)
     if isinstance(node, ast.Match):
-        cases = sum(_block(case.body, depth + 1, name) for case in node.cases)
+        cases = sum(_block([*([case.guard] if case.guard else []), *case.body], depth + 1, name) for case in node.cases)
         return 1 + depth + _cost(node.subject, depth, name) + cases
     if isinstance(node, ast.IfExp):
         return 1 + depth + _cost(node.test, depth, name) + _block([node.body, node.orelse], depth + 1, name)

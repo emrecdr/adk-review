@@ -483,6 +483,7 @@ class TestTheSecretShapes:
         assert score("    return f(a, b, c, rows)\n") == 1, "it calls itself"
         assert score("    return [row for row in rows if row]\n") == 0, "a comprehension reads as one line"
         assert score("    with a:\n        return b\n") == 0
+        assert score("    match a:\n        case 1 if b and c:\n            return 1\n") == 2, "a case's guard is read"
 
     def test_a_function_a_change_made_hard_to_follow_is_named_and_one_it_found_so_is_not(self) -> None:
         """Measured over four projects' last 150 commits before the rule was written: at a bar of 15 a function a
@@ -512,7 +513,29 @@ class TestTheSecretShapes:
         assert found(nested("work", 6) + "\nx = 1\n", nested("work", 6), [10]) == [], "not touched"
         assert found(nested("work", 5), nested("work", 2), [4, 5, 6, 7]) == [], "raised, to 15: under the bar"
         new = found(nested("work", 6), "", list(range(1, 9)))
-        assert [line for line, _said in new] == [1] and "new" in new[0][1], new
+        assert [line for line, _said in new] == [1] and "before" not in new[0][1], new
+        # Read by review, each reproduced. A function renamed, its body as it was, is not new.
+        assert found(nested("do_work", 7), nested("work", 7), [1]) == [], "renamed, and left as hard"
+        # One under an `if` is read as any other.
+        under = "if True:\n" + "".join(f"    {line}\n" for line in nested("work", 6).splitlines())
+        was = "if True:\n" + "".join(f"    {line}\n" for line in nested("work", 3).splitlines())
+        assert [line for line, _said in found(under, was, [6, 7, 8, 9])] == [2]
+
+        def both(getter: int) -> str:  # a property and its setter, one name for two functions
+            parts = [nested("x", getter), nested("x", 6)]
+            marks = ("@property", "@x.setter")
+            return "class K:\n" + "".join(
+                f"    {mark}\n" + "".join(f"    {line}\n" for line in part.splitlines())
+                for mark, part in zip(marks, parts, strict=True)
+            )
+
+        raised_getter = found(both(6), both(1), list(range(3, 11)))
+        assert [line for line, _said in raised_getter] == [3], "the getter, weighed against the getter"
+        assert found(nested("work", 6), "def work(:\n", list(range(1, 9))) == [], "a base Python cannot read"
+        long = "def join():\n    return " + " + ".join(['"a"'] * 600) + "\n" + nested("work", 6)
+        entry = {**_entry("app/work.py", long), "status": "M", "before": "", "added": [(4, "x")]}
+        answer = run_rules({"files": [entry], "tree": None}, [CognitiveComplexity()])["rule.cognitive-complexity"]
+        assert answer.could_not_look is None, answer.could_not_look
         assert found(nested("work", 6), None, list(range(1, 9))) == [], "nothing to weigh it against: not read"
         assert found(nested("work", 6), "", list(range(1, 9)), "tests/test_work.py") == [], "a test is not read"
 
@@ -534,6 +557,8 @@ class TestTheSecretShapes:
             'obslog.info("push", device_token=device_token)',
             'logger.log(logging.INFO, "secret %s", self.client_secret)',
             'logger.exception("as %r", (user_id, db_pwd))',
+            'logger.info("key %s", settings.SECRET_KEY)',
+            'logger.info("key %s", aws_secret_access_key)',
         )
         left = (
             'logger.info("token %s", token[:8])',
@@ -548,6 +573,14 @@ class TestTheSecretShapes:
             "print(token)",
             "math.log(token)",
             "cache.set(token)",
+            # Read by review, each reproduced: a word that ends in log is no logger, and a token is not always a secret.
+            'catalog.info("%s", token)',
+            'self.dialog.warning("%s", password)',
+            'changelog.info("%s", api_key)',
+            'logger.info("next %s", next_token)',
+            'logger.info("from %s", self._starting_token)',
+            'logger.info("eos %s", tokenizer.eos_token)',
+            'logger.info("hash %s", hashed_token)',
         )
         for line in named:
             assert lines_hit(rule, "app/auth.py", f"{line}\n") == [1], line
@@ -556,6 +589,10 @@ class TestTheSecretShapes:
         wrapped = 'logger.info(\n    "token %s",\n    access_token,\n)\n'
         assert lines_hit(rule, "app/auth.py", wrapped) == [3], "named where the value stands"
         assert lines_hit(rule, "tests/test_auth.py", f"{named[0]}\n") == [], "a test logs what it made up"
+        # Read by review: `emit(` made `logger.info(` on the call's first line logs each value the lines under it hold.
+        made = {**_entry("app/auth.py", wrapped), "status": "M", "added": [(1, "logger.info(")]}
+        found = run_rules({"files": [made], "tree": None}, [rule])["rule.sensitive-logging"].findings
+        assert [hit.line for hit in found] == [3], found
         kept = {**_entry("app/auth.py", f"{named[0]}\nx = 1\n"), "status": "M", "added": [(2, "x = 1")]}
         assert run_rules({"files": [kept], "tree": None}, [rule])["rule.sensitive-logging"].findings == []
 

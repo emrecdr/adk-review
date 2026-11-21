@@ -2958,7 +2958,7 @@ class TestWhatTheCommandTells:
         assert re.fullmatch(r"review: repository repo: feature @ [0-9a-f]{9} against main @ [0-9a-f]{9}", phases[1])
         assert re.fullmatch(r"review: 1 commit\(s\) since the merge base [0-9a-f]{9}", phases[2]), said
         assert phases[3] == "review: read 1 file(s) (1 added), 0 ignored", said
-        assert phases[4] == "review: lines added and deleted: source +1 -0, tests +0 -0", said
+        assert phases[4] == "review: Python lines added and deleted: source +1 -0, tests +0 -0", said
         assert phases[5].startswith("review: running ") and phases[5].endswith(" rule(s)"), said
         assert phases[6].startswith("review: rules done in ") and phases[6].endswith(" s") and len(phases) == 7, said
         assert any(line.startswith("review: still running the rules: ") for line in said), said
@@ -2986,7 +2986,10 @@ class TestWhatTheCommandTells:
         assert said[3] == "review: read 4 file(s) (2 added, 1 modified, 1 deleted), 0 ignored, 1 outside the scope"
         # Asked by the owner, as one factual line: measured over four projects, a ratio of the two alarmed falsely
         # in 10 of 15 commits read, so the lines are counted, source and tests apart, and nothing is made of them.
-        assert said[4] == "review: lines added and deleted: source +2 -2, tests +2 -0", said
+        assert said[4] == "review: Python lines added and deleted: source +2 -2, tests +2 -0", said
+        # Read by review: a lock file's 50 lines read as source. Python's files alone are counted.
+        lock = {"path": "uv.lock", "added": [(1, "x")] * 50, "diff": ""}
+        assert cli._lines([lock], False, True) == (0, 0)
         assert cli.main([*argv, "--quiet"]) == 0 and capsys.readouterr().err == "", "a pipeline's log stays the report"
 
     def test_a_closed_stderr_still_ends_in_the_verdict(self, cli, tmp_path: Path, monkeypatch, capsys) -> None:

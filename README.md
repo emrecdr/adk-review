@@ -396,7 +396,8 @@ A profile is a list in `config.toml`, and a check runs only where a profile name
 - `rules-only` is every rule but the payments demo's, each by its id, and no model;
 - `full` is `rules-only`'s rules and every guideline, through the group `guidelines`;
 - `simplify` and `code-review` read a change as Claude Code's `/simplify` and `/code-review` do: the first the cleanup,
-  `rule.simplify` and the guidelines `complexity`, `efficiency` and `altitude`, with `lint` and `pitfalls` beside them;
+  `rule.simplify`, `rule.cognitive-complexity` and the guidelines `complexity`, `efficiency` and `altitude`, with `lint`
+  and `pitfalls` beside them;
   the second the default's rules, `pitfalls` among them, and `simplify`, then `correctness` and `security` before the
   same three. `/code-review`'s conventions angle, which obeys the reviewed repository's own `CLAUDE.md`, is left out;
 - `demo` is the payments demo's: every rule, through the group `rules`, its own among them, and no model.

@@ -464,7 +464,7 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         action="store_true",
         help="tell each phase on stderr, and every few seconds what the review still waits on. After it reads the "
         "change, it names the repository, both sides and the files by kind. For a branch, it also names the commits "
-        "since the merge base. It counts the lines added and deleted, source and tests apart. On at a terminal",
+        "since the merge base. It counts the Python lines added and deleted, source and tests apart. On at a terminal",
     )
     told.add_argument(
         "--quiet",
@@ -1259,15 +1259,15 @@ def _tell_started(say: Callable[[str], None] | None, evidence: Evidence) -> None
         + (f", {outside} outside the scope" if outside else "")
     )
     (grew, shrank), (tested, untested) = (_lines(files, tests, evidence.get("whole", False)) for tests in (False, True))
-    say(f"lines added and deleted: source +{grew} -{shrank}, tests +{tested} -{untested}")
+    say(f"Python lines added and deleted: source +{grew} -{shrank}, tests +{tested} -{untested}")
 
 
 def _lines(files: list[Entry], tests: bool, whole: bool) -> tuple[int, int]:
-    """The lines the change added to and deleted from the files read, a test's or the rest, counted from each file's
-    diff, which the review read already. A whole project deletes none, and its diffs are not read again for it.
-    Counted and nothing made of them: measured over four projects, a ratio of test lines to source lines alarmed
-    falsely in 10 of 15 commits read."""
-    own = [entry for entry in files if is_test(entry["path"]) == tests]
+    """The lines the change added to and deleted from the Python files read, a test's or the rest, counted from each
+    file's diff, which the review read already. Python's alone: read by review, a lock file's 50 lines read as source.
+    A whole project deletes none, and its diffs are not read again for it. Counted and nothing made of them: measured
+    over four projects, a ratio of test lines to source lines alarmed falsely in 10 of 15 commits read."""
+    own = [entry for entry in files if entry["path"].endswith(".py") and is_test(entry["path"]) == tests]
     added = sum(len(entry["added"] or ()) for entry in own)
     if whole:
         return added, 0
