@@ -2958,8 +2958,9 @@ class TestWhatTheCommandTells:
         assert re.fullmatch(r"review: repository repo: feature @ [0-9a-f]{9} against main @ [0-9a-f]{9}", phases[1])
         assert re.fullmatch(r"review: 1 commit\(s\) since the merge base [0-9a-f]{9}", phases[2]), said
         assert phases[3] == "review: read 1 file(s) (1 added), 0 ignored", said
-        assert phases[4].startswith("review: running ") and phases[4].endswith(" rule(s)"), said
-        assert phases[5].startswith("review: rules done in ") and phases[5].endswith(" s") and len(phases) == 6, said
+        assert phases[4] == "review: lines added and deleted: source +1 -0, tests +0 -0", said
+        assert phases[5].startswith("review: running ") and phases[5].endswith(" rule(s)"), said
+        assert phases[6].startswith("review: rules done in ") and phases[6].endswith(" s") and len(phases) == 7, said
         assert any(line.startswith("review: still running the rules: ") for line in said), said
 
     def test_progress_tells_what_the_change_holds_before_any_check_runs(self, cli, tmp_path: Path, capsys) -> None:
@@ -2973,6 +2974,7 @@ class TestWhatTheCommandTells:
         _git_in(repo, "checkout", "-q", "-B", "feature")
         _committed(repo, "src/kept.py", "x = 2\n")
         _committed(repo, "src/new.py", "z = 1\n")
+        _committed(repo, "src/test_new.py", "def test_z():\n    assert True\n")
         _git_in(repo, "rm", "-q", "src/gone.py")
         _git_in(repo, "commit", "-qm", "gone")
         _committed(repo, "docs/notes.py", "w = 1\n")
@@ -2980,8 +2982,11 @@ class TestWhatTheCommandTells:
         assert cli.main([*argv, "--progress"]) == 0
         said = [line for line in capsys.readouterr().err.splitlines() if not line.startswith("review: still ")]
         assert re.fullmatch(r"review: repository shop: feature @ [0-9a-f]{9} against main @ [0-9a-f]{9}", said[1])
-        assert re.fullmatch(r"review: 4 commit\(s\) since the merge base [0-9a-f]{9}", said[2]), said
-        assert said[3] == "review: read 3 file(s) (1 added, 1 modified, 1 deleted), 0 ignored, 1 outside the scope"
+        assert re.fullmatch(r"review: 5 commit\(s\) since the merge base [0-9a-f]{9}", said[2]), said
+        assert said[3] == "review: read 4 file(s) (2 added, 1 modified, 1 deleted), 0 ignored, 1 outside the scope"
+        # Asked by the owner, as one factual line: measured over four projects, a ratio of the two alarmed falsely
+        # in 10 of 15 commits read, so the lines are counted, source and tests apart, and nothing is made of them.
+        assert said[4] == "review: lines added and deleted: source +2 -2, tests +2 -0", said
         assert cli.main([*argv, "--quiet"]) == 0 and capsys.readouterr().err == "", "a pipeline's log stays the report"
 
     def test_a_closed_stderr_still_ends_in_the_verdict(self, cli, tmp_path: Path, monkeypatch, capsys) -> None:
@@ -4009,7 +4014,7 @@ class TestWhatANewcomerReads:
         ), out
         assert out.count("- no findings") == 0 and "### rule.secrets\n" in out and "### rule.no-print" not in out
         silent = out.split("### no findings from ", 1)[1].split("\n", 1)[0]
-        assert silent.startswith("19 checks"), silent
+        assert silent.startswith("21 checks"), silent
         assert "`rule.no-print`" in out.split("### no findings from ", 1)[1].split("\n\n", 1)[0]
 
     def test_a_check_named_without_its_kind_is_pointed_at_the_nearest_id(self, demo_repo: Path, cli, capsys) -> None:

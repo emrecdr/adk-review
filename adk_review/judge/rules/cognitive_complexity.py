@@ -7,7 +7,8 @@ repository's 43 functions at 15 or more, ruff named none at its defaults.
 
 Weighed against what the file held before, so a function found hard and left as hard is not the change's to answer
 for. Measured over four projects' last 150 commits each: at a bar of 15, 6 of 15 alerts read were marginal, a flat
-ladder of checks or a new function at 15 or 16; above 20, 2 of 8.
+ladder of checks or a new function at 15 or 16; above 20, 2 of 8. This rule over the same 599 commits, read as a
+review reads a commit: 87 functions in 62 of them, 3 in this repository's 150.
 """
 
 from __future__ import annotations
