@@ -89,12 +89,22 @@ def _raised(name: str, at: int, now: _Named, was: _Named) -> tuple[int, str] | N
 
 
 def _held(name: str, at: int, now: _Named, was: _Named) -> list[_Function]:
-    """The base's functions `now[name][at]` is weighed against: the one in its place where the base holds as many of
-    its name, a property and its setter each against its own; else every one of its name, the hardest deciding, since
-    a stub added above it or one removed moves each place; none for a name the base does not hold. Read by review: by
-    place alone, two stubs added above a function found hard named it as new."""
-    held = was.get(name, [])
-    return [held[at]] if len(held) == len(now[name]) else held
+    """The base's functions `now[name][at]` is weighed against, the hardest deciding. The one in its place, where the
+    base holds as many of its name: a property and its setter, each against its own. Where it holds another count, a
+    stub added above it or a setter beside it, each of its name that no other function of that name still holds as it
+    was: read by review, by place alone two stubs named a function found hard as new, and against every one of its
+    name a setter added beside a hard getter was not named. And for a name the base does not hold, a function of its
+    last name that the head no longer holds, a class renamed or a method moved; none where there is no such."""
+    held = was.get(name)
+    if held is None:
+        last = name.rpartition(".")[2]
+        return [
+            old for other, olds in was.items() if other not in now and other.rpartition(".")[2] == last for old in olds
+        ]
+    if len(held) == len(now[name]):
+        return [held[at]]
+    kept = {_body(function) for place, function in enumerate(now[name]) if place != at}
+    return [old for old in held if _body(old) not in kept]
 
 
 def _moved(function: _Function, now: _Named, was: _Named) -> bool:

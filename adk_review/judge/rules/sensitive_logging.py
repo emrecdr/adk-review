@@ -26,7 +26,7 @@ WRITES = ("debug", "info", "warning", "warn", "error", "critical", "exception", 
 #: What a logger is named, by its last part: `logger`, `log`, `logging`, `self._log`, a project's own `obslog`.
 LOGGER = re.compile(r"(?i)log(?:ger|ging)?$")
 #: And what only ends as one does. Read by review: `catalog.info(token)` and `dialog.warning(password)` were named.
-NO_LOGGER = re.compile(r"(?i)(?:^|[._])(?:cata|dia|change|back|b|ana|pro|epi|web|trave)log(?:ger|ging)?$")
+NO_LOGGER = re.compile(r"(?i)(?:^|[._])(?:(?:cata|dia|change|back|ana|pro|epi|web|trave)log|blog(?:ger|ging)?)$")
 #: Where one word ends and the next begins inside a name written without `_`: `productCatalog` is a catalog.
 _HUMP = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 
@@ -67,9 +67,10 @@ class SensitiveLogging(FileRule):
 
 
 def _logs(receiver: str) -> bool:
-    """Whether what a call is made on is named as a logger is, read word by word."""
+    """Whether what a call is made on is named as a logger is: as written, and word by word, so `changeLog` and
+    `productCatalog` are none, and `weblogger` is one."""
     words = _HUMP.sub("_", receiver)
-    return LOGGER.search(words) is not None and NO_LOGGER.search(words) is None
+    return LOGGER.search(words) is not None and not (NO_LOGGER.search(receiver) or NO_LOGGER.search(words))
 
 
 def _handed(call: ast.Call) -> Iterator[ast.Name | ast.Attribute]:

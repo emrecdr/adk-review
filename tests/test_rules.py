@@ -549,6 +549,25 @@ class TestTheSecretShapes:
         handled = "try:\n    pass\nexcept ImportError:\n"
         guarded = found(inside(handled, nested("work", 6)), handled + "    pass\n", [6, 7, 8])
         assert [line for line, _said in guarded] == [4], guarded
+        # Read by the third review, each reproduced. A hard setter added beside a hard getter is new: the getter,
+        # which the change left alone, is not what it was before.
+        getter = inside("class K:\n", "@property\n" + nested("x", 6))
+        added_setter = found(both(6), getter, list(range(11, 20)))
+        assert [line for line, _said in added_setter] == [12], added_setter
+        # A getter raised while a deleter is added is weighed against the getter, not against its hard setter.
+        with_deleter = both(6) + "    @x.deleter\n    def x(self):\n        pass\n"
+        raised_beside = found(with_deleter, both(1), list(range(3, 11)))
+        assert [line for line, _said in raised_beside] == [3] and "1 before" in raised_beside[0][1], raised_beside
+        # A class renamed, its hard method edited by one point: weighed against the method the old name held.
+        renamed = found(
+            inside("class New:\n", nested("m", 6, one_more=True)), inside("class Old:\n", nested("m", 6)), [8, 9]
+        )
+        assert renamed == [], "21 to 22, under a class renamed"
+        # A method moved to another class and raised: named, with what it read at where it was.
+        was_in_a = inside("class A:\n", nested("m", 6)) + "\n\nclass B:\n    pass\n"
+        now_in_b = "class A:\n    pass\n\n\n" + inside("class B:\n", nested("m", 7))
+        moved = found(now_in_b, was_in_a, list(range(5, 15)))
+        assert len(moved) == 1 and "28, 21 before" in moved[0][1], moved
         long = "def join():\n    return " + " + ".join(['"a"'] * 600) + "\n" + nested("work", 6)
         entry = {**_entry("app/work.py", long), "status": "M", "before": "", "added": [(4, "x")]}
         answer = run_rules({"files": [entry], "tree": None}, [CognitiveComplexity()])["rule.cognitive-complexity"]
@@ -581,6 +600,7 @@ class TestTheSecretShapes:
             'logger.exception("as %r", (user_id, db_pwd))',
             'logger.info("key %s", settings.SECRET_KEY)',
             'logger.info("key %s", aws_secret_access_key)',
+            'weblogger.info("%s", token)',
         )
         left = (
             'logger.info("token %s", token[:8])',
@@ -606,6 +626,7 @@ class TestTheSecretShapes:
             'productCatalog.info("%s", token)',
             'self.saveDialog.warning("%s", password)',
             'blogger.info("%s", token)',
+            'changeLog.info("%s", api_key)',
         )
         for line in named:
             assert lines_hit(rule, "app/auth.py", f"{line}\n") == [1], line
