@@ -319,7 +319,8 @@ Conventions:
 - Every string a model reads is capped in characters, with the cut named in the text, and the cut never falls inside a
   credential, and so is each title, change, reason and corrected code a model writes into a finding, cut where
   `core/findings.py` makes it. A dropped finding's file is a model's text too, cut in `drop_ungrounded` at
-  `REASON_MAX_CHARS`. The report cuts each finding's evidence the same way, after the scrub, and breaks CI runners'
+  `REASON_MAX_CHARS`. A rule's quote from a file that holds a private key is withheld (`KEY_WITHHELD`), its line
+  named. The report cuts each finding's evidence the same way, after the scrub, and breaks CI runners'
   command openers (`##[`, `##vso[`, `::` opening a line) and HTML comments' (`<!--`) in all it prints, and in prose a markdown image's or link's (`![`, `](`) and a reference a pull
   request's page acts on (`@name`, `#12`, `!12`), every character a reader cannot see printed as a space.
 - Every sentence the package prints itself — a stderr line, a flag's `--help`, an error it raises or answers, a rule's

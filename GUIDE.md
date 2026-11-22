@@ -451,18 +451,21 @@ adk-review <repo> --head <branch> --base develop --profile default-rules --comme
 ```
 
 A file that holds a private key is shown to no model: its header or footer on a line of its own, as a key file, a YAML
-block or a Python string holds one, a PuTTY key's header, or a key in base64 opening a line. A diff shows three lines
+block or a Python string holds one, a Python string of the header or the footer and its line break alone, as a key
+joined from strings is written, a PuTTY key's header, or a key in base64 opening a line. A diff shows three lines
 around each change, so a change beside a key, or inside one, would show lines of it that no redaction can tell for a
 key's. Where a guideline runs, the file is named under "not read", and the review ends in exit 3. The rules still read
-it, and a review with no guideline is not touched. Move the key out of the file, or add the file to the skip list:
+it, and a review with no guideline is not touched. A rule's finding there names its line and withholds its quote. Move
+the key out of the file, which is best, since a key belongs in a secret store, or add the file to the skip list:
 
 ```
 adk-review <repo> --head <branch> --base main --skip config/deploy.yaml
 ```
 
-A key written another way, in a string that neither opens nor closes on its header, or in base64 that does not open a
-line, is not told apart. The redaction still hides a key whose header, body and footer a diff shows together, and a key
-in base64 on one line.
+A key written another way is not told apart: in a string that holds more than its header, in a list joined at run
+time, or in base64 that does not open a line. Nor is a key in a file past the 1,000,000 bytes above, which is read by
+its diff alone. Of such a key, the redaction hides what it reads as one: a header, the key's lines and a footer that a
+diff shows together, none of them in quotes, or base64 on one line.
 
 The review plans the parts itself, before any model call, from what each file takes of the diffs the guidelines read: a
 folder whole where it fits, else its folders and files one level down. `--dry-run` prints each run as a command to copy:

@@ -111,7 +111,9 @@ def unjudged(state: State | Mapping[str, Any]) -> str | None:
     as a check that could not look, for the same reason."""
     if failure := state.get(FAILURE):
         return f"Nothing was judged against this guideline: a call earlier in this turn failed, {failure}"
-    if not state.get(DIFF) and not state.get(IGNORED):
+    # A file gathered and shown to none, one the skip list names say, leaves the block empty: read by review, chat
+    # ended a lock file's bump DEGRADED. Chat's checks node writes each file it gathered, and the command seeds none.
+    if not state.get(DIFF) and not state.get(IGNORED) and not state.get(QUOTABLE):
         return "Nothing was gathered, so nothing was judged against this guideline."
     return None
 

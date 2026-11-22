@@ -414,6 +414,8 @@ class TestWhatTheSecretsGateKnows:
             f"-{head}\n",  # a deleted one
             "PuTTY-User-Key-File-" + "3: ssh-ed25519\nEncryption: none\n",
             "tls_key: |\n  " + base64.b64encode(f"{head}\nMIIEowIBAAKCAQEA".encode()).decode()[:76] + "\n",  # wrapped
+            f'KEY = (\n    "{head}\\n"\n    "MIIEowIBAAKCAQEA\\n"\n',  # joined strings, read by review
+            f"    b'MIIEowIBAAKCAQEA\\n'\n    b'{foot}\\n',\n)\n",  # their last line, a byte string in a list
         )
         named = (
             f'private_key = "{head}..."',
@@ -424,6 +426,8 @@ class TestWhatTheSecretsGateKnows:
             f"x = 1  # {head} opens a key",
             "tls.key: "
             + base64.b64encode(f"{head}\nMIIE".encode()).decode(),  # one line, hidden whole by the redaction
+            f'        "{head}\\n" * (size // 28),',  # this repository's own test of a long line
+            f'MARKERS = (\n    "{head}",\n    "{foot}",\n)',  # a parser's markers, no key between them
         )
         assert [text for text in held if not holds_private_key(text)] == []
         assert [text for text in named if holds_private_key(text)] == []
@@ -1409,6 +1413,56 @@ class TestWhatRanUntested:
         assert asked and "sign" in sent, "a guideline was asked of the change to sign()"
         assert [line for line in body if line[:16] in sent] == [], "no line of the key"
         assert "more call into `sign()` from `app.py`, not shown" in sent, "the call is counted, not shown"
+
+    def test_a_key_file_a_change_only_moves_is_no_hole(self, cli, tmp_path: Path, capsys) -> None:
+        """Read by review, and reproduced: a key file the change only renamed shows no line of it, and was named a
+        hole, so moving a folder of fixtures failed every review a guideline runs in."""
+        key = "\n".join(
+            ["-----BEGIN RSA " + "PRIVATE KEY-----", "MIIEowIBAAKCAQEA", "-----END RSA " + "PRIVATE KEY-----"]
+        )
+        repo = tmp_path / "r"
+        (repo / "keys").mkdir(parents=True)
+        _git_in(repo, "init", "-q", "-b", "main")
+        (repo / "keys" / "deploy.yaml").write_text(f"key: |\n  {key}\n", encoding="utf-8", newline="\n")
+        (repo / "app.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
+        _git_in(repo, "add", ".")
+        _git_in(repo, "commit", "-qm", "init")
+        _git_in(repo, "checkout", "-qb", "feature")
+        (repo / "certs").mkdir()
+        _git_in(repo, "mv", "keys/deploy.yaml", "certs/deploy.yaml")
+        (repo / "app.py").write_text("x = 2\n", encoding="utf-8", newline="\n")
+        _git_in(repo, "commit", "-qam", "move")
+        assert cli.main([str(repo), "--head", "feature", "--base", "main"]) == 0, capsys.readouterr().out
+
+    def test_a_rules_quote_of_a_line_in_a_file_that_holds_a_key_reaches_no_model(
+        self, cli, asked, tmp_path: Path
+    ) -> None:
+        """Read by review, and reproduced: lint quoted a key's line its trailing blanks named, the redaction cannot
+        tell one line for a key's, and the verifier was sent it, as chat's verdict and the report were. A rule's
+        quote from such a file is withheld, its line still named."""
+        from adk_review.core.rules import KEY_WITHHELD
+
+        body = [f"FAKEKEYBODY{n:02d}" + "A" * 51 for n in range(8)]
+        lines = ["-----BEGIN RSA " + "PRIVATE KEY-----", *body, "-----END RSA " + "PRIVATE KEY-----"]
+        lines[3] += "   "
+        repo = tmp_path / "r"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", "main")
+        (repo / "app.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
+        _git_in(repo, "add", ".")
+        _git_in(repo, "commit", "-qm", "init")
+        _git_in(repo, "checkout", "-qb", "feature")
+        (repo / "keys.py").write_text('KEY = """' + "\n".join(lines) + '"""\n', encoding="utf-8", newline="\n")
+        (repo / "app.py").write_text("x = 2\n", encoding="utf-8", newline="\n")
+        _git_in(repo, "add", ".")
+        _git_in(repo, "commit", "-qm", "change")
+        data = tmp_path / "review.json"
+        cli.main([str(repo), "--head", "feature", "--base", "main", "--verify", "--json", str(data)])
+        sent = "\n".join(system + "\n" + "\n".join(turns) for system, turns in asked)
+        assert "W291" in sent, "the verifier was asked of lint's finding"
+        assert [line for line in body if line[:16] in sent] == [], "no line of the key"
+        said = [f for f in json.loads(data.read_text(encoding="utf-8"))["findings"] if "W291" in f["title"]]
+        assert said and all(f["evidence"] == KEY_WITHHELD for f in said), said
 
     def test_a_change_no_guideline_is_shown_a_file_of_asks_no_model(self, cli, asked, tmp_path: Path) -> None:
         """Read by review, and reproduced: a change of only files the skip list names built a block of its note alone,

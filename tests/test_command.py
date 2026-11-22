@@ -705,6 +705,23 @@ class TestWhatAReviewCovers:
         assert said.startswith("verdict: APPROVED") and "README.md" in said, said
 
     @pytest.mark.asyncio
+    async def test_chat_approves_a_change_of_only_files_the_skip_list_names(
+        self, tmp_path: Path, monkeypatch, fake_provider
+    ) -> None:
+        """Read by review, and reproduced: once a block of a note alone asked no model, chat read the empty block of a
+        change of only skip-listed files, a lock file's bump, as nothing gathered, and ended DEGRADED where the command
+        approves. It reads what its checks node gathered."""
+        from adk_review.judge.agents import FINDINGS
+
+        repo = _branch_off_empty(tmp_path / "repo", "feature", base="main")
+        _committed(repo, "uv.lock", "version = 1\n")
+        module = load_agent(monkeypatch)
+        confirms(fake_provider, repo, head="feature")
+        _final, state = await run_turn(module, "Review feature against main.")
+        said = state.get(FINDINGS, "")
+        assert said.startswith("verdict: APPROVED"), said
+
+    @pytest.mark.asyncio
     async def test_chat_reads_the_head_whole_only_where_its_checks_do(
         self, tmp_path: Path, head_reads: list[int], fake_provider
     ) -> None:

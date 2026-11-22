@@ -1186,7 +1186,9 @@ def gather(
     read_texts(resolved, files, listing, excluded)
     # A file whose text at the head holds a private key, its diff showing neither the key's header nor its footer, a
     # change inside a long key: the change read again, that file shown to no model. As rare as a key beside a change.
-    keys = (f["path"] for f in files if f["unread"] != KEY_UNREAD and holds_private_key(f["text"] or ""))
+    # Only where its diff shows a line: read by review, a key file only renamed showed none, and was named a hole.
+    shows = (f for f in files if f["unread"] != KEY_UNREAD and next(hunk_lines(unreleased(f["diff"])), None))
+    keys = (f["path"] for f in shows if holds_private_key(f["text"] or ""))
     if guidelines and (held := {path for path in keys if path not in excluded}):
         try:
             files, block, excluded, left_out, parts = _read_change(

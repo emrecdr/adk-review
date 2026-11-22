@@ -341,11 +341,16 @@ _PATTERNS_REST = (*_VENDOR_REST, *_GENERIC)
 
 #: A private key's header or footer on a line of its own, as a key file, a YAML or TOML block or a Python string it
 #: opens or closes holds it, a diff's mark before it or not, a PuTTY key file's header, or a key in base64 opening a
-#: line, as `base64` wraps one at 76 characters: measured, the redaction hid its first line of eleven. Code that names
-#: one in quotes, a comment or a placeholder holds none: measured over 31,089 text files, none matched, where 30-odd do.
+#: line, as `base64` wraps one at 76 characters: measured, the redaction hid its first line of eleven. And a Python
+#: string that holds a header or a footer and its line break alone, a line of its own, as a key joined from strings
+#: is written: read by review, every line of one was sent, since the redaction reads no quoted line as a key's. Code
+#: that names one in quotes, a comment or a placeholder holds none: measured over 31,089 text files, none matched,
+#: where 30-odd do.
 _HOLDS_KEY = re.compile(
     r"^[+\- ]?[ \t]*(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r"|PuTTY-User-Key-File-[23]:|" + _KEY_BASE64 + ")"
-    r"|(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r")[ \t]*\r?$",
+    r"|(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r")[ \t]*\r?$"
+    r"|^[+\- ]?[ \t]*[bBrRuUfF]{0,2}(?P<quote>[\"'])(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r")\\n(?P=quote)"
+    r"[ \t]*[,+)]*[ \t]*\r?$",
     re.MULTILINE,
 )
 

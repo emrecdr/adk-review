@@ -47,7 +47,10 @@ POINTER_UNREAD = "a Git LFS pointer: the file's content is stored elsewhere, and
 #: Why a binary file, or a link to one, is not read: the same sentence for both, as both are the same hole.
 BINARY_UNREAD = "binary: no line of it can be read or quoted"
 #: Why a file that holds a private key is shown to no model, and what to do: the rules read it still.
-KEY_UNREAD = "holds a private key, so no model is shown a line of it. Move the key out, or add the file to --skip"
+KEY_UNREAD = (
+    "holds a private key, so no model is shown a line of it. "
+    "Move the key out of the file (recommended), or add the file to --skip"
+)
 _POINTER_KEYS = ("version", "oid", "size")
 _POINTER_EXTENSION = re.compile(r"ext-[0-9]-\w", re.ASCII)
 _POINTER_OID = re.compile(r"sha256:[0-9a-f]{64}")
