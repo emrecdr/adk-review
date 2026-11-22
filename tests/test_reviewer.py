@@ -1305,6 +1305,23 @@ class TestWhatRanUntested:
         headers = {line for line in sent.splitlines() if line.startswith("@@ ")}
         assert headers and all(line.endswith(" @@") for line in headers), headers
 
+    def test_a_change_no_guideline_is_shown_a_file_of_asks_no_model(self, cli, asked, tmp_path: Path) -> None:
+        """Read by review, and reproduced: a change of only files the skip list names built a block of its note alone,
+        and each guideline ran over it, billed, a branch that only moves a lock file, as Dependabot's do, among them.
+        A note is added beside a file shown alone, as the note of files outside the folders reviewed was."""
+        repo = tmp_path / "r"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", "main")
+        (repo / "uv.lock").write_text("version = 1\n", encoding="utf-8", newline="\n")
+        (repo / "app.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
+        _git_in(repo, "add", ".")
+        _git_in(repo, "commit", "-qm", "init")
+        _git_in(repo, "checkout", "-qb", "feature")
+        (repo / "uv.lock").write_text("version = 2\n", encoding="utf-8", newline="\n")
+        _git_in(repo, "commit", "-qam", "change")
+        assert cli.main([str(repo), "--head", "feature", "--base", "main"]) == 0
+        assert asked == [], "no guideline was asked of a lock file it is not shown"
+
     def test_an_engine_that_fails_is_named_and_degrades(self, cli, demo_repo: Path, monkeypatch, capsys) -> None:
         """What escapes the engine itself is every guideline's reason, never a traceback and never an approval."""
         # The command imports the engine when a review starts, from ADK's own module, so its runner is changed there.

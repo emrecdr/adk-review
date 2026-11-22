@@ -287,9 +287,11 @@ def shown_to_guidelines(
             block, framing = framed(file["path"], view)
             file.update(quotable=quotable(view), framing=framing)
             blocks.append(block)
-    if not_shown:  # named to the guidelines too: a test left out is no test missing
+    # Each note beside a file shown alone: read by review, a change of only files the skip list names made a block of
+    # its note, and each guideline ran over it, billed.
+    if blocks and not_shown:  # named to the guidelines too: a test left out is no test missing
         blocks.append(f"[… {not_shown} more file(s) not shown: past {BLOCK_CAP_CHARS:,} characters in all]")
-    if excluded:
+    if blocks and excluded:
         blocks.append(f"[… {len(excluded)} more file(s) not shown: the operator's skip list leaves them out]")
     return files, "\n\n".join(blocks), excluded, left_out, parts
 
