@@ -15,6 +15,7 @@ from ..core.blast import PASSED_ON, Blast, blast_radius
 from ..core.evidence import Entry, Failure, entry
 from ..core.paths import in_scope, matches, no_such_path
 from ..core.rules import Tree, UnreadError, is_python_text
+from ..core.secrets import holds_private_key
 from ..core.text import lines_of, squash
 from .diff import BINARY, LINK_MODE, SUBMODULE, added_lines, capped, framed, headers, hunk_lines, quotable
 
@@ -45,6 +46,8 @@ POINTER_BYTES = 1_024
 POINTER_UNREAD = "a Git LFS pointer: the file's content is stored elsewhere, and none of it was read"
 #: Why a binary file, or a link to one, is not read: the same sentence for both, as both are the same hole.
 BINARY_UNREAD = "binary: no line of it can be read or quoted"
+#: Why a file that holds a private key is shown to no model, and what to do: the rules read it still.
+KEY_UNREAD = "holds a private key, so no model is shown a line of it. Move the key out, or add the file to --skip"
 _POINTER_KEYS = ("version", "oid", "size")
 _POINTER_EXTENSION = re.compile(r"ext-[0-9]-\w", re.ASCII)
 _POINTER_OID = re.compile(r"sha256:[0-9a-f]{64}")
@@ -225,6 +228,7 @@ def shown_to_guidelines(
     *,
     shown: bool = True,
     scope: Sequence[str] = (),
+    held: Collection[str] = (),
 ) -> tuple[list[Entry], str, dict[str, str], int, list[list[str]]]:
     """Each changed file with its whole diff and its added lines, for the rules, and what the guidelines are shown of
     it; the block they read, each file capped at `diff_cap` and the block at `BLOCK_CAP_CHARS`, what it leaves out
@@ -233,10 +237,11 @@ def shown_to_guidelines(
     hunk cost one its reading; and, where it left any out, the runs that read them all, as `in_parts` plans them.
     Decided from the diffs alone: no git runs here. With no guideline to show it to, `shown` False, no file is capped,
     framed or shown: measured, the view cost 2.3 s of a 10.5 s `default-rules` review of 2,683 files, the pre-push
-    hook's profile, and nothing read it."""
+    hook's profile, and nothing read it. A file `held` names, its text at the head holding a private key, or one whose
+    diff shows a key's header or footer, is shown to no model, a hole where the change keeps it."""
     files: list[Entry] = []
     blocks: list[str] = []
-    room, excluded = BLOCK_CAP_CHARS, {}
+    room, excluded, keyed = BLOCK_CAP_CHARS, {}, 0
     shown_any: list[tuple[Entry, str, bool, int]] = []  # a file a guideline may read: its diff, cut, block size
     for listed, diff in zip(entries, diffs, strict=True):
         # A symbolic link is known by the change's own mode, with no tree listed.
@@ -252,6 +257,13 @@ def shown_to_guidelines(
             continue
         if not shown:  # the rules read every added line: what no one can read is all `unread` still names
             file["unread"] = unread(file, diff, cut=False, fits=True, cap=diff_cap)
+            continue
+        # Read by a finding from adk-spec, and reproduced: a diff shows three lines around each change, so a change
+        # beside a key, or inside one, showed lines of it with neither its header nor its footer, which the redaction
+        # reads it between, and every guideline was sent them. The rules read it as any other file.
+        if file["path"] in held or holds_private_key(diff):
+            file.update(unread="" if file["status"] == "D" else KEY_UNREAD, cut=True)
+            keyed += 1
             continue
         view, cut = capped(diff, diff_cap)
         shown_any.append((file, diff, cut, len(framed(file["path"], view)[0])))
@@ -289,11 +301,19 @@ def shown_to_guidelines(
             blocks.append(block)
     # Each note beside a file shown alone: read by review, a change of only files the skip list names made a block of
     # its note, and each guideline ran over it, billed.
-    if blocks and not_shown:  # named to the guidelines too: a test left out is no test missing
-        blocks.append(f"[… {not_shown} more file(s) not shown: past {BLOCK_CAP_CHARS:,} characters in all]")
-    if blocks and excluded:
-        blocks.append(f"[… {len(excluded)} more file(s) not shown: the operator's skip list leaves them out]")
+    if blocks:
+        blocks += _left_out(not_shown, len(excluded), keyed)
     return files, "\n\n".join(blocks), excluded, left_out, parts
+
+
+def _left_out(past_cap: int, skipped: int, keyed: int) -> list[str]:
+    """What the block leaves out of the change, named to the guidelines: a test left out is no test missing."""
+    whys = (
+        (past_cap, f"past {BLOCK_CAP_CHARS:,} characters in all"),
+        (skipped, "the operator's skip list leaves them out"),
+        (keyed, "each holds a private key"),
+    )
+    return [f"[… {count} more file(s) not shown: {why}]" for count, why in whys if count]
 
 
 #: At most how many calls into one changed function the guidelines are shown, a call from each file before a second.

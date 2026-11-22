@@ -33,9 +33,11 @@ from ..core.blast import Radius
 from ..core.evidence import LINK_UNREAD, Entry, Evidence, Failure, unreleased
 from ..core.paths import Links, UnfollowedError, in_review, in_scope, matches
 from ..core.rules import PYTHON_SUFFIXES, Tree, is_python_text
+from ..core.secrets import holds_private_key
 from ..core.text import lines_of
 from .change import (
     BINARY_UNREAD,
+    KEY_UNREAD,
     POINTER_UNREAD,
     callers_of,
     lfs_pointer,
@@ -1176,6 +1178,23 @@ def gather(
         named = (*scope, *exclude) if listed else ()
         unmatched = _unmatched(named, [entry["path"] for entry in listed], head_listing(resolved)) if named else []
         return no_change(head, base, scope if listed else (), exclude if listed else (), unmatched)
+    listing = head_listing(resolved)
+    # A link of a kind `scan` leaves out is read by the credential rules as its own path, as its diff shows it and a
+    # secret scanner reads a link's blob: a key in the file it names is found where the review reads that file's own
+    # change. Read by review, four rounds running: followed, it was a hole wherever its file could not be read, and each
+    # way round that let a key through.
+    read_texts(resolved, files, listing, excluded)
+    # A file whose text at the head holds a private key, its diff showing neither the key's header nor its footer, a
+    # change inside a long key: the change read again, that file shown to no model. As rare as a key beside a change.
+    keys = (f["path"] for f in files if f["unread"] != KEY_UNREAD and holds_private_key(f["text"] or ""))
+    if guidelines and (held := {path for path in keys if path not in excluded}):
+        try:
+            files, block, excluded, left_out, parts = _read_change(
+                resolved, own, scope, guidelines=guidelines, diff_cap=diff_cap, skip=skip, held=held
+            )
+        except GitError as exc:
+            return {"status": "error", "error_message": str(exc)}
+        read_texts(resolved, files, listing, excluded)
     # Only beside a file shown: read by review, the note alone made a block of no file, and each guideline ran, billed.
     if guidelines and block and (outside := len(listed) - len(entries)):
         # Named to the guidelines, as a file past the cap is: a test outside is no test missing. Read by review, the
@@ -1183,12 +1202,6 @@ def gather(
         what = "file(s) of the project" if base is None else "changed file(s)"  # under --all, every file is listed
         note = f"[… {outside} more {what} outside the folders reviewed: not shown here]"
         block = f"{block}\n\n{note}" if block else note
-    listing = head_listing(resolved)
-    # A link of a kind `scan` leaves out is read by the credential rules as its own path, as its diff shows it and a
-    # secret scanner reads a link's blob: a key in the file it names is found where the review reads that file's own
-    # change. Read by review, four rounds running: followed, it was a hole wherever its file could not be read, and each
-    # way round that let a key through.
-    read_texts(resolved, files, listing, excluded)
     # Each modified Python file's text at the base, read here once as the head's is, for a tool's finding to be set
     # against: asked by the owner, what a change causes is kept apart from what was already in the files it touched.
     # None where git cannot give it, and a tool then reads every finding on an untouched line as there before.
@@ -1233,7 +1246,14 @@ def gather(
 
 
 def _read_change(
-    resolved: dict, entries: list[dict], scope: Sequence[str], *, guidelines: bool, diff_cap: int, skip: Sequence[str]
+    resolved: dict,
+    entries: list[dict],
+    scope: Sequence[str],
+    *,
+    guidelines: bool,
+    diff_cap: int,
+    skip: Sequence[str],
+    held: Collection[str] = (),
 ) -> tuple[list[Entry], str, dict[str, str], int, list[list[str]]]:
     """Each entry's diff, as the rules read it, and the block the guidelines read, as `shown_to_guidelines` builds it.
     Where a guideline reads the change, each Python hunk `widens` names is read within the function or class around it,
@@ -1248,7 +1268,7 @@ def _read_change(
     diffs = _diffs(resolved, entries, scope, frozenset(wide))
     over = {at for at in wide if len(diffs[at]) > min(diff_cap, WIDEN_CAP_CHARS)}
     _narrowed(resolved, entries, diffs, sorted(over))
-    shown = {"shown": guidelines, "scope": scope}
+    shown = {"shown": guidelines, "scope": scope, "held": held}
     files, block, excluded, left_out, parts = shown_to_guidelines(entries, diffs, diff_cap, skip, **shown)
     if left_out and (rest := [at for at in wide if at not in over]):
         _narrowed(resolved, entries, diffs, rest)

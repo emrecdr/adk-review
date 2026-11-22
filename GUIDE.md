@@ -450,6 +450,20 @@ adk-review <repo> --head <branch> --base develop --check guideline.security --ch
 adk-review <repo> --head <branch> --base develop --profile default-rules --comment
 ```
 
+A file that holds a private key is shown to no model: its header or footer on a line of its own, as a key file, a YAML
+block or a Python string holds one, a PuTTY key's header, or a key in base64 opening a line. A diff shows three lines
+around each change, so a change beside a key, or inside one, would show lines of it that no redaction can tell for a
+key's. Where a guideline runs, the file is named under "not read", and the review ends in exit 3. The rules still read
+it, and a review with no guideline is not touched. Move the key out of the file, or add the file to the skip list:
+
+```
+adk-review <repo> --head <branch> --base main --skip config/deploy.yaml
+```
+
+A key written another way, in a string that neither opens nor closes on its header, or in base64 that does not open a
+line, is not told apart. The redaction still hides a key whose header, body and footer a diff shows together, and a key
+in base64 on one line.
+
 The review plans the parts itself, before any model call, from what each file takes of the diffs the guidelines read: a
 folder whole where it fits, else its folders and files one level down. `--dry-run` prints each run as a command to copy:
 this review's guidelines alone, with its repository, branches, globs and a `--diff-cap` it was given, since the plan is

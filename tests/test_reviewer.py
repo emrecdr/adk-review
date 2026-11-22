@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import importlib
 import json
 import sys
@@ -213,9 +214,15 @@ class TestTheReport:
         """Through the whole command: a guideline quotes a line below a private key's block, which the guidelines saw
         redacted into one line, so its quote grounds and no line is named. Measured by a type checker, then by this
         test: the JSON report read the lines grounding kept, `(None, None)`, as two numbers, and raised after every
-        model call was spent; the pipeline had no report, and the review ended in exit 3."""
+        model call was spent; the pipeline had no report, and the review ended in exit 3. A key on lines of its own is
+        shown to no model now, so this one shares its header's and its footer's lines with other text, a shape the
+        guide names: the redaction still joins its lines, and a model is still shown the file."""
         repo = _branch_off_empty(tmp_path / "repo", HEAD)
-        key = ["-----BEGIN RSA PRIVATE KEY-----", "MIIEowIBAAKCAQEA7yn3bRHQ5", "-----END RSA PRIVATE KEY-----"]
+        key = [
+            "pem: -----BEGIN RSA " + "PRIVATE KEY----- (deploy)",
+            "MIIEowIBAAKCAQEA7yn3bRHQ5",
+            "end: -----END RSA " + "PRIVATE KEY----- (deploy)",
+        ]
         _committed(repo, "deploy/key.txt", "\n".join([*key, "x = 1", ""]))
         quoted = {**CANNED_REVIEW["findings"][0], "file": "deploy/key.txt", "evidence": "x = 1"}
         fake_provider.answers_when(EVERY_GUIDELINE, {**CANNED_REVIEW, "findings": [quoted]})
@@ -387,6 +394,39 @@ class TestWhatTheSecretsGateKnows:
         block = "\n".join([*key, "+x = 1"])
         hidden, _count = scrub(block)
         assert "MIIEow" not in hidden and hidden.endswith("+x = 1"), hidden
+
+    def test_a_text_holds_a_private_key_where_its_header_or_footer_begins_or_ends_a_line(self) -> None:
+        """Read by a finding from adk-spec: what tells a file a model may not be shown, since a diff can show lines of a
+        key with neither its header nor its footer. A real key's header and footer stand on lines of their own, in a
+        key file, a YAML or TOML block, or a Python string they open or close; code that only names one, in quotes,
+        a comment or a placeholder, holds none. Measured over 31,089 text files of the installed packages, this
+        repository and three projects: none held, where 30-odd lines name a header in a string."""
+        from adk_review.core.secrets import holds_private_key
+
+        head, foot = "-----BEGIN RSA " + "PRIVATE KEY-----", "-----END OPENSSH " + "PRIVATE KEY-----"
+        held = (
+            f"{head}\nMIIEowIBAAKCAQEA\n",  # a key file
+            f"deploy_key: |\n  {head}\n  MIIEowIBAAKCAQEA\n",  # a YAML block
+            f'KEY = """{head}\nMIIEowIBAAKCAQEA\n',  # a Python string it opens
+            f'MIIEowIBAAKCAQEA\n{foot}"""\n',  # one it closes, as a hunk below a key shows it
+            f" MIIEowIBAAKCAQEA\n {foot}\n-timeout: 30\n+timeout: 60\n",  # a diff's context line
+            f"+{head}\n+MIIEowIBAAKCAQEA\n",  # an added line
+            f"-{head}\n",  # a deleted one
+            "PuTTY-User-Key-File-" + "3: ssh-ed25519\nEncryption: none\n",
+            "tls_key: |\n  " + base64.b64encode(f"{head}\nMIIEowIBAAKCAQEA".encode()).decode()[:76] + "\n",  # wrapped
+        )
+        named = (
+            f'private_key = "{head}..."',
+            f'pem = b"{head}\\n" + body',
+            f'"placeholder": "{head}\\n...\\n{foot}",',
+            f"# {head[:-5]}...",
+            f'_PKCS1_MARKER = ("{head}", "{foot}")',
+            f"x = 1  # {head} opens a key",
+            "tls.key: "
+            + base64.b64encode(f"{head}\nMIIE".encode()).decode(),  # one line, hidden whole by the redaction
+        )
+        assert [text for text in held if not holds_private_key(text)] == []
+        assert [text for text in named if holds_private_key(text)] == []
 
     def test_a_key_header_where_no_rule_reads_hides_nothing_after_it(self) -> None:
         """Measured before: a key's header in a file's name or on an unchanged line, and a footer further on, hid
@@ -1304,6 +1344,45 @@ class TestWhatRanUntested:
         assert [s for s in ("Sup3rS3cret-db9", "k3y-f0r-the-app-9a8b", key[:40]) if s in sent] == []
         headers = {line for line in sent.splitlines() if line.startswith("@@ ")}
         assert headers and all(line.endswith(" @@") for line in headers), headers
+
+    def test_no_line_of_a_private_key_reaches_a_model_from_a_change_beside_it(
+        self, cli, asked, tmp_path: Path, capsys
+    ) -> None:
+        """Read by a finding from adk-spec, and reproduced: a diff shows three lines around each change, so a change
+        beside a private key, or inside one, showed lines of the key with neither its first line nor its last, and the
+        redaction, which reads a key between the two, sent them to every guideline; no rule named it, and the review
+        approved. A file that holds a private key is now shown to no model, and named as a file no guideline read."""
+        body = [f"FAKEKEYBODY{n:02d}" + "A" * 51 for n in range(8)]
+        head, foot = "-----BEGIN RSA " + "PRIVATE KEY-----", "-----END RSA " + "PRIVATE KEY-----"
+        key = "\n".join([head, *body, foot])
+        yaml = "service: orders\ndeploy_key: |\n" + "".join(f"  {line}\n" for line in key.split("\n")) + "timeout: 30\n"
+        repo = tmp_path / "r"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", "main")
+        (repo / "config").mkdir()
+        (repo / "keys").mkdir()
+        (repo / "config" / "deploy.yaml").write_text(yaml, encoding="utf-8", newline="\n")
+        (repo / "keys" / "id_rsa").write_text(key + "\n", encoding="utf-8", newline="\n")
+        (repo / "app.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
+        _git_in(repo, "add", ".")
+        _git_in(repo, "commit", "-qm", "init")
+        _git_in(repo, "checkout", "-qb", "feature")
+        changed = yaml.replace("timeout: 30", "timeout: 60")
+        (repo / "config" / "deploy.yaml").write_text(changed, encoding="utf-8", newline="\n")
+        moved = key.replace(body[4], body[4][:-1] + "B")
+        (repo / "keys" / "id_rsa").write_text(moved + "\n", encoding="utf-8", newline="\n")
+        (repo / "app.py").write_text("x = 2\n", encoding="utf-8", newline="\n")
+        _git_in(repo, "commit", "-qam", "change")
+        code = cli.main([str(repo), "--head", "feature", "--base", "main"])
+        sent = "\n".join(system + "\n" + "\n".join(turns) for system, turns in asked)
+        assert asked, "a guideline was asked, of app.py"
+        assert [line for line in [*body, body[4][:-1] + "B"] if line[:16] in sent] == [], "no line of either key"
+        out = capsys.readouterr().out
+        assert code == 3 and "config/deploy.yaml" in out and "keys/id_rsa" in out and "private key" in out, out
+        # The two ways out its message names: the skip list names a file it leaves out, and no rule reads a model.
+        skipped = ["--skip", "config/deploy.yaml", "--skip", "keys/id_rsa"]
+        assert cli.main([str(repo), "--head", "feature", "--base", "main", *skipped]) == 0, capsys.readouterr().out
+        assert cli.main([str(repo), "--head", "feature", "--base", "main", "--profile", "rules-only"]) == 0
 
     def test_a_change_no_guideline_is_shown_a_file_of_asks_no_model(self, cli, asked, tmp_path: Path) -> None:
         """Read by review, and reproduced: a change of only files the skip list names built a block of its note alone,

@@ -40,6 +40,8 @@ _STAND_IN = r"(?![$%{<]|\[REDACTED)"
 #: further on: measured with any text allowed between them, the change in between was hidden from every model call.
 _KEY_HEADER = r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----"
 _KEY_FOOTER = r"-----END (?:[A-Z0-9]+ )*PRIVATE KEY(?: BLOCK)?-----"
+#: A private key's header in base64: `-----BEGIN`, then `PRIVATE KEY` within forty characters, at any of its offsets.
+_KEY_BASE64 = r"LS0tLS1CRUdJTi[A-Za-z0-9+/]{0,40}?(?:UFJJVkFURSBLRV|BSSVZBVEUgS0VZ|QUklWQVRFIEtFW)"
 #: Each run read once and kept: measured by review, a line's blanks split every way between the two runs, a header and
 #: 8,000 spaces took 0.6 s to scrub, four times as long for each doubling, and every request of a review is scrubbed.
 _KEY_LINE = (
@@ -184,9 +186,7 @@ _VENDOR = (
     ("telegram_bot_token", re.compile(r"\b\d{8,10}:AA[0-9A-Za-z_-]{33}(?![\w-])"), "[REDACTED:telegram_bot_token]"),
     (
         "private_key_base64",  # `-----BEGIN`, then `PRIVATE KEY` within forty characters, at any of base64's offsets
-        re.compile(
-            r"\bLS0tLS1CRUdJTi[A-Za-z0-9+/]{0,40}?(?:UFJJVkFURSBLRV|BSSVZBVEUgS0VZ|QUklWQVRFIEtFW)[A-Za-z0-9+/=]*"
-        ),
+        re.compile(r"\b" + _KEY_BASE64 + r"[A-Za-z0-9+/=]*"),
         "[REDACTED:private_key_base64]",
     ),
     # Its whole block as a private key's is, its header where a line is all there is: a key file's own lines only,
@@ -337,6 +337,24 @@ _PREFIXED = tuple(
 _ANY_PREFIXED = re.compile("|".join(f"(?:{pattern.pattern})" for _kind, pattern, _ in _PREFIXED))
 _VENDOR_REST = tuple(shape for shape in _VENDOR if shape not in _PREFIXED)
 _PATTERNS_REST = (*_VENDOR_REST, *_GENERIC)
+
+
+#: A private key's header or footer on a line of its own, as a key file, a YAML or TOML block or a Python string it
+#: opens or closes holds it, a diff's mark before it or not, a PuTTY key file's header, or a key in base64 opening a
+#: line, as `base64` wraps one at 76 characters: measured, the redaction hid its first line of eleven. Code that names
+#: one in quotes, a comment or a placeholder holds none: measured over 31,089 text files, none matched, where 30-odd do.
+_HOLDS_KEY = re.compile(
+    r"^[+\- ]?[ \t]*(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r"|PuTTY-User-Key-File-[23]:|" + _KEY_BASE64 + ")"
+    r"|(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r")[ \t]*\r?$",
+    re.MULTILINE,
+)
+
+
+def holds_private_key(text: str) -> bool:
+    """Whether a file's text, or the part of a diff that shows it, holds a private key, which no model is shown any
+    line of. Read by a finding from adk-spec, and reproduced: `scrub` hides a key from its header to its footer, and a
+    diff shows three lines around each change, so a change beside a key, or inside one, showed lines of it alone."""
+    return _HOLDS_KEY.search(text) is not None
 
 
 def scrub(text: str, *, cut: bool = False) -> tuple[str, int]:

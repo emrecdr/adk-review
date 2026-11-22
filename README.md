@@ -970,7 +970,12 @@ by itself; a review whose profile names a guideline does.
   model runs: `secrets` reads the added lines of each file's whole diff, past any cap, and `named-secrets` weighs a
   value given a name that says secret. A value with no vendor's shape, in triple quotes or split over lines, is a known
   limit: neither rule finds it, and no redaction hides it. No cut falls inside a credential, since half of one matches
-  no shape and would be sent unredacted.
+  no shape and would be sent unredacted. A file that holds a private key is shown to no model at all
+  (`holds_private_key`): a diff shows three lines around each change, so a change beside a key, or inside one, showed
+  lines of it with neither its header nor its footer, which the redaction hides it between. The block leaves it out
+  where its diff shows a key's header or footer, and where only its text at the head does, a change inside a long key,
+  the collector reads the change again with it left out, as rare as such a change. It is a hole where a guideline runs,
+  and the rules read it as any other file.
 - **The rules run as one node.** Every rule runs the same way, through `run_rule`, in one `FunctionNode`, ADK 2.x's node
   for a deterministic step, before the guidelines: in the command's graph over the evidence it gathered, and in chat's,
   which gathers the same evidence for the commits its intake confirmed. Each rule's answer is left in state under its
