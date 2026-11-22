@@ -431,6 +431,11 @@ class TestWhatTheSecretsGateKnows:
         )
         assert [text for text in held if not holds_private_key(text)] == []
         assert [text for text in named if holds_private_key(text)] == []
+        # Read by review, and measured: two runs of blanks side by side took four times as long for each doubling,
+        # 1.9 s for 16,000 spaces, and a branch's own file could hang every review, the pre-push hook's among them.
+        started = time.perf_counter()
+        holds_private_key(f'"{head}\\n"' + " " * 40_000 + "x")
+        assert time.perf_counter() - started < 0.5
 
     def test_a_key_header_where_no_rule_reads_hides_nothing_after_it(self) -> None:
         """Measured before: a key's header in a file's name or on an unchanged line, and a footer further on, hid
@@ -1459,10 +1464,39 @@ class TestWhatRanUntested:
         data = tmp_path / "review.json"
         cli.main([str(repo), "--head", "feature", "--base", "main", "--verify", "--json", str(data)])
         sent = "\n".join(system + "\n" + "\n".join(turns) for system, turns in asked)
-        assert "W291" in sent, "the verifier was asked of lint's finding"
         assert [line for line in body if line[:16] in sent] == [], "no line of the key"
-        said = [f for f in json.loads(data.read_text(encoding="utf-8"))["findings"] if "W291" in f["title"]]
-        assert said and all(f["evidence"] == KEY_WITHHELD for f in said), said
+        # Shown neither its quote nor its file, a verifier has nothing to judge: read by review, one told to refute
+        # what the quote does not show could drop it. It is kept, unverified, and asked of no one.
+        assert "W291" not in sent, "no verifier was asked of lint's finding"
+        report = json.loads(data.read_text(encoding="utf-8"))
+        said = [f for f in report["findings"] if "W291" in f["title"]]
+        assert said and all(f["evidence"].startswith(KEY_WITHHELD) for f in said), said
+        assert [f for f in report["unverified"] if "W291" in f["title"]], report["unverified"]
+
+    def test_each_withheld_quote_is_its_own_as_a_line_is(self) -> None:
+        """Read by review, and reproduced: every withheld quote was one string, so the fold read a finding with no line
+        as the same as any other in a key's file, and `--previous`, which knows a finding by its quote, mixed two up.
+        Each carries a digest of its line: two lines differ, a line is the same in every review, and no part of it
+        is shown."""
+        from adk_review.core.rules import KEY_WITHHELD, FileRule, run_rule
+
+        class Each(FileRule):
+            id, severity, title, fix = "each", "minor", "a line", "Mend it."
+
+            def check(self, file):
+                return [2, 3, 4] if file.path else []
+
+        key = [
+            "-----BEGIN RSA " + "PRIVATE KEY-----",
+            "MIIEowIBAAKCAQEA",
+            "MIIEowIBAAKCAQEA",
+            "-----END RSA " + "PRIVATE KEY-----",
+        ]
+        entry = {"path": "a.yaml", "text": "\n".join(key) + "\n", "unread_text": None, "added": []}
+        quotes = [f.evidence for f in run_rule(Each(), [entry], None).findings]
+        assert all(quote.startswith(KEY_WITHHELD) for quote in quotes), quotes
+        assert quotes[0] == quotes[1] != quotes[2], quotes
+        assert not any("MIIE" in quote for quote in quotes), quotes
 
     def test_a_change_no_guideline_is_shown_a_file_of_asks_no_model(self, cli, asked, tmp_path: Path) -> None:
         """Read by review, and reproduced: a change of only files the skip list names built a block of its note alone,

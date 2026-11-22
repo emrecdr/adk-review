@@ -349,8 +349,9 @@ _PATTERNS_REST = (*_VENDOR_REST, *_GENERIC)
 _HOLDS_KEY = re.compile(
     r"^[+\- ]?[ \t]*(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r"|PuTTY-User-Key-File-[23]:|" + _KEY_BASE64 + ")"
     r"|(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r")[ \t]*\r?$"
+    # Its tail one class: read by review, two runs of blanks side by side took 1.9 s for 16,000 spaces, quadratic.
     r"|^[+\- ]?[ \t]*[bBrRuUfF]{0,2}(?P<quote>[\"'])(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r")\\n(?P=quote)"
-    r"[ \t]*[,+)]*[ \t]*\r?$",
+    r"[ \t,+)]*\r?$",
     re.MULTILINE,
 )
 

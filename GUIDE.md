@@ -455,8 +455,9 @@ block or a Python string holds one, a Python string of the header or the footer 
 joined from strings is written, a PuTTY key's header, or a key in base64 opening a line. A diff shows three lines
 around each change, so a change beside a key, or inside one, would show lines of it that no redaction can tell for a
 key's. Where a guideline runs, the file is named under "not read", and the review ends in exit 3. The rules still read
-it, and a review with no guideline is not touched. A rule's finding there names its line and withholds its quote. Move
-the key out of the file, which is best, since a key belongs in a secret store, or add the file to the skip list:
+it, and a review with no guideline names no hole for it. In every review, a rule's finding there names its line and
+withholds its quote, and `--verify` asks no verifier of it. Move the key out of the file, which is best, since a key
+belongs in a secret store, or add the file to the skip list:
 
 ```
 adk-review <repo> --head <branch> --base main --skip config/deploy.yaml

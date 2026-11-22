@@ -19,6 +19,7 @@ from __future__ import annotations
 import ast
 import copy
 import functools
+import hashlib
 import inspect
 import re
 import traceback
@@ -441,9 +442,10 @@ def _folded(path: str) -> str:
     return _fold(PurePath(path).as_posix())
 
 
-#: What a rule's finding quotes from a file that holds a private key, its line still named: read by review, lint quoted
-#: a key's line its trailing blanks named, which the redaction cannot tell for a key's, and the verifier was sent it.
-KEY_WITHHELD = "(withheld: the file holds a private key)"
+#: How a rule's finding quotes a line of a file that holds a private key, its line still named: read by review, lint
+#: quoted a key's line its trailing blanks named, which the redaction cannot tell for a key's, and the verifier was
+#: sent it. A digest of the line follows (`_withheld`).
+KEY_WITHHELD = "(withheld: the file holds a private key"
 
 
 def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
@@ -469,7 +471,7 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
                 # The report never prints a secret, a rule's evidence included, and the line is cut once, after a
                 # scrub reading as far as a credential crossing the cut could run: measured by review, a 10 MB line
                 # was scrubbed again by every later reader, 160 s in all, and one 2 MB line whole took 9 s.
-                evidence=KEY_WITHHELD
+                evidence=_withheld(hit.text)
                 if hit.path in keyed
                 else cut_at(scrub(hit.text[:read], cut=len(hit.text) > read)[0], EVIDENCE_MAX_CHARS),
                 suggestion=hit.fix or rule.fix,
@@ -482,6 +484,13 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
     except (Exception, SystemExit) as exc:  # noqa: BLE001 -- the project's code: a failure, an exit too, is named
         return Checked(could_not_look=f"rule {rule.id} raised {type(exc).__name__}: {exc}{_raised_at(rule, exc)}")
     return Checked(findings=findings, could_not_look=could_not_look, old=old)
+
+
+def _withheld(text: str) -> str:
+    """A withheld quote, with a digest of its line and no part of it: read by review, one string for them all, the fold
+    read a finding with no line as the same as any other in the file, and `--previous`, which knows a finding by its
+    quote, mixed two up. Two lines differ, and one line is the same in every review."""
+    return f"{KEY_WITHHELD}, digest {hashlib.sha256(text.encode('utf-8', 'surrogatepass')).hexdigest()[:12]})"
 
 
 def _keyed(files: list[Entry], paths: set[str]) -> set[str]:

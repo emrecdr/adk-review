@@ -28,6 +28,7 @@ from google.adk.workflow import JoinNode, Workflow
 from pydantic import BaseModel, Field
 
 from ..core.findings import at_or_above
+from ..core.rules import KEY_WITHHELD
 from ..core.text import backticks, cut_at, squash
 from ..core.verdict import Outcome, Sourced
 from .agents import (
@@ -50,6 +51,8 @@ VERIFIER = "verifier"
 CALLERS = "verifier_callers"
 #: Why a finding is kept unjudged where its verifier answered and named no judgement for its number.
 NOT_JUDGED = "the verifier gave no judgement for it"
+#: Why a finding whose quote is withheld, its file holding a private key, is asked of no verifier.
+NOT_ASKED = "not asked: its quote is withheld, since the file holds a private key"
 #: The most findings one verifier judges where a second file joins its call: a file past it alone is a call of its own.
 CHUNK_FINDINGS_MAX = 12
 #: The most characters of the change one verifier reads where a second file joins its call.
@@ -267,7 +270,12 @@ def second_opinion(
     the bar.
     """
     outcome.verified = True
-    asked = [*(item for item in rules if not item.old), *outcome.kept]
+    # Shown neither its quote nor its file, a verifier has nothing to judge: read by review, one told to refute what
+    # the quote does not show could drop it. Kept, unverified, and asked of no one.
+    withheld = [item for item in rules if not item.old and item.finding.evidence.startswith(KEY_WITHHELD)]
+    outcome.unverified += [(item, NOT_ASKED) for item in withheld]
+    skipped = {id(item) for item in withheld}  # by identity: two checks can file the same finding
+    asked = [*(item for item in rules if not item.old and id(item) not in skipped), *outcome.kept]
     packed = chunks(asked, diff)
     judged = run(judge_calls(packed, callers, plugins))
     refuted: set[int] = set()  # by identity: two checks can file the same finding
