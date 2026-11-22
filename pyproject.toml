@@ -24,7 +24,7 @@ dependencies = [
     # interpreter. Pinned at the lock's own versions, as litellm is, so every install runs the two the suite ran with.
     # Read by review, with a floor here: an install that reads no lock took a ruff a day old; ruff 0.15 refused a code
     # `pitfalls` selects, exit 2; and ruff 0.16, which held that code in preview, ran without it and said so to no one.
-    "ruff==0.17.5",
+    "ruff==0.17.6",
     "pyrefly==1.5.0",
 ]
 
@@ -83,6 +83,11 @@ members = ["tui"]
 # credential stealer on PyPI for 2 h 32 min, and the registry's own advice after it was a cooldown beside the lock.
 # The lock records the span, not a date, so `uv sync --locked` holds day after day.
 exclude-newer = "P3D"
+# One exception, the owner's, on 22 Nov 2026: ruff 0.17.6, published 19 Nov 15:55 UTC, taken before its three days end
+# at 22 Nov 15:55 UTC. Remove this line once that time has passed: the span then takes 0.17.6 itself, and the line
+# would hold back every later ruff. A one-time `--exclude-newer-package` flag is no way round it: the lock records it,
+# and CI's `uv sync --locked` refuses a lock its own settings would not resolve.
+exclude-newer-package = { ruff = "2026-11-19T16:00:00Z" }
 # The uv that reads the lock's span; an older one stops with this sentence instead of misreading the file.
 required-version = ">=0.12"
 
