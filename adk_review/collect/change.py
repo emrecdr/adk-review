@@ -418,11 +418,13 @@ def _defined(
 
 def _calls_shown(tree: Tree, file: str, function: str, sites: list[tuple[str, int]]) -> str:
     """The calls into `function` of `file` the guidelines are shown, a call from each file before a second, each with
-    the lines around it, and how many more there are."""
+    the lines around it, and how many more there are. A call in a file that holds a private key is counted, never
+    shown: reproduced, the lines above a call under a test's key were the key's, from a file the change left alone."""
     by_file: defaultdict[str, list[int]] = defaultdict(list)
     for path, line in sites:
         by_file[path].append(line)
-    ranked = sorted((rank, path, line) for path, lines in by_file.items() for rank, line in enumerate(sorted(lines)))
+    shows = {path: lines for path, lines in by_file.items() if not holds_private_key(tree.sources[path])}
+    ranked = sorted((rank, path, line) for path, lines in shows.items() for rank, line in enumerate(sorted(lines)))
     shown = []
     for _rank, path, line in sorted(ranked[:CALLS_SHOWN], key=lambda site: site[1:]):
         lines = lines_of(tree.sources[path])

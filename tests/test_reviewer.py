@@ -1384,6 +1384,32 @@ class TestWhatRanUntested:
         assert cli.main([str(repo), "--head", "feature", "--base", "main", *skipped]) == 0, capsys.readouterr().out
         assert cli.main([str(repo), "--head", "feature", "--base", "main", "--profile", "rules-only"]) == 0
 
+    def test_no_line_of_a_private_key_reaches_a_model_from_a_call_shown_beside_it(
+        self, cli, asked, tmp_path: Path
+    ) -> None:
+        """Reproduced while the key fix was reviewed: the guidelines are shown the lines around each call into a
+        function the change touched, from any Python file at the head, and a call under a test's key reached them
+        with the key's last lines, from a file the change left alone. A file that holds a key shows no call."""
+        body = [f"FAKEKEYBODY{n:02d}" + "A" * 51 for n in range(8)]
+        head, foot = "-----BEGIN RSA " + "PRIVATE KEY-----", "-----END RSA " + "PRIVATE KEY-----"
+        fixture = f'from app import sign\n\nKEY = """{head}\n' + "\n".join(body) + f'\n{foot}"""\nSIGNED = sign(KEY)\n'
+        repo = tmp_path / "r"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", "main")
+        (repo / "app.py").write_text("def sign(key):\n    return key\n", encoding="utf-8", newline="\n")
+        (repo / "conftest.py").write_text(fixture, encoding="utf-8", newline="\n")
+        _git_in(repo, "add", ".")
+        _git_in(repo, "commit", "-qm", "init")
+        _git_in(repo, "checkout", "-qb", "feature")
+        changed = "def sign(key, *, salt=b''):\n    return key + salt.decode()\n"
+        (repo / "app.py").write_text(changed, encoding="utf-8", newline="\n")
+        _git_in(repo, "commit", "-qam", "change")
+        cli.main([str(repo), "--head", "feature", "--base", "main"])
+        sent = "\n".join(system + "\n" + "\n".join(turns) for system, turns in asked)
+        assert asked and "sign" in sent, "a guideline was asked of the change to sign()"
+        assert [line for line in body if line[:16] in sent] == [], "no line of the key"
+        assert "more call into `sign()` from `app.py`, not shown" in sent, "the call is counted, not shown"
+
     def test_a_change_no_guideline_is_shown_a_file_of_asks_no_model(self, cli, asked, tmp_path: Path) -> None:
         """Read by review, and reproduced: a change of only files the skip list names built a block of its note alone,
         and each guideline ran over it, billed, a branch that only moves a lock file, as Dependabot's do, among them.
