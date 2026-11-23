@@ -104,11 +104,23 @@ def _commit(raw: dict) -> str | None:
     return head if isinstance(head, str) and OBJECT_ID.fullmatch(head) else None
 
 
-def load_report(json_path: Path) -> tuple[list[FindingRow], str | None]:
-    """A report's findings, sorted by priority, and the commit it reviewed, from one read of the file: the screen
-    shows the two together, and a commit read apart from its findings was, for a moment, the last review's."""
+#: The verdicts a review reaches, as its JSON names them: any other value is read as none.
+VERDICTS = ("APPROVED", "REQUEST_CHANGES", "DEGRADED")
+
+
+def _verdict(raw: dict) -> str | None:
+    """The verdict a report says the review reached, or None where it names none the reviewer gives."""
+    verdict = raw.get("verdict")
+    return verdict if verdict in VERDICTS else None
+
+
+def load_report(json_path: Path) -> tuple[list[FindingRow], str | None, str | None]:
+    """A report's findings, sorted by priority, the commit it reviewed and the verdict it reached, from one read of
+    the file: the screen shows them together, and a commit read apart from its findings was, for a moment, the last
+    review's. Read by an audit: the findings alone left a review that could not check everything reading as one that
+    found nothing."""
     raw = _read(json_path)
-    return ([], None) if raw is None else (_rows(raw), _commit(raw))
+    return ([], None, None) if raw is None else (_rows(raw), _commit(raw), _verdict(raw))
 
 
 def _rows(raw: dict) -> list[FindingRow]:

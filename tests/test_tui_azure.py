@@ -195,9 +195,9 @@ class TestWhatAReportSaysOfAFinding:
         assert findings.load_report(_report(tmp_path, [], {"head_sha": "b" * 64}))[1] == "b" * 64, "its commit alone"
         for bad in ({**good, "head_sha": "main"}, {**good, "head_sha": 7}, {**good, "head_sha": None}, None, [good]):
             assert findings.load_report(_report(tmp_path, [], bad))[1] is None, bad
-        assert findings.load_report(tmp_path / "missing.json") == ([], None)
+        assert findings.load_report(tmp_path / "missing.json") == ([], None, None)
         (tmp_path / "broken.json").write_text("{", encoding="utf-8")
-        assert findings.load_report(tmp_path / "broken.json") == ([], None)
+        assert findings.load_report(tmp_path / "broken.json") == ([], None, None)
 
 
 @pytest.fixture
@@ -1133,7 +1133,7 @@ class TestACompanysOwnRoot:
 
 
 class TestAReportReadOnce:
-    """`load_report`: a report's findings and what it reviewed, from one read."""
+    """`load_report`: a report's findings, what it reviewed and the verdict it reached, from one read."""
 
     def test_the_findings_and_the_commit_come_from_one_read(
         self, findings: ModuleType, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1145,7 +1145,7 @@ class TestAReportReadOnce:
         reads = []
         read = Path.read_text
         monkeypatch.setattr(Path, "read_text", lambda path, **how: reads.append(path) or read(path, **how))
-        rows, reviewed = findings.load_report(report)
+        rows, reviewed, verdict = findings.load_report(report)
         assert reads == [report]
-        assert (rows[0].fingerprint, reviewed) == ("ab" * 8, "a" * 40)
-        assert findings.load_report(tmp_path / "missing.json") == ([], None)
+        assert (rows[0].fingerprint, reviewed, verdict) == ("ab" * 8, "a" * 40, None), "a report naming no verdict"
+        assert findings.load_report(tmp_path / "missing.json") == ([], None, None)

@@ -42,6 +42,7 @@ from textual.widgets.option_list import Option
 from textual.widgets.selection_list import Selection
 
 from adk_review.core.text import kinds_of
+from adk_review.core.verdict import EXIT_CLEAN, EXIT_FINDINGS
 
 from .azure import Place, PullRequest, draft, files_link, line_link, parse_pr_url, thread_link
 from .azure_client import AzLogin, AzureError, Client, Credential, post_comment
@@ -229,6 +230,8 @@ class AdkReviewTuiApp(App[int]):
         self._filtered_findings: list[FindingRow] = []
         self._selected_finding: FindingRow | None = None
         self._reviewed: str | None = None  # the commit the findings' report reviewed: their lines are counted in it
+        self._verdict: str | None = None  # the verdict that report reached: no finding is "nothing found" only so
+        self._said: list[str] = []  # what the running review said on its error stream, its reason where it ends early
         self._pull_request: PullRequest | None = None  # the address field's, where it reads as one
         self._pull_request_of: tuple[str, str] | None = None  # the repository and branch the field was restored for
         self._kept_address: str = ""  # what the state holds for that pair, so it is written when it changes alone
@@ -522,7 +525,7 @@ class AdkReviewTuiApp(App[int]):
         self.findings_rows = []
         self._filtered_findings = []
         self._selected_finding = None
-        self._reviewed = None
+        self._reviewed = self._verdict = None
         self.query_one("#report-log", RichLog).clear()
         self.query_one("#findings-table", DataTable).clear()
         self.query_one("#finding-detail", Static).update("Run a review to see its findings.")
@@ -812,18 +815,18 @@ class AdkReviewTuiApp(App[int]):
         """Populate or clear `2. Findings Explorer` from any saved `--previous` baseline for `(project, target)`."""
         tabs = self.query_one("#output-tabs", TabbedContent)
         if has_prev:
-            rows, reviewed = await asyncio.to_thread(load_report, prev_file)
+            rows, reviewed, verdict = await asyncio.to_thread(load_report, prev_file)
             if (
                 self.selected_project != project
                 or baseline_path(project.path, self.selected_base, self.selected_head, self.selected_mode) != prev_file
             ):
                 return
-            self.findings_rows, self._reviewed = rows, reviewed
+            self.findings_rows, self._reviewed, self._verdict = rows, reviewed, verdict
             tabs.get_tab("tab-findings").label = (
                 f"2. Findings Explorer ({len(rows)} prior)" if rows else "2. Findings Explorer"
             )
         else:
-            self.findings_rows, self._reviewed = [], None
+            self.findings_rows, self._reviewed, self._verdict = [], None, None
             tabs.get_tab("tab-findings").label = "2. Findings Explorer"
         self._render_findings_table()
 
@@ -1547,12 +1550,20 @@ class AdkReviewTuiApp(App[int]):
         self.last_report_md = stdout_text
         if stdout_text:
             report_log.write(stdout_text.rstrip("\n"))
-        await self._load_generated_files(outputs)
+        decided = await self._load_generated_files(outputs)
         self.query_one("#output-tabs", TabbedContent).active = "tab-report"
-        self._set_banner(f"Finished {label} on {project.name} (exit code {code}).")
-        self.notify(
-            f"Finished {label} (exit code {code}).", severity="information" if code == 0 else "warning", timeout=4
-        )
+        if not stdout_text.strip() and code not in (EXIT_CLEAN, EXIT_FINDINGS):
+            # Read by an audit, and reproduced: a review refused before it ran, as a first one with no login is, left
+            # the Report tab empty and the banner at "exit code 2", its reason on the progress tab alone.
+            said = self._said or [f"It gave no reason (exit code {code})."]
+            report_log.write("\n".join([f"The {label} ended with no report. It said:", "", *said]))
+            self._set_banner(f"The {label} on {project.name} ended with no report (exit code {code}): {said[-1]}"[:300])
+            told = f"The {label} ended with no report (exit code {code}). The Report tab says why."
+        else:
+            reached = f": {decided}" if decided else ""
+            self._set_banner(f"Finished {label} on {project.name}{reached} (exit code {code}).")
+            told = f"Finished {label}{reached} (exit code {code})."
+        self.notify(told, severity="information" if code == 0 else "warning", timeout=4, markup=False)
 
     async def _stream_subprocess(self, cmd: list[str]) -> tuple[int, str]:
         # UTF-8 streams: on Windows Python writes a pipe in the system's code page, cp1252, where this reads UTF-8.
@@ -1566,9 +1577,11 @@ class AdkReviewTuiApp(App[int]):
         )
         self._active_proc = proc
         stdout_chunks: list[str] = []
+        self._said = []
 
         def told(raw: bytes) -> None:
             if line := raw.decode("utf-8", errors="replace").rstrip():
+                self._said.append(line)
                 self._log_progress(line)
                 self._set_banner(line[:300])
 
@@ -1616,21 +1629,23 @@ class AdkReviewTuiApp(App[int]):
             with contextlib.suppress(TimeoutError, ProcessLookupError):
                 await asyncio.wait_for(proc.wait(), timeout=2.0)
 
-    async def _load_generated_files(self, outputs: dict[str, Path]) -> None:
+    async def _load_generated_files(self, outputs: dict[str, Path]) -> str | None:
         """What a decided review wrote, on its three tabs: its findings, and its comment and hand-off or that it wrote
-        none. A run that decided nothing wrote no report, a dry run or a review the reviewer refused, and leaves the
-        tabs as the last review left them. Read by an audit, and confirmed: a review with the comment switched off set
-        the tab's name back and left the earlier review's comment under it, for Ctrl+Y to copy as its own."""
+        none, and the verdict its report names. A run that decided nothing wrote no report, a dry run or a review the
+        reviewer refused, and leaves the tabs as the last review left them, its verdict None. Read by an audit, and
+        confirmed: a review with the comment switched off set the tab's name back and left the earlier review's comment
+        under it, for Ctrl+Y to copy as its own."""
         json_path = outputs.get("json")
         if json_path is None or not await asyncio.to_thread(json_path.is_file):
-            return
-        self.findings_rows, self._reviewed = await asyncio.to_thread(load_report, json_path)
+            return None
+        self.findings_rows, self._reviewed, self._verdict = await asyncio.to_thread(load_report, json_path)
         count = len(self.findings_rows)
         tabs = self.query_one("#output-tabs", TabbedContent)
         tabs.get_tab("tab-findings").label = f"2. Findings Explorer ({count})" if count else "2. Findings Explorer"
         self._render_findings_table()
         self.last_comment_md = await self._shown(outputs.get("comment"), "comment", "3. Author Comment")
         self.last_handoff_md = await self._shown(outputs.get("handoff"), "handoff", "4. Agent Handoff")
+        return self._verdict
 
     async def _shown(self, written: Path | None, flag: str, title: str) -> str:
         """The text a review wrote for the tab `flag` names, drawn there, or "" and the tab saying it wrote none."""
@@ -1671,8 +1686,18 @@ class AdkReviewTuiApp(App[int]):
         else:
             self._selected_finding = None
             self.query_one("#btn-explain-check", Button).disabled = True
-            msg = "No finding matches the filters." if self.findings_rows else "This review has no findings."
+            msg = "No finding matches the filters." if self.findings_rows else self._none_found()
             self.query_one("#finding-detail", Static).update(msg)
+
+    def _none_found(self) -> str:
+        """What the Findings tab says of a review that kept no finding: read by an audit, and reproduced, a review that
+        could not check everything said "This review has no findings.", the words of one that looked and found none."""
+        if self._verdict == "DEGRADED":
+            return (
+                "This review kept no finding, but it could not check everything. "
+                "Its report names what it did not check."
+            )
+        return "This review has no findings."
 
     def _select_finding_at(self, row_index: int) -> None:
         if 0 <= row_index < len(self._filtered_findings):

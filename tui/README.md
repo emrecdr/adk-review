@@ -111,7 +111,10 @@ Click a chip, or press its number, to restore that panel; `Ctrl+T` minimizes eve
 The line under the steps shows the command it will run, ready to paste. While a review runs, its progress shows in
 the last tab. Its results stay with the target they came from: choose another branch, mode or repository, and the
 tabs clear. The comment and the hand-off tabs show what the last review wrote, or that it wrote none. A dry run, and
-a review the reviewer refused, decide nothing and write no report: each leaves them and the findings as they are.
+a review the reviewer refused, decide nothing and write no report: each leaves them and the findings as they are. A run
+that ends with no report shows what it said in the Report tab, and its last line in the banner, as a review refused
+for an arm with no login does. The banner names the verdict a review reached, and the Findings tab of a review that
+could not check everything says so where it kept no finding, never that it found none.
 
 A finding is drawn as plain text, with its reason, "Why it matters", and its corrected code where there are
 some: a reason at any severity, and the corrected code where a model gave one. A guideline's words are a model's, and

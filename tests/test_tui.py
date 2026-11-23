@@ -4211,3 +4211,94 @@ class TestWhatAnAuditFound:
         assert held.defaults.profile == "rules-only" and held.projects["my-service"].profile == "full"
         cfg.write_text('[projects."my-service"]\nbase = "main"\n', encoding="utf-8")
         assert load_tui_config(cfg).projects["my-service"].profile == "", "a preset that names none"
+
+
+class TestHowTheScreenSaysWhatAReviewDecided:
+    """The verdict a review's JSON holds, read beside its findings. Read by an audit of the screen, which read the
+    findings alone, so a review that did not look read as one that found nothing."""
+
+    @pytest.mark.asyncio
+    async def test_a_review_that_could_not_check_everything_never_reads_as_one_with_no_findings(
+        self, tmp_path: Path
+    ) -> None:
+        """Read by an audit, and reproduced: a degraded review that kept no finding, a guideline's call refused,
+        showed "This review has no findings." on the Findings tab, the words of a review that looked and found
+        nothing. It says the review could not check everything. An approval with no finding reads as before."""
+        pytest.importorskip("textual")
+        import json
+
+        from textual.widgets import Static
+
+        app = _payments_screen(tmp_path)
+        degraded = _pull_request_report(tmp_path)
+        data = json.loads(degraded.read_text(encoding="utf-8"))
+        data.update(findings=[], verdict="DEGRADED", could_not_look={"guideline.security": "the model answered 429"})
+        degraded.write_text(json.dumps(data), encoding="utf-8")
+        approved = tmp_path / "approved.json"
+        approved.write_text(json.dumps({**data, "verdict": "APPROVED", "could_not_look": {}}), encoding="utf-8")
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)  # the pick the screen makes as it opens clears the tab once
+            await _show_findings(app, pilot, degraded)
+            said = str(app.query_one("#finding-detail", Static).render())
+            assert "could not check everything" in said and "has no findings" not in said, said
+            await _show_findings(app, pilot, approved)
+            assert str(app.query_one("#finding-detail", Static).render()) == "This review has no findings."
+
+    @pytest.mark.asyncio
+    async def test_a_review_that_ended_with_no_report_says_why_in_the_report_and_the_banner(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by an audit, and reproduced: a review the reviewer refused, exit 2 with no arm ready, as a first run
+        with no login is, cleared the Report tab and showed it empty, and the banner said only "exit code 2". The
+        reason was on the progress tab alone. What the review said is in the report, and its last line in the
+        banner, read from a real child's error stream as a review's is."""
+        pytest.importorskip("textual")
+        import sys
+
+        from textual.widgets import RichLog, Static
+
+        import tui.app as screen
+
+        refused = "review: the Copilot arm is not ready. Run adk-review-login once"
+        child = f"import sys; sys.stderr.write({refused!r} + '\\n'); sys.exit(2)"
+        monkeypatch.setattr(screen, "review_command", lambda _argv: [sys.executable, "-c", child])
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            await pilot.press("ctrl+r")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            report = "\n".join(line.text for line in app.query_one("#report-log", RichLog).lines)
+            banner = str(app.query_one("#status-banner", Static).render())
+        assert refused in report, report
+        assert refused in banner and "exit code 2" in banner, banner
+
+    @pytest.mark.asyncio
+    async def test_the_banner_names_the_verdict_the_review_reached(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by an audit: the banner named the exit code alone, a number the person had to know, where the JSON
+        the screen had just read named the verdict. It names both."""
+        pytest.importorskip("textual")
+        import asyncio
+        import json
+
+        from textual.widgets import Static
+
+        app = _payments_screen(tmp_path)
+
+        async def reviewed(cmd: list[str]) -> tuple[int, str]:
+            report = json.dumps({"schema": 2, "verdict": "REQUEST_CHANGES", "findings": []})
+            await asyncio.to_thread(Path(cmd[cmd.index("--json") + 1]).write_text, report, "utf-8")
+            return 1, "## Verdict: REQUEST_CHANGES\n"
+
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            monkeypatch.setattr(app, "_stream_subprocess", reviewed)
+            app.selected_base = "main"
+            await pilot.press("ctrl+r")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            banner = str(app.query_one("#status-banner", Static).render())
+        assert "REQUEST_CHANGES" in banner and "exit code 1" in banner, banner
