@@ -196,12 +196,16 @@ TESTS_FIRST = (
 )
 #: What a coding agent does before it fixes a guideline's finding: a model's reading, which can be wrong, and which no
 #: second model checked unless `--verify` ran. Told only to fix each finding where it stands, an agent changes correct
-#: code for a wrong one. A test that fails first proves the fault, as a bug is diagnosed, and stays to prove the fix. A
-#: rule's finding is decided by code, and a tidy changes no behaviour, so neither alone is told this.
+#: code for a wrong one. A test that fails first proves the fault, as a bug is diagnosed, and stays to prove the fix.
+#: Read by review: a test that cannot fail leaves that finding alone, never a rule's on the same lines, and code no test
+#: reaches is fixed as before, since the check of the work runs no guideline. The item's title names no check, so the
+#: agent is pointed at its `after` line. A rule's finding is decided by code, a tidy changes no behaviour, and what may
+#: be done already is told to change nothing, so none of them alone is told this.
 PROVE_FIRST = (
-    "A finding from a `guideline.` check is a model's reading, and it can be wrong. Where one names wrong behaviour,",
-    "first write a test that fails on the code as it stands. Keep that test as part of the fix. Then fix the code,",
-    "and see the test pass. Where no test can show the fault, leave that code as it is, and say why.",
+    "Each finding whose `after` line names a `guideline.` check is a model's reading, and it can be wrong. Where one",
+    "names wrong behaviour, first write a test that fails on the code as it stands. Keep that test as part of the",
+    "fix. Then fix the code, and see the test pass. Where a test reaches that code but cannot fail, make no change",
+    "for that finding, and say why. Where no test can reach it, fix it as the finding says.",
 )
 #: How a review that kept no finding ends, its report and its hand-off alike.
 NOTHING_TO_FIX = "Nothing to fix: no finding was kept."
@@ -258,11 +262,7 @@ def render_handoff(
     identity = dict(zip(map(id, outcome.kept), _identified(outcome.kept), strict=True))
     identity |= _held_identities(outcome)
     fixes, tidy, apart = _lanes(outcome, tidies, fail_on)
-    proves = any(
-        item.source.startswith(guideline_id("")) and not _is_tidy(item, tidies)
-        for group in (*fixes, *apart)
-        for item in group
-    )
+    proves = any(item.from_guideline and not _is_tidy(item, tidies) for group in fixes for item in group)
     majors = sum(group[0].finding.severity == "major" and not at_or_above("major", fail_on) for group in fixes)
     approved = verdict == "APPROVED"
     told = HANDOFF_MAJORS.format(
