@@ -23,6 +23,7 @@ import string
 import subprocess
 import tempfile
 import uuid
+from collections import Counter
 from collections.abc import Callable, Collection, Iterable, Iterator, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
@@ -665,6 +666,33 @@ def _off_disk(resolved: dict) -> Mapping[str, str]:
     return {} if resolved.get("staged") else OFF_DISK
 
 
+#: The most folders a whole project's patch leaves out by name, those holding the most files first: each is an argument,
+#: and Windows holds a command line to 32,767 characters.
+UNASKED_MAX = 64
+
+
+def _folders(path: str) -> Iterator[str]:
+    """Each folder `path` lies in, the top-most first."""
+    parts = path.split("/")
+    return ("/".join(parts[:depth]) for depth in range(1, len(parts)))
+
+
+def _unasked(paths: Sequence[str], asked: Collection[str]) -> list[str]:
+    """The top-most folders among `paths` that hold no path in `asked`, those holding the most paths first, at most
+    `UNASKED_MAX`: each left out of a whole project's patch by its literal name. A file at the top level stays in."""
+    holds = {folder for path in asked for folder in _folders(path)}
+    counts: Counter[str] = Counter()
+    for path in paths:
+        if path not in asked and (top := next((f for f in _folders(path) if f not in holds), None)):
+            counts[top] += 1
+    return [folder for folder, _ in counts.most_common(UNASKED_MAX)]
+
+
+def _within(path: str, folders: Collection[str]) -> bool:
+    """Whether `path` lies in one of `folders`, each named whole."""
+    return any(folder in folders for folder in _folders(path))
+
+
 def whole_diffs(resolved: dict, entries: list[dict[str, str]], scope: Sequence[str]) -> list[str]:
     """Under `--all`, each entry's diff as `diff_of` reads it, from one call split at each `diff --git` opening a line.
 
@@ -679,18 +707,26 @@ def whole_diffs(resolved: dict, entries: list[dict[str, str]], scope: Sequence[s
     away = _off_disk(resolved)
     _, names = _git(repo, "diff-tree", "-r", "-z", "--name-only", "-M", base, head, *specs, strip=False, away=away)
     paths = names.split("\0")[:-1]
+    asked = {entry["path"] for entry in entries}
+    # Each folder holding no file asked for is left out of the patch by its literal name, taken from git's own listing:
+    # no glob decides, so no file asked for is lost. Measured by an audit: a `node_modules` of 149 MB, printed whole for
+    # each of a review's two reads only to be dropped here, peaked at 747 MB.
+    left = _unasked(paths, asked)
+    if left:
+        held = frozenset(left)
+        paths = [path for path in paths if not _within(path, held)]
+    unasked = (f":(top,exclude,literal){folder}" for folder in left)
     # Split as bytes, each part decoded alone: one str of the whole patch is as wide as its widest character.
-    args = (f"--attr-source={base}", "diff-tree", "-r", "-p", *_PLAIN, base, head, *specs)
+    args = (f"--attr-source={base}", "diff-tree", "-r", "-p", *_PLAIN, base, head, *specs, *unasked)
     # Every line of an added file opens with `+`, so a line opening with `diff --git ` is a file's header: a literal
     # split, where a pattern tested every line's start (measured: 45 ms against 5 on a 15 MB patch).
     pieces = _git_raw(repo, *args, away=away).stdout.split(b"\ndiff --git ")  # the whole, freed once split
     first = [pieces[0]] if pieces[0].startswith(b"diff --git ") else []
     parts = first + [b"diff --git " + piece for piece in pieces[1:]]
-    asked = {entry["path"] for entry in entries}
     if len(parts) != len(paths) or not asked <= set(paths):
         raise GitError("git diff-tree's one patch did not split into the files it lists")
-    # Only the files asked for: a third-party folder's are in git's patch, never read. Left out by git's own pathspec
-    # instead, a glob git reads otherwise than `matches` could leave out a file of the project's own.
+    # Only the files asked for: one beside them, in a folder that holds one, is in git's patch and never read. Left out
+    # by a glob of git's instead, one git reads otherwise than `matches` could leave out a file of the project's own.
     pairs = sorted(((path, part) for path, part in zip(paths, parts, strict=True) if path in asked), key=lambda p: p[0])
     return [unguessed(readable(_text(part))) for _, part in pairs]
 

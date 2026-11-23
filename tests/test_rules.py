@@ -2427,6 +2427,37 @@ class TestWhatTheBranchCannotTellTheRules:
         with pytest.raises(git.GitError, match="did not split into the files it lists"):
             git.whole_diffs(resolved, [*some, {"path": "no/such/file.py", "status": "A"}], ())
 
+    def test_a_whole_project_patch_leaves_out_each_folder_that_holds_no_file_asked_for(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Measured by an audit: under `--all` git printed the whole project's patch for each of the two reads, the
+        review's own files and the project's other kinds, a vendored folder's files in both, only for Python to drop
+        them: a `node_modules` of 149 MB peaked at 747 MB. A folder holding no file asked for is left out of git's
+        patch by its literal name, taken from git's own listing, so no glob decides and no file asked for is lost."""
+        from adk_review.collect import git
+
+        repo = _branch_off_empty(tmp_path / "repo", "change")
+        for name, text in (
+            ("app.py", "x = 1\n"),
+            ("README.md", "# x\n"),
+            ("node_modules/left/index.js", "VENDORED = 1\n"),
+            ("src/pkg/mod.py", "y = 2\n"),
+            ("src/pkg/data/blob.txt", "BLOB\n"),
+        ):
+            _committed(repo, name, text)
+        resolved = git.preflight(str(repo), None, "change")
+        asked = [entry for entry in git.list_changed(resolved) if entry["path"].endswith(".py")]
+        printed, raw = [], git._git_raw
+
+        def kept(*args, **kwargs):
+            done = raw(*args, **kwargs)
+            printed.append(done.stdout)
+            return done
+
+        monkeypatch.setattr(git, "_git_raw", kept)
+        assert git.whole_diffs(resolved, asked, ()) == [git.diff_of(resolved, entry["path"]) for entry in asked]
+        assert printed and not any(b"VENDORED" in out or b"BLOB" in out for out in printed), printed
+
     def test_each_commit_a_push_sends_reads_its_files_as_diff_of_does(self, hostile_repo) -> None:
         """Measured by review: a file a commit holds before another kept its CRLF last line's `\\r`, and the pre-push
         hook flagged `TOKEN_EXPIRY_MS=86400000` in `.env` as a password where the branch's review let it go. A file a
