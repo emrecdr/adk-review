@@ -3928,18 +3928,18 @@ class TestWhatTheReportPrints:
         assert "each title, reason, change and code a model's reading of it" in " ".join(said.split()), said
 
     def test_a_handoff_asks_its_agent_for_a_failing_test_before_it_fixes_a_guidelines_finding(self) -> None:
-        """A guideline's finding is a model's reading and can be wrong, and `verify` is off by default, so no second
-        model checked it. Told only to fix each finding where it stands, a coding agent changes correct code for a wrong
-        one. Where a guideline's finding takes a fix's instruction, its own or folded under a rule's, the agent is asked
-        first for a test that fails on the code as it stands, kept as part of the fix. Read by review: a test that
-        reaches the code and cannot fail leaves that finding alone, never a rule's on its lines, and code no test can
-        reach, a workflow's or a Dockerfile's, is fixed as before, since the check of the work runs no guideline and a
-        blocker left there would end in exit 0. The agent tells a guideline's finding by its `after` line, as the item's
-        title names no check. A rule decides by code, a tidy changes no behaviour, and what may be done already is told
-        to change nothing, so none alone asks for a test."""
+        """A guideline's finding is a model's reading and can be wrong, even one a verifier, a model too, agreed with.
+        Told only to fix each finding where it stands, a coding agent changes correct code for a wrong one. Each of a
+        guideline's findings to fix, its own or folded under a rule's, carries a `first:` line: a test that fails on
+        the code as it stands, kept with the fix. Read by review: a paragraph that named every item with a guideline's
+        `after` line reached the tidies and what may be done already too, so the line marks the items themselves. A
+        test that reaches the code and cannot fail leaves that finding alone, never a rule's on its lines, and code no
+        test reaches, a workflow's or a Dockerfile's, is fixed as before: the command that checks the work runs no
+        guideline, and a blocker left there would end in exit 0. A rule decides by code, a tidy changes no behaviour,
+        and what may be done already is told to change nothing, so none of them is marked."""
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Outcome, Sourced
-        from adk_review.deliver.report import PROVE_FIRST, render_handoff
+        from adk_review.deliver.report import FIRST, PROVE_FIRST, render_handoff
 
         def at(check: str, line: int, severity: str) -> Sourced:
             found = Finding(file="a.py", line=line, severity=severity, title="t", evidence=f"x{line}", suggestion="s")
@@ -3952,21 +3952,26 @@ class TestWhatTheReportPrints:
         }
         tidies = frozenset({"rule.simplify", "guideline.complexity"})
         lint, slip = at("rule.lint", 3, "major"), at("guideline.correctness", 3, "minor")
-
-        def told(outcome: Outcome) -> bool:
-            said = render_handoff(evidence, outcome, verdict="REQUEST_CHANGES", fail_on="blocker", tidies=tidies)
-            return " ".join(PROVE_FIRST) in " ".join(said.split())
-
-        assert told(Outcome(kept=[at("guideline.correctness", 5, "major")])), "a guideline's own fix"
-        assert told(Outcome(kept=[lint], folded=[(slip, lint)])), "a guideline's finding folded under a rule's"
-        assert not told(Outcome(kept=[lint])), "a rule's alone"
-        assert not told(Outcome(kept=[lint, at("guideline.complexity", 9, "minor")])), "a tidy changes no behaviour"
+        tidy = at("guideline.complexity", 9, "minor")
         done = Sourced("guideline.correctness", at("guideline.correctness", 7, "minor").finding, (7, 7), done=True)
-        assert not told(Outcome(kept=[done])), "what may be done already is told to change nothing"
-        joined = " ".join(PROVE_FIRST)
-        assert "`after` line names a `guideline.` check" in joined, "the agent can tell which findings"
-        assert "make no change for that finding" in joined, "a rule's finding on the same lines is still fixed"
-        assert "Where no test can reach it, fix it as the finding says." in joined, "an untestable blocker is fixed"
+
+        def told(outcome: Outcome) -> str:
+            return render_handoff(evidence, outcome, verdict="REQUEST_CHANGES", fail_on="blocker", tidies=tidies)
+
+        def marked(said: str) -> int:
+            return sum(line.lstrip() == f"- {FIRST}" for line in said.splitlines())
+
+        paragraph = " ".join(PROVE_FIRST)
+        assert marked(told(Outcome(kept=[at("guideline.correctness", 5, "major")]))) == 1, "a guideline's own fix"
+        assert marked(told(Outcome(kept=[lint], folded=[(slip, lint)]))) == 1, "folded under a rule's"
+        for alone in ([lint], [lint, tidy], [done]):
+            said = told(Outcome(kept=alone))
+            assert marked(said) == 0 and paragraph not in " ".join(said.split()), alone
+        mixed = told(Outcome(kept=[at("guideline.correctness", 5, "major"), lint, tidy, done], folded=[(slip, lint)]))
+        assert marked(mixed) == 2 and " ".join(mixed.split()).count(paragraph) == 1, mixed
+        assert FIRST not in mixed.split("\n## Tidy\n", 1)[1], "no tidy, nor what may be done already, is marked"
+        assert "make no change for that finding." in paragraph, "a rule's finding on the same lines is still fixed"
+        assert "Where no test can reach the code, fix it as the finding says." in paragraph, "an untestable blocker"
 
     def test_a_comment_and_a_hand_off_say_what_a_quoted_deleted_line_is_where_a_quote_holds_one(self) -> None:
         """Read by review on a branch that removed a field: a quote keeps the `-` of a line the change deleted, and

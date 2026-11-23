@@ -194,18 +194,19 @@ TESTS_FIRST = (
     "Run the project's own tests before committing, as its Makefile, pyproject or CI runs them. A fix is done when",
     "they pass.",
 )
-#: What a coding agent does before it fixes a guideline's finding: a model's reading, which can be wrong, and which no
-#: second model checked unless `--verify` ran. Told only to fix each finding where it stands, an agent changes correct
-#: code for a wrong one. A test that fails first proves the fault, as a bug is diagnosed, and stays to prove the fix.
-#: Read by review: a test that cannot fail leaves that finding alone, never a rule's on the same lines, and code no test
-#: reaches is fixed as before, since the check of the work runs no guideline. The item's title names no check, so the
-#: agent is pointed at its `after` line. A rule's finding is decided by code, a tidy changes no behaviour, and what may
-#: be done already is told to change nothing, so none of them alone is told this.
+#: What a coding agent does before it fixes a guideline's finding: a model's reading, which can be wrong, even where a
+#: verifier, a model too, agreed. Told only to fix each finding where it stands, an agent changes correct code for a
+#: wrong one. A test that fails first proves the fault, as a bug is diagnosed, and stays to prove the fix. Each such
+#: item carries `FIRST`, and the paragraph names the line: read by review, a paragraph that named each item with a
+#: guideline's `after` line reached the tidies and what may be done already too. A test that cannot fail leaves that
+#: finding alone, never a rule's on the same lines, and code no test reaches is fixed as before, since the command that
+#: checks the work runs no guideline. A rule's finding is decided by code, a tidy changes no behaviour, and what may be
+#: done already is told to change nothing, so none of them is marked.
+FIRST = "first: a test that fails on the code as it stands, kept with the fix"
 PROVE_FIRST = (
-    "Each finding whose `after` line names a `guideline.` check is a model's reading, and it can be wrong. Where one",
-    "names wrong behaviour, first write a test that fails on the code as it stands. Keep that test as part of the",
-    "fix. Then fix the code, and see the test pass. Where a test reaches that code but cannot fail, make no change",
-    "for that finding, and say why. Where no test can reach it, fix it as the finding says.",
+    "An item with a `first:` line is a guideline's finding, a model's reading, and it can be wrong. Where a test",
+    "reaches its code but cannot fail, make no change for that finding. Report why: a review of that guideline",
+    "still names it. Where no test can reach the code, fix it as the finding says.",
 )
 #: How a review that kept no finding ends, its report and its hand-off alike.
 NOTHING_TO_FIX = "Nothing to fix: no finding was kept."
@@ -292,18 +293,18 @@ def render_handoff(
     # Each section a heading and what it tells the agent, its points numbered on from the last: what was already in
     # the files, asked by the owner, apart and never at the bar.
     sections = [
-        ("Fix" if tidy else "", [], fixes, tidies, fail_on),
-        ("Tidy", TIDY_KEEPS, tidy, frozenset(), fail_on),
-        (APART_HEADING, [ALREADY_NOTE, ALREADY_FOR_AGENT], apart, tidies, fail_on),
-        (OLD_HEADING, [OLD_FOR_AGENT], [[item] for item in outcome.old], frozenset(), None),
+        ("Fix" if tidy else "", [], fixes, tidies, fail_on, True),
+        ("Tidy", TIDY_KEEPS, tidy, frozenset(), fail_on, False),
+        (APART_HEADING, [ALREADY_NOTE, ALREADY_FOR_AGENT], apart, tidies, fail_on, False),
+        (OLD_HEADING, [OLD_FOR_AGENT], [[item] for item in outcome.old], frozenset(), None, False),
     ]
     number = 1
-    for heading, told, groups, held, bar in sections:
+    for heading, told, groups, held, bar, proving in sections:
         if not groups:
             continue
         if heading:
             lines += [*([""] if number > 1 else []), f"## {heading}", "", *told, *([""] if told else [])]
-        lines += _items(groups, number, identity, held, bar)
+        lines += _items(groups, number, identity, held, bar, proving)
         number += len(groups)
     # Never "nothing to fix" where the review could not check everything, as its report's next steps, and what it did
     # not check named: read by review, a finding at the bar left unproven ended there, and a hole of another kind said
@@ -399,10 +400,12 @@ def _items(
     identity: Mapping[int, str],
     held: frozenset[str],
     fail_on: str | None,
+    proving: bool = False,
 ) -> list[str]:
     """Each hand-off item, numbered from `start`: its lead's place, quote and instruction, then each other reading of
     the same lines, one whose check is in `held` held back, as `_lanes` leaves a tidy under a fix only to be. With no
-    `fail_on`, as for what was already in the files, no item is marked at the bar: none of them can fail the review."""
+    `fail_on`, as for what was already in the files, no item is marked at the bar: none of them can fail the review.
+    Where `proving`, the fixes' lane, a guideline's finding is first proved by a test (`FIRST`)."""
     lines = []
     for number, (lead, *also) in enumerate(groups, start):
         f = lead.finding
@@ -413,15 +416,19 @@ def _items(
                 f"{number}. {_titled(lead)} ({_where(f)}), {f.severity}{_bar(f, fail_on)}",
                 *(_quoted_lines(f, label) if _serious(f) else [f"   - {label}: {_quoted(f)}"]),
                 *_why(lead, "   - why"),
-                *_to_fix(lead, identity[id(lead)], "   "),
-                *_folded_under(also, fail_on, identity, held),
+                *_to_fix(lead, identity[id(lead)], "   ", first=proving and lead.from_guideline),
+                *_folded_under(also, fail_on, identity, held, proving),
             ],
         )
     return lines
 
 
 def _folded_under(
-    folded: Sequence[Sourced], fail_on: str | None, identity: Mapping[int, str], held: frozenset[str]
+    folded: Sequence[Sourced],
+    fail_on: str | None,
+    identity: Mapping[int, str],
+    held: frozenset[str],
+    proving: bool = False,
 ) -> list[str]:
     """A line for each finding folded into a handoff item: another reading of the same lines, by another check or the
     same one, which can be a second defect — an injection whose quote spans a key's line folds into the key's finding.
@@ -441,7 +448,7 @@ def _folded_under(
         lines += [
             f"   - also on these lines: {_titled(item)}, {f.severity}{_bar(f, fail_on)}",
             *_why(item, "     - why"),
-            *_to_fix(item, identity[id(item)], "     "),
+            *_to_fix(item, identity[id(item)], "     ", first=proving and item.from_guideline),
         ]
     return lines
 
@@ -451,10 +458,12 @@ def _bar(f: Finding, fail_on: str | None) -> str:
     return " — at the bar" if fail_on and at_or_above(f.severity, fail_on) else ""
 
 
-def _to_fix(item: Sourced, identity: str, indent: str) -> list[str]:
-    """A handoff finding's instruction: what to change, the corrected code of a blocker or a major, and the fingerprint
-    a review of the fixed commit no longer reports, which is what must hold after."""
+def _to_fix(item: Sourced, identity: str, indent: str, *, first: bool = False) -> list[str]:
+    """A handoff finding's instruction: the test that proves a guideline's finding first, where `first`, what to
+    change, the corrected code of a blocker or a major, and the fingerprint a review of the fixed commit no longer
+    reports, which is what must hold after."""
     return [
+        *([f"{indent}- {FIRST}"] if first else []),
         f"{indent}- change: {prose(item.finding.suggestion)}",
         *_code_lines(item.finding, "code", indent),
         f"{indent}- after: `{item.source}` no longer reports fingerprint `{identity}`",

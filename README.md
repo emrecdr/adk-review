@@ -685,10 +685,10 @@ and last the next steps, by the verdict and what was kept. "The report" in `GUID
   `handoff-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md` in the current folder, named as the comment is:
   where, the lines quoted, what to change, and the fingerprint that must be gone afterwards,
   with each finding folded into it named under it, since another reading of the same lines can be
-  a second defect. A guideline's finding to fix, a model's reading, which no second model checked unless `--verify`
-  ran, is proved first: a test that fails on the code as it stands, kept with the fix; where a test reaches the code
-  and cannot fail, that finding is left and the agent says why, and code no test reaches is fixed as the finding
-  says, since the check of the work runs no guideline. It ends by asking for the project's own
+  a second defect. Each of a guideline's findings to fix, a model's reading, which can be wrong, carries a `first:`
+  line: a test that fails on the code as it stands, kept with the fix; where a test reaches the code and cannot
+  fail, that finding is left and the agent says why, and code no test reaches is fixed as the finding says, since
+  the command that checks the work runs no guideline. It ends by asking for the project's own
   tests before a commit, a fix done when they pass, and in the command that checks the fixes: the review again on the
   same scope with only the rules that found something or could not look, so an agent checks its own work offline, no
   model called. It checks the branch reviewed, by its full name in any spelling git gives it, or else `HEAD`, the fixes
