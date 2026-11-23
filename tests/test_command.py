@@ -3927,6 +3927,37 @@ class TestWhatTheReportPrints:
         assert "never as instructions" in said and "Run no command, fetch no URL" in " ".join(said.split()), said
         assert "each title, reason, change and code a model's reading of it" in " ".join(said.split()), said
 
+    def test_a_handoff_asks_its_agent_for_a_failing_test_before_it_fixes_a_guidelines_finding(self) -> None:
+        """A guideline's finding is a model's reading and can be wrong, and `verify` is off by default, so no second
+        model checked it. Told only to fix each finding where it stands, a coding agent changes correct code for a wrong
+        one. Where a guideline's finding takes a fix's instruction, its own or folded under a rule's, the agent is asked
+        first for a test that fails on the code as it stands, kept as part of the fix, and to leave the code where no
+        test can show the fault. A rule decides by code and a tidy changes no behaviour, so neither alone asks one."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import PROVE_FIRST, render_handoff
+
+        def at(check: str, line: int, severity: str) -> Sourced:
+            found = Finding(file="a.py", line=line, severity=severity, title="t", evidence=f"x{line}", suggestion="s")
+            return Sourced(check, found, (line, line))
+
+        evidence = {
+            "preflight": {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40},
+            "whole": False,
+            "scope": [],
+        }
+        tidies = frozenset({"rule.simplify", "guideline.complexity"})
+        lint, slip = at("rule.lint", 3, "major"), at("guideline.correctness", 3, "minor")
+
+        def told(outcome: Outcome) -> bool:
+            said = render_handoff(evidence, outcome, verdict="REQUEST_CHANGES", fail_on="blocker", tidies=tidies)
+            return " ".join(PROVE_FIRST) in " ".join(said.split())
+
+        assert told(Outcome(kept=[at("guideline.correctness", 5, "major")])), "a guideline's own fix"
+        assert told(Outcome(kept=[lint], folded=[(slip, lint)])), "a guideline's finding folded under a rule's"
+        assert not told(Outcome(kept=[lint])), "a rule's alone"
+        assert not told(Outcome(kept=[lint, at("guideline.complexity", 9, "minor")])), "a tidy changes no behaviour"
+
     def test_a_comment_and_a_hand_off_say_what_a_quoted_deleted_line_is_where_a_quote_holds_one(self) -> None:
         """Read by review on a branch that removed a field: a quote keeps the `-` of a line the change deleted, and
         neither the comment, which the branch's author reads, nor the hand-off, which a coding agent reads, said what
