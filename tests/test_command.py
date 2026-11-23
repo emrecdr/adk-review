@@ -3981,6 +3981,9 @@ class TestWhatTheReportPrints:
         assert FIRST not in mixed.split("\n## Tidy\n", 1)[1], "no tidy, nor what may be done already, is marked"
         assert "make no change for that finding." in paragraph, "a rule's finding on the same lines is still fixed"
         assert "Where no test can reach the code, fix it as the finding says." in paragraph, "an untestable blocker"
+        # Reproduced by review: a `tests` finding asks for a test of code that works, which passes, and the paragraph
+        # alone told the agent to leave it, so the test the finding asked for was never written.
+        assert "Where the finding asks only for a test, that test is the fix, and it can pass." in paragraph
 
     def test_a_comment_and_a_hand_off_say_what_a_quoted_deleted_line_is_where_a_quote_holds_one(self) -> None:
         """Read by review on a branch that removed a field: a quote keeps the `-` of a line the change deleted, and

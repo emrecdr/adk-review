@@ -80,7 +80,9 @@ third_party = [
 # over 7,266 calls in six released projects, none named wrongly, and every call a changed signature broke named, for
 # a read of the whole head, 0.8 s on 815 files — what the change broke elsewhere as a type checker reads it, a method,
 # an attribute or a type, measured over 195 commits each type-checked by its CI and 31 method edits, none named
-# wrongly, for two pyrefly runs side by side, 1 s on 815 files — and the three guidelines.
+# wrongly, for two pyrefly runs side by side, 1 s on 815 files — a secret's value handed whole to a log, measured over
+# seven projects at 14 places, 13 of them a token logged whole, a major below the blocker bar — and the three
+# guidelines.
 default = [
     "rule.secrets", "rule.named-secrets", "rule.lint", "rule.reviewer-instructions", "rule.encoding-declaration",
     "rule.lockfile-sources", "rule.pinned-actions", "rule.script-injection", "rule.pitfalls", "rule.callers",

@@ -356,9 +356,10 @@ The rules shipped with the reviewer are written as a project writes its own:
   review, not its full commit SHA), `script-injection` (a workflow's script expanding a value an outsider writes, a pull
   request's title or a branch's name, which GitHub writes into the code before it runs, and a `pull_request_target`
   job that checks out the pull request's own code), `hidden-text` (tag characters,
-  bidirectional controls, and text smuggled in variation selectors, invisible operators or Hangul fillers, in any file)
-  and `steering-files` (a change to a file another tool or agent obeys: a coding agent's instructions or settings,
-  Copilot's and Gemini CLI's among them, an editor's settings and the tool servers an agent starts, a GitHub workflow or
+  bidirectional controls, and text smuggled in variation selectors, invisible operators or Hangul fillers, in any file),
+  `sensitive-logging` (a Python value whose own name says secret, handed whole to a logging call on a line the change
+  added) and `steering-files` (a change to a file another tool or agent obeys: a coding agent's instructions or
+  settings, Copilot's and Gemini CLI's among them, an editor's settings and the tool servers an agent starts, a GitHub workflow or
   an Azure pipeline, a hook, a `.pth` file), and the tree rule `callers` (a call that no longer fits a function whose
   parameters the change touched, bound as Python binds a call, a name a changed module no longer defines, and an import
   of a module the change moved or removed, each in any file, one the change left alone among them, and a name a line
@@ -687,8 +688,9 @@ and last the next steps, by the verdict and what was kept. "The report" in `GUID
   with each finding folded into it named under it, since another reading of the same lines can be
   a second defect. Each of a guideline's findings to fix, a model's reading, which can be wrong, carries a `first:`
   line: a test that fails on the code as it stands, kept with the fix; where a test reaches the code and cannot
-  fail, that finding is left and the agent says why, and code no test reaches is fixed as the finding says, since
-  the command that checks the work runs no guideline. It ends by asking for the project's own
+  fail, that finding is left and the agent says why, a finding that asks only for a test, as `tests` does, is fixed
+  by that test, which can pass, and code no test reaches is fixed as the finding says, since the command that checks
+  the work runs no guideline. It ends by asking for the project's own
   tests before a commit, a fix done when they pass, and in the command that checks the fixes: the review again on the
   same scope with only the rules that found something or could not look, so an agent checks its own work offline, no
   model called. It checks the branch reviewed, by its full name in any spelling git gives it, or else `HEAD`, the fixes

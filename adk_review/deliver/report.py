@@ -200,13 +200,16 @@ TESTS_FIRST = (
 #: item carries `FIRST`, and the paragraph names the line: read by review, a paragraph that named each item with a
 #: guideline's `after` line reached the tidies and what may be done already too. A test that cannot fail leaves that
 #: finding alone, never a rule's on the same lines, and code no test reaches is fixed as before, since the command that
-#: checks the work runs no guideline. A rule's finding is decided by code, a tidy changes no behaviour, and what may be
-#: done already is told to change nothing, so none of them is marked.
+#: checks the work runs no guideline. A finding that asks only for a test, as `tests` makes, is fixed by that test,
+#: which passes where the code works: read by review, told to leave it, an agent never wrote the test it asked for. A
+#: rule's finding is decided by code, a tidy changes no behaviour, and what may be done already, listed apart, is told
+#: to change nothing, so none of them is marked.
 FIRST = "first: a test that fails on the code as it stands, kept with the fix"
 PROVE_FIRST = (
     "An item with a `first:` line is a guideline's finding, a model's reading, and it can be wrong. Where a test",
     "reaches its code but cannot fail, make no change for that finding. Report why: a review of that guideline",
-    "still names it. Where no test can reach the code, fix it as the finding says.",
+    "still names it. Where the finding asks only for a test, that test is the fix, and it can pass. Where no test",
+    "can reach the code, fix it as the finding says.",
 )
 #: How a review that kept no finding ends, its report and its hand-off alike.
 NOTHING_TO_FIX = "Nothing to fix: no finding was kept."
@@ -400,7 +403,7 @@ def _items(
     identity: Mapping[int, str],
     held: frozenset[str],
     fail_on: str | None,
-    proving: bool = False,
+    proving: bool,
 ) -> list[str]:
     """Each hand-off item, numbered from `start`: its lead's place, quote and instruction, then each other reading of
     the same lines, one whose check is in `held` held back, as `_lanes` leaves a tidy under a fix only to be. With no
@@ -428,7 +431,7 @@ def _folded_under(
     fail_on: str | None,
     identity: Mapping[int, str],
     held: frozenset[str],
-    proving: bool = False,
+    proving: bool,
 ) -> list[str]:
     """A line for each finding folded into a handoff item: another reading of the same lines, by another check or the
     same one, which can be a second defect — an injection whose quote spans a key's line folds into the key's finding.

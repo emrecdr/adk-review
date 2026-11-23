@@ -31,12 +31,19 @@ def _in_order[Node: ast.AST](nodes: Iterable[Node]) -> list[Node]:
 
 def name_of(node: ast.AST) -> str:
     """A name as written, dotted: `open`, `requests.get`, `self.session.get`; a method of something with no name,
-    as `"…".format` and `client().get` are, is `.format` and `.get`. Empty for what is no name at all."""
+    as `"…".format` and `client().get` are, is `.format` and `.get`. Empty for what is no name at all. Read in a loop:
+    reproduced by review, Python parses a chain of thousands of attributes, and read by recursion it raised."""
+    parts = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
     if isinstance(node, ast.Name):
-        return node.id
-    if isinstance(node, ast.Attribute):
-        return f"{name_of(node.value)}.{node.attr}"
-    return ""
+        parts.append(node.id)
+    elif not parts:
+        return ""
+    else:
+        parts.append("")  # a method of something with no name
+    return ".".join(reversed(parts))
 
 
 def calls_in(code: ast.AST | str, *names: str) -> list[ast.Call]:

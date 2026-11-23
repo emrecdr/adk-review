@@ -130,6 +130,16 @@ class TestTheSyntaxReaders:
         assert imports_in(module) == [(1, "os.path"), (2, "requests.Session"), (3, "os.*"), (4, ".charge.Charge")]
         assert [handler.lineno for handler in nodes_in(module, ast.ExceptHandler)] == [17]
 
+    def test_a_name_thousands_of_attributes_deep_is_read_whole(self) -> None:
+        """Reproduced by review: Python parses a chain of thousands of attributes, and `name_of` read it by recursion,
+        which stops at a thousand. The logged-secret rule, which every everyday review and both hooks run, raised on
+        it, and the review ended as a hole where every other rule read the file."""
+        from adk_review.judge.rules.sensitive_logging import SensitiveLogging
+
+        chain = "x" + ".a" * 5000
+        assert name_of(ast.parse(chain).body[0].value) == chain
+        assert try_rule(SensitiveLogging(), {"m.py": f'logger.info("%s", {chain}.token)\n'}), "named, not raised"
+
 
 def _file_rule(returned: object) -> FileRule:
     """A file rule whose check returns `returned`, whatever it is."""
