@@ -2434,8 +2434,6 @@ class TestWhatTheBranchCannotTellTheRules:
         review's own files and the project's other kinds, a vendored folder's files in both, only for Python to drop
         them: a `node_modules` of 149 MB peaked at 747 MB. A folder holding no file asked for is left out of git's
         patch by its literal name, taken from git's own listing, so no glob decides and no file asked for is lost."""
-        import subprocess
-
         from adk_review.collect import git
 
         repo = _branch_off_empty(tmp_path / "repo", "change")
@@ -2467,8 +2465,8 @@ class TestWhatTheBranchCannotTellTheRules:
         # the patch while the list of names had dropped it, and the review ended in a hole. Its name is git's bytes,
         # given on standard input, which on Windows a command's argument could not carry.
         blob = _git_in(repo, "hash-object", "-w", "--stdin", stdin="LATIN = 1\n")
-        info = f"100644 {blob}\t".encode("ascii") + b"vend\xe9/index.js\n"
-        subprocess.run(["git", "-C", str(repo), "update-index", "--add", "--index-info"], input=info, check=True)
+        # C-quoted, as git reads a name on standard input: `\351` is the byte 0xE9, no UTF-8 alone.
+        _git_in(repo, "update-index", "--add", "--index-info", stdin=f'100644 {blob}\t"vend\\351/index.js"\n')
         _git_in(repo, "commit", "-qm", "a folder not named in UTF-8")
         resolved = git.preflight(str(repo), None, "change")
         asked = [entry for entry in git.list_changed(resolved) if entry["path"].endswith(".py")]

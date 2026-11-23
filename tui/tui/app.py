@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import os
 import subprocess
+from collections import deque
 from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import ClassVar, NamedTuple
@@ -161,6 +162,8 @@ NOTHING_TO_COPY = {
 #: The last lines a run that wrote no report said, shown in the report's place: read by review, a run cut short
 #: repeated its every progress line there, and its last is what it said as it ended.
 NO_REPORT_LINES = 20
+#: What the Findings tab says where it holds no review's verdict: no review run yet, or a report it could not read.
+RUN_FIRST = "Run a review to see its findings."
 
 
 class AdkReviewTuiApp(App[int]):
@@ -235,7 +238,8 @@ class AdkReviewTuiApp(App[int]):
         self._selected_finding: FindingRow | None = None
         self._reviewed: str | None = None  # the commit the findings' report reviewed: their lines are counted in it
         self._verdict: str | None = None  # the verdict that report reached: no finding is "nothing found" only so
-        self._said: list[str] = []  # what the running review said on its error stream, its reason where it ends early
+        # The last lines the running review said on its error stream, its reason where it ends with no report.
+        self._said: deque[str] = deque(maxlen=NO_REPORT_LINES)
         self._pull_request: PullRequest | None = None  # the address field's, where it reads as one
         self._pull_request_of: tuple[str, str] | None = None  # the repository and branch the field was restored for
         self._kept_address: str = ""  # what the state holds for that pair, so it is written when it changes alone
@@ -417,7 +421,7 @@ class AdkReviewTuiApp(App[int]):
                     yield Static("", id="pr-status", markup=False)
                 yield DataTable(id="findings-table", cursor_type="row")
                 with VerticalScroll(id="finding-detail-scroll"):
-                    yield Static("Run a review to see its findings.", id="finding-detail", markup=False)
+                    yield Static(RUN_FIRST, id="finding-detail", markup=False)
             # No link opens on a click: Markdown makes one of an address in a finding's words, which are a model's.
             with TabPane("3. Author Comment (--comment)", id="tab-comment"), VerticalScroll():
                 yield Markdown("*No `--comment` generated yet.*", id="comment-md", open_links=False)
@@ -532,7 +536,7 @@ class AdkReviewTuiApp(App[int]):
         self._reviewed = self._verdict = None
         self.query_one("#report-log", RichLog).clear()
         self.query_one("#findings-table", DataTable).clear()
-        self.query_one("#finding-detail", Static).update("Run a review to see its findings.")
+        self.query_one("#finding-detail", Static).update(RUN_FIRST)
         self.query_one("#btn-explain-check", Button).disabled = True
         self.query_one("#comment-md", Markdown).update("*No `--comment` generated yet.*")
         self.query_one("#handoff-md", Markdown).update("*No `--handoff` generated yet.*")
@@ -1534,7 +1538,7 @@ class AdkReviewTuiApp(App[int]):
         self._set_banner(f"Running {label} on {project.name}...")
         self._log_progress(f"$ {format_cli_command(argv)}")
         self._set_running_ui(True)
-        self._said = []  # this run's own: read by review, a run whose stream gave nothing would show the last one's
+        self._said.clear()  # this run's own: read by review, a run whose stream gave nothing would show the last one's
         try:
             code, stdout_text = await self._stream_subprocess(review_command(argv))
         except asyncio.CancelledError:
@@ -1557,14 +1561,15 @@ class AdkReviewTuiApp(App[int]):
             report_log.write(stdout_text.rstrip("\n"))
         decided = await self._load_generated_files(outputs)
         self.query_one("#output-tabs", TabbedContent).active = "tab-report"
-        if not stdout_text.strip() and decided is None:
+        if decided is None and not stdout_text.strip():
             # Read by an audit, and reproduced: a review refused before it ran, as a first one with no login is, left
             # the Report tab empty and the banner at "exit code 2", its reason on the progress tab alone. Known by the
             # report it did not write, never by its code: read by review, a broken install exits 1 with a traceback.
-            said = self._said[-NO_REPORT_LINES:] or [f"It gave no reason (exit code {code})."]
+            said = list(self._said) or [f"It gave no reason (exit code {code})."]
             self.last_report_md = "\n".join([f"The {label} ended with no report. It said:", "", *said])
             report_log.write(self.last_report_md)
-            self._set_banner(f"The {label} on {project.name} ended with no report (exit code {code}): {said[-1]}"[:300])
+            why = f": {self._said[-1]}" if self._said else "."
+            self._set_banner(f"The {label} on {project.name} ended with no report (exit code {code}){why}"[:300])
             told = f"The {label} ended with no report (exit code {code}). The Report tab says why."
         else:
             reached = f": {decided}" if decided else ""
@@ -1638,7 +1643,7 @@ class AdkReviewTuiApp(App[int]):
     async def _load_generated_files(self, outputs: dict[str, Path]) -> str | None:
         """What a decided review wrote, on its three tabs: its findings, and its comment and hand-off or that it wrote
         none, and the verdict its report names. A run that decided nothing wrote no report, a dry run or a review the
-        reviewer refused, and leaves the tabs as the last review left them, its verdict None. Read by an audit, and
+        reviewer refused, and leaves the tabs as the last review left them, and it returns None. Read by an audit, and
         confirmed: a review with the comment switched off set the tab's name back and left the earlier review's comment
         under it, for Ctrl+Y to copy as its own."""
         json_path = outputs.get("json")
@@ -1696,14 +1701,18 @@ class AdkReviewTuiApp(App[int]):
             self.query_one("#finding-detail", Static).update(msg)
 
     def _none_found(self) -> str:
-        """What the Findings tab says of a review that kept no finding: read by an audit, and reproduced, a review that
-        could not check everything said "This review has no findings.", the words of one that looked and found none."""
+        """What the Findings tab says of a review that kept no finding: that it found none only where it approved. Read
+        by an audit, and reproduced, a review that could not check everything said "This review has no findings.", the
+        words of one that looked and found none; read by review, so did a target no review had read yet, and a report
+        the screen could not read."""
+        if self._verdict == "APPROVED":
+            return "This review has no findings."
         if self._verdict == "DEGRADED":
             return (
                 "This review kept no finding, but it could not check everything. "
                 "Its report names what it did not check."
             )
-        return "This review has no findings."
+        return RUN_FIRST
 
     def _select_finding_at(self, row_index: int) -> None:
         if 0 <= row_index < len(self._filtered_findings):

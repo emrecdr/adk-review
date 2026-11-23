@@ -2905,6 +2905,14 @@ class TestThePickAsReviewedAgain:
         ], seen
 
 
+async def _reviewed_once(app, pilot) -> None:
+    """One review run as the person's Ctrl+R runs it, waited on to its end and the screen drawn after it."""
+    await pilot.press("ctrl+r")
+    await pilot.pause()
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+
+
 async def _wait_for_branches(app, pilot) -> None:
     """Until the first repository's branches are listed, and its folders too: a review waits for both. Seen on
     Windows in CI: a test that pressed Ctrl+D once the branches showed met the wait for the folders."""
@@ -4245,6 +4253,24 @@ class TestHowTheScreenSaysWhatAReviewDecided:
             assert str(app.query_one("#finding-detail", Static).render()) == "This review has no findings."
 
     @pytest.mark.asyncio
+    async def test_a_screen_that_read_no_verdict_never_says_a_review_found_nothing(self, tmp_path: Path) -> None:
+        """Read by review of the fix: the Findings tab said "This review has no findings." for every verdict but a
+        degraded one, so a target no review had read yet, and a report the screen could not read, each said a review
+        had looked and found nothing. Only an approval reads so; one with no verdict read asks for a review."""
+        pytest.importorskip("textual")
+        from textual.widgets import Static
+
+        app = _payments_screen(tmp_path)
+        broken = tmp_path / "broken.json"
+        broken.write_text("{not json", encoding="utf-8")
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            unreviewed = str(app.query_one("#finding-detail", Static).render())
+            await _show_findings(app, pilot, broken)
+            unread = str(app.query_one("#finding-detail", Static).render())
+        assert "has no findings" not in unreviewed and "has no findings" not in unread, (unreviewed, unread)
+
+    @pytest.mark.asyncio
     async def test_a_review_that_ended_with_no_report_says_why_in_the_report_and_the_banner(
         self, tmp_path: Path, monkeypatch
     ) -> None:
@@ -4266,10 +4292,7 @@ class TestHowTheScreenSaysWhatAReviewDecided:
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             app.selected_base = "main"
-            await pilot.press("ctrl+r")
-            await pilot.pause()
-            await app.workers.wait_for_complete()
-            await pilot.pause()
+            await _reviewed_once(app, pilot)
             report = "\n".join(line.text for line in app.query_one("#report-log", RichLog).lines)
             banner = str(app.query_one("#status-banner", Static).render())
             copied = app.last_report_md  # what Ctrl+Y copies from the Report tab
@@ -4297,25 +4320,21 @@ class TestHowTheScreenSaysWhatAReviewDecided:
         monkeypatch.setattr(screen, "review_command", lambda _argv: [sys.executable, "-c", crash])
         app = _payments_screen(tmp_path)
 
-        async def ran() -> tuple[str, str]:
-            await pilot.press("ctrl+r")
-            await pilot.pause()
-            await app.workers.wait_for_complete()
-            await pilot.pause()
-            return app.last_report_md, str(app.query_one("#status-banner", Static).render())
-
         async def silent(_cmd: list[str]) -> tuple[int, str]:
             return 2, ""
 
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             app.selected_base = "main"
-            report, banner = await ran()
+            await _reviewed_once(app, pilot)
+            report, banner = app.last_report_md, str(app.query_one("#status-banner", Static).render())
             assert "no module x" in report and "progress 29" in report and "progress 0\n" not in report, report
             assert "no module x" in banner and "exit code 1" in banner, banner
             monkeypatch.setattr(app, "_stream_subprocess", silent)
-            report, _banner = await ran()
+            await _reviewed_once(app, pilot)
+            report, banner = app.last_report_md, str(app.query_one("#status-banner", Static).render())
         assert "no module x" not in report and "gave no reason" in report, report
+        assert banner.endswith("ended with no report (exit code 2)."), f"the code once, with no reason given: {banner}"
 
     @pytest.mark.asyncio
     async def test_the_banner_names_the_verdict_the_review_reached(self, tmp_path: Path, monkeypatch) -> None:
@@ -4338,9 +4357,6 @@ class TestHowTheScreenSaysWhatAReviewDecided:
             await _wait_for_branches(app, pilot)
             monkeypatch.setattr(app, "_stream_subprocess", reviewed)
             app.selected_base = "main"
-            await pilot.press("ctrl+r")
-            await pilot.pause()
-            await app.workers.wait_for_complete()
-            await pilot.pause()
+            await _reviewed_once(app, pilot)
             banner = str(app.query_one("#status-banner", Static).render())
         assert "REQUEST_CHANGES" in banner and "exit code 1" in banner, banner

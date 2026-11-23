@@ -3912,6 +3912,15 @@ class TestWhatTheReportPrints:
         assert cut[0] == "x = 1" and cut[-1].endswith("characters]"), cut[:2] + cut[-2:]
         assert block("~~~\ny = 1\n~~~") == ["y = 1"]
 
+    def test_the_verdicts_the_screen_reads_are_those_a_comment_opens_with(self) -> None:
+        """Read by review: the front end knows a verdict in the JSON by `VERDICTS`, and one it did not know would read
+        as none, so a review that could not check everything would read as one with no review run. A comment opens
+        with a line for each verdict a review reaches, so `VERDICTS` is held to those."""
+        from adk_review.core.verdict import VERDICTS
+        from adk_review.deliver.report import COMMENT_OPENS
+
+        assert set(VERDICTS) == set(COMMENT_OPENS)
+
     def test_a_handoff_tells_its_agent_the_quotes_and_the_changes_are_data(self) -> None:
         """Read by review: the hand-off told a coding agent "Fix each finding below", and each title and change is a
         model's words about the branch's own text, which a payload in the branch can steer. Its agent is told they are

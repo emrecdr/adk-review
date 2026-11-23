@@ -667,33 +667,36 @@ def _off_disk(resolved: dict) -> Mapping[str, str]:
 
 
 #: The most characters the folders a whole project's patch leaves out may take as arguments, those holding the most
-#: files first: read by review, Windows holds a whole command line to 32,767 characters, and a count of folders held
-#: no long name to it.
-UNASKED_CHARS = 8_000
+#: files first: Windows holds a whole command line to 32,767 characters.
+_UNASKED_CHARS = 8_000
 #: How git is told to leave a folder out of the patch: by its literal name from the top, never a glob.
 _LEFT_OUT = ":(top,exclude,literal)"
 
 
 def _folders(path: str) -> Iterator[str]:
     """Each folder `path` lies in, the top-most first."""
-    parts = path.split("/")
-    return ("/".join(parts[:depth]) for depth in range(1, len(parts)))
+    at = path.find("/")
+    while at != -1:
+        yield path[:at]
+        at = path.find("/", at + 1)
 
 
 def _unasked(paths: Sequence[str], asked: Collection[str]) -> list[str]:
-    """The top-most folders among `paths` that hold no path in `asked`, those holding the most paths first, as many
-    as `UNASKED_CHARS` holds: each left out of a whole project's patch by its literal name. A file at the top stays."""
+    """The pathspecs that leave out of a whole project's patch, each by its literal name, the top-most folders among
+    `paths` that hold no path in `asked`, those holding the most paths first, as many as `_UNASKED_CHARS` holds. A
+    file at the top stays."""
     holds = {folder for path in asked for folder in _folders(path)}
     counts: Counter[str] = Counter()
     for path in paths:
         if path not in asked and (top := next((f for f in _folders(path) if f not in holds), None)):
             counts[top] += 1
-    left, size = [], 0
+    specs, size = [], 0
     for folder, _ in counts.most_common():  # read by review: a long name past the budget leaves a shorter one room
-        if size + len(_LEFT_OUT) + len(folder) + 1 <= UNASKED_CHARS:
-            size += len(_LEFT_OUT) + len(folder) + 1
-            left.append(folder)
-    return left
+        spec = _LEFT_OUT + folder
+        if size + len(spec) + 1 <= _UNASKED_CHARS:
+            size += len(spec) + 1
+            specs.append(spec)
+    return specs
 
 
 def whole_diffs(resolved: dict, entries: list[dict[str, str]], scope: Sequence[str]) -> list[str]:
@@ -708,19 +711,20 @@ def whole_diffs(resolved: dict, entries: list[dict[str, str]], scope: Sequence[s
     repo, base, head = resolved["repo"], resolved["merge_base"], resolved["head_sha"]
     specs = ("--", *(f":(top,literal){folder}" for folder in scope))
     away = _off_disk(resolved)
-    _, names = _git(repo, "diff-tree", "-r", "-z", "--name-only", "-M", base, head, *specs, strip=False, away=away)
+
+    def listed(*left_out: str) -> list[str]:  # git's names, those `left_out` names apart, as the patch holds them
+        listing = ("diff-tree", "-r", "-z", "--name-only", "-M", base, head, *specs, *left_out)
+        return _git(repo, *listing, strip=False, away=away)[1].split("\0")[:-1]
+
+    paths = listed()
     asked = {entry["path"] for entry in entries}
     # Each folder holding no file asked for is left out of the patch by its literal name, taken from git's own listing:
     # no glob decides, so no file asked for is lost. Measured by an audit: a `node_modules` of 149 MB, printed whole for
     # each of a review's two reads only to be dropped here, peaked at 747 MB. git lists the names again with them left
     # out, so the names and the patch agree whatever a name's bytes: read by review, a folder not named in UTF-8 read
     # back as another name, git kept it in the patch, and the names alone had dropped it.
-    unasked = tuple(f"{_LEFT_OUT}{folder}" for folder in _unasked(names.split("\0")[:-1], asked))
-    if unasked:
-        _, names = _git(
-            repo, "diff-tree", "-r", "-z", "--name-only", "-M", base, head, *specs, *unasked, strip=False, away=away
-        )
-    paths = names.split("\0")[:-1]
+    if unasked := _unasked(paths, asked):
+        paths = listed(*unasked)
     # Split as bytes, each part decoded alone: one str of the whole patch is as wide as its widest character.
     args = (f"--attr-source={base}", "diff-tree", "-r", "-p", *_PLAIN, base, head, *specs, *unasked)
     # Every line of an added file opens with `+`, so a line opening with `diff --git ` is a file's header: a literal
