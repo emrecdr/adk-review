@@ -42,7 +42,6 @@ from textual.widgets.option_list import Option
 from textual.widgets.selection_list import Selection
 
 from adk_review.core.text import kinds_of
-from adk_review.core.verdict import EXIT_CLEAN, EXIT_FINDINGS
 
 from .azure import Place, PullRequest, draft, files_link, line_link, parse_pr_url, thread_link
 from .azure_client import AzLogin, AzureError, Client, Credential, post_comment
@@ -157,6 +156,11 @@ NOTHING_TO_COPY = {
     "tab-comment": "No comment to copy yet. Run a review with the comment switched on.",
     "tab-handoff": "No hand-off to copy yet. Run a review with the hand-off switched on.",
 }
+
+
+#: The last lines a run that wrote no report said, shown in the report's place: read by review, a run cut short
+#: repeated its every progress line there, and its last is what it said as it ended.
+NO_REPORT_LINES = 20
 
 
 class AdkReviewTuiApp(App[int]):
@@ -1530,6 +1534,7 @@ class AdkReviewTuiApp(App[int]):
         self._set_banner(f"Running {label} on {project.name}...")
         self._log_progress(f"$ {format_cli_command(argv)}")
         self._set_running_ui(True)
+        self._said = []  # this run's own: read by review, a run whose stream gave nothing would show the last one's
         try:
             code, stdout_text = await self._stream_subprocess(review_command(argv))
         except asyncio.CancelledError:
@@ -1552,11 +1557,13 @@ class AdkReviewTuiApp(App[int]):
             report_log.write(stdout_text.rstrip("\n"))
         decided = await self._load_generated_files(outputs)
         self.query_one("#output-tabs", TabbedContent).active = "tab-report"
-        if not stdout_text.strip() and code not in (EXIT_CLEAN, EXIT_FINDINGS):
+        if not stdout_text.strip() and decided is None:
             # Read by an audit, and reproduced: a review refused before it ran, as a first one with no login is, left
-            # the Report tab empty and the banner at "exit code 2", its reason on the progress tab alone.
-            said = self._said or [f"It gave no reason (exit code {code})."]
-            report_log.write("\n".join([f"The {label} ended with no report. It said:", "", *said]))
+            # the Report tab empty and the banner at "exit code 2", its reason on the progress tab alone. Known by the
+            # report it did not write, never by its code: read by review, a broken install exits 1 with a traceback.
+            said = self._said[-NO_REPORT_LINES:] or [f"It gave no reason (exit code {code})."]
+            self.last_report_md = "\n".join([f"The {label} ended with no report. It said:", "", *said])
+            report_log.write(self.last_report_md)
             self._set_banner(f"The {label} on {project.name} ended with no report (exit code {code}): {said[-1]}"[:300])
             told = f"The {label} ended with no report (exit code {code}). The Report tab says why."
         else:
@@ -1565,7 +1572,7 @@ class AdkReviewTuiApp(App[int]):
             told = f"Finished {label}{reached} (exit code {code})."
         self.notify(told, severity="information" if code == 0 else "warning", timeout=4, markup=False)
 
-    async def _stream_subprocess(self, cmd: list[str]) -> tuple[int, str]:
+    async def _stream_subprocess(self, cmd: list[str]) -> tuple[int, str]:  # its error lines kept in `_said`
         # UTF-8 streams: on Windows Python writes a pipe in the system's code page, cp1252, where this reads UTF-8.
         # Reproduced with that code page set: a progress line's `ü` and `—` read as replacement marks, and the
         # report's `→` stopped the review with an error.
@@ -1577,7 +1584,6 @@ class AdkReviewTuiApp(App[int]):
         )
         self._active_proc = proc
         stdout_chunks: list[str] = []
-        self._said = []
 
         def told(raw: bytes) -> None:
             if line := raw.decode("utf-8", errors="replace").rstrip():

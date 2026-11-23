@@ -9,6 +9,7 @@ from pathlib import Path
 
 from adk_review.collect.git import OBJECT_ID
 from adk_review.core.findings import RANK
+from adk_review.core.verdict import VERDICTS
 from adk_review.judge.catalog import CONFIG, catalog, explained, load_config
 
 
@@ -102,10 +103,6 @@ def _commit(raw: dict) -> str | None:
     seen = raw.get("reviewed")
     head = seen.get("head_sha") if isinstance(seen, dict) else None
     return head if isinstance(head, str) and OBJECT_ID.fullmatch(head) else None
-
-
-#: The verdicts a review reaches, as its JSON names them: any other value is read as none.
-VERDICTS = ("APPROVED", "REQUEST_CHANGES", "DEGRADED")
 
 
 def _verdict(raw: dict) -> str | None:

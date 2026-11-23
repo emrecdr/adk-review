@@ -22,6 +22,8 @@ from .secrets import scrub
 from .text import REASON_MAX_CHARS, cut_at, squash
 
 EXIT_CLEAN, EXIT_FINDINGS, EXIT_USAGE, EXIT_DEGRADED = 0, 1, 2, 3
+#: The verdicts `decide` reaches, as the report and the JSON name them: the front end reads them from the JSON.
+VERDICTS = ("APPROVED", "REQUEST_CHANGES", "DEGRADED")
 #: The shell's own code for a run Ctrl-C stopped: 128 and SIGINT's 2.
 EXIT_INTERRUPTED = 130
 #: And for one a job stopped: 128 and SIGTERM's 15.

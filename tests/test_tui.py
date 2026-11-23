@@ -4272,8 +4272,50 @@ class TestHowTheScreenSaysWhatAReviewDecided:
             await pilot.pause()
             report = "\n".join(line.text for line in app.query_one("#report-log", RichLog).lines)
             banner = str(app.query_one("#status-banner", Static).render())
+            copied = app.last_report_md  # what Ctrl+Y copies from the Report tab
         assert refused in report, report
         assert refused in banner and "exit code 2" in banner, banner
+        assert refused in copied, f"read by review: Ctrl+Y said there was nothing to copy: {copied!r}"
+
+    @pytest.mark.asyncio
+    async def test_a_run_with_no_report_is_said_whatever_its_code_and_only_its_own_last_lines(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by review of the fix: a reviewer that could not load, a broken install, exits 1 with Python's own
+        traceback and no report, and an exit code of 1 read as a decided review left the Report tab empty again; a run
+        cut short repeated every progress line in the report; and a run whose stream gave nothing would have shown the
+        reason of the run before. The run is read by the report it wrote, its last 20 lines shown, its own alone."""
+        pytest.importorskip("textual")
+        import sys
+
+        from textual.widgets import Static
+
+        import tui.app as screen
+
+        lines = "[sys.stderr.write(f'progress {n}\\n') for n in range(30)]"
+        crash = f"import sys; {lines}; sys.stderr.write('ModuleNotFoundError: no module x\\n'); sys.exit(1)"
+        monkeypatch.setattr(screen, "review_command", lambda _argv: [sys.executable, "-c", crash])
+        app = _payments_screen(tmp_path)
+
+        async def ran() -> tuple[str, str]:
+            await pilot.press("ctrl+r")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            return app.last_report_md, str(app.query_one("#status-banner", Static).render())
+
+        async def silent(_cmd: list[str]) -> tuple[int, str]:
+            return 2, ""
+
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            report, banner = await ran()
+            assert "no module x" in report and "progress 29" in report and "progress 0\n" not in report, report
+            assert "no module x" in banner and "exit code 1" in banner, banner
+            monkeypatch.setattr(app, "_stream_subprocess", silent)
+            report, _banner = await ran()
+        assert "no module x" not in report and "gave no reason" in report, report
 
     @pytest.mark.asyncio
     async def test_the_banner_names_the_verdict_the_review_reached(self, tmp_path: Path, monkeypatch) -> None:
