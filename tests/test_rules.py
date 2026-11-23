@@ -2434,6 +2434,8 @@ class TestWhatTheBranchCannotTellTheRules:
         review's own files and the project's other kinds, a vendored folder's files in both, only for Python to drop
         them: a `node_modules` of 149 MB peaked at 747 MB. A folder holding no file asked for is left out of git's
         patch by its literal name, taken from git's own listing, so no glob decides and no file asked for is lost."""
+        import subprocess
+
         from adk_review.collect import git
 
         repo = _branch_off_empty(tmp_path / "repo", "change")
@@ -2457,6 +2459,26 @@ class TestWhatTheBranchCannotTellTheRules:
         monkeypatch.setattr(git, "_git_raw", kept)
         assert git.whole_diffs(resolved, asked, ()) == [git.diff_of(resolved, entry["path"]) for entry in asked]
         assert printed and not any(b"VENDORED" in out or b"BLOB" in out for out in printed), printed
+        printed.clear()
+        mod = [entry for entry in asked if entry["path"].startswith("src/")]
+        assert git.whole_diffs(resolved, mod, ("src",)) == [git.diff_of(resolved, entry["path"]) for entry in mod]
+        assert not any(b"BLOB" in out for out in printed), "a folder left out under --path too"
+        # Read by review, and reproduced: a folder whose name is not UTF-8 read back as another name, git kept it in
+        # the patch while the list of names had dropped it, and the review ended in a hole. Its name is git's bytes,
+        # given on standard input, which on Windows a command's argument could not carry.
+        blob = (
+            subprocess.run(
+                ["git", "-C", str(repo), "hash-object", "-w", "--stdin"], input=b"LATIN = 1\n", capture_output=True
+            )
+            .stdout.decode("ascii")
+            .strip()
+        )
+        info = f"100644 {blob}\t".encode("ascii") + b"vend\xe9/index.js\n"
+        subprocess.run(["git", "-C", str(repo), "update-index", "--add", "--index-info"], input=info, check=True)
+        _git_in(repo, "commit", "-qm", "a folder not named in UTF-8")
+        resolved = git.preflight(str(repo), None, "change")
+        asked = [entry for entry in git.list_changed(resolved) if entry["path"].endswith(".py")]
+        assert git.whole_diffs(resolved, asked, ()) == [git.diff_of(resolved, entry["path"]) for entry in asked]
 
     def test_each_commit_a_push_sends_reads_its_files_as_diff_of_does(self, hostile_repo) -> None:
         """Measured by review: a file a commit holds before another kept its CRLF last line's `\\r`, and the pre-push
