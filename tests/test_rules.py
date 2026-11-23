@@ -2462,17 +2462,11 @@ class TestWhatTheBranchCannotTellTheRules:
         printed.clear()
         mod = [entry for entry in asked if entry["path"].startswith("src/")]
         assert git.whole_diffs(resolved, mod, ("src",)) == [git.diff_of(resolved, entry["path"]) for entry in mod]
-        assert not any(b"BLOB" in out for out in printed), "a folder left out under --path too"
+        assert printed and not any(b"BLOB" in out for out in printed), "a folder left out under --path too"
         # Read by review, and reproduced: a folder whose name is not UTF-8 read back as another name, git kept it in
         # the patch while the list of names had dropped it, and the review ended in a hole. Its name is git's bytes,
         # given on standard input, which on Windows a command's argument could not carry.
-        blob = (
-            subprocess.run(
-                ["git", "-C", str(repo), "hash-object", "-w", "--stdin"], input=b"LATIN = 1\n", capture_output=True
-            )
-            .stdout.decode("ascii")
-            .strip()
-        )
+        blob = _git_in(repo, "hash-object", "-w", "--stdin", stdin="LATIN = 1\n")
         info = f"100644 {blob}\t".encode("ascii") + b"vend\xe9/index.js\n"
         subprocess.run(["git", "-C", str(repo), "update-index", "--add", "--index-info"], input=info, check=True)
         _git_in(repo, "commit", "-qm", "a folder not named in UTF-8")

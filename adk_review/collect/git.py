@@ -689,11 +689,10 @@ def _unasked(paths: Sequence[str], asked: Collection[str]) -> list[str]:
         if path not in asked and (top := next((f for f in _folders(path) if f not in holds), None)):
             counts[top] += 1
     left, size = [], 0
-    for folder, _ in counts.most_common():
-        size += len(_LEFT_OUT) + len(folder) + 1
-        if size > UNASKED_CHARS:
-            break
-        left.append(folder)
+    for folder, _ in counts.most_common():  # read by review: a long name past the budget leaves a shorter one room
+        if size + len(_LEFT_OUT) + len(folder) + 1 <= UNASKED_CHARS:
+            size += len(_LEFT_OUT) + len(folder) + 1
+            left.append(folder)
     return left
 
 
