@@ -13,7 +13,6 @@ limits to the code.
 itself, and git 2.41 or later on `PATH`, with the fix for CVE-2024-32465 (2.41.1, 2.42.2, 2.43.4, 2.44.1, 2.45 and
 later, or a distribution's build that carries it): without it, git ignores `GIT_NO_LAZY_FETCH`, and a review of a
 partial clone could fetch into it.
-On macOS they need Xcode's Command Line Tools too, `xcode-select --install`: `README.md`'s step 1 says why.
 
 ```bash
 uv sync --locked                             # once: the reviewer, its Python and its locked dependencies
@@ -84,7 +83,7 @@ and how it runs on Windows, in cmd and PowerShell.
 | `--previous` | Compare with a previous review's JSON: mark each finding new or seen before, by its fingerprint, new only where the previous review looked, its check run and able to look, and its file in the scope it read, and seen where it found it, folded under another, already in the files or refuted among them, and list what is no longer found, among what this review looked for — a check that ran, a file in its scope — a finding folded under another still found; the comment opens with how many points are fixed, new and still open, and how many it could not compare. A finding already in the files is not compared: one fixed since is not counted. A review with a hole resolves nothing. A report of another repository, or of an `--all` review where this one is not or the reverse, marks nothing new or fixed, and the review says so; the head is not compared, so a pipeline may name it by its commit. |
 | `--progress` | Tell each phase on stderr, and every 10 seconds what the review still waits on. After it reads the change, it names the repository, both sides and the files by kind. For a branch, it also names the commits since the merge base. It counts the Python lines added and deleted, source and tests apart. On at a terminal. |
 | `--quiet` | Print nothing when the review passes, not even the name of a file it wrote. Print the report and any error when it does not, and name each file it wrote. For a pipeline. Not with `--progress`. |
-| `--debug-log` | Write every model request and answer to this file, secrets redacted, the session's state left out. An earlier file of that name is removed before the review. Keep the file as you keep the code it quotes. |
+| `--debug-log` | Write every model request and answer to this file, secrets redacted, the session's state left out. An error that stops the run is written too, in its own words, which the redaction does not read. An earlier file of that name is removed before the review. Keep the file as you keep the code it quotes. |
 | `--trace` | Record ADK's spans, with their timings and token counts, to this local SQLite file. An earlier file of that name is removed before the review. Nothing is sent anywhere. |
 | `--record` | Keep each model answer in this folder under a hash of the request as the model read it, secrets redacted: a live run's answers, which a fake replays offline. The folder is made before any model call. |
 | `--dry-run` | Say what a review would cover and run — the revisions, the files, the profile, the model and whether its arm is ready — and run nothing. |

@@ -24,9 +24,6 @@ The reviewer needs uv 0.12 or later (https://docs.astral.sh/uv/getting-started/i
 3.14 itself where the machine has none, and git 2.41 or later on `PATH`, with the fix for CVE-2024-32465 (2.41.1,
 2.42.2, 2.43.4, 2.44.1, 2.45 and later, or a distribution's build that carries it): without it, git ignores
 `GIT_NO_LAZY_FETCH`, and a review of a partial clone could fetch into it.
-On macOS one package ADK needs, watchdog 6, has no wheel for Python 3.14, so the install builds it from source with
-a C compiler: Xcode's Command Line Tools, which Apple's git and Homebrew need too. Where they are missing, run
-`xcode-select --install`.
 
 ### 2. Get the reviewer
 
