@@ -127,6 +127,18 @@ class TestTheConfig:
             "guideline.complexity",
         ], "default is unchanged until a live measurement says otherwise"
 
+    def test_the_everyday_profiles_run_the_logged_secret_rule_and_not_the_cognitive_one(self) -> None:
+        """Measured over seven repositories, `sensitive-logging` named 14 places, 13 of them a secret logged whole: a
+        leak rule as `named-secrets` is, which costs no call, so every review and both hooks run it, its major reported
+        below the `blocker` bar. `cognitive-complexity` is a tidy the verdict never reads, and it named a function in
+        about one commit in seven: it stays in `simplify`, out of the reviews and the hooks the owner runs each day."""
+        from adk_review.core.profiles import chosen
+
+        found, profiles = catalog(), profiles_of()
+        for name in ("default", "default-rules", "code-review"):
+            on = chosen(profiles, name, found.ids(), found.groups())
+            assert "rule.sensitive-logging" in on and "rule.cognitive-complexity" not in on, (name, on)
+
     def test_every_file_a_rule_is_shown_by_example_is_one_the_shipped_scan_reads(self, cli) -> None:
         """Read by review: `steering-files` named `CLAUDE.md`, a `SKILL.md` and a `.pth` by example, and the shipped
         `scan` read none of them, so the rule never fired where it was made to; its examples ran through `try_rule`,

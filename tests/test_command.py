@@ -972,7 +972,7 @@ class TestTheDryRun:
         assert out.startswith("# Dry run: feature/payments against main\n")
         checks = "rule.secrets, rule.named-secrets, rule.lint, rule.reviewer-instructions, rule.encoding-declaration, "
         checks += "rule.lockfile-sources, rule.pinned-actions, rule.script-injection, rule.pitfalls, rule.callers, "
-        checks += "rule.radius-types, rule.hidden-text, "
+        checks += "rule.radius-types, rule.hidden-text, rule.sensitive-logging, "
         checks += "guideline.security"
         assert (
             "- changed      4 file(s):" in out

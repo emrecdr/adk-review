@@ -172,7 +172,7 @@ prints them:
 | `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full, code-review, demo | text that tries to instruct the reviewing model | `judge/rules/reviewer_instructions.py` |
 | `rule.script-injection` | file rule | major | default, default-rules, rules-only, full, code-review, demo | a workflow script expands a value an outsider writes, such as a pull request's title | `judge/rules/script_injection.py` |
 | `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, code-review, demo | a hard-coded credential | `judge/rules/secrets.py` |
-| `rule.sensitive-logging` | file rule | major | rules-only, full, demo | a credential written to a log | `judge/rules/sensitive_logging.py` |
+| `rule.sensitive-logging` | file rule | major | default, default-rules, rules-only, full, code-review, demo | a credential written to a log | `judge/rules/sensitive_logging.py` |
 | `rule.simplify` | file rule | minor | rules-only, full, simplify, code-review, demo | code ruff can write more simply | `judge/rules/simplify.py` |
 | `rule.steering-files` | file rule | minor | rules-only, full, demo | a file another tool or agent obeys has changed | `judge/rules/steering_files.py` |
 | `rule.tests-offline` | file rule | major | rules-only, full, demo | a test reaches the network | `judge/rules/tests_offline.py` |

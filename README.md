@@ -384,8 +384,8 @@ A profile is a list in `config.toml`, and a check runs only where a profile name
 
 - `default` runs when no `--profile` names another, and the file must hold it: the basics, `rule.secrets`,
   `rule.named-secrets`, `rule.lint`, `rule.reviewer-instructions`, `rule.encoding-declaration`, `rule.lockfile-sources`,
-  `rule.pinned-actions`, `rule.script-injection`, `rule.pitfalls`, `rule.callers`, `rule.radius-types` and
-  `rule.hidden-text`, and the guidelines `security`,
+  `rule.pinned-actions`, `rule.script-injection`, `rule.pitfalls`, `rule.callers`, `rule.radius-types`,
+  `rule.hidden-text` and `rule.sensitive-logging`, and the guidelines `security`,
   `tests` and `complexity`;
 - `default-rules` is the default's rules and no model, so it needs no key and fits any project's every pull request;
   a test keeps it to the default's rules;
