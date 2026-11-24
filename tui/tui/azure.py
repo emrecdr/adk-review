@@ -69,6 +69,55 @@ class PullRequest:
         parts = (self.origin, _quoted(self.project), "_apis/git/repositories", _quoted(self.repository))
         return "/".join((*parts, "pullRequests", str(self.number), *tail))
 
+    def names(self) -> tuple[str, str, str]:
+        """Its organization, project and repository, as `remote_names` reads a clone's address: in lower case, since
+        Azure DevOps reads names whatever their case."""
+        host = urlsplit(self.origin).hostname or ""
+        organization = host.split(".")[0] if _OLD_HOST.fullmatch(host) else self.origin.rstrip("/").rpartition("/")[2]
+        return unquote(organization).lower(), self.project.lower(), self.repository.lower()
+
+
+#: A clone's address over SSH, as Azure DevOps writes it: `git@ssh.dev.azure.com:v3/org/project/repo`, its older host
+#: `org@vs-ssh.visualstudio.com`, and the same as a URL, `ssh://git@ssh.dev.azure.com/v3/org/project/repo`.
+_SSH = re.compile(
+    r"(?:ssh://)?[^@/\s]+@(?:ssh\.dev\.azure\.com|vs-ssh\.visualstudio\.com)(?::\d+)?[:/]v3/([^/]+)/([^/]+)/([^/]+?)/?",
+    re.IGNORECASE,
+)
+
+
+def remote_names(url: str) -> tuple[str, str, str] | None:
+    """The organization, project and repository a clone's address names, in lower case, or None for an address of no
+    Azure DevOps repository: what a remote is matched to a pull request by, with no call made. A project of the
+    repository's own name may be left out of an address over HTTPS, as Azure DevOps leaves it out."""
+    text = url.strip()
+    if (ssh := _SSH.fullmatch(text)) is not None:
+        organization, project, repository = (unquote(name) for name in ssh.groups())
+    else:
+        try:
+            parts = urlsplit(text)
+        except ValueError:
+            return None
+        host = (parts.hostname or "").lower()
+        names = [unquote(name) for name in parts.path.strip("/").split("/")]
+        if parts.scheme.lower() != "https" or "_git" not in [name.lower() for name in names]:
+            return None
+        at = [name.lower() for name in names].index("_git")
+        before, after = names[:at], names[at + 1 :]
+        if host == _HOST and before:
+            organization, before = before[0], before[1:]
+        elif _OLD_HOST.fullmatch(host):
+            organization = host.split(".")[0]
+            before = before[1:] if before and before[0].lower() == "defaultcollection" else before
+        else:
+            return None
+        if len(after) == 2 and after[0].lower() in ("_optimized", "_full"):  # a clone of limited refs, or all of them
+            after = after[1:]
+        if len(after) != 1 or len(before) > 1:
+            return None
+        repository = after[0]
+        project = before[0] if before else repository.lower().removesuffix(".git")
+    return organization.lower(), project.lower(), repository.lower().removesuffix(".git")
+
 
 def parse_pr_url(text: str) -> PullRequest:
     """The pull request a pasted address names, or a `ValueError` whose text says what to paste. The refusal never

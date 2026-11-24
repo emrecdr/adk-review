@@ -185,6 +185,13 @@ Screen {
     width: 2fr;
     margin-right: 1;
 }
+#btn-open-pr {
+    width: 1fr;
+    height: 1;
+    min-height: 1;
+    border: none;
+    margin: 0;
+}
 #pr-status {
     width: 1fr;
     height: auto;

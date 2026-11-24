@@ -2978,8 +2978,243 @@ def _payments_screen(tmp_path: Path):  # the application, not yet running
     return AdkReviewTuiApp(config_path=_screen_config(tmp_path))
 
 
+def _two_clones(tmp_path: Path) -> Path:
+    """A workspace of two repositories, `notes` listed first and `payments` second, whose remote is the fake pull
+    request's repository: its branches as the remote holds them, `origin/main` and `origin/feature/tax`. The screen
+    never fetches: the remote's address is Azure DevOps', which no test reaches."""
+    _repository(tmp_path / "workspace" / "anotes", ("main",), "main")
+    clone = _repository(
+        tmp_path / "workspace" / "payments", ("main", "feature/orders", "feature/tax"), "feature/orders"
+    )
+    _git(clone, "remote", "add", "origin", "https://dev.azure.com/contoso/Web/_git/payments")
+    for branch in ("main", "feature/tax"):
+        _git(clone, "update-ref", f"refs/remotes/origin/{branch}", branch)
+    return _screen_config(tmp_path, "fetch_on_select = false")
+
+
+def _opened(fake, commit: str, **changed: object) -> None:
+    """The fake pull request merging `feature/tax` into `main`, its last push `commit`, from now on."""
+    fake.instead(
+        "GET",
+        "",
+        {
+            "status": "active",
+            "sourceRefName": "refs/heads/feature/tax",
+            "targetRefName": "refs/heads/main",
+            "lastMergeSourceCommit": {"commitId": commit},
+            **changed,
+        },
+    )
+
+
 class TestAzureDevOpsOnTheScreen:
     """The pull request's address, pasted once a branch, and the keys that open a finding's place in Azure DevOps."""
+
+    @pytest.mark.asyncio
+    async def test_a_pull_request_opened_chooses_its_repository_and_both_its_branches(
+        self, tmp_path: Path, fake_ado
+    ) -> None:
+        """One paste chooses what a review of the pull request reads: the repository whose remote names its
+        repository, and its source and target branches as the remote holds them, never a local copy, which can hold
+        work not pushed. Its address is kept for that branch, and for no other: the one chosen before keeps its own."""
+        from conftest import FakeToken
+        from textual.widgets import Input, Select, Static
+
+        from tui import azure_state
+        from tui.app import AdkReviewTuiApp
+
+        app = AdkReviewTuiApp(config_path=_two_clones(tmp_path))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            before = app._pair()
+            assert app.selected_project is not None and app.selected_project.name == "anotes"
+            app._credential = FakeToken()
+            app.query_one("#mode-select", Select).value = "staged"  # opened, a pull request is a branch's review
+            await pilot.pause()
+            listed = [command.title for command in app.get_system_commands(app.screen)]
+            clone = tmp_path / "workspace" / "payments"
+            _opened(fake_ado, _git(clone, "rev-parse", "feature/tax").strip())
+            app._open_pull_request(fake_ado.pr)
+            await _until(
+                pilot, lambda: app.selected_head == "origin/feature/tax" and app._listing_for is None, "opened"
+            )
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            chosen = (app.selected_project.name, app.selected_head, app.selected_base, app.selected_mode)
+            field = app.query_one("#pr-url", Input).value
+            banner = str(app.query_one("#status-banner", Static).render())
+            pair = app._pair()
+        assert chosen == ("payments", "origin/feature/tax", "origin/main", "branch"), chosen
+        assert field == fake_ado.pr.web and azure_state.pull_request_url(*pair) == fake_ado.pr.web
+        assert azure_state.pull_request_url(*before) == "", "the branch chosen before keeps none of it"
+        assert "Pull request 123" in banner and "F5" not in banner, banner
+        assert "Open pull request" in listed, "the palette, Ctrl+P, opens one too"
+
+    @pytest.mark.asyncio
+    async def test_a_pull_request_opened_on_the_branch_already_chosen_shows_its_own_address(
+        self, tmp_path: Path, fake_ado, monkeypatch
+    ) -> None:
+        """Read by review, and reproduced: with its branch already the one under review, the address was kept but the
+        field kept what it showed, none or another pull request's, and a comment went to that one. The field shows
+        the pull request opened."""
+        from conftest import FakeToken
+        from textual.widgets import Input
+
+        import tui.app as screen
+        from tui.app import AdkReviewTuiApp
+
+        real = screen.parse_pr_url  # the fake's address is a local one, which the parser refuses by design
+        monkeypatch.setattr(screen, "parse_pr_url", lambda text: fake_ado.pr if text == fake_ado.pr.web else real(text))
+        app = AdkReviewTuiApp(config_path=_two_clones(tmp_path))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app._credential = FakeToken()
+            clone = tmp_path / "workspace" / "payments"
+            app._on_project_chosen(next(project for project in app.projects if project.name == "payments"))
+            await _until(pilot, lambda: app.selected_project.name == "payments" and app._listing_for is None, "picked")
+            await app.workers.wait_for_complete()
+            app._sync_chosen_branch("head", "origin/feature/tax")
+            await _until(pilot, lambda: app.selected_head == "origin/feature/tax", "the branch chosen by hand")
+            await app.workers.wait_for_complete()
+            assert app.query_one("#pr-url", Input).value == "", "none kept for it yet"
+            _opened(fake_ado, _git(clone, "rev-parse", "feature/tax").strip())
+            app._open_pull_request(fake_ado.pr)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            shown = app.query_one("#pr-url", Input).value, app._pull_request
+        assert shown == (fake_ado.pr.web, fake_ado.pr), shown
+
+    @pytest.mark.asyncio
+    async def test_a_pick_made_while_a_pull_request_opens_wins_and_leaves_nothing_of_it(
+        self, tmp_path: Path, fake_ado, monkeypatch
+    ) -> None:
+        """Read by review, and reproduced: a pick made while the clone was sought was undone, its lists left empty;
+        and one made while the clone's branches listed left the pull request waiting, to be chosen when the person
+        picked that repository again by hand. The person's last pick wins, and the pull request is dropped."""
+        import threading
+
+        from conftest import FakeToken
+
+        import tui.app as screen
+        from tui.app import AdkReviewTuiApp
+
+        app = AdkReviewTuiApp(config_path=_two_clones(tmp_path))
+        sought, released, real = threading.Event(), threading.Event(), screen._clone_of
+
+        def slow(*args: object):
+            sought.set()
+            released.wait(2)  # until the person's pick is made, never forever
+            return real(*args)
+
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app._credential = FakeToken()
+            await app.workers.wait_for_complete()  # the opening pick's folders listed: a pick would cancel them
+            notes, payments = (next(p for p in app.projects if p.name == name) for name in ("anotes", "payments"))
+            app._on_project_chosen(payments)  # chosen first, so the pick below is another
+            await _until(pilot, lambda: app.selected_project is payments and app._listing_for is None, "chosen")
+            await app.workers.wait_for_complete()
+            _opened(fake_ado, "c" * 40)
+            monkeypatch.setattr(screen, "_clone_of", slow)
+            app._open_pull_request(fake_ado.pr)
+            await _until(pilot, sought.is_set, "the clone sought")
+            app._on_project_chosen(notes)  # the person's pick, while the clone is sought
+            released.set()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            during = (app.selected_project.name, bool(app.branches))
+            monkeypatch.setattr(screen, "_clone_of", real)
+            app._opening = screen._Opening(
+                str(payments.path), "origin", app._client(fake_ado.pr).pull_request(), fake_ado.pr
+            )
+            app._on_project_chosen(notes)  # a pick while a clone's branches list: the pull request waits no longer
+            await app.workers.wait_for_complete()
+            app._on_project_chosen(payments)
+            await _until(pilot, lambda: app.selected_project.name == "payments" and app._listing_for is None, "picked")
+            await app.workers.wait_for_complete()
+            later = app.selected_head
+        assert during == ("anotes", True), during
+        assert later != "origin/feature/tax", "the pull request dropped at the pick"
+
+    @pytest.mark.asyncio
+    async def test_a_pull_request_whose_last_push_is_not_here_says_to_fetch(self, tmp_path: Path, fake_ado) -> None:
+        """The remote's branch here is older than the pull request's last push: a review of it would read the
+        commits before it. The banner names the push and the key that fetches it."""
+        from conftest import FakeToken
+        from textual.widgets import Static
+
+        from tui.app import AdkReviewTuiApp
+
+        app = AdkReviewTuiApp(config_path=_two_clones(tmp_path))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app._credential = FakeToken()
+            _opened(fake_ado, "d" * 40)
+            app._open_pull_request(fake_ado.pr)
+            await _until(
+                pilot, lambda: app.selected_head == "origin/feature/tax" and app._listing_for is None, "opened"
+            )
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            banner = str(app.query_one("#status-banner", Static).render())
+        assert "dddddddddddd" in banner and "F5" in banner, banner
+
+    @pytest.mark.asyncio
+    async def test_a_pull_request_no_repository_here_holds_or_a_forks_changes_nothing(
+        self, tmp_path: Path, fake_ado
+    ) -> None:
+        """A pull request from a fork has its branch in another repository, and one of a repository no folder of the
+        workspace clones has none here: each is said, with what to do, and the choice stays as it was."""
+        from conftest import FakeToken
+        from textual.widgets import Static
+
+        from tui.app import AdkReviewTuiApp
+
+        app = AdkReviewTuiApp(config_path=_two_clones(tmp_path))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app._credential = FakeToken()
+            before = (app.selected_project, app.selected_head, app.selected_base)
+            _opened(fake_ado, "c" * 40, forkSource={"name": "refs/heads/feature/tax"})
+            app._open_pull_request(fake_ado.pr)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            fork = str(app.query_one("#status-banner", Static).render())
+            _opened(fake_ado, "c" * 40)
+            clone = tmp_path / "workspace" / "payments"
+            _git(clone, "remote", "set-url", "origin", "https://dev.azure.com/contoso/Web/_git/billing")
+            app._open_pull_request(fake_ado.pr)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            nowhere = str(app.query_one("#status-banner", Static).render())
+            after = (app.selected_project, app.selected_head, app.selected_base)
+        assert "fork" in fork and "by hand" in fork, fork
+        assert "contoso/web/payments" in nowhere and "remote" in nowhere, nowhere
+        assert after == before
+
+    @pytest.mark.asyncio
+    async def test_the_open_button_asks_for_an_address_and_refuses_one_that_names_no_pull_request(
+        self, tmp_path: Path, fake_ado
+    ) -> None:
+        """The button asks for the address in a dialog of its own, apart from the field kept for the branch chosen: a
+        paste there would be kept for that branch before the pull request's own was known. An address that names no
+        pull request is refused with what to paste, and nothing is asked of Azure DevOps."""
+        from tui.app import AdkReviewTuiApp
+        from tui.modals import OpenPullRequestModal
+
+        app = AdkReviewTuiApp(config_path=_two_clones(tmp_path))
+        async with app.run_test(size=(80, 24)) as pilot:  # the smallest screen: the button is there before a review
+            await _wait_for_branches(app, pilot)
+            said: list[str] = []
+            app.notify = _plainly(said)
+            await pilot.click("#btn-open-pr")
+            dialog = await _shown(app, pilot, OpenPullRequestModal)
+            dialog.query_one("#open-pr-url").value = "https://github.com/contoso/payments/pull/1"
+            await pilot.press("enter")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+        assert said and "pull request" in said[-1].lower(), said
+        assert fake_ado.seen == [], "nothing asked of Azure DevOps"
 
     @pytest.mark.asyncio
     async def test_a_pasted_address_is_kept_for_its_branch_and_comes_back_after_a_restart(self, tmp_path: Path) -> None:

@@ -11,7 +11,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Label, Markdown, Static, TextArea
+from textual.widgets import Button, Input, Label, Markdown, Static, TextArea
 
 from .clipboard import copy_text
 from .findings import explain_check_markdown
@@ -56,6 +56,39 @@ class SyncBranchModal(ModalScreen[bool]):
     def action_decline(self) -> None:
         """Close the modal without updating the local branch."""
         self.dismiss(False)
+
+
+class OpenPullRequestModal(ModalScreen[str | None]):
+    """Modal asking for a pull request's address, to review what it merges: apart from the field kept for the branch
+    chosen, where a paste is kept for that branch before the pull request's own branch is known."""
+
+    BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Close")]
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="modal-dialog"):
+            yield Label("Open Pull Request", classes="chain-title")
+            yield Static(
+                "Paste the pull request's address, as the browser shows it. "
+                "The screen then chooses its repository and both its branches.",
+                markup=False,
+            )
+            yield Input(placeholder="https://dev.azure.com/org/project/_git/repo/pullrequest/123", id="open-pr-url")
+            with Horizontal(id="modal-buttons"):
+                yield Button("Open", id="btn-open-pr-yes", variant="primary")
+                yield Button("Cancel", id="btn-open-pr-no", variant="default")
+
+    def on_mount(self) -> None:
+        self.query_one("#open-pr-url", Input).focus()
+
+    @on(Input.Submitted, "#open-pr-url")
+    @on(Button.Pressed, "#btn-open-pr-yes")
+    def _open(self) -> None:
+        self.dismiss(self.query_one("#open-pr-url", Input).value)
+
+    @on(Button.Pressed, "#btn-open-pr-no")
+    def action_cancel(self) -> None:
+        """Close the modal, opening nothing."""
+        self.dismiss(None)
 
 
 class DivergedBranchModal(ModalScreen[str]):

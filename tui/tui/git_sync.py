@@ -290,6 +290,25 @@ def _walk_for_repos(current: Path, depth: int, max_depth: int, acc: list[Path]) 
             _walk_for_repos(child, depth + 1, max_depth, acc)
 
 
+def remote_urls(repo: str) -> dict[str, str]:
+    """Each remote of `repo` by its name, with the address it fetches from, as the repository's own config names it:
+    what a pull request is matched to a clone by."""
+    read = _read(repo, "config", "--get-regexp", r"^remote\..*\.url$", ok=(0, 1))
+    found: dict[str, str] = {}
+    for line in (read[1] if read else "").splitlines():
+        key, _, url = line.partition(" ")
+        name = key.removeprefix("remote.").removesuffix(".url")
+        if name and url.strip():
+            found.setdefault(name, url.strip())
+    return found
+
+
+def commit_of(repo: str, ref: str) -> str | None:
+    """The commit `ref` names in `repo`, or None where it names none."""
+    read = _read(repo, "rev-parse", "--verify", "--quiet", "--end-of-options", f"{ref}^{{commit}}", ok=(0, 1))
+    return read[1] if read and read[0] == 0 and read[1] else None
+
+
 def is_dirty(repo: str) -> bool:
     """Whether `repo` has uncommitted tracked modifications in its working tree or index."""
     return bool(_status(repo, "--porcelain"))

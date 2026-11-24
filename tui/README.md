@@ -132,8 +132,16 @@ none.
 A finding of the Findings tab opens at its place in Azure DevOps, and its comment is posted to that file and line,
 when you ask. The reviewer itself posts nothing, as before: this is the screen's one write outside your machine.
 
-1. Log in once, in a terminal: `az login`. The screen asks the Azure CLI for a token when you post, and stores none.
-2. Review the pull request's branch, as any branch.
+1. Log in once, in a terminal: `az login`. The screen asks the Azure CLI for a token when you post, or open a pull
+   request, and stores none.
+2. Review the pull request's branch, as any branch. Or press **Open Pull Request**, under the repositories, or choose
+   "Open pull request" in the palette, `Ctrl+P`, and paste its address: the screen reads the pull request, picks the
+   repository under the workspace whose remote names its repository, the one chosen first, and chooses its source and
+   target branches as that remote holds them, never a local copy, which can hold work not pushed. It fetches as a pick
+   does, and keeps the address for that branch, so step 3 is done. A pull request from a fork, whose branch is in
+   another repository, and one of a repository no folder here clones are said, and nothing changes. Where the remote's
+   branch here is not at the pull request's last push, the banner names it and says to press F5. A repository you
+   pick while it opens wins, and the pull request is not opened.
 3. Paste the pull request's address into the field above the findings, as the browser shows it:
    `https://dev.azure.com/<organization>/<project>/_git/<repository>/pullrequest/<number>`. It is kept for that
    repository and branch, so you paste it once.
@@ -265,13 +273,13 @@ It runs in cmd, in PowerShell and in Windows Terminal alike.
 | `__init__.py`, `__main__.py` | The `adk-review-tui` command: `--config`, `--init-config`, and the config read before the screen opens |
 | `app.py` | The screen: the steps, the tabs, the keys, and the review it runs |
 | `config.py` | `tui.toml` and where it and the state live: the folders of repositories, the defaults and each repository's saved choices |
-| `git_sync.py` | The repositories under a folder, their branches and how each stands to its remote, the fetch, the change a review of a pick reads, through the review's own collector, a file's lines at a commit, and the one runner that stops a program whole past its timeout, git or the Azure CLI |
+| `git_sync.py` | The repositories under a folder, their branches and how each stands to its remote, each remote's address and the commit a branch is at, the fetch, the change a review of a pick reads, through the review's own collector, a file's lines at a commit, and the one runner that stops a program whole past its timeout, git or the Azure CLI |
 | `options.py` | The profiles, the command a selection makes, the folder a review's files go to, and the report `--previous` reads |
 | `findings.py` | A `--json` report read for the findings tab, with the commit it reviewed, its filters, and a check's explanation |
-| `azure.py` | Azure DevOps, with no call made: a pull request's address read, a finding's links built, the comment drafted from a finding, with the mark that finds it again, the thread it is posted as, and which of a pull request's threads is a finding's already |
-| `azure_client.py` | The calls to Azure DevOps and their login: a token from `az`, with fixed arguments, kept in memory alone, and one comment's post, with the checks before it |
+| `azure.py` | Azure DevOps, with no call made: a pull request's address read, the repository a clone's address names, a finding's links built, the comment drafted from a finding, with the mark that finds it again, the thread it is posted as, and which of a pull request's threads is a finding's already |
+| `azure_client.py` | The calls to Azure DevOps and their login: a token from `az`, with fixed arguments, kept in memory alone, a pull request's branches and last push read, and one comment's post, with the checks before it |
 | `azure_state.py` | `azure.json` in the state folder: the pull request's address given for a branch, and the thread each finding was posted as |
-| `modals.py` | The dialogs: a branch behind or apart from its remote, a check's explanation, and a comment's editor and the question before its post |
+| `modals.py` | The dialogs: a branch behind or apart from its remote, a pull request's address to open, a check's explanation, and a comment's editor and the question before its post |
 | `commands.py` | The command palette |
 | `clipboard.py` | Copying, through the terminal and through the system's own clipboard on Windows and on a Mac |
 | `styles.py` | The screen's styles, and `literal`, which draws a `[` as written |

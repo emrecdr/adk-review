@@ -255,25 +255,25 @@ Load-bearing rules the tests enforce:
   a repository, a `git fetch` that adds the branches its remote got since and removes none, unless `fetch_on_select =
   false`, never the pick the screen makes as it opens; F5, a `git fetch --prune`; and their answer to a branch behind
   its remote, `git branch -f` on a branch no working tree has checked out. It writes outside the machine in one place:
-  one comment posted to an Azure DevOps pull request, on the person's click, after their edit and a confirmation,
-  never a batch, and never from the reviewer, which gains no network call and no posting command. Its login is the
-  person's own `az` login: a token asked of `az` by its full path with fixed arguments alone, since `az.cmd` runs
-  through cmd.exe, kept in memory and written nowhere. The token goes to `dev.azure.com` or a `visualstudio.com`
-  organization alone, and no redirect is followed: `urllib` sends `Authorization` again to a redirect's target. A
-  comment's prose passes through `prose`, and its corrected code is never changed, since "Apply changes" writes it
-  into the file. Whether that code is drafted as a `suggestion` block is the report's word, the JSON's `suggestable`,
-  never a guess from the code's look: only the report knows whether the change added each line, whether the quote
-  holds a deleted one, and whether its own safety rules left the code the model's. A post whose answer did not come
-  back is never said to be unposted: the next try finds it by its mark, or by its own words. Its tests are offline: a
-  fake Azure DevOps on a local port, and a fake `az`. Every string a
-  repository, a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a tag. No link in a
-  model's words opens on a click: a finding is plain text, and the comment and the hand-off open none. On Windows,
-  from cmd
-  and PowerShell alike: the command it shows is quoted by `windows_word`, or not shown; no key is one a terminal sends
-  as another or the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first, Stop while a review runs
-  alone, since Ctrl+X is a text field's cut, and none but Stop, and Textual's own Ctrl+Q, which quits, runs behind a dialog; a review it runs gets UTF-8
-  streams; and a copy goes to Windows' own clipboard too. `adk_review/` still leaves a `tui/` folder out of the cache
-  key: a checkout keeps a person's old config there.
+  one comment posted to an Azure DevOps pull request, on the person's click, after their edit and a confirmation, never
+  a batch, and never from the reviewer, which gains no network call and no posting command. It reads Azure DevOps where
+  the person asks: a pull request they open, its branches and last push, which choose the clone and the branches a
+  review reads, and its threads before a post. Its login is the person's own `az` login: a token asked of `az` by its
+  full path with fixed arguments alone, since `az.cmd` runs through cmd.exe, kept in memory and written nowhere. The
+  token goes to `dev.azure.com` or a `visualstudio.com` organization alone, and no redirect is followed: `urllib` sends
+  `Authorization` again to a redirect's target. A comment's prose passes through `prose`, and its corrected code is
+  never changed, since "Apply changes" writes it into the file. Whether that code is drafted as a `suggestion` block is
+  the report's word, the JSON's `suggestable`, never a guess from the code's look: only the report knows whether the
+  change added each line, whether the quote holds a deleted one, and whether its own safety rules left the code the
+  model's. A post whose answer did not come back is never said to be unposted: the next try finds it by its mark, or by
+  its own words. Its tests are offline: a fake Azure DevOps on a local port, and a fake `az`. Every string a repository,
+  a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a tag. No link in a model's words opens
+  on a click: a finding is plain text, and the comment and the hand-off open none. On Windows, from cmd and PowerShell
+  alike: the command it shows is quoted by `windows_word`, or not shown; no key is one a terminal sends as another or
+  the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first, Stop while a review runs alone, since Ctrl+X
+  is a text field's cut, and none but Stop, and Textual's own Ctrl+Q, which quits, runs behind a dialog; a review it
+  runs gets UTF-8 streams; and a copy goes to Windows' own clipboard too. `adk_review/` still leaves a `tui/` folder out
+  of the cache key: a checkout keeps a person's old config there.
 - **Layering** (`tests/test_layering.py`): `core` → `collect` → `judge` → `deliver`, with imports pointing one way
   only, never spelled from the top (`adk_review.…`), `deliver/` importing `core` alone, a guideline importing `core`
   alone, and a rule importing one door, `judge/rule_helpers/`, alone, which imports `core` alone and lists in `__all__`

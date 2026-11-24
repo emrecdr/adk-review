@@ -88,12 +88,12 @@ miss: a new flag, check, JSON field or limit the guide does not say.
 - `tui/`, the terminal front end, an application of its own on top of the reviewer, reads git only through
   `collect`'s `read_only`, the change a review reads through its `preflight` and `list_changed`, and writes into a
   repository only where the person acts: their pick of a repository, a fetch that removes nothing, F5, a fetch with
-  `--prune`, or their answer to a branch behind its remote. It posts one comment to an Azure DevOps pull request
-  only on the person's click, after their edit and a confirmation, with a token from their own `az` login, asked
-  with fixed arguments and never stored; the reviewer posts nothing. A `suggestion` block is drafted only where the
-  report's JSON calls the finding's code `suggestable`. It draws every string a
-  repository, a branch or a model wrote with no markup, and opens no link in a model's words. Its own guide is
-  `tui/README.md`.
+  `--prune`, or their answer to a branch behind its remote. It posts one comment to an Azure DevOps pull request only on
+  the person's click, after their edit and a confirmation, with a token from their own `az` login, asked with fixed
+  arguments and never stored; the reviewer posts nothing. It reads a pull request a person opens, its branches and last
+  push, to choose what a review reads. A `suggestion` block is drafted only where the report's JSON calls the finding's
+  code `suggestable`. It draws every string a repository, a branch or a model wrote with no markup, and opens no link in
+  a model's words. Its own guide is `tui/README.md`.
 - The docs are tested (`tests/test_docs.py`): every guide names only paths the working tree has, `README.md` names each
   module at the package's root, and `GUIDE.md` holds every flag, check, JSON field and limit as the code has them.
 - `root_agent.name` equals the folder name, `adk_review`. Never name a sub-package module `agent.py`: ADK's nested

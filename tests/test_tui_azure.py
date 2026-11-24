@@ -526,6 +526,38 @@ def _closed_port() -> int:
         return probe.getsockname()[1]
 
 
+class TestTheRepositoryAPullRequestNames:
+    """Which repository under the workspace a pull request is of: the one whose remote names the same organization,
+    project and repository, as each way Azure DevOps writes a clone's address names them, read with no call made."""
+
+    def test_each_way_azure_devops_writes_a_clones_address_names_its_repository(self, azure: ModuleType) -> None:
+        named = ("contoso", "web", "payments")
+        for url in (
+            "https://dev.azure.com/contoso/Web/_git/payments",
+            "https://contoso@dev.azure.com/contoso/Web/_git/payments",
+            "https://dev.azure.com/contoso/Web/_git/payments.git",
+            "https://contoso.visualstudio.com/Web/_git/payments",
+            "https://contoso.visualstudio.com/DefaultCollection/Web/_git/payments",
+            "git@ssh.dev.azure.com:v3/contoso/Web/payments",
+            "contoso@vs-ssh.visualstudio.com:v3/contoso/Web/payments",
+            "ssh://git@ssh.dev.azure.com/v3/contoso/Web/payments",
+            "HTTPS://DEV.AZURE.COM/Contoso/WEB/_git/Payments",
+            # Read by review, each reproduced: a suffix in capitals, a clone of limited refs, and SSH on its port.
+            "https://dev.azure.com/contoso/Web/_git/payments.GIT",
+            "https://dev.azure.com/contoso/Web/_git/_optimized/payments",
+            "https://dev.azure.com/contoso/Web/_git/_full/payments",
+            "ssh://git@ssh.dev.azure.com:22/v3/contoso/Web/payments",
+        ):
+            assert azure.remote_names(url) == named, url
+        spaced = "https://dev.azure.com/contoso/My%20Project/_git/pay%20ments"
+        assert azure.remote_names(spaced) == ("contoso", "my project", "pay ments")
+        assert azure.remote_names("https://dev.azure.com/contoso/_git/payments") == ("contoso", "payments", "payments")
+        for other in ("https://github.com/contoso/payments.git", "/srv/git/payments", "", "git@github.com:c/p.git"):
+            assert azure.remote_names(other) is None, other
+        assert _pr(azure).names() == named
+        assert _pr(azure, "https://contoso.visualstudio.com").names() == named
+
+
 class TestTheClient:
     """`Client`: each call to Azure DevOps, and each refusal as a sentence that names the next step."""
 
@@ -536,6 +568,31 @@ class TestTheClient:
         assert (seen.method, seen.path, seen.query) == ("GET", fake_ado.root, {"api-version": "7.1"})
         assert seen.headers["authorization"] == "Bearer tok" and seen.headers["accept"] == "application/json"
         assert seen.headers["user-agent"] == "adk-review-tui", "a plain name: nothing of the person's goes with a call"
+
+    def test_a_pull_requests_branches_and_its_last_push_are_read(self, client: ModuleType, fake_ado: FakeAdo) -> None:
+        """What a review of the pull request reads: its source and target branches, as git names them under
+        `refs/heads/`, the commit its last push brought, its status, and whether it comes from a fork, whose branch
+        is in another repository."""
+        answer = {
+            "status": "active",
+            "sourceRefName": "refs/heads/feature/tax",
+            "targetRefName": "refs/heads/main",
+            "lastMergeSourceCommit": {"commitId": "c" * 40},
+        }
+        fake_ado.answer("GET", "", answer)
+        read = client.Client(fake_ado.pr, FakeToken()).pull_request()
+        assert (read.source, read.target, read.commit, read.status, read.fork) == (
+            "feature/tax",
+            "main",
+            "c" * 40,
+            "active",
+            False,
+        )
+        fake_ado.instead("GET", "", {**answer, "forkSource": {"name": "refs/heads/feature/tax"}})
+        assert client.Client(fake_ado.pr, FakeToken()).pull_request().fork
+        fake_ado.instead("GET", "", {**answer, "sourceRefName": "refs/tags/v1"})
+        with pytest.raises(client.AzureError, match="branch"):
+            client.Client(fake_ado.pr, FakeToken()).pull_request()
 
     def test_the_iterations_are_read_oldest_first(self, client: ModuleType, fake_ado: FakeAdo) -> None:
         pushed = [

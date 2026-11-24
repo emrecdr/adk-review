@@ -8,20 +8,21 @@ import os
 import subprocess
 import time
 from collections import deque
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, NamedTuple
 
 from rich.cells import cell_len, set_cell_size
 from rich.text import Text
 from textual import events, on, work
-from textual.app import App, ComposeResult
+from textual.app import App, ComposeResult, SystemCommand
 from textual.binding import Binding, BindingType
 from textual.command import Provider
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.content import Content
 from textual.notifications import SeverityLevel
-from textual.screen import ModalScreen
+from textual.screen import ModalScreen, Screen
 from textual.widget import Widget
 from textual.widgets import (
     Button,
@@ -47,8 +48,8 @@ from textual.widgets.selection_list import Selection
 from adk_review.core.text import kinds_of, squash
 from adk_review.deliver.report import one_line, unhidden
 
-from .azure import Place, PullRequest, draft, files_link, line_link, parse_pr_url, thread_link
-from .azure_client import AzLogin, AzureError, Client, Credential, post_comment
+from .azure import Place, PullRequest, draft, files_link, line_link, parse_pr_url, remote_names, thread_link
+from .azure_client import AzLogin, AzureError, Client, Credential, PullRequestHead, post_comment
 from .azure_state import forget_posted, keep_posted, keep_pull_request_url, posted_threads, pull_request_url
 from .clipboard import copy_text
 from .commands import ReviewCommandProvider
@@ -63,6 +64,7 @@ from .git_sync import (
     BranchInfo,
     ProjectInfo,
     SyncStatus,
+    commit_of,
     discover_projects,
     fast_forward_local_branch,
     fetch_remote,
@@ -71,8 +73,16 @@ from .git_sync import (
     list_branches,
     preferred_base_branch,
     read_change,
+    remote_urls,
 )
-from .modals import CommentModal, ConfirmPostModal, DivergedBranchModal, ExplainCheckModal, SyncBranchModal
+from .modals import (
+    CommentModal,
+    ConfirmPostModal,
+    DivergedBranchModal,
+    ExplainCheckModal,
+    OpenPullRequestModal,
+    SyncBranchModal,
+)
 from .options import (
     OPTION_DESCRIPTIONS,
     ProfileOption,
@@ -178,6 +188,32 @@ RUN_FIRST = "Run a review to see its findings."
 SAVED_NONE = "The saved review of this target has no findings. Press Ctrl+R to review it as it stands."
 
 
+@dataclass(frozen=True)
+class _Opening:
+    """A pull request being opened: the clone of its repository, the remote that names it, and what it merges. Applied
+    where that clone's branches are listed, so the fetch, the lists and the address all run as a pick's do."""
+
+    path: str
+    remote: str
+    head: PullRequestHead
+    pr: PullRequest
+
+
+def _clone_of(projects: Sequence[ProjectInfo], wanted: tuple[str, str, str]) -> tuple[ProjectInfo, str] | None:
+    """The first of `projects` with a remote that names the repository `wanted`, and that remote's name."""
+    for project in projects:
+        for name, url in remote_urls(project.path).items():
+            if remote_names(url) == wanted:
+                return project, name
+    return None
+
+
+def _remote_branch(branches: Sequence[BranchInfo], remote: str, branch: str) -> str | None:
+    """The listed name of `remote`'s copy of `branch`, as git shortens it, or None where it is not listed."""
+    names = (f"{remote}/{branch}", f"remotes/{remote}/{branch}")
+    return next((b.name for b in branches if b.is_remote and b.name in names), None)
+
+
 class AdkReviewTuiApp(App[int]):
     """Interactive Textual front-end shell for `adk-review`."""
 
@@ -268,7 +304,10 @@ class AdkReviewTuiApp(App[int]):
         self._pull_request_of: tuple[str, str] | None = None  # the repository and branch the field was restored for
         self._kept_address: str = ""  # what the state holds for that pair, so it is written when it changes alone
         self._posted_threads: dict[str, int] = {}  # the pull request's posted findings, read when it changes
-        self._credential: Credential = AzLogin()  # the person's own `az` login, asked only when a comment is posted
+        self._credential: Credential = AzLogin()  # the person's own `az` login, asked as a comment is posted or a pull
+        # request opened, each on the person's click
+        self._opening: _Opening | None = None  # a pull request being opened, applied as its clone's branches list
+        self._opened: tuple[_Opening, str] | None = None  # one just chosen, and its head, told once the lists are
         self._clients: dict[str, Client] = {}  # one a pull request, by its address: what it read once is kept
         self._drafts: dict[tuple[str, str, str], str] = {}  # an edit left for later: where it belongs, and its text
         self._commenting: bool = False  # a comment from its key to its answer: one at a time
@@ -344,6 +383,8 @@ class AdkReviewTuiApp(App[int]):
             ):
                 yield Input(placeholder="Filter repos...", id="repo-filter", classes="filter-input")
                 yield OptionList(id="repo-list", markup=False)
+                # Where a review starts: the findings' tab, where the address field is, is a row high before one.
+                yield Button("Open Pull Request", id="btn-open-pr", variant="default")
             with Collapsible(
                 title=f"{self._step(3)}. Branch Under Review", collapsed=False, id="head-box", classes="chain-box"
             ):
@@ -487,6 +528,7 @@ class AdkReviewTuiApp(App[int]):
             self._select_root(shown[0])
 
     def _select_root(self, root: RootDir) -> None:
+        self._opening = None  # a pull request being opened waits for no listing the person's pick cancels
         self.selected_root = root
         self.workers.cancel_group(self, "git_load")
         self.workers.cancel_group(self, "branch_sync")
@@ -529,6 +571,9 @@ class AdkReviewTuiApp(App[int]):
         `fetch_on_select` says so, or by the screen itself as it lists the repositories, which fetches nothing."""
         prev_path = self.selected_project.path if self.selected_project else ""
         again = bool(prev_path) and os.path.normcase(prev_path) == os.path.normcase(project.path)
+        # Read by review, and reproduced: a pull request being opened outlived a pick that cancelled its clone's
+        # listing, and was chosen when the person picked that repository again by hand. It is set after this call.
+        self._opening = None
         self.workers.cancel_group(self, "branch_sync")
         self.workers.cancel_group(self, "folder_refresh")
         self.selected_project = project
@@ -637,26 +682,57 @@ class AdkReviewTuiApp(App[int]):
         if self._left(project, "#head-list", "#base-list"):
             return
         self.branches = branches
-        names = {b.name for b in branches}
-        if (prune or keep) and self.selected_head in names and self.selected_base in {*names, ""}:
-            # F5 and a pick of the same repository keep the branches chosen where they are still there; a pick of
-            # another takes its own. Read by review: F5 set them back to the branch checked out and the default
-            # target; and, kept at every fetch, another repository took the last one's head and base.
-            head_default, base_default = self.selected_head, self.selected_base
-        else:
-            preset = self.tui_config.projects.get(project.name)
-            head_default = (
-                project.branch
-                if any(b.name == project.branch for b in branches)
-                else (branches[0].name if branches else "HEAD")
-            )
-            base_default = preferred_base_branch(project.path, branches, head_default, preset.base if preset else "")
+        head_default, base_default = self._defaults(project, branches, kept=prune or keep)
+        opened, before = self._opened_branches(project, branches), self._target()
+        if isinstance(opened, tuple):
+            head_default, base_default = opened
         self.selected_head = head_default
         self.selected_base = base_default
+        if isinstance(opened, tuple):
+            if self._target() != before:
+                self._reset_outputs()  # another target's results are never shown as this one's
+            # Read by review, and reproduced: with its branch the one chosen already, the field kept another address.
+            self._pull_request_of = None
         self._restore_pull_request()  # here, where the branch becomes the repository's own, and nowhere before
         self._render_branch_lists()
         self._set_banner(f"{project.name}: {said} | Head: {self.selected_head} | Base: {self.selected_base}")
+        if isinstance(opened, str):
+            self._set_banner(opened)
         await self._refresh_folders()
+        if (shown := self._opened) is not None:
+            self._opened = None
+            await self._tell_opened(project, *shown)
+
+    def _defaults(self, project: ProjectInfo, branches: Sequence[BranchInfo], *, kept: bool) -> tuple[str, str]:
+        """The head and the base a listing of `project` chooses: those chosen, where `kept` and both are still there,
+        else the branch checked out and the default target."""
+        names = {b.name for b in branches}
+        if kept and self.selected_head in names and self.selected_base in {*names, ""}:
+            # F5 and a pick of the same repository keep the branches chosen where they are still there; a pick of
+            # another takes its own. Read by review: F5 set them back to the branch checked out and the default
+            # target; and, kept at every fetch, another repository took the last one's head and base.
+            return self.selected_head, self.selected_base
+        preset = self.tui_config.projects.get(project.name)
+        head = (
+            project.branch
+            if any(b.name == project.branch for b in branches)
+            else (branches[0].name if branches else "HEAD")
+        )
+        return head, preferred_base_branch(project.path, list(branches), head, preset.base if preset else "")
+
+    async def _tell_opened(self, project: ProjectInfo, opening: _Opening, head: str) -> None:
+        """The banner naming the pull request now chosen, and, where its remote's branch here is not at its last push,
+        the key that fetches it: a review would read the commits before it."""
+        ref = f"refs/remotes/{opening.remote}/{opening.head.source}"
+        here = await asyncio.to_thread(commit_of, project.path, ref)
+        if self.selected_project != project or self.selected_head != head:
+            return  # another pick meanwhile: this banner is no longer the screen's
+        said = f"Pull request {opening.pr.number}: {head} into {self.selected_base} of {project.name}."
+        if opening.head.status != "active":
+            said += f" Its status is {opening.head.status}."
+        if opening.head.commit and here != opening.head.commit:
+            said += f" {head} is not at its last push, {opening.head.commit[:12]}: press F5 to fetch it."
+        self._set_banner(said)
 
     def _is_head_branch(self, branch: BranchInfo) -> bool:
         """Whether `branch` (or its local/remote tracking counterpart) is Branch Under Review."""
@@ -1158,6 +1234,83 @@ class AdkReviewTuiApp(App[int]):
     @on(Input.Changed, "#pr-url")
     def _on_pull_request_typed(self, event: Input.Changed) -> None:
         self._read_pull_request(event.value, keep=True)
+
+    def get_system_commands(self, screen: Screen) -> Iterable[SystemCommand]:
+        """Textual's own commands in its palette, Ctrl+P, and one to open a pull request, as the button does."""
+        yield from super().get_system_commands(screen)
+        yield SystemCommand(
+            "Open pull request", "Review what an Azure DevOps pull request merges", self._ask_for_pull_request
+        )
+
+    @on(Button.Pressed, "#btn-open-pr")
+    def _ask_for_pull_request(self) -> None:
+        self.push_screen(OpenPullRequestModal(), self._opened_address)
+
+    def _opened_address(self, text: str | None) -> None:
+        """The address the dialog gave: the pull request it names opened, or the sentence that says what to paste."""
+        if not (text or "").strip():
+            return
+        try:
+            pr = parse_pr_url(text or "")
+        except ValueError as refused:
+            self.notify(str(refused), severity="warning", timeout=6, markup=False)
+            return
+        self._open_pull_request(pr)
+
+    @work(exclusive=True, group="pr_open")
+    async def _open_pull_request(self, pr: PullRequest) -> None:
+        """What a review of `pr` reads chosen: the clone of its repository among the workspace's, the one chosen first,
+        and its source and target branches as that clone's remote holds them, never a local copy, which can hold work
+        not pushed. Its address is kept for that branch alone. A fork's pull request, and one of a repository no
+        folder here clones, are said, and the choice stays as it was."""
+        self._set_banner(f"Reading pull request {pr.number}...")
+        try:
+            head = await asyncio.to_thread(self._client(pr).pull_request)
+        except AzureError as exc:
+            self._set_banner(f"Pull request {pr.number} could not be read: {exc}")
+            return
+        if head.fork:
+            self._set_banner(
+                f"Pull request {pr.number} comes from a fork: its branch is in another repository. "
+                "Choose its branches by hand."
+            )
+            return
+        chosen = self.selected_project
+        projects = sorted(self.projects, key=lambda project: project is not chosen)  # the one chosen asked first
+        found = await asyncio.to_thread(_clone_of, projects, pr.names())
+        if self.selected_project is not chosen:  # read by review: a pick meanwhile was undone, its lists left empty
+            self._set_banner(f"Pull request {pr.number} was not opened: another repository was chosen meanwhile.")
+            return
+        if found is None:
+            organization, project_name, repository = pr.names()
+            self._set_banner(
+                f"No repository here has {organization}/{project_name}/{repository} as a remote. "
+                "Add its folder under a root, then open the pull request again."
+            )
+            return
+        project, remote = found
+        if self._has_dom("#mode-select") and self.selected_mode != "branch":
+            self.query_one("#mode-select", Select).value = "branch"
+        if chosen is not None and os.path.normcase(chosen.path) == os.path.normcase(project.path):
+            self._load_repo_branches(project, fetch=self.tui_config.fetch_on_select, keep=True)
+        else:
+            self._on_project_chosen(project)
+        self._opening = _Opening(project.path, remote, head, pr)  # the listing just started, which runs after this
+
+    def _opened_branches(self, project: ProjectInfo, branches: Sequence[BranchInfo]) -> tuple[str, str] | str | None:
+        """The head and the base a pull request being opened chooses in `project`, or what to say where its remote
+        does not hold one of them here; None where no pull request is being opened there."""
+        opening, self._opening = self._opening, None  # applied once, or dropped by another repository's listing
+        if opening is None or os.path.normcase(opening.path) != os.path.normcase(project.path):
+            return None
+        source, target = opening.head.source, opening.head.target
+        head, base = _remote_branch(branches, opening.remote, source), _remote_branch(branches, opening.remote, target)
+        if head is None or base is None:
+            missing = f"{opening.remote}/{source if head is None else target}"
+            return f"{missing} is not in {project.name}. Press F5 to fetch it, then open the pull request again."
+        self._kept("address", lambda: keep_pull_request_url(project.path, head, opening.pr.web))
+        self._opened = (opening, head)
+        return head, base
 
     @on(TabbedContent.TabActivated, "#output-tabs")
     def _on_output_tab(self) -> None:

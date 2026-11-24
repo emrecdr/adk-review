@@ -157,6 +157,23 @@ def _opener() -> urllib.request.OpenerDirector:
     return opener
 
 
+@dataclass(frozen=True)
+class PullRequestHead:
+    """What a review of a pull request reads of it: its branches, the commit its last push brought, its status, and
+    whether its source is a fork's branch, in another repository."""
+
+    source: str
+    target: str
+    commit: str
+    status: str
+    fork: bool
+
+
+def _branch(ref: object) -> str | None:
+    """A branch's name, as git names it under `refs/heads/`, or None for any other ref."""
+    return ref.removeprefix("refs/heads/") if isinstance(ref, str) and ref.startswith("refs/heads/") else None
+
+
 class Client:
     """One pull request of Azure DevOps Services, over HTTPS. Each refusal is an `AzureError` whose text names what
     to do next."""
@@ -165,6 +182,22 @@ class Client:
         self._pr, self._credential, self._sleep = pr, credential, sleep
         self._opener: urllib.request.OpenerDirector | None = None  # built at the first call, off the screen's loop
         self._changed: dict[int, dict[str, int]] = {}  # an iteration's files, read once: its changes never change
+
+    def pull_request(self) -> PullRequestHead:
+        """The pull request's source and target branches, the commit its last push brought, its status, and whether
+        it comes from a fork: what a review of it reads. A branch is named as git names it under `refs/heads/`."""
+        answer = self._call("GET", self._pr.api())
+        source, target = (_branch(answer.get(key)) for key in ("sourceRefName", "targetRefName"))
+        if source is None or target is None:
+            raise AzureError("Azure DevOps named no branch this pull request merges. Choose its branches by hand.")
+        commit = (answer.get("lastMergeSourceCommit") or {}).get("commitId")
+        return PullRequestHead(
+            source,
+            target,
+            commit if isinstance(commit, str) else "",
+            str(answer.get("status") or "unknown"),
+            bool(answer.get("forkSource")),
+        )
 
     def status(self) -> str:
         """Whether the pull request is `active`, `completed` or `abandoned`."""
