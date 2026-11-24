@@ -504,10 +504,8 @@ def _keyed(files: list[Entry], tree: Tree | None, paths: set[str]) -> set[str]:
     one, and a file the change left alone as the head's text, which a tree rule quotes. Read by an audit, and
     reproduced: a call into a changed function, in such a file, was quoted whole, to the report and the verifier."""
     by_path = {file["path"]: file for file in files if file["path"] in paths}
-    left = {
-        path for path in paths - by_path.keys() if tree is not None and holds_private_key(tree.sources.get(path) or "")
-    }
-    return left | {
+    sources = tree.sources if tree is not None else {}
+    return {path for path in paths - by_path.keys() if holds_private_key(sources.get(path, ""))} | {
         path
         for path, file in by_path.items()
         if holds_private_key(file.get("text") or "") or holds_private_key(file.get("diff") or "")
