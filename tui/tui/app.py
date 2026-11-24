@@ -218,7 +218,6 @@ class AdkReviewTuiApp(App[int]):
         "minimize_all",
         "restore_all",
         "copy_active_tab",
-        "quit",
         "quit_when_idle",
     }
 
@@ -1432,8 +1431,10 @@ class AdkReviewTuiApp(App[int]):
         """Quit the screen, where no review runs: one that runs is stopped with Ctrl+X first, or quit with Ctrl+Q."""
         if self._reviewing:
             self.notify("A review is running. Press Ctrl+X to stop it, then q to quit.", timeout=4, markup=False)
-            return
-        self.exit()
+        elif self._drafts or self._commenting:  # read by a code review: a comment kept in memory alone was lost
+            self.notify("A comment is not posted yet. Press Ctrl+Q to quit without it.", timeout=4, markup=False)
+        else:
+            self.exit()
 
     @on(Button.Pressed, "#btn-stop")
     def action_stop_review(self) -> None:
@@ -1542,6 +1543,11 @@ class AdkReviewTuiApp(App[int]):
         self._set_reviewing(True)
         try:
             await self._run_review(dry_run=dry_run, label=label)
+        except asyncio.CancelledError:
+            # Read by a code review: a stop while the choices were saved, or once the child had ended, left the review
+            # before on the Report tab, for Ctrl+Y to copy as this one's.
+            self._stopped(label, dry_run=dry_run)
+            raise
         except (OSError, ValueError) as exc:
             # Read by review: an error here, a config the screen could not write, ended the whole screen with a
             # traceback, Textual's own way with a worker's error.
@@ -1549,6 +1555,16 @@ class AdkReviewTuiApp(App[int]):
             self.notify(f"The {label} could not run: {exc}", severity="error", timeout=8, markup=False)
         finally:
             self._set_reviewing(False)
+
+    def _stopped(self, label: str, *, dry_run: bool) -> None:
+        """What a stopped run leaves: the banner and the Report tab saying so, and that as what Ctrl+Y copies."""
+        self._set_banner(f"{label.capitalize()} stopped by user.")
+        if self._has_dom("#report-log"):  # not where the closing screen stopped it
+            again = "Ctrl+D" if dry_run else "Ctrl+R"
+            self.last_report_md = f"The {label} was stopped before its report was shown. Press {again} to run it again."
+            report_log = self.query_one("#report-log", RichLog)
+            report_log.clear()
+            report_log.write(self.last_report_md)
 
     def _set_reviewing(self, on: bool) -> None:
         """Whether a review runs, and the line under the screen redrawn for it: it shows the keys that act now, Stop
@@ -1580,13 +1596,6 @@ class AdkReviewTuiApp(App[int]):
         self._said.clear()  # this run's own: read by review, a run whose stream gave nothing would show the last one's
         try:
             code, stdout_text = await self._stream_subprocess(review_command(argv))
-        except asyncio.CancelledError:
-            self._set_banner(f"{label.capitalize()} stopped by user.")
-            if self._has_dom("#report-log"):  # not where the closing screen stopped it
-                again = "Ctrl+D" if dry_run else "Ctrl+R"
-                self.last_report_md = f"The {label} was stopped, so it wrote no report. Press {again} to run it again."
-                report_log.write(self.last_report_md)
-            raise
         finally:
             self._set_running_ui(False)
         if not dry_run:
@@ -1707,6 +1716,8 @@ class AdkReviewTuiApp(App[int]):
         comment, handoff = await self._written(outputs.get("comment")), await self._written(outputs.get("handoff"))
         if target is not None and self._target() != target:
             return None
+        if not self._has_dom("#output-tabs"):  # read by a code review: the screen closed while the report was read
+            return None
         self._hold(rows, reviewed, verdict, target)
         self.last_comment_md, self.last_handoff_md = self._shown(comment, "comment"), self._shown(handoff, "handoff")
         return verdict or ""  # read by a code review: a verdict this screen does not know is still a report read
@@ -1794,11 +1805,13 @@ class AdkReviewTuiApp(App[int]):
         title: str = "",
         severity: SeverityLevel = "information",
         timeout: float | None = None,
-        markup: bool = False,  # noqa: ARG002 -- Textual's signature: no notice reads markup
+        markup: bool = True,
     ) -> None:
-        """Every notice made safe as the banner is, and drawn with no markup. Read by a code review: a fetch's message,
-        Azure's and an error's reached it as written, a token or a terminal's escape among them."""
-        super().notify(one_line(message), title=title, severity=severity, timeout=timeout, markup=False)
+        """Each of the screen's own notices, all sent with no markup, made safe as the banner is. Read by a code
+        review: a fetch's message, Azure's and an error's reached it as written, a token or a terminal's escape among
+        them; and Textual's own notices, which carry markup, keep it, its Ctrl+C hint among them."""
+        said = message if markup else one_line(message)
+        super().notify(said, title=title, severity=severity, timeout=timeout, markup=markup)
 
     def _set_banner(self, message: str, *, safe: bool = False) -> None:
         """`message` on the banner as one line, cut to its room, made safe unless `safe` says it is already. Read by

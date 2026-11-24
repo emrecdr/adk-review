@@ -3240,7 +3240,7 @@ class TestWhatAReviewKeeps:
         from adk_review.core.blast import Blast
 
         args = argparse.Namespace(cache=str(tmp_path / "c"), previous=str(tmp_path / "gone.json"))
-        chosen = SimpleNamespace(rules=[], name="default-rules", ids=lambda: ())
+        chosen = SimpleNamespace(rules=[], name="default-rules", ids=lambda: (), guidelines=())
         pre = {"repo": "r", "head": "b", "head_sha": "1" * 40, "base": "c", "base_sha": "2" * 40}
         pre |= {"merge_base": "3" * 40, "head_ref": "refs/heads/b", "base_ref": "refs/heads/c"}
         evidence = {
@@ -3265,12 +3265,18 @@ class TestWhatAReviewKeeps:
         # Read by an audit: no engine a guideline's call goes through was in the key, though a newer one sends another
         # request, as a newer ruff finds what an older one did not.
         real = cli.metadata.version
+        judged = SimpleNamespace(rules=[], name="default", ids=lambda: (), guidelines=("guideline.correctness",))
+        key = cli._cached_at(args, judged, evidence, "m", previous)
         for engine in ("google-adk", "litellm", "google-genai"):
             monkeypatch.setattr(
                 cli.metadata, "version", lambda name, bumped=engine: "0.0.1" if name == bumped else real(name)
             )
-            assert cli._cached_at(args, chosen, evidence, "m", previous) != key, engine
+            assert cli._cached_at(args, judged, evidence, "m", previous) != key, engine
+            # Read by a code review: a review that runs no guideline goes through no engine, and a bump of one served
+            # every cached rules-only review again.
+            rules_only = cli._cached_at(args, chosen, evidence, "m", previous)
             monkeypatch.undo()
+            assert cli._cached_at(args, chosen, evidence, "m", previous) == rules_only, engine
 
     def test_the_cache_key_reads_the_reviewers_own_source_wherever_the_checkout_lies(
         self, cli, tmp_path: Path, monkeypatch
@@ -3292,7 +3298,7 @@ class TestWhatAReviewKeeps:
         (package / "tui" / ".tui.toml").write_text("[projects]\n", encoding="utf-8")
         monkeypatch.setattr(cli, "__file__", str(package / "review.py"))
         args = argparse.Namespace(cache=str(tmp_path / "c"), previous=None)
-        chosen = SimpleNamespace(rules=[], name="default-rules", ids=lambda: ())
+        chosen = SimpleNamespace(rules=[], name="default-rules", ids=lambda: (), guidelines=())
         pre = {"repo": "r", "head": "b", "head_sha": "1" * 40, "base": "c", "base_sha": "2" * 40}
         evidence = {"preflight": pre, "scope": [], "whole": False, "files": [], "blast": Blast((), (), 0)}
 
@@ -4002,6 +4008,9 @@ class TestWhatTheReportPrints:
         assert "Prove wasted work with a test that counts calls, queries or objects kept alive." in paragraph
         assert "Where no count can show it, make the change: the project's tests must still pass." in paragraph
         assert "Prove a defect worked around elsewhere with a test of the code where it starts." in paragraph
+        # Read by a code review: each item's own line asked for a test that fails on the code as it stands, which a
+        # `tests` finding's test never does, while the paragraph said that test can pass.
+        assert "fails on the code as it stands" not in FIRST and "fails on the code as it stands" in paragraph
 
     def test_a_comment_and_a_hand_off_say_what_a_quoted_deleted_line_is_where_a_quote_holds_one(self) -> None:
         """Read by review on a branch that removed a field: a quote keeps the `-` of a line the change deleted, and

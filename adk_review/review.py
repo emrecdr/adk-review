@@ -1357,7 +1357,7 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
         # Each outside tool a rule that runs reads, as it would run: a newer ruff finds what an older one did not.
         "tools": {tool: IDENTITIES[tool]() for tool in tools},
         # And each engine a guideline's call goes through: read by an audit, a newer one sends another request.
-        "engines": {name: _installed(name) for name in ENGINES},
+        "engines": {name: _installed(name) for name in ENGINES} if chosen.guidelines else {},
         # As `read_previous` read it: read again here, a pipe gave nothing the second time and a FIFO never answered.
         "previous": previous,
         # What of the head's tree went unread: read by review, a blob a partial clone fetched since served a stale

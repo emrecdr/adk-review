@@ -222,21 +222,21 @@ As the reviewer does, the screen reads a repository, and writes into it only whe
 | `Ctrl+T` | Minimize every panel |
 | `Ctrl+O` | Restore every panel |
 | `Ctrl+Y` | Copy the open tab: the report, the chosen finding, the comment, the hand-off or the progress lines. A tab with nothing to copy says so |
-| `Ctrl+Q` | Quit, whatever runs: Textual's own key. VS Code's terminal keeps it for itself, so use `q` there |
+| `Ctrl+Q` | Quit, whatever runs, a dialog open or a comment not posted: Textual's own key. VS Code's terminal keeps it for itself, so use `q` there |
 | `Ctrl+P` | Open the command palette: a repository, any of its branches, a profile or an action by name |
 | `F5` | Fetch the chosen repository with `--prune` and list its branches again, the branches you chose kept where they are still there |
 | A number key | Minimize or restore the panel of that number, where no text field has the focus |
 | `o` | Open the chosen finding's lines in Azure DevOps, in the file as the commit reviewed holds it |
 | `p` | Open the pull request at the chosen finding: its comment thread once posted, else its file in the Files tab |
 | `c` | Comment on the chosen finding in its pull request: a draft to edit, a confirmation, then one post |
-| `q` | Quit, where no review runs and no text field has the focus. While a review runs, it says to stop it first |
+| `q` | Quit, where no review runs, no comment waits to be posted and no text field has the focus. Otherwise it says what waits |
 
-The action keys work wherever the focus is, a text field included. `Ctrl+X` stops a review while one runs, and
-only then: with none running it is a text field's own cut. While a dialog is open, only `Ctrl+X` works, and while a
-review runs, `Ctrl+R` and `Ctrl+D` wait for it to end: they never restart it. The line under the screen shows the
-keys that act now: Stop while a review runs, Run and Dry Run while none does. `o`, `p` and `c` are plain letters:
-they act on the Findings tab alone, where no text field has the focus, and they need the pull request's address in
-the field above the table.
+The action keys work wherever the focus is, a text field included. `Ctrl+X` stops a review while one runs, and only
+then: with none running it is a text field's own cut. While a dialog is open, only `Ctrl+X` and `Ctrl+Q` work, and
+while a review runs, `Ctrl+R` and `Ctrl+D` wait for it to end: they never restart it. The line under the screen
+shows the keys that act now: Stop while a review runs, Run and Dry Run while none does. `o`, `p` and `c` are plain
+letters: they act on the Findings tab alone, where no text field has the focus, and they need the pull request's
+address in the field above the table.
 
 `Ctrl+Y` and the comment editor's Copy send the text through the terminal, which Windows Terminal, iTerm2 and kitty
 take. On Windows and on a Mac they also put it into the system's own clipboard, so they work in the classic console

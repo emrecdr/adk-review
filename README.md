@@ -687,7 +687,7 @@ and last the next steps, by the verdict and what was kept. "The report" in `GUID
   where, the lines quoted, what to change, and the fingerprint that must be gone afterwards,
   with each finding folded into it named under it, since another reading of the same lines can be
   a second defect. Each of a guideline's findings to fix, a model's reading, which can be wrong, carries a `first:`
-  line: a test that fails on the code as it stands, kept with the fix; where a test reaches the code and cannot
+  line, a test that proves it, kept with the fix: one that fails on the code as it stands; where a test reaches the code and cannot
   fail, that finding is left and the agent says why, a finding that asks only for a test, as `tests` does, is fixed
   by that test, which can pass, and code no test reaches is fixed as the finding says, since the command that checks
   the work runs no guideline. Wasted work gives no wrong result: it is proved by a test that counts calls, queries or

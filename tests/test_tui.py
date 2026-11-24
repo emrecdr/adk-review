@@ -4820,3 +4820,81 @@ class TestWhatTheCodeReviewOfTheAuditFound:
             await pilot.pause()
             stopped = app.last_report_md
         assert "stopped" in stopped, stopped
+
+
+class TestWhatTheSecondCodeReviewFound:
+    """Read by the second code review of the audit's branch, each reproduced by a test that failed first."""
+
+    @pytest.mark.asyncio
+    async def test_textuals_own_notices_keep_their_markup(self, tmp_path: Path) -> None:
+        """The screen's notify drew every notice with no markup, Textual's own too, so Ctrl+C said "Press
+        [b]ctrl+q[/b] to quit the app". Only the screen's own notices, each sent with no markup, are made safe."""
+        pytest.importorskip("textual")
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.query_one("#repo-list").focus()
+            await pilot.press("ctrl+c")
+            await pilot.pause()
+            told = [(notice.message, notice.markup) for notice in app._notifications]
+        assert [said for said, markup in told if "to quit" in said and markup], told
+
+    @pytest.mark.asyncio
+    async def test_a_review_stopped_before_its_child_runs_says_so(self, tmp_path: Path, monkeypatch) -> None:
+        """Stop works from the moment a review starts, but the note was written only for a stop while its child ran:
+        stopped while its choices were saved, the Report tab kept the review before, for Ctrl+Y to copy as its own."""
+        pytest.importorskip("textual")
+        import threading
+
+        import tui.app as screen
+
+        app = _payments_screen(tmp_path)
+        saving, real = threading.Event(), screen.save_repo_preset
+
+        def slow(*args: object) -> object:
+            saving.set()
+            threading.Event().wait(2)  # a slow disk, never forever
+            return real(*args)
+
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("REQUEST_CHANGES", 1, ("x",), "FIRST REPORT\n"))
+            await _reviewed_once(app, pilot)
+            monkeypatch.setattr(screen, "save_repo_preset", slow)
+            await pilot.press("ctrl+r")
+            await _until(pilot, saving.is_set, "the choices being saved")
+            await pilot.press("ctrl+x")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            copied = app.last_report_md
+        assert "FIRST REPORT" not in copied and "stopped" in copied, copied
+
+    @pytest.mark.asyncio
+    async def test_a_report_read_as_the_screen_closes_draws_nothing(self, tmp_path: Path) -> None:
+        """`_hold` drew nothing once the tabs were gone, but the comment's and the hand-off's tabs were drawn after it
+        all the same, `NoMatches`, a worker's error where the screen closed during the report's read."""
+        pytest.importorskip("textual")
+        app = _payments_screen(tmp_path)
+        report = tmp_path / "report.json"
+        report.write_text(_report("APPROVED"), encoding="utf-8")
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+        assert await app._load_generated_files({"json": report}) is None
+
+    @pytest.mark.asyncio
+    async def test_q_keeps_a_comment_not_yet_posted(self, tmp_path: Path) -> None:
+        """`q` refused to quit while a review ran, but closed the screen over a comment left for later, kept in memory
+        alone, and over a post on its way. It says so, and Ctrl+Q quits without it."""
+        pytest.importorskip("textual")
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.query_one("#repo-list").focus()
+            app._drafts[("src/app.py", "42", "1a2b3c4d5e6f7a8b")] = "a comment left for later"
+            await pilot.press("q")
+            await pilot.pause()
+            running = app.is_running
+            told = [notice.message for notice in app._notifications]
+        assert running and [said for said in told if "Ctrl+Q" in said], (running, told)

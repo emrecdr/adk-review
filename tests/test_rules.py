@@ -2472,6 +2472,37 @@ class TestWhatTheBranchCannotTellTheRules:
         asked = [entry for entry in git.list_changed(resolved) if entry["path"].endswith(".py")]
         assert git.whole_diffs(resolved, asked, ()) == [git.diff_of(resolved, entry["path"]) for entry in asked]
 
+    def test_the_folders_a_whole_project_patch_leaves_out_share_the_room_its_paths_leave(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by a code review: the folders left out were held to 8,000 characters whatever `--path` already put on
+        the same command line, which Windows holds to 32,767, so a review of many long folders could cross it where it
+        ran before. They take the room the paths leave, and none where the paths take it all."""
+        from adk_review.collect import git
+
+        repo = _branch_off_empty(tmp_path / "repo", "change")
+        for name, text in (("src/mod.py", "y = 2\n"), ("src/vendor/index.js", "VENDORED = 1\n")):
+            _committed(repo, name, text)
+        resolved = git.preflight(str(repo), None, "change")
+        asked = [entry for entry in git.list_changed(resolved) if entry["path"].endswith(".py")]
+        argvs, raw = [], git._git_raw
+
+        def kept(*args, **kwargs):
+            argvs.append(args)
+            return raw(*args, **kwargs)
+
+        def left_out() -> bool:
+            return any(isinstance(arg, str) and arg.startswith(":(top,exclude") for args in argvs for arg in args)
+
+        monkeypatch.setattr(git, "_git_raw", kept)
+        read = git.whole_diffs(resolved, asked, ("src",))
+        assert left_out(), "a folder holding no file asked for is left out where the paths leave room"
+        argvs.clear()
+        wide = ("src", *(f"src/{'f' * 90}{n}" for n in range(100)))  # about 11,000 characters of paths
+        assert git.whole_diffs(resolved, asked, wide) == read, "the same files read"
+        assert argvs and not left_out(), "the paths took the room"
+        assert read == [git.diff_of(resolved, entry["path"]) for entry in asked]
+
     def test_each_commit_a_push_sends_reads_its_files_as_diff_of_does(self, hostile_repo) -> None:
         """Measured by review: a file a commit holds before another kept its CRLF last line's `\\r`, and the pre-push
         hook flagged `TOKEN_EXPIRY_MS=86400000` in `.env` as a password where the branch's review let it go. A file a

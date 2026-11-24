@@ -682,9 +682,9 @@ def _folders(path: str) -> Iterator[str]:
         at = path.find("/", at + 1)
 
 
-def _unasked(paths: Sequence[str], asked: Collection[str]) -> list[str]:
+def _unasked(paths: Sequence[str], asked: Collection[str], room: int) -> list[str]:
     """The pathspecs that leave out of a whole project's patch, each by its literal name, the top-most folders among
-    `paths` that hold no path in `asked`, those holding the most paths first, as many as `_UNASKED_CHARS` holds. A
+    `paths` that hold no path in `asked`, those holding the most paths first, as many as `room` characters hold. A
     file at the top stays."""
     holds = {folder for path in asked for folder in _folders(path)}
     counts: Counter[str] = Counter()
@@ -694,7 +694,7 @@ def _unasked(paths: Sequence[str], asked: Collection[str]) -> list[str]:
     specs, size = [], 0
     for folder, _ in counts.most_common():  # read by review: a long name past the budget leaves a shorter one room
         spec = _LEFT_OUT + folder
-        if size + len(spec) + 1 <= _UNASKED_CHARS:
+        if size + len(spec) + 1 <= room:
             size += len(spec) + 1
             specs.append(spec)
     return specs
@@ -724,7 +724,8 @@ def whole_diffs(resolved: dict, entries: list[dict[str, str]], scope: Sequence[s
     # each of a review's two reads only to be dropped here, peaked at 747 MB. git lists the names again with them left
     # out, so the names and the patch agree whatever a name's bytes: read by review, a folder not named in UTF-8 read
     # back as another name, git kept it in the patch, and the names alone had dropped it.
-    if unasked := _unasked(paths, asked):
+    # Read by a code review: the room is what the paths on the same command line leave of it, as Windows counts both.
+    if unasked := _unasked(paths, asked, _UNASKED_CHARS - sum(len(spec) + 1 for spec in specs)):
         paths = listed(*unasked)
     # Split as bytes, each part decoded alone: one str of the whole patch is as wide as its widest character.
     args = (f"--attr-source={base}", "diff-tree", "-r", "-p", *_PLAIN, base, head, *specs, *unasked)
