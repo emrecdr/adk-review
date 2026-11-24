@@ -258,7 +258,9 @@ class AdkReviewTuiApp(App[int]):
         self._filtered_findings: list[FindingRow] = []
         self._selected_finding: FindingRow | None = None
         self._reviewed: str | None = None  # the commit the findings' report reviewed: their lines are counted in it
-        self._verdict: str | None = None  # the verdict that report reached: no finding is "nothing found" only so
+        # The verdict that report reached, "" for one read whose verdict this screen does not know, None for none read:
+        # no finding is "nothing found" only so
+        self._verdict: str | None = None
         # The last lines the running review said on its error stream, its reason where it ends with no report.
         self._said: deque[str] = deque(maxlen=NO_REPORT_LINES)
         self._pull_request: PullRequest | None = None  # the address field's, where it reads as one
@@ -1567,10 +1569,11 @@ class AdkReviewTuiApp(App[int]):
         except (OSError, ValueError) as exc:
             # Read by review: an error here, a config the screen could not write, ended the whole screen with a
             # traceback, Textual's own way with a worker's error.
-            self._set_banner(f"The {label} could not run: {exc}")
+            said = unhidden(f"The {label} could not run: {exc}")  # the Report tab draws it as written
+            self._set_banner(said)
             # Read by the fourth code review: the review before stayed on the Report tab, for Ctrl+Y to copy as this.
-            self._report_says(f"The {label} could not run: {exc}")
-            self.notify(f"The {label} could not run: {exc}", severity="error", timeout=8, markup=False)
+            self._report_says(said)
+            self.notify(said, severity="error", timeout=8, markup=False)
         finally:
             self._set_reviewing(False)
 
@@ -1619,7 +1622,10 @@ class AdkReviewTuiApp(App[int]):
         self._said.clear()  # this run's own: read by review, a run whose stream gave nothing would show the last one's
         code, stdout_text = await self._stream_subprocess(review_command(argv))
         if not dry_run:
-            await asyncio.to_thread(promote_baseline, outputs, code)
+            try:
+                await asyncio.to_thread(promote_baseline, outputs, code)
+            except OSError as exc:  # read by the fifth simplify pass: a full disk hid the review that had run
+                self._log_progress(f"The report is not kept for the next review to compare with: {exc}")
         decided = await self._load_generated_files(outputs, target)
         if self._target() != target:
             # Read by review: a review that ended after the person chose another target filled that target's tabs. Read
@@ -1736,9 +1742,10 @@ class AdkReviewTuiApp(App[int]):
         # Read by review: a target picked meanwhile was shown it; and the screen may have closed during the reads.
         if (target is not None and self._target() != target) or not self._has_dom("#output-tabs"):
             return None
-        self._hold(rows, reviewed, "" if verdict is None else verdict, target)  # "": a report read, its verdict unknown
+        decided = verdict or ""  # read by a code review: a verdict this screen does not know is still a report read
+        self._hold(rows, reviewed, decided, target)
         self.last_comment_md, self.last_handoff_md = self._shown(comment, "comment"), self._shown(handoff, "handoff")
-        return verdict or ""  # read by a code review: a verdict this screen does not know is still a report read
+        return decided
 
     @staticmethod
     async def _written(path: Path | None) -> str | None:

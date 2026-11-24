@@ -5044,3 +5044,27 @@ class TestWhatTheFourthCodeReviewFound:
             await _reviewed_once(app, pilot)
             said = str(app.query_one("#finding-detail", Static).render())
         assert said != RUN_FIRST and "Report tab" in said, said
+
+    @pytest.mark.asyncio
+    async def test_a_review_whose_report_is_not_kept_for_the_next_is_still_shown(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by the fifth simplify pass: the error a run cannot recover from was caught around the whole run, so a
+        report that could not be kept for the next review's comparison, a full disk, said the review could not run
+        and hid the review that had run. The review is shown, and the progress tab says what was not kept."""
+        pytest.importorskip("textual")
+        import tui.app as screen
+
+        def full(*_args: object) -> None:
+            raise OSError("no space left on the disk")
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            monkeypatch.setattr(screen, "promote_baseline", full)
+            monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("REQUEST_CHANGES", 1, ("x",), "THE REPORT\n"))
+            await _reviewed_once(app, pilot)
+            copied, rows, progress = app.last_report_md, app.findings_rows, app._progress
+        assert "THE REPORT" in copied and [row.title for row in rows] == ["x"], copied
+        assert [line for line in progress if "no space left" in line], progress
