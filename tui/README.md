@@ -229,7 +229,7 @@ As the reviewer does, the screen reads a repository, and writes into it only whe
 | `o` | Open the chosen finding's lines in Azure DevOps, in the file as the commit reviewed holds it |
 | `p` | Open the pull request at the chosen finding: its comment thread once posted, else its file in the Files tab |
 | `c` | Comment on the chosen finding in its pull request: a draft to edit, a confirmation, then one post |
-| `q` | Quit, where no review runs, no comment waits to be posted and no text field has the focus. Otherwise it says what waits |
+| `q` | Quit, where no review runs and no text field has the focus. Over a comment not posted yet it asks first: a second `q` within 5 seconds quits without it. While a review runs, it says to stop it first |
 
 The action keys work wherever the focus is, a text field included. `Ctrl+X` stops a review while one runs, and only
 then: with none running it is a text field's own cut. While a dialog is open, only `Ctrl+X` and `Ctrl+Q` work, and

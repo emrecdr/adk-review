@@ -667,8 +667,8 @@ def _off_disk(resolved: dict) -> Mapping[str, str]:
     return {} if resolved.get("staged") else OFF_DISK
 
 
-#: The most characters the folders a whole project's patch leaves out may take as arguments, those holding the most
-#: files first: Windows holds a whole command line to 32,767 characters.
+#: The most characters the paths of a whole project's patch and the folders it leaves out may take as arguments
+#: together, the folders holding the most files first: Windows holds a whole command line to 32,767 characters.
 _UNASKED_CHARS = 8_000
 #: How git is told to leave a folder out of the patch: by its literal name from the top, never a glob.
 _LEFT_OUT = ":(top,exclude,literal)"
@@ -691,11 +691,11 @@ def _unasked(paths: Sequence[str], asked: Collection[str], room: int) -> list[st
     for path in paths:
         if path not in asked and (top := next((f for f in _folders(path) if f not in holds), None)):
             counts[top] += 1
-    specs, size = [], 0
+    specs = []
     for folder, _ in counts.most_common():  # read by review: a long name past the budget leaves a shorter one room
         spec = _LEFT_OUT + folder
-        if size + len(spec) + 1 <= room:
-            size += len(spec) + 1
+        if len(spec) + 1 <= room:
+            room -= len(spec) + 1
             specs.append(spec)
     return specs
 

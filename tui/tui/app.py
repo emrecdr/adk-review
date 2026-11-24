@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import os
 import subprocess
+import time
 from collections import deque
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -166,6 +167,8 @@ NOTHING_TO_COPY = {
 NO_REPORT_LINES = 20
 #: The most of a line the banner shows, a run's error line or git's among them.
 BANNER_CHARS = 300
+#: How long a second `q` quits over a comment not posted yet, in seconds.
+QUIT_AGAIN_S = 5
 #: The tabs a review's own files fill, by the flag that writes each, and what each says where none was written.
 WRITTEN = {"comment": "3. Author Comment", "handoff": "4. Agent Handoff"}
 _NONE_WRITTEN = "*No `--{flag}` generated yet.*"
@@ -265,6 +268,7 @@ class AdkReviewTuiApp(App[int]):
         self._clients: dict[str, Client] = {}  # one a pull request, by its address: what it read once is kept
         self._drafts: dict[tuple[str, str, str], str] = {}  # an edit left for later: where it belongs, and its text
         self._commenting: bool = False  # a comment from its key to its answer: one at a time
+        self._quit_asked = float("-inf")  # when `q` last said a comment waits: a second `q` soon after quits
         self.selected_root: RootDir = self.tui_config.root_dirs[0]
         self.selected_project: ProjectInfo | None = None
         self.selected_mode: ReviewMode = "branch"
@@ -547,10 +551,9 @@ class AdkReviewTuiApp(App[int]):
 
     def _reset_outputs(self) -> None:
         """Clear prior repository outputs and tab readiness badges when switching repositories."""
-        self.last_report_md = ""
-        self._clear_written()
+        self._report_says("")
+        self.last_comment_md, self.last_handoff_md = self._shown(None, "comment"), self._shown(None, "handoff")
         self._hold([], None, None, None)
-        self.query_one("#report-log", RichLog).clear()
 
     def _apply_repo_preset(self, repo_name: str) -> None:
         preset = self.tui_config.projects.get(repo_name)
@@ -747,7 +750,8 @@ class AdkReviewTuiApp(App[int]):
                 )
                 self._log_progress(outcome.message)
                 self._set_banner(outcome.message)
-                self.notify(outcome.message, severity="information" if outcome.ok else "warning", timeout=4)
+                severity = "information" if outcome.ok else "warning"
+                self.notify(outcome.message, severity=severity, timeout=4, markup=False)
                 return outcome.resolved_ref
             return status.local_branch
         if status.kind == "diverged":
@@ -851,10 +855,8 @@ class AdkReviewTuiApp(App[int]):
         *,
         prior: bool = False,
     ) -> None:
-        """What the Findings tab holds, the review it came from, and its name, drawn: one place sets them together. Read
-        by a code review: a saved report read as the screen closed found no tab to name."""
-        if not self._has_dom("#output-tabs"):
-            return
+        """What the Findings tab holds, the review it came from, and its name, drawn: one place sets them together. Each
+        caller has checked that the tabs are still there."""
         self.findings_rows, self._reviewed, self._verdict, self._rows_target = rows, reviewed, verdict, target
         self.query_one("#output-tabs", TabbedContent).get_tab("tab-findings").label = self._findings_label(prior=prior)
         self._render_findings_table()
@@ -1431,8 +1433,11 @@ class AdkReviewTuiApp(App[int]):
         """Quit the screen, where no review runs: one that runs is stopped with Ctrl+X first, or quit with Ctrl+Q."""
         if self._reviewing:
             self.notify("A review is running. Press Ctrl+X to stop it, then q to quit.", timeout=4, markup=False)
-        elif self._drafts or self._commenting:  # read by a code review: a comment kept in memory alone was lost
-            self.notify("A comment is not posted yet. Press Ctrl+Q to quit without it.", timeout=4, markup=False)
+        elif (self._drafts or self._commenting) and time.monotonic() - self._quit_asked > QUIT_AGAIN_S:
+            # Read by a code review: a comment kept in memory alone was lost; and by the third simplify pass: told to
+            # press Ctrl+Q, which VS Code's terminal keeps for itself, a person there had no way out.
+            self._quit_asked = time.monotonic()
+            self.notify("A comment is not posted yet. Press q again to quit without it.", timeout=4, markup=False)
         else:
             self.exit()
 
@@ -1491,13 +1496,14 @@ class AdkReviewTuiApp(App[int]):
         name = active.removeprefix("tab-")
         if copy_text(self, text):
             self._set_banner(f"Copied {name} content to the clipboard ({len(text):,} chars).")
-            self.notify("Copied active tab to the clipboard.", severity="information", timeout=3)
+            self.notify("Copied active tab to the clipboard.", severity="information", timeout=3, markup=False)
         else:  # through the terminal alone, which no program can check
             self._set_banner(f"Sent {name} content to the clipboard through the terminal ({len(text):,} chars).")
             self.notify(
                 "Sent to the clipboard through the terminal. If nothing pastes, use Windows Terminal, iTerm2 or kitty.",
                 severity="information",
                 timeout=6,
+                markup=False,
             )
 
     @staticmethod
@@ -1559,18 +1565,26 @@ class AdkReviewTuiApp(App[int]):
     def _stopped(self, label: str, *, dry_run: bool) -> None:
         """What a stopped run leaves: the banner and the Report tab saying so, and that as what Ctrl+Y copies."""
         self._set_banner(f"{label.capitalize()} stopped by user.")
-        if self._has_dom("#report-log"):  # not where the closing screen stopped it
-            again = "Ctrl+D" if dry_run else "Ctrl+R"
-            self.last_report_md = f"The {label} was stopped before its report was shown. Press {again} to run it again."
+        again = "Ctrl+D" if dry_run else "Ctrl+R"
+        self._report_says(f"The {label} was stopped before its report was shown. Press {again} to run it again.")
+
+    def _report_says(self, text: str) -> None:
+        """`text` on the Report tab, and as what Ctrl+Y copies from it: one place keeps the two the same. Read by
+        review three times on this branch: a run with no report, one stopped and one cut short each left them apart.
+        Nothing is drawn once the screen has closed."""
+        if self._has_dom("#report-log"):
+            self.last_report_md = text
             report_log = self.query_one("#report-log", RichLog)
             report_log.clear()
-            report_log.write(self.last_report_md)
+            if text:
+                report_log.write(text.rstrip("\n"))
 
     def _set_reviewing(self, on: bool) -> None:
         """Whether a review runs, and the line under the screen redrawn for it: it shows the keys that act now, Stop
         while one runs and the two runs while none does. Nothing is redrawn once the screen has closed: measured,
         Textual's redraw raises `ScreenStackError` there, where a closing screen cut a review short."""
         self._reviewing = on
+        self._set_running_ui(on)  # read by the third simplify pass: Ctrl+X stops the whole run, the button stopped less
         if self.is_running:
             self.refresh_bindings()
 
@@ -1587,17 +1601,11 @@ class AdkReviewTuiApp(App[int]):
             )
             await asyncio.to_thread(make_output_dir, sel, self.tui_config.config_path)
         argv, outputs = build_review_argv(sel)
-        report_log = self.query_one("#report-log", RichLog)
-        report_log.clear()
-        self.last_report_md = ""  # read by an audit: a stopped run left the last report for Ctrl+Y as its own
+        self._report_says("")  # read by an audit: a stopped run left the last report for Ctrl+Y as its own
         self._set_banner(f"Running {label} on {project.name}...")
         self._log_progress(f"$ {format_cli_command(argv)}")
-        self._set_running_ui(True)
         self._said.clear()  # this run's own: read by review, a run whose stream gave nothing would show the last one's
-        try:
-            code, stdout_text = await self._stream_subprocess(review_command(argv))
-        finally:
-            self._set_running_ui(False)
+        code, stdout_text = await self._stream_subprocess(review_command(argv))
         if not dry_run:
             await asyncio.to_thread(promote_baseline, outputs, code)
         decided = await self._load_generated_files(outputs, target)
@@ -1610,9 +1618,7 @@ class AdkReviewTuiApp(App[int]):
                 f"another target since.{where}"
             )
             return
-        self.last_report_md = stdout_text
-        if stdout_text:
-            report_log.write(stdout_text.rstrip("\n"))
+        self._report_says(stdout_text)
         self.query_one("#output-tabs", TabbedContent).active = "tab-report"
         # Read by an audit: at 80 by 24 the results got one row while the panels stayed open. Ctrl+O brings them back.
         # Read by a code review: a review refused, or a dry run, minimized the step to mend: only a report read does.
@@ -1623,8 +1629,7 @@ class AdkReviewTuiApp(App[int]):
             # the Report tab empty and the banner at "exit code 2", its reason on the progress tab alone. Known by the
             # report it did not write, never by its code: read by review, a broken install exits 1 with a traceback.
             said = list(self._said) or [f"It gave no reason (exit code {code})."]
-            self.last_report_md = "\n".join([f"The {label} ended with no report. It said:", "", *said])
-            report_log.write(self.last_report_md)
+            self._report_says("\n".join([f"The {label} ended with no report. It said:", "", *said]))
             why = f": {self._said[-1]}" if self._said else "."
             self._set_banner(f"The {label} on {project.name} ended with no report (exit code {code}){why}")
             told = f"The {label} ended with no report (exit code {code}). The Report tab says why."
@@ -1714,19 +1719,12 @@ class AdkReviewTuiApp(App[int]):
             return None
         rows, reviewed, verdict = await asyncio.to_thread(load_report, json_path)
         comment, handoff = await self._written(outputs.get("comment")), await self._written(outputs.get("handoff"))
-        if target is not None and self._target() != target:
-            return None
-        if not self._has_dom("#output-tabs"):  # read by a code review: the screen closed while the report was read
+        # Read by review: a target picked meanwhile was shown it; and the screen may have closed during the reads.
+        if (target is not None and self._target() != target) or not self._has_dom("#output-tabs"):
             return None
         self._hold(rows, reviewed, verdict, target)
         self.last_comment_md, self.last_handoff_md = self._shown(comment, "comment"), self._shown(handoff, "handoff")
         return verdict or ""  # read by a code review: a verdict this screen does not know is still a report read
-
-    def _clear_written(self) -> None:
-        """The comment and hand-off tabs as before any review: nothing to copy, each saying the review wrote none."""
-        if not self._has_dom("#output-tabs"):
-            return
-        self.last_comment_md, self.last_handoff_md = self._shown(None, "comment"), self._shown(None, "handoff")
 
     @staticmethod
     async def _written(path: Path | None) -> str | None:

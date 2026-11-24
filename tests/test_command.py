@@ -3261,22 +3261,21 @@ class TestWhatAReviewKeeps:
         monkeypatch.undo()
         monkeypatch.setattr(cli.platform, "python_version", lambda: "3.15.0")
         assert cli._cached_at(args, chosen, evidence, "m", previous) != key
-        monkeypatch.undo()
         # Read by an audit: no engine a guideline's call goes through was in the key, though a newer one sends another
         # request, as a newer ruff finds what an older one did not.
         real = cli.metadata.version
         judged = SimpleNamespace(rules=[], name="default", ids=lambda: (), guidelines=("guideline.correctness",))
-        key = cli._cached_at(args, judged, evidence, "m", previous)
+        judged_key = cli._cached_at(args, judged, evidence, "m", previous)
+        plain = cli._cached_at(args, chosen, evidence, "m", previous)
+        # Read by a code review: a review that runs no guideline calls no model, through no engine, and another
+        # model's name, or a bump of an engine, served every cached rules-only review again.
+        assert cli._cached_at(args, chosen, evidence, "another", previous) == plain
         for engine in ("google-adk", "litellm", "google-genai"):
             monkeypatch.setattr(
                 cli.metadata, "version", lambda name, bumped=engine: "0.0.1" if name == bumped else real(name)
             )
-            assert cli._cached_at(args, judged, evidence, "m", previous) != key, engine
-            # Read by a code review: a review that runs no guideline goes through no engine, and a bump of one served
-            # every cached rules-only review again.
-            rules_only = cli._cached_at(args, chosen, evidence, "m", previous)
-            monkeypatch.undo()
-            assert cli._cached_at(args, chosen, evidence, "m", previous) == rules_only, engine
+            assert cli._cached_at(args, judged, evidence, "m", previous) != judged_key, engine
+            assert cli._cached_at(args, chosen, evidence, "m", previous) == plain, engine
 
     def test_the_cache_key_reads_the_reviewers_own_source_wherever_the_checkout_lies(
         self, cli, tmp_path: Path, monkeypatch

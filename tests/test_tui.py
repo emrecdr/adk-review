@@ -4849,11 +4849,11 @@ class TestWhatTheSecondCodeReviewFound:
         import tui.app as screen
 
         app = _payments_screen(tmp_path)
-        saving, real = threading.Event(), screen.save_repo_preset
+        saving, released, real = threading.Event(), threading.Event(), screen.save_repo_preset
 
         def slow(*args: object) -> object:
             saving.set()
-            threading.Event().wait(2)  # a slow disk, never forever
+            released.wait(2)  # a slow disk until the stop is seen, never forever
             return real(*args)
 
         async with app.run_test(size=(140, 45)) as pilot:
@@ -4869,6 +4869,7 @@ class TestWhatTheSecondCodeReviewFound:
             await app.workers.wait_for_complete()
             await pilot.pause()
             copied = app.last_report_md
+            released.set()  # read by the third simplify pass: the thread waited out its 2 s in every run
         assert "FIRST REPORT" not in copied and "stopped" in copied, copied
 
     @pytest.mark.asyncio
@@ -4897,4 +4898,32 @@ class TestWhatTheSecondCodeReviewFound:
             await pilot.pause()
             running = app.is_running
             told = [notice.message for notice in app._notifications]
-        assert running and [said for said in told if "Ctrl+Q" in said], (running, told)
+            # Read by the third simplify pass: told to press Ctrl+Q, which VS Code's terminal keeps for itself, a person
+            # there had no way out but to empty each draft. A second `q` quits without them.
+            await pilot.press("q")
+            await pilot.pause()
+            after_twice = app.is_running
+        assert running and [said for said in told if "q again" in said], (running, told)
+        assert not after_twice, "a second q quits without the comment"
+
+
+class TestWhatTheThirdSimplifyPassFound:
+    """Read by the third /simplify pass over the audit's branch."""
+
+    def test_every_notice_the_screen_sends_draws_no_markup(self) -> None:
+        """A branch update's notice lost its `markup=False` when the screen's notify forced it, and kept no flag once
+        notify left Textual's own notices their markup, so git's message was drawn as markup and never made safe. Each
+        of the screen's own notices passes it; Textual's, which carry markup, keep theirs."""
+        import ast
+
+        loose = []
+        for source in sorted(FRONT_END.glob("*.py")):
+            for node in ast.walk(ast.parse(source.read_text(encoding="utf-8"))):
+                if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+                    continue
+                if node.func.attr != "notify" or isinstance(node.func.value, ast.Call):  # super().notify passes it on
+                    continue
+                flag = next((keyword.value for keyword in node.keywords if keyword.arg == "markup"), None)
+                if not (isinstance(flag, ast.Constant) and flag.value is False):
+                    loose.append(f"{source.name}:{node.lineno}")
+        assert loose == [], loose
