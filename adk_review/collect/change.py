@@ -51,6 +51,11 @@ KEY_UNREAD = (
     "holds a private key, so no model is shown a line of it. "
     "Move the key out of the file (recommended), or add the file to --skip"
 )
+#: Why a file whose change removes a private key is shown to no model, and what to do: the head holds the key no more.
+KEY_REMOVED = (
+    "removes a private key, so no model is shown a line of its change. "
+    "Rotate the key, since the git history still holds it, or add the file to --skip"
+)
 _POINTER_KEYS = ("version", "oid", "size")
 _POINTER_EXTENSION = re.compile(r"ext-[0-9]-\w", re.ASCII)
 _POINTER_OID = re.compile(r"sha256:[0-9a-f]{64}")
@@ -265,7 +270,10 @@ def shown_to_guidelines(
         # beside a key, or inside one, showed lines of it with neither its header nor its footer, which the redaction
         # reads it between, and every guideline was sent them. The rules read it as any other file.
         if file["path"] in held or holds_private_key(diff):
-            file.update(unread="" if file["status"] == "D" else KEY_UNREAD, cut=True)
+            # Read by an audit: a change that removed a key was told to move it out of the file, which holds it no more.
+            kept = "\n".join(line for _at, line in hunk_lines(diff) if not line.startswith("-"))
+            gone = file["path"] not in held and not holds_private_key(kept)
+            file.update(unread="" if file["status"] == "D" else KEY_REMOVED if gone else KEY_UNREAD, cut=True)
             keyed += 1
             continue
         view, cut = capped(diff, diff_cap)

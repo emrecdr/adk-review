@@ -1204,6 +1204,8 @@ class TestThePreviousReportAndTheHandoff:
         first = written.split("\n1. ", 1)[1].split("\n2. ", 1)[0]
         assert "blocker — at the bar" in first and "REDACTED" in first and "AKIA" not in written
         assert "   - after: `rule.secrets` no longer reports fingerprint `" in first
+        # Read by an audit: the check the hand-off prints writes no JSON, and its text names no fingerprint.
+        assert "A review's `--json` lists each finding's fingerprint." in " ".join(written.split())
         from adk_review.judge.rule_helpers import fix_of
         from adk_review.judge.rules.lint import FIX
 
@@ -3259,6 +3261,16 @@ class TestWhatAReviewKeeps:
         monkeypatch.undo()
         monkeypatch.setattr(cli.platform, "python_version", lambda: "3.15.0")
         assert cli._cached_at(args, chosen, evidence, "m", previous) != key
+        monkeypatch.undo()
+        # Read by an audit: no engine a guideline's call goes through was in the key, though a newer one sends another
+        # request, as a newer ruff finds what an older one did not.
+        real = cli.metadata.version
+        for engine in ("google-adk", "litellm", "google-genai"):
+            monkeypatch.setattr(
+                cli.metadata, "version", lambda name, bumped=engine: "0.0.1" if name == bumped else real(name)
+            )
+            assert cli._cached_at(args, chosen, evidence, "m", previous) != key, engine
+            monkeypatch.undo()
 
     def test_the_cache_key_reads_the_reviewers_own_source_wherever_the_checkout_lies(
         self, cli, tmp_path: Path, monkeypatch
@@ -3984,6 +3996,12 @@ class TestWhatTheReportPrints:
         # Reproduced by review: a `tests` finding asks for a test of code that works, which passes, and the paragraph
         # alone told the agent to leave it, so the test the finding asked for was never written.
         assert "Where the finding asks only for a test, that test is the fix, and it can pass." in paragraph
+        # Read by an audit: wasted work gives no wrong result, so "a test that cannot fail" left an efficiency finding
+        # on tested code alone, and had it applied where no test reached; and a defect worked around passes a test of
+        # the code that works around it, where one of the code it starts in fails.
+        assert "Prove wasted work with a test that counts calls, queries or objects kept alive." in paragraph
+        assert "Where no count can show it, make the change: the project's tests must still pass." in paragraph
+        assert "Prove a defect worked around elsewhere with a test of the code where it starts." in paragraph
 
     def test_a_comment_and_a_hand_off_say_what_a_quoted_deleted_line_is_where_a_quote_holds_one(self) -> None:
         """Read by review on a branch that removed a field: a quote keeps the `-` of a line the change deleted, and

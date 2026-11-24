@@ -344,8 +344,9 @@ _PATTERNS_REST = (*_VENDOR_REST, *_GENERIC)
 #: line, as `base64` wraps one at 76 characters: measured, the redaction hid its first line of eleven. And a Python
 #: string that holds a header or a footer and its line break alone, a line of its own, as a key joined from strings
 #: is written: read by review, every line of one was sent, since the redaction reads no quoted line as a key's. Code
-#: that names one in quotes, a comment or a placeholder holds none: measured over 31,089 text files, none matched,
-#: where 30-odd do.
+#: that names one in quotes, or a comment with words after it, holds none: measured over 31,089 text files, none
+#: matched, where 30-odd do. A comment line that ends in one, or one on a line of its own in a docstring, matches: its
+#: file is shown to no model, which fails safe. Read by an audit, 0 of 10,523 installed text files held either.
 _HOLDS_KEY = re.compile(
     r"^[+\- ]?[ \t]*(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r"|PuTTY-User-Key-File-[23]:|" + _KEY_BASE64 + ")"
     r"|(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r")[ \t]*\r?$"

@@ -1891,6 +1891,29 @@ class TestWhatTheGuidelinesAreShown:
         files, block, _excluded, left_out, parts = change.shown_to_guidelines(entries, [binary, text], 2_000, ())
         assert left_out == 0 and parts == [] and "### b.py" in block and files[1]["unread"] == "", block
 
+    def test_a_change_that_removes_a_key_is_told_to_rotate_it_never_to_move_it(self) -> None:
+        """Read by an audit, and reproduced: a change that removed a private key from a file was told to move the key
+        out of the file, which the head no longer holds. No model is shown its diff still, a hole as before, since a
+        guideline reads what a change deletes; the note says the key was removed, and to rotate it, since the history
+        still holds it. A change beside a key the head still holds keeps the note it had."""
+        from adk_review.collect import change
+
+        head, foot = "-----BEGIN RSA " + "PRIVATE KEY-----", "-----END RSA " + "PRIVATE KEY-----"
+        key = [f"  {line}" for line in (head, "FAKEKEYBODY" + "A" * 53, foot)]
+        top = "diff --git a/deploy.yaml b/deploy.yaml\n--- a/deploy.yaml\n+++ b/deploy.yaml\n"
+        removed = top + "@@ -1,6 +1,2 @@\n service: orders\n-deploy_key: |\n" + "".join(f"-{line}\n" for line in key)
+        removed += " timeout: 30\n"
+        beside = top + "@@ -1,6 +1,6 @@\n service: orders\n deploy_key: |\n" + "".join(f" {line}\n" for line in key)
+        beside += "-timeout: 30\n+timeout: 60\n"
+        entries = [{"path": "deploy.yaml", "status": "M"}]
+        files = change.shown_to_guidelines(entries, [removed], 2_000, ())[0]
+        assert files[0]["unread"] == change.KEY_REMOVED and "Move the key" not in files[0]["unread"], files[0]
+        assert "Rotate the key" in change.KEY_REMOVED, change.KEY_REMOVED
+        files = change.shown_to_guidelines(entries, [beside], 2_000, ())[0]
+        assert files[0]["unread"] == change.KEY_UNREAD, files[0]
+        files = change.shown_to_guidelines(entries, [removed], 2_000, (), held={"deploy.yaml"})[0]
+        assert files[0]["unread"] == change.KEY_UNREAD, "the head's text holds a key: one the diff shows no line of"
+
     def test_a_deleted_file_takes_the_room_last_and_is_never_counted_as_left_out(self, monkeypatch) -> None:
         """Read by review: a deleted file is never a hole, what it removes reviewed when it came in, yet the block gave
         it the room before a file the change added, which was then a hole, and counted it as left out, so the review

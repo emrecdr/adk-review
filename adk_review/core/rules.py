@@ -471,7 +471,7 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
                 # The report never prints a secret, a rule's evidence included, and the line is cut once, after a
                 # scrub reading as far as a credential crossing the cut could run: measured by review, a 10 MB line
                 # was scrubbed again by every later reader, 160 s in all, and one 2 MB line whole took 9 s.
-                evidence=_withheld(hit.text)
+                evidence=_withheld(scrub(hit.text[:read], cut=len(hit.text) > read)[0])
                 if hit.path in keyed
                 else cut_at(scrub(hit.text[:read], cut=len(hit.text) > read)[0], EVIDENCE_MAX_CHARS),
                 suggestion=hit.fix or rule.fix,
@@ -489,7 +489,9 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
 def _withheld(text: str) -> str:
     """A withheld quote, with a digest of its line and no part of it: read by review, one string for them all, the fold
     read a finding with no line as the same as any other in the file, and `--previous`, which knows a finding by its
-    quote, mixed two up. Two lines differ, and one line is the same in every review."""
+    quote, mixed two up. Two lines differ, and one line is the same in every review. Of the line as the redaction
+    leaves it: read by an audit, a password on a line of the file was printed as 12 digits of its hash, to be guessed
+    offline."""
     return f"{KEY_WITHHELD}, digest {hashlib.sha256(text.encode('utf-8', 'surrogatepass')).hexdigest()[:12]})"
 
 

@@ -690,7 +690,9 @@ and last the next steps, by the verdict and what was kept. "The report" in `GUID
   line: a test that fails on the code as it stands, kept with the fix; where a test reaches the code and cannot
   fail, that finding is left and the agent says why, a finding that asks only for a test, as `tests` does, is fixed
   by that test, which can pass, and code no test reaches is fixed as the finding says, since the command that checks
-  the work runs no guideline. It ends by asking for the project's own
+  the work runs no guideline. Wasted work gives no wrong result: it is proved by a test that counts calls, queries or
+  objects kept alive, and where no count shows it, made with the project's tests passing; a defect worked around is
+  proved by a test of the code where it starts. It ends by asking for the project's own
   tests before a commit, a fix done when they pass, and in the command that checks the fixes: the review again on the
   same scope with only the rules that found something or could not look, so an agent checks its own work offline, no
   model called. It checks the branch reviewed, by its full name in any spelling git gives it, or else `HEAD`, the fixes

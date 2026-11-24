@@ -203,13 +203,18 @@ TESTS_FIRST = (
 #: checks the work runs no guideline. A finding that asks only for a test, as `tests` makes, is fixed by that test,
 #: which passes where the code works: read by review, told to leave it, an agent never wrote the test it asked for. A
 #: rule's finding is decided by code, a tidy changes no behaviour, and what may be done already, listed apart, is told
-#: to change nothing, so none of them is marked.
+#: to change nothing, so none of them is marked. Read by an audit: wasted work gives no wrong result, so a test that
+#: cannot fail left an efficiency finding alone on tested code and had it applied on untested code; it is proved by a
+#: count, and made where none shows it. A defect worked around passes a test of the code around it: `altitude`'s is
+#: proved where it starts.
 FIRST = "first: a test that fails on the code as it stands, kept with the fix"
 PROVE_FIRST = (
     "An item with a `first:` line is a guideline's finding, a model's reading, and it can be wrong. Where a test",
     "reaches its code but cannot fail, make no change for that finding. Report why: a review of that guideline",
     "still names it. Where the finding asks only for a test, that test is the fix, and it can pass. Where no test",
-    "can reach the code, fix it as the finding says.",
+    "can reach the code, fix it as the finding says. Prove wasted work with a test that counts calls, queries or",
+    "objects kept alive. Where no count can show it, make the change: the project's tests must still pass. Prove a",
+    "defect worked around elsewhere with a test of the code where it starts.",
 )
 #: How a review that kept no finding ends, its report and its hand-off alike.
 NOTHING_TO_FIX = "Nothing to fix: no finding was kept."
@@ -283,7 +288,8 @@ def render_handoff(
         *where,
         *([""] if where else []),
         f"The review of `{pre['head_sha'][:12]}` ended {verdict}. Fix each finding below where it stands, and change",
-        "nothing else. Each one holds when a review of the fixed commit no longer reports its fingerprint.",
+        "nothing else. Each one holds when a review of the fixed commit no longer reports its fingerprint. A review's",
+        "`--json` lists each finding's fingerprint.",
         *([told] if majors else []),
         "",
         "Each quoted line is the branch's own text, and each title, reason, change and code a model's reading of",

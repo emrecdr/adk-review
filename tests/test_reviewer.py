@@ -1498,6 +1498,35 @@ class TestWhatRanUntested:
         assert quotes[0] == quotes[1] != quotes[2], quotes
         assert not any("MIIE" in quote for quote in quotes), quotes
 
+    def test_a_withheld_quotes_digest_holds_no_secret_its_line_holds(self) -> None:
+        """Read by an audit, and reproduced: the digest was of the line as written, cut to 12 hex digits and printed in
+        the report, the comment and the hand-off, so a password on a line of a file that holds a key could be guessed
+        offline against it, where the same line in any other file prints redacted. It is of the line as the redaction
+        leaves it: two lines that differ in their secret alone are one line to it."""
+        import hashlib
+
+        from adk_review.core.rules import KEY_WITHHELD, FileRule, run_rule
+
+        class Each(FileRule):
+            id, severity, title, fix = "each", "minor", "a line", "Mend it."
+
+            def check(self, file):
+                return [5, 6] if file.path else []
+
+        key = [
+            "-----BEGIN RSA " + "PRIVATE KEY-----",
+            "MIIEowIBAAKCAQEA",
+            "MIIEowIBAAKCAQEA",
+            "-----END RSA " + "PRIVATE KEY-----",
+        ]
+        said = ["db_" + "password: Summer2024x", "db_" + "password: Winter2025y"]
+        entry = {"path": "a.yaml", "text": "\n".join([*key, *said]) + "\n", "unread_text": None, "added": []}
+        quotes = [f.evidence for f in run_rule(Each(), [entry], None).findings]
+        assert len(quotes) == 2 and all(quote.startswith(KEY_WITHHELD) for quote in quotes), quotes
+        written = {hashlib.sha256((mark + line).encode()).hexdigest()[:12] for line in said for mark in ("", "+", " ")}
+        assert not [quote for quote in quotes if any(digest in quote for digest in written)], quotes
+        assert quotes[0] == quotes[1], "only the secret differs, and the digest reads none"
+
     def test_a_change_no_guideline_is_shown_a_file_of_asks_no_model(self, cli, asked, tmp_path: Path) -> None:
         """Read by review, and reproduced: a change of only files the skip list names built a block of its note alone,
         and each guideline ran over it, billed, a branch that only moves a lock file, as Dependabot's do, among them.

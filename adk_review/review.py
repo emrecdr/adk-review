@@ -1302,12 +1302,24 @@ def _waiting(running: Sequence[str]) -> str:
     return f"waiting on {', '.join(running)}" if running else "working"
 
 
+#: The packages a guideline's call goes through, each as installed, in the cache key.
+ENGINES = ("google-adk", "litellm", "google-genai")
+
+
+def _installed(name: str) -> str | None:
+    """A package's installed version, read from its metadata alone: a rules-only review's key imports no engine."""
+    try:
+        return metadata.version(name)
+    except metadata.PackageNotFoundError:
+        return None
+
+
 def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, model: str, previous: Previous) -> Path:
     """Where a decided review of these inputs is kept: a file named by a hash of everything its result depends on —
     the reviewer's own code, its config and its version, the interpreter that parses the tree, the commits or the
     index, what of them is covered and what of the tree went unread, the checks and every setting, the previous
-    report as it was read, each model a call would go to, and each outside tool a rule runs. A missing input would
-    serve a stale approval."""
+    report as it was read, each model a call would go to and each engine it goes through, and each outside tool a rule
+    runs. A missing input would serve a stale approval."""
     from .collect.tools import IDENTITIES
     from .judge.settings import fallback_name, registries
 
@@ -1346,6 +1358,8 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
         "registries": registries(),
         # Each outside tool a rule that runs reads, as it would run: a newer ruff finds what an older one did not.
         "tools": {tool: IDENTITIES[tool]() for tool in tools},
+        # And each engine a guideline's call goes through: read by an audit, a newer one sends another request.
+        "engines": {name: _installed(name) for name in ENGINES},
         # As `read_previous` read it: read again here, a pipe gave nothing the second time and a FIFO never answered.
         "previous": previous,
         # What of the head's tree went unread: read by review, a blob a partial clone fetched since served a stale
