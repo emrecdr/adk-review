@@ -1851,7 +1851,6 @@ class TestWhatTheCodeReviewFound:
         its files where they are, and not shown."""
         pytest.importorskip("textual")
         import asyncio
-        import json
 
         from textual.widgets import Static, TabbedContent
 
@@ -1879,8 +1878,7 @@ class TestWhatTheCodeReviewFound:
 
             async def moved_on(cmd: list[str]) -> tuple[int, str]:
                 app.selected_head = "main"  # the person chose another target while it ran
-                found = {"check": "rule.lint", "file": "a.py", "line": 1, "severity": "major", "title": "its own"}
-                report = json.dumps({"schema": 2, "verdict": "REQUEST_CHANGES", "findings": [found]})
+                report = _report("REQUEST_CHANGES", ("its own",))
                 await asyncio.to_thread(Path(cmd[cmd.index("--json") + 1]).write_text, report, "utf-8")
                 return 1, "the report of origin/feat-remote"
 
@@ -4365,10 +4363,8 @@ def _child_runs(monkeypatch: pytest.MonkeyPatch, code: str) -> None:
     monkeypatch.setattr(screen, "review_command", lambda _argv: [sys.executable, "-c", code])
 
 
-def _stubbed_run(verdict: str, code: int, titles: tuple[str, ...] = (), stdout: str = ""):
-    """A review run in place of the reviewer's child: its JSON report written where the command names it, a major for
-    each of `titles`, and `stdout` as its text report."""
-    import asyncio
+def _report(verdict: str, titles: tuple[str, ...] = ()) -> str:
+    """A review's JSON report: its verdict, and a major for each of `titles`."""
     import json
 
     found = [
@@ -4384,13 +4380,37 @@ def _stubbed_run(verdict: str, code: int, titles: tuple[str, ...] = (), stdout: 
         }
         for n, title in enumerate(titles, 1)
     ]
+    return json.dumps({"schema": 2, "verdict": verdict, "findings": found, "reviewed": {"head_sha": "b" * 40}})
+
+
+def _stubbed_run(verdict: str, code: int, titles: tuple[str, ...] = (), stdout: str | None = None):
+    """A review run in place of the reviewer's child: `_report`'s JSON written where the command names it, and
+    `stdout` as its text report, the verdict's heading where none is given."""
+    import asyncio
+
+    report = _report(verdict, titles)
 
     async def run(cmd: list[str]) -> tuple[int, str]:
-        report = json.dumps({"schema": 2, "verdict": verdict, "findings": found, "reviewed": {"head_sha": "b" * 40}})
         await asyncio.to_thread(Path(cmd[cmd.index("--json") + 1]).write_text, report, "utf-8")
-        return code, stdout or f"## Verdict: {verdict}\n"
+        return code, f"## Verdict: {verdict}\n" if stdout is None else stdout
 
     return run
+
+
+def _opened_panels(app) -> list[str]:
+    """The panels the screen shows open, by id."""
+    from textual.widgets import Collapsible
+
+    return [str(c.id) for c in app.query(Collapsible) if not c.has_class("hidden") and not c.collapsed]
+
+
+def _saved_report(app, report: str) -> None:
+    """`report` as the saved report of the target the screen has chosen, as an earlier review leaves it."""
+    from tui import options
+
+    saved = options.baseline_path(app.selected_project.path, app.selected_base, app.selected_head, app.selected_mode)
+    saved.parent.mkdir(parents=True, exist_ok=True)
+    saved.write_text(report, encoding="utf-8")
 
 
 class TestWhatAReviewLeavesOnTheScreen:
@@ -4405,19 +4425,14 @@ class TestWhatAReviewLeavesOnTheScreen:
         review is never saved, so its findings went from view, and where the saved one approved, the tab said "This
         review has no findings." beside a report that said DEGRADED."""
         pytest.importorskip("textual")
-        import json
 
         from textual.widgets import Static
-
-        from tui import options
 
         app = _payments_screen(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             app.selected_base = "main"
-            saved = options.baseline_path(app.selected_project.path, "main", app.selected_head, app.selected_mode)
-            saved.parent.mkdir(parents=True, exist_ok=True)
-            saved.write_text(json.dumps({"schema": 2, "verdict": "APPROVED", "findings": []}), encoding="utf-8")
+            _saved_report(app, _report("APPROVED"))
             monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("DEGRADED", 3, ("first", "second")))
             await _reviewed_once(app, pilot)
             assert [row.title for row in app.findings_rows] == ["first", "second"]
@@ -4622,23 +4637,19 @@ class TestTheKeysAndTheRoomTheScreenGives:
         """At 80 by 24 the results got one row while the panels stayed open, and at 140 by 45 five. A review that ends
         minimizes the panels, as Ctrl+T does, and Ctrl+O or a chip brings each back."""
         pytest.importorskip("textual")
-        from textual.widgets import Collapsible
 
         app = _payments_screen(tmp_path)
-
-        def opened() -> list[str]:
-            return [str(c.id) for c in app.query(Collapsible) if not c.has_class("hidden") and not c.collapsed]
 
         async with app.run_test(size=(80, 24)) as pilot:
             await _wait_for_branches(app, pilot)
             app.selected_base = "main"
-            before = opened()
+            before = _opened_panels(app)
             monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("REQUEST_CHANGES", 1, ("x",)))
             await _reviewed_once(app, pilot)
-            after = opened()
+            after = _opened_panels(app)
             await pilot.press("ctrl+o")
             await pilot.pause()
-            restored = opened()
+            restored = _opened_panels(app)
         assert before and after == [] and restored == before, (before, after, restored)
 
 
@@ -4649,29 +4660,26 @@ class TestWhatTheCodeReviewOfTheAuditFound:
     async def test_a_target_picked_while_the_comment_draws_is_given_none_of_it(
         self, tmp_path: Path, monkeypatch
     ) -> None:
-        """The target was checked once all was read, but the comment and the hand-off are drawn after it, a long
+        """The target was checked once all was read, but the comment and the hand-off were drawn after it, a long
         comment for seconds, so a target picked meanwhile was given that review's comment and hand-off, ready to copy.
-        Picked while they draw, both tabs say the review wrote none."""
+        They are drawn with no await now, so a pick lands before the check or after the drawing: picked while the
+        hand-off is read, both tabs say the review wrote none."""
         pytest.importorskip("textual")
         from textual.widgets import TabbedContent
 
         app = _payments_screen(tmp_path)
+        reads: list[object] = []
 
-        async def written(_path: object) -> str:
+        async def written(path: object) -> str:
+            reads.append(path)
+            if len(reads) == 2:
+                app.selected_head = "feature/tax"  # the person's pick, as the hand-off is read
             return "the old target's text"
 
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             app.selected_base = "main"
-            real = app._shown
-
-            async def shown(text: str | None, flag: str, title: str) -> str:
-                if flag == "comment":
-                    app.selected_head = "feature/tax"  # the person's pick, as the comment draws
-                return await real(text, flag, title)
-
             monkeypatch.setattr(app, "_written", written)
-            monkeypatch.setattr(app, "_shown", shown)
             monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("REQUEST_CHANGES", 1, ("x",)))
             await _reviewed_once(app, pilot)
             tabs = app.query_one("#output-tabs", TabbedContent)
@@ -4686,15 +4694,12 @@ class TestWhatTheCodeReviewOfTheAuditFound:
         session's own review passed; the review ended degraded, which is never saved, and the read that came back
         after it put the older review over it. The check is made again once the read is back."""
         pytest.importorskip("textual")
-        import json
 
         import tui.app as screen
-        from tui import options
 
         app = _payments_screen(tmp_path)
         degraded = tmp_path / "degraded.json"
-        found = {"check": "rule.lint", "file": "a.py", "line": 1, "severity": "major", "title": "its own"}
-        degraded.write_text(json.dumps({"schema": 2, "verdict": "DEGRADED", "findings": [found]}), encoding="utf-8")
+        degraded.write_text(_report("DEGRADED", ("its own",)), encoding="utf-8")
         read = screen.load_report
 
         def review_ends_meanwhile(path: Path):
@@ -4706,9 +4711,7 @@ class TestWhatTheCodeReviewOfTheAuditFound:
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             app.selected_base = "main"
-            saved = options.baseline_path(app.selected_project.path, "main", app.selected_head, app.selected_mode)
-            saved.parent.mkdir(parents=True, exist_ok=True)
-            saved.write_text(json.dumps({"schema": 2, "verdict": "APPROVED", "findings": []}), encoding="utf-8")
+            _saved_report(app, _report("APPROVED"))
             monkeypatch.setattr(screen, "load_report", review_ends_meanwhile)
             app.action_refresh_repo()
             await pilot.pause()
@@ -4754,23 +4757,14 @@ class TestWhatTheCodeReviewOfTheAuditFound:
         """A review that wrote its report, with a verdict this screen does not know, a newer reviewer's, and said
         nothing on its standard output, was said to have ended with no report, its findings drawn beside the words."""
         pytest.importorskip("textual")
-        import asyncio
-        import json
 
         from textual.widgets import Static
-
-        found = {"check": "rule.lint", "file": "a.py", "line": 1, "severity": "major", "title": "its own"}
-
-        async def run(cmd: list[str]) -> tuple[int, str]:
-            report = json.dumps({"schema": 2, "verdict": "SOMETHING_NEW", "findings": [found]})
-            await asyncio.to_thread(Path(cmd[cmd.index("--json") + 1]).write_text, report, "utf-8")
-            return 1, ""
 
         app = _payments_screen(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             app.selected_base = "main"
-            monkeypatch.setattr(app, "_stream_subprocess", run)
+            monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("SOMETHING_NEW", 1, ("its own",), stdout=""))
             await _reviewed_once(app, pilot)
             banner, rows = str(app.query_one("#status-banner", Static).render()), app.findings_rows
         assert "no report" not in app.last_report_md and "no report" not in banner, (app.last_report_md, banner)
@@ -4781,20 +4775,16 @@ class TestWhatTheCodeReviewOfTheAuditFound:
         """A review refused, as one for nothing under --path is, minimized every panel, the step to mend among them.
         Only a review that wrote its report gives the results the room."""
         pytest.importorskip("textual")
-        from textual.widgets import Collapsible
 
         _child_runs(monkeypatch, "import sys; sys.stderr.write('review: nothing under --path src\\n'); sys.exit(2)")
         app = _payments_screen(tmp_path)
 
-        def opened() -> list[str]:
-            return [str(c.id) for c in app.query(Collapsible) if not c.has_class("hidden") and not c.collapsed]
-
         async with app.run_test(size=(80, 24)) as pilot:
             await _wait_for_branches(app, pilot)
             app.selected_base = "main"
-            before = opened()
+            before = _opened_panels(app)
             await _reviewed_once(app, pilot)
-            after = opened()
+            after = _opened_panels(app)
         assert before and after == before, (before, after)
 
     @pytest.mark.asyncio
@@ -4809,3 +4799,24 @@ class TestWhatTheCodeReviewOfTheAuditFound:
             app._log_progress('  File "x.py", line 3')
             kept = app._progress[-2:]
         assert kept == ["$ adk-review . --path 'My  Docs'", '  File "x.py", line 3'], kept
+
+    @pytest.mark.asyncio
+    async def test_the_stop_button_stops_a_running_review(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by the second simplify pass, by all four of its reviews: a method added above `action_stop_review`
+        took its decorator, so the Stop button, enabled only while a review runs, said to press Ctrl+X and stopped
+        nothing. No test clicked it."""
+        pytest.importorskip("textual")
+        child = "import sys, time; sys.stderr.write('review: running\\n'); sys.stderr.flush(); time.sleep(8)"
+        _child_runs(monkeypatch, child)
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            await pilot.press("ctrl+r")
+            await _until(pilot, lambda: app._said, "the run's first line")
+            await pilot.click("#btn-stop")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            stopped = app.last_report_md
+        assert "stopped" in stopped, stopped
