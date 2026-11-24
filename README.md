@@ -858,13 +858,16 @@ On Azure Pipelines the same holds, for a pull request under a branch policy: che
 `fetchDepth: 0`, since new pipelines may fetch one commit deep, and the reviewer at a pinned commit beside it; pass
 `--head "$(System.PullRequest.SourceCommitId)"` and
 `--base "refs/remotes/origin/$(System.PullRequest.targetBranchName)"`, never
-`origin/$(System.PullRequest.TargetBranch)`, which on Azure Repos holds `refs/heads/main` and names no branch; run
-the command under `set -o pipefail` where it pipes into `tee`, since a script step's bash does not set it; and attach
-the report with `##vso[task.uploadsummary]<path of review.md>`. On GitLab CI, in a merge request pipeline: set
-`GIT_DEPTH: "0"`, since new projects clone 20 commits deep and a shallow clone is refused; clone the reviewer at a
-pinned commit; pass `--head "$CI_COMMIT_SHA"` and `--base "$CI_MERGE_REQUEST_DIFF_BASE_SHA"`, the merge request's
-own diff base; and keep `review.md` and `review.json` as artifacts `when: always`. Each command was tried on a
-simulated checkout, the base as a full remote ref and as a commit; neither service was, so no file is given for them.
+`origin/$(System.PullRequest.TargetBranch)`, which on Azure Repos holds `refs/heads/main` and names no branch; run the
+command under `set -o pipefail` where it pipes into `tee`, since a script step's bash does not set it; attach the report
+with `##vso[task.uploadsummary]<path of review.md>`; and give `--junit review.xml`, then publish it with a
+`PublishTestResults@2` step under `condition: always()`, `testResultsFormat: JUnit`, so each finding, one below the bar
+too, shows in the run's Tests tab, while `failTaskOnFailedTests` stays false and the review's exit code decides. On
+GitLab CI, in a merge request pipeline: set `GIT_DEPTH: "0"`, since new projects clone 20 commits deep and a shallow
+clone is refused; clone the reviewer at a pinned commit; pass `--head "$CI_COMMIT_SHA"` and
+`--base "$CI_MERGE_REQUEST_DIFF_BASE_SHA"`, the merge request's own diff base; and keep `review.md` and `review.json` as
+artifacts `when: always`, and `--junit`'s file under `artifacts:reports:junit`. Each command was tried on a simulated
+checkout, the base as a full remote ref and as a commit; neither service was, so no file is given for them.
 
 To review each push before it leaves a developer's machine, see "Before a push" in `GUIDE.md`.
 

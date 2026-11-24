@@ -77,8 +77,8 @@ applyTo: "adk_review/**"
   refused, exit 2.
 - `main` wraps the command: an error nothing else names is a sentence and exit 3, never Python's own exit 1, which
   would read as a blocker.
-- `--dry-run`, `--list-checks`, `--try` and `--explain` (`MODES` in `review.py`) each stop before a review would
-  start: they exclude one another, and each refuses a review's own flags (`REVIEW_ONLY`: `--json`, `--handoff`,
+- `--dry-run`, `--list-checks`, `--try` and `--explain` (`MODES` in `review.py`) each stop before a review would start:
+  they exclude one another, and each refuses a review's own flags (`REVIEW_ONLY`: `--json`, `--junit`, `--handoff`,
   `--comment`, `--cache`, `--previous`, `--record`, `--trace`, `--debug-log`) with exit 2. A new flag only a review
   reads joins `REVIEW_ONLY`. `--try` reads the files it is given, and also refuses each flag that names what a review
   reads (`OF_A_CHANGE`: `--path`, `--path-exclude`, `--base`, `--head`, `--all`, `--staged`), which a dry run reads.

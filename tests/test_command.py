@@ -2793,6 +2793,167 @@ class TestTheJsonReport:
         assert stopped.value.code == 0 and capsys.readouterr().out == f"adk-review {cli.version()}\n"
 
 
+class TestTheJUnitReport:
+    """`--junit FILE`: the review as JUnit XML, which a pipeline's test tab reads with no add-on. Read by a code review:
+    in a pipeline and in the hooks, a finding below the `--fail-on` bar showed in a log alone, and a review that
+    passes prints none. Each finding is a failed test there, and the exit code still decides the build."""
+
+    @staticmethod
+    def _data(**changed: object) -> dict:
+        finding = {
+            "fingerprint": "a1b2c3d4e5f60718",
+            "check": "rule.sensitive-logging",
+            "file": "app/auth.py",
+            "line": 3,
+            "severity": "major",
+            "title": "sensitive-logging: `token` is written to the log whole",
+            "evidence": 'logger.info("%s", token)',
+            "suggestion": "Log that the value is set.",
+            "why": "A log is kept and copied.",
+        }
+        data = {
+            "verdict": "APPROVED",
+            "exit_code": 0,
+            "fail_on": "blocker",
+            "checks": ["rule.lint", "rule.sensitive-logging", "rule.types"],
+            "findings": [finding],
+            "could_not_look": {"rule.types": "rule rule.types could not look: pyrefly did not start"},
+            "not_read": {"assets/logo.png": "binary"},
+        }
+        return {**data, **changed}
+
+    def test_each_check_is_a_suite_each_finding_a_failed_test_and_each_hole_an_error(self) -> None:
+        """A check that looked and found nothing passes, so the tab names what ran; a check that could not look, and
+        a file no check read whole, are errors, never passed, since "did not look" never reads as "found nothing".
+        The verdict is a test of its own, failed or in error as the exit code is."""
+        from xml.etree import ElementTree
+
+        from adk_review.deliver.junit import render_junit
+
+        root = ElementTree.fromstring(render_junit(self._data()))
+        suites = {suite.get("name"): suite for suite in root.iter("testsuite")}
+        assert list(suites) == ["adk-review", "rule.lint", "rule.sensitive-logging", "rule.types", "not read"]
+        (verdict,) = suites["adk-review"].iter("testcase")
+        assert verdict.find("failure") is None and verdict.find("error") is None, "approved: the verdict passes"
+        (clean,) = suites["rule.lint"].iter("testcase")
+        assert clean.get("name") == "no finding" and len(clean) == 0
+        (found,) = suites["rule.sensitive-logging"].iter("testcase")
+        assert found.get("classname") == "rule.sensitive-logging"
+        assert found.get("name", "").startswith("app/auth.py:3 sensitive-logging:"), found.get("name")
+        assert found.get("name", "").endswith("[a1b2c3d4e5f60718]"), "its fingerprint, so a test's history is its"
+        failure = found.find("failure")
+        assert failure is not None and (failure.get("message") or "").startswith("major"), failure
+        assert all(part in (failure.text or "") for part in ('logger.info("%s", token)', "Log that", "A log is"))
+        (hole,) = suites["rule.types"].iter("testcase")
+        assert hole.find("error") is not None and "pyrefly" in (hole.find("error").get("message") or "")
+        (unread,) = suites["not read"].iter("testcase")
+        assert unread.get("name") == "assets/logo.png" and unread.find("error") is not None
+        assert (root.get("tests"), root.get("failures"), root.get("errors")) == ("5", "1", "2")
+        for verdict_said, kind in (("REQUEST_CHANGES", "failure"), ("DEGRADED", "error")):
+            again = ElementTree.fromstring(render_junit(self._data(verdict=verdict_said, exit_code=1)))
+            first = next(again.iter("testcase"))
+            assert first.get("name") == "verdict" and first.find(kind) is not None, verdict_said
+
+    def test_a_name_fits_the_test_tab_and_a_character_xml_cannot_hold_is_a_space(self) -> None:
+        """Azure Pipelines takes a test's full name, its check's and its own, to 512 characters, and XML 1.0 holds
+        no control character: a title past the one and holding the other still reads, its fingerprint kept."""
+        from xml.etree import ElementTree
+
+        from adk_review.deliver.junit import NAME_MAX_CHARS, render_junit
+
+        data = self._data()
+        data["findings"][0]["title"] = "x\x1b[31m" + "y" * 900
+        root = ElementTree.fromstring(render_junit(data))
+        found = next(case for case in root.iter("testcase") if case.get("classname") == "rule.sensitive-logging")
+        name = found.get("name", "")
+        assert len(f"{found.get('classname')}.{name}") <= NAME_MAX_CHARS and name.endswith("[a1b2c3d4e5f60718]")
+        assert "\x1b" not in name and "x [31m" in name
+
+    def test_a_finding_set_aside_at_the_bar_is_an_error_and_the_verdict_says_why(self) -> None:
+        """Read by review, and reproduced: a finding at the bar whose quote the diff does not bear out, or that a
+        verifier refuted, holds the verdict back, exit 3, and its check read as a passed "no finding" with no reason.
+        It is an error in its check's suite, and the verdict names what held it back. One below the bar holds nothing
+        back, and a kept finding a verifier disputed or could not judge says so."""
+        from xml.etree import ElementTree
+
+        from adk_review.deliver.junit import render_junit
+
+        base = self._data()["findings"][0]
+        set_aside = {**base, "fingerprint": "0000000000000001", "severity": "blocker"}
+        below = {**base, "fingerprint": "0000000000000002", "severity": "minor"}
+        refuted = {**base, "fingerprint": "0000000000000003", "severity": "blocker", "reason": "the call masks it"}
+        kept = {**base, "check": "rule.lint", "fingerprint": "0000000000000004"}
+        data = self._data(
+            verdict="DEGRADED",
+            exit_code=3,
+            findings=[kept],
+            dropped=[set_aside, below],
+            refuted=[refuted],
+            unverified=[{**kept, "reason": "no verifier answered"}],
+            could_not_look={},
+            not_read={},
+        )
+        root = ElementTree.fromstring(render_junit(data))
+        suites = {suite.get("name"): suite for suite in root.iter("testsuite")}
+        cases = list(suites["rule.sensitive-logging"].iter("testcase"))
+        assert [case.get("name", "")[-18:] for case in cases] == ["[0000000000000001]", "[0000000000000003]"]
+        assert all(case.find("error") is not None for case in cases), "set aside at the bar: never passed"
+        assert "the call masks it" in (cases[1].find("error").get("message") or "")
+        said = next(root.iter("testcase")).find("error").get("message") or ""
+        assert "2 findings at the bar set aside" in said, said
+        lint = next(suites["rule.lint"].iter("testcase")).find("failure")
+        assert "unverified: no verifier answered" in (lint.text or ""), lint.text
+
+    def test_a_name_never_passes_the_limit_a_path_or_a_wide_character_included(self) -> None:
+        """Read by review, and reproduced: a file not read whole was named uncut, 614 characters, and the limit counts
+        what .NET counts, UTF-16 units, where a character past the basic plane is two."""
+        from xml.etree import ElementTree
+
+        from adk_review.deliver.junit import NAME_MAX_CHARS, render_junit
+
+        data = self._data(not_read={"d/" * 300 + "f.bin": "binary"})
+        data["findings"][0]["title"] = "\U0001f511" * 600
+        root = ElementTree.fromstring(render_junit(data))
+        for case in root.iter("testcase"):
+            full = f"{case.get('classname')}.{case.get('name')}"
+            assert len(full.encode("utf-16-le")) // 2 <= NAME_MAX_CHARS, len(full)
+
+    def test_where_a_file_is_written_never_keys_a_kept_review(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ) -> None:
+        """Read by review, and reproduced: `--junit`'s path keyed the cache, so a pipeline whose file went to a new
+        temp folder each run was never served a kept review, and paid its model calls again. No file a run writes
+        keys one."""
+        assert {dest for _flag, dest in cli._OUTPUTS} <= cli.OUTPUTS
+        cache = tmp_path / "cache"
+        for name in ("a.xml", "b.xml"):
+            junit = str(tmp_path / name)
+            run_review(cli, demo_repo, "--profile", "rules-only", "--cache", str(cache), "--junit", junit)
+        assert "served from the cache" in capsys.readouterr().err
+        assert (tmp_path / "b.xml").read_text(encoding="utf-8").startswith("<?xml")
+
+    def test_junit_is_written_from_the_same_review_as_the_json_and_never_to_the_same_file(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ) -> None:
+        """Written for every decided review, as the JSON is, from the same review: one failed test a kept finding,
+        by its fingerprint, and the exit code unchanged. Two flags naming one file are refused before the review."""
+        from xml.etree import ElementTree
+
+        data, junit = tmp_path / "review.json", tmp_path / "review.xml"
+        code = run_review(cli, demo_repo, "--profile", "rules-only", "--json", str(data), "--junit", str(junit))
+        report = json.loads(data.read_text(encoding="utf-8"))
+        assert code == report["exit_code"]
+        root = ElementTree.fromstring(junit.read_text(encoding="utf-8"))
+        failed = {
+            (case.get("name") or "").rsplit("[", 1)[-1].rstrip("]")
+            for case in root.iter("testcase")
+            if case.get("classname") != "adk-review" and case.find("failure") is not None
+        }
+        assert report["findings"] and failed == {finding["fingerprint"] for finding in report["findings"]}
+        assert f"wrote the JUnit report to {junit.resolve()}" in capsys.readouterr().err
+        assert run_review(cli, demo_repo, "--json", str(data), "--junit", str(data)) == 2, "one file, two flags"
+
+
 class TestWhatTheCommandTells:
     """Asked by the owner: a person at a terminal sees the review move, never a silence that reads as a hang. A
     pipeline's log stays empty unless the review finds an issue or fails."""

@@ -36,7 +36,7 @@ uv run pyrefly check                                  # types: the package and s
 
 uv run python scripts/make_demo_repo.py          # build <tmp>/adk-demo-repo: main + feature/payments with 4 planted defects + feature/orders with a defect for each check
 uv run python scripts/make_demo_repo.py --fix    # commit the two fixes on feature/payments
-uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--path-exclude DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--handoff [FILE]] [--comment [FILE]] [--cache DIR] [--previous FILE] [--progress | --quiet] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
+uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--path-exclude DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--junit FILE] [--handoff [FILE]] [--comment [FILE]] [--cache DIR] [--previous FILE] [--progress | --quiet] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
 uv run adk-review <demo repo> --head feature/payments --base main --profile demo   # every rule, the demo's own among them, no model call, no key
 uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # what a review would cover and run, nothing run
 uv run adk-review <demo repo> --head feature/orders --base main --profile rules-only   # each rule finds its own planted defect, exit 1; no model call
@@ -69,11 +69,11 @@ where a guideline runs, one it was not shown whole — one that holds a private 
 link to a file it was not shown whole, cut at the diff cap or past the guidelines' block cap — unless the skip list
 names it, named under "not read", a finding at the `--fail-on` bar whose quote the diff does not bear out or that a
 verifier refuted, a guideline's call the token ceiling refused (a verifier's leaves its finding unverified), a `--json`,
-`--handoff` or `--comment` file that cannot be written, any error nothing else names (`main` wraps the command: a
-sentence, never Python's own exit 1, which would read as a blocker), a reader that closes the pipe early, and a reviewer
-that cannot load (a broken install). Ctrl-C is one sentence and 130, the shell's own code for it, and a job's SIGTERM
-143, which stops the git, ruff and pyrefly the review runs too (`stop_programs`): a thread that waits on one is reached
-by no signal.
+`--junit`, `--handoff` or `--comment` file that cannot be written, any error nothing else names (`main` wraps the
+command: a sentence, never Python's own exit 1, which would read as a blocker), a reader that closes the pipe early, and
+a reviewer that cannot load (a broken install). Ctrl-C is one sentence and 130, the shell's own code for it, and a job's
+SIGTERM 143, which stops the git, ruff and pyrefly the review runs too (`stop_programs`): a thread that waits on one is
+reached by no signal.
 
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so. A
@@ -186,7 +186,9 @@ guideline follows, and code decides the verdict. Around them: retries, a token c
 rule's and a guideline's, shown each of its files' parts of the block once or the whole block, and the
 calls into what the change touched; a refuted finding dropped and named, a security rule's kept as `Outcome.disputed`,
 an unsure or unjudged one kept as `Outcome.unverified`), a JSON report a pipeline reads (`--json FILE`, schema 2,
-written for every decided review, under the text report's safety rules), a comment for the branch's author
+written for every decided review, under the text report's safety rules), the same review as JUnit XML for a
+pipeline's test tab (`--junit FILE`, `deliver/junit.py`, each kept finding a failed test, the exit code still
+the gate), a comment for the branch's author
 (`--comment [FILE]`, by default `comment-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md` where the command
 runs), which the person pastes into the pull request by hand: the reviewer posts nothing and prints no command that
 would, a hand-off for a coding agent (`--handoff [FILE]`, by default

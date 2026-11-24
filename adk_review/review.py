@@ -118,6 +118,7 @@ try:
         from_rules,
         not_read,
     )
+    from .deliver.junit import render_junit
     from .deliver.report import (
         Previous,
         as_data,
@@ -186,7 +187,7 @@ COMMENT_NAME_CHARS = 40
 #: seconds apart, named by the minute, left one comment, the second over the first.
 NAME_TIME = "%Y%m%d-%H%M%S"
 #: Where a review's results go, which no result depends on: left out of what keys a kept review.
-OUTPUTS = {"json", "handoff", "comment", "cache", "record", "trace", "debug_log", "progress", "quiet"}
+OUTPUTS = {"json", "junit", "handoff", "comment", "cache", "record", "trace", "debug_log", "progress", "quiet"}
 #: How often a person at a terminal is told the review still works, in seconds. A model's call can take a minute, and
 #: silence reads as a hang.
 HEARTBEAT_SECONDS = 10
@@ -197,6 +198,7 @@ MODES = {"dry_run": "--dry-run", "list_checks": "--list-checks", "try_paths": "-
 #: What only a review reads, by dest: what it writes, keeps, records and compares against.
 REVIEW_ONLY = {
     "json": "--json",
+    "junit": "--junit",
     "handoff": "--handoff",
     "comment": "--comment",
     "cache": "--cache",
@@ -409,6 +411,12 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         metavar="FILE",
         help="also write the review to FILE as JSON, for a pipeline. It holds the verdict, its exit code and every "
         "finding with its place. The review writes it whenever it decides, so never on exit 2",
+    )
+    parser.add_argument(
+        "--junit",
+        metavar="FILE",
+        help="also write the review to FILE as JUnit XML, for a pipeline's test tab. Each finding is a failed test, "
+        "and each check a suite. The exit code still decides the build",
     )
     parser.add_argument(
         "--handoff",
@@ -656,6 +664,7 @@ def _terminated(_signal: int, _frame: object) -> None:
 #: Each flag naming a file the run writes, and its name in `args`: the reports, and the engine's own log and trace.
 _OUTPUTS = (
     ("--json", "json"),
+    ("--junit", "junit"),
     ("--handoff", "handoff"),
     ("--comment", "comment"),
     ("--debug-log", "debug_log"),
@@ -1172,7 +1181,7 @@ def _reported(
             previous=seen,
             health=health,
         )
-        if args.json or keep
+        if args.json or args.junit or keep
         else {}
     )
     if keep:
@@ -1195,6 +1204,7 @@ def _delivered(args: argparse.Namespace, report: str, handoff: str, comment: str
     for flag, written, text in (
         ("hand-off", args.handoff, lambda: handoff),
         ("JSON report", args.json, lambda: json.dumps(data, indent=2, ensure_ascii=False) + "\n"),
+        ("JUnit report", args.junit, lambda: render_junit(data)),
         ("code review comments", args.comment, lambda: comment),
     ):
         if not written:  # measured by review: the JSON was dumped whole for a kept review that wrote none
