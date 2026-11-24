@@ -54,7 +54,7 @@ KEY_UNREAD = (
 #: Why a file whose change removes a private key is shown to no model, and what to do: the head holds the key no more.
 KEY_REMOVED = (
     "removes a private key, so no model is shown a line of its change. "
-    "Rotate the key: the git history still holds it. Add the file to --skip to end this note"
+    "Rotate the key if it was a real one: the git history still holds it. Add the file to --skip to end this note"
 )
 _POINTER_KEYS = ("version", "oid", "size")
 _POINTER_EXTENSION = re.compile(r"ext-[0-9]-\w", re.ASCII)

@@ -4274,6 +4274,9 @@ class TestHowTheScreenSaysWhatAReviewDecided:
             await _show_findings(app, pilot, broken)
             unread = str(app.query_one("#finding-detail", Static).render())
         assert "has no findings" not in unreviewed and "has no findings" not in unread, (unreviewed, unread)
+        # Read by the final code review: a report the screen could not read was given the verdict of one read whose
+        # verdict it does not know, and the tab said the review kept no finding.
+        assert "kept no finding" not in unread, unread
 
     @pytest.mark.asyncio
     async def test_a_review_that_ended_with_no_report_says_why_in_the_report_and_the_banner(
@@ -5068,3 +5071,40 @@ class TestWhatTheFourthCodeReviewFound:
             copied, rows, progress = app.last_report_md, app.findings_rows, app._progress
         assert "THE REPORT" in copied and [row.title for row in rows] == ["x"], copied
         assert [line for line in progress if "no space left" in line], progress
+
+
+class TestWhatTheFinalCodeReviewFound:
+    """Read by the fifth and final code review of the audit's branch, each reproduced by a test that failed first."""
+
+    @pytest.mark.asyncio
+    async def test_a_file_a_review_wrote_that_cannot_be_read_is_one_it_wrote_none_of(self, tmp_path: Path) -> None:
+        """Reading the comment or the hand-off had no `except`, so a file a virus scan held ended the run as "could
+        not run", over the review that had run. Such a file reads as none written, and the progress tab says so."""
+        pytest.importorskip("textual")
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            held = tmp_path / "comment.md"
+            held.write_bytes(b"\xff\xfe not UTF-8")  # a read that fails, as one a virus scan holds does
+            read = await app._written(held)
+            progress = app._progress
+        assert read is None and [line for line in progress if "could not be read" in line], (read, progress)
+
+    @pytest.mark.asyncio
+    async def test_the_command_palette_opens_behind_no_dialog(self, tmp_path: Path) -> None:
+        """Textual's Ctrl+P opened its palette over the dialog for a branch behind its remote, and its Run Review
+        started a review behind the dialog, where the guides say only Ctrl+X and Ctrl+Q act."""
+        pytest.importorskip("textual")
+        from tui.git_sync import SyncStatus
+        from tui.modals import SyncBranchModal
+
+        app = _payments_screen(tmp_path)
+        behind = SyncStatus("behind", "feature/orders", "origin/feature/orders", behind=2)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.push_screen(SyncBranchModal("head", behind))
+            await pilot.pause()
+            await pilot.press("ctrl+p")
+            await pilot.pause()
+            on_top = type(app.screen).__name__
+        assert on_top == "SyncBranchModal", on_top

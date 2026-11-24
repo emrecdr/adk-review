@@ -113,10 +113,12 @@ def _commit(raw: dict) -> str | None:
     return head if isinstance(head, str) and OBJECT_ID.fullmatch(head) else None
 
 
-def _verdict(raw: dict) -> str | None:
-    """The verdict a report says the review reached, or None where it names none the reviewer gives."""
+def _verdict(raw: dict) -> str:
+    """The verdict a report says the review reached, or "" where it names none the screen knows: a report read, apart
+    from one no read could give, whose verdict is None. Read by the final code review: the screen took the two for
+    one, and a report it could not read said the review kept no finding."""
     verdict = raw.get("verdict")
-    return verdict if verdict in VERDICTS else None
+    return verdict if verdict in VERDICTS else ""
 
 
 def load_report(json_path: Path) -> tuple[list[FindingRow], str | None, str | None]:

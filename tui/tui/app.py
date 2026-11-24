@@ -223,6 +223,7 @@ class AdkReviewTuiApp(App[int]):
         "minimize_all",
         "restore_all",
         "copy_active_tab",
+        "command_palette",  # read by the final code review: its Run Review started a review behind the dialog
     }
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:  # noqa: ARG002 -- Textual's
@@ -1625,7 +1626,9 @@ class AdkReviewTuiApp(App[int]):
             try:
                 await asyncio.to_thread(promote_baseline, outputs, code)
             except OSError as exc:  # read by the fifth simplify pass: a full disk hid the review that had run
-                self._log_progress(f"The report is not kept for the next review to compare with: {exc}")
+                said = f"The report is not kept for the next review to compare with: {exc}"
+                self._log_progress(said)
+                self.notify(said, severity="warning", timeout=6, markup=False)
         decided = await self._load_generated_files(outputs, target)
         if self._target() != target:
             # Read by review: a review that ended after the person chose another target filled that target's tabs. Read
@@ -1742,17 +1745,20 @@ class AdkReviewTuiApp(App[int]):
         # Read by review: a target picked meanwhile was shown it; and the screen may have closed during the reads.
         if (target is not None and self._target() != target) or not self._has_dom("#output-tabs"):
             return None
-        decided = verdict or ""  # read by a code review: a verdict this screen does not know is still a report read
-        self._hold(rows, reviewed, decided, target)
+        self._hold(rows, reviewed, verdict, target)
         self.last_comment_md, self.last_handoff_md = self._shown(comment, "comment"), self._shown(handoff, "handoff")
-        return decided
+        return verdict  # "": a report read whose verdict this screen does not know; None: none read
 
-    @staticmethod
-    async def _written(path: Path | None) -> str | None:
-        """The text a review wrote at `path`, or None where it wrote none."""
+    async def _written(self, path: Path | None) -> str | None:
+        """The text a review wrote at `path`, or None where it wrote none, or none that can be read: read by the final
+        code review, a file a virus scan held ended the run as "could not run", over the review that had run."""
         if path is None or not await asyncio.to_thread(path.is_file):
             return None
-        return await asyncio.to_thread(path.read_text, encoding="utf-8")
+        try:
+            return await asyncio.to_thread(path.read_text, encoding="utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            self._log_progress(f"{path.name} could not be read: {exc}")
+            return None
 
     def _shown(self, text: str | None, flag: str) -> str:
         """`text` drawn on the tab `flag` names, or the tab saying the review wrote none; the text, or "". Never
@@ -1803,7 +1809,7 @@ class AdkReviewTuiApp(App[int]):
         the screen could not read."""
         if self._verdict == "APPROVED":  # read by the third code review: a saved one read as the last review
             return SAVED_NONE if self._prior else "This review has no findings."
-        if self._verdict == "":  # read by the fourth code review: it asked for a review right after one
+        if self._verdict == "" and not self._prior:  # read by the fourth code review: it asked for a review
             return "This review kept no finding. Its Report tab names its verdict, which this screen does not know."
         if self._verdict == "DEGRADED":
             return (

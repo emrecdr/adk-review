@@ -1147,5 +1147,5 @@ class TestAReportReadOnce:
         monkeypatch.setattr(Path, "read_text", lambda path, **how: reads.append(path) or read(path, **how))
         rows, reviewed, verdict = findings.load_report(report)
         assert reads == [report]
-        assert (rows[0].fingerprint, reviewed, verdict) == ("ab" * 8, "a" * 40, None), "a report naming no verdict"
+        assert (rows[0].fingerprint, reviewed, verdict) == ("ab" * 8, "a" * 40, ""), "read, and naming no verdict"
         assert findings.load_report(tmp_path / "missing.json") == ([], None, None)

@@ -4005,15 +4005,16 @@ class TestWhatTheReportPrints:
         # on tested code alone, and had it applied where no test reached; and a defect worked around passes a test of
         # the code that works around it, where one of the code it starts in fails.
         assert "Prove wasted work with a test that counts calls, queries or objects kept alive." in paragraph
-        assert "Where no count can show it, make the change: the project's tests must still pass." in paragraph
+        assert "Where a count shows no waste, make no change for that finding." in paragraph
+        assert "Where no count can be written, make the change: the project's tests must still pass." in paragraph
         assert "Prove a defect worked around elsewhere with a test of the code where it starts." in paragraph
         # Read by a code review: each item's own line asked for a test that fails on the code as it stands, which a
         # `tests` finding's test never does, while the paragraph said that test can pass.
         assert "fails on the code as it stands" not in FIRST and "fails on the code as it stands" in paragraph
         # Read by the third code review: "cannot fail, make no change" came before the cases it does not cover, so an
         # agent that took the first rule that matched left an efficiency and a tests finding alone.
-        cases = ("that test is the fix", "Where no count can show it", "where it starts", "Where no test can reach")
-        assert paragraph.index("make no change") > max(paragraph.index(case) for case in cases), paragraph
+        cases = ("that test is the fix", "Where no count can be written", "where it starts", "Where no test can reach")
+        assert paragraph.index("write its test first") > max(paragraph.index(case) for case in cases), paragraph
 
     def test_a_comment_and_a_hand_off_say_what_a_quoted_deleted_line_is_where_a_quote_holds_one(self) -> None:
         """Read by review on a branch that removed a field: a quote keeps the `-` of a line the change deleted, and
