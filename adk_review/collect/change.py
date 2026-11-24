@@ -284,7 +284,8 @@ def shown_to_guidelines(
             file.update(unread=note, cut=True)
             # Read by the third code review: one the change removed a key from, or deleted, was named to the
             # guidelines as a file that holds one, which a security guideline could report as a key committed.
-            keyed, removed = keyed + (note == KEY_UNREAD), removed + (note != KEY_UNREAD)
+            keyed += note == KEY_UNREAD  # no branch: this function is at the complexity bar
+            removed += note != KEY_UNREAD
             continue
         view, cut = capped(diff, diff_cap)
         shown_any.append((file, diff, cut, len(framed(file["path"], view)[0])))

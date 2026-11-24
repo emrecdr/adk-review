@@ -52,21 +52,27 @@ def _row_from_item(item: dict, tier: str) -> FindingRow:
     raw_line = item.get("line")
     line = raw_line if isinstance(raw_line, int) and not isinstance(raw_line, bool) else None
     return FindingRow(
-        severity=str(item.get("severity") or "minor"),
+        severity=_text(item.get("severity"), "minor"),
         tier=tier,
-        check=str(item.get("check") or ""),
-        file=str(item.get("file") or ""),
+        check=_text(item.get("check")),
+        file=_text(item.get("file")),
         line=line,
-        title=str(item.get("title") or ""),
-        evidence=str(item.get("evidence") or ""),
-        suggestion=str(item.get("suggestion") or ""),
+        title=_text(item.get("title")),
+        evidence=_text(item.get("evidence")),
+        suggestion=_text(item.get("suggestion")),
         already_held=bool(item.get("already_held", False)),
-        why=str(item.get("why") or ""),
-        code=str(item.get("code") or ""),
-        fingerprint=fingerprint if isinstance(fingerprint := item.get("fingerprint"), str) else "",
+        why=_text(item.get("why")),
+        code=_text(item.get("code")),
+        fingerprint=_text(item.get("fingerprint")),
         lines=_range(item.get("lines")),
         suggestable=item.get("suggestable") is True,
     )
+
+
+def _text(raw: object, default: str = "") -> str:
+    """A report's field where it is text, else `default`. Read by a code review: `str()` of a value nested 100,000
+    lists deep, which json reads, raised `RecursionError` and closed the screen; and a list showed as a title."""
+    return raw if isinstance(raw, str) and raw else default
 
 
 def _range(raw: object) -> tuple[int, int] | None:
@@ -119,10 +125,7 @@ def load_report(json_path: Path) -> tuple[list[FindingRow], str | None, str | No
     review's. Read by an audit: the findings alone left a review that could not check everything reading as one that
     found nothing."""
     raw = _read(json_path)
-    try:
-        return ([], None, None) if raw is None else (_rows(raw), _commit(raw), _verdict(raw))
-    except RecursionError:  # read by a code review: a value nested 100,000 deep, read whole, raised in `str()`
-        return [], None, None
+    return ([], None, None) if raw is None else (_rows(raw), _commit(raw), _verdict(raw))
 
 
 def _rows(raw: dict) -> list[FindingRow]:

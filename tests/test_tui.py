@@ -4555,13 +4555,26 @@ class TestWhatAReviewLeavesOnTheScreen:
         # them, which can name a remote with its token, reached the banner and the progress tab as written.
         assert not [text for text in (banner, copied) if "[2J" in text or "ghp_" in text], (banner, copied)
 
-    def test_a_report_nested_past_pythons_depth_reads_as_no_report(self, tmp_path: Path) -> None:
-        """A report nested past Python's depth raised `RecursionError`, which nothing caught, and the screen closed."""
+    @pytest.mark.parametrize(
+        ("nested", "titles"),
+        [
+            ("[" * 200_000 + "]" * 200_000, []),  # json's own read refuses it: 100,000 reads
+            # A list is no title, however deep: 2,000 is read by json on every stack, where 100,000 a small one refuses.
+            ('{"schema": 2, "findings": [{"check": "rule.lint", "title": ' + "[" * 2_000 + "]" * 2_000 + "}]}", [""]),
+        ],
+        ids=["the whole report", "a title"],
+    )
+    def test_a_report_nested_past_pythons_depth_closes_no_screen(
+        self, tmp_path: Path, nested: str, titles: list[str]
+    ) -> None:
+        """A report nested past Python's depth raised `RecursionError`, which nothing caught, and the screen closed:
+        read by an audit, in json's own read of the whole; read by a code review, in `str()` of a title json had read,
+        100,000 lists deep. The first reads as no report; a title that is no text reads as none."""
         from tui.findings import load_report
 
         deep = tmp_path / "deep.json"
-        deep.write_text("[" * 200_000 + "]" * 200_000, encoding="utf-8")  # 100,000 reads
-        assert load_report(deep) == ([], None, None)
+        deep.write_text(nested, encoding="utf-8")
+        assert [row.title for row in load_report(deep)[0]] == titles
 
 
 class TestTheKeysAndTheRoomTheScreenGives:
@@ -4931,17 +4944,6 @@ class TestWhatTheThirdSimplifyPassFound:
 
 class TestWhatTheThirdCodeReviewFound:
     """Read by the third code review of the audit's branch, each reproduced by a test that failed first."""
-
-    def test_a_report_holding_a_value_nested_past_pythons_depth_reads_as_no_report(self, tmp_path: Path) -> None:
-        """`json.loads` reads a value 100,000 lists deep, and `str()` of it raised `RecursionError` outside the read's
-        own `except`, which closed the screen."""
-        from tui.findings import load_report
-
-        deep = tmp_path / "deep.json"
-        title = "[" * 100_000 + "]" * 100_000
-        found = '{"check": "rule.lint", "file": "a.py", "line": 1, "severity": "major", "title": ' + title + "}"
-        deep.write_text('{"schema": 2, "findings": [' + found + "]}", encoding="utf-8")
-        assert load_report(deep) == ([], None, None)
 
     @pytest.mark.asyncio
     async def test_a_saved_review_with_no_findings_is_never_read_as_the_last_one(self, tmp_path: Path) -> None:

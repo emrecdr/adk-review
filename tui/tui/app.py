@@ -174,6 +174,8 @@ WRITTEN = {"comment": "3. Author Comment", "handoff": "4. Agent Handoff"}
 _NONE_WRITTEN = "*No `--{flag}` generated yet.*"
 #: What the Findings tab says where it holds no review's verdict: no review run yet, or a report it could not read.
 RUN_FIRST = "Run a review to see its findings."
+#: What the Findings tab says of a saved review of the target that kept no finding: an older review, never the last.
+SAVED_NONE = "The saved review of this target has no findings. Press Ctrl+R to review it as it stands."
 
 
 class AdkReviewTuiApp(App[int]):
@@ -867,11 +869,13 @@ class AdkReviewTuiApp(App[int]):
         """The Findings tab's name: how many findings it holds, `prior` where a saved review's, and, where the review
         could not check everything, DEGRADED in words. Read by an audit: the banner alone said so, and the next copy or
         link replaced it."""
-        count, prior = len(self.findings_rows), self._prior
-        # Read by the third code review: a saved review with no finding showed no mark, and read as the last one. No
-        # saved review at all is no verdict read.
-        said = [f"{count} prior" if prior else str(count)] if count else ["prior"] if prior and self._verdict else []
-        said += ["DEGRADED"] if self._verdict == "DEGRADED" else []
+        said, count = [], len(self.findings_rows)
+        if count:
+            said.append(f"{count} prior" if self._prior else str(count))
+        elif self._prior and self._verdict:  # read by the third code review: a saved review with none read as the last
+            said.append("prior")
+        if self._verdict == "DEGRADED":
+            said.append("DEGRADED")
         return f"2. Findings Explorer ({', '.join(said)})" if said else "2. Findings Explorer"
 
     def current_selection(self, *, dry_run: bool = False) -> ReviewSelection:
@@ -1786,10 +1790,8 @@ class AdkReviewTuiApp(App[int]):
         by an audit, and reproduced, a review that could not check everything said "This review has no findings.", the
         words of one that looked and found none; read by review, so did a target no review had read yet, and a report
         the screen could not read."""
-        if self._verdict == "APPROVED" and self._prior:  # read by the third code review: an older one read as the last
-            return "The saved review of this target has no findings. Press Ctrl+R to review it as it stands."
-        if self._verdict == "APPROVED":
-            return "This review has no findings."
+        if self._verdict == "APPROVED":  # read by the third code review: a saved one read as the last review
+            return SAVED_NONE if self._prior else "This review has no findings."
         if self._verdict == "DEGRADED":
             return (
                 "This review kept no finding, but it could not check everything. "
