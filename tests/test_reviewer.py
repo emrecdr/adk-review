@@ -416,6 +416,10 @@ class TestWhatTheSecretsGateKnows:
             "tls_key: |\n  " + base64.b64encode(f"{head}\nMIIEowIBAAKCAQEA".encode()).decode()[:76] + "\n",  # wrapped
             f'KEY = (\n    "{head}\\n"\n    "MIIEowIBAAKCAQEA\\n"\n',  # joined strings, read by review
             f"    b'MIIEowIBAAKCAQEA\\n'\n    b'{foot}\\n',\n)\n",  # their last line, a byte string in a list
+            # Read by an audit, and reproduced: each line of these keys was sent, a line break written as Windows
+            # writes one, and a list whose first and last strings stand on the lines of its brackets.
+            f'KEY = (\n    "{head}\\r\\n"\n    "MIIEowIBAAKCAQEA\\r\\n"\n)\n',
+            f'KEY = ["{head}\\n",\n    "MIIEowIBAAKCAQEA\\n",\n    "{foot}\\n"]\n',
         )
         named = (
             f'private_key = "{head}..."',
@@ -428,6 +432,7 @@ class TestWhatTheSecretsGateKnows:
             + base64.b64encode(f"{head}\nMIIE".encode()).decode(),  # one line, hidden whole by the redaction
             f'        "{head}\\n" * (size // 28),',  # this repository's own test of a long line
             f'MARKERS = (\n    "{head}",\n    "{foot}",\n)',  # a parser's markers, no key between them
+            f'HEADER = b"{head}\\r\\n"',  # a parser's marker that names a line break too
         )
         assert [text for text in held if not holds_private_key(text)] == []
         assert [text for text in named if holds_private_key(text)] == []
@@ -1472,6 +1477,37 @@ class TestWhatRanUntested:
         said = [f for f in report["findings"] if "W291" in f["title"]]
         assert said and all(f["evidence"].startswith(KEY_WITHHELD) for f in said), said
         assert [f for f in report["unverified"] if "W291" in f["title"]], report["unverified"]
+
+    def test_a_tree_rules_quote_of_a_file_the_change_left_that_holds_a_key_reaches_no_model(
+        self, cli, asked, tmp_path: Path
+    ) -> None:
+        """Read by an audit, and reproduced: a tree rule quotes a line of a file the change left alone, a call that no
+        longer fits a changed function, and the quote of such a file that holds a private key was shown whole, in the
+        report and to the verifier, where a changed file's was withheld. A key's file is withheld whatever changed."""
+        from adk_review.core.rules import KEY_WITHHELD
+
+        body = [f"FAKEKEYBODY{n:02d}" + "A" * 51 for n in range(8)]
+        lines = ["-----BEGIN RSA " + "PRIVATE KEY-----", *body, "-----END RSA " + "PRIVATE KEY-----"]
+        repo = tmp_path / "r"
+        (repo / "pkg").mkdir(parents=True)
+        _git_in(repo, "init", "-q", "-b", "main")
+        (repo / "pkg" / "helper.py").write_text("def connect(host):\n    return host\n", encoding="utf-8", newline="\n")
+        held = 'from pkg.helper import connect\n\nKEY = """' + "\n".join(lines) + '"""\n\nconnect("db")  # CALLMARK\n'
+        (repo / "pkg" / "deploy.py").write_text(held, encoding="utf-8", newline="\n")
+        _git_in(repo, "add", ".")
+        _git_in(repo, "commit", "-qm", "init")
+        _git_in(repo, "checkout", "-qb", "feature")
+        changed = "def connect(host, port):\n    return host, port\n"
+        (repo / "pkg" / "helper.py").write_text(changed, encoding="utf-8", newline="\n")
+        _git_in(repo, "commit", "-qam", "change")
+        data = tmp_path / "review.json"
+        cli.main([str(repo), "--head", "feature", "--base", "main", "--verify", "--json", str(data)])
+        report = json.loads(data.read_text(encoding="utf-8"))
+        said = [f for f in report["findings"] if f["file"] == "pkg/deploy.py"]
+        assert said and all(f["evidence"].startswith(KEY_WITHHELD) for f in said), said
+        sent = "\n".join(system + "\n" + "\n".join(turns) for system, turns in asked)
+        assert "CALLMARK" not in sent, "no model was shown the line"
+        assert [line for line in body if line[:16] in sent] == [], "no line of the key"
 
     def test_each_withheld_quote_is_its_own_as_a_line_is(self) -> None:
         """Read by review, and reproduced: every withheld quote was one string, so the fold read a finding with no line

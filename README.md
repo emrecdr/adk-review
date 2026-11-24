@@ -983,7 +983,7 @@ by itself; a review whose profile names a guideline does.
   no line, one only renamed, is no hole. Otherwise it is a hole where a guideline runs, and the rules read it as any
   other file, each finding there naming its line with its quote withheld (`KEY_WITHHELD`) and asked of no verifier. A
   call in such a file, into a function the change touched, is counted and never shown, though the change left the file
-  alone.
+  alone, and a tree rule's finding anywhere in the file withholds its quote too.
 - **The rules run as one node.** Every rule runs the same way, through `run_rule`, in one `FunctionNode`, ADK 2.x's node
   for a deterministic step, before the guidelines: in the command's graph over the evidence it gathered, and in chat's,
   which gathers the same evidence for the commits its intake confirmed. Each rule's answer is left in state under its

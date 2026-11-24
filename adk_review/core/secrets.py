@@ -343,7 +343,8 @@ _PATTERNS_REST = (*_VENDOR_REST, *_GENERIC)
 #: opens or closes holds it, a diff's mark before it or not, a PuTTY key file's header, or a key in base64 opening a
 #: line, as `base64` wraps one at 76 characters: measured, the redaction hid its first line of eleven. And a Python
 #: string that holds a header or a footer and its line break alone, a line of its own, as a key joined from strings
-#: is written: read by review, every line of one was sent, since the redaction reads no quoted line as a key's. Code
+#: is written: read by review, every line of one was sent, since the redaction reads no quoted line as a key's. Read by
+#: an audit, and reproduced: so was one whose line break is Windows' `\r\n`, or whose list closes on its footer. Code
 #: that names one in quotes, or a comment with words after it, holds none: measured over 31,089 text files, none
 #: matched, where 30-odd do. A comment line that ends in one, or one on a line of its own in a docstring, matches: its
 #: file is shown to no model, which fails safe. Read by an audit, 0 of 10,523 installed text files held either.
@@ -351,8 +352,8 @@ _HOLDS_KEY = re.compile(
     r"^[+\- ]?[ \t]*(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r"|PuTTY-User-Key-File-[23]:|" + _KEY_BASE64 + ")"
     r"|(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r")[ \t]*\r?$"
     # Its tail one class: read by review, two runs of blanks side by side took 1.9 s for 16,000 spaces, quadratic.
-    r"|^[+\- ]?[ \t]*[bBrRuUfF]{0,2}(?P<quote>[\"'])(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r")\\n(?P=quote)"
-    r"[ \t,+)]*\r?$",
+    r"|^[+\- ]?[ \t]*[bBrRuUfF]{0,2}(?P<quote>[\"'])(?:" + _KEY_HEADER + "|" + _KEY_FOOTER + r")(?:\\r)?\\n(?P=quote)"
+    r"[ \t,+)\]]*\r?$",
     re.MULTILINE,
 )
 

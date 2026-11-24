@@ -460,7 +460,7 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
             hits = rule.hits(files, tree)
         except UnreadError as exc:
             hits, could_not_look = exc.found, f"rule {rule.id} could not look: {exc}"
-        keyed = _keyed(files, {hit.path for hit in hits})
+        keyed = _keyed(files, tree, {hit.path for hit in hits})
         made = [
             Finding(
                 file=hit.path,
@@ -499,10 +499,15 @@ def _withheld(text: str) -> str:
     return f"{KEY_WITHHELD}, digest {hashlib.sha256(text.encode('utf-8', 'surrogatepass')).hexdigest()[:12]})"
 
 
-def _keyed(files: list[Entry], paths: set[str]) -> set[str]:
-    """Which of `paths`, each a changed file a rule named, holds a private key, as its text or its diff shows one."""
+def _keyed(files: list[Entry], tree: Tree | None, paths: set[str]) -> set[str]:
+    """Which of `paths`, each a file a rule named, holds a private key: a changed file as its text or its diff shows
+    one, and a file the change left alone as the head's text, which a tree rule quotes. Read by an audit, and
+    reproduced: a call into a changed function, in such a file, was quoted whole, to the report and the verifier."""
     by_path = {file["path"]: file for file in files if file["path"] in paths}
-    return {
+    left = {
+        path for path in paths - by_path.keys() if tree is not None and holds_private_key(tree.sources.get(path) or "")
+    }
+    return left | {
         path
         for path, file in by_path.items()
         if holds_private_key(file.get("text") or "") or holds_private_key(file.get("diff") or "")
