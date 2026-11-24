@@ -4504,6 +4504,55 @@ class TestWhatAReviewLeavesOnTheScreen:
         assert "stopped" in report and "Ctrl+R" in report, report
 
     @pytest.mark.asyncio
+    async def test_a_review_stopped_or_failed_after_another_target_is_picked_writes_nothing_on_its_report(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by an audit, and reproduced: a review that ended after another pick was shown on none of its tabs, but
+        one stopped or one that could not run wrote its note on the Report tab, for Ctrl+Y to copy as the new target's
+        report and for Ctrl+R, which reviews the new target, to run again. The banner says it, and the tab is left."""
+        pytest.importorskip("textual")
+        import asyncio
+
+        from textual.widgets import Static
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            started = asyncio.Event()
+
+            async def runs(_cmd: list[str]) -> tuple[int, str]:
+                started.set()
+                await asyncio.sleep(30)
+                return 0, ""
+
+            monkeypatch.setattr(app, "_stream_subprocess", runs)
+            await pilot.press("ctrl+r")
+            await _until(pilot, started.is_set, "the run started")
+            app.selected_head = "feature/tax"  # another target, picked while the review runs
+            await pilot.press("ctrl+x")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            stopped = app.last_report_md, str(app.query_one("#status-banner", Static).render())
+
+            async def fails(_cmd: list[str]) -> tuple[int, str]:
+                app.selected_head = "feature/orders"
+                raise OSError("no room left on the disk")
+
+            monkeypatch.setattr(app, "_stream_subprocess", fails)
+            await pilot.press("ctrl+r")
+            await _until(
+                pilot,
+                lambda: not app._reviewing and "no room" in str(app.query_one("#status-banner", Static).render()),
+                "the failure",
+            )
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            failed = app.last_report_md
+        assert stopped[0] == "" and "stopped" in stopped[1], stopped
+        assert failed == "", failed
+
+    @pytest.mark.asyncio
     async def test_a_target_picked_while_a_review_is_read_is_shown_none_of_it(
         self, tmp_path: Path, monkeypatch
     ) -> None:

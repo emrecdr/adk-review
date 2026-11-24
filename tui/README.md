@@ -119,7 +119,8 @@ none. F5, or the same branch picked again, keeps the review this session ran of 
 you choose another target: back on it, the saved one shows, marked `prior`, since a review that could not check
 everything is never saved. A review that writes its report minimizes every panel, so its results take the screen;
 `Ctrl+O` restores them. A dry run, or a review refused, leaves them open, the step to change among them. A review
-you stop says so in the Report tab, and that is what `Ctrl+Y` copies from it.
+you stop says so in the Report tab, and that is what `Ctrl+Y` copies from it. Stopped, or unable to run, after
+you chose another target, it says so on the banner alone: the tab is the new target's.
 
 A finding is drawn as plain text, with its reason, "Why it matters", and its corrected code where there are
 some: a reason at any severity, and the corrected code where a model gave one. A guideline's words are a model's, and

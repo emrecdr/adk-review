@@ -1558,14 +1558,14 @@ class AdkReviewTuiApp(App[int]):
         if self.selected_mode == "branch" and (not self.selected_base or self.selected_head == self.selected_base):
             self._set_banner("Branch Under Review and Target Branch cannot be the same.")
             return
-        label = "dry-run" if dry_run else "review"
+        label, target = "dry-run" if dry_run else "review", self._target()  # the target `_run_review` reads first
         self._set_reviewing(True)
         try:
             await self._run_review(dry_run=dry_run, label=label)
         except asyncio.CancelledError:
             # Read by a code review: a stop while the choices were saved, or once the child had ended, left the review
             # before on the Report tab, for Ctrl+Y to copy as this one's.
-            self._stopped(label, dry_run=dry_run)
+            self._stopped(label, dry_run=dry_run, ours=self._target() == target)
             raise
         except (OSError, ValueError) as exc:
             # Read by review: an error here, a config the screen could not write, ended the whole screen with a
@@ -1573,16 +1573,21 @@ class AdkReviewTuiApp(App[int]):
             said = unhidden(f"The {label} could not run: {exc}")  # the Report tab draws it as written
             self._set_banner(said)
             # Read by the fourth code review: the review before stayed on the Report tab, for Ctrl+Y to copy as this.
-            self._report_says(said)
+            # Read by an audit: after another pick, the tab is that target's, and this run's note is not its report.
+            if self._target() == target:
+                self._report_says(said)
             self.notify(said, severity="error", timeout=8, markup=False)
         finally:
             self._set_reviewing(False)
 
-    def _stopped(self, label: str, *, dry_run: bool) -> None:
-        """What a stopped run leaves: the banner and the Report tab saying so, and that as what Ctrl+Y copies."""
+    def _stopped(self, label: str, *, dry_run: bool, ours: bool) -> None:
+        """What a stopped run leaves: the banner and, where its target is still the one chosen (`ours`), the Report tab
+        saying so, and that as what Ctrl+Y copies. Read by an audit, and reproduced: stopped after another pick, the
+        note became the new target's report, and Ctrl+R, which it names, reviews the new target."""
         self._set_banner(f"{label.capitalize()} stopped by user.")
-        again = "Ctrl+D" if dry_run else "Ctrl+R"
-        self._report_says(f"The {label} was stopped before its report was shown. Press {again} to run it again.")
+        if ours:
+            again = "Ctrl+D" if dry_run else "Ctrl+R"
+            self._report_says(f"The {label} was stopped before its report was shown. Press {again} to run it again.")
 
     def _report_says(self, text: str) -> None:
         """`text` on the Report tab, and as what Ctrl+Y copies from it: one place keeps the two the same. Read by
