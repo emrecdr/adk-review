@@ -404,6 +404,8 @@ class TestWhatTheSecretsGateKnows:
         from adk_review.core.secrets import holds_private_key
 
         head, foot = "-----BEGIN RSA " + "PRIVATE KEY-----", "-----END OPENSSH " + "PRIVATE KEY-----"
+        one_line = base64.b64encode(f"{head}\n{'MIIEowIBAAKCAQEA' * 8}\n{foot}\n".encode()).decode()
+        wrapped = "\n".join(one_line[at : at + 76] for at in range(0, len(one_line), 76))  # as `base64` wraps it
         held = (
             f"{head}\nMIIEowIBAAKCAQEA\n",  # a key file
             f"deploy_key: |\n  {head}\n  MIIEowIBAAKCAQEA\n",  # a YAML block
@@ -420,6 +422,13 @@ class TestWhatTheSecretsGateKnows:
             # writes one, and a list whose first and last strings stand on the lines of its brackets.
             f'KEY = (\n    "{head}\\r\\n"\n    "MIIEowIBAAKCAQEA\\r\\n"\n)\n',
             f'KEY = ["{head}\\n",\n    "MIIEowIBAAKCAQEA\\n",\n    "{foot}\\n"]\n',
+            # Read by the next audit, and reproduced: so was one in a dict, one whose lines carry the comment
+            # detect-secrets marks a test key with, and a key in base64 wrapped over lines after a name, added or not.
+            f'CFG = {{"key": ("{head}\\n"\n    "MIIEowIBAAKCAQEA\\n"\n    "{foot}\\n")}}\n',
+            f'KEY = (\n    "{head}\\n"  # pragma: allowlist secret\n'
+            '    "MIIEowIBAAKCAQEA\\n"  # pragma: allowlist secret\n',
+            f'PRIVATE_KEY_B64="{wrapped}"\n',
+            "-PRIVATE_KEY_B64=" + wrapped.replace("\n", "\n-") + "\n",
         )
         named = (
             f'private_key = "{head}..."',
@@ -433,6 +442,9 @@ class TestWhatTheSecretsGateKnows:
             f'        "{head}\\n" * (size // 28),',  # this repository's own test of a long line
             f'MARKERS = (\n    "{head}",\n    "{foot}",\n)',  # a parser's markers, no key between them
             f'HEADER = b"{head}\\r\\n"',  # a parser's marker that names a line break too
+            f'    "{head}",  # the header a parser looks for\n',
+            f'if line == "{head}\\n":  # a key begins\n',
+            f"tls.key: {one_line}\ntls.crt: {one_line}\n",  # a key in base64 on one line, hidden whole by the redaction
         )
         assert [text for text in held if not holds_private_key(text)] == []
         assert [text for text in named if holds_private_key(text)] == []
