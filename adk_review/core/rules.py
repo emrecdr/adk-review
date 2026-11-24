@@ -460,7 +460,6 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
             hits = rule.hits(files, tree)
         except UnreadError as exc:
             hits, could_not_look = exc.found, f"rule {rule.id} could not look: {exc}"
-        read = EVIDENCE_MAX_CHARS + CREDENTIAL_REACH
         keyed = _keyed(files, {hit.path for hit in hits})
         made = [
             Finding(
@@ -468,12 +467,7 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
                 line=hit.line,
                 severity=hit.severity or rule.severity,
                 title=f"{rule.id}: {hit.title or rule.title}",
-                # The report never prints a secret, a rule's evidence included, and the line is cut once, after a
-                # scrub reading as far as a credential crossing the cut could run: measured by review, a 10 MB line
-                # was scrubbed again by every later reader, 160 s in all, and one 2 MB line whole took 9 s.
-                evidence=_withheld(scrub(hit.text[:read], cut=len(hit.text) > read)[0])
-                if hit.path in keyed
-                else cut_at(scrub(hit.text[:read], cut=len(hit.text) > read)[0], EVIDENCE_MAX_CHARS),
+                evidence=_evidence(hit.text, keyed=hit.path in keyed),
                 suggestion=hit.fix or rule.fix,
                 why=hit.why or rule.why,
             )
@@ -484,6 +478,16 @@ def run_rule(rule: AnyRule, files: list[Entry], tree: Tree | None) -> Checked:
     except (Exception, SystemExit) as exc:  # noqa: BLE001 -- the project's code: a failure, an exit too, is named
         return Checked(could_not_look=f"rule {rule.id} raised {type(exc).__name__}: {exc}{_raised_at(rule, exc)}")
     return Checked(findings=findings, could_not_look=could_not_look, old=old)
+
+
+def _evidence(text: str, *, keyed: bool) -> str:
+    """A rule's quote as the report prints it. The report never prints a secret, a rule's evidence included, and the
+    line is cut once, after a scrub reading as far as a credential crossing the cut could run: measured by review, a
+    10 MB line was scrubbed again by every later reader, 160 s in all, and one 2 MB line whole took 9 s. In a file that
+    holds a key, withheld, a digest of the scrubbed line in its place."""
+    read = EVIDENCE_MAX_CHARS + CREDENTIAL_REACH
+    said = scrub(text[:read], cut=len(text) > read)[0]
+    return _withheld(said) if keyed else cut_at(said, EVIDENCE_MAX_CHARS)
 
 
 def _withheld(text: str) -> str:

@@ -17,7 +17,7 @@ from ..core.paths import in_scope, matches, no_such_path
 from ..core.rules import Tree, UnreadError, is_python_text
 from ..core.secrets import holds_private_key
 from ..core.text import lines_of, squash
-from .diff import BINARY, LINK_MODE, SUBMODULE, added_lines, capped, framed, headers, hunk_lines, quotable
+from .diff import BINARY, LINK_MODE, SUBMODULE, added_lines, capped, framed, headers, hunk_lines, kept_lines, quotable
 
 #: And the block of diffs the guidelines read, in all: a file past it is left out whole, and named. Measured with none,
 #: `--all` over 4,826 files gave each guideline and each verifier 14.9 MB; this repository's whole project, 275,688
@@ -107,8 +107,7 @@ def lfs_pointer(diff: str) -> bool:
     file the change turned into a pointer, its old lines removed first."""
     opening: list[str] = []
     read = 0
-    kept = ((number, line[1:]) for number, line in hunk_lines(diff) if line[:1] != "-")
-    for at, (number, line) in enumerate(kept, 1):
+    for at, (number, line) in enumerate(kept_lines(diff), 1):
         if number != at or read > POINTER_BYTES:
             break
         opening.append(line)
@@ -228,6 +227,17 @@ def _skipped(path: str, skip: Sequence[str]) -> str | None:
     return next((glob for glob in skip if matches(path, glob)), None)
 
 
+def _key_note(status: str, diff: str, *, held: bool) -> str:
+    """Why a file whose text or diff holds a private key is shown to no model: nothing where the change deletes it,
+    `KEY_REMOVED` where only the lines the change removed hold the key, else `KEY_UNREAD`. Read by an audit: a change
+    that removed a key was told to move it out of a file it is gone from."""
+    if status == "D":
+        return ""
+    if held or holds_private_key("\n".join(line for _at, line in kept_lines(diff))):
+        return KEY_UNREAD
+    return KEY_REMOVED
+
+
 def shown_to_guidelines(
     entries: list[dict[str, str]],
     diffs: list[str],
@@ -270,10 +280,7 @@ def shown_to_guidelines(
         # beside a key, or inside one, showed lines of it with neither its header nor its footer, which the redaction
         # reads it between, and every guideline was sent them. The rules read it as any other file.
         if file["path"] in held or holds_private_key(diff):
-            # Read by an audit: a change that removed a key was told to move it out of the file, which holds it no more.
-            kept = "\n".join(line for _at, line in hunk_lines(diff) if not line.startswith("-"))
-            gone = file["path"] not in held and not holds_private_key(kept)
-            file.update(unread="" if file["status"] == "D" else KEY_REMOVED if gone else KEY_UNREAD, cut=True)
+            file.update(unread=_key_note(file["status"], diff, held=file["path"] in held), cut=True)
             keyed += 1
             continue
         view, cut = capped(diff, diff_cap)

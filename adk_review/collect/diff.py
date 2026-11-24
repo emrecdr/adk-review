@@ -166,6 +166,12 @@ def written_binary(part: str) -> str | None:
     return _unquoted(named)
 
 
+def kept_lines(diff: str) -> Iterator[tuple[int, str]]:
+    """`(new line number, text)` for every line of the new file the diff shows, added or kept around a change: the
+    head's own lines, never a removed one."""
+    return ((number, raw[1:]) for number, raw in hunk_lines(diff) if raw[:1] != "-")
+
+
 def added_lines(diff: str) -> list[tuple[int, str]]:
     """`(new line number, text)` for every line the change added: a rule that needs "what was added, and where"
     takes this list, never the diff."""

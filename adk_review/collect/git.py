@@ -57,6 +57,7 @@ from .diff import (
     WIDEN_CAP_CHARS,
     headers,
     hunk_lines,
+    kept_lines,
     readable,
     unguessed,
 )
@@ -1161,7 +1162,7 @@ def read_texts(
                 entry["text"] = None
                 _not_read(entry, POINTER_UNREAD, skipped)
     for entry in unread:
-        entry["shown"] = {number: line[1:] for number, line in hunk_lines(unreleased(entry["diff"])) if line[:1] != "-"}
+        entry["shown"] = dict(kept_lines(unreleased(entry["diff"])))
 
 
 def collect_evidence(

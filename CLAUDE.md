@@ -239,9 +239,8 @@ Load-bearing rules the tests enforce:
   ADK would hand the verdict the guidelines' findings unfenced as a turn.
 - **Front end.** `tui/`, the terminal front end on Textual, is an application of its own on top of the reviewer: a uv
   workspace member, `adk-review-tui`, with its own project file and package, `tui`, which imports
-  `adk_review` as any user would, its `core`, `collect`, `judge` and `deliver`'s `windows_word` and `prose`; nothing in
-  `adk_review`
-  imports it, and `tui/README.md` is its guide. Textual is the member's dependency alone, never the reviewer's, so `uv
+  `adk_review` as any user would, its `core`, `collect`, `judge` and `deliver`'s `windows_word`, `prose`, `one_line` and
+  `read_previous`; nothing in `adk_review` imports it, and `tui/README.md` is its guide. Textual is the member's dependency alone, never the reviewer's, so `uv
   sync --locked` and `uv tool install` of the reviewer take none of its code, command or UI package; CI, Copilot's setup
   and `make sync` sync `--all-packages`, so the suite and the type check read the screen, and pyrefly reads Textual as
   `Any` where it is missing. Its config is `tui/.tui.toml` in a checkout, which git ignores, and for an installed copy

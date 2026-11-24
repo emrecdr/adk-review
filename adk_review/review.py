@@ -504,14 +504,20 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
     return parser
 
 
+def _installed(name: str) -> str | None:
+    """A package's installed version, read from its metadata alone: a rules-only review's key imports no engine."""
+    try:
+        return metadata.version(name)
+    except metadata.PackageNotFoundError:
+        return None
+
+
 def version() -> str:
     """The reviewer's version: the installed distribution's, as `adk-review` is installed, else the project's own
     `pyproject.toml`'s, as a clone runs it. What a pipeline that pins the reviewer names in its log, and the JSON
     beside each review."""
-    try:
-        return metadata.version(DISTRIBUTION)
-    except metadata.PackageNotFoundError:
-        pass
+    if found := _installed(DISTRIBUTION):
+        return found
     try:
         return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
     except OSError, KeyError, tomllib.TOMLDecodeError:
@@ -1304,14 +1310,6 @@ def _waiting(running: Sequence[str]) -> str:
 
 #: The packages a guideline's call goes through, each as installed, in the cache key.
 ENGINES = ("google-adk", "litellm", "google-genai")
-
-
-def _installed(name: str) -> str | None:
-    """A package's installed version, read from its metadata alone: a rules-only review's key imports no engine."""
-    try:
-        return metadata.version(name)
-    except metadata.PackageNotFoundError:
-        return None
 
 
 def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, model: str, previous: Previous) -> Path:

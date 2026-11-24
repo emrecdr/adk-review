@@ -1846,6 +1846,9 @@ class TestWhatTheCodeReviewFound:
         filled that target's tabs. A change of target clears them now, and a review whose target changed is named,
         its files where they are, and not shown."""
         pytest.importorskip("textual")
+        import asyncio
+        import json
+
         from textual.widgets import Static, TabbedContent
 
         from tui.app import AdkReviewTuiApp
@@ -1870,20 +1873,20 @@ class TestWhatTheCodeReviewFound:
             assert app.last_comment_md == "", "another branch's comment is never shown as this one's"
             assert "ready" not in str(app.query_one(TabbedContent).get_tab("tab-comment").label)
 
-            loaded: list[object] = []
-
-            async def moved_on(_cmd: list[str]) -> tuple[int, str]:
+            async def moved_on(cmd: list[str]) -> tuple[int, str]:
                 app.selected_head = "main"  # the person chose another target while it ran
+                found = {"check": "rule.lint", "file": "a.py", "line": 1, "severity": "major", "title": "its own"}
+                report = json.dumps({"schema": 2, "verdict": "REQUEST_CHANGES", "findings": [found]})
+                await asyncio.to_thread(Path(cmd[cmd.index("--json") + 1]).write_text, report, "utf-8")
                 return 1, "the report of origin/feat-remote"
 
             monkeypatch.setattr(app, "_stream_subprocess", moved_on)
-            monkeypatch.setattr(app, "_load_generated_files", lambda outputs: loaded.append(outputs))
             app.selected_head = "origin/feat-remote"
             app._execute_review(dry_run=False)
             await pilot.pause()
             await app.workers.wait_for_complete()
             banner = str(app.query_one("#status-banner", Static).render())
-            assert loaded == [] and app.last_report_md == "", "its results fill no other target's tabs"
+            assert app.last_report_md == "" and app.findings_rows == [], "its results fill no other target's tabs"
             assert "origin/feat-remote" in banner and "not shown" in banner, banner
 
     @pytest.mark.asyncio
@@ -4279,15 +4282,12 @@ class TestHowTheScreenSaysWhatAReviewDecided:
         reason was on the progress tab alone. What the review said is in the report, and its last line in the
         banner, read from a real child's error stream as a review's is."""
         pytest.importorskip("textual")
-        import sys
 
         from textual.widgets import RichLog, Static
 
-        import tui.app as screen
-
         refused = "review: the Copilot arm is not ready. Run adk-review-login once"
         child = f"import sys; sys.stderr.write({refused!r} + '\\n'); sys.exit(2)"
-        monkeypatch.setattr(screen, "review_command", lambda _argv: [sys.executable, "-c", child])
+        _child_runs(monkeypatch, child)
         app = _payments_screen(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
@@ -4309,15 +4309,12 @@ class TestHowTheScreenSaysWhatAReviewDecided:
         cut short repeated every progress line in the report; and a run whose stream gave nothing would have shown the
         reason of the run before. The run is read by the report it wrote, its last 20 lines shown, its own alone."""
         pytest.importorskip("textual")
-        import sys
 
         from textual.widgets import Static
 
-        import tui.app as screen
-
         lines = "[sys.stderr.write(f'progress {n}\\n') for n in range(30)]"
         crash = f"import sys; {lines}; sys.stderr.write('ModuleNotFoundError: no module x\\n'); sys.exit(1)"
-        monkeypatch.setattr(screen, "review_command", lambda _argv: [sys.executable, "-c", crash])
+        _child_runs(monkeypatch, crash)
         app = _payments_screen(tmp_path)
 
         async def silent(_cmd: list[str]) -> tuple[int, str]:
@@ -4341,25 +4338,27 @@ class TestHowTheScreenSaysWhatAReviewDecided:
         """Read by an audit: the banner named the exit code alone, a number the person had to know, where the JSON
         the screen had just read named the verdict. It names both."""
         pytest.importorskip("textual")
-        import asyncio
-        import json
 
         from textual.widgets import Static
 
         app = _payments_screen(tmp_path)
 
-        async def reviewed(cmd: list[str]) -> tuple[int, str]:
-            report = json.dumps({"schema": 2, "verdict": "REQUEST_CHANGES", "findings": []})
-            await asyncio.to_thread(Path(cmd[cmd.index("--json") + 1]).write_text, report, "utf-8")
-            return 1, "## Verdict: REQUEST_CHANGES\n"
-
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
-            monkeypatch.setattr(app, "_stream_subprocess", reviewed)
+            monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("REQUEST_CHANGES", 1))
             app.selected_base = "main"
             await _reviewed_once(app, pilot)
             banner = str(app.query_one("#status-banner", Static).render())
         assert "REQUEST_CHANGES" in banner and "exit code 1" in banner, banner
+
+
+def _child_runs(monkeypatch: pytest.MonkeyPatch, code: str) -> None:
+    """Each review the screen runs as a Python child running `code`, in place of the reviewer's."""
+    import sys
+
+    import tui.app as screen
+
+    monkeypatch.setattr(screen, "review_command", lambda _argv: [sys.executable, "-c", code])
 
 
 def _stubbed_run(verdict: str, code: int, titles: tuple[str, ...] = (), stdout: str = ""):
@@ -4457,11 +4456,8 @@ class TestWhatAReviewLeavesOnTheScreen:
         """Stop emptied the Report tab, but Ctrl+Y on it copied the review before, as the stopped run's own, and
         nothing but the banner said the run stopped. The tab says so, and that is what it copies."""
         pytest.importorskip("textual")
-        import sys
 
         from textual.widgets import RichLog
-
-        import tui.app as screen
 
         app = _payments_screen(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
@@ -4472,13 +4468,10 @@ class TestWhatAReviewLeavesOnTheScreen:
             await _reviewed_once(app, pilot)
             assert "FIRST REPORT" in app.last_report_md
             child = "import sys, time; sys.stderr.write('review: running\\n'); sys.stderr.flush(); time.sleep(30)"
-            monkeypatch.setattr(screen, "review_command", lambda _argv: [sys.executable, "-c", child])
+            _child_runs(monkeypatch, child)
             monkeypatch.setattr(app, "_stream_subprocess", real)
             await pilot.press("ctrl+r")
-            for _ in range(200):
-                await pilot.pause(0.05)
-                if app._said:
-                    break
+            await _until(pilot, lambda: app._said, "the run's first line")
             await pilot.press("ctrl+x")
             await pilot.pause()
             await app.workers.wait_for_complete()
@@ -4522,18 +4515,15 @@ class TestWhatAReviewLeavesOnTheScreen:
         self, tmp_path: Path, monkeypatch
     ) -> None:
         """A run's error lines reached the banner, the Report tab and what Ctrl+Y copies with their control
-        characters, a terminal's escape among them, as a branch's own lines once did. Each is drawn as `_seen` draws a
-        file's line."""
+        characters, a terminal's escape among them, as a branch's own lines once did. Each is drawn as the report
+        draws a model's line: no escape, no credential."""
         pytest.importorskip("textual")
-        import sys
 
         from textual.widgets import Static
 
-        import tui.app as screen
-
-        said = "review: \x1b[2J cleared \x9b31m red"
+        said = "review: \x1b[2J cleared \x9b31m red token=" + "ghp_" + "a1B2" * 9
         child = f"import sys; sys.stderr.write({said!r} + '\\n'); sys.exit(2)"
-        monkeypatch.setattr(screen, "review_command", lambda _argv: [sys.executable, "-c", child])
+        _child_runs(monkeypatch, child)
         app = _payments_screen(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
@@ -4542,6 +4532,9 @@ class TestWhatAReviewLeavesOnTheScreen:
             banner, copied = str(app.query_one("#status-banner", Static).render()), app.last_report_md
         assert "cleared" in copied and "cleared" in banner, (copied, banner)
         assert not [text for text in (banner, copied) if "\x1b" in text or "\x9b" in text], (banner, copied)
+        # Read by the simplify pass: the escape's tail stayed on the screen, and git's own messages, a fetch's among
+        # them, which can name a remote with its token, reached the banner and the progress tab as written.
+        assert not [text for text in (banner, copied) if "[2J" in text or "ghp_" in text], (banner, copied)
 
     def test_a_report_nested_past_pythons_depth_reads_as_no_report(self, tmp_path: Path) -> None:
         """A report nested past Python's depth raised `RecursionError`, which nothing caught, and the screen closed."""
