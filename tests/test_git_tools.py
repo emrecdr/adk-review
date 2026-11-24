@@ -1913,6 +1913,13 @@ class TestWhatTheGuidelinesAreShown:
         assert files[0]["unread"] == change.KEY_UNREAD, files[0]
         files = change.shown_to_guidelines(entries, [removed], 2_000, (), held={"deploy.yaml"})[0]
         assert files[0]["unread"] == change.KEY_UNREAD, "the head's text holds a key: one the diff shows no line of"
+        # Read by the third code review: the guidelines were told the file holds a key, which the change removed, and
+        # rotating the key was offered as a way out of the note it never ends.
+        app = "diff --git a/app.py b/app.py\n--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n-x = 1\n+x = 2\n"
+        both = [*entries, {"path": "app.py", "status": "M"}]
+        block = change.shown_to_guidelines(both, [removed, app], 2_000, ())[1]
+        assert "removes a private key" in block and "holds a private key" not in block, block
+        assert "or add the file to --skip" not in change.KEY_REMOVED, change.KEY_REMOVED
 
     def test_a_deleted_file_takes_the_room_last_and_is_never_counted_as_left_out(self, monkeypatch) -> None:
         """Read by review: a deleted file is never a hole, what it removes reviewed when it came in, yet the block gave

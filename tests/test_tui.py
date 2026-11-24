@@ -4927,3 +4927,61 @@ class TestWhatTheThirdSimplifyPassFound:
                 if not (isinstance(flag, ast.Constant) and flag.value is False):
                     loose.append(f"{source.name}:{node.lineno}")
         assert loose == [], loose
+
+
+class TestWhatTheThirdCodeReviewFound:
+    """Read by the third code review of the audit's branch, each reproduced by a test that failed first."""
+
+    def test_a_report_holding_a_value_nested_past_pythons_depth_reads_as_no_report(self, tmp_path: Path) -> None:
+        """`json.loads` reads a value 100,000 lists deep, and `str()` of it raised `RecursionError` outside the read's
+        own `except`, which closed the screen."""
+        from tui.findings import load_report
+
+        deep = tmp_path / "deep.json"
+        title = "[" * 100_000 + "]" * 100_000
+        found = '{"check": "rule.lint", "file": "a.py", "line": 1, "severity": "major", "title": ' + title + "}"
+        deep.write_text('{"schema": 2, "findings": [' + found + "]}", encoding="utf-8")
+        assert load_report(deep) == ([], None, None)
+
+    @pytest.mark.asyncio
+    async def test_a_saved_review_with_no_findings_is_never_read_as_the_last_one(self, tmp_path: Path) -> None:
+        """A saved approval with no finding showed no "prior" mark and said "This review has no findings.", so back on
+        a target whose last review could not check everything, an older approval read as the latest review."""
+        pytest.importorskip("textual")
+        from textual.widgets import Static, TabbedContent
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            _saved_report(app, _report("APPROVED"))
+            app.action_refresh_repo()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            label = str(app.query_one("#output-tabs", TabbedContent).get_tab("tab-findings").label)
+            said = str(app.query_one("#finding-detail", Static).render())
+        assert "prior" in label, label
+        assert said != "This review has no findings." and "saved" in said, said
+
+    @pytest.mark.asyncio
+    async def test_a_review_whose_screen_closes_as_its_report_is_read_draws_nothing(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The loader drew nothing once the tabs were gone, but the run that called it chose the Report tab and folded
+        the panels after it, `NoMatches`, a worker's error where the screen closed during the report's read."""
+        pytest.importorskip("textual")
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            real = app._load_generated_files
+
+            async def closing(outputs: dict, target: object = None) -> object:
+                await app.query_one("#output-tabs").remove()  # as Textual's harness takes the widgets away first
+                return await real(outputs, target)
+
+            monkeypatch.setattr(app, "_load_generated_files", closing)
+            monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("APPROVED", 0))
+            await _reviewed_once(app, pilot)
+            assert app.is_running, "the screen is still open"

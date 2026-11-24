@@ -116,10 +116,10 @@ that ends with no report shows what it said in the Report tab, and its last line
 for an arm with no login does. The banner names the verdict a review reached, and the Findings tab of a review that
 could not check everything says so: in its name, `(2, DEGRADED)`, and where it kept no finding, never that it found
 none. F5, or the same branch picked again, keeps the review this session ran of it over an older saved one, until
-you choose another target: back on it, the saved one shows, since a review that could not check everything is never
-saved. A review that writes its report minimizes every panel, so its results take the screen; `Ctrl+O` restores
-them. A dry run, or a review refused, leaves them open, the step to change among them. A review you stop says so in
-the Report tab, and that is what `Ctrl+Y` copies from it.
+you choose another target: back on it, the saved one shows, marked `prior`, since a review that could not check
+everything is never saved. A review that writes its report minimizes every panel, so its results take the screen;
+`Ctrl+O` restores them. A dry run, or a review refused, leaves them open, the step to change among them. A review
+you stop says so in the Report tab, and that is what `Ctrl+Y` copies from it.
 
 A finding is drawn as plain text, with its reason, "Why it matters", and its corrected code where there are
 some: a reason at any severity, and the corrected code where a model gave one. A guideline's words are a model's, and

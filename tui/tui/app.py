@@ -285,6 +285,7 @@ class AdkReviewTuiApp(App[int]):
         self._reviewing: bool = False  # a review or a dry run in its worker, from its start to its end
         self._listing_for: ProjectInfo | None = None  # the repository whose branches are loading, a fetch among it
         self._rows_target: tuple[str, str, str, str] | None = None  # the target whose own review the findings are
+        self._prior = False  # whether the findings are a saved review's, read when a target was picked
 
     def has_multiple_roots(self) -> bool:
         """Whether more than one root workspace directory is configured."""
@@ -858,15 +859,18 @@ class AdkReviewTuiApp(App[int]):
         """What the Findings tab holds, the review it came from, and its name, drawn: one place sets them together. Each
         caller has checked that the tabs are still there."""
         self.findings_rows, self._reviewed, self._verdict, self._rows_target = rows, reviewed, verdict, target
-        self.query_one("#output-tabs", TabbedContent).get_tab("tab-findings").label = self._findings_label(prior=prior)
+        self._prior = prior
+        self.query_one("#output-tabs", TabbedContent).get_tab("tab-findings").label = self._findings_label()
         self._render_findings_table()
 
-    def _findings_label(self, *, prior: bool = False) -> str:
+    def _findings_label(self) -> str:
         """The Findings tab's name: how many findings it holds, `prior` where a saved review's, and, where the review
         could not check everything, DEGRADED in words. Read by an audit: the banner alone said so, and the next copy or
         link replaced it."""
-        count = len(self.findings_rows)
-        said = [f"{count} prior" if prior else str(count)] if count else []
+        count, prior = len(self.findings_rows), self._prior
+        # Read by the third code review: a saved review with no finding showed no mark, and read as the last one. No
+        # saved review at all is no verdict read.
+        said = [f"{count} prior" if prior else str(count)] if count else ["prior"] if prior and self._verdict else []
         said += ["DEGRADED"] if self._verdict == "DEGRADED" else []
         return f"2. Findings Explorer ({', '.join(said)})" if said else "2. Findings Explorer"
 
@@ -1618,6 +1622,8 @@ class AdkReviewTuiApp(App[int]):
                 f"another target since.{where}"
             )
             return
+        if not self._has_dom("#output-tabs"):  # read by the third code review: the screen closed as the report was read
+            return
         self._report_says(stdout_text)
         self.query_one("#output-tabs", TabbedContent).active = "tab-report"
         # Read by an audit: at 80 by 24 the results got one row while the panels stayed open. Ctrl+O brings them back.
@@ -1780,6 +1786,8 @@ class AdkReviewTuiApp(App[int]):
         by an audit, and reproduced, a review that could not check everything said "This review has no findings.", the
         words of one that looked and found none; read by review, so did a target no review had read yet, and a report
         the screen could not read."""
+        if self._verdict == "APPROVED" and self._prior:  # read by the third code review: an older one read as the last
+            return "The saved review of this target has no findings. Press Ctrl+R to review it as it stands."
         if self._verdict == "APPROVED":
             return "This review has no findings."
         if self._verdict == "DEGRADED":

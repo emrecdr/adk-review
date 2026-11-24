@@ -1350,9 +1350,8 @@ def _cached_at(args: argparse.Namespace, chosen: Selection, evidence: Evidence, 
         "untracked": evidence.get("untracked"),  # `--staged`'s note: a new untracked file is a new report
         "ignored": evidence.get("ignored"),  # read by review: a staged change to a vendored file served a stale list
         "outside": evidence.get("outside"),  # read by review: one staged outside --path served a stale count
-        "models": [model, fallback_name()]
-        if chosen.guidelines
-        else [],  # the verifier's among `model`'s roles under --verify
+        # Each model a call would go to, the verifier's among `model`'s roles under --verify, where a guideline runs.
+        "models": [model, fallback_name()] if chosen.guidelines else [],
         # The operator's own registries, which a rule reads and no flag names: read by review, a review kept before
         # the setting was served after it, its finding for the registry with it.
         "registries": registries(),

@@ -54,7 +54,7 @@ KEY_UNREAD = (
 #: Why a file whose change removes a private key is shown to no model, and what to do: the head holds the key no more.
 KEY_REMOVED = (
     "removes a private key, so no model is shown a line of its change. "
-    "Rotate the key, since the git history still holds it, or add the file to --skip"
+    "Rotate the key: the git history still holds it. Add the file to --skip to end this note"
 )
 _POINTER_KEYS = ("version", "oid", "size")
 _POINTER_EXTENSION = re.compile(r"ext-[0-9]-\w", re.ASCII)
@@ -259,7 +259,7 @@ def shown_to_guidelines(
     diff shows a key's header or footer, is shown to no model, a hole where the change keeps it."""
     files: list[Entry] = []
     blocks: list[str] = []
-    room, excluded, keyed = BLOCK_CAP_CHARS, {}, 0
+    room, excluded, keyed, removed = BLOCK_CAP_CHARS, {}, 0, 0
     shown_any: list[tuple[Entry, str, bool, int]] = []  # a file a guideline may read: its diff, cut, block size
     for listed, diff in zip(entries, diffs, strict=True):
         # A symbolic link is known by the change's own mode, with no tree listed.
@@ -280,8 +280,11 @@ def shown_to_guidelines(
         # beside a key, or inside one, showed lines of it with neither its header nor its footer, which the redaction
         # reads it between, and every guideline was sent them. The rules read it as any other file.
         if file["path"] in held or holds_private_key(diff):
-            file.update(unread=_key_note(file["status"], diff, held=file["path"] in held), cut=True)
-            keyed += 1
+            note = _key_note(file["status"], diff, held=file["path"] in held)
+            file.update(unread=note, cut=True)
+            # Read by the third code review: one the change removed a key from, or deleted, was named to the
+            # guidelines as a file that holds one, which a security guideline could report as a key committed.
+            keyed, removed = keyed + (note == KEY_UNREAD), removed + (note != KEY_UNREAD)
             continue
         view, cut = capped(diff, diff_cap)
         shown_any.append((file, diff, cut, len(framed(file["path"], view)[0])))
@@ -320,16 +323,17 @@ def shown_to_guidelines(
     # Each note beside a file shown alone: read by review, a change of only files the skip list names made a block of
     # its note, and each guideline ran over it, billed.
     if blocks:
-        blocks += _left_out(not_shown, len(excluded), keyed)
+        blocks += _left_out(not_shown, len(excluded), keyed, removed)
     return files, "\n\n".join(blocks), excluded, left_out, parts
 
 
-def _left_out(past_cap: int, skipped: int, keyed: int) -> list[str]:
+def _left_out(past_cap: int, skipped: int, keyed: int, removed: int) -> list[str]:
     """What the block leaves out of the change, named to the guidelines: a test left out is no test missing."""
     whys = (
         (past_cap, f"past {BLOCK_CAP_CHARS:,} characters in all"),
         (skipped, "the operator's skip list leaves them out"),
         (keyed, "each holds a private key"),
+        (removed, "the change removes a private key from each"),
     )
     return [f"[… {count} more file(s) not shown: {why}]" for count, why in whys if count]
 

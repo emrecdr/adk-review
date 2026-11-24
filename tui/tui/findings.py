@@ -119,7 +119,10 @@ def load_report(json_path: Path) -> tuple[list[FindingRow], str | None, str | No
     review's. Read by an audit: the findings alone left a review that could not check everything reading as one that
     found nothing."""
     raw = _read(json_path)
-    return ([], None, None) if raw is None else (_rows(raw), _commit(raw), _verdict(raw))
+    try:
+        return ([], None, None) if raw is None else (_rows(raw), _commit(raw), _verdict(raw))
+    except RecursionError:  # read by a code review: a value nested 100,000 deep, read whole, raised in `str()`
+        return [], None, None
 
 
 def _rows(raw: dict) -> list[FindingRow]:
