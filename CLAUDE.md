@@ -143,10 +143,11 @@ rule imports one door, `judge/rule_helpers/`: the contract, passed on from `core
 (`lines.py`, `syntax.py`, `diagnostics.py`, `workflows.py`) and try a rule with (`testing.py`), and what a review
 reads too, passed on
 from `core/`: `matches`, the skip list's matcher, a test's path, the parser `parse`, how far a name a package passes on
-is followed (`PASSED_ON`), and a credential's shape. A rule is handed no test's file unless it sets `reads_tests =
-True`, as each rule about what runs, leaks or steers does (`file.changed` and `tree.paths` still list every test). A
-rule reads only the files `scan` names unless it sets `reads_every_kind = True`, as the two credential rules do: a key
-leaks from a README as from code. A rule or a guideline whose findings change how code reads and never what it does sets
+is followed (`PASSED_ON`), and a credential's shape. A rule is handed no test's file unless it sets
+`reads_tests = True`, as each rule about what runs, leaks or steers does, but `sensitive-logging`, since a test logs a
+token it made up (`file.changed` and `tree.paths` still list every test). A rule reads only the files `scan` names
+unless it sets `reads_every_kind = True`, as the two credential rules do: a key leaks from a README as from code. A rule
+or a guideline whose findings change how code reads and never what it does sets
 `cleanup = True`, as `simplify` and `complexity` do: the hand-off lists them under `## Tidy`, apart from the fixes, and
 holds one back on lines a defect at major or above names; a guideline's finding at major or above is a defect there
 and in the comment, never a tidy, since its model rates a real bug so (`_is_tidy`, `deliver/report.py`). A rule about what leaks, runs or steers sets

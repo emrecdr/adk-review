@@ -146,8 +146,8 @@ a `…User` to `BaseUser`, a `…Repository` to `BaseRepository` — and a proje
 with a kind's, a `ModelForm`.
 
 A rule reads no test — a file in a folder named `tests` or `test`, or named `test_*`, `*_test` or `conftest.py` — unless
-it says so, as the rules about what runs, leaks or steers do; `--explain ID` names which. The checks, as `--list-checks`
-prints them:
+it says so, as the rules about what runs, leaks or steers do, but `sensitive-logging`, since a test logs a token it made
+up; `--explain ID` names which. The checks, as `--list-checks` prints them:
 
 <!-- checks: the output of `uv run python -m adk_review.review --list-checks`; a test holds it so -->
 | id | kind | severity | profiles | what | where |

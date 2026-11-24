@@ -623,6 +623,13 @@ class TestTheSecretShapes:
             'logger.info("key %s", private_key)',
             'logger.info("key %s", self.privateKey)',
             'logger.info("pass %s", key_passphrase)',
+            # Read by a code review, each reproduced: bound with `:=`, unpacked with `*`, in a set, in a t-string, whose
+            # repr a log writes with its values, or through `fatal`, the standard library's other name for `critical`.
+            'logger.info("%s", seen := access_token)',
+            'logger.info("%s %s", *[user, access_token])',
+            'logger.info("%s", {access_token})',
+            'logger.info(t"auth={access_token}")',
+            'logger.fatal("%s", access_token)',
         )
         left = (
             'logger.info("token %s", token[:8])',
@@ -669,6 +676,15 @@ class TestTheSecretShapes:
         wrapped = 'logger.info(\n    "token %s",\n    access_token,\n)\n'
         assert lines_hit(rule, "app/auth.py", wrapped) == [3], "named where the value stands"
         assert lines_hit(rule, "tests/test_auth.py", f"{named[0]}\n") == [], "a test logs what it made up"
+        # Read by a code review, and reproduced: a script Python runs by its first line, and a `.pyw` file, were read by
+        # lint and not by this rule. A file that is no Python is still not read.
+        assert lines_hit(rule, "bin/deploy", f"#!/usr/bin/env python3\n{named[0]}\n") == [2], "a script"
+        assert lines_hit(rule, "app/gui.pyw", f"{named[0]}\n") == [1], "a .pyw file"
+        assert lines_hit(rule, "bin/run", "#!/bin/sh\necho $access_token\n") == [], "a shell script"
+        # Read by a code review, and reproduced: a value logged twice was named twice, and the second folded into the
+        # first as a duplicate of the rule by itself.
+        twice = _entry("app/auth.py", 'logger.info("%s %s", access_token, access_token)\n')
+        assert len(run_rules({"files": [twice], "tree": None}, [rule])["rule.sensitive-logging"].findings) == 1
         # Read by the second review: a message reworded on a call's first line named the value two lines under it, a
         # leak the change did not add. A value is named on its own line alone.
         reworded = {**_entry("app/auth.py", wrapped), "status": "M", "added": [(1, "logger.info(")]}

@@ -595,9 +595,10 @@ What a rule may do, and may not:
 - It reads no test unless it says so: a rule about the product's code is handed no file `is_test` names, so a test's
   fakes are no findings, while `file.changed` and `tree.paths` still list every test. A rule about what runs, leaks or
   steers sets `reads_tests = True`, as `secrets` and `steering-files` do: a test runs in CI with its keys, and a
-  workflow named `test_*.yml` is a test by its name. `--explain` says which a rule does. It reads only the files the
-  shipped `scan` names unless it sets `reads_every_kind = True`, as `secrets` and `named-secrets` do: a key leaks from a
-  README or a script as from code. No rule reads another project's code.
+  workflow named `test_*.yml` is a test by its name. `sensitive-logging` does not: a test logs a token it made up.
+  `--explain` says which a rule does. It reads only the files the shipped `scan` names unless it sets
+  `reads_every_kind = True`, as `secrets` and `named-secrets` do: a key leaks from a README or a script as from code. No
+  rule reads another project's code.
 - A rule whose findings change how code reads, never what it does, sets `cleanup = True`, as `simplify` does, and a
   guideline the same, as `complexity` does: the hand-off lists them as tidies, never as fixes, but a guideline's
   finding at major or above, which its model rates a real bug.

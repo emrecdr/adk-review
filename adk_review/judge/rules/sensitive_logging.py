@@ -1,14 +1,16 @@
 """A credential written to a log: a value whose own name says secret, handed whole to a logging call.
 
-Only what is handed whole: a variable or an attribute as an argument, in an f-string or a string's `format`, joined to
-the message, as either side of `or`, the last value of `and` or either answer of a conditional, in a tuple, or as a
-value of `extra` or of a keyword. The name decides, by its last word. Measured over seven projects, 4,314 logging calls,
-before this rule was written: every logged value whose name held a secret word gave 106 hits, 16 of them a credential
-logged, the rest a masked prefix, `token[:8]`, a test for one, `bool(token)`, a count, or a name about one, `token_dir`.
-This rule over the same projects, 4,818 files in 5 s: 14 hits, 13 of them a push token logged whole, where lines beside
-them logged eight characters of it, and one a count. Read by an audit, `format`, `or`, `and`, a conditional,
-`private_key` and a passphrase were then read too, and arithmetic but `+` and `%` no longer: the same 14 hits, and the
-same 22 over the installed packages.
+Only what is handed whole: a variable or an attribute as an argument, in an f-string, a t-string or a string's `format`,
+joined to the message, as either side of `or`, the last value of `and` or either answer of a conditional, in a tuple, a
+list or a set, unpacked with `*` or bound with `:=`, or as a value of `extra` or of a keyword. The name decides, by its
+last word. Measured over seven projects, 4,314 logging calls, before this rule was written: every logged value whose
+name held a secret word gave 106 hits, 16 of them a credential logged, the rest a masked prefix, `token[:8]`, a test for
+one, `bool(token)`, a count, or a name about one, `token_dir`. This rule over the same projects, 4,818 files in 5 s: 14
+hits, 13 of them a push token logged whole, where lines beside them logged eight characters of it, and one a count. Read
+by an audit, `format`, `or`, `and`, a conditional, `private_key` and a passphrase were then read too, and arithmetic but
+`+` and `%` no longer: the same 14 hits, and the same 22 over the installed packages. Read by a code review, a t-string,
+`:=`, `*`, a set, `fatal`, a `.pyw` file and a script Python runs by its first line were then read too: the same 14 hits
+over the projects' 3,800 Python files, and the same 22.
 
 Known limits: a count named as a credential is, `total_no_token`, or a sum of two such counts, `max_token +
 used_token`, which `+` reads as a joined string, is named. Not read: `print`; a logger no name holds,
@@ -21,13 +23,13 @@ from __future__ import annotations
 
 import ast
 import re
-from collections.abc import Iterator
-from typing import TypeGuard
+from collections.abc import Callable, Iterator
+from typing import Any, TypeGuard
 
-from ..rule_helpers import ChangedFile, FileRule, calls_in, is_test, name_of, names_secret
+from ..rule_helpers import ChangedFile, FileRule, calls_in, is_python, is_test, name_of, names_secret
 
 #: A logger's methods that write a record.
-WRITES = ("debug", "info", "warning", "warn", "error", "critical", "exception", "log")
+WRITES = ("debug", "info", "warning", "warn", "error", "critical", "fatal", "exception", "log")
 #: What a logger's name ends in: `logger`, `log`, `logging`, `self._log`, `LOG`, a project's own `obslog`.
 LOGGER = ("log", "logger", "logging")
 #: And the words that only end so, however they are written: `change_log`, `changeLog` and `changelog` are one list of
@@ -36,6 +38,25 @@ NO_LOGGER = frozenset(
     {"catalog", "dialog", "changelog", "backlog", "analog", "prolog", "epilog", "travelog"}
     | {"blog", "blogger", "blogging"}
 )
+#: What each kind of expression hands a log whole of its parts: a part of an f-string, or of a t-string, whose repr a
+#: log writes with its values; a side of a `+` or a `%`, but no other arithmetic; a side of an `or`, and the last value
+#: of an `and`, which hands on an earlier one only where it is falsy; either answer of a conditional, never its test; a
+#: member of a tuple, a list or a set; a value of a dict; and what `:=` binds or `*` unpacks. Read by an audit, and
+#: reproduced: `max_token - used_token` was named, which logs neither; read by a code review, `:=`, `*`, a set and a
+#: t-string were not.
+HANDS_ON: dict[type[ast.expr], Callable[[Any], list[ast.expr]]] = {
+    ast.JoinedStr: lambda node: [part.value for part in node.values if isinstance(part, ast.FormattedValue)],
+    ast.TemplateStr: lambda node: [part.value for part in node.values if isinstance(part, ast.Interpolation)],
+    ast.BinOp: lambda node: [node.left, node.right] if isinstance(node.op, (ast.Add, ast.Mod)) else [],
+    ast.BoolOp: lambda node: node.values if isinstance(node.op, ast.Or) else node.values[-1:],
+    ast.IfExp: lambda node: [node.body, node.orelse],
+    ast.Tuple: lambda node: node.elts,
+    ast.List: lambda node: node.elts,
+    ast.Set: lambda node: node.elts,
+    ast.Dict: lambda node: node.values,
+    ast.NamedExpr: lambda node: [node.value],
+    ast.Starred: lambda node: [node.value],
+}
 #: A name's words: at each `_` and at each hump of camelCase.
 _WORD = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+")
 
@@ -66,14 +87,17 @@ class SensitiveLogging(FileRule):
 
     def check(self, file: ChangedFile) -> list[tuple[int, str]]:
         """Each value the change added to a logging call whole, under a name that says secret, at the value's line."""
-        if not file.path.endswith(".py") or is_test(file.path):
+        # Read by a code review: a script Python runs by its first line, and a `.pyw` file, were left to lint alone.
+        if not is_python(file.path, lambda: file.line(1)) or is_test(file.path) or isinstance(file.module, str):
             return []
-        return sorted(
-            (value.lineno, f"`{name_of(value)}` is written to the log whole")
-            for call in calls_in(file.module, *(f"*.{write}" for write in WRITES))
-            if _logs(name_of(call.func).rpartition(".")[0])
-            for value in _handed(call)
-            if value.lineno in file.added and names_secret(name_of(value).rpartition(".")[2])
+        return sorted(  # a set: read by a code review, a value logged twice was named twice, and folded into itself
+            {
+                (value.lineno, f"`{name_of(value)}` is written to the log whole")
+                for call in calls_in(file.module, *(f"*.{write}" for write in WRITES))
+                if _logs(name_of(call.func).rpartition(".")[0])
+                for value in _handed(call)
+                if value.lineno in file.added and names_secret(name_of(value).rpartition(".")[2])
+            }
         )
 
 
@@ -89,28 +113,15 @@ def _logs(receiver: str) -> bool:
 
 
 def _handed(call: ast.Call) -> Iterator[ast.Name | ast.Attribute]:
-    """Each value `call` hands the log whole: an argument, a part of an f-string or of a string's own `format`, a side
-    of a `+` or a `%`, a side of an `or` and the last value of an `and`, either answer of a conditional, a member of a
-    tuple or a list, a value of a dict or of a keyword. One sliced, tested or passed through another call is not, nor
-    one in arithmetic but `+` and `%`, which join and format a string too. Read by an audit, and reproduced:
-    `max_token - used_token` was named, which logs neither, and `"{}".format(token)` was not."""
+    """Each value `call` hands the log whole: an argument, a value of a keyword, and what `HANDS_ON` and a string's own
+    `format` pass on of it. One sliced, tested or passed through another call is not."""
     pending: list[ast.expr] = [*call.args, *(keyword.value for keyword in call.keywords)]
     while pending:
         node = pending.pop()
-        if isinstance(node, ast.JoinedStr):
-            pending += [part.value for part in node.values if isinstance(part, ast.FormattedValue)]
-        elif _formats(node):
+        if _formats(node):
             pending += [*node.args, *(keyword.value for keyword in node.keywords)]
-        elif isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
-            pending += [node.left, node.right]
-        elif isinstance(node, ast.BoolOp):  # `and` hands on its last value: an earlier one only where it is falsy
-            pending += node.values if isinstance(node.op, ast.Or) else node.values[-1:]
-        elif isinstance(node, ast.IfExp):
-            pending += [node.body, node.orelse]
-        elif isinstance(node, ast.Dict):
-            pending += node.values
-        elif isinstance(node, (ast.Tuple, ast.List)):
-            pending += node.elts
+        elif (parts := HANDS_ON.get(type(node))) is not None:
+            pending += parts(node)
         elif isinstance(node, (ast.Name, ast.Attribute)) and name_of(node):
             yield node
 
