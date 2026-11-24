@@ -191,11 +191,12 @@ Screen {
     max-height: 3;
 }
 #findings-table {
-    height: 1fr;
-    min-height: 6;
+    height: 2fr;
+    min-height: 4;
 }
 #finding-detail-scroll {
-    height: 10;
+    height: 1fr;
+    min-height: 3;
     border-top: solid $primary;
     padding: 0 1;
 }

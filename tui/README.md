@@ -114,7 +114,10 @@ tabs clear. The comment and the hand-off tabs show what the last review wrote, o
 a review the reviewer refused, decide nothing and write no report: each leaves them and the findings as they are. A run
 that ends with no report shows what it said in the Report tab, and its last line in the banner, as a review refused
 for an arm with no login does. The banner names the verdict a review reached, and the Findings tab of a review that
-could not check everything says so where it kept no finding, never that it found none.
+could not check everything says so: in its name, `(2, DEGRADED)`, and where it kept no finding, never that it found
+none. F5, or the same branch picked again, keeps the review this session ran of it over an older saved one. A review
+that ends minimizes every panel, so its results take the screen; `Ctrl+O` restores them. A review you stop says so
+in the Report tab, and that is what `Ctrl+Y` copies from it.
 
 A finding is drawn as plain text, with its reason, "Why it matters", and its corrected code where there are
 some: a reason at any severity, and the corrected code where a model gave one. A guideline's words are a model's, and
@@ -217,13 +220,13 @@ As the reviewer does, the screen reads a repository, and writes into it only whe
 | `Ctrl+T` | Minimize every panel |
 | `Ctrl+O` | Restore every panel |
 | `Ctrl+Y` | Copy the open tab: the report, the chosen finding, the comment, the hand-off or the progress lines. A tab with nothing to copy says so |
+| `Ctrl+Q` | Quit |
 | `Ctrl+P` | Open the command palette: a repository, any of its branches, a profile or an action by name |
 | `F5` | Fetch the chosen repository with `--prune` and list its branches again, the branches you chose kept where they are still there |
 | A number key | Minimize or restore the panel of that number, where no text field has the focus |
 | `o` | Open the chosen finding's lines in Azure DevOps, in the file as the commit reviewed holds it |
 | `p` | Open the pull request at the chosen finding: its comment thread once posted, else its file in the Files tab |
 | `c` | Comment on the chosen finding in its pull request: a draft to edit, a confirmation, then one post |
-| `q` | Quit |
 
 The action keys work wherever the focus is, a text field included. `Ctrl+X` stops a review while one runs, and
 only then: with none running it is a text field's own cut. While a dialog is open, only `Ctrl+X` works, and while a

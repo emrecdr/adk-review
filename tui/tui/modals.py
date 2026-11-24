@@ -44,6 +44,10 @@ class SyncBranchModal(ModalScreen[bool]):
                 yield Button("Update Local Branch", id="btn-sync-yes", variant="primary")
                 yield Button("Keep Local As-Is", id="btn-sync-no", variant="default")
 
+    def on_mount(self) -> None:
+        # Read by an audit: the dialog opened on "Update Local Branch", so Enter by habit ran `git branch -f`.
+        self.query_one("#btn-sync-no", Button).focus()
+
     @on(Button.Pressed, "#btn-sync-yes")
     def _accept(self) -> None:
         self.dismiss(True)

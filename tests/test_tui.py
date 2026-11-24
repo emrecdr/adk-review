@@ -1456,7 +1456,7 @@ class TestWindowsAndItsShells:
     async def test_quitting_while_a_scan_runs_ends_cleanly(self, tmp_path: Path, monkeypatch) -> None:
         """Seen on Windows in CI, where git is slower: the screen closed while a scan of the repositories still ran, and
         the scan's last step set `loading` on a list whose screen was gone, `NoScreen`, raised as `WorkerFailed`. A
-        person quitting with `q` during a scan met the same. Reproduced here with a scan that ends only once the screen
+        person quitting during a scan met the same. Reproduced here with a scan that ends only once the screen
         has closed: read on a slow macOS runner, a scan that slept half a second ended first, and the test failed."""
         pytest.importorskip("textual")
         import threading
@@ -4360,3 +4360,274 @@ class TestHowTheScreenSaysWhatAReviewDecided:
             await _reviewed_once(app, pilot)
             banner = str(app.query_one("#status-banner", Static).render())
         assert "REQUEST_CHANGES" in banner and "exit code 1" in banner, banner
+
+
+def _stubbed_run(verdict: str, code: int, titles: tuple[str, ...] = (), stdout: str = ""):
+    """A review run in place of the reviewer's child: its JSON report written where the command names it, a major for
+    each of `titles`, and `stdout` as its text report."""
+    import asyncio
+    import json
+
+    found = [
+        {
+            "check": "rule.lint",
+            "file": "a.py",
+            "line": n,
+            "severity": "major",
+            "title": title,
+            "evidence": "+ x = 1",
+            "suggestion": "Mend it.",
+            "fingerprint": f"{n:016x}",
+        }
+        for n, title in enumerate(titles, 1)
+    ]
+
+    async def run(cmd: list[str]) -> tuple[int, str]:
+        report = json.dumps({"schema": 2, "verdict": verdict, "findings": found, "reviewed": {"head_sha": "b" * 40}})
+        await asyncio.to_thread(Path(cmd[cmd.index("--json") + 1]).write_text, report, "utf-8")
+        return code, stdout or f"## Verdict: {verdict}\n"
+
+    return run
+
+
+class TestWhatAReviewLeavesOnTheScreen:
+    """What the tabs hold once a review ends, is stopped, or is followed by another pick. Read by an audit of the
+    screen, each reproduced by a probe first."""
+
+    @pytest.mark.asyncio
+    async def test_a_fetch_after_a_review_keeps_that_review_over_an_older_saved_one(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """F5, or the same branch picked again, read the target's saved report over the review just shown. A degraded
+        review is never saved, so its findings went from view, and where the saved one approved, the tab said "This
+        review has no findings." beside a report that said DEGRADED."""
+        pytest.importorskip("textual")
+        import json
+
+        from textual.widgets import Static
+
+        from tui import options
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            saved = options.baseline_path(app.selected_project.path, "main", app.selected_head, app.selected_mode)
+            saved.parent.mkdir(parents=True, exist_ok=True)
+            saved.write_text(json.dumps({"schema": 2, "verdict": "APPROVED", "findings": []}), encoding="utf-8")
+            monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("DEGRADED", 3, ("first", "second")))
+            await _reviewed_once(app, pilot)
+            assert [row.title for row in app.findings_rows] == ["first", "second"]
+            app.action_refresh_repo()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            kept, verdict = [row.title for row in app.findings_rows], app._verdict
+            said = str(app.query_one("#finding-detail", Static).render())
+        assert kept == ["first", "second"] and verdict == "DEGRADED", (kept, verdict)
+        assert "has no findings" not in said, said
+
+    @pytest.mark.asyncio
+    async def test_a_review_that_could_not_check_everything_says_so_beside_the_findings_it_kept(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A degraded review that kept findings looked like any other on the Findings tab: its verdict was in the
+        banner alone, which the next copy or link replaced. The tab's name says it, in words, never colour alone."""
+        pytest.importorskip("textual")
+        from textual.widgets import TabbedContent
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            tabs = app.query_one("#output-tabs", TabbedContent)
+            monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("DEGRADED", 3, ("first",)))
+            await _reviewed_once(app, pilot)
+            degraded = str(tabs.get_tab("tab-findings").label)
+            monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("REQUEST_CHANGES", 1, ("first",)))
+            await _reviewed_once(app, pilot)
+            decided = str(tabs.get_tab("tab-findings").label)
+        assert "DEGRADED" in degraded and "(1" in degraded, degraded
+        assert "DEGRADED" not in decided and "(1)" in decided, decided
+
+    @pytest.mark.asyncio
+    async def test_a_stopped_review_leaves_nothing_of_the_last_report_to_copy_and_says_it_stopped(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Stop emptied the Report tab, but Ctrl+Y on it copied the review before, as the stopped run's own, and
+        nothing but the banner said the run stopped. The tab says so, and that is what it copies."""
+        pytest.importorskip("textual")
+        import sys
+
+        from textual.widgets import RichLog
+
+        import tui.app as screen
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            real = app._stream_subprocess
+            monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("REQUEST_CHANGES", 1, ("x",), "FIRST REPORT\n"))
+            await _reviewed_once(app, pilot)
+            assert "FIRST REPORT" in app.last_report_md
+            child = "import sys, time; sys.stderr.write('review: running\\n'); sys.stderr.flush(); time.sleep(30)"
+            monkeypatch.setattr(screen, "review_command", lambda _argv: [sys.executable, "-c", child])
+            monkeypatch.setattr(app, "_stream_subprocess", real)
+            await pilot.press("ctrl+r")
+            for _ in range(200):
+                await pilot.pause(0.05)
+                if app._said:
+                    break
+            await pilot.press("ctrl+x")
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            copied = app.last_report_md
+            report = "\n".join(line.text for line in app.query_one("#report-log", RichLog).lines)
+        assert "FIRST REPORT" not in copied and "stopped" in copied, copied
+        assert "stopped" in report and "Ctrl+R" in report, report
+
+    @pytest.mark.asyncio
+    async def test_a_target_picked_while_a_review_is_read_is_shown_none_of_it(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Reproduced with a slow read: the screen checked the target before it read the report, the comment and the
+        hand-off, so a branch picked meanwhile was shown the review of the one before, its findings and the commit a
+        comment is posted against among them. The target is read again once all is read."""
+        pytest.importorskip("textual")
+        from textual.widgets import Static
+
+        import tui.app as screen
+
+        app = _payments_screen(tmp_path)
+        read = screen.load_report
+
+        def picked_meanwhile(path: Path):
+            app.call_from_thread(setattr, app, "selected_head", "feature/tax")  # the person's pick, as it is read
+            return read(path)
+
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            monkeypatch.setattr(screen, "load_report", picked_meanwhile)
+            monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("REQUEST_CHANGES", 1, ("old target's",)))
+            await _reviewed_once(app, pilot)
+            rows, banner = app.findings_rows, str(app.query_one("#status-banner", Static).render())
+        assert rows == [], [row.title for row in rows]
+        assert "another target" in banner, banner
+
+    @pytest.mark.asyncio
+    async def test_a_runs_error_lines_reach_the_screen_with_no_terminal_command_in_them(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A run's error lines reached the banner, the Report tab and what Ctrl+Y copies with their control
+        characters, a terminal's escape among them, as a branch's own lines once did. Each is drawn as `_seen` draws a
+        file's line."""
+        pytest.importorskip("textual")
+        import sys
+
+        from textual.widgets import Static
+
+        import tui.app as screen
+
+        said = "review: \x1b[2J cleared \x9b31m red"
+        child = f"import sys; sys.stderr.write({said!r} + '\\n'); sys.exit(2)"
+        monkeypatch.setattr(screen, "review_command", lambda _argv: [sys.executable, "-c", child])
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            await _reviewed_once(app, pilot)
+            banner, copied = str(app.query_one("#status-banner", Static).render()), app.last_report_md
+        assert "cleared" in copied and "cleared" in banner, (copied, banner)
+        assert not [text for text in (banner, copied) if "\x1b" in text or "\x9b" in text], (banner, copied)
+
+    def test_a_report_nested_past_pythons_depth_reads_as_no_report(self, tmp_path: Path) -> None:
+        """A report nested past Python's depth raised `RecursionError`, which nothing caught, and the screen closed."""
+        from tui.findings import load_report
+
+        deep = tmp_path / "deep.json"
+        deep.write_text("[" * 200_000 + "]" * 200_000, encoding="utf-8")  # 100,000 reads
+        assert load_report(deep) == ([], None, None)
+
+
+class TestTheKeysAndTheRoomTheScreenGives:
+    """Where the keys act as the screen opens, which keys end it, and the room the results get. Read by an audit of the
+    screen, each reproduced by a probe first."""
+
+    @pytest.mark.asyncio
+    async def test_the_screen_opens_with_the_keys_on_the_repository_list(self, tmp_path: Path) -> None:
+        """The scan marks the list as loading, and a loading list cannot hold the focus, so the screen's own focus took
+        the first widget it counts, a chip of the hidden dock: the arrow keys moved nothing, and Enter pressed a chip
+        no one could see."""
+        pytest.importorskip("textual")
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _wait_for_branches(app, pilot)
+            focused = app.focused
+        assert focused is not None and focused.id == "repo-list", focused
+
+    @pytest.mark.asyncio
+    async def test_the_dialog_for_a_branch_behind_its_remote_moves_no_branch_on_enter(self, tmp_path: Path) -> None:
+        """The dialog opened on "Update Local Branch", so Enter by habit ran `git branch -f`. It opens on the answer
+        that changes nothing, as the dialog before a post does."""
+        pytest.importorskip("textual")
+        from tui.git_sync import SyncStatus
+        from tui.modals import SyncBranchModal
+
+        app = _payments_screen(tmp_path)
+        answers: list[bool] = []
+        behind = SyncStatus("behind", "feature/orders", "origin/feature/orders", behind=2)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.push_screen(SyncBranchModal("head", behind), answers.append)
+            await pilot.pause()
+            focused = app.focused
+            await pilot.press("enter")
+            await pilot.pause()
+        assert focused is not None and focused.id == "btn-sync-no", focused
+        assert answers == [False], answers
+
+    @pytest.mark.asyncio
+    async def test_a_stray_q_ends_nothing_and_ctrl_q_ends_the_screen(self, tmp_path: Path) -> None:
+        """A plain `q` closed the screen from any list, the table or a chip, a review running or a draft unsent. Ctrl+Q
+        closes it, Textual's own key, which no terminal keeps for itself."""
+        pytest.importorskip("textual")
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.query_one("#repo-list").focus()
+            await pilot.press("q")
+            await pilot.pause()
+            after_q = app.is_running
+            await pilot.press("ctrl+q")
+            await pilot.pause()
+            after_ctrl_q = app.is_running
+        assert after_q and not after_ctrl_q, (after_q, after_ctrl_q)
+
+    @pytest.mark.asyncio
+    async def test_a_review_that_ends_gives_its_results_the_room_of_the_panels(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """At 80 by 24 the results got one row while the panels stayed open, and at 140 by 45 five. A review that ends
+        minimizes the panels, as Ctrl+T does, and Ctrl+O or a chip brings each back."""
+        pytest.importorskip("textual")
+        from textual.widgets import Collapsible
+
+        app = _payments_screen(tmp_path)
+
+        def opened() -> list[str]:
+            return [str(c.id) for c in app.query(Collapsible) if not c.has_class("hidden") and not c.collapsed]
+
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            before = opened()
+            monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("REQUEST_CHANGES", 1, ("x",)))
+            await _reviewed_once(app, pilot)
+            after = opened()
+            await pilot.press("ctrl+o")
+            await pilot.pause()
+            restored = opened()
+        assert before and after == [] and restored == before, (before, after, restored)

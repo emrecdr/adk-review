@@ -69,7 +69,7 @@ from .git_sync import (
     preferred_base_branch,
     read_change,
 )
-from .modals import CommentModal, ConfirmPostModal, DivergedBranchModal, ExplainCheckModal, SyncBranchModal
+from .modals import CommentModal, ConfirmPostModal, DivergedBranchModal, ExplainCheckModal, SyncBranchModal, _seen
 from .options import (
     OPTION_DESCRIPTIONS,
     ProfileOption,
@@ -182,6 +182,8 @@ class AdkReviewTuiApp(App[int]):
         Binding("ctrl+t", "minimize_all", "Minimize All", priority=True),
         Binding("ctrl+o", "restore_all", "Restore All", priority=True),
         Binding("ctrl+y", "copy_active_tab", "Copy Tab", priority=True),
+        # Read by an audit: a plain `q` closed the screen from any list, a review running or a draft unsent.
+        Binding("ctrl+q", "quit", "Quit", priority=True),
         Binding("f5", "refresh_repo", "Fetch & Refresh"),
         # A finding's place in Azure DevOps: plain letters, which a text field takes as text, and which act on the
         # Findings tab alone, where the person sees the finding they open.
@@ -195,14 +197,20 @@ class AdkReviewTuiApp(App[int]):
         Binding("5", "toggle_step(5)", "Step 5", show=False),
         Binding("6", "toggle_step(6)", "Step 6", show=False),
         Binding("7", "toggle_step(7)", "Step 7", show=False),
-        Binding("q", "quit", "Quit"),
     ]
 
     #: What a key starts that never runs behind a dialog: a review, a dry run, the sections folded, a tab copied. Not
     #: Stop, which must always reach a running review.
     #: What acts on the finding chosen, so only where the Findings tab shows it.
     ON_A_FINDING = frozenset({"open_lines", "open_pull_request", "comment"})
-    BEHIND_NO_DIALOG = ON_A_FINDING | {"run_review", "run_dry", "minimize_all", "restore_all", "copy_active_tab"}
+    BEHIND_NO_DIALOG = ON_A_FINDING | {
+        "run_review",
+        "run_dry",
+        "minimize_all",
+        "restore_all",
+        "copy_active_tab",
+        "quit",
+    }
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:  # noqa: ARG002 -- Textual's
         """No action key but Stop runs while a dialog is open. Measured: once the keys went first, Ctrl+R and Ctrl+D
@@ -263,6 +271,7 @@ class AdkReviewTuiApp(App[int]):
         self._active_proc: asyncio.subprocess.Process | None = None
         self._reviewing: bool = False  # a review or a dry run in its worker, from its start to its end
         self._listing_for: ProjectInfo | None = None  # the repository whose branches are loading, a fetch among it
+        self._rows_target: tuple[str, str, str, str] | None = None  # the target whose own review the findings are
 
     def has_multiple_roots(self) -> bool:
         """Whether more than one root workspace directory is configured."""
@@ -435,11 +444,15 @@ class AdkReviewTuiApp(App[int]):
         table = self.query_one("#findings-table", DataTable)
         table.add_columns("Severity", "Tier", "Check", "Location", "Title", "Posted")
         self._populate_roots(initial=True)
-        root_list = self.query_one("#root-list", OptionList)
-        if self.has_multiple_roots():
-            root_list.focus()
-        else:
-            self.query_one("#repo-list", OptionList).focus()
+        self._start_list().focus()
+
+    def _start_list(self) -> OptionList:
+        """The list the keys start on: the roots' where several show, else the repositories'."""
+        return self.query_one("#root-list" if self.has_multiple_roots() else "#repo-list", OptionList)
+
+    def _focus_shown(self) -> bool:
+        """Whether the focus is on a widget the screen shows, none of its containers hidden."""
+        return self.focused is not None and all(node.display for node in self.focused.ancestors_with_self)
 
     def _populate_roots(self, filter_text: str = "", *, initial: bool = False) -> None:
         root_list = self.query_one("#root-list", OptionList)
@@ -473,6 +486,10 @@ class AdkReviewTuiApp(App[int]):
             found = await asyncio.to_thread(discover_projects, root.path, self.tui_config.scan_depth)
         finally:
             self._set_loading(False, repo_list)
+        # Read by an audit, and reproduced: a loading list cannot hold the focus, so the screen's own focus took the
+        # first widget it counts, a chip of the hidden dock, and the arrow keys moved nothing.
+        if repo_list.is_attached and not self._focus_shown():
+            self._start_list().focus()
         if self.selected_root != root:
             return
         self.projects = found
@@ -533,7 +550,7 @@ class AdkReviewTuiApp(App[int]):
         self.findings_rows = []
         self._filtered_findings = []
         self._selected_finding = None
-        self._reviewed = self._verdict = None
+        self._reviewed = self._verdict = self._rows_target = None
         self.query_one("#report-log", RichLog).clear()
         self.query_one("#findings-table", DataTable).clear()
         self.query_one("#finding-detail", Static).update(RUN_FIRST)
@@ -820,7 +837,11 @@ class AdkReviewTuiApp(App[int]):
         self._update_cli_preview()
 
     async def _sync_prior_baseline_findings(self, project: ProjectInfo, prev_file: Path, *, has_prev: bool) -> None:
-        """Populate or clear `2. Findings Explorer` from any saved `--previous` baseline for `(project, target)`."""
+        """Populate or clear `2. Findings Explorer` from any saved `--previous` baseline for `(project, target)`, unless
+        it shows this session's own review of that target. Read by an audit, and reproduced: F5 put an older saved
+        review over a degraded one, which is never saved, and the tab said the review found nothing."""
+        if self._rows_target == self._target():
+            return
         tabs = self.query_one("#output-tabs", TabbedContent)
         if has_prev:
             rows, reviewed, verdict = await asyncio.to_thread(load_report, prev_file)
@@ -829,14 +850,21 @@ class AdkReviewTuiApp(App[int]):
                 or baseline_path(project.path, self.selected_base, self.selected_head, self.selected_mode) != prev_file
             ):
                 return
-            self.findings_rows, self._reviewed, self._verdict = rows, reviewed, verdict
-            tabs.get_tab("tab-findings").label = (
-                f"2. Findings Explorer ({len(rows)} prior)" if rows else "2. Findings Explorer"
-            )
+            self.findings_rows, self._reviewed, self._verdict, self._rows_target = rows, reviewed, verdict, None
+            tabs.get_tab("tab-findings").label = self._findings_label(prior=True)
         else:
-            self.findings_rows, self._reviewed, self._verdict = [], None, None
-            tabs.get_tab("tab-findings").label = "2. Findings Explorer"
+            self.findings_rows, self._reviewed, self._verdict, self._rows_target = [], None, None, None
+            tabs.get_tab("tab-findings").label = self._findings_label()
         self._render_findings_table()
+
+    def _findings_label(self, *, prior: bool = False) -> str:
+        """The Findings tab's name: how many findings it holds, `prior` where a saved review's, and, where the review
+        could not check everything, DEGRADED in words. Read by an audit: the banner alone said so, and the next copy or
+        link replaced it."""
+        count = len(self.findings_rows)
+        said = [f"{count} prior" if prior else str(count)] if count else []
+        said += ["DEGRADED"] if self._verdict == "DEGRADED" else []
+        return f"2. Findings Explorer ({', '.join(said)})" if said else "2. Findings Explorer"
 
     def current_selection(self, *, dry_run: bool = False) -> ReviewSelection:
         """Collect all current widget states into a `ReviewSelection`."""
@@ -1535,6 +1563,7 @@ class AdkReviewTuiApp(App[int]):
         argv, outputs = build_review_argv(sel)
         report_log = self.query_one("#report-log", RichLog)
         report_log.clear()
+        self.last_report_md = ""  # read by an audit: a stopped run left the last report for Ctrl+Y as its own
         self._set_banner(f"Running {label} on {project.name}...")
         self._log_progress(f"$ {format_cli_command(argv)}")
         self._set_running_ui(True)
@@ -1543,13 +1572,19 @@ class AdkReviewTuiApp(App[int]):
             code, stdout_text = await self._stream_subprocess(review_command(argv))
         except asyncio.CancelledError:
             self._set_banner(f"{label.capitalize()} stopped by user.")
+            if self._has_dom("#report-log"):  # not where the closing screen stopped it
+                again = "Ctrl+D" if dry_run else "Ctrl+R"
+                self.last_report_md = f"The {label} was stopped, so it wrote no report. Press {again} to run it again."
+                report_log.write(self.last_report_md)
             raise
         finally:
             self._set_running_ui(False)
         if not dry_run:
             await asyncio.to_thread(promote_baseline, outputs, code)
+        decided = await self._load_generated_files(outputs, target) if self._target() == target else None
         if self._target() != target:
-            # Read by review: a review that ended after the person chose another target filled that target's tabs.
+            # Read by review: a review that ended after the person chose another target filled that target's tabs. Read
+            # by an audit, and reproduced: so did one whose report was read while the person chose.
             where = f" Its files are in {self.tui_config.output_dir}." if outputs else ""
             self._set_banner(
                 f"Finished the {label} of {target[2] or target[1]} (exit code {code}). It is not shown: you chose "
@@ -1559,8 +1594,9 @@ class AdkReviewTuiApp(App[int]):
         self.last_report_md = stdout_text
         if stdout_text:
             report_log.write(stdout_text.rstrip("\n"))
-        decided = await self._load_generated_files(outputs)
         self.query_one("#output-tabs", TabbedContent).active = "tab-report"
+        # Read by an audit: at 80 by 24 the results got one row while the panels stayed open. Ctrl+O brings them back.
+        self._fold_all(collapsed=True)
         if decided is None and not stdout_text.strip():
             # Read by an audit, and reproduced: a review refused before it ran, as a first one with no login is, left
             # the Report tab empty and the banner at "exit code 2", its reason on the progress tab alone. Known by the
@@ -1591,7 +1627,9 @@ class AdkReviewTuiApp(App[int]):
         stdout_chunks: list[str] = []
 
         def told(raw: bytes) -> None:
-            if line := raw.decode("utf-8", errors="replace").rstrip():
+            # Read by an audit: another program's line, a warning or git's, kept a terminal's escapes for the banner,
+            # the Report tab and the clipboard.
+            if line := _seen(raw.decode("utf-8", errors="replace")).rstrip():
                 self._said.append(line)
                 self._log_progress(line)
                 self._set_banner(line[:300])
@@ -1640,33 +1678,42 @@ class AdkReviewTuiApp(App[int]):
             with contextlib.suppress(TimeoutError, ProcessLookupError):
                 await asyncio.wait_for(proc.wait(), timeout=2.0)
 
-    async def _load_generated_files(self, outputs: dict[str, Path]) -> str | None:
+    async def _load_generated_files(
+        self, outputs: dict[str, Path], target: tuple[str, str, str, str] | None = None
+    ) -> str | None:
         """What a decided review wrote, on its three tabs: its findings, and its comment and hand-off or that it wrote
         none, and the verdict its report names. A run that decided nothing wrote no report, a dry run or a review the
         reviewer refused, and leaves the tabs as the last review left them, and it returns None. Read by an audit, and
         confirmed: a review with the comment switched off set the tab's name back and left the earlier review's comment
-        under it, for Ctrl+Y to copy as its own."""
+        under it, for Ctrl+Y to copy as its own. Where `target` is given, all is read first and shown only while it is
+        still the target chosen: read by an audit, a branch picked while the report was read was shown it."""
         json_path = outputs.get("json")
         if json_path is None or not await asyncio.to_thread(json_path.is_file):
             return None
-        self.findings_rows, self._reviewed, self._verdict = await asyncio.to_thread(load_report, json_path)
-        count = len(self.findings_rows)
-        tabs = self.query_one("#output-tabs", TabbedContent)
-        tabs.get_tab("tab-findings").label = f"2. Findings Explorer ({count})" if count else "2. Findings Explorer"
+        rows, reviewed, verdict = await asyncio.to_thread(load_report, json_path)
+        comment, handoff = await self._written(outputs.get("comment")), await self._written(outputs.get("handoff"))
+        if target is not None and self._target() != target:
+            return None
+        self.findings_rows, self._reviewed, self._verdict, self._rows_target = rows, reviewed, verdict, target
+        self.query_one("#output-tabs", TabbedContent).get_tab("tab-findings").label = self._findings_label()
         self._render_findings_table()
-        self.last_comment_md = await self._shown(outputs.get("comment"), "comment", "3. Author Comment")
-        self.last_handoff_md = await self._shown(outputs.get("handoff"), "handoff", "4. Agent Handoff")
-        return self._verdict
+        self.last_comment_md = await self._shown(comment, "comment", "3. Author Comment")
+        self.last_handoff_md = await self._shown(handoff, "handoff", "4. Agent Handoff")
+        return verdict
 
-    async def _shown(self, written: Path | None, flag: str, title: str) -> str:
-        """The text a review wrote for the tab `flag` names, drawn there, or "" and the tab saying it wrote none."""
+    @staticmethod
+    async def _written(path: Path | None) -> str | None:
+        """The text a review wrote at `path`, or None where it wrote none."""
+        if path is None or not await asyncio.to_thread(path.is_file):
+            return None
+        return await asyncio.to_thread(path.read_text, encoding="utf-8")
+
+    async def _shown(self, text: str | None, flag: str, title: str) -> str:
+        """`text` drawn on the tab `flag` names, or the tab saying the review wrote none; the text, or ""."""
         tab = self.query_one("#output-tabs", TabbedContent).get_tab(f"tab-{flag}")
-        if written is None or not await asyncio.to_thread(written.is_file):
-            text, tab.label = "", f"{title} (--{flag})"
-        else:
-            text, tab.label = await asyncio.to_thread(written.read_text, encoding="utf-8"), f"{title} (ready)"
+        tab.label = f"{title} (--{flag})" if text is None else f"{title} (ready)"
         await self.query_one(f"#{flag}-md", Markdown).update(text or f"*No `--{flag}` generated yet.*")
-        return text
+        return text or ""
 
     def _render_findings_table(self, *, keep: FindingRow | None = None) -> None:
         if not self._has_dom("#finding-sev-filter", "#finding-tier-filter", "#finding-search", "#findings-table"):
