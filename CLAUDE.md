@@ -268,7 +268,7 @@ Load-bearing rules the tests enforce:
   from cmd
   and PowerShell alike: the command it shows is quoted by `windows_word`, or not shown; no key is one a terminal sends
   as another or the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first, Stop while a review runs
-  alone, since Ctrl+X is a text field's cut, and none but Stop runs behind a dialog; a review it runs gets UTF-8
+  alone, since Ctrl+X is a text field's cut, and none but Stop, and Textual's own Ctrl+Q, which quits, runs behind a dialog; a review it runs gets UTF-8
   streams; and a copy goes to Windows' own clipboard too. `adk_review/` still leaves a `tui/` folder out of the cache
   key: a checkout keeps a person's old config there.
 - **Layering** (`tests/test_layering.py`): `core` → `collect` → `judge` → `deliver`, with imports pointing one way

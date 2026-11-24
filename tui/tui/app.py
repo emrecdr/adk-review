@@ -223,7 +223,6 @@ class AdkReviewTuiApp(App[int]):
         "minimize_all",
         "restore_all",
         "copy_active_tab",
-        "quit_when_idle",
     }
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:  # noqa: ARG002 -- Textual's
@@ -553,7 +552,10 @@ class AdkReviewTuiApp(App[int]):
                 break
 
     def _reset_outputs(self) -> None:
-        """Clear prior repository outputs and tab readiness badges when switching repositories."""
+        """Clear prior repository outputs and tab readiness badges when switching repositories. Read by the fourth code
+        review: a branch's sync clears them past its dialog and its update, where the screen may have closed."""
+        if not self._has_dom("#output-tabs"):
+            return
         self._report_says("")
         self.last_comment_md, self.last_handoff_md = self._shown(None, "comment"), self._shown(None, "handoff")
         self._hold([], None, None, None)
@@ -1566,6 +1568,8 @@ class AdkReviewTuiApp(App[int]):
             # Read by review: an error here, a config the screen could not write, ended the whole screen with a
             # traceback, Textual's own way with a worker's error.
             self._set_banner(f"The {label} could not run: {exc}")
+            # Read by the fourth code review: the review before stayed on the Report tab, for Ctrl+Y to copy as this.
+            self._report_says(f"The {label} could not run: {exc}")
             self.notify(f"The {label} could not run: {exc}", severity="error", timeout=8, markup=False)
         finally:
             self._set_reviewing(False)
@@ -1732,7 +1736,7 @@ class AdkReviewTuiApp(App[int]):
         # Read by review: a target picked meanwhile was shown it; and the screen may have closed during the reads.
         if (target is not None and self._target() != target) or not self._has_dom("#output-tabs"):
             return None
-        self._hold(rows, reviewed, verdict, target)
+        self._hold(rows, reviewed, "" if verdict is None else verdict, target)  # "": a report read, its verdict unknown
         self.last_comment_md, self.last_handoff_md = self._shown(comment, "comment"), self._shown(handoff, "handoff")
         return verdict or ""  # read by a code review: a verdict this screen does not know is still a report read
 
@@ -1792,6 +1796,8 @@ class AdkReviewTuiApp(App[int]):
         the screen could not read."""
         if self._verdict == "APPROVED":  # read by the third code review: a saved one read as the last review
             return SAVED_NONE if self._prior else "This review has no findings."
+        if self._verdict == "":  # read by the fourth code review: it asked for a review right after one
+            return "This review kept no finding. Its Report tab names its verdict, which this screen does not know."
         if self._verdict == "DEGRADED":
             return (
                 "This review kept no finding, but it could not check everything. "

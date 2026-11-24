@@ -4987,3 +4987,60 @@ class TestWhatTheThirdCodeReviewFound:
             monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("APPROVED", 0))
             await _reviewed_once(app, pilot)
             assert app.is_running, "the screen is still open"
+
+
+class TestWhatTheFourthCodeReviewFound:
+    """Read by the fourth code review of the audit's branch, each reproduced by a test that failed first."""
+
+    @pytest.mark.asyncio
+    async def test_a_review_that_could_not_run_leaves_none_of_the_last_report_to_copy(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """An error while the choices were saved, or the output folder made, left the review before on the Report tab,
+        for Ctrl+Y to copy as this one's, beside a banner that said this one could not run."""
+        pytest.importorskip("textual")
+        import tui.app as screen
+
+        def gone(*_args: object) -> None:
+            raise OSError("the output drive is gone")
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("REQUEST_CHANGES", 1, ("x",), "FIRST REPORT\n"))
+            await _reviewed_once(app, pilot)
+            monkeypatch.setattr(screen, "make_output_dir", gone)
+            await _reviewed_once(app, pilot)
+            copied = app.last_report_md
+        assert "FIRST REPORT" not in copied and "could not run" in copied and "drive is gone" in copied, copied
+
+    @pytest.mark.asyncio
+    async def test_outputs_cleared_as_the_screen_closes_draw_nothing(self, tmp_path: Path) -> None:
+        """A branch's sync clears the outputs past its dialog and its update, and found the tabs gone where the screen
+        closed meanwhile: one of its three calls was guarded, `NoMatches` from the other two."""
+        pytest.importorskip("textual")
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+        app._reset_outputs()
+
+    @pytest.mark.asyncio
+    async def test_a_report_with_a_verdict_the_screen_does_not_know_never_asks_for_a_review(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A report whose verdict this screen does not know, with no finding kept, left the Findings tab asking for a
+        review, right after one: it says the review kept no finding, and where its verdict is named."""
+        pytest.importorskip("textual")
+        from textual.widgets import Static
+
+        from tui.app import RUN_FIRST
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("SOMETHING_NEW", 1, stdout=""))
+            await _reviewed_once(app, pilot)
+            said = str(app.query_one("#finding-detail", Static).render())
+        assert said != RUN_FIRST and "Report tab" in said, said

@@ -211,7 +211,7 @@ TESTS_FIRST = (
 #: stands, which a `tests` finding's never does, so the line names a test that proves the finding, and the paragraph
 #: says what that test is, and where it can pass. Read by the third code review: "cannot fail, make no change" came
 #: before the cases it does not cover, so an agent that took the first rule to match left those findings alone: each
-#: case comes first, one sentence a line, and the rule last, for any other case.
+#: case comes first, a sentence each, and the rule last, for any other case.
 FIRST = "first: a test that proves the finding, where one can, kept with the fix"
 PROVE_FIRST = (
     "An item with a `first:` line is a guideline's finding, a model's reading, and it can be wrong.",
