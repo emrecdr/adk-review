@@ -89,11 +89,12 @@ def _extend_rows(rows: list[FindingRow], items: object, tier_resolver: str | Non
 
 
 def _read(json_path: Path) -> dict | None:
-    """A JSON report as data, or None where the file is missing, is no JSON, or holds no object. Read by an audit: one
-    nested past Python's depth raised `RecursionError`, which nothing caught, and the screen closed."""
+    """A JSON report as data, or None where the file is missing, is no JSON, or holds no object. Read by an audit, one
+    nested past Python's depth raised `RecursionError`, and by a code review, one holding an integer of more than
+    4,300 digits a `ValueError` no narrower `except` caught: the screen closed on each."""
     try:
         raw = json.loads(json_path.read_text(encoding="utf-8"))
-    except OSError, json.JSONDecodeError, UnicodeDecodeError, RecursionError:
+    except OSError, ValueError, RecursionError:  # ValueError holds JSONDecodeError and UnicodeDecodeError
         return None
     return raw if isinstance(raw, dict) else None
 

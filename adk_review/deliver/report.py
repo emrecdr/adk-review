@@ -51,11 +51,12 @@ def one_line(text: str) -> str:
     only: grounding (`core.verdict.drop_ungrounded`) reads a quote its own way, so
     what counts as grounded cannot move when the report's safety rule does.
     """
-    return squash(_unhidden(text))
+    return squash(unhidden(text))
 
 
-def _unhidden(text: str) -> str:
-    """`text` with each credential hidden and each character a reader cannot see, or a terminal acts on, a space."""
+def unhidden(text: str) -> str:
+    """`text` with each credential hidden and each character a reader cannot see, or a terminal acts on, a space, its
+    spaces kept: another program's line as the terminal front end shows it, a command or a traceback's indentation."""
     return _CONTROL.sub(" ", scrub(text)[0])
 
 
@@ -894,7 +895,7 @@ def _pasted(argv: Sequence[str], windows: bool = os.name == "nt") -> str | None:
     words = [windows_word(arg) if windows else shlex.quote(arg) for arg in argv]
     line = " ".join(word for word in words if word is not None)
     # Read by review: a token, and a variation selector no one sees, were printed where the prose beside hid them.
-    safe = line.isprintable() and inert(_unhidden(line)) == line
+    safe = line.isprintable() and inert(unhidden(line)) == line
     return line if None not in words and safe else None
 
 

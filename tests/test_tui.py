@@ -1446,8 +1446,8 @@ class TestWindowsAndItsShells:
         monkeypatch.setenv("PYTHONIOENCODING", "cp1252")  # what a pipe gets on Windows
         app = AdkReviewTuiApp(config_path=cfg)
         said: list[str] = []
-        monkeypatch.setattr(app, "_log_progress", said.append)
-        monkeypatch.setattr(app, "_set_banner", lambda _line: None)
+        monkeypatch.setattr(app, "_log_progress", lambda line, **_how: said.append(line))
+        monkeypatch.setattr(app, "_set_banner", lambda _line, **_how: None)
         child = "import sys; sys.stderr.write('feat/f\\u00fcnf \\u2014 done\\n'); print('report \\u2192 ok')"
         code, out = await app._stream_subprocess([sys.executable, "-c", child])
         assert (code, said, out) == (0, ["feat/f\u00fcnf \u2014 done"], "report \u2192 ok\n"), (code, said, out)
@@ -1483,7 +1483,7 @@ class TestWindowsAndItsShells:
             closed.set()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("slow", ["list_branches", "read_change", "is_file"])
+    @pytest.mark.parametrize("slow", ["list_branches", "read_change", "is_file", "load_report"])
     async def test_a_listing_that_ends_as_the_screen_closes_draws_nothing(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, slow: str
     ) -> None:
@@ -1511,6 +1511,10 @@ class TestWindowsAndItsShells:
             return read
 
         monkeypatch.setattr(screen.asyncio, "to_thread", held)
+        if slow == "load_report":  # read by a code review: the saved report's own read, after its file was found
+            saved = tmp_path / "saved.json"
+            saved.write_text('{"schema": 2, "findings": []}', encoding="utf-8")
+            monkeypatch.setattr(screen, "baseline_path", lambda *_args: saved)
         app = screen.AdkReviewTuiApp(config_path=cfg)
         close_the_screens = app._close_all
 
@@ -1790,7 +1794,7 @@ class TestWhatTheCodeReviewFound:
             banner = str(app.query_one("#status-banner", Static).render())
             assert "could not run" in banner and "Permission denied" in banner, banner
             said: list[str] = []
-            monkeypatch.setattr(app, "_log_progress", said.append)
+            monkeypatch.setattr(app, "_log_progress", lambda line, **_how: said.append(line))
             long = "import sys; sys.stderr.write('x' * 100_000 + '\\nafter\\n')"
             code, _out = await app._stream_subprocess([sys.executable, "-c", long])
             assert code == 0 and said[-1] == "after" and len(said[0]) >= 64_000, [len(line) for line in said]
@@ -4583,21 +4587,33 @@ class TestTheKeysAndTheRoomTheScreenGives:
         assert answers == [False], answers
 
     @pytest.mark.asyncio
-    async def test_a_stray_q_ends_nothing_and_ctrl_q_ends_the_screen(self, tmp_path: Path) -> None:
-        """A plain `q` closed the screen from any list, the table or a chip, a review running or a draft unsent. Ctrl+Q
-        closes it, Textual's own key, which no terminal keeps for itself."""
+    async def test_q_ends_no_running_review_and_ctrl_q_ends_the_screen(self, tmp_path: Path) -> None:
+        """A plain `q` closed the screen from any list, the table or a chip, the review it ran with it. It quits a
+        screen with no review running; while one runs it says how to stop it. Read by a code review: with `q` gone,
+        a terminal that keeps Ctrl+Q for itself, as VS Code's does, had no key that quits. Ctrl+Q, Textual's own,
+        quits whatever runs."""
         pytest.importorskip("textual")
         app = _payments_screen(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             app.query_one("#repo-list").focus()
+            app._reviewing = True  # as while a review runs
             await pilot.press("q")
             await pilot.pause()
             after_q = app.is_running
+            told = [notice.message for notice in app._notifications]
             await pilot.press("ctrl+q")
             await pilot.pause()
             after_ctrl_q = app.is_running
         assert after_q and not after_ctrl_q, (after_q, after_ctrl_q)
+        assert [said for said in told if "Ctrl+X" in said], told
+        idle = _payments_screen(tmp_path / "idle")
+        async with idle.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(idle, pilot)
+            idle.query_one("#repo-list").focus()
+            await pilot.press("q")
+            await pilot.pause()
+            assert not idle.is_running, "q quits a screen with no review running"
 
     @pytest.mark.asyncio
     async def test_a_review_that_ends_gives_its_results_the_room_of_the_panels(
@@ -4624,3 +4640,172 @@ class TestTheKeysAndTheRoomTheScreenGives:
             await pilot.pause()
             restored = opened()
         assert before and after == [] and restored == before, (before, after, restored)
+
+
+class TestWhatTheCodeReviewOfTheAuditFound:
+    """Read by the code review of the audit's branch, each reproduced by a test that failed first."""
+
+    @pytest.mark.asyncio
+    async def test_a_target_picked_while_the_comment_draws_is_given_none_of_it(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """The target was checked once all was read, but the comment and the hand-off are drawn after it, a long
+        comment for seconds, so a target picked meanwhile was given that review's comment and hand-off, ready to copy.
+        Picked while they draw, both tabs say the review wrote none."""
+        pytest.importorskip("textual")
+        from textual.widgets import TabbedContent
+
+        app = _payments_screen(tmp_path)
+
+        async def written(_path: object) -> str:
+            return "the old target's text"
+
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            real = app._shown
+
+            async def shown(text: str | None, flag: str, title: str) -> str:
+                if flag == "comment":
+                    app.selected_head = "feature/tax"  # the person's pick, as the comment draws
+                return await real(text, flag, title)
+
+            monkeypatch.setattr(app, "_written", written)
+            monkeypatch.setattr(app, "_shown", shown)
+            monkeypatch.setattr(app, "_stream_subprocess", _stubbed_run("REQUEST_CHANGES", 1, ("x",)))
+            await _reviewed_once(app, pilot)
+            tabs = app.query_one("#output-tabs", TabbedContent)
+            labels = [str(tabs.get_tab(f"tab-{flag}").label) for flag in ("comment", "handoff")]
+            kept = (app.last_comment_md, app.last_handoff_md)
+        assert kept == ("", ""), kept
+        assert not [label for label in labels if "ready" in label], labels
+
+    @pytest.mark.asyncio
+    async def test_a_saved_report_read_while_a_review_ends_never_replaces_it(self, tmp_path: Path, monkeypatch) -> None:
+        """F5's read of the saved report began while a review still ran, so the check that the tab shows this
+        session's own review passed; the review ended degraded, which is never saved, and the read that came back
+        after it put the older review over it. The check is made again once the read is back."""
+        pytest.importorskip("textual")
+        import json
+
+        import tui.app as screen
+        from tui import options
+
+        app = _payments_screen(tmp_path)
+        degraded = tmp_path / "degraded.json"
+        found = {"check": "rule.lint", "file": "a.py", "line": 1, "severity": "major", "title": "its own"}
+        degraded.write_text(json.dumps({"schema": 2, "verdict": "DEGRADED", "findings": [found]}), encoding="utf-8")
+        read = screen.load_report
+
+        def review_ends_meanwhile(path: Path):
+            if path != degraded:
+                rows, reviewed, verdict = read(degraded)
+                app.call_from_thread(app._hold, rows, reviewed, verdict, app._target())
+            return read(path)
+
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            saved = options.baseline_path(app.selected_project.path, "main", app.selected_head, app.selected_mode)
+            saved.parent.mkdir(parents=True, exist_ok=True)
+            saved.write_text(json.dumps({"schema": 2, "verdict": "APPROVED", "findings": []}), encoding="utf-8")
+            monkeypatch.setattr(screen, "load_report", review_ends_meanwhile)
+            app.action_refresh_repo()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            verdict, rows = app._verdict, [row.title for row in app.findings_rows]
+        assert verdict == "DEGRADED" and rows == ["its own"], (verdict, rows)
+
+    def test_a_report_holding_a_number_past_pythons_digits_reads_as_no_report(self, tmp_path: Path) -> None:
+        """Python refuses an integer of more than 4,300 digits with a `ValueError` no narrower `except` caught, and the
+        screen closed on a saved report that held one."""
+        from tui.findings import load_report
+
+        long = tmp_path / "long.json"
+        long.write_text('{"schema": ' + "9" * 5_000 + "}", encoding="utf-8")
+        assert load_report(long) == ([], None, None)
+
+    @pytest.mark.asyncio
+    async def test_a_failed_fetch_is_told_with_no_credential_and_no_escape(self, tmp_path: Path, monkeypatch) -> None:
+        """git's own message reached the banner and the progress tab made safe, and the notice as git wrote it: a
+        remote's address with its token, a terminal's escape."""
+        pytest.importorskip("textual")
+        import tui.app as screen
+        from tui.git_sync import FetchResult
+
+        said = "fatal: unable to access 'https://user:" + "ghp_" + "a1B2" * 9 + "@example.com/r.git/' \x1b[2J"
+        monkeypatch.setattr(screen, "fetch_remote", lambda *_args, **_kwargs: FetchResult(False, said))
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.action_refresh_repo()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            told = [notice.message for notice in app._notifications]
+        assert [said for said in told if "unable to access" in said], told
+        assert not [said for said in told if "ghp_" in said or "\x1b" in said or "[2J" in said], told
+
+    @pytest.mark.asyncio
+    async def test_a_report_with_a_verdict_the_screen_does_not_know_is_never_called_no_report(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """A review that wrote its report, with a verdict this screen does not know, a newer reviewer's, and said
+        nothing on its standard output, was said to have ended with no report, its findings drawn beside the words."""
+        pytest.importorskip("textual")
+        import asyncio
+        import json
+
+        from textual.widgets import Static
+
+        found = {"check": "rule.lint", "file": "a.py", "line": 1, "severity": "major", "title": "its own"}
+
+        async def run(cmd: list[str]) -> tuple[int, str]:
+            report = json.dumps({"schema": 2, "verdict": "SOMETHING_NEW", "findings": [found]})
+            await asyncio.to_thread(Path(cmd[cmd.index("--json") + 1]).write_text, report, "utf-8")
+            return 1, ""
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            monkeypatch.setattr(app, "_stream_subprocess", run)
+            await _reviewed_once(app, pilot)
+            banner, rows = str(app.query_one("#status-banner", Static).render()), app.findings_rows
+        assert "no report" not in app.last_report_md and "no report" not in banner, (app.last_report_md, banner)
+        assert [row.title for row in rows] == ["its own"], rows
+
+    @pytest.mark.asyncio
+    async def test_a_run_that_wrote_no_report_leaves_the_panels_open(self, tmp_path: Path, monkeypatch) -> None:
+        """A review refused, as one for nothing under --path is, minimized every panel, the step to mend among them.
+        Only a review that wrote its report gives the results the room."""
+        pytest.importorskip("textual")
+        from textual.widgets import Collapsible
+
+        _child_runs(monkeypatch, "import sys; sys.stderr.write('review: nothing under --path src\\n'); sys.exit(2)")
+        app = _payments_screen(tmp_path)
+
+        def opened() -> list[str]:
+            return [str(c.id) for c in app.query(Collapsible) if not c.has_class("hidden") and not c.collapsed]
+
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.selected_base = "main"
+            before = opened()
+            await _reviewed_once(app, pilot)
+            after = opened()
+        assert before and after == before, (before, after)
+
+    @pytest.mark.asyncio
+    async def test_the_progress_tab_keeps_a_lines_own_spaces(self, tmp_path: Path) -> None:
+        """Each progress line was made one line, so the command a review ran, copied from the progress tab, named
+        `My  Docs` as `My Docs`, another folder, and a traceback lost its indentation."""
+        pytest.importorskip("textual")
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app._log_progress("$ adk-review . --path 'My  Docs'")
+            app._log_progress('  File "x.py", line 3')
+            kept = app._progress[-2:]
+        assert kept == ["$ adk-review . --path 'My  Docs'", '  File "x.py", line 3'], kept

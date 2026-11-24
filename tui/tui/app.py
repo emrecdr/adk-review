@@ -42,8 +42,8 @@ from textual.widgets import (
 from textual.widgets.option_list import Option
 from textual.widgets.selection_list import Selection
 
-from adk_review.core.text import kinds_of
-from adk_review.deliver.report import one_line
+from adk_review.core.text import kinds_of, squash
+from adk_review.deliver.report import one_line, unhidden
 
 from .azure import Place, PullRequest, draft, files_link, line_link, parse_pr_url, thread_link
 from .azure_client import AzLogin, AzureError, Client, Credential, post_comment
@@ -185,8 +185,6 @@ class AdkReviewTuiApp(App[int]):
         Binding("ctrl+t", "minimize_all", "Minimize All", priority=True),
         Binding("ctrl+o", "restore_all", "Restore All", priority=True),
         Binding("ctrl+y", "copy_active_tab", "Copy Tab", priority=True),
-        # Read by an audit: a plain `q` closed the screen from any list, a review running or a draft unsent.
-        Binding("ctrl+q", "quit", "Quit", priority=True),
         Binding("f5", "refresh_repo", "Fetch & Refresh"),
         # A finding's place in Azure DevOps: plain letters, which a text field takes as text, and which act on the
         # Findings tab alone, where the person sees the finding they open.
@@ -200,6 +198,10 @@ class AdkReviewTuiApp(App[int]):
         Binding("5", "toggle_step(5)", "Step 5", show=False),
         Binding("6", "toggle_step(6)", "Step 6", show=False),
         Binding("7", "toggle_step(7)", "Step 7", show=False),
+        # Read by an audit: a plain `q` closed the screen and the review it ran; it now quits only where none runs.
+        # Textual's own Ctrl+Q quits whatever runs: read by a code review, a terminal that keeps Ctrl+Q, as VS Code's
+        # does, then had no key that quits.
+        Binding("q", "quit_when_idle", "Quit"),
     ]
 
     #: What a key starts that never runs behind a dialog: a review, a dry run, the sections folded, a tab copied. Not
@@ -213,6 +215,7 @@ class AdkReviewTuiApp(App[int]):
         "restore_all",
         "copy_active_tab",
         "quit",
+        "quit_when_idle",
     }
 
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:  # noqa: ARG002 -- Textual's
@@ -543,8 +546,7 @@ class AdkReviewTuiApp(App[int]):
     def _reset_outputs(self) -> None:
         """Clear prior repository outputs and tab readiness badges when switching repositories."""
         self.last_report_md = ""
-        self.last_comment_md = ""
-        self.last_handoff_md = ""
+        self._clear_written()
         self.findings_rows = []
         self._filtered_findings = []
         self._selected_finding = None
@@ -553,12 +555,7 @@ class AdkReviewTuiApp(App[int]):
         self.query_one("#findings-table", DataTable).clear()
         self.query_one("#finding-detail", Static).update(RUN_FIRST)
         self.query_one("#btn-explain-check", Button).disabled = True
-        self.query_one("#comment-md", Markdown).update("*No `--comment` generated yet.*")
-        self.query_one("#handoff-md", Markdown).update("*No `--handoff` generated yet.*")
-        tabs = self.query_one("#output-tabs", TabbedContent)
-        tabs.get_tab("tab-findings").label = "2. Findings Explorer"
-        tabs.get_tab("tab-comment").label = "3. Author Comment (--comment)"
-        tabs.get_tab("tab-handoff").label = "4. Agent Handoff (--handoff)"
+        self.query_one("#output-tabs", TabbedContent).get_tab("tab-findings").label = "2. Findings Explorer"
 
     def _apply_repo_preset(self, repo_name: str) -> None:
         preset = self.tui_config.projects.get(repo_name)
@@ -618,7 +615,7 @@ class AdkReviewTuiApp(App[int]):
                 )
                 if self.selected_project != project:
                     return
-                said = fetch_res.message
+                said = one_line(fetch_res.message)  # read by a code review: the notice showed it as git wrote it
                 self._log_progress(f"[{project.name}] {said}")
                 if not fetch_res.ok:
                     off = "" if prune else " fetch_on_select = false turns off the fetch at a pick."
@@ -753,10 +750,10 @@ class AdkReviewTuiApp(App[int]):
                 outcome = await asyncio.to_thread(
                     fast_forward_local_branch, repo, status.local_branch, status.upstream_branch
                 )
-                self._log_progress(outcome.message)
-                self._set_banner(outcome.message)
-                severity = "information" if outcome.ok else "warning"
-                self.notify(outcome.message, severity=severity, timeout=4, markup=False)
+                said = one_line(outcome.message)
+                self._log_progress(said)
+                self._set_banner(said)
+                self.notify(said, severity="information" if outcome.ok else "warning", timeout=4, markup=False)
                 return outcome.resolved_ref
             return status.local_branch
         if status.kind == "diverged":
@@ -844,7 +841,8 @@ class AdkReviewTuiApp(App[int]):
         if has_prev:
             found = await asyncio.to_thread(load_report, prev_file)
             if (
-                self.selected_project != project
+                self._rows_target == self._target()  # read by a code review: a review that ended during the read
+                or self.selected_project != project
                 or baseline_path(project.path, self.selected_base, self.selected_head, self.selected_mode) != prev_file
             ):
                 return
@@ -859,7 +857,10 @@ class AdkReviewTuiApp(App[int]):
         *,
         prior: bool = False,
     ) -> None:
-        """What the Findings tab holds, the review it came from, and its name, drawn: one place sets them together."""
+        """What the Findings tab holds, the review it came from, and its name, drawn: one place sets them together. Read
+        by a code review: a saved report read as the screen closed found no tab to name."""
+        if not self._has_dom("#output-tabs"):
+            return
         self.findings_rows, self._reviewed, self._verdict, self._rows_target = rows, reviewed, verdict, target
         self.query_one("#output-tabs", TabbedContent).get_tab("tab-findings").label = self._findings_label(prior=prior)
         self._render_findings_table()
@@ -1433,6 +1434,13 @@ class AdkReviewTuiApp(App[int]):
             self._execute_review(dry_run=False)
 
     @on(Button.Pressed, "#btn-stop")
+    def action_quit_when_idle(self) -> None:
+        """Quit the screen, where no review runs: one that runs is stopped with Ctrl+X first, or quit with Ctrl+Q."""
+        if self._reviewing:
+            self.notify("A review is running. Press Ctrl+X to stop it, then q to quit.", timeout=4, markup=False)
+            return
+        self.exit()
+
     def action_stop_review(self) -> None:
         """Cancel the active review worker and terminate its subprocess."""
         self.workers.cancel_group(self, "review_exec")
@@ -1603,7 +1611,9 @@ class AdkReviewTuiApp(App[int]):
             report_log.write(stdout_text.rstrip("\n"))
         self.query_one("#output-tabs", TabbedContent).active = "tab-report"
         # Read by an audit: at 80 by 24 the results got one row while the panels stayed open. Ctrl+O brings them back.
-        self._fold_all(collapsed=True)
+        # Read by a code review: a review refused, or a dry run, minimized the step to mend: only a report read does.
+        if decided is not None:
+            self._fold_all(collapsed=True)
         if decided is None and not stdout_text.strip():
             # Read by an audit, and reproduced: a review refused before it ran, as a first one with no login is, left
             # the Report tab empty and the banner at "exit code 2", its reason on the progress tab alone. Known by the
@@ -1636,10 +1646,12 @@ class AdkReviewTuiApp(App[int]):
         def told(raw: bytes) -> None:
             # Read by an audit: another program's line, a warning or a traceback's, kept a terminal's escapes and any
             # credential it held, for the Report tab and the clipboard. Made safe as the report makes a model's line.
-            if line := one_line(raw.decode("utf-8", errors="replace")):
+            if line := unhidden(raw.decode("utf-8", errors="replace")).rstrip():
                 self._said.append(line)
-                self._log_progress(line)
-                self._set_banner(line)
+                self._log_progress(
+                    line, safe=True
+                )  # read by a code review: made safe three times, 250 ms a 650 KB line
+                self._set_banner(line, safe=True)
 
         async def _read_stderr() -> None:
             # In pieces, split here: `readline` raises past 64 KiB, and read by review, one line of a provider's error
@@ -1704,7 +1716,20 @@ class AdkReviewTuiApp(App[int]):
         self._hold(rows, reviewed, verdict, target)
         self.last_comment_md = await self._shown(comment, "comment", "3. Author Comment")
         self.last_handoff_md = await self._shown(handoff, "handoff", "4. Agent Handoff")
-        return verdict
+        if target is not None and self._target() != target:  # read by a code review: picked while the two drew
+            self._clear_written()
+            return None
+        return verdict or ""  # read by a code review: a verdict this screen does not know is still a report read
+
+    def _clear_written(self) -> None:
+        """The comment and hand-off tabs as before any review: nothing to copy, each saying the review wrote none."""
+        if not self._has_dom("#output-tabs"):
+            return
+        self.last_comment_md = self.last_handoff_md = ""
+        tabs = self.query_one("#output-tabs", TabbedContent)
+        for flag, title in (("comment", "3. Author Comment"), ("handoff", "4. Agent Handoff")):
+            tabs.get_tab(f"tab-{flag}").label = f"{title} (--{flag})"
+            self.query_one(f"#{flag}-md", Markdown).update(f"*No `--{flag}` generated yet.*")
 
     @staticmethod
     async def _written(path: Path | None) -> str | None:
@@ -1773,15 +1798,18 @@ class AdkReviewTuiApp(App[int]):
             self.query_one("#finding-detail", Static).update(format_finding_detail(selected))
             self.query_one("#btn-explain-check", Button).disabled = not bool(selected.check)
 
-    def _set_banner(self, message: str) -> None:
-        """`message` on the banner, safe and cut to one line's room. Read by the simplify pass: git's own messages, a
-        fetch's among them, which can name a remote with its token, reached it as written."""
+    def _set_banner(self, message: str, *, safe: bool = False) -> None:
+        """`message` on the banner as one line, cut to its room, made safe unless `safe` says it is already. Read by
+        the simplify pass: git's own messages, a fetch's among them, which can name a remote with its token, reached
+        it as written."""
         if self._has_dom("#status-banner"):
-            self.query_one("#status-banner", Static).update(one_line(message)[:BANNER_CHARS])
+            shown = squash(message) if safe else one_line(message)
+            self.query_one("#status-banner", Static).update(shown[:BANNER_CHARS])
 
-    def _log_progress(self, line: str) -> None:
-        """`line` on the progress tab and in what Ctrl+Y copies from it, made safe as the banner's is."""
+    def _log_progress(self, line: str, *, safe: bool = False) -> None:
+        """`line` on the progress tab and in what Ctrl+Y copies from it, made safe unless `safe` says it is already,
+        its spaces kept: read by a code review, a command copied from it named `My  Docs` as `My Docs`."""
         if self._has_dom("#progress-log"):
-            line = one_line(line)
+            line = line if safe else unhidden(line)
             self._progress.append(line)
             self.query_one("#progress-log", RichLog).write(line)
