@@ -613,6 +613,16 @@ class TestTheSecretShapes:
             # a blog named once.
             'web_log.info("%s", token)',
             'webLog.info("%s", token)',
+            # Read by an audit, each reproduced: a value formatted by a string's own `format`, or either side of `or`,
+            # `and` or a conditional, is handed whole, and a private key and a passphrase are secrets by name.
+            'logger.info("token {}".format(access_token))',
+            'logger.info("token {t}".format(t=access_token))',
+            'logger.info("token %s", access_token or "none")',
+            'logger.info("token %s", debug and access_token)',
+            'logger.info("token %s", access_token if debug else "-")',
+            'logger.info("key %s", private_key)',
+            'logger.info("key %s", self.privateKey)',
+            'logger.info("pass %s", key_passphrase)',
         )
         left = (
             'logger.info("token %s", token[:8])',
@@ -642,6 +652,15 @@ class TestTheSecretShapes:
             # One word, however it is written: `change_log`, `changeLog` and `changelog` are the same list of changes.
             'change_log.info("%s", api_key)',
             'myBlogger.info("%s", token)',
+            # Read by an audit, and reproduced: a sum or a ratio of two counts named as tokens are, which logs neither.
+            'logger.info("left %d", max_token - used_token)',
+            'logger.info("ratio %.2f", used_token / max_token)',
+            'logger.info("token %s", "set" if access_token else "unset")',
+            'logger.info("token {}".format(len(access_token)))',
+            'logger.info("path %s", private_key_path)',
+            # Read by review: `and` hands the log its first value only where that value is falsy, so no secret.
+            'logger.info("token %s", access_token and access_token[:8])',
+            'logger.info("token %s", access_token and "***")',
         )
         for line in named:
             assert lines_hit(rule, "app/auth.py", f"{line}\n") == [1], line

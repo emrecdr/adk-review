@@ -510,7 +510,8 @@ the line the change added: an order the base began on a line the change kept, an
 `cognitive-complexity` weighs a function against the one of its name its file held: a function moved in from another
 file reads as new, and so does one renamed or moved and edited in one change. Where a change adds or removes a
 function of a name the file holds more than one of, a property's setter, a hard one beside a hard one is not named. `sensitive-logging` names a value on a line the change added: one under a call whose first line alone
-changed is not named, nor one logged through `print` or passed through a call on its way.
+changed is not named, nor one logged through `print` or passed through a call on its way, other than a string's
+own `format`. A sum of two counts named as credentials are, `max_token + used_token`, is named: `+` joins strings too.
 
 ## Before a push
 

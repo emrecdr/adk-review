@@ -1,16 +1,20 @@
 """A credential written to a log: a value whose own name says secret, handed whole to a logging call.
 
-Only what is handed whole: a variable or an attribute as an argument, in an f-string, joined to the message, in a
-tuple, or as a value of `extra` or of a keyword. The name decides, by its last word. Measured over seven projects,
-4,314 logging calls, before this rule was written: every logged value whose name held a secret word gave 106 hits, 16
-of them a credential logged, the rest a masked prefix, `token[:8]`, a test for one, `bool(token)`, a count, or a name
-about one, `token_dir`. This rule over the same projects, 4,818 files in 5 s: 14 hits, 13 of them a push token logged
-whole, where lines beside them logged eight characters of it, and one a count.
+Only what is handed whole: a variable or an attribute as an argument, in an f-string or a string's `format`, joined to
+the message, as either side of `or`, the last value of `and` or either answer of a conditional, in a tuple, or as a
+value of `extra` or of a keyword. The name decides, by its last word. Measured over seven projects, 4,314 logging calls,
+before this rule was written: every logged value whose name held a secret word gave 106 hits, 16 of them a credential
+logged, the rest a masked prefix, `token[:8]`, a test for one, `bool(token)`, a count, or a name about one, `token_dir`.
+This rule over the same projects, 4,818 files in 5 s: 14 hits, 13 of them a push token logged whole, where lines beside
+them logged eight characters of it, and one a count. Read by an audit, `format`, `or`, `and`, a conditional,
+`private_key` and a passphrase were then read too, and arithmetic but `+` and `%` no longer: the same 14 hits, and the
+same 22 over the installed packages.
 
-Not read, as known limits: a count named as a credential is, `total_no_token`; `print`; a logger no name holds,
-`get_logger().info(...)`; a value passed through a call on its way, `str(token)`; and a value on a line the change
-left alone, under a call it made a logger's: read by review, naming it there named each leak a reworded message
-stood over, which the change did not add.
+Known limits: a count named as a credential is, `total_no_token`, or a sum of two such counts, `max_token +
+used_token`, which `+` reads as a joined string, is named. Not read: `print`; a logger no name holds,
+`get_logger().info(...)`; a value passed through a call on its way, `str(token)`, other than a string's own `format`;
+and a value on a line the change left alone, under a call it made a logger's: read by review, naming it there named
+each leak a reworded message stood over, which the change did not add.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from __future__ import annotations
 import ast
 import re
 from collections.abc import Iterator
+from typing import TypeGuard
 
 from ..rule_helpers import ChangedFile, FileRule, calls_in, is_test, name_of, names_secret
 
@@ -49,9 +54,11 @@ class SensitiveLogging(FileRule):
         'logger.info("token %s", access_token)',
         'log.debug(f"auth={api_key}")',
         'self.logger.warning("login failed", extra={"password": user.password})',
+        'logger.debug("key {}".format(private_key))',
     )
     good = (
         'logger.info("token %s", token[:8])',
+        'logger.info("left %d", max_token - used_token)',
         'logger.info("used %s tokens", tokens)',
         'logger.info("page %s", page_token)',
         ("tests/test_auth.py", 'logger.info("token %s", access_token)'),
@@ -82,18 +89,39 @@ def _logs(receiver: str) -> bool:
 
 
 def _handed(call: ast.Call) -> Iterator[ast.Name | ast.Attribute]:
-    """Each value `call` hands the log whole: an argument, a part of an f-string, a side of a `+` or a `%`, a member
-    of a tuple or a list, a value of a dict or of a keyword. One sliced, tested or passed through a call is not."""
+    """Each value `call` hands the log whole: an argument, a part of an f-string or of a string's own `format`, a side
+    of a `+` or a `%`, a side of an `or` and the last value of an `and`, either answer of a conditional, a member of a
+    tuple or a list, a value of a dict or of a keyword. One sliced, tested or passed through another call is not, nor
+    one in arithmetic but `+` and `%`, which join and format a string too. Read by an audit, and reproduced:
+    `max_token - used_token` was named, which logs neither, and `"{}".format(token)` was not."""
     pending: list[ast.expr] = [*call.args, *(keyword.value for keyword in call.keywords)]
     while pending:
         node = pending.pop()
         if isinstance(node, ast.JoinedStr):
             pending += [part.value for part in node.values if isinstance(part, ast.FormattedValue)]
-        elif isinstance(node, ast.BinOp):
+        elif _formats(node):
+            pending += [*node.args, *(keyword.value for keyword in node.keywords)]
+        elif isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Add, ast.Mod)):
             pending += [node.left, node.right]
+        elif isinstance(node, ast.BoolOp):  # `and` hands on its last value: an earlier one only where it is falsy
+            pending += node.values if isinstance(node.op, ast.Or) else node.values[-1:]
+        elif isinstance(node, ast.IfExp):
+            pending += [node.body, node.orelse]
         elif isinstance(node, ast.Dict):
             pending += node.values
         elif isinstance(node, (ast.Tuple, ast.List)):
             pending += node.elts
         elif isinstance(node, (ast.Name, ast.Attribute)) and name_of(node):
             yield node
+
+
+def _formats(node: ast.expr) -> TypeGuard[ast.Call]:
+    """Whether `node` is a string's own `format`, as `"token {}".format(token)`: the values it is given are written
+    whole, as an f-string's are."""
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and node.func.attr == "format"
+        and isinstance(node.func.value, ast.Constant)
+        and isinstance(node.func.value.value, str)
+    )

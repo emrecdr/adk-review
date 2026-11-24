@@ -602,8 +602,9 @@ _CHOSEN = re.compile(r"(?i)passw(?:or)?d|pwd")
 _WORDS = re.compile(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|\d+")
 #: A word a name says secret with, among a value's words joined by `_`: a value that holds one names a secret.
 _SECRET_WORD = re.compile(r"(?:^|_)(?:" + SECRET_WORDS + r")(?:_|$)")
-#: The same word as a name's last, which says the value is the secret itself, and a secret key by its two words.
-_SECRET_LAST = re.compile(r"(?:^|_)(?:" + SECRET_WORDS + r"|secret_(?:access_)?key)$")
+#: The same word as a name's last, which says the value is the secret itself, and a secret key, a private key and a
+#: passphrase by their words. Read by an audit, and reproduced: `private_key` and `passphrase` were logged unnamed.
+_SECRET_LAST = re.compile(r"(?:^|_)(?:" + SECRET_WORDS + r"|secret_(?:access_)?key|private_key|pass_?phrase)$")
 #: A token a variable's name says is no secret: a place in a list of pages, a tokenizer's marker, a hash of one. Read
 #: by review over installed libraries: `next_token`, `eos_token` and `hashed_token` were each named a credential.
 _NO_SECRET = re.compile(r"(?:^|_)(?:hashed|starting|next|prev|previous|eos|bos|pad|unk|sep|cls|mask)_token$")
@@ -627,9 +628,9 @@ MADE_MIN_CHARS = 8
 
 def names_secret(name: str) -> bool:
     """Whether a variable's or an attribute's own `name` says its value is a secret: its last word is one a secret goes
-    by, `access_token`, `db_password`, `apiKey` or `SECRET_KEY`, and it is no cursor's, form guard's, tokenizer's or
-    hashed token. A name that holds the word before its end, `token_count` or `password_hint`, says something about
-    one, and `tokens` counts them."""
+    by, `access_token`, `db_password`, `apiKey`, `SECRET_KEY` or `private_key`, and it is no cursor's, form guard's,
+    tokenizer's or hashed token. A name that holds the word before its end, `token_count` or `password_hint`, says
+    something about one, and `tokens` counts them."""
     words = "_".join(_WORDS.findall(name)).lower()
     if _NOT_CREDENTIAL.search(name) or _NO_SECRET.search(words):
         return False
