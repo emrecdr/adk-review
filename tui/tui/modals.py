@@ -11,8 +11,9 @@ from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Markdown, Static, TextArea
+from textual.widgets import Button, Input, Label, Markdown, OptionList, Static, TextArea
 
+from .azure import PullRequest
 from .clipboard import copy_text
 from .findings import explain_check_markdown
 from .git_sync import SyncStatus
@@ -58,20 +59,27 @@ class SyncBranchModal(ModalScreen[bool]):
         self.dismiss(False)
 
 
-class OpenPullRequestModal(ModalScreen[str | None]):
-    """Modal asking for a pull request's address, to review what it merges: apart from the field kept for the branch
-    chosen, where a paste is kept for that branch before the pull request's own branch is known."""
+class OpenPullRequestModal(ModalScreen[str | PullRequest | None]):
+    """Modal asking for a pull request to review what it merges: one the repositories here have open, as the screen
+    lists them once read, or one whose address is pasted: apart from the field kept for the branch chosen, where a
+    paste is kept for that branch before the pull request's own branch is known."""
 
     BINDINGS: ClassVar[list[BindingType]] = [Binding("escape", "cancel", "Close")]
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._choices: list[PullRequest] = []
 
     def compose(self) -> ComposeResult:
         with Vertical(id="modal-dialog"):
             yield Label("Open Pull Request", classes="chain-title")
             yield Static(
-                "Paste the pull request's address, as the browser shows it. "
+                "Choose one the repositories here have open, or paste its address, as the browser shows it. "
                 "The screen then chooses its repository and both its branches.",
                 markup=False,
             )
+            yield Static("Reading the open pull requests of the repositories here...", id="open-pr-note", markup=False)
+            yield OptionList(id="open-pr-list", markup=False)
             yield Input(placeholder="https://dev.azure.com/org/project/_git/repo/pullrequest/123", id="open-pr-url")
             with Horizontal(id="modal-buttons"):
                 yield Button("Open", id="btn-open-pr-yes", variant="primary")
@@ -79,6 +87,21 @@ class OpenPullRequestModal(ModalScreen[str | None]):
 
     def on_mount(self) -> None:
         self.query_one("#open-pr-url", Input).focus()
+
+    def listed(self, choices: Sequence[tuple[str, PullRequest]], note: str) -> None:
+        """The pull requests to choose from, each by its line, and what the read of them says: none where the dialog
+        is gone or going, its list taken down first, which read by review ended the screen."""
+        if not self.is_attached or not self.query("#open-pr-list") or not self.query("#open-pr-note"):
+            return
+        self._choices = [pr for _, pr in choices]
+        options = self.query_one("#open-pr-list", OptionList)
+        options.clear_options()
+        options.add_options([line for line, _ in choices])
+        self.query_one("#open-pr-note", Static).update(note)
+
+    @on(OptionList.OptionSelected, "#open-pr-list")
+    def _picked(self, event: OptionList.OptionSelected) -> None:
+        self.dismiss(self._choices[event.option_index])
 
     @on(Input.Submitted, "#open-pr-url")
     @on(Button.Pressed, "#btn-open-pr-yes")

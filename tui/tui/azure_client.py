@@ -16,7 +16,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from email.message import Message
 from http import HTTPStatus
@@ -30,7 +30,7 @@ from adk_review.core.text import squash
 from adk_review.deliver.threads import OPEN_STATUSES, OpenThread
 from adk_review.deliver.work_items import FIELDS
 
-from .azure import Place, PullRequest, posted_as, rooted, thread_payload
+from .azure import Listed, Place, PullRequest, posted_as, rooted, thread_payload
 from .git_sync import bounded
 
 #: Azure DevOps' own application in Microsoft Entra: the resource `az` is asked a token for.
@@ -53,6 +53,10 @@ _PAGE = 2000
 WORK_ITEMS_ASKED = 200
 #: What each read the person asks for alone reads, as a refusal of it names it.
 _COMMENTS = "the pull request's comments"
+_PULL_REQUESTS = "the project's pull requests"
+#: How many active pull requests one call lists, and how many pages of them the list reads at most.
+INBOX_PAGE = 100
+INBOX_PAGES = 10
 _WORK_ITEMS = "the work items it links"
 #: A Microsoft Entra tenant's id, as Azure DevOps names the organization's in `X-VSS-ResourceTenant`. Only this
 #: shape is repeated to the person: the header is a server's text, and the sentence names a command to run.
@@ -302,6 +306,35 @@ class Client:
         asked = {"ids": ",".join(ids[:WORK_ITEMS_ASKED]), "fields": ",".join(FIELDS), "errorPolicy": "omit"}
         return self._call("GET", self._pr.project_api("wit", "workitems"), query=asked, reading=_WORK_ITEMS)
 
+    def active_pull_requests(self, repositories: Collection[str]) -> list[Listed]:
+        """The project's active pull requests into the repositories `repositories` names in lower case, newest first,
+        a page of `INBOX_PAGE` a call up to `INBOX_PAGES`: what the open dialog lists, the project the client's own."""
+        found: list[Listed] = []
+        for page in range(INBOX_PAGES):
+            asked = {"searchCriteria.status": "active", "$top": str(INBOX_PAGE), "$skip": str(page * INBOX_PAGE)}
+            answer = self._call("GET", self._pr.project_api("git", "pullrequests"), query=asked, reading=_PULL_REQUESTS)
+            entries = _dicts(answer.get("value"))
+            found += [listed for entry in entries if (listed := self._listed(entry, repositories)) is not None]
+            if len(entries) < INBOX_PAGE:
+                break
+        return sorted(found, key=lambda listed: listed.created, reverse=True)
+
+    def _listed(self, entry: dict, repositories: Collection[str]) -> Listed | None:
+        """One entry of the list, or None where it is into a repository not named, or names no number."""
+        # Each part read as the object it must be: read by review, one of another shape ended the screen.
+        where, by = (part if isinstance(part := entry.get(key), dict) else {} for key in ("repository", "createdBy"))
+        held = where.get("project")
+        name, number, project = where.get("name"), entry.get("pullRequestId"), _text(_named(held))
+        if not isinstance(name, str) or name.lower() not in repositories or type(number) is not int:
+            return None
+        return Listed(
+            PullRequest(self._pr.origin, project or self._pr.project, name, number),
+            title=_text(entry.get("title")),
+            author=_text(by.get("displayName")),
+            created=_text(entry.get("creationDate")),
+            draft=entry.get("isDraft") is True,
+        )
+
     def post(self, payload: dict) -> int:
         """`payload` posted as a new thread: its id."""
         thread = self._call("POST", self._pr.api("threads"), body=payload).get("id")
@@ -376,6 +409,8 @@ class Client:
         if code == HTTPStatus.FORBIDDEN:
             said = 'Your account may not comment here. Ask for the "Contribute to pull requests" permission.'
             raise AzureError(said) from None
+        if code == HTTPStatus.NOT_FOUND and reading:  # read by review: a project's list said no such pull request
+            raise AzureError(f"Azure DevOps did not find {reading}. Check that your account can read them.") from None
         if code == HTTPStatus.NOT_FOUND:  # or not this account's to see
             said = "Azure DevOps found no such pull request. Check the address, and that your account can read it."
             raise AzureError(said) from None
@@ -448,6 +483,16 @@ def post_comment(client: Client, *, text: str, place: Place, commit: str, finger
     if (change := client.change_of(iteration, place.path)) is None:
         raise AzureError(f"The pull request does not change {place.path}. No line can hold the comment.")
     return Posted(client.post(thread_payload(text, place, iteration, change)), already=False)
+
+
+def _named(value: object) -> object:
+    """The `name` of an object Azure DevOps answered, or None for anything else."""
+    return value.get("name") if isinstance(value, dict) else None
+
+
+def _text(value: object) -> str:
+    """A string Azure DevOps answered, or none for anything else."""
+    return value if isinstance(value, str) else ""
 
 
 def _dicts(value: object) -> list[dict]:

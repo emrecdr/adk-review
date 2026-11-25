@@ -15,6 +15,7 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import ClassVar, NamedTuple
+from urllib.parse import quote
 
 from rich.cells import cell_len, set_cell_size
 from rich.text import Text
@@ -54,7 +55,17 @@ from adk_review.deliver.threads import OpenThread
 from adk_review.deliver.threads import as_data as threads_data
 from adk_review.deliver.work_items import WorkItems, work_items_of
 
-from .azure import Place, PullRequest, draft, files_link, line_link, parse_pr_url, remote_names, thread_link
+from .azure import (
+    Listed,
+    Place,
+    PullRequest,
+    draft,
+    files_link,
+    line_link,
+    parse_pr_url,
+    remote_names,
+    thread_link,
+)
 from .azure_client import AzLogin, AzureError, Client, Credential, PullRequestHead, post_comment
 from .azure_state import forget_posted, keep_posted, keep_pull_request_url, posted_threads, pull_request_url
 from .clipboard import copy_text
@@ -267,6 +278,50 @@ def _work_item_lines(work: WorkItems) -> list[str]:
     if work.unread:
         lines.append(f"{_counted(work.unread, 'linked work item')} could not be read.")
     return lines
+
+
+#: Where an organization's calls go: every organization answers at dev.azure.com, one at visualstudio.com too.
+ORIGIN = "https://dev.azure.com/{}"
+#: The longest line of the open dialog's list of pull requests.
+LISTED_CHARS = 160
+
+
+def _cloned_projects(projects: Sequence[ProjectInfo]) -> dict[tuple[str, str], set[str]]:
+    """The Azure DevOps projects the repositories here clone, each by its organization and name as a remote spells
+    them, with the names of the repositories of it cloned here in lower case: one call a project lists them."""
+    found: dict[tuple[str, str], set[str]] = {}
+    spelled: dict[tuple[str, str], tuple[str, str]] = {}
+    for project in projects:
+        for url in remote_urls(project.path).values():
+            if (names := remote_names(url, folded=False)) is None:
+                continue
+            key = (names[0].lower(), names[1].lower())
+            spelled.setdefault(key, (names[0], names[1]))
+            found.setdefault(key, set()).add(names[2].lower())
+    return {spelled[key]: repositories for key, repositories in found.items()}
+
+
+def _listed_line(listed: Listed) -> str:
+    """One open pull request as the dialog lists it: its repository and number, its title and its author."""
+    drafted = ", draft" if listed.draft else ""
+    return one_line(f"{listed.pr.repository} #{listed.pr.number}  {listed.title}  ({listed.author}{drafted})")[
+        :LISTED_CHARS
+    ]
+
+
+def _open_note(count: int, cloned: bool, failed: Sequence[str]) -> str:
+    """What the open dialog says of its list: how many, or why none, and each project it could not read."""
+    if count:
+        said = (
+            f"{count} open pull request{'' if count == 1 else 's'} here, newest first. Choose one, or paste an address."
+        )
+    elif failed:  # read by review: none read was said to be none there
+        said = "The open pull requests here could not be read. Paste an address."
+    elif cloned:
+        said = "The repositories here have no open pull request. Paste an address."
+    else:
+        said = "No repository here has an Azure DevOps remote. Paste an address."
+    return one_line(said + (f" Not read: {' '.join(failed)}" if failed else ""))[:BANNER_CHARS]
 
 
 def _clone_of(projects: Sequence[ProjectInfo], wanted: tuple[str, str, str]) -> tuple[ProjectInfo, str] | None:
@@ -1398,10 +1453,42 @@ class AdkReviewTuiApp(App[int]):
 
     @on(Button.Pressed, "#btn-open-pr")
     def _ask_for_pull_request(self) -> None:
-        self.push_screen(OpenPullRequestModal(), self._opened_address)
+        dialog = OpenPullRequestModal()
+        self.push_screen(dialog, self._opened_address)
+        self._read_open(dialog)
 
-    def _opened_address(self, text: str | None) -> None:
-        """The address the dialog gave: the pull request it names opened, or the sentence that says what to paste."""
+    @work(exclusive=True, group="pr_list")
+    async def _read_open(self, dialog: OpenPullRequestModal) -> None:
+        """The active pull requests of the repositories cloned here, listed in the open dialog, newest first: one call
+        a project, read as the person opens the dialog. Asked by the owner, from the validated options: the address a
+        browser shows was the one way in. A project that cannot be read is named, the rest listed."""
+        wanted = await asyncio.to_thread(_cloned_projects, self.projects)
+        if wanted:  # the login asked once: read by review, a refused one was asked, and said, again for each project
+            try:
+                await asyncio.to_thread(self._credential)
+            except AzureError as exc:
+                dialog.listed([], _open_note(0, True, [str(exc)]))
+                return
+        listed: list[Listed] = []
+        failed: list[str] = []
+        for (organization, project), repositories in wanted.items():
+            client = self._client(PullRequest(ORIGIN.format(quote(organization, safe="")), project, "", 0))
+            try:
+                listed += await asyncio.to_thread(client.active_pull_requests, repositories)
+            except AzureError as exc:
+                failed.append(f"{organization}/{project}: {exc}")
+        if not dialog.is_attached:  # closed meanwhile
+            return
+        listed.sort(key=lambda one: one.created, reverse=True)
+        dialog.listed([(_listed_line(one), one.pr) for one in listed], _open_note(len(listed), bool(wanted), failed))
+
+    def _opened_address(self, text: str | PullRequest | None) -> None:
+        """The pull request the dialog gave, chosen from its list, or the address pasted there: the pull request it
+        names opened, or the sentence that says what to paste."""
+        self.workers.cancel_group(self, "pr_list")  # the dialog is gone: read by review, its calls ran on
+        if isinstance(text, PullRequest):
+            self._open_pull_request(text)
+            return
         if not (text or "").strip():
             return
         try:

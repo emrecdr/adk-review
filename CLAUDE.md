@@ -258,7 +258,8 @@ Load-bearing rules the tests enforce:
   its remote, `git branch -f` on a branch no working tree has checked out. It writes outside the machine in one place:
   one comment posted to an Azure DevOps pull request, on the person's click, after their edit and a confirmation, never
   a batch, and never from the reviewer, which gains no network call and no posting command. It reads Azure DevOps where
-  the person asks: a pull request they open, its branches and last push, which choose the clone and the branches a
+  the person asks: the open pull requests of the repositories cloned here, listed as they open the dialog to choose
+  one, a pull request they open, its branches and last push, which choose the clone and the branches a
   review reads, its threads before a post, and its open comments and linked work items, which a review's hand-off
   quotes. Its login is the
   person's own `az` login: a token asked of `az` by its full path with fixed arguments alone, since `az.cmd` runs

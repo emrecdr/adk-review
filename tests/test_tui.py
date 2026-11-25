@@ -41,6 +41,21 @@ def _state_apart(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.M
     monkeypatch.setattr(config, "STATE_DIR", state)
     # Nor the person's own clipboard: a screen test that copies runs pbcopy on a Mac, here a program no folder holds.
     monkeypatch.setattr(importlib.import_module("tui.clipboard"), "PBCOPY", str(state / "no-pbcopy"))
+    # Nor the person's own Azure DevOps login, nor its host: the open dialog lists a project's pull requests as it
+    # opens, and a test that clicked it asked the real `az` for a token and called dev.azure.com. A test that reads
+    # Azure DevOps gives the screen a FakeToken and the fake's address.
+    screen = importlib.import_module("tui.app")
+    client = importlib.import_module("tui.azure_client")
+
+    class NoLogin:
+        def __call__(self) -> str:
+            raise client.AzureError("A test asks no real az for a token. Give the screen a FakeToken.")
+
+        def forget(self) -> None:
+            pass
+
+    monkeypatch.setattr(screen, "AzLogin", NoLogin)
+    monkeypatch.setattr(screen, "ORIGIN", "http://127.0.0.1:9/{}")
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -3251,6 +3266,109 @@ class TestAzureDevOpsOnTheScreen:
         assert len({str(path).lower() for path in paths}) == 4, paths
         assert _kept_for_handoff(str(tmp_path), one, "threads", {}) == paths[0], "the same pull request, the same file"
         assert _kept_for_handoff(str(tmp_path), one, "work-items", {}) != paths[0], "each kind its own file"
+
+    @pytest.mark.asyncio
+    async def test_the_open_dialog_lists_the_active_pull_requests_here_and_a_pick_opens_one(
+        self, tmp_path: Path, fake_ado, monkeypatch
+    ) -> None:
+        """Asked by the owner, from the validated options: the address pasted from a browser was the one way in. The
+        dialog lists the active pull requests of the repositories cloned here, read as it opens, one call a project,
+        each by its repository, number, title and author; a pick opens it as its pasted address would."""
+        from conftest import FakeToken
+        from textual.widgets import OptionList
+
+        import tui.app as screen
+        from tui.modals import OpenPullRequestModal
+
+        monkeypatch.setattr(screen, "ORIGIN", fake_ado.pr.origin.rsplit("/", 1)[0] + "/{}")
+        app = screen.AdkReviewTuiApp(config_path=_two_clones(tmp_path))
+        opened: list = []
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app._credential = FakeToken()
+            monkeypatch.setattr(app, "_open_pull_request", opened.append)
+            item = {"pullRequestId": 123, "title": "Round the tax", "creationDate": "2026-11-20T00:00:00Z",
+                    "repository": {"name": "payments", "project": {"name": "Web"}},
+                    "createdBy": {"displayName": "Jane"}}  # fmt: skip
+            fake_ado.answer("GET", "/git/pullrequests", {"value": [item]}, under=fake_ado.project)
+            app._ask_for_pull_request()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            dialog = app.screen
+            assert isinstance(dialog, OpenPullRequestModal), dialog
+            options = dialog.query_one("#open-pr-list", OptionList)
+            label = str(options.get_option_at_index(0).prompt)
+            options.highlighted = 0
+            options.action_select()
+            await pilot.pause()
+        assert "payments #123" in label and "Round the tax" in label and "Jane" in label, label
+        assert [(pr.project, pr.repository, pr.number) for pr in opened] == [("Web", "payments", 123)]
+
+    @pytest.mark.asyncio
+    async def test_a_list_that_arrives_after_the_dialog_closed_is_dropped(self, tmp_path: Path) -> None:
+        """Read by review, and reproduced: a list that came as the dialog was taken down found no list to fill, and
+        the screen ended."""
+        from tui.app import AdkReviewTuiApp
+        from tui.modals import OpenPullRequestModal
+
+        app = AdkReviewTuiApp(config_path=_two_clones(tmp_path))
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _wait_for_branches(app, pilot)
+            dialog = OpenPullRequestModal()
+            await app.push_screen(dialog)
+            await pilot.pause()
+            dialog.dismiss(None)
+            await pilot.pause()
+            dialog.listed([], "late")
+
+    def test_a_list_none_could_read_never_says_there_is_none(self) -> None:
+        """Read by review, and reproduced: every project refused, and the note said the repositories had no open pull
+        request, a list never read read as an empty one."""
+        from tui.app import _open_note
+
+        said = _open_note(0, True, ["contoso/Web: refused."])
+        assert "could not be read" in said and "no open pull request" not in said, said
+
+    @pytest.mark.asyncio
+    async def test_a_login_that_gives_no_token_is_asked_once_and_said_once(self, tmp_path: Path) -> None:
+        """Read by review, and reproduced: a login that failed was asked again for each project, each time `az`, and
+        its sentence said once a project, cut where the note ends. Asked once, it is said once; and at 80 columns by
+        24 rows the dialog's buttons stay on the screen with a full list."""
+        from textual.widgets import Static
+
+        from tui.app import AdkReviewTuiApp
+        from tui.azure_client import AzureError
+
+        config = _two_clones(tmp_path)
+        other = _repository(tmp_path / "workspace" / "billing", ("main",), "main")
+        _git(other, "remote", "add", "origin", "https://dev.azure.com/contoso/Ops/_git/billing")
+
+        class Refused:
+            asked = 0
+
+            def __call__(self) -> str:
+                self.asked += 1
+                raise AzureError("The Azure CLI gave no token. Run `az login`, then post again.")
+
+            def forget(self) -> None:
+                pass
+
+        refused = Refused()
+        app = AdkReviewTuiApp(config_path=config)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app._credential = refused
+            app._ask_for_pull_request()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            note = str(app.screen.query_one("#open-pr-note", Static).render())
+            title = "a title long enough to wrap the line of the dialog at eighty columns, " * 2
+            choices = [(f"payments #{n}  {title} (Jane)", None) for n in range(12)]
+            app.screen.listed(choices, note)  # the longest note: a refusal after the count
+            await pilot.pause()
+            bottom = app.screen.query_one("#btn-open-pr-no").region.bottom
+        assert refused.asked == 1 and note.count("az login") == 1, (refused.asked, note)
+        assert bottom <= 24, bottom
 
     @pytest.mark.asyncio
     async def test_a_pull_request_whose_last_push_is_not_here_says_to_fetch(self, tmp_path: Path, fake_ado) -> None:

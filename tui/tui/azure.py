@@ -89,10 +89,11 @@ _SSH = re.compile(
 )
 
 
-def remote_names(url: str) -> tuple[str, str, str] | None:
+def remote_names(url: str, *, folded: bool = True) -> tuple[str, str, str] | None:
     """The organization, project and repository a clone's address names, in lower case, or None for an address of no
     Azure DevOps repository: what a remote is matched to a pull request by, with no call made. A project of the
-    repository's own name may be left out of an address over HTTPS, as Azure DevOps leaves it out."""
+    repository's own name may be left out of an address over HTTPS, as Azure DevOps leaves it out. Not `folded`, each
+    as the address spells it, what a call names."""
     text = url.strip()
     if (ssh := _SSH.fullmatch(text)) is not None:
         organization, project, repository = (unquote(name) for name in ssh.groups())
@@ -119,8 +120,9 @@ def remote_names(url: str) -> tuple[str, str, str] | None:
         if len(after) != 1 or len(before) > 1:
             return None
         repository = after[0]
-        project = before[0] if before else repository.lower().removesuffix(".git")
-    return organization.lower(), project.lower(), repository.lower().removesuffix(".git")
+        project = before[0] if before else _bare(repository)
+    names = (organization, project, _bare(repository))
+    return (names[0].lower(), names[1].lower(), names[2].lower()) if folded else names
 
 
 def parse_pr_url(text: str) -> PullRequest:
@@ -150,6 +152,23 @@ def parse_pr_url(text: str) -> PullRequest:
     if len(before) > 1:
         raise ValueError(_NOT_ONE)
     return PullRequest(origin, before[0] if before else after[0], after[0], int(after[2]))
+
+
+def _bare(repository: str) -> str:
+    """A repository's name without the `.git` a clone's address may end it with, in any case."""
+    return repository[:-4] if repository.lower().endswith(".git") else repository
+
+
+@dataclass(frozen=True)
+class Listed:
+    """One active pull request a project lists: the pull request, its title and author as people wrote them, when it
+    was made, and whether it is a draft."""
+
+    pr: PullRequest
+    title: str
+    author: str
+    created: str
+    draft: bool
 
 
 def _no_name(name: str) -> bool:

@@ -135,7 +135,9 @@ when you ask. The reviewer itself posts nothing, as before: this is the screen's
 1. Log in once, in a terminal: `az login`. The screen asks the Azure CLI for a token when you post, or open a pull
    request, and stores none.
 2. Review the pull request's branch, as any branch. Or press **Open Pull Request**, under the repositories, or choose
-   "Open pull request" in the palette, `Ctrl+P`, and paste its address: the screen reads the pull request, picks the
+   "Open pull request" in the palette, `Ctrl+P`. The dialog lists the open pull requests of the repositories cloned
+   here, newest first, each by its repository, number, title and author, read as it opens: a call for each hundred
+   open in a project of theirs, ten at most, so a project with more than a thousand open lists the newest thousand. Choose one, or paste an address as the browser shows it: the screen reads the pull request, picks the
    repository under the workspace whose remote names its repository, the one chosen first, and chooses its source and
    target branches as that remote holds them, never a local copy, which can hold work not pushed. It fetches as a pick
    does, and keeps the address for that branch, so step 3 is done. A pull request from a fork, whose branch is in

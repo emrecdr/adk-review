@@ -663,6 +663,55 @@ class TestTheClient:
         with pytest.raises(client.AzureError, match="Read again after that"):
             client.Client(fake_ado.pr, FakeToken()).open_threads()
 
+    def test_a_projects_active_pull_requests_are_listed_for_the_repositories_named_newest_first(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        """One call a page, a hundred a page, for the project's active pull requests: those into a repository named,
+        whatever its case, newest first, each with its title, author and whether it is a draft. Another repository's
+        are left out: no clone here holds them."""
+
+        def listed(number: int, repository: str, title: str, created: str, **more: object) -> dict:
+            where = {"name": repository, "project": {"name": "Web"}}
+            by = {"displayName": "Jane"}
+            return {"pullRequestId": number, "title": title, "creationDate": created, "repository": where,
+                    "createdBy": by, **more}  # fmt: skip
+
+        full = [listed(n, "billing", "elsewhere", "2026-11-02T00:00:00Z") for n in range(200, 300)]
+        last = [listed(7, "payments", "Older", "2026-11-01T00:00:00Z"),
+                listed(9, "Payments", "Newer", "2026-11-20T00:00:00Z", isDraft=True)]  # fmt: skip
+        fake_ado.answer("GET", "/git/pullrequests", {"value": full}, under=fake_ado.project)
+        fake_ado.answer("GET", "/git/pullrequests", {"value": last}, under=fake_ado.project)
+        project = type(fake_ado.pr)(fake_ado.pr.origin, "Web", "", 0)  # a project's calls read its origin and name
+        found = client.Client(project, FakeToken()).active_pull_requests({"payments"})
+        assert [(f.pr.repository, f.pr.number, f.title, f.draft, f.author) for f in found] == [
+            ("Payments", 9, "Newer", True, "Jane"),
+            ("payments", 7, "Older", False, "Jane"),
+        ]
+        asked = [seen.query for seen in fake_ado.seen]
+        assert [(q["searchCriteria.status"], q["$top"], q["$skip"]) for q in asked] == [
+            ("active", "100", "0"),
+            ("active", "100", "100"),
+        ]
+
+    def test_a_project_list_of_odd_shape_or_refused_names_what_to_do(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        """Read by review, and reproduced: a repository, a project or an author of another shape ended the screen,
+        each read as an object; and a project Azure DevOps did not find was said to be no such pull request."""
+        odd = [
+            {"pullRequestId": 1, "repository": "x"},
+            {"pullRequestId": 2, "repository": {"name": "payments", "project": "Web"}, "createdBy": ["Jane"]},
+        ]
+        fake_ado.answer("GET", "/git/pullrequests", {"value": odd}, under=fake_ado.project)
+        project = type(fake_ado.pr)(fake_ado.pr.origin, "Web", "", 0)
+        found = client.Client(project, FakeToken()).active_pull_requests({"payments"})
+        assert [(f.pr.project, f.pr.number, f.author) for f in found] == [("Web", 2, "")]
+        fake_ado.instead("GET", "/git/pullrequests", status=404, under=fake_ado.project)
+        with pytest.raises(client.AzureError) as refused:
+            client.Client(project, FakeToken()).active_pull_requests({"payments"})
+        assert "did not find the project's pull requests" in str(refused.value), refused.value
+        assert "no such pull request" not in str(refused.value)
+
     def test_the_iterations_are_read_oldest_first(self, client: ModuleType, fake_ado: FakeAdo) -> None:
         pushed = [
             {"id": 2, "sourceRefCommit": {"commitId": "b" * 40}},

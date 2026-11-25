@@ -185,6 +185,11 @@ Screen {
     width: 2fr;
     margin-right: 1;
 }
+#open-pr-list {
+    height: auto;
+    max-height: 5;  /* the buttons stay on a screen of 24 rows */
+}
+
 #btn-open-pr {
     width: 1fr;
     height: 1;
