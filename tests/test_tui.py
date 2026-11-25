@@ -3251,6 +3251,70 @@ class TestAzureDevOpsOnTheScreen:
         assert "comments not kept" in unkept_status and "quotes what was kept" in unkept_status, unkept_status
         assert given(cut, "--threads") is None and given(cut, "--work-items") is None, "cut short: neither file given"
 
+    @pytest.mark.asyncio
+    async def test_reading_comments_switches_on_the_hand_off_that_quotes_them(self, tmp_path: Path, fake_ado) -> None:
+        """Read by an audit, and reproduced: with the hand-off switched off, as the default config has it, the tab
+        said the next review's hand-off quoted the comments read, and the next review wrote no hand-off. The person
+        read them for the hand-off, so the read switches it on, and says so."""
+        from conftest import FakeToken
+        from textual.widgets import Switch
+
+        from tui.options import build_review_argv
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            said: list[str] = []
+            app.notify = _plainly(said)
+            app._credential = FakeToken()
+            app._pull_request = fake_ado.pr
+            before = app.query_one("#sw-handoff", Switch).value
+            comment = {"author": {"displayName": "Jane"}, "content": "Fix the rounding", "commentType": "text"}
+            fake_ado.answer("GET", "/threads", {"value": [{"id": 1, "status": "active", "comments": [comment]}]})
+            fake_ado.answer("GET", "/workitems", {"value": []})
+            app._read_from_pull_request()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            argv, _ = build_review_argv(app.current_selection())
+        assert before is False, "the default config's"
+        assert "--handoff" in argv and "--threads" in argv, argv
+        assert any("hand-off" in line and "switched on" in line for line in said), said
+
+    @pytest.mark.asyncio
+    async def test_the_chosen_findings_words_show_on_the_smallest_screen(self, tmp_path: Path) -> None:
+        """Read by an audit, and reproduced: at 80 columns by 24 rows, with the config line on two rows as a
+        checkout's path makes it, the toolbars' fixed heights left the finding's detail under the footer, no word of
+        its title, reason or fix shown. The toolbars take a row each."""
+        import json
+
+        from textual.widgets import Static, TabbedContent
+
+        found = [
+            {"check": "rule.lint", "file": "a.py", "line": n, "severity": "major", "title": f"finding {n}",
+             "evidence": "+ x = 1", "suggestion": "Mend it.", "fingerprint": f"{n:016x}"}
+            for n in range(1, 9)
+        ]  # fmt: skip
+        report = json.dumps({"schema": 2, "verdict": "REQUEST_CHANGES", "findings": found,
+                             "reviewed": {"head_sha": "b" * 40}})  # fmt: skip
+
+        async def reviewed(command: list[str]) -> tuple[int, str]:
+            await asyncio.to_thread(Path(command[command.index("--json") + 1]).write_text, report, "utf-8")
+            return 1, "## Verdict: REQUEST_CHANGES\n"
+
+        app = _payments_screen(tmp_path)
+        app._stream_subprocess = reviewed
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.query_one("#config-line", Static).update("Config: ~/Projects/adk_review/tui/.tui.toml\nFolders: ~")
+            await pilot.press("ctrl+r")
+            await _until(pilot, lambda: not app._reviewing, "the review ended")
+            await app.workers.wait_for_complete()
+            app.query_one("#output-tabs", TabbedContent).active = "tab-findings"
+            await pilot.pause(0.3)
+            detail = app.query_one("#finding-detail-scroll").region
+            footer = app.query_one("Footer").region
+        assert footer.y - (detail.y + 1) >= 1, (detail, footer)  # a row of words under the detail's top border
+
     def test_two_pull_requests_of_one_name_and_number_keep_two_files(self, tmp_path: Path) -> None:
         """Read by review: the file was named by the repository and the number alone, and two organizations' pull
         requests of one name, or of names that differ in case or punctuation alone, wrote one file, so one's hand-off

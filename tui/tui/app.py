@@ -605,14 +605,22 @@ class AdkReviewTuiApp(App[int]):
             with TabPane("1. Review Report", id="tab-report"):
                 yield RichLog(id="report-log", wrap=True, highlight=True, markup=False)
             with TabPane("2. Findings Explorer", id="tab-findings"):
+                # A row each, compact: read by an audit, at 80 columns by 24 rows their fixed heights of three left
+                # the chosen finding's words under the footer.
                 with Horizontal(id="findings-toolbar"):
-                    yield Select(sev_opts, value="all", allow_blank=False, id="finding-sev-filter")
-                    yield Select(tier_opts, value="all", allow_blank=False, id="finding-tier-filter")
-                    yield Input(placeholder="Search findings (file, check, title)...", id="finding-search")
-                    yield Button("Explain Check", id="btn-explain-check", variant="default", disabled=True)
+                    yield Select(sev_opts, value="all", allow_blank=False, id="finding-sev-filter", compact=True)
+                    yield Select(tier_opts, value="all", allow_blank=False, id="finding-tier-filter", compact=True)
+                    yield Input(
+                        placeholder="Search findings (file, check, title)...", id="finding-search", compact=True
+                    )
+                    yield Button(
+                        "Explain Check", id="btn-explain-check", variant="default", disabled=True, compact=True
+                    )
                 with Horizontal(id="pr-bar"):
                     yield Input(
-                        placeholder="Pull request address (Azure DevOps): paste it once for a branch", id="pr-url"
+                        placeholder="Pull request address (Azure DevOps): paste it once for a branch",
+                        id="pr-url",
+                        compact=True,
                     )
                     yield Static("", id="pr-status", markup=False)
                 yield DataTable(id="findings-table", cursor_type="row")
@@ -1409,7 +1417,21 @@ class AdkReviewTuiApp(App[int]):
         client = self._client(pr)
         threads = await self._fetched(pr, "threads", client.open_threads, lambda read: threads_data(read, pr.web))
         items = await self._fetched(pr, "work-items", lambda: _work_items_read(client.work_items()), lambda got: got[0])
-        self._list_pull_request(pr, threads, None if items is None else items[1])
+        work = None if items is None else items[1]
+        self._list_pull_request(pr, threads, work)
+        if threads or (work and (work.items or work.unread)):
+            self._switch_handoff_on()
+
+    def _switch_handoff_on(self) -> None:
+        """The hand-off switched on where it is off, said: the person read the pull request's comments and work items
+        for it. Read by an audit, and reproduced: with it off, as the default config has it, the tab said the next
+        review's hand-off quoted them, and the next review wrote none."""
+        if not self._has_dom("#sw-handoff") or (handoff := self.query_one("#sw-handoff", Switch)).value:
+            return
+        handoff.value = True
+        self.notify(
+            "The hand-off is switched on: the next review's hand-off quotes what was read.", timeout=6, markup=False
+        )
 
     async def _fetched[T](
         self, pr: PullRequest, kind: str, read: Callable[[], T], data: Callable[[T], dict]

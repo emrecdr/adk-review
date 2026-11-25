@@ -162,7 +162,7 @@ Screen {
     height: 1fr;
 }
 #findings-toolbar {
-    height: 3;
+    height: 1;
     padding: 0 1;
     layout: horizontal;
     align-vertical: middle;
@@ -176,7 +176,7 @@ Screen {
     margin-right: 1;
 }
 #pr-bar {
-    height: 3;
+    height: 1;
     padding: 0 1;
     layout: horizontal;
     align-vertical: middle;
