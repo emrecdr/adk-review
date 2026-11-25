@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
+import json
 import os
+import re
 import subprocess
 import time
 from collections import deque
@@ -47,6 +50,8 @@ from textual.widgets.selection_list import Selection
 
 from adk_review.core.text import kinds_of, squash
 from adk_review.deliver.report import one_line, unhidden
+from adk_review.deliver.threads import OpenThread
+from adk_review.deliver.threads import as_data as threads_data
 
 from .azure import Place, PullRequest, draft, files_link, line_link, parse_pr_url, remote_names, thread_link
 from .azure_client import AzLogin, AzureError, Client, Credential, PullRequestHead, post_comment
@@ -169,6 +174,7 @@ NOTHING_TO_COPY = {
     "tab-findings": "No finding to copy. Run a review, or change the filters above the table.",
     "tab-comment": "No comment to copy yet. Run a review with the comment switched on.",
     "tab-handoff": "No hand-off to copy yet. Run a review with the hand-off switched on.",
+    "tab-threads": "No comments to copy yet. Choose a pull request, then press Read Open Comments.",
 }
 
 
@@ -197,6 +203,23 @@ class _Opening:
     remote: str
     head: PullRequestHead
     pr: PullRequest
+
+
+#: The longest line of one comment the comments' tab draws: the hand-off quotes it whole.
+THREAD_LINE_CHARS = 500
+
+
+def _write_threads(folder: str, pr: PullRequest, threads: Sequence[OpenThread]) -> Path:
+    """`pr`'s open `threads` written for `--threads` in the outputs `folder`, the person's own: they quote people's
+    words. The file's name is the pull request's, so a review reads the same file each time it is read again: its
+    repository and number, and a hash of its address, since read by review, two organizations' pull requests of one
+    name, or of names one in case or punctuation, wrote one file, and one's hand-off quoted the other's comments."""
+    name = re.sub(r"[^A-Za-z0-9._-]+", "-", pr.repository)[:40] or "repository"
+    mark = hashlib.sha256(pr.web.encode("utf-8")).hexdigest()[:12]
+    path = Path(folder).expanduser() / f"threads-{name}-{pr.number}-{mark}.json"
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path.write_text(json.dumps(threads_data(threads, pr.web), ensure_ascii=False), encoding="utf-8")
+    return path
 
 
 def _clone_of(projects: Sequence[ProjectInfo], wanted: tuple[str, str, str]) -> tuple[ProjectInfo, str] | None:
@@ -308,6 +331,8 @@ class AdkReviewTuiApp(App[int]):
         # request opened, each on the person's click
         self._opening: _Opening | None = None  # a pull request being opened, applied as its clone's branches list
         self._opened: tuple[_Opening, str] | None = None  # one just chosen, and its head, told once the lists are
+        self._threads_read: dict[str, Path] = {}  # by pull request, the file its open comments were written to
+        self._threads_text: list[str] = []  # the comments' tab as drawn, which Ctrl+Y copies there
         self._clients: dict[str, Client] = {}  # one a pull request, by its address: what it read once is kept
         self._drafts: dict[tuple[str, str, str], str] = {}  # an edit left for later: where it belongs, and its text
         self._commenting: bool = False  # a comment from its key to its answer: one at a time
@@ -496,6 +521,11 @@ class AdkReviewTuiApp(App[int]):
                     yield Markdown(_NONE_WRITTEN.format(flag=flag), id=f"{flag}-md", open_links=False)
             with TabPane("5. Live Progress & Git Log", id="tab-log"):
                 yield RichLog(id="progress-log", wrap=True, highlight=True, markup=False)
+            with TabPane("6. Pull Request Comments", id="tab-threads"):
+                with Horizontal(id="threads-bar"):
+                    yield Button("Read Open Comments", id="btn-read-threads", variant="default")
+                    yield Static("", id="threads-status", markup=False)
+                yield RichLog(id="threads-log", wrap=True, markup=False)
 
     def on_mount(self) -> None:
         """Configure Findings Explorer columns, populate roots, and scan initial workspace."""
@@ -986,6 +1016,7 @@ class AdkReviewTuiApp(App[int]):
             checks=checks,
             diff_cap=diff_cap,
             output_dir=self.tui_config.output_dir,
+            threads=str(self._threads_read.get(self._pull_request.web, "")) if self._pull_request else "",
         )
 
     def _has_dom(self, *selectors: str) -> bool:
@@ -1241,6 +1272,71 @@ class AdkReviewTuiApp(App[int]):
         yield SystemCommand(
             "Open pull request", "Review what an Azure DevOps pull request merges", self._ask_for_pull_request
         )
+        yield SystemCommand(
+            "Read pull request comments", "List its open comments, for the next hand-off", self._read_open_comments
+        )
+
+    @on(Button.Pressed, "#btn-read-threads")
+    def _read_open_comments(self) -> None:
+        """The pull request chosen read for its open comments, on the person's click: none chosen is said."""
+        if self._pull_request is None:
+            self.notify(
+                "Choose a pull request first: paste its address above the findings, or press Open Pull Request.",
+                severity="warning",
+                timeout=6,
+                markup=False,
+            )
+            return
+        self._read_threads(self._pull_request)
+
+    @work(exclusive=True, group="pr_threads")
+    async def _read_threads(self, pr: PullRequest) -> None:
+        """`pr`'s open comments listed on their tab, each by its place and its authors, and written where the next
+        review's hand-off quotes them, `--threads`, for its coding agent to answer in the same pass. A read that
+        fails gives the next hand-off none: read by review, the last read's file was given, and the tab said so."""
+        self._threads_read.pop(pr.web, None)
+        try:
+            threads = await asyncio.to_thread(self._client(pr).open_threads)
+        except AzureError as exc:
+            self.notify(f"The comments could not be read: {exc}", severity="warning", timeout=8, markup=False)
+            self._threads_text = []
+            if self._has_dom("#threads-log", "#threads-status"):
+                self.query_one("#threads-log", RichLog).clear()
+                said = (
+                    f"The comments of pull request {pr.number} were not read. The next review's hand-off quotes none."
+                )
+                self.query_one("#threads-status", Static).update(said)
+            return
+        try:
+            path = await asyncio.to_thread(_write_threads, self.tui_config.output_dir, pr, threads)
+        except OSError as exc:
+            self.notify(f"The comments could not be kept for the hand-off: {exc}", severity="warning", markup=False)
+        else:
+            self._threads_read[pr.web] = path
+        self._list_threads(pr, threads)
+
+    def _list_threads(self, pr: PullRequest, threads: Sequence[OpenThread]) -> None:
+        """`threads` drawn on their tab, each comment as one line made safe: a person's words, never markup."""
+        if not self._has_dom("#threads-log", "#threads-status"):
+            return
+        log = self.query_one("#threads-log", RichLog)
+        log.clear()
+        self._threads_text = []
+        count = (
+            f"{len(threads)} open comment thread{'' if len(threads) == 1 else 's'}" if threads else "No open comment"
+        )
+        kept = "The next review's hand-off quotes them." if pr.web in self._threads_read else "Not kept for a hand-off."
+        self.query_one("#threads-status", Static).update(
+            f"{count} on pull request {pr.number}. {kept}" if threads else f"{count} on pull request {pr.number}."
+        )
+        for thread in threads:
+            place = f"{thread.file}:{thread.line}" if thread.line else thread.file or "The whole pull request"
+            self._threads_text.append(one_line(f"{place}, {thread.status}"))
+            for author, text in thread.comments:
+                self._threads_text.append(one_line(f"  {author or 'someone'}: {text}")[:THREAD_LINE_CHARS])
+        for line in self._threads_text:
+            log.write(line)
+        self.query_one("#output-tabs", TabbedContent).active = "tab-threads"  # read on a click: shown at once
 
     @on(Button.Pressed, "#btn-open-pr")
     def _ask_for_pull_request(self) -> None:
@@ -1653,6 +1749,7 @@ class AdkReviewTuiApp(App[int]):
             "tab-comment": self.last_comment_md,
             "tab-handoff": self.last_handoff_md,
             "tab-log": "\n".join(self._progress),
+            "tab-threads": "\n".join(self._threads_text),
         }.get(active, "")
         if not text:
             self.notify(

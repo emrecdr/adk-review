@@ -27,6 +27,7 @@ import truststore
 
 from adk_review.collect.git import on_path
 from adk_review.core.text import squash
+from adk_review.deliver.threads import OPEN_STATUSES, OpenThread
 
 from .azure import Place, PullRequest, posted_as, rooted, thread_payload
 from .git_sync import bounded
@@ -169,6 +170,22 @@ class PullRequestHead:
     fork: bool
 
 
+def _author(comment: dict) -> str:
+    """A comment's author by the name Azure DevOps shows."""
+    name = (comment.get("author") or {}).get("displayName")
+    return name if isinstance(name, str) else ""
+
+
+def _place(context: object) -> tuple[str, int | None]:
+    """The file a thread is on, without the leading `/` Azure DevOps writes, and its line on the new side of the
+    diff, else on the old; an empty file and no line for a thread on the whole pull request."""
+    if not isinstance(context, dict) or not isinstance(context.get("filePath"), str):
+        return "", None
+    lines = [(context.get(side) or {}).get("line") for side in ("rightFileStart", "leftFileStart")]
+    line = next((n for n in lines if type(n) is int and n > 0), None)
+    return context["filePath"].lstrip("/"), line
+
+
 def _branch(ref: object) -> str | None:
     """A branch's name, as git names it under `refs/heads/`, or None for any other ref."""
     return ref.removeprefix("refs/heads/") if isinstance(ref, str) and ref.startswith("refs/heads/") else None
@@ -243,6 +260,25 @@ class Client:
                 kept = [comment for comment in _dicts(thread.get("comments")) if not comment.get("isDeleted")]
                 live.append((thread["id"], [one["content"] for one in kept if isinstance(one.get("content"), str)]))
         return live
+
+    def open_threads(self) -> list[OpenThread]:
+        """The pull request's threads still open, active or pending, as people wrote them: each comment not deleted by
+        its author's name, and the file and line it is on, from either side of the diff, none for one on the whole pull
+        request. A resolved or deleted thread, and one of the system's own, a vote or a push, are left out."""
+        found = []
+        for thread in _dicts(self._call("GET", self._pr.api("threads")).get("value")):
+            if thread.get("isDeleted") or thread.get("status") not in OPEN_STATUSES:
+                continue
+            said = tuple(
+                (_author(comment), comment["content"])
+                for comment in _dicts(thread.get("comments"))
+                if not comment.get("isDeleted")
+                and comment.get("commentType") != "system"
+                and isinstance(comment.get("content"), str)
+            )
+            if said:
+                found.append(OpenThread(*_place(thread.get("threadContext")), str(thread["status"]), said))
+        return found
 
     def post(self, payload: dict) -> int:
         """`payload` posted as a new thread: its id."""

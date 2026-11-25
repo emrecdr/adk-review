@@ -265,7 +265,9 @@ The order is the architecture: evidence and rules first, the guidelines' judgeme
    not look, a changed file no check can read whole, or where a guideline runs one it was not shown whole, unless the
    skip list names it, a dropped finding at the bar — is `DEGRADED`, exit 3. A hole never approves.
 7. **Deliver.** The report goes to stdout, and the JSON (`--json`), a hand-off for a coding agent (`--handoff`) and a
-   comment for the branch's author (`--comment`) to their files, whenever a review is decided.
+   comment for the branch's author (`--comment`) to their files, whenever a review is decided. The hand-off quotes a
+   pull request's open comments too, from the file `--threads` names, which `deliver/threads.py` reads and the
+   terminal front end writes.
 
 Exit 0 approves; 1 is a finding at the bar; 2 a usage error before any model call; 3 a hole; 130 and 143 a run
 stopped by Ctrl-C or by a job. "Exit codes" in `GUIDE.md` says what each covers.

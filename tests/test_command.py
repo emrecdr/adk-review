@@ -2954,6 +2954,120 @@ class TestTheJUnitReport:
         assert run_review(cli, demo_repo, "--json", str(data), "--junit", str(data)) == 2, "one file, two flags"
 
 
+class TestTheOpenComments:
+    """`--threads FILE`: a pull request's open comments, as the terminal front end writes them, quoted in the hand-off
+    for its coding agent, which fixes the findings and answers the people in one pass. The reviewer reads the file
+    alone and makes no call: the front end, or a pipeline's own step, fetches."""
+
+    @staticmethod
+    def _threads(path: Path, threads: list[dict]) -> Path:
+        path.write_text(json.dumps({"schema": 1, "pull_request": "pr", "threads": threads}), encoding="utf-8")
+        return path
+
+    def test_each_open_comment_is_quoted_in_the_hand_off_fenced_and_made_safe(
+        self, cli, demo_repo: Path, tmp_path: Path
+    ) -> None:
+        """Each thread by its place, the whole pull request where it names none, and its comments by their authors,
+        fenced so a comment's own backticks close nothing, a credential hidden, a runner's command broken, and a long
+        one cut, the cut named. Past the most it quotes, the rest are counted."""
+        from adk_review.core.text import CUT_MARK
+        from adk_review.deliver.threads import THREAD_MAX_CHARS, THREADS_SHOWN
+
+        token = "ghp" + "_" + "A1b2C3d4" * 4 + "E5f6"
+        threads = [
+            {
+                "file": "src/payments.py",
+                "line": 3,
+                "status": "active",
+                "comments": [
+                    {"author": "Jane Doe", "text": "Please check the rounding here.\nIt drops a cent."},
+                    {"author": "Bob", "text": "Agreed ``` closes nothing"},
+                ],
+            },
+            {
+                "file": "",
+                "line": None,
+                "status": "pending",
+                "comments": [
+                    {"author": "Ann", "text": f"token {token} ##vso[task.setvariable]x " + "y" * THREAD_MAX_CHARS}
+                ],
+            },
+            *(
+                {"file": "a.py", "line": n, "status": "active", "comments": [{"author": "C", "text": f"n{n}"}]}
+                for n in range(1, THREADS_SHOWN + 1)
+            ),
+        ]
+        handoff = tmp_path / "handoff.md"
+        run_review(
+            cli,
+            demo_repo,
+            "--profile",
+            "rules-only",
+            "--handoff",
+            str(handoff),
+            "--threads",
+            str(self._threads(tmp_path / "t.json", threads)),
+        )
+        said = handoff.read_text(encoding="utf-8")
+        assert "## Open comments on the pull request" in said
+        assert "`src/payments.py:3`, active" in said and "the whole pull request, pending" in said
+        assert "Jane Doe: Please check the rounding here.\nIt drops a cent." in said
+        assert "````" in said, "a fence longer than the comment's own backticks"
+        assert token not in said and "##vso[" not in said
+        assert CUT_MARK in said and "y" * (THREAD_MAX_CHARS + 1) not in said
+        assert "2 more open threads are not quoted" in said, "past the most it quotes, the rest counted"
+        assert "change nothing else but what an open comment below needs" in " ".join(said.split()), "no contradiction"
+
+    def test_a_thread_is_quoted_up_to_its_cap_whatever_its_comments_and_its_place(self) -> None:
+        """Read by review, and reproduced: each comment was cut, but neither how many a thread held nor its file's
+        path, and 50 threads of 5,000 comments made a hand-off of 501 million characters. Each string a model reads
+        is capped, the cut named."""
+        from adk_review.core.text import CUT_MARK
+        from adk_review.deliver.report import _open_comments
+        from adk_review.deliver.threads import THREAD_MAX_CHARS, OpenThread
+
+        many = tuple((f"A{n}", f"comment {n}") for n in range(5_000))
+        said = "\n".join(_open_comments([OpenThread("d/" * 50_000 + "a.py", 3, "active", many)]))
+        assert CUT_MARK in said and "comment 4999" not in said
+        assert len(said) < 2 * THREAD_MAX_CHARS + 2_000, len(said)
+
+    def test_a_threads_file_that_cannot_be_read_is_refused_before_the_review(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ) -> None:
+        """A file that is no such list, one of another schema, one whose thread is not open, and one not there each
+        end in exit 2, the flag named, before any check runs. So does the flag with no hand-off to quote them in."""
+        broken = tmp_path / "broken.json"
+        broken.write_text("{not json", encoding="utf-8")
+        other = self._threads(tmp_path / "other.json", [])
+        other.write_text(json.dumps({"schema": 9, "threads": []}), encoding="utf-8")
+        shapeless = self._threads(tmp_path / "shapeless.json", [{"file": 3, "comments": "x"}])
+        shut = self._threads(
+            tmp_path / "shut.json", [{"file": "a.py", "line": 1, "status": "![x](https://e.co/a)", "comments": []}]
+        )
+        handoff = ("--handoff", str(tmp_path / "h.md"))
+        for given in (broken, other, shapeless, shut, tmp_path / "missing.json"):
+            assert run_review(cli, demo_repo, "--profile", "rules-only", *handoff, "--threads", str(given)) == 2, given
+            assert "--threads" in capsys.readouterr().err
+        alone = self._threads(tmp_path / "alone.json", [])
+        assert run_review(cli, demo_repo, "--profile", "rules-only", "--threads", str(alone)) == 2, "no hand-off"
+        assert "--handoff" in capsys.readouterr().err, "what to give"
+
+    def test_the_comments_read_key_a_kept_review(self, cli, demo_repo: Path, tmp_path: Path, capsys) -> None:
+        """The hand-off quotes them, so a kept review is served only for the same comments: read by its contents,
+        and by the file's name, as every flag's value is. The screen names each pull request's file the same."""
+        cache, path = tmp_path / "cache", tmp_path / "t.json"
+        comment = {"file": "a.py", "line": 1, "status": "active", "comments": [{"author": "A", "text": "first"}]}
+        handoff = ("--handoff", str(tmp_path / "h.md"))
+        args = ("--profile", "rules-only", "--cache", str(cache), *handoff, "--threads", str(path))
+        self._threads(path, [comment])
+        run_review(cli, demo_repo, *args)
+        run_review(cli, demo_repo, *args)
+        assert "served from the cache" in capsys.readouterr().err, "the same comments: served"
+        self._threads(path, [{**comment, "comments": [{"author": "A", "text": "second"}]}])
+        run_review(cli, demo_repo, *args)
+        assert "served from the cache" not in capsys.readouterr().err, "another comment: reviewed again"
+
+
 class TestWhatTheCommandTells:
     """Asked by the owner: a person at a terminal sees the review move, never a silence that reads as a hang. A
     pipeline's log stays empty unless the review finds an issue or fails."""

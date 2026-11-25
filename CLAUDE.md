@@ -36,7 +36,7 @@ uv run pyrefly check                                  # types: the package and s
 
 uv run python scripts/make_demo_repo.py          # build <tmp>/adk-demo-repo: main + feature/payments with 4 planted defects + feature/orders with a defect for each check
 uv run python scripts/make_demo_repo.py --fix    # commit the two fixes on feature/payments
-uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--path-exclude DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--junit FILE] [--handoff [FILE]] [--comment [FILE]] [--cache DIR] [--previous FILE] [--progress | --quiet] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
+uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--path-exclude DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--junit FILE] [--handoff [FILE]] [--comment [FILE]] [--cache DIR] [--previous FILE] [--threads FILE] [--progress | --quiet] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
 uv run adk-review <demo repo> --head feature/payments --base main --profile demo   # every rule, the demo's own among them, no model call, no key
 uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # what a review would cover and run, nothing run
 uv run adk-review <demo repo> --head feature/orders --base main --profile rules-only   # each rule finds its own planted defect, exit 1; no model call
@@ -181,27 +181,27 @@ or else the branch `origin/HEAD` names.
 Evidence is gathered in Python first, the rules run as one `FunctionNode` before the guidelines in both shapes
 (`judge/checks.py`, every rule through `run_rule`), or straight from the driver through the same `run_rules` where no
 guideline follows, and code decides the verdict. Around them: retries, a token ceiling, a `--verify` second opinion
-(`judge/verify.py`: before the fold, one verifier a call of whole files that hold findings, up to
-`CHUNK_FINDINGS_MAX` findings and `CHUNK_CAP_CHARS` of the block a call, asked of every finding of the change, a
-rule's and a guideline's, shown each of its files' parts of the block once or the whole block, and the
-calls into what the change touched; a refuted finding dropped and named, a security rule's kept as `Outcome.disputed`,
-an unsure or unjudged one kept as `Outcome.unverified`), a JSON report a pipeline reads (`--json FILE`, schema 2,
-written for every decided review, under the text report's safety rules), the same review as JUnit XML for a
-pipeline's test tab (`--junit FILE`, `deliver/junit.py`, each kept finding a failed test, the exit code still
-the gate), a comment for the branch's author
+(`judge/verify.py`: before the fold, one verifier a call of whole files that hold findings, up to `CHUNK_FINDINGS_MAX`
+findings and `CHUNK_CAP_CHARS` of the block a call, asked of every finding of the change, a rule's and a guideline's,
+shown each of its files' parts of the block once or the whole block, and the calls into what the change touched; a
+refuted finding dropped and named, a security rule's kept as `Outcome.disputed`, an unsure or unjudged one kept as
+`Outcome.unverified`), a JSON report a pipeline reads (`--json FILE`, schema 2, written for every decided review, under
+the text report's safety rules), the same review as JUnit XML for a pipeline's test tab (`--junit FILE`,
+`deliver/junit.py`, each kept finding a failed test, the exit code still the gate), a comment for the branch's author
 (`--comment [FILE]`, by default `comment-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md` where the command
 runs), which the person pastes into the pull request by hand: the reviewer posts nothing and prints no command that
 would, a hand-off for a coding agent (`--handoff [FILE]`, by default
-`handoff-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md`, named as the comment is), which applies nothing
-itself, under `--all` a
-Health section (`core/health.py`: what was read, source and tests apart, McCabe complexity counted as ruff's C901 counts
-it, in bands graded A to E by SIG's published risk-profile rating where most of the source parsed, each rule's findings
-by severity, counted and never graded; never read by the verdict), each changed file's blast radius (`core/blast.py`: an
-import graph parsed from the head commit, shown to the guidelines as `{blast?}` with each call into a function the
-change touched that it did not add or edit (`collect/change.py`'s `callers_of`), and heading the report, never read by
-the verdict), and fences around every untrusted section the guidelines, the verifiers and the chat's verdict read
-(`judge/agents.py`: two marker lines carrying a nonce drawn once a process, a second one, no guideline shown it, where a
-guideline's own words are read, a reminder after them, the content never escaped so a quote still grounds).
+`handoff-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md`, named as the comment is), which applies nothing itself
+and quotes a pull request's open comments `--threads FILE` names, people's words it is told never to obey, under `--all`
+a Health section (`core/health.py`: what was read, source and tests apart, McCabe complexity counted as ruff's C901
+counts it, in bands graded A to E by SIG's published risk-profile rating where most of the source parsed, each rule's
+findings by severity, counted and never graded; never read by the verdict), each changed file's blast radius
+(`core/blast.py`: an import graph parsed from the head commit, shown to the guidelines as `{blast?}` with each call into
+a function the change touched that it did not add or edit (`collect/change.py`'s `callers_of`), and heading the report,
+never read by the verdict), and fences around every untrusted section the guidelines, the verifiers and the chat's
+verdict read (`judge/agents.py`: two marker lines carrying a nonce drawn once a process, a second one, no guideline
+shown it, where a guideline's own words are read, a reminder after them, the content never escaped so a quote still
+grounds).
 
 Load-bearing rules the tests enforce:
 
@@ -258,22 +258,23 @@ Load-bearing rules the tests enforce:
   one comment posted to an Azure DevOps pull request, on the person's click, after their edit and a confirmation, never
   a batch, and never from the reviewer, which gains no network call and no posting command. It reads Azure DevOps where
   the person asks: a pull request they open, its branches and last push, which choose the clone and the branches a
-  review reads, and its threads before a post. Its login is the person's own `az` login: a token asked of `az` by its
-  full path with fixed arguments alone, since `az.cmd` runs through cmd.exe, kept in memory and written nowhere. The
-  token goes to `dev.azure.com` or a `visualstudio.com` organization alone, and no redirect is followed: `urllib` sends
-  `Authorization` again to a redirect's target. A comment's prose passes through `prose`, and its corrected code is
-  never changed, since "Apply changes" writes it into the file. Whether that code is drafted as a `suggestion` block is
-  the report's word, the JSON's `suggestable`, never a guess from the code's look: only the report knows whether the
-  change added each line, whether the quote holds a deleted one, and whether its own safety rules left the code the
-  model's. A post whose answer did not come back is never said to be unposted: the next try finds it by its mark, or by
-  its own words. Its tests are offline: a fake Azure DevOps on a local port, and a fake `az`. Every string a repository,
-  a branch or a model wrote is drawn with no markup: Textual reads `[name]` as a tag. No link in a model's words opens
-  on a click: a finding is plain text, and the comment and the hand-off open none. On Windows, from cmd and PowerShell
-  alike: the command it shows is quoted by `windows_word`, or not shown; no key is one a terminal sends as another or
-  the classic console keeps (Ctrl+A, C, F, M, V); the action keys go first, Stop while a review runs alone, since Ctrl+X
-  is a text field's cut, and none but Stop, and Textual's own Ctrl+Q, which quits, runs behind a dialog; a review it
-  runs gets UTF-8 streams; and a copy goes to Windows' own clipboard too. `adk_review/` still leaves a `tui/` folder out
-  of the cache key: a checkout keeps a person's old config there.
+  review reads, its threads before a post, and its open comments, which a review's hand-off quotes. Its login is the
+  person's own `az` login: a token asked of `az` by its full path with fixed arguments alone, since `az.cmd` runs
+  through cmd.exe, kept in memory and written nowhere. The token goes to `dev.azure.com` or a `visualstudio.com`
+  organization alone, and no redirect is followed: `urllib` sends `Authorization` again to a redirect's target. A
+  comment's prose passes through `prose`, and its corrected code is never changed, since "Apply changes" writes it into
+  the file. Whether that code is drafted as a `suggestion` block is the report's word, the JSON's `suggestable`, never a
+  guess from the code's look: only the report knows whether the change added each line, whether the quote holds a
+  deleted one, and whether its own safety rules left the code the model's. A post whose answer did not come back is
+  never said to be unposted: the next try finds it by its mark, or by its own words. Its tests are offline: a fake Azure
+  DevOps on a local port, and a fake `az`. Every string a repository, a branch or a model wrote is drawn with no markup:
+  Textual reads `[name]` as a tag. No link in a model's words opens on a click: a finding is plain text, and the comment
+  and the hand-off open none. On Windows, from cmd and PowerShell alike: the command it shows is quoted by
+  `windows_word`, or not shown; no key is one a terminal sends as another or the classic console keeps (Ctrl+A, C, F, M,
+  V); the action keys go first, Stop while a review runs alone, since Ctrl+X is a text field's cut, and none but Stop,
+  and Textual's own Ctrl+Q, which quits, runs behind a dialog; a review it runs gets UTF-8 streams; and a copy goes to
+  Windows' own clipboard too. `adk_review/` still leaves a `tui/` folder out of the cache key: a checkout keeps a
+  person's old config there.
 - **Layering** (`tests/test_layering.py`): `core` → `collect` → `judge` → `deliver`, with imports pointing one way
   only, never spelled from the top (`adk_review.…`), `deliver/` importing `core` alone, a guideline importing `core`
   alone, and a rule importing one door, `judge/rule_helpers/`, alone, which imports `core` alone and lists in `__all__`

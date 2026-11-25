@@ -134,6 +134,7 @@ try:
         safe_line,
         told_in_parts,
     )
+    from .deliver.threads import read_threads
     from .judge.catalog import (
         CONFIG,
         REVIEW,
@@ -203,6 +204,7 @@ REVIEW_ONLY = {
     "comment": "--comment",
     "cache": "--cache",
     "previous": "--previous",
+    "threads": "--threads",
     "record": "--record",
     "trace": "--trace",
     "debug_log": "--debug-log",
@@ -448,6 +450,12 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         metavar="FILE",
         help="a previous review's --json report. The review marks each finding new or seen before, by its "
         "fingerprint. It lists what it no longer finds. A review with a hole resolves nothing",
+    )
+    parser.add_argument(
+        "--threads",
+        metavar="FILE",
+        help="quote a pull request's open comments from FILE in the hand-off, as the front end writes it. The review "
+        "makes no call for them",
     )
     parser.add_argument(
         "--debug-log",
@@ -801,6 +809,10 @@ def _review(argv: list[str] | None = None) -> int:
         _mode_alone(args)
         explanation = explained(found, config["profiles"], args.explain) if args.explain else None
         previous = read_previous(args.previous) if args.previous else (None, None, None)
+        if args.threads and not args.handoff:  # read by review: with nothing to quote them in, the flag did nothing
+            raise ValueError("--threads quotes comments in the hand-off alone. Give --handoff too, or drop --threads")
+        # As the hand-off quotes them, so the cache key reads them too, through `vars(args)`, with the file's name.
+        args.threads_read = read_threads(args.threads) if args.threads else ()
         _outputs_ready(args)
     except ValueError as exc:
         _say(str(exc))
@@ -1148,7 +1160,15 @@ def _reported(
     # The hand-off and the JSON only where asked for, or kept: measured by review in-process, each costs about the
     # report's own time, 0.9 and 0.2 times it on the demo and 1.6 and 1.1 times over this repository whole.
     handoff = (
-        render_handoff(evidence, outcome, verdict=verdict, fail_on=args.fail_on, tidies=tidies, added=args.added)
+        render_handoff(
+            evidence,
+            outcome,
+            verdict=verdict,
+            fail_on=args.fail_on,
+            tidies=tidies,
+            added=args.added,
+            threads=getattr(args, "threads_read", ()),
+        )
         if args.handoff or keep
         else ""
     )

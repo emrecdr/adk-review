@@ -594,6 +594,35 @@ class TestTheClient:
         with pytest.raises(client.AzureError, match="branch"):
             client.Client(fake_ado.pr, FakeToken()).pull_request()
 
+    def test_the_open_threads_are_read_and_the_resolved_the_deleted_and_the_systems_left_out(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        """Only what is still open and people wrote: active and pending threads, each comment not deleted by its
+        author's name, a thread's file and line from either side of the diff, and none for one on the whole pull
+        request. A resolved thread, a deleted one, and one of the system's own, a vote or a push, are left out."""
+        from adk_review.deliver.threads import OpenThread
+
+        def said(who: str, text: str, kind: str = "text", **more: object) -> dict:
+            return {"author": {"displayName": who}, "content": text, "commentType": kind, **more}
+
+        value = [
+            {"id": 1, "status": "active", "threadContext": {"filePath": "/src/app.py", "rightFileStart": {"line": 12}},
+             "comments": [said("Jane", "Fix it"), said("Jane", "gone", isDeleted=True)]},
+            {"id": 2, "status": "pending", "threadContext": None, "comments": [said("Ann", "A note on it all")]},
+            {"id": 3, "status": "fixed", "comments": [said("Bob", "done")]},
+            {"id": 4, "comments": [said("System", "Jane voted 10", "system")]},
+            {"id": 5, "status": "active", "isDeleted": True, "comments": [said("Bob", "x")]},
+            {"id": 6, "status": "active", "comments": [said("System", "pushed", "system")]},
+            {"id": 7, "status": "active", "threadContext": {"filePath": "/old.py", "leftFileStart": {"line": 4}},
+             "comments": [said("Cem", "Why remove this?")]},
+        ]  # fmt: skip
+        fake_ado.answer("GET", "/threads", {"value": value})
+        assert client.Client(fake_ado.pr, FakeToken()).open_threads() == [
+            OpenThread("src/app.py", 12, "active", (("Jane", "Fix it"),)),
+            OpenThread("", None, "pending", (("Ann", "A note on it all"),)),
+            OpenThread("old.py", 4, "active", (("Cem", "Why remove this?"),)),
+        ]
+
     def test_the_iterations_are_read_oldest_first(self, client: ModuleType, fake_ado: FakeAdo) -> None:
         pushed = [
             {"id": 2, "sourceRefCommit": {"commitId": "b" * 40}},

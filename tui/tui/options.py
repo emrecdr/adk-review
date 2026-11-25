@@ -87,6 +87,7 @@ class ReviewSelection:
     checks: tuple[str, ...] = ()
     diff_cap: int = 0
     output_dir: str = str(OUTPUTS_DIR)
+    threads: str = ""  # a pull request's open comments, read on the screen, for the hand-off to quote
 
 
 def load_profile_options() -> list[ProfileOption]:
@@ -263,6 +264,8 @@ def _output_flags(sel: ReviewSelection, argv: list[str]) -> dict[str, Path]:
         handoff_file = out_dir / f"handoff-{repo_slug}__{base_slug}__{head_slug}__{stamp}.md"
         argv.extend(["--handoff", str(handoff_file)])
         outputs["handoff"] = handoff_file
+        if sel.threads:  # its agent answers the people's comments in the same pass as the findings
+            argv.extend(["--threads", sel.threads])
     return outputs
 
 

@@ -3137,6 +3137,74 @@ class TestAzureDevOpsOnTheScreen:
         assert later != "origin/feature/tax", "the pull request dropped at the pick"
 
     @pytest.mark.asyncio
+    async def test_the_open_comments_are_read_listed_and_given_to_the_next_hand_off(
+        self, tmp_path: Path, fake_ado
+    ) -> None:
+        """The pull request's open comments, read on the person's click: listed on their own tab, each by its place
+        and its authors, and written where the next review's hand-off quotes them, for its coding agent to answer in
+        the same pass. A review that writes no hand-off is given none. With no pull request chosen, it says so."""
+        from conftest import FakeToken
+        from textual.widgets import RichLog, Static, Switch
+
+        from adk_review.deliver.threads import read_threads
+        from tui.options import build_review_argv
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            said: list[str] = []
+            app.notify = _plainly(said)
+            app._read_open_comments()
+            await pilot.pause()
+            assert said and "pull request" in said[-1], "none chosen: said"
+            app._credential = FakeToken()
+            app._pull_request = fake_ado.pr
+            comment = {"author": {"displayName": "Jane"}, "content": "Fix the rounding", "commentType": "text"}
+            thread = {"id": 1, "status": "active", "comments": [comment],
+                      "threadContext": {"filePath": "/src/app.py", "rightFileStart": {"line": 12}}}  # fmt: skip
+            fake_ado.answer("GET", "/threads", {"value": [thread]})
+            app._read_open_comments()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            listed = "\n".join(line.text for line in app.query_one("#threads-log", RichLog).lines)
+            app.query_one("#sw-handoff", Switch).value = True
+            await pilot.pause()
+            with_handoff, _ = build_review_argv(app.current_selection())
+            app.query_one("#sw-handoff", Switch).value = False
+            await pilot.pause()
+            without, _ = build_review_argv(app.current_selection())
+            # Read by review, and reproduced: a read that failed left the last read's file given, and its words.
+            fake_ado.instead("GET", "/threads", {"message": "down"}, status=500)
+            app._read_open_comments()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            app.query_one("#sw-handoff", Switch).value = True
+            await pilot.pause()
+            after_failure, _ = build_review_argv(app.current_selection())
+            status = str(app.query_one("#threads-status", Static).render())
+        assert "src/app.py:12" in listed and "Jane: Fix the rounding" in listed, listed
+        given = Path(with_handoff[with_handoff.index("--threads") + 1])
+        assert [t.comments for t in read_threads(str(given))] == [(("Jane", "Fix the rounding"),)]
+        assert "--threads" not in without, "no hand-off, no comments for it"
+        assert "--threads" not in after_failure, "a failed read gives none, never the last one's"
+        assert "quotes them" not in status and "not read" in status, status
+
+    def test_two_pull_requests_of_one_name_and_number_keep_two_files(self, tmp_path: Path) -> None:
+        """Read by review: the file was named by the repository and the number alone, and two organizations' pull
+        requests of one name, or of names that differ in case or punctuation alone, wrote one file, so one's hand-off
+        quoted the other's comments. The same pull request read again writes the same file."""
+        from tui.app import _write_threads
+        from tui.azure import parse_pr_url
+
+        one = parse_pr_url("https://dev.azure.com/orgone/Shop/_git/api/pullrequest/7")
+        two = parse_pr_url("https://dev.azure.com/orgtwo/Bank/_git/API/pullrequest/7")
+        three = parse_pr_url("https://dev.azure.com/orgone/Shop/_git/my api/pullrequest/7")
+        four = parse_pr_url("https://dev.azure.com/orgone/Shop/_git/my-api/pullrequest/7")
+        paths = [_write_threads(str(tmp_path), pr, ()) for pr in (one, two, three, four)]
+        assert len({str(path).lower() for path in paths}) == 4, paths
+        assert _write_threads(str(tmp_path), one, ()) == paths[0], "the same pull request, the same file"
+
+    @pytest.mark.asyncio
     async def test_a_pull_request_whose_last_push_is_not_here_says_to_fetch(self, tmp_path: Path, fake_ado) -> None:
         """The remote's branch here is older than the pull request's last push: a review of it would read the
         commits before it. The banner names the push and the key that fetches it."""
@@ -4435,6 +4503,7 @@ class TestWhatAnAuditFound:
             for tab, words in (("tab-findings", "No finding"), ("tab-comment", "comment"), ("tab-handoff", "hand-off")):
                 assert words in await copy_from(tab) and len(copied) == 2, (tab, said[-1], copied)
                 assert "Run a review" in said[-1], "what to do next, true whether a switch is on or off"
+            assert "Read Open Comments" in await copy_from("tab-threads") and len(copied) == 2, said[-1]
 
     def test_a_profile_no_review_has_is_refused_with_the_profiles_there_are(self, tmp_path: Path) -> None:
         """Read by an audit, and reproduced: `profile = "typo"` in `[defaults]`, and `profile = 123`, were taken as
