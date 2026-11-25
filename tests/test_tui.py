@@ -3538,6 +3538,72 @@ class TestAzureDevOpsOnTheScreen:
         assert [(pr.project, pr.repository, pr.number) for pr in opened] == [("Web", "payments", 123)]
 
     @pytest.mark.asyncio
+    async def test_the_lists_are_built_in_one_go_and_an_empty_filter_says_so(self, tmp_path: Path, monkeypatch) -> None:
+        """Measured by an audit: each branch was added to its list one at a time, 4,201 additions and 363 ms for 2,101
+        branches, on each key typed in a filter; and a repository filter that matched nothing said no repository was
+        found under the folder at all."""
+        from textual.widgets import OptionList, Static
+
+        from tui.git_sync import BranchInfo
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app.branches = [BranchInfo(f"feature/b{n:04}", False, "", f"feature/b{n:04}", "") for n in range(500)]
+            one_at_a_time: list[object] = []
+            real = OptionList.add_option
+            monkeypatch.setattr(
+                OptionList, "add_option", lambda list_, *a, **k: one_at_a_time.append(1) or real(list_, *a, **k)
+            )
+            app._render_branch_lists()
+            app._populate_repos("zzz")
+            await pilot.pause()
+            banner = str(app.query_one("#status-banner", Static).render())
+        assert one_at_a_time == [], len(one_at_a_time)
+        assert "No repository matches 'zzz'" in banner, banner
+
+    @pytest.mark.asyncio
+    async def test_the_open_dialog_works_by_keys_alone(self, tmp_path: Path, fake_ado, monkeypatch) -> None:
+        """Read by an audit, and reproduced: with pull requests listed, the focus stayed in the empty address field,
+        Down did nothing, and Enter closed the dialog, opening nothing and saying nothing. The list takes the focus on
+        its first pull request, and Enter opens it; Enter on an empty field with nothing to choose says what to do."""
+        from conftest import FakeToken
+        from textual.widgets import OptionList
+
+        import tui.app as screen
+        from tui.modals import OpenPullRequestModal
+
+        monkeypatch.setattr(screen, "ORIGIN", fake_ado.pr.origin.rsplit("/", 1)[0] + "/{}")
+        app = screen.AdkReviewTuiApp(config_path=_two_clones(tmp_path))
+        opened: list = []
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            said: list[str] = []
+            app.notify = _plainly(said)
+            app._credential = FakeToken()
+            monkeypatch.setattr(app, "_open_pull_request", opened.append)
+            item = {"pullRequestId": 123, "title": "Round the tax", "creationDate": "2026-11-20T00:00:00Z",
+                    "repository": {"name": "payments", "project": {"name": "Web"}},
+                    "createdBy": {"displayName": "Jane"}}  # fmt: skip
+            fake_ado.answer("GET", "/git/pullrequests", {"value": [item]}, under=fake_ado.project)
+            app._ask_for_pull_request()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            on_list = app.focused is app.screen.query_one("#open-pr-list", OptionList)
+            await pilot.press("enter")
+            await pilot.pause()
+            empty = OpenPullRequestModal()
+            await app.push_screen(empty)
+            await pilot.pause()
+            empty.listed([], "No repository here has an Azure DevOps remote. Paste an address.")
+            await pilot.press("enter")
+            await pilot.pause()
+            stayed = app.screen is empty
+        assert on_list, "the list focused on its first pull request"
+        assert [pr.number for pr in opened] == [123], opened
+        assert stayed and said and "paste an address" in said[-1].lower(), said
+
+    @pytest.mark.asyncio
     async def test_a_list_that_arrives_after_the_dialog_closed_is_dropped(self, tmp_path: Path) -> None:
         """Read by review, and reproduced: a list that came as the dialog was taken down found no list to fill, and
         the screen ended."""

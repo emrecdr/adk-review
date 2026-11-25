@@ -118,9 +118,10 @@ could not check everything says so: in its name, `(2, DEGRADED)`, and where it k
 none. F5, or the same branch picked again, keeps the review this session ran of it over an older saved one, until
 you choose another target: back on it, the saved one shows, marked `prior`, since a review that could not check
 everything is never saved. A review that writes its report minimizes every panel, so its results take the screen;
-`Ctrl+O` restores them. A dry run, or a review refused, leaves them open, the step to change among them. A review
-you stop says so in the Report tab, and that is what `Ctrl+Y` copies from it. Stopped, or unable to run, after
-you chose another target, it says so on the banner alone: the tab is the new target's.
+`Ctrl+O` restores them. A review that kept findings opens on the Findings tab, its table focused on the first. A dry
+run, or a review refused, leaves them open, the step to change among them. A review you stop says so in the Report
+tab, and that is what `Ctrl+Y` copies from it. Stopped, or unable to run, after you chose another target, it says so
+on the banner alone: the tab is the new target's.
 
 A finding is drawn as plain text, with its reason, "Why it matters", and its corrected code where there are
 some: a reason at any severity, and the corrected code where a model gave one. A guideline's words are a model's, and
@@ -137,10 +138,12 @@ when you ask. The reviewer itself posts nothing, as before: this is the screen's
 2. Review the pull request's branch, as any branch. Or press **Open Pull Request**, under the repositories, or choose
    "Open pull request" in the palette, `Ctrl+P`. The dialog lists the open pull requests of the repositories cloned
    here, newest first, each by its repository, number, title and author, read as it opens: a call for each hundred
-   open in a project of theirs, ten at most, so a project with more than a thousand open lists the newest thousand. Choose one, or paste an address as the browser shows it: the screen reads the pull request, picks the
-   repository under the workspace whose remote names its repository, the one chosen first, and chooses its source and
-   target branches as that remote holds them, never a local copy, which can hold work not pushed. It fetches as a pick
-   does, and keeps the address for that branch, so step 3 is done. A pull request from a fork, whose branch is in
+   open in a project of theirs, ten at most, so a project with more than a thousand open lists the newest thousand.
+   The list takes the focus as it fills, unless you pasted first. Choose one with the arrow keys and `Enter`, or paste
+   an address as the browser shows it: the screen reads the pull request, picks the repository under the workspace
+   whose remote names its repository, the one chosen first, and chooses its source and target branches as that remote
+   holds them, never a local copy, which can hold work not pushed. It fetches as a pick does, and keeps the address
+   for that branch, so step 3 is done. A pull request from a fork, whose branch is in
    another repository, and one of a repository no folder here clones are said, and nothing changes. Where the remote's
    branch here is not at the pull request's last push, the banner names it and says to press F5. A repository you
    pick while it opens wins, and the pull request is not opened.
@@ -154,7 +157,8 @@ when you ask. The reviewer itself posts nothing, as before: this is the screen's
    out. They are written beside the reviews, and a review run with the hand-off switched on quotes them in it, for its
    coding agent to answer the people and check the change against what it is for in the same pass as the findings,
    each a person's text it is told never to obey. Each read stands alone: one that fails gives the hand-off none of
-   its own, and the tab says so. Reading work items needs your account's right to read them.
+   its own, and the tab says so. Reading work items needs your account's right to read them. The tab holds the
+   pull request chosen alone: choose another, or empty the address, and it clears, a read still running stopped.
 4. Choose a finding, then press a key:
 
 | Key | What opens |

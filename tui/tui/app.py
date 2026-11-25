@@ -696,10 +696,14 @@ class AdkReviewTuiApp(App[int]):
         repo_list.clear_options()
         needle = filter_text.strip().lower()
         shown = [p for p in self.projects if not needle or needle in p.label().lower()]
-        for proj in shown:
-            repo_list.add_option(Option(proj.label(), id=proj.path))
+        repo_list.add_options([Option(proj.label(), id=proj.path) for proj in shown])
         if not shown:
-            self._set_banner(f"No Git repositories found under {self.selected_root.path}.")
+            # Read by an audit: a filter that matched nothing said the folder holds no repository at all.
+            self._set_banner(
+                f"No repository matches '{filter_text.strip()}'. Clear the filter to see every repository."
+                if needle and self.projects
+                else f"No Git repositories found under {self.selected_root.path}."
+            )
             return
         if not initial and self.selected_project in shown:
             repo_list.highlighted = shown.index(self.selected_project)
@@ -882,22 +886,23 @@ class AdkReviewTuiApp(App[int]):
 
     def _is_head_branch(self, branch: BranchInfo) -> bool:
         """Whether `branch` (or its local/remote tracking counterpart) is Branch Under Review."""
-        if not self.selected_head:
-            return False
-        head_local = next((b.local_name for b in self.branches if b.name == self.selected_head), self.selected_head)
-        return (
-            branch.name == self.selected_head
-            or branch.local_name == head_local
-            or branch.remote_name == self.selected_head
-        )
+        return self._head_test()(branch)
+
+    def _head_test(self) -> Callable[[BranchInfo], bool]:
+        """`_is_head_branch` with the head's local name looked up once, for a loop over every branch: profiled, the
+        lookup made once a branch took most of a list's rebuild for 2,101 branches."""
+        head = self.selected_head
+        if not head:
+            return lambda _branch: False
+        local = next((b.local_name for b in self.branches if b.name == head), head)
+        return lambda branch: branch.name == head or branch.local_name == local or branch.remote_name == head
 
     def _reconcile_base_against_head(self, repo: str) -> None:
         """Ensure Target Branch (`--base`) differs from Branch Under Review (`--head`)."""
-        same = not self.selected_base or any(
-            b.name == self.selected_base and self._is_head_branch(b) for b in self.branches
-        )
+        is_head = self._head_test()
+        same = not self.selected_base or any(b.name == self.selected_base and is_head(b) for b in self.branches)
         if same or self.selected_base == self.selected_head:
-            candidates = [b for b in self.branches if not self._is_head_branch(b)]
+            candidates = [b for b in self.branches if not is_head(b)]
             preset = self.tui_config.projects.get(self.selected_project.name) if self.selected_project else None
             self.selected_base = preferred_base_branch(
                 repo, candidates, self.selected_head, preset.base if preset else ""
@@ -919,18 +924,16 @@ class AdkReviewTuiApp(App[int]):
     def _fill_branch_option_list(self, selector: str, needle: str, active_name: str, *, exclude_head: bool) -> None:
         widget = self.query_one(selector, OptionList)
         widget.clear_options()
+        is_head = self._head_test()
         shown = [
             b
             for b in self.branches
-            if (not exclude_head or not self._is_head_branch(b)) and (not needle or needle in b.label().lower())
+            if (not exclude_head or not is_head(b)) and (not needle or needle in b.label().lower())
         ]
-        active_idx = 0
-        for idx, branch in enumerate(shown):
-            widget.add_option(Option(branch.label(), id=branch.name))
-            if branch.name == active_name:
-                active_idx = idx
+        # In one call: measured by an audit, one at a time took 363 ms for 2,101 branches, on each key in a filter.
+        widget.add_options([Option(branch.label(), id=branch.name) for branch in shown])
         if shown:
-            widget.highlighted = active_idx
+            widget.highlighted = next((n for n, branch in enumerate(shown) if branch.name == active_name), 0)
 
     @work(exclusive=True, group="branch_sync")
     async def _sync_chosen_branch(self, role: str, branch_name: str) -> None:

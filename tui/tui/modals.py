@@ -98,6 +98,11 @@ class OpenPullRequestModal(ModalScreen[str | PullRequest | None]):
         options.clear_options()
         options.add_options([line for line, _ in choices])
         self.query_one("#open-pr-note", Static).update(note)
+        # The first one chosen and the list focused, where nothing was pasted: read by an audit, the focus stayed in
+        # the empty field, and Enter there closed the dialog, opening nothing and saying nothing.
+        if choices and not self.query_one("#open-pr-url", Input).value.strip():
+            options.highlighted = 0
+            options.focus()
 
     @on(OptionList.OptionSelected, "#open-pr-list")
     def _picked(self, event: OptionList.OptionSelected) -> None:
@@ -106,7 +111,15 @@ class OpenPullRequestModal(ModalScreen[str | PullRequest | None]):
     @on(Input.Submitted, "#open-pr-url")
     @on(Button.Pressed, "#btn-open-pr-yes")
     def _open(self) -> None:
-        self.dismiss(self.query_one("#open-pr-url", Input).value)
+        """The address pasted opened, or with none, the pull request chosen in the list; with neither, what to do."""
+        if pasted := self.query_one("#open-pr-url", Input).value.strip():
+            self.dismiss(pasted)
+            return
+        options = self.query_one("#open-pr-list", OptionList)
+        if self._choices and options.highlighted is not None:
+            self.dismiss(self._choices[options.highlighted])
+            return
+        self.app.notify("Choose a pull request, or paste an address.", severity="warning", timeout=6, markup=False)
 
     @on(Button.Pressed, "#btn-open-pr-no")
     def action_cancel(self) -> None:
