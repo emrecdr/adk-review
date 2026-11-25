@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import hashlib
 import os
 import re
@@ -17,7 +18,7 @@ from adk_review.core.findings import RANK
 from adk_review.core.profiles import DEFAULT, expanded
 from adk_review.core.verdict import EXIT_CLEAN, EXIT_FINDINGS
 from adk_review.deliver.report import read_previous, windows_word
-from adk_review.judge.catalog import CONFIG, catalog, load_config
+from adk_review.judge.catalog import CONFIG, catalog, load_config, select
 
 from .config import BASELINES_DIR, CACHE_DIR, OUTPUTS_DIR, write_atomic
 
@@ -267,9 +268,29 @@ def _output_flags(sel: ReviewSelection, argv: list[str]) -> dict[str, Path]:
         outputs["handoff"] = handoff_file
         if sel.threads:  # its agent answers the people's comments in the same pass as the findings
             argv.extend(["--threads", sel.threads])
-        if sel.work_items:  # and checks the change against what it is for
-            argv.extend(["--work-items", sel.work_items])
+    # The work items, for the hand-off's agent to check the change against, or a guideline that judges it against
+    # them: read by review, those read with the hand-off off never reached `full`'s guideline.
+    if sel.work_items and (sel.handoff or _reads_work_items(sel)):
+        argv.extend(["--work-items", sel.work_items])
     return outputs
+
+
+def _reads_work_items(sel: ReviewSelection) -> bool:
+    """Whether the review `sel` runs holds a guideline that judges the change against its work items."""
+    return _profile_reads_work_items(sel.profile or DEFAULT, tuple(c.strip() for c in sel.checks if c.strip()))
+
+
+@functools.cache
+def _profile_reads_work_items(profile: str, checks: tuple[str, ...]) -> bool:
+    """Whether `profile`, or `checks` where named, holds such a guideline, as the reviewer resolves them: asked once
+    a profile and checks, since read by review and measured, the command line the screen shows is built on each key
+    typed, and resolving the catalog each time took about 20 ms there. One the reviewer would refuse is not this
+    question's to answer."""
+    try:
+        chosen = select(catalog(), load_config(CONFIG)["profiles"], profile, list(checks))
+    except ValueError:
+        return False
+    return any(guideline.reads_work_items for guideline in chosen.guidelines)
 
 
 def _output_dir(sel: ReviewSelection) -> Path:

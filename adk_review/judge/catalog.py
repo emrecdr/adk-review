@@ -14,12 +14,12 @@ import importlib
 import pkgutil
 import tomllib
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any, NoReturn
 
 from ..core.evidence import Entry
-from ..core.findings import RANK
+from ..core.findings import RANK, Severity
 from ..core.guidelines import RESERVED_IDS, Guideline, Models
 from ..core.profiles import NAME, chosen, expand, expanded, nearest
 from ..core.rules import TOOLS, AnyRule, FileRule, Rule, TreeRule, raised_line
@@ -143,7 +143,9 @@ def _guideline_problem(guideline: Guideline) -> str | None:
     models = getattr(guideline, "models", Models())
     if type(models) is not Models or not all(type(getattr(models, arm.name)) is str for arm in fields(Models)):
         return f"{guideline.id!r} has models {models!r}, not Models(copilot=..., gemini=...) of model names"
-    return _flag_problem(guideline, "cleanup")
+    if (most := getattr(guideline, "most_severe", "blocker")) not in RANK:
+        return f"{guideline.id!r} has most_severe {most!r}, not one of {', '.join(RANK)}"
+    return _flag_problem(guideline, "cleanup", "reads_work_items")
 
 
 def _file(module: str) -> str:
@@ -215,6 +217,11 @@ class Catalog:
         """The checks whose findings change how code reads and never what it does: the hand-off lists them apart."""
         return frozenset(check.check_id for check in (*self.rules, *self.guidelines) if check.cleanup)
 
+    def caps(self) -> dict[str, Severity]:
+        """The most severe each guideline here that is capped reports a finding, by its id: the command and chat both
+        read its answers through them, so the two cannot report it otherwise."""
+        return {g.check_id: g.most_severe for g in self.guidelines if g.most_severe != "blocker"}
+
     def groups(self) -> dict[str, list[str]]:
         """The two names a profile may give for every check of a kind."""
         return {"rules": [rule.check_id for rule in self.rules], "guidelines": [g.check_id for g in self.guidelines]}
@@ -282,6 +289,13 @@ class Selection(Catalog):
 
     name: str
     off: tuple[str, ...]
+
+    def without_work_items(self) -> Selection:
+        """This selection with each guideline that judges the change against its work items left off, as a review
+        given none, and chat, which is given none, run: its silence would read as a change that meets them."""
+        unread = tuple(g.check_id for g in self.guidelines if g.reads_work_items)
+        kept = tuple(g for g in self.guidelines if not g.reads_work_items)
+        return replace(self, guidelines=kept, off=(*self.off, *unread))
 
 
 def select(found: Catalog, profiles: dict, profile: str, picked: Sequence[str] = ()) -> Selection:

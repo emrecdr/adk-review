@@ -26,7 +26,7 @@ from ..core.secrets import holds_private_key, scrub
 from ..core.text import CUT_MARK, EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, short_ref, squash
 from ..core.verdict import DELETED_QUOTED, Outcome, Sourced, at_bar, without_fences
 from .threads import AUTHOR_MAX_CHARS, DECIDED_STATUSES, OPEN_STATUSES, THREAD_MAX_CHARS, THREADS_SHOWN, OpenThread
-from .work_items import NO_WORK_ITEMS, WORK_ITEM_MAX_CHARS, WORK_ITEMS_SHOWN, WorkItems
+from .work_items import NO_WORK_ITEMS, WORK_ITEM_MAX_CHARS, WORK_ITEMS_SHOWN, WorkItem, WorkItems
 
 #: What a terminal runs or reorders, and what a reader cannot see: escape sequences, C0 and C1 controls (U+009B is
 #: `ESC [` in one character), every format character — the marks that turn the text after them around (U+202E and its
@@ -387,11 +387,7 @@ def _work_items(work: WorkItems) -> list[str]:
         return []
     lines = ["", "## Work items the change is for", *_paragraph(*WORK_ITEMS_SAID)]
     for item in work.items[:WORK_ITEMS_SHOWN]:
-        head = ", ".join(part for part in (item.kind, item.state) if part)
-        # Each field made safe on its own: read by review, one field that held a key withheld the work item whole.
-        title = _comment(f"{head}: {item.title}" if head else item.title)
-        parts = [title, *(f"{label}:\n{_comment(text)}" for label, text in item.texts)]
-        said = cut_at("\n\n".join(parts), WORK_ITEM_MAX_CHARS, sep="\n")
+        said = work_item_text(item)
         fence = "`" * max(3, backticks(said) + 1)
         lines += ["", f"- Work item {item.number}", "", f"{fence}text", said, fence]
     if (more := len(work.items) - WORK_ITEMS_SHOWN) > 0:
@@ -401,6 +397,28 @@ def _work_items(work: WorkItems) -> list[str]:
         lost = f"{work.unread} linked work item{'s' if work.unread > 1 else ''} could not be read"
         lines += ["", f"{lost}. Ask a person for {'them' if work.unread > 1 else 'it'}."]
     return lines
+
+
+def work_item_text(item: WorkItem) -> str:
+    """One work item as a person reads it, the hand-off's agent and a guideline alike: its kind, state and title, then
+    each text field under its label, each credential hidden, each character a reader cannot see a space, and the whole
+    cut at `WORK_ITEM_MAX_CHARS`."""
+    head = ", ".join(part for part in (item.kind, item.state) if part)
+    # Each field made safe on its own: read by review, one field that held a key withheld the work item whole.
+    title = _comment(f"{head}: {item.title}" if head else item.title)
+    parts = [title, *(f"{label}:\n{_comment(text)}" for label, text in item.texts)]
+    return cut_at("\n\n".join(parts), WORK_ITEM_MAX_CHARS, sep="\n")
+
+
+def work_items_text(work: WorkItems) -> str:
+    """The work items as a guideline is shown them, between its own marker lines: each by its number and its text,
+    past `WORK_ITEMS_SHOWN` the rest counted, and those Azure DevOps could not give counted too."""
+    said = [f"Work item {item.number}\n{work_item_text(item)}" for item in work.items[:WORK_ITEMS_SHOWN]]
+    if (more := len(work.items) - WORK_ITEMS_SHOWN) > 0:
+        said.append(f"{more} more work item{'s are' if more > 1 else ' is'} not shown.")
+    if work.unread:
+        said.append(f"{work.unread} linked work item{'s' if work.unread > 1 else ''} could not be read.")
+    return "\n\n".join(said)
 
 
 #: What the hand-off tells its agent of a pull request's open comments: people's words, as each finding's are a model's.

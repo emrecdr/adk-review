@@ -19,7 +19,7 @@ from .judge.settings import registries
 # --fail-on does: in chat no flag chooses another. The operator's own registries are read as the command reads them.
 config = load_config(CONFIG)
 policy = config["review"]
-checks = select(catalog(registries()), config["profiles"], DEFAULT)
+checks = select(catalog(registries()), config["profiles"], DEFAULT).without_work_items()  # chat is given none
 app = build_app(
     chat=True,
     checks=checks,

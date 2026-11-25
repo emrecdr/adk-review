@@ -74,11 +74,11 @@ The rules find the demo's hard-coded key pair, its shell call and a float divisi
 each check, to show every check at work. Each rule of `rules-only` finds its own, offline: a call a file the branch
 left alone still makes the old way, a workflow that runs an issue's title as code, a lockfile that fetches from a
 private mirror, an order to the reviewing model, and more; that review ends in exit 1.
-Drop `--profile` to add the default guidelines, which need a model as step 5 says; `--profile full` adds all six, and
-`--verify` a second model that checks each finding: the build prints that review ready to copy. Each
-guideline has a target of its kind there: an inverted condition, SQL built with an f-string, a query run for each line,
-a special case in shared code, a deeply nested function and code no test calls. The comments in
-`scripts/make_demo_repo.py` name each defect and the check that finds it.
+Drop `--profile` to add the default guidelines, which need a model as step 5 says; `--profile full` adds all six,
+`requirements` too where `--work-items` names the work items, and `--verify` a second model that checks each finding:
+the build prints that review ready to copy. Each guideline has a target of its kind there: an inverted condition, SQL
+built with an f-string, a query run for each line, a special case in shared code, a deeply nested function and code no
+test calls. The comments in `scripts/make_demo_repo.py` name each defect and the check that finds it.
 
 ### 4. Review a repository of your own
 
@@ -259,7 +259,7 @@ The order is the architecture: evidence and rules first, the guidelines' judgeme
 5. **Ground what the guidelines found.** A finding stays only where its quote is whole lines of its own file's diff;
    the rest are dropped and counted. With `--verify`, a second model judges each rule's finding and each guideline
    finding no rule already made, several files a call, and one it refutes is dropped and named, a security rule's
-   kept and named as disputed.
+   kept and named as disputed, and so is one judged against work items, which no verifier is shown.
 6. **Fold and decide.** Findings on the same lines fold into one, the most severe reading kept whole. The verdict is
    code's: a kept finding at or above `--fail-on` is `REQUEST_CHANGES`, exit 1. A hole — a check that failed or could
    not look, a changed file no check can read whole, or where a guideline runs one it was not shown whole, unless the
@@ -341,7 +341,10 @@ before changed its parameters, one a line the change removed names or one not al
 change removed a name a module defined or moved or removed a module, and `radius-types` wherever the change touched
 a Python file other than a test. None is handed a test's file unless it sets `reads_tests`, as the list
 of what a rule may do says below. A guideline names its role and a thinking budget, and `cleanup = True` where its
-findings change how code reads and never what it does; the instruction around the role is every guideline's.
+findings change how code reads and never what it does, `reads_work_items = True` where it judges the change against
+the work items `--work-items` names, shown beside the change, so a review given no work item never runs it, and
+`most_severe` where no finding of it is reported above that severity; the instruction around the role is every
+guideline's.
 
 The rules shipped with the reviewer are written as a project writes its own:
 
@@ -384,7 +387,10 @@ The rules shipped with the reviewer are written as a project writes its own:
   `demo-parameters` and `demo-derives-from`. A project replaces them with its own.
 
 The guidelines are `security`, `tests`, `complexity` and `correctness`, and the two a simplify pass adds: `efficiency`
-(work the change wastes) and `altitude` (a defect worked around, not fixed where it starts).
+(work the change wastes) and `altitude` (a defect worked around, not fixed where it starts). `requirements`, in `full`
+alone, judges the change against the work items `--work-items` names, and reports changed code that goes against an
+acceptance criterion, as a major at most: a criterion the change leaves out quotes no line of it, so the hand-off asks
+its agent to finish it instead.
 
 A profile is a list in `config.toml`, and a check runs only where a profile names it, or alone with `--check ID`:
 

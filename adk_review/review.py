@@ -133,6 +133,7 @@ try:
         reviewed_scope,
         safe_line,
         told_in_parts,
+        work_items_text,
     )
     from .deliver.threads import read_threads
     from .deliver.work_items import NO_WORK_ITEMS, read_work_items
@@ -211,8 +212,11 @@ REVIEW_ONLY = {
     "trace": "--trace",
     "debug_log": "--debug-log",
 }
-#: What only a review's hand-off reads, by dest: each refused without `--handoff`, which would quote it.
-HANDED_OFF = {"threads": "--threads", "work_items": "--work-items"}
+#: What only a review's hand-off reads, by dest, its flag and what reads it: each refused where nothing would.
+HANDED_OFF = {
+    "threads": ("--threads", "is quoted in the hand-off alone"),
+    "work_items": ("--work-items", "is read by the hand-off and by guideline.requirements, which this run leaves off"),
+}
 #: What names the change a review reads, by dest: a dry run plans with each, and `--try` reads the files it is given.
 OF_A_CHANGE = {
     "path": "--path",
@@ -464,8 +468,8 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
     parser.add_argument(
         "--work-items",
         metavar="FILE",
-        help="quote the work items a pull request links, Azure DevOps' answer in FILE, in the hand-off. The review "
-        "makes no call for them",
+        help="read the work items a pull request links from FILE, Azure DevOps' answer. The hand-off quotes them, "
+        "and guideline.requirements judges the change against them. The review makes no call for them",
     )
     parser.add_argument(
         "--debug-log",
@@ -810,8 +814,12 @@ def _review(argv: list[str] | None = None) -> int:
         from .judge.settings import registries  # read with the catalog, where a wrong one is a usage error
 
         found = catalog(registries())
+        # As the hand-off quotes them, so the cache key reads them too, through `vars(args)`, with the file's name.
+        args.threads_read = read_threads(args.threads) if args.threads else ()
+        args.work_items_read = read_work_items(args.work_items) if args.work_items else NO_WORK_ITEMS
         # One run's `--check` list is held to what a profile is, and named in the report as the flag.
-        chosen = select(found, config["profiles"], args.profile, args.check)
+        selected = select(found, config["profiles"], args.profile, args.check)
+        chosen = _given_work_items(selected, args)
         args.rules_alone = _rules_alone(found, config["profiles"], chosen)
         args.guidelines_alone = tuple(("--check", guideline.check_id) for guideline in chosen.guidelines)
         scope = scope_of(args.path)
@@ -819,12 +827,13 @@ def _review(argv: list[str] | None = None) -> int:
         _mode_alone(args)
         explanation = explained(found, config["profiles"], args.explain) if args.explain else None
         previous = read_previous(args.previous) if args.previous else (None, None, None)
-        # Read by review: with no hand-off to quote them in, each flag did nothing.
-        if quoted := next((flag for dest, flag in HANDED_OFF.items() if getattr(args, dest) and not args.handoff), ""):
-            raise ValueError(f"{quoted} is quoted in the hand-off alone. Give --handoff too, or drop {quoted}")
-        # As the hand-off quotes them, so the cache key reads them too, through `vars(args)`, with the file's name.
-        args.threads_read = read_threads(args.threads) if args.threads else ()
-        args.work_items_read = read_work_items(args.work_items) if args.work_items else NO_WORK_ITEMS
+        # Read by review: with no hand-off to quote them in, each flag did nothing. A guideline the run names may read
+        # work items, even a file of none, which it then says left the guideline off.
+        read = {"work_items"} if any(guideline.reads_work_items for guideline in selected.guidelines) else set()
+        unread = [named for dest, named in HANDED_OFF.items() if getattr(args, dest) and dest not in read]
+        if unread and not args.handoff:
+            flag, why = unread[0]
+            raise ValueError(f"{flag} {why}. Give --handoff too, or drop {flag}")
         _outputs_ready(args)
     except ValueError as exc:
         _say(str(exc))
@@ -849,6 +858,33 @@ def _added(parser: argparse.ArgumentParser, args: argparse.Namespace) -> tuple[s
         for dest, flag in (("skip", "--skip"), ("scan", "--scan"), ("third_party", "--third-party"))
         for glob in getattr(args, dest)[len(parser.get_default(dest)) :]
     )
+
+
+def _given_work_items(chosen: Selection, args: argparse.Namespace) -> Selection:
+    """`chosen`, each guideline that judges the change against its work items left off where the review is given
+    none: its silence would read as a change that meets them. Read by review, and reproduced: a file of no work item,
+    which the front end writes for a pull request that links none, ran the guideline over nothing, and approved. One
+    asked for by name is a usage error then, and so is a profile left with no check, which ran nothing and approved.
+    A mode takes no work items, and plans, lists or tries the run as the profile makes it: read by review, a dry run
+    of the guideline was refused both ways, then named no check. Where progress is told, it says so: a pipeline's
+    log holds the report, whose `off` names it."""
+    mode = any(getattr(args, dest) for dest in MODES)
+    unread = [g.check_id for g in chosen.guidelines if g.reads_work_items]
+    if mode or args.work_items_read.items or not unread:
+        return chosen
+    given = f"--work-items {args.work_items} names no work item it could read"
+    why = given if args.work_items else "no --work-items was given"
+    give = "Give --work-items a file that names some"
+    if named := [check for check in unread if check in args.check]:
+        raise ValueError(f"{named[0]} judges the change against its work items, and {why}. {give}, or drop the check")
+    left = chosen.without_work_items()
+    if not left.rules and not left.guidelines:
+        raise ValueError(
+            f"Profile {chosen.name} runs no check without work items, and {why}. {give}, or choose another"
+        )
+    if not args.quiet and (args.progress or _terminal(sys.stderr)):
+        _say(f"{', '.join(unread)} did not run: {why}")
+    return left
 
 
 def _rules_alone(found: Catalog, profiles: dict, chosen: Selection) -> tuple[tuple[str, str], ...]:
@@ -1080,13 +1116,16 @@ def _judged(
 
     from google.adk.runners import InMemoryRunner
 
-    from .judge.agents import DIFF, IGNORED
+    from .judge.agents import DIFF, IGNORED, WORK_ITEMS
     from .judge.graph import build_app
     from .judge.plugins import ONE_TURN, Progress, accounted
     from .judge.run import read_checks, read_guidelines, run_seeded
     from .judge.verify import second_opinion
 
     guidelines = tuple(guideline.check_id for guideline in chosen.guidelines)
+    # The work items as a guideline that reads them is shown them: a review given none never runs one.
+    reads = any(guideline.reads_work_items for guideline in chosen.guidelines)
+    work_items = {WORK_ITEMS: work_items_text(args.work_items_read)} if reads else {}
     verify = args.verify and bool(guidelines)  # a profile with no guideline calls no model, the verifier's included
     app = build_app(
         chat=False,
@@ -1107,14 +1146,17 @@ def _judged(
                 run_seeded(
                     runner,
                     session_id="run",
-                    state={DIFF: evidence["diff"], IGNORED: evidence.get("ignored", [])},
+                    state={DIFF: evidence["diff"], IGNORED: evidence.get("ignored", []), **work_items},
                     prompt=ONE_TURN,
                 )
             )
         rules, holes = read_checks(run, chosen.rules)
-        outcome = read_guidelines(run, evidence["files"], guidelines, holes)
+        outcome = read_guidelines(run, evidence["files"], guidelines, holes, chosen.caps())
         if verify:
+            # Never dropped by a verifier: a security rule's finding, and one judged against work items no verifier
+            # is shown, which read by review it refuted as code that looked right.
             security = frozenset(rule.check_id for rule in chosen.rules if rule.security)
+            security |= {guideline.check_id for guideline in chosen.guidelines if guideline.reads_work_items}
             with _beating(say, lambda: "verifying the findings"):
                 second_opinion(
                     outcome,

@@ -65,7 +65,8 @@ miss: a new flag, check, JSON field or limit the guide does not say.
   whose profile names a guideline calls a provider, and so do `--check guideline.<name>`, `adk web`, `adk run`,
   `scripts/measure.py`, `scripts/injection_suite.py` and `scripts/labelled_set.py`, so run one only when the task says
   so.
-- A review under `default` makes three calls, `simplify` three, `code-review` five and `full` six, at most three in
+- A review under `default` makes three calls, `simplify` three, `code-review` five and `full` six, seven with
+  `--work-items`, at most three in
   flight (`CONCURRENCY`). On Copilot each call is billed to the seat that logged in, and GitHub rate-limits each user,
   unpublished; Gemini's free tier allows five a minute and twenty a day: a run that met a 429 names it under
   `could_not_look` and measures nothing there, and a live script stops at it. The cloud agent's setup logs in to

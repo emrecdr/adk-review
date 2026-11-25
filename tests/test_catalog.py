@@ -270,7 +270,7 @@ class TestTheConfig:
 
         rule = Secrets()
         major = Finding(file="a.py", line=3, severity="major", title="t", evidence="+x", suggestion="s")
-        checks = SimpleNamespace(rules=[rule], guidelines=[], ids=lambda: (rule.check_id,), tidies=frozenset)
+        checks = SimpleNamespace(rules=[rule], guidelines=[], ids=lambda: (rule.check_id,), tidies=frozenset, caps=dict)
         state = {state_key(rule.check_id): Checked(findings=[major]).model_dump(mode="json")}
         assert decided(state, {}, checks, "major").startswith("verdict: REQUEST_CHANGES\n")
         assert decided(state, {}, checks, "blocker").startswith("verdict: APPROVED\n")
@@ -686,6 +686,25 @@ class TestTheRuleKinds:
         assert seen == {"a.py": "x = 1\n", "new.py": moved, "b.py": "", "conf.toml": None}, seen
 
 
+class TestTheGuidelinesOwnFields:
+    def test_a_guideline_whose_fields_are_not_what_they_must_be_is_refused(self) -> None:
+        """Read by review, and reproduced: `most_severe = "Major"` passed the catalog and raised after every call was
+        spent, exit 3 for a usage error; and `reads_work_items = "no"` read as true."""
+        from adk_review.core.guidelines import Guideline
+        from adk_review.judge.catalog import _guideline_problem
+
+        class Sloppy(Guideline):
+            id = "sloppy"
+            title = "a title"
+            role = "You judge."
+            thinking_budget = 0
+
+        for field, value in (("most_severe", "Major"), ("reads_work_items", "no")):
+            bad = type("Bad", (Sloppy,), {field: value})
+            assert field in (_guideline_problem(bad()) or ""), field
+        assert _guideline_problem(Sloppy()) is None
+
+
 class TestTheProfiles:
     """The profiles choose the checks: a group, a check's id, `default-rules`, `--check` for one run, and a profile that
     cannot run refused before anything."""
@@ -746,7 +765,7 @@ class TestTheProfiles:
         out = capsys.readouterr().out
         assert (
             "- profile      demo (off: guideline.altitude, guideline.complexity, guideline.correctness, "
-            "guideline.efficiency, guideline.security, guideline.tests)" in out
+            "guideline.efficiency, guideline.requirements, guideline.security, guideline.tests)" in out
         ), "what a profile leaves off is named: here the guidelines, and no rule, since code alone decides"
         assert "demo-money-in-cents: cents divided into a float (src/payments/report.py:5)" in out
         assert "charge.py:19" not in out

@@ -1324,9 +1324,13 @@ class TestTheStateKeys:
 
     @pytest.mark.usefixtures("cli")  # the package loaded on the fake, so an agent builds without a key
     def test_every_placeholder_an_instruction_reads_is_a_key_something_writes(self) -> None:
+        from dataclasses import replace
+
         from google.adk.agents import LlmAgent
 
-        from adk_review.judge.agents import BLAST, DIFF, FINDINGS, REPOSITORY
+        from adk_review.core.profiles import DEFAULT
+        from adk_review.judge.agents import BLAST, DIFF, FINDINGS, REPOSITORY, WORK_ITEMS
+        from adk_review.judge.catalog import CONFIG, load_config, select
         from adk_review.judge.graph import build_workflow
         from adk_review.judge.verify import CALLERS, build_verifier, keys
 
@@ -1338,12 +1342,18 @@ class TestTheStateKeys:
         # writes the radius beside it, in both shapes; chat's grounding node writes every check's answer grounded and
         # the verdict decided, for its verdict. In chat the intake's first tool writes the repository it confirmed
         # (`test_git_tools.py` runs it), which the intake is told on each later turn.
+        # The command seeds the work items where a guideline reads them. Chat is given none, and its profile,
+        # `default`, runs no guideline that reads them.
         by_the_node = {BLAST, FINDINGS, DIFF}
         by_the_tool = {REPOSITORY}
+        chats = select(found, load_config(CONFIG)["profiles"], DEFAULT)
+        assert not [g for g in chats.guidelines if g.reads_work_items], "chat would run one, with no work items"
         for chat in (False, True):
-            graph = build_workflow(chat=chat, checks=found, fail_on="blocker").graph
+            shown = replace(found, guidelines=tuple(g for g in found.guidelines if not (chat and g.reads_work_items)))
+            graph = build_workflow(chat=chat, checks=shown, fail_on="blocker").graph
             agents = [node for node in graph.nodes if isinstance(node, LlmAgent)]
-            written = by_the_node | by_the_tool | {agent.output_key for agent in agents}
+            seeded = set() if chat else {WORK_ITEMS}
+            written = by_the_node | by_the_tool | seeded | {agent.output_key for agent in agents}
             assert read(agents) - written == set(), f"chat={chat}: an instruction reads a key nothing writes"
             assert {DIFF, BLAST} <= read(agents), "the guidelines read the change and the radius beside it"
             assert chat == (FINDINGS in read(agents)), "chat's verdict reads every check's answer, grounded and decided"
@@ -1351,6 +1361,28 @@ class TestTheStateKeys:
         # The verifiers' own run seeds each its findings and its file's part of the change, and all of them the calls.
         findings, change, _judgements = keys(0)
         assert read([build_verifier(0)]) == {findings, change, CALLERS}, "a verifier reads what its run seeds"
+
+
+class TestChatAndTheWorkItems:
+    def test_chat_never_runs_a_guideline_that_reads_work_items(self, monkeypatch) -> None:
+        """Read by review, and reproduced: a `default` naming every guideline made each chat turn raise a KeyError,
+        chat being given no work items. Chat leaves such a guideline off, as the command does where it is given none."""
+        import tomllib
+
+        from conftest import load_agent
+
+        real = tomllib.loads
+
+        def every_guideline(text: str, **how):
+            config = real(text, **how)
+            if "profiles" in config:
+                config["profiles"]["default"] = [*config["profiles"]["default"], "guidelines"]
+            return config
+
+        monkeypatch.setattr(tomllib, "loads", every_guideline)
+        agent = load_agent(monkeypatch)
+        assert len(agent.checks.guidelines) > 3, "the edited default ran"
+        assert not [g.check_id for g in agent.checks.guidelines if g.reads_work_items]
 
 
 class TestTheChecksNode:

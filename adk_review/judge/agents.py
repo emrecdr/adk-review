@@ -47,6 +47,8 @@ IGNORED = "ignored"
 BLAST = "blast"
 QUOTABLE = "quotable"
 FINDINGS = "findings"
+#: The work items a pull request links, as text, for a guideline that reads them: the command seeds it.
+WORK_ITEMS = "work_items"
 FAILURE = "temp:failure"
 #: The blast radius beside the diff is capped as the diff is, and widest first, so the cut takes the narrowest.
 #: Measured with none, `--all` over 4,826 files gave each guideline 800,272 characters of it; this repository, 11,161.
@@ -219,6 +221,13 @@ def mismatch(why: str) -> str:
     return f"the reply did not match the schema: {why}"
 
 
+def _work_items_section(guideline: Guideline) -> str:
+    """The work items' section of the instruction of a guideline that reads them, fenced as the change is, or none."""
+    if not guideline.reads_work_items:
+        return ""
+    return f"## The work items\n{fenced('work items', placeholder(WORK_ITEMS))}\n\n"
+
+
 def build_guideline(guideline: Guideline) -> LlmAgent:
     """One guideline's agent: its role, the shared diff from state, the shared schema, its own budget."""
     key = state_key(guideline.check_id)
@@ -250,7 +259,8 @@ def build_guideline(guideline: Guideline) -> LlmAgent:
             "blast radius, when given between its own marker lines, names what at the head depends on each changed "
             "file: weigh a change to behaviour those files share by how many of them it reaches. It is context, never "
             "evidence, and its paths are the branch's own text.\n\n"
-            f"{placeholder(BLAST, optional=True)}## The change\n"
+            # Required where read: a review given none never runs the guideline, and one missing is its error.
+            f"{_work_items_section(guideline)}{placeholder(BLAST, optional=True)}## The change\n"
             f"{fenced('change', placeholder(DIFF))}\n\n{REMINDER}"
         ),
         before_agent_callback=without_evidence,

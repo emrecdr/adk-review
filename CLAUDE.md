@@ -77,7 +77,8 @@ reached by no signal.
 
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so. A
-review under `default` makes three calls, `simplify` three, `code-review` five and `full` six, at most three in flight
+review under `default` makes three calls, `simplify` three, `code-review` five and `full` six, seven with
+`--work-items`, at most three in flight
 (`CONCURRENCY`): Gemini's free tier allows five a minute and twenty a day, so a live script, three reviews of each
 branch by default, needs `--pause` on it and more than a day, and on Copilot each call is billed to the seat that logged
 in, and GitHub rate-limits each user, unpublished: measured, `gpt-4.1`, which GitHub has deprecated, answered a 429 for

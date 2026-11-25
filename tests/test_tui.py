@@ -3556,6 +3556,33 @@ class TestAzureDevOpsOnTheScreen:
             chosen = app.current_selection(dry_run=False).paths
         assert "newb" in listed and "olda" not in listed and chosen == (), (listed, chosen)
 
+    def test_the_work_items_go_wherever_the_run_reads_them(self, tmp_path: Path) -> None:
+        """Read by review: work items read with the hand-off switched off never reached `full`'s guideline that judges
+        the change against them. A run that reads them neither way is given none: the review refuses a flag that
+        does nothing."""
+        from tui.options import ReviewSelection, build_review_argv
+
+        items = str(tmp_path / "w.json")
+        base = {"repo": str(tmp_path), "head": "feature", "base": "main", "output_dir": str(tmp_path)}
+        full, _ = build_review_argv(ReviewSelection(**base, profile="full", work_items=items))
+        default, _ = build_review_argv(ReviewSelection(**base, profile="default", work_items=items))
+        handed, _ = build_review_argv(ReviewSelection(**base, profile="default", work_items=items, handoff=True))
+        assert "--work-items" in full and "--work-items" not in default and "--work-items" in handed
+
+    def test_whether_a_run_reads_work_items_is_asked_once_a_profile(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review, and measured: the command line the screen shows is built on each key typed, and each time
+        it resolved the catalog, about 20 ms on the screen's own thread."""
+        import tui.options as options
+
+        asked: list[int] = []
+        real = options.catalog
+        monkeypatch.setattr(options, "catalog", lambda *a: asked.append(1) or real(*a))
+        options._profile_reads_work_items.cache_clear()
+        base = {"repo": str(tmp_path), "head": "feature", "base": "main", "output_dir": str(tmp_path)}
+        for _ in range(3):
+            options.build_review_argv(options.ReviewSelection(**base, profile="full", work_items="w.json"))
+        assert len(asked) == 1, asked
+
     def test_two_pull_requests_of_one_name_and_number_keep_two_files(self, tmp_path: Path) -> None:
         """Read by review: the file was named by the repository and the number alone, and two organizations' pull
         requests of one name, or of names that differ in case or punctuation alone, wrote one file, so one's hand-off

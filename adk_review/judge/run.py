@@ -22,7 +22,7 @@ from google.adk.runners import InMemoryRunner
 from google.genai import types
 
 from ..core.evidence import Entry, entry
-from ..core.findings import Checked, Review
+from ..core.findings import RANK, Checked, Review, Severity
 from ..core.profiles import state_key
 from ..core.rules import AnyRule
 from ..core.verdict import Outcome, Sourced, decide, drop_ungrounded, fold, from_rules, not_read
@@ -85,9 +85,16 @@ def read_checks(run: Run, rules: Sequence[AnyRule]) -> tuple[list[Sourced], dict
     return from_rules(answers)
 
 
-def read_guidelines(run: Run, files: list[Entry], guidelines: Sequence[str], holes: Mapping[str, str]) -> Outcome:
+def read_guidelines(
+    run: Run,
+    files: list[Entry],
+    guidelines: Sequence[str],
+    holes: Mapping[str, str],
+    most_severe: Mapping[str, Severity] | None = None,
+) -> Outcome:
     """The guidelines' answers read back and grounded, each narrowing counted: what a model said that the diff bears
     out. `holes` are the checks that could not look before any model ran, named beside the guidelines that could not.
+    `most_severe` names a guideline whose findings are reported no more severe than it says, each lowered here.
 
     A guideline that wrote nothing is named with why: the error event it ended
     with — its provider raised or timed out, the ceiling refused its call, the
@@ -103,6 +110,11 @@ def read_guidelines(run: Run, files: list[Entry], guidelines: Sequence[str], hol
         if isinstance(answer, str):
             outcome.errors[check] = answer
             continue
+        if (cap := (most_severe or {}).get(check)) is not None:
+            lowered = [
+                f.model_copy(update={"severity": cap}) if RANK[f.severity] > RANK[cap] else f for f in answer.findings
+            ]
+            answer = answer.model_copy(update={"findings": lowered})
         kept, dropped = drop_ungrounded(answer, quotable, framing)
         outcome.kept += [Sourced(check, f, lines, deleted, done=done) for f, lines, deleted, done in kept]
         outcome.dropped += [Sourced(check, f) for f in dropped]
@@ -148,7 +160,9 @@ def decided(state: Mapping, errors: Mapping[str, str], checks: Catalog, fail_on:
         made.update(quotable=held["quotable"], framing=held["framing"], unread=held["unread"], cut=held["cut"])
         files.append(made)
     rules, holes = read_checks(run, checks.rules)
-    outcome = read_guidelines(run, files, tuple(guideline.check_id for guideline in checks.guidelines), holes)
+    outcome = read_guidelines(
+        run, files, tuple(guideline.check_id for guideline in checks.guidelines), holes, checks.caps()
+    )
     fold(outcome, rules, checks.ids(), checks.tidies())
     verdict, _code = decide(outcome, fail_on)
     return for_the_verdict(outcome, checks.ids(), verdict, state.get(IGNORED) or ())

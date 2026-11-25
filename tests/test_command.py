@@ -987,7 +987,7 @@ class TestTheDryRun:
         assert "- guidelines " not in out and "- model " not in out
         assert (
             "- profile      demo (off: guideline.altitude, guideline.complexity, guideline.correctness, "
-            "guideline.efficiency, guideline.security, guideline.tests)" in out
+            "guideline.efficiency, guideline.requirements, guideline.security, guideline.tests)" in out
         )
         assert run_review(cli, demo_repo, "--dry-run", "--head", "no-such") == 2, "the wrong branch, caught"
         assert "does not exist" in capsys.readouterr().err
@@ -3204,9 +3204,9 @@ class TestTheWorkItems:
 
     def test_a_text_that_holds_a_private_key_is_withheld_whole(self) -> None:
         """Read by an audit, and reproduced: a key pasted with no footer into a work item or a comment had its header
-        hidden and its body lines quoted to the hand-off's agent. Its text is withheld whole, as a file that holds a
-        key is shown to no model; a work item's other fields, its title among them, stay."""
-        from adk_review.deliver.report import _open_comments, _work_items
+        hidden and its body lines quoted, to the hand-off's agent and to a guideline. Its text is withheld whole, as a
+        file that holds a key is shown to no model."""
+        from adk_review.deliver.report import _open_comments, _work_items, work_items_text
         from adk_review.deliver.threads import OpenThread
         from adk_review.deliver.work_items import WorkItem, WorkItems
 
@@ -3215,11 +3215,12 @@ class TestTheWorkItems:
         work = WorkItems((WorkItem(7, "Bug", "Active", "Sign in fails", (("Repro steps", "Use\n" + key),)),))
         said = [
             "\n".join(_work_items(work)),
+            work_items_text(work),
             "\n".join(_open_comments([OpenThread("a.py", 1, "active", (("Ann", "Try\n" + key),))])),
         ]
         for text in said:
             assert body not in text and body[::-1] not in text and "withheld" in text, text
-        assert "Sign in fails" in said[0], "the field withheld, its title kept"
+        assert "Sign in fails" in said[0] and "Sign in fails" in said[1], "the field withheld, its title kept"
 
     def test_a_work_item_is_quoted_up_to_its_cap(self) -> None:
         """Each string a model reads is capped, the cut named: a work item's text as a whole."""
@@ -3262,6 +3263,125 @@ class TestTheWorkItems:
         self._items(path, [self._item(1, **{"System.Title": "second"})])
         run_review(cli, demo_repo, *args)
         assert "served from the cache" not in capsys.readouterr().err, "another work item: reviewed again"
+
+
+class TestTheRequirementsGuideline:
+    """`guideline.requirements`, in `full` and alone with `--check`: a model judges the change against the work items
+    the pull request links, `--work-items FILE`, and reports changed code that goes against an acceptance criterion.
+    Chosen by the owner: a finding of it is a major at most, never a blocker, and it never runs without work items,
+    where its silence would read as a change that meets them."""
+
+    ROLE = "You judge the change against the work items"
+
+    @staticmethod
+    def _items(path: Path) -> Path:
+        item = {
+            "id": 12,
+            "fields": {
+                "System.WorkItemType": "User Story",
+                "System.Title": "Charges run no shell",
+                "Microsoft.VSTS.Common.AcceptanceCriteria": "<ul><li>No charge starts a shell</li></ul>",
+            },
+        }
+        path.write_text(json.dumps({"count": 1, "value": [item]}), encoding="utf-8")
+        return path
+
+    def test_it_is_shown_the_work_items_and_its_blocker_is_reported_as_a_major(
+        self, cli, demo_repo: Path, tmp_path: Path, asked, fake_provider
+    ) -> None:
+        """Its instruction holds the work items as text, fenced as the change is, and nothing of them reaches another
+        guideline. A blocker it reports is reported as a major, as the owner chose for an unmet criterion."""
+        from conftest import CANNED_REVIEW
+
+        blocker = {"findings": [{**CANNED_REVIEW["findings"][0], "severity": "blocker"}]}
+        fake_provider.answers_when(self.ROLE, blocker)
+        report = tmp_path / "r.json"
+        items = str(self._items(tmp_path / "w.json"))
+        run_review(cli, demo_repo, "--check", "guideline.requirements", "--work-items", items, "--json", str(report))
+        shown = [instruction for instruction, _ in asked if self.ROLE in instruction]
+        assert len(shown) == 1, [i[:80] for i, _ in asked]
+        assert "Charges run no shell" in shown[0] and "- No charge starts a shell" in shown[0], shown[0]
+        assert "<li>" not in shown[0], "text, never HTML"
+        found = [
+            f
+            for f in json.loads(report.read_text(encoding="utf-8"))["findings"]
+            if f["check"] == "guideline.requirements"
+        ]
+        assert [f["severity"] for f in found] == ["major"], found
+
+    def test_without_work_items_it_never_runs(self, cli, demo_repo: Path, tmp_path: Path, asked, capsys) -> None:
+        """`full` without `--work-items` runs every other guideline and, where progress is told, says this one did
+        not run: a pipeline's log holds the report alone, whose `off` names it. Asked for alone, it is exit 2 before
+        any model call. With them and no hand-off, `--work-items` is taken: the guideline reads them."""
+        run_review(cli, demo_repo, "--profile", "full")
+        assert not [i for i, _ in asked if self.ROLE in i], "never asked without work items"
+        assert asked, "the other guidelines ran"
+        assert "did not run" not in capsys.readouterr().err, "a pipeline's log: the report alone"
+        run_review(cli, demo_repo, "--profile", "full", "--progress")
+        assert "guideline.requirements did not run" in capsys.readouterr().err
+        asked.clear()
+        assert run_review(cli, demo_repo, "--check", "guideline.requirements") == 2
+        assert "--work-items" in capsys.readouterr().err and not asked, "exit 2 before any call"
+        items = str(self._items(tmp_path / "w.json"))
+        assert run_review(cli, demo_repo, "--check", "guideline.requirements", "--work-items", items) == 0, "a major"
+
+    def test_a_work_items_file_that_holds_none_is_none_given(
+        self, cli, demo_repo: Path, tmp_path: Path, asked, capsys
+    ) -> None:
+        """Read by review, and reproduced: a file of no work item, which the front end writes for a pull request that
+        links none, or of none Azure DevOps could give, ran the guideline over nothing, and the review approved."""
+        for value in ([], [None, None]):
+            empty = tmp_path / "none.json"
+            empty.write_text(json.dumps({"count": len(value), "value": value}), encoding="utf-8")
+            asked.clear()
+            assert run_review(cli, demo_repo, "--check", "guideline.requirements", "--work-items", str(empty)) == 2
+            assert "--work-items" in capsys.readouterr().err and not asked, value
+            handoff = ("--handoff", str(tmp_path / "h.md"))
+            run_review(cli, demo_repo, "--profile", "full", "--work-items", str(empty), *handoff)
+            assert asked and not [i for i, _ in asked if self.ROLE in i], value
+
+    def test_a_verifier_shown_no_work_items_disputes_its_finding_but_never_drops_it(
+        self, cli, demo_repo: Path, tmp_path: Path, fake_provider
+    ) -> None:
+        """Read by review, and reproduced: the verifier is shown the change and the finding, never the work items,
+        and its refutation dropped a finding it could not judge. As a security rule's, it is kept, disputed."""
+        from conftest import REFUTED
+
+        fake_provider.answers_when("## The findings", REFUTED)
+        report = tmp_path / "r.json"
+        items = str(self._items(tmp_path / "w.json"))
+        flags = ("--check", "guideline.requirements", "--work-items", items, "--verify", "--json", str(report))
+        run_review(cli, demo_repo, *flags)
+        data = json.loads(report.read_text(encoding="utf-8"))
+        assert [f["check"] for f in data["disputed"]] == ["guideline.requirements"], data["disputed"]
+        assert not data["refuted"], data["refuted"]
+
+    def test_a_dry_run_of_it_is_no_usage_error(self, cli, demo_repo: Path, capsys) -> None:
+        """Read by review, and reproduced: a dry run asked for the work items, then refused them, a mode taking none;
+        and then left the guideline out without a word. A mode leaves the selection as the profile makes it."""
+        assert run_review(cli, demo_repo, "--dry-run", "--check", "guideline.requirements") == 0
+        checks = next(line for line in capsys.readouterr().out.splitlines() if line.startswith("- checks"))
+        assert "guideline.requirements" in checks, checks
+
+    def test_a_profile_that_runs_nothing_without_work_items_is_refused(
+        self, cli, demo_repo: Path, monkeypatch, capsys
+    ) -> None:
+        """Read by review, and reproduced: a profile of this guideline alone, given no work items, ran no check and
+        approved, as a profile that turns nothing on would, which the config refuses."""
+        import tomllib
+
+        real = tomllib.loads
+
+        def with_reqs(text: str, **how):
+            config = real(text, **how)
+            if "profiles" in config:
+                config["profiles"]["reqs"] = ["guideline.requirements"]
+            return config
+
+        monkeypatch.setattr(tomllib, "loads", with_reqs)
+        assert run_review(cli, demo_repo, "--profile", "reqs") == 2
+        said = capsys.readouterr().err
+        assert "reqs" in said and "--work-items" in said, said
 
 
 class TestWhatTheCommandTells:

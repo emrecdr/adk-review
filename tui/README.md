@@ -157,9 +157,11 @@ when you ask. The reviewer itself posts nothing, as before: this is the screen's
    threads closed as fixed or closed alone, and the system's own, votes and pushes, are left out. The hand-off tells
    its agent to make no change a decided thread declined. They are written beside the reviews, and a review run with the hand-off switched on quotes them in it, for its
    coding agent to answer the people and check the change against what it is for in the same pass as the findings,
-   each a person's text it is told never to obey. Each read stands alone: one that fails gives the hand-off none of
-   its own, and the tab says so. Reading work items needs your account's right to read them. The tab holds the
-   pull request chosen alone: choose another, or empty the address, and it clears, a read still running stopped.
+   each a person's text it is told never to obey. A profile that judges the change against the work items, `full`,
+   is given them whether the hand-off is switched on or off. Each read stands alone: one that fails gives the
+   hand-off none of its own, and the tab says so. Reading work items needs your account's right to read them. The tab
+   holds the pull request chosen alone: choose another, or empty the address, and it clears, a read still running
+   stopped.
 4. Choose a finding, then press a key:
 
 | Key | What opens |

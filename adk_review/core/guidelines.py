@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
+from .findings import Severity
 from .profiles import guideline_id
 
 #: Ids no guideline takes: each is a role of the reviewer's own, whose `REVIEW_<ID>_MODEL` names another model, the
@@ -45,6 +46,11 @@ class Guideline:
     cleanup: ClassVar[bool] = False
     #: The model it runs on, by arm; blank runs on everyone's.
     models: ClassVar[Models] = Models()
+    #: Whether it judges the change against the work items a pull request links, `--work-items`, shown beside the
+    #: change: a review given no work item never runs it, since its silence would read as a change that meets them.
+    reads_work_items: ClassVar[bool] = False
+    #: The most severe a finding of it is reported: one its model rates above is lowered to this.
+    most_severe: ClassVar[Severity] = "blocker"
 
     @property
     def check_id(self) -> str:
