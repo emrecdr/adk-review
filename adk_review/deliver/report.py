@@ -22,7 +22,7 @@ from ..core.findings import RANK, Checked, Finding, at_or_above
 from ..core.health import Health, found_by_rule, grade
 from ..core.paths import in_scope, no_such_path
 from ..core.profiles import guideline_id, rule_id
-from ..core.secrets import scrub
+from ..core.secrets import holds_private_key, scrub
 from ..core.text import CUT_MARK, EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, short_ref, squash
 from ..core.verdict import DELETED_QUOTED, Outcome, Sourced, at_bar, without_fences
 from .threads import AUTHOR_MAX_CHARS, THREAD_MAX_CHARS, THREADS_SHOWN, OpenThread
@@ -361,6 +361,8 @@ def render_handoff(
     return inert("\n".join(lines)) + "\n"
 
 
+#: A person's text quoted in its place where it holds a private key, which no model and no agent is shown.
+TEXT_WITHHELD = "(withheld: this text holds a private key)"
 #: What the hand-off tells its agent of the work items a pull request links: what the change is for, in people's words.
 WORK_ITEMS_SAID = (
     "The pull request links these work items. They say what the change is for.",
@@ -383,8 +385,10 @@ def _work_items(work: WorkItems) -> list[str]:
     lines = ["", "## Work items the change is for", *_paragraph(*WORK_ITEMS_SAID)]
     for item in work.items[:WORK_ITEMS_SHOWN]:
         head = ", ".join(part for part in (item.kind, item.state) if part)
-        parts = [f"{head}: {item.title}" if head else item.title, *(f"{label}:\n{text}" for label, text in item.texts)]
-        said = cut_at(_comment("\n\n".join(parts)), WORK_ITEM_MAX_CHARS, sep="\n")
+        # Each field made safe on its own: read by review, one field that held a key withheld the work item whole.
+        title = _comment(f"{head}: {item.title}" if head else item.title)
+        parts = [title, *(f"{label}:\n{_comment(text)}" for label, text in item.texts)]
+        said = cut_at("\n\n".join(parts), WORK_ITEM_MAX_CHARS, sep="\n")
         fence = "`" * max(3, backticks(said) + 1)
         lines += ["", f"- Work item {item.number}", "", f"{fence}text", said, fence]
     if (more := len(work.items) - WORK_ITEMS_SHOWN) > 0:
@@ -431,7 +435,11 @@ def _author(name: str) -> str:
 
 
 def _comment(text: str) -> str:
-    """A comment's text, its lines kept: a credential hidden across them first, then each line made safe."""
+    """A person's text, a comment's or a work item's, its lines kept: a credential hidden across them first, then each
+    line made safe. One that holds a private key is withheld whole: read by an audit, a key pasted with no footer had
+    its header hidden and its body quoted, to the agent and to a guideline: a file holding one is shown to none."""
+    if holds_private_key(text):
+        return TEXT_WITHHELD
     return "\n".join(unhidden(line).rstrip() for line in scrub(text)[0].splitlines())
 
 

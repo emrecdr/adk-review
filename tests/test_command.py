@@ -3119,7 +3119,8 @@ class TestTheWorkItems:
         said = handoff.read_text(encoding="utf-8")
         assert "## Work items the change is for" in said
         assert "- Work item 12" in said and "User Story, Active: Customer can sign in" in said
-        assert "Sign in with one click & stay signed in." in said and "x()" not in said and "<div>" not in said
+        assert "Sign in with one click & stay signed in." in said and "<div>" not in said
+        assert "<script>x()</script>" in said, "a person's text, quoted whole in its fence: nothing hidden"
         assert "Acceptance criteria:\n- A Microsoft account works" in said
         assert token not in said and "````" in said
         assert "1 linked work item could not be read" in said
@@ -3145,6 +3146,31 @@ class TestTheWorkItems:
         )
         markdown = "1. Given `parse()`:\n\n```python\n    return Result<Order>\n```\n<https://e.co/a>"
         assert as_text(markdown) == markdown
+        # Read by an audit and by review, and reproduced: a script or a style, closed or not, hid every word after it;
+        # a security story's Markdown names one, and lost its later criteria.
+        for hiding in ("<style/>", "<script src='x.js'/>", "<style>", "<script>"):
+            assert "AC 1" in as_text(f"<p>Header</p>{hiding}<p>AC 1</p>"), hiding
+        story = "1. Escape any <script> a user writes.\n2. Log each rejected upload."
+        assert as_text(story) == story
+
+    def test_a_text_that_holds_a_private_key_is_withheld_whole(self) -> None:
+        """Read by an audit, and reproduced: a key pasted with no footer into a work item or a comment had its header
+        hidden and its body lines quoted to the hand-off's agent. Its text is withheld whole, as a file that holds a
+        key is shown to no model; a work item's other fields, its title among them, stay."""
+        from adk_review.deliver.report import _open_comments, _work_items
+        from adk_review.deliver.threads import OpenThread
+        from adk_review.deliver.work_items import WorkItem, WorkItems
+
+        body = "MIIEpAIBAAKCAQEA" + "q1w2e3r4t5y6u7i8o9p0" * 3
+        key = "-----BEGIN " + "RSA PRIVATE KEY-----\n" + body + "\n" + body[::-1] + "\n"
+        work = WorkItems((WorkItem(7, "Bug", "Active", "Sign in fails", (("Repro steps", "Use\n" + key),)),))
+        said = [
+            "\n".join(_work_items(work)),
+            "\n".join(_open_comments([OpenThread("a.py", 1, "active", (("Ann", "Try\n" + key),))])),
+        ]
+        for text in said:
+            assert body not in text and body[::-1] not in text and "withheld" in text, text
+        assert "Sign in fails" in said[0], "the field withheld, its title kept"
 
     def test_a_work_item_is_quoted_up_to_its_cap(self) -> None:
         """Each string a model reads is capped, the cut named: a work item's text as a whole."""

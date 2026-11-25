@@ -88,9 +88,10 @@ def _said(value: object) -> str:
 
 def as_text(html: str) -> str:
     """Rich text as a person reads it: each block on a line of its own, a table's cells apart, a list item after a
-    dash, a script's or a style's text left out, each entity read, the spaces in a line made one, no blank lines but
-    one between blocks, and a tag HTML has not, `Result<Order>`, kept as written. A field with no HTML in it, as Azure
-    DevOps keeps one written in Markdown, is quoted as written: read as HTML, its spaces and its `<...>` were lost."""
+    dash, each entity read, the spaces in a line made one, no blank lines but one between blocks, and a tag HTML has
+    not, `Result<Order>`, kept as written, a script's and a style's among them: read by an audit and by review, one
+    hid every word after it, and a security story names one. A field with no HTML in it, as Azure DevOps keeps one
+    written in Markdown, is quoted as written: read as HTML, its spaces and its `<...>` were lost."""
     reader = _Reader()
     reader.feed(html)
     reader.close()
@@ -158,13 +159,11 @@ HTML_TAGS = frozenset(
         "q",
         "s",
         "samp",
-        "script",
         "section",
         "small",
         "span",
         "strike",
         "strong",
-        "style",
         "sub",
         "summary",
         "sup",
@@ -223,13 +222,11 @@ class _Reader(HTMLParser):
         ]
     )
     CELLS = frozenset({"td", "th"})
-    UNREAD = frozenset({"script", "style"})
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.said: list[str] = []
         self.html = False
-        self._unread = 0
         self._item = False  # a list item's dash written, its text not yet: a paragraph inside it stays on its line
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:  # noqa: ARG002 -- the parser's own
@@ -237,9 +234,7 @@ class _Reader(HTMLParser):
             self.said.append(self.get_starttag_text() or "")
             return
         self.html = True
-        if tag in self.UNREAD:
-            self._unread += 1
-        elif tag == "br":  # the one line break that is always one: `<div><br></div>` is an empty line
+        if tag == "br":  # the one line break that is always one: `<div><br></div>` is an empty line
             self.said.append("\n")
         elif tag == "li":
             self._line_ends()
@@ -256,15 +251,12 @@ class _Reader(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag not in HTML_TAGS:
             self.said.append(f"</{tag}>")
-        elif tag in self.UNREAD:
-            self._unread = max(0, self._unread - 1)
         elif tag in self.BLOCKS and tag != "br":
             self._line_ends()
 
     def handle_data(self, data: str) -> None:
-        if not self._unread:
-            self.said.append(data)
-            self._item = self._item and not data.strip()
+        self.said.append(data)
+        self._item = self._item and not data.strip()
 
     def _line_ends(self) -> None:
         """The line written so far ended, where one is open: a block's start and its end each end a line, and read by
