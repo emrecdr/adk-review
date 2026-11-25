@@ -28,6 +28,7 @@ import truststore
 from adk_review.collect.git import on_path
 from adk_review.core.text import squash
 from adk_review.deliver.threads import OPEN_STATUSES, OpenThread
+from adk_review.deliver.work_items import FIELDS
 
 from .azure import Place, PullRequest, posted_as, rooted, thread_payload
 from .git_sync import bounded
@@ -48,6 +49,11 @@ HTTP_TIMEOUT_S = 20
 RETRY_AFTER_MAX_S = 30
 #: The changes of an iteration, asked this many a page: the most Azure DevOps gives.
 _PAGE = 2000
+#: The most work items one call reads, as Azure DevOps takes them.
+WORK_ITEMS_ASKED = 200
+#: What each read the person asks for alone reads, as a refusal of it names it.
+_COMMENTS = "the pull request's comments"
+_WORK_ITEMS = "the work items it links"
 #: A Microsoft Entra tenant's id, as Azure DevOps names the organization's in `X-VSS-ResourceTenant`. Only this
 #: shape is repeated to the person: the header is a server's text, and the sentence names a command to run.
 _TENANT = re.compile(r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}")
@@ -266,7 +272,7 @@ class Client:
         its author's name, and the file and line it is on, from either side of the diff, none for one on the whole pull
         request. A resolved or deleted thread, and one of the system's own, a vote or a push, are left out."""
         found = []
-        for thread in _dicts(self._call("GET", self._pr.api("threads")).get("value")):
+        for thread in _dicts(self._call("GET", self._pr.api("threads"), reading=_COMMENTS).get("value")):
             if thread.get("isDeleted") or thread.get("status") not in OPEN_STATUSES:
                 continue
             said = tuple(
@@ -280,6 +286,22 @@ class Client:
                 found.append(OpenThread(*_place(thread.get("threadContext")), str(thread["status"]), said))
         return found
 
+    def work_items(self) -> dict:
+        """The work items the pull request links, as Azure DevOps answers its work items call with the fields
+        `--work-items` quotes: what the file holds. One it cannot give, deleted or out of the person's reach, is
+        `null` in its answer, which reads the rest. With none linked, no second call is made."""
+        links = self._call("GET", self._pr.api("workitems"), reading=_WORK_ITEMS)
+        linked = [entry.get("id") for entry in _dicts(links.get("value"))]
+        ids = [
+            str(number)
+            for number in linked
+            if type(number) is int or (isinstance(number, str) and number.isascii() and number.isdigit())
+        ]
+        if not ids:
+            return {"count": 0, "value": []}
+        asked = {"ids": ",".join(ids[:WORK_ITEMS_ASKED]), "fields": ",".join(FIELDS), "errorPolicy": "omit"}
+        return self._call("GET", self._pr.project_api("wit", "workitems"), query=asked, reading=_WORK_ITEMS)
+
     def post(self, payload: dict) -> int:
         """`payload` posted as a new thread: its id."""
         thread = self._call("POST", self._pr.api("threads"), body=payload).get("id")
@@ -287,10 +309,19 @@ class Client:
             raise AzureError("Azure DevOps answered with no thread.", unsure=True)
         return thread
 
-    def _call(self, method: str, url: str, *, body: dict | None = None, query: Mapping[str, str] | None = None) -> dict:
+    def _call(
+        self,
+        method: str,
+        url: str,
+        *,
+        body: dict | None = None,
+        query: Mapping[str, str] | None = None,
+        reading: str = "",
+    ) -> dict:
         """One call's answer, a JSON object. A 429 is waited out once, as `Retry-After` says: Azure DevOps refused
         the call and did nothing. Nothing is sent again after a failure of the network, where a post may have
-        arrived."""
+        arrived. `reading` names what a read the person asked for alone reads, which a refusal names: read by review,
+        a refused read of work items said the account may not comment, and to post again."""
         full = f"{url}?{urlencode({**(query or {}), 'api-version': API_VERSION})}"
         if not full.startswith((_HTTPS, _LOCAL)):  # the second lock: a pasted address is HTTPS by the time it is read
             raise AzureError(
@@ -307,9 +338,9 @@ class Client:
                 if self._opener is None:
                     self._opener = _opener()
                 with self._opener.open(request, timeout=HTTP_TIMEOUT_S) as answer:
-                    return self._answered(answer.status, answer.read(), answer.headers, posting=posting)
+                    return self._answered(answer.status, answer.read(), answer.headers, posting, reading)
             except urllib.error.HTTPError as refused:
-                self._sleep(self._wait(refused, waited=waited, posting=posting))
+                self._sleep(self._wait(refused, waited=waited, posting=posting, reading=reading))
             except (OSError, http.client.HTTPException) as failed:
                 # No route, no answer in time, a certificate, or an answer cut short or no HTTP at all, which is
                 # none of the network's own errors. Uncaught, it ended the screen with this call's headers shown.
@@ -317,29 +348,31 @@ class Client:
                 raise AzureError(_unreached(failed), unsure=posting) from None
         raise AssertionError("a second 429 is a sentence")
 
-    def _answered(self, status: int, raw: bytes, headers: Message, *, posting: bool) -> dict:
+    def _answered(self, status: int, raw: bytes, headers: Message, posting: bool, reading: str) -> dict:
         """A 2xx's JSON object. A 203 is Azure DevOps' sign-in page: it answers a login it does not accept with one,
         where another service would answer 401. Any other body that is no object is not known to be its own: read
         by review, a company's proxy answers 200 with its own page, and called a refused login it cost a good token
         and sent the person to log in to no effect. A post answered so may have arrived. A 203 names the
         organization's tenant as a 401 does, read by an audit: it was left out, and the sentence named none."""
         if status == HTTPStatus.NON_AUTHORITATIVE_INFORMATION:
-            raise self._no_login(headers)
+            raise self._no_login(headers, reading)
         answer = _object(raw)
         if answer is None:
             said = (
                 "Azure DevOps answered with no answer of its own. A proxy or a sign-in page may stand before it. "
-                "Check the network, or run `az login`, then post again."
+                f"Check the network, or run `az login`, then {_again(reading)}."
             )
             raise AzureError(said, unsure=posting)
         return answer
 
-    def _wait(self, refused: urllib.error.HTTPError, *, waited: bool, posting: bool) -> float:
+    def _wait(self, refused: urllib.error.HTTPError, *, waited: bool, posting: bool, reading: str) -> float:
         """The seconds to wait before one more try, or the refusal as its sentence. A post a server failed on, a
         gateway before Azure DevOps among them, may have arrived: Azure DevOps' own refusals, the 4xx, are sure."""
         code = refused.code
         if code == HTTPStatus.UNAUTHORIZED or HTTPStatus.MULTIPLE_CHOICES <= code < HTTPStatus.BAD_REQUEST:
-            raise self._no_login(refused.headers) from None  # refused, or sent elsewhere to sign in
+            raise self._no_login(refused.headers, reading) from None  # refused, or sent elsewhere to sign in
+        if code == HTTPStatus.FORBIDDEN and reading:
+            raise AzureError(f"Your account may not read {reading}. Ask for access to them in Azure DevOps.") from None
         if code == HTTPStatus.FORBIDDEN:
             said = 'Your account may not comment here. Ask for the "Contribute to pull requests" permission.'
             raise AzureError(said) from None
@@ -350,21 +383,28 @@ class Client:
             asked = (refused.headers.get("Retry-After") or "").strip()
             seconds = int(asked) if asked.isascii() and asked.isdigit() else 60
             if waited or seconds > RETRY_AFTER_MAX_S:
-                raise AzureError(f"Azure DevOps asked to wait {seconds} s. Post again after that.") from None
+                raise AzureError(
+                    f"Azure DevOps asked to wait {seconds} s. {_again(reading).capitalize()} after that."
+                ) from None
             return float(seconds)
         # A post a server failed on may have arrived: the screen says so, and what to press. A read posted nothing.
         unsure = posting and code >= HTTPStatus.INTERNAL_SERVER_ERROR
         ended = "" if unsure else " Nothing was posted."
         raise AzureError(f"Azure DevOps answered {code}: {_said(refused)}.{ended}", unsure=unsure) from None
 
-    def _no_login(self, headers: Message) -> AzureError:
+    def _no_login(self, headers: Message, reading: str) -> AzureError:
         """The sentence for a login Azure DevOps did not accept, the token forgotten: the person logs in again, and
         the one kept in memory is the one just refused. The organization's tenant is named where the answer names
         one, since a login in another tenant is the usual cause."""
         self._credential.forget()
         tenant = (headers.get("X-VSS-ResourceTenant") or "").strip().lower()
         named = f" --tenant {tenant}" if _TENANT.fullmatch(tenant) and tenant.strip("0-") else ""
-        return AzureError(f"Azure DevOps did not accept your login. Run `az login{named}`, then post again.")
+        return AzureError(f"Azure DevOps did not accept your login. Run `az login{named}`, then {_again(reading)}.")
+
+
+def _again(reading: str) -> str:
+    """What a refusal asks the person to do again: read, where they asked for a read alone, or else post."""
+    return "read again" if reading else "post again"
 
 
 def _request(full: str, data: bytes | None, headers: Mapping[str, str], method: str) -> urllib.request.Request:

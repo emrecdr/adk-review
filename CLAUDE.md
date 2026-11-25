@@ -36,7 +36,7 @@ uv run pyrefly check                                  # types: the package and s
 
 uv run python scripts/make_demo_repo.py          # build <tmp>/adk-demo-repo: main + feature/payments with 4 planted defects + feature/orders with a defect for each check
 uv run python scripts/make_demo_repo.py --fix    # commit the two fixes on feature/payments
-uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--path-exclude DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--junit FILE] [--handoff [FILE]] [--comment [FILE]] [--cache DIR] [--previous FILE] [--threads FILE] [--progress | --quiet] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
+uv run adk-review [repo] [--head B] [--base main | --all | --staged] [--path DIR] [--path-exclude DIR] [--fail-on …] [--verify | --no-verify] [--max-tokens N] [--diff-cap N] [--skip GLOB] [--scan GLOB] [--third-party GLOB] [--profile NAME | --check ID] [--json FILE] [--junit FILE] [--handoff [FILE]] [--comment [FILE]] [--cache DIR] [--previous FILE] [--threads FILE] [--work-items FILE] [--progress | --quiet] [--debug-log FILE] [--trace FILE] [--record DIR] [--dry-run] [--list-checks] [--explain ID] [--try PATH…] [--version]
 uv run adk-review <demo repo> --head feature/payments --base main --profile demo   # every rule, the demo's own among them, no model call, no key
 uv run adk-review <demo repo> --head feature/payments --base main --dry-run   # what a review would cover and run, nothing run
 uv run adk-review <demo repo> --head feature/orders --base main --profile rules-only   # each rule finds its own planted defect, exit 1; no model call
@@ -192,7 +192,8 @@ the text report's safety rules), the same review as JUnit XML for a pipeline's t
 runs), which the person pastes into the pull request by hand: the reviewer posts nothing and prints no command that
 would, a hand-off for a coding agent (`--handoff [FILE]`, by default
 `handoff-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md`, named as the comment is), which applies nothing itself
-and quotes a pull request's open comments `--threads FILE` names, people's words it is told never to obey, under `--all`
+and quotes a pull request's open comments `--threads FILE` names and the work items it links `--work-items FILE` names,
+people's words it is told never to obey, under `--all`
 a Health section (`core/health.py`: what was read, source and tests apart, McCabe complexity counted as ruff's C901
 counts it, in bands graded A to E by SIG's published risk-profile rating where most of the source parsed, each rule's
 findings by severity, counted and never graded; never read by the verdict), each changed file's blast radius
@@ -258,7 +259,8 @@ Load-bearing rules the tests enforce:
   one comment posted to an Azure DevOps pull request, on the person's click, after their edit and a confirmation, never
   a batch, and never from the reviewer, which gains no network call and no posting command. It reads Azure DevOps where
   the person asks: a pull request they open, its branches and last push, which choose the clone and the branches a
-  review reads, its threads before a post, and its open comments, which a review's hand-off quotes. Its login is the
+  review reads, its threads before a post, and its open comments and linked work items, which a review's hand-off
+  quotes. Its login is the
   person's own `az` login: a token asked of `az` by its full path with fixed arguments alone, since `az.cmd` runs
   through cmd.exe, kept in memory and written nowhere. The token goes to `dev.azure.com` or a `visualstudio.com`
   organization alone, and no redirect is followed: `urllib` sends `Authorization` again to a redirect's target. A

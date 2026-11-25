@@ -6,6 +6,8 @@ such test, three of these failed, the catalog reading no rule as a rule and a pa
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import os
 import subprocess
 import sys
@@ -3137,24 +3139,35 @@ class TestAzureDevOpsOnTheScreen:
         assert later != "origin/feature/tax", "the pull request dropped at the pick"
 
     @pytest.mark.asyncio
-    async def test_the_open_comments_are_read_listed_and_given_to_the_next_hand_off(
-        self, tmp_path: Path, fake_ado
+    async def test_the_comments_and_work_items_are_read_listed_and_given_to_the_next_hand_off(
+        self, tmp_path: Path, fake_ado, monkeypatch
     ) -> None:
-        """The pull request's open comments, read on the person's click: listed on their own tab, each by its place
-        and its authors, and written where the next review's hand-off quotes them, for its coding agent to answer in
-        the same pass. A review that writes no hand-off is given none. With no pull request chosen, it says so."""
+        """The pull request's open comments and the work items it links, read on one click: listed on their tab, and
+        written where the next review's hand-off quotes them, for its coding agent to answer the people and check the
+        change against what it is for in the same pass. A review that writes no hand-off is given neither. Each read
+        stands alone: one that fails gives the hand-off none of its own, never the last read's, and the tab says so.
+        With no pull request chosen, it says so. Read by review, and reproduced: the tab's status line shared its id
+        with the findings tab's, which took its words; one read cut short left the last read's other file given; and
+        comments read but not kept were said to be quoted."""
         from conftest import FakeToken
         from textual.widgets import RichLog, Static, Switch
+        from textual.worker import WorkerCancelled
 
+        import tui.app as screen
         from adk_review.deliver.threads import read_threads
+        from adk_review.deliver.work_items import read_work_items
+        from tui.azure_client import Client
         from tui.options import build_review_argv
+
+        def given(argv: list[str], flag: str) -> str | None:
+            return argv[argv.index(flag) + 1] if flag in argv else None
 
         app = _payments_screen(tmp_path)
         async with app.run_test(size=(140, 45)) as pilot:
             await _wait_for_branches(app, pilot)
             said: list[str] = []
             app.notify = _plainly(said)
-            app._read_open_comments()
+            app._read_from_pull_request()
             await pilot.pause()
             assert said and "pull request" in said[-1], "none chosen: said"
             app._credential = FakeToken()
@@ -3162,47 +3175,82 @@ class TestAzureDevOpsOnTheScreen:
             comment = {"author": {"displayName": "Jane"}, "content": "Fix the rounding", "commentType": "text"}
             thread = {"id": 1, "status": "active", "comments": [comment],
                       "threadContext": {"filePath": "/src/app.py", "rightFileStart": {"line": 12}}}  # fmt: skip
+            item = {"id": 12, "fields": {"System.WorkItemType": "User Story", "System.Title": "Sign in",
+                    "Microsoft.VSTS.Common.AcceptanceCriteria": "<ul><li>A work account works</li></ul>"}}  # fmt: skip
             fake_ado.answer("GET", "/threads", {"value": [thread]})
-            app._read_open_comments()
-            await app.workers.wait_for_complete()
-            await pilot.pause()
-            listed = "\n".join(line.text for line in app.query_one("#threads-log", RichLog).lines)
-            app.query_one("#sw-handoff", Switch).value = True
-            await pilot.pause()
-            with_handoff, _ = build_review_argv(app.current_selection())
+            fake_ado.answer("GET", "/workitems", {"value": [{"id": "12", "url": "u"}]})
+            fake_ado.answer("GET", "/wit/workitems", {"count": 1, "value": [item]}, under=fake_ado.project)
+
+            async def read() -> tuple[list[str], str]:
+                app._read_from_pull_request()
+                with contextlib.suppress(WorkerCancelled):  # a read cut short, as one the person starts again is
+                    await app.workers.wait_for_complete()
+                await pilot.pause()
+                app.query_one("#sw-handoff", Switch).value = True
+                await pilot.pause()
+                argv, _ = build_review_argv(app.current_selection())
+                return argv, str(app.query_one("#tab-pr #read-status", Static).render())
+
+            with_handoff, first_status = await read()
+            findings_line = str(app.query_one("#pr-status", Static).render())
+            listed = "\n".join(line.text for line in app.query_one("#read-log", RichLog).lines)
             app.query_one("#sw-handoff", Switch).value = False
             await pilot.pause()
             without, _ = build_review_argv(app.current_selection())
             # Read by review, and reproduced: a read that failed left the last read's file given, and its words.
             fake_ado.instead("GET", "/threads", {"message": "down"}, status=500)
-            app._read_open_comments()
-            await app.workers.wait_for_complete()
-            await pilot.pause()
-            app.query_one("#sw-handoff", Switch).value = True
-            await pilot.pause()
-            after_failure, _ = build_review_argv(app.current_selection())
-            status = str(app.query_one("#threads-status", Static).render())
+            comments_failed, comments_status = await read()
+            fake_ado.instead("GET", "/threads", {"value": [thread]})
+            fake_ado.instead("GET", "/wit/workitems", {"message": "no access"}, status=403, under=fake_ado.project)
+            items_failed, items_status = await read()
+            fake_ado.instead("GET", "/wit/workitems", {"count": 1, "value": [item]}, under=fake_ado.project)
+            kept = screen._kept_for_handoff
+
+            def full_for_comments(folder: str, pr, kind: str, data: dict) -> Path:
+                if kind == "threads":
+                    raise OSError(28, "No space left on device")
+                return kept(folder, pr, kind, data)
+
+            monkeypatch.setattr(screen, "_kept_for_handoff", full_for_comments)
+            unkept, unkept_status = await read()
+            monkeypatch.setattr(screen, "_kept_for_handoff", kept)
+            await read()  # both kept again
+
+            def cut_short(_client: Client) -> list:
+                raise asyncio.CancelledError
+
+            monkeypatch.setattr(Client, "open_threads", cut_short)
+            cut, _ = await read()
         assert "src/app.py:12" in listed and "Jane: Fix the rounding" in listed, listed
-        given = Path(with_handoff[with_handoff.index("--threads") + 1])
-        assert [t.comments for t in read_threads(str(given))] == [(("Jane", "Fix the rounding"),)]
-        assert "--threads" not in without, "no hand-off, no comments for it"
-        assert "--threads" not in after_failure, "a failed read gives none, never the last one's"
-        assert "quotes them" not in status and "not read" in status, status
+        assert "Work item 12, User Story: Sign in" in listed and "A work account works" in listed, listed
+        threads, items = given(with_handoff, "--threads"), given(with_handoff, "--work-items")
+        assert threads and [t.comments for t in read_threads(threads)] == [(("Jane", "Fix the rounding"),)]
+        assert items and [w.title for w in read_work_items(items).items] == ["Sign in"]
+        assert given(without, "--threads") is None and given(without, "--work-items") is None, "no hand-off, neither"
+        assert given(comments_failed, "--threads") is None and given(comments_failed, "--work-items"), comments_failed
+        assert "comments not read" in comments_status, comments_status
+        assert given(items_failed, "--threads") and given(items_failed, "--work-items") is None, items_failed
+        assert "work items not read" in items_status, items_status
+        assert "comment" in first_status and "comment" not in findings_line, (first_status, findings_line)
+        assert given(unkept, "--threads") is None and given(unkept, "--work-items"), unkept
+        assert "comments not kept" in unkept_status and "quotes what was kept" in unkept_status, unkept_status
+        assert given(cut, "--threads") is None and given(cut, "--work-items") is None, "cut short: neither file given"
 
     def test_two_pull_requests_of_one_name_and_number_keep_two_files(self, tmp_path: Path) -> None:
         """Read by review: the file was named by the repository and the number alone, and two organizations' pull
         requests of one name, or of names that differ in case or punctuation alone, wrote one file, so one's hand-off
         quoted the other's comments. The same pull request read again writes the same file."""
-        from tui.app import _write_threads
+        from tui.app import _kept_for_handoff
         from tui.azure import parse_pr_url
 
         one = parse_pr_url("https://dev.azure.com/orgone/Shop/_git/api/pullrequest/7")
         two = parse_pr_url("https://dev.azure.com/orgtwo/Bank/_git/API/pullrequest/7")
         three = parse_pr_url("https://dev.azure.com/orgone/Shop/_git/my api/pullrequest/7")
         four = parse_pr_url("https://dev.azure.com/orgone/Shop/_git/my-api/pullrequest/7")
-        paths = [_write_threads(str(tmp_path), pr, ()) for pr in (one, two, three, four)]
+        paths = [_kept_for_handoff(str(tmp_path), pr, "threads", {}) for pr in (one, two, three, four)]
         assert len({str(path).lower() for path in paths}) == 4, paths
-        assert _write_threads(str(tmp_path), one, ()) == paths[0], "the same pull request, the same file"
+        assert _kept_for_handoff(str(tmp_path), one, "threads", {}) == paths[0], "the same pull request, the same file"
+        assert _kept_for_handoff(str(tmp_path), one, "work-items", {}) != paths[0], "each kind its own file"
 
     @pytest.mark.asyncio
     async def test_a_pull_request_whose_last_push_is_not_here_says_to_fetch(self, tmp_path: Path, fake_ado) -> None:
@@ -4503,7 +4551,7 @@ class TestWhatAnAuditFound:
             for tab, words in (("tab-findings", "No finding"), ("tab-comment", "comment"), ("tab-handoff", "hand-off")):
                 assert words in await copy_from(tab) and len(copied) == 2, (tab, said[-1], copied)
                 assert "Run a review" in said[-1], "what to do next, true whether a switch is on or off"
-            assert "Read Open Comments" in await copy_from("tab-threads") and len(copied) == 2, said[-1]
+            assert "Read Comments and Work Items" in await copy_from("tab-pr") and len(copied) == 2, said[-1]
 
     def test_a_profile_no_review_has_is_refused_with_the_profiles_there_are(self, tmp_path: Path) -> None:
         """Read by an audit, and reproduced: `profile = "typo"` in `[defaults]`, and `profile = 123`, were taken as

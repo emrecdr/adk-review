@@ -88,6 +88,7 @@ class ReviewSelection:
     diff_cap: int = 0
     output_dir: str = str(OUTPUTS_DIR)
     threads: str = ""  # a pull request's open comments, read on the screen, for the hand-off to quote
+    work_items: str = ""  # the work items it links, read with them, for the hand-off to check the change against
 
 
 def load_profile_options() -> list[ProfileOption]:
@@ -266,6 +267,8 @@ def _output_flags(sel: ReviewSelection, argv: list[str]) -> dict[str, Path]:
         outputs["handoff"] = handoff_file
         if sel.threads:  # its agent answers the people's comments in the same pass as the findings
             argv.extend(["--threads", sel.threads])
+        if sel.work_items:  # and checks the change against what it is for
+            argv.extend(["--work-items", sel.work_items])
     return outputs
 
 

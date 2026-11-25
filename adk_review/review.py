@@ -135,6 +135,7 @@ try:
         told_in_parts,
     )
     from .deliver.threads import read_threads
+    from .deliver.work_items import NO_WORK_ITEMS, read_work_items
     from .judge.catalog import (
         CONFIG,
         REVIEW,
@@ -205,10 +206,13 @@ REVIEW_ONLY = {
     "cache": "--cache",
     "previous": "--previous",
     "threads": "--threads",
+    "work_items": "--work-items",
     "record": "--record",
     "trace": "--trace",
     "debug_log": "--debug-log",
 }
+#: What only a review's hand-off reads, by dest: each refused without `--handoff`, which would quote it.
+HANDED_OFF = {"threads": "--threads", "work_items": "--work-items"}
 #: What names the change a review reads, by dest: a dry run plans with each, and `--try` reads the files it is given.
 OF_A_CHANGE = {
     "path": "--path",
@@ -455,6 +459,12 @@ def build_parser(review: dict) -> argparse.ArgumentParser:
         "--threads",
         metavar="FILE",
         help="quote a pull request's open comments from FILE in the hand-off, as the front end writes it. The review "
+        "makes no call for them",
+    )
+    parser.add_argument(
+        "--work-items",
+        metavar="FILE",
+        help="quote the work items a pull request links, Azure DevOps' answer in FILE, in the hand-off. The review "
         "makes no call for them",
     )
     parser.add_argument(
@@ -809,10 +819,12 @@ def _review(argv: list[str] | None = None) -> int:
         _mode_alone(args)
         explanation = explained(found, config["profiles"], args.explain) if args.explain else None
         previous = read_previous(args.previous) if args.previous else (None, None, None)
-        if args.threads and not args.handoff:  # read by review: with nothing to quote them in, the flag did nothing
-            raise ValueError("--threads quotes comments in the hand-off alone. Give --handoff too, or drop --threads")
+        # Read by review: with no hand-off to quote them in, each flag did nothing.
+        if quoted := next((flag for dest, flag in HANDED_OFF.items() if getattr(args, dest) and not args.handoff), ""):
+            raise ValueError(f"{quoted} is quoted in the hand-off alone. Give --handoff too, or drop {quoted}")
         # As the hand-off quotes them, so the cache key reads them too, through `vars(args)`, with the file's name.
         args.threads_read = read_threads(args.threads) if args.threads else ()
+        args.work_items_read = read_work_items(args.work_items) if args.work_items else NO_WORK_ITEMS
         _outputs_ready(args)
     except ValueError as exc:
         _say(str(exc))
@@ -1168,6 +1180,7 @@ def _reported(
             tidies=tidies,
             added=args.added,
             threads=getattr(args, "threads_read", ()),
+            work_items=getattr(args, "work_items_read", NO_WORK_ITEMS),
         )
         if args.handoff or keep
         else ""

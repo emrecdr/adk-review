@@ -79,7 +79,7 @@ applyTo: "adk_review/**"
   would read as a blocker.
 - `--dry-run`, `--list-checks`, `--try` and `--explain` (`MODES` in `review.py`) each stop before a review would start:
   they exclude one another, and each refuses a review's own flags (`REVIEW_ONLY`: `--json`, `--junit`, `--handoff`,
-  `--comment`, `--cache`, `--previous`, `--threads`, `--record`, `--trace`, `--debug-log`) with exit 2. A new flag only a review
+  `--comment`, `--cache`, `--previous`, `--threads`, `--work-items`, `--record`, `--trace`, `--debug-log`) with exit 2. A new flag only a review
   reads joins `REVIEW_ONLY`. `--try` reads the files it is given, and also refuses each flag that names what a review
   reads (`OF_A_CHANGE`: `--path`, `--path-exclude`, `--base`, `--head`, `--all`, `--staged`), which a dry run reads.
 - `--staged` reads the index through plumbing alone (`diff-index --cached`, `ls-files -s`, `cat-file`), so nothing is

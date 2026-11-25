@@ -145,12 +145,14 @@ when you ask. The reviewer itself posts nothing, as before: this is the screen's
 3. Paste the pull request's address into the field above the findings, as the browser shows it:
    `https://dev.azure.com/<organization>/<project>/_git/<repository>/pullrequest/<number>`. It is kept for that
    repository and branch, so you paste it once.
-   On the **Pull Request Comments** tab, **Read Open Comments**, or "Read pull request comments" in the palette,
-   lists the pull request's open threads, active and pending, each by its file and line and its comments by their
-   authors; resolved threads and the system's own, votes and pushes, are left out. They are written beside the
-   reviews, and a review run with the hand-off switched on quotes them in it, for its coding agent to answer the
-   people in the same pass as the findings, each comment a person's text it is told never to obey. A read that
-   fails gives the hand-off none, and the tab says so.
+   On the **Pull Request** tab, **Read Comments and Work Items**, or "Read pull request comments and work items" in
+   the palette, lists the pull request's open threads, active and pending, each by its file and line and its comments
+   by their authors, and the work items it links, each by its number, kind, state and title, then its description,
+   acceptance criteria and repro steps as text; resolved threads and the system's own, votes and pushes, are left
+   out. They are written beside the reviews, and a review run with the hand-off switched on quotes them in it, for its
+   coding agent to answer the people and check the change against what it is for in the same pass as the findings,
+   each a person's text it is told never to obey. Each read stands alone: one that fails gives the hand-off none of
+   its own, and the tab says so. Reading work items needs your account's right to read them.
 4. Choose a finding, then press a key:
 
 | Key | What opens |
@@ -236,7 +238,7 @@ As the reviewer does, the screen reads a repository, and writes into it only whe
 | `Ctrl+X` | Stop a running review. With no review running, it cuts the chosen text in a text field |
 | `Ctrl+T` | Minimize every panel |
 | `Ctrl+O` | Restore every panel |
-| `Ctrl+Y` | Copy the open tab: the report, the chosen finding, the comment, the hand-off, the progress lines or the pull request's open comments. A tab with nothing to copy says so |
+| `Ctrl+Y` | Copy the open tab: the report, the chosen finding, the comment, the hand-off, the progress lines or the pull request's comments and work items. A tab with nothing to copy says so |
 | `Ctrl+Q` | Quit, whatever runs, a dialog open or a comment not posted: Textual's own key. VS Code's terminal keeps it for itself, so use `q` there |
 | `Ctrl+P` | Open the command palette: a repository, any of its branches, a profile or an action by name |
 | `F5` | Fetch the chosen repository with `--prune` and list its branches again, the branches you chose kept where they are still there |
@@ -283,7 +285,7 @@ It runs in cmd, in PowerShell and in Windows Terminal alike.
 | `options.py` | The profiles, the command a selection makes, the folder a review's files go to, and the report `--previous` reads |
 | `findings.py` | A `--json` report read for the findings tab, with the commit it reviewed, its filters, and a check's explanation |
 | `azure.py` | Azure DevOps, with no call made: a pull request's address read, the repository a clone's address names, a finding's links built, the comment drafted from a finding, with the mark that finds it again, the thread it is posted as, and which of a pull request's threads is a finding's already |
-| `azure_client.py` | The calls to Azure DevOps and their login: a token from `az`, with fixed arguments, kept in memory alone, a pull request's branches and last push read, its open threads read, and one comment's post, with the checks before it |
+| `azure_client.py` | The calls to Azure DevOps and their login: a token from `az`, with fixed arguments, kept in memory alone, a pull request's branches and last push read, its open threads and linked work items read, and one comment's post, with the checks before it |
 | `azure_state.py` | `azure.json` in the state folder: the pull request's address given for a branch, and the thread each finding was posted as |
 | `modals.py` | The dialogs: a branch behind or apart from its remote, a pull request's address to open, a check's explanation, and a comment's editor and the question before its post |
 | `commands.py` | The command palette |

@@ -623,6 +623,46 @@ class TestTheClient:
             OpenThread("old.py", 4, "active", (("Cem", "Why remove this?"),)),
         ]
 
+    def test_the_linked_work_items_are_read_with_the_fields_the_hand_off_quotes(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        """The pull request's links name the work items; one more call reads each with the fields `--work-items`
+        quotes, any Azure DevOps cannot give answered as `null` rather than failing the rest. With none linked, no
+        second call is made."""
+        from adk_review.deliver.work_items import FIELDS
+
+        answer = {"count": 2, "value": [{"id": 12, "fields": {"System.Title": "Sign in"}}, None]}
+        fake_ado.answer(
+            "GET", "/workitems", {"count": 2, "value": [{"id": "12", "url": "u"}, {"id": "13", "url": "u"}]}
+        )
+        fake_ado.answer("GET", "/wit/workitems", answer, under=fake_ado.project)
+        assert client.Client(fake_ado.pr, FakeToken()).work_items() == answer
+        asked = fake_ado.seen[-1]
+        assert asked.query["ids"] == "12,13" and asked.query["errorPolicy"] == "omit", asked.query
+        assert asked.query["fields"].split(",") == list(FIELDS)
+        fake_ado.instead("GET", "/workitems", {"count": 0, "value": []})
+        seen = len(fake_ado.seen)
+        assert client.Client(fake_ado.pr, FakeToken()).work_items() == {"count": 0, "value": []}
+        assert len(fake_ado.seen) == seen + 1, "none linked: no second call"
+
+    def test_a_refused_read_of_comments_or_work_items_names_reading_never_posting(
+        self, client: ModuleType, fake_ado: FakeAdo
+    ) -> None:
+        """Read by review, and reproduced: a refusal of the work items read said the account may not comment here,
+        and to post again, though the person posts nothing there."""
+        fake_ado.answer("GET", "/workitems", {"value": [{"id": "12"}]})
+        fake_ado.answer("GET", "/wit/workitems", status=403, under=fake_ado.project)
+        with pytest.raises(client.AzureError) as refused:
+            client.Client(fake_ado.pr, FakeToken()).work_items()
+        assert "may not read the work items it links" in str(refused.value), refused.value
+        assert "comment" not in str(refused.value) and "post" not in str(refused.value).lower()
+        fake_ado.answer("GET", "/threads", status=401)
+        with pytest.raises(client.AzureError, match="then read again"):
+            client.Client(fake_ado.pr, FakeToken()).open_threads()
+        fake_ado.instead("GET", "/threads", status=429, headers={"Retry-After": "600"})
+        with pytest.raises(client.AzureError, match="Read again after that"):
+            client.Client(fake_ado.pr, FakeToken()).open_threads()
+
     def test_the_iterations_are_read_oldest_first(self, client: ModuleType, fake_ado: FakeAdo) -> None:
         pushed = [
             {"id": 2, "sourceRefCommit": {"commitId": "b" * 40}},

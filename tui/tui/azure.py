@@ -64,6 +64,10 @@ class PullRequest:
         """The pull request's page: what the state keeps, never the text a person pasted."""
         return f"{self.repository_web}/pullrequest/{self.number}"
 
+    def project_api(self, *tail: str) -> str:
+        """The REST address of what `tail` names under the pull request's project, with no query: its work items."""
+        return "/".join((self.origin, _quoted(self.project), "_apis", *tail))
+
     def api(self, *tail: str) -> str:
         """The REST address of the pull request, or of what `tail` names under it, with no query."""
         parts = (self.origin, _quoted(self.project), "_apis/git/repositories", _quoted(self.repository))

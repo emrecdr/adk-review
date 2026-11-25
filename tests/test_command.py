@@ -3068,6 +3068,127 @@ class TestTheOpenComments:
         assert "served from the cache" not in capsys.readouterr().err, "another comment: reviewed again"
 
 
+class TestTheWorkItems:
+    """`--work-items FILE`: the work items a pull request links, as Azure DevOps answers its work items call and the
+    terminal front end writes it, quoted in the hand-off as text for its coding agent to check the change against and
+    finish. The reviewer reads the file alone and makes no call: the front end, or a pipeline's own step, fetches."""
+
+    @staticmethod
+    def _items(path: Path, value: list) -> Path:
+        path.write_text(json.dumps({"count": len(value), "value": value}), encoding="utf-8")
+        return path
+
+    @staticmethod
+    def _item(number: int, **fields: str) -> dict:
+        return {"id": number, "rev": 1, "fields": {"System.Id": number, **fields}, "url": f"https://x/{number}"}
+
+    def test_each_linked_work_item_is_quoted_in_the_hand_off_as_text_and_made_safe(
+        self, cli, demo_repo: Path, tmp_path: Path
+    ) -> None:
+        """Each work item by its number, its kind, state and title, then its description and acceptance criteria as
+        text, never HTML, in a fence their own backticks cannot close, a credential hidden. One Azure DevOps could not
+        give is counted, and past the most it quotes, the rest. The header names them as the one change besides the
+        findings."""
+        from adk_review.deliver.work_items import WORK_ITEMS_SHOWN
+
+        token = "ghp" + "_" + "A1b2C3d4" * 4 + "E5f6"
+        story = self._item(
+            12,
+            **{
+                "System.WorkItemType": "User Story",
+                "System.State": "Active",
+                "System.Title": "Customer can sign in",
+                "System.Description": "<div>Sign in with <b>one</b> click &amp; stay signed in.</div>"
+                "<script>x()</script>",
+                "Microsoft.VSTS.Common.AcceptanceCriteria": f"<ul><li>A Microsoft account works</li><li>{token}</li>"
+                "<li>Agreed ``` closes nothing</li></ul>",
+            },
+        )
+        rest = [self._item(100 + n, **{"System.Title": f"t{n}"}) for n in range(WORK_ITEMS_SHOWN)]
+        handoff = tmp_path / "handoff.md"
+        run_review(
+            cli,
+            demo_repo,
+            "--profile",
+            "rules-only",
+            "--handoff",
+            str(handoff),
+            "--work-items",
+            str(self._items(tmp_path / "w.json", [story, None, *rest])),
+        )
+        said = handoff.read_text(encoding="utf-8")
+        assert "## Work items the change is for" in said
+        assert "- Work item 12" in said and "User Story, Active: Customer can sign in" in said
+        assert "Sign in with one click & stay signed in." in said and "x()" not in said and "<div>" not in said
+        assert "Acceptance criteria:\n- A Microsoft account works" in said
+        assert token not in said and "````" in said
+        assert "1 linked work item could not be read" in said
+        assert "1 more work item is not quoted" in said
+        assert "change nothing else but what a work item below needs" in " ".join(said.split())
+        assert "Add a test for each criterion you finish." in " ".join(said.split()), "what it builds, it proves"
+
+    def test_rich_text_reads_as_a_person_reads_it(self) -> None:
+        """Read by review, and reproduced: cells, terms and headings ran together, "5" and "10" read as "510"; a line
+        break made a blank line; a list item's paragraph left its dash alone; and a tag HTML has not, `Result<Order>`,
+        was dropped. A field with no HTML in it, as Azure DevOps keeps one written in Markdown, is quoted as written."""
+        from adk_review.deliver.work_items import as_text
+
+        table = "<table><tr><th>Input</th><th>Expected</th></tr><tr><td>5</td><td>10</td></tr></table>"
+        assert as_text(table).splitlines() == ["| Input | Expected", "| 5 | 10"]
+        assert as_text("<dl><dt>Term</dt><dd>Meaning</dd></dl><hr>After<h5>Head</h5>Body").splitlines() == [
+            "Term", "Meaning", "After", "Head", "Body"
+        ]  # fmt: skip
+        assert as_text("<div>one<br/>two</div>") == "one\ntwo"
+        assert as_text("<ul><li><p>x</p></li><li>y</li></ul>") == "- x\n- y"
+        assert (
+            as_text("<div>parse() returns Result<Order> or Vec<u8></div>") == "parse() returns Result<Order> or Vec<u8>"
+        )
+        markdown = "1. Given `parse()`:\n\n```python\n    return Result<Order>\n```\n<https://e.co/a>"
+        assert as_text(markdown) == markdown
+
+    def test_a_work_item_is_quoted_up_to_its_cap(self) -> None:
+        """Each string a model reads is capped, the cut named: a work item's text as a whole."""
+        from adk_review.core.text import CUT_MARK
+        from adk_review.deliver.report import _work_items
+        from adk_review.deliver.work_items import WORK_ITEM_MAX_CHARS, work_items_of
+
+        long = {"System.Title": "T", "System.Description": "<p>line</p>" * WORK_ITEM_MAX_CHARS}
+        said = "\n".join(_work_items(work_items_of({"value": [self._item(1, **long)]})))
+        assert CUT_MARK in said and len(said) < 2 * WORK_ITEM_MAX_CHARS, len(said)
+
+    def test_a_work_items_file_that_cannot_be_read_is_refused_before_the_review(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ) -> None:
+        """A file that is no such answer, one whose work item has no number or no fields, and one not there each end
+        in exit 2, the flag named, before any check runs. So does the flag with no hand-off to quote them in."""
+        broken = tmp_path / "broken.json"
+        broken.write_text("{not json", encoding="utf-8")
+        listless = tmp_path / "listless.json"
+        listless.write_text(json.dumps({"count": 1}), encoding="utf-8")
+        nameless = self._items(tmp_path / "nameless.json", [{"fields": {}}])
+        fieldless = self._items(tmp_path / "fieldless.json", [{"id": 3, "fields": "x"}])
+        handoff = ("--handoff", str(tmp_path / "h.md"))
+        for given in (broken, listless, nameless, fieldless, tmp_path / "missing.json"):
+            assert run_review(cli, demo_repo, "--profile", "rules-only", *handoff, "--work-items", str(given)) == 2
+            assert "--work-items" in capsys.readouterr().err, given
+        alone = self._items(tmp_path / "alone.json", [])
+        assert run_review(cli, demo_repo, "--profile", "rules-only", "--work-items", str(alone)) == 2, "no hand-off"
+        assert "--handoff" in capsys.readouterr().err, "what to give"
+
+    def test_the_work_items_read_key_a_kept_review(self, cli, demo_repo: Path, tmp_path: Path, capsys) -> None:
+        """The hand-off quotes them, so a kept review is served only for the same work items."""
+        cache, path = tmp_path / "cache", tmp_path / "w.json"
+        handoff = ("--handoff", str(tmp_path / "h.md"))
+        args = ("--profile", "rules-only", "--cache", str(cache), *handoff, "--work-items", str(path))
+        self._items(path, [self._item(1, **{"System.Title": "first"})])
+        run_review(cli, demo_repo, *args)
+        run_review(cli, demo_repo, *args)
+        assert "served from the cache" in capsys.readouterr().err, "the same work items: served"
+        self._items(path, [self._item(1, **{"System.Title": "second"})])
+        run_review(cli, demo_repo, *args)
+        assert "served from the cache" not in capsys.readouterr().err, "another work item: reviewed again"
+
+
 class TestWhatTheCommandTells:
     """Asked by the owner: a person at a terminal sees the review move, never a silence that reads as a hang. A
     pipeline's log stays empty unless the review finds an issue or fails."""

@@ -1007,6 +1007,7 @@ class FakeAdo:
     def __init__(self, azure, port: int) -> None:  # the front end's module, imported where a test runs
         self.pr = azure.PullRequest(f"http://127.0.0.1:{port}/contoso", "Web", "payments", 123)
         self.root = "/contoso/Web/_apis/git/repositories/payments/pullRequests/123"
+        self.project = "/contoso/Web/_apis"  # what `under=` names for a route of the project's, its work items'
         self.seen: list[Seen] = []
         self._answers: dict[tuple[str, str], list[tuple[int, dict[str, str], bytes, str]]] = {}
 
@@ -1020,18 +1021,22 @@ class FakeAdo:
         headers: dict[str, str] | None = None,
         raw: bytes | None = None,
         broken: str = "",
+        under: str | None = None,
     ) -> None:
         """What `method` on the pull request's `tail` answers: `""`, `"/iterations"`, `"/iterations/3/changes"`,
         `"/threads"`. Several answers for one route are served in turn, and the last one again after that. `broken`
         is how the answer fails on its way: `"cut"`, its body shorter than it says, or `"garbage"`, no HTTP at all,
-        as a proxy or a dropped line answers."""
+        as a proxy or a dropped line answers. `under` is the path `tail` follows where it is not the pull request's:
+        `project` for the work items'."""
         sent = raw if raw is not None else b"" if body is None else json.dumps(body).encode("utf-8")
-        self._answers.setdefault((method, self.root + tail), []).append((status, headers or {}, sent, broken))
+        route = (method, (self.root if under is None else under) + tail)
+        self._answers.setdefault(route, []).append((status, headers or {}, sent, broken))
 
     def instead(self, method: str, tail: str, body: object = None, **how: object) -> None:
         """What a route answers from now on, in place of what it answered: as the pull request stands after a
         post. `answer` adds to a route's turns, and a turn already served once is served again before a new one."""
-        self._answers.pop((method, self.root + tail), None)
+        under = how.get("under")
+        self._answers.pop((method, (self.root if under is None else str(under)) + tail), None)
         self.answer(method, tail, body, **how)
 
     def answered(self, seen: Seen) -> tuple[int, dict[str, str], bytes, str]:
