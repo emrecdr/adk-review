@@ -17,7 +17,7 @@ import subprocess
 import sysconfig
 import tempfile
 import threading
-from collections.abc import Callable, Generator, Iterable, Sequence
+from collections.abc import Callable, Generator, Iterable, Iterator, Sequence
 from contextlib import closing
 from dataclasses import replace
 from pathlib import Path, PurePath, PurePosixPath
@@ -33,6 +33,16 @@ RUFF_TIMEOUT_S = 60
 #: Ruff's answer is read a finding at a time, and past this many none is: what it named past them is a hole. Measured
 #: by review, three files of unary minus chains made ruff write 589 MB of JSON each, read whole: 90 s and 4.5 GB.
 RUFF_FINDINGS_MAX = 500_000
+
+
+#: The most characters one command line that runs ruff holds, its program's path among them: Windows holds a command
+#: line to 32,767. Read by an audit: every file's path on one line failed from about 2,230 Python files, and each rule
+#: that reads ruff was named as one whose file could not be written.
+ARGV_CHARS = 30_000
+
+
+class _UnrunError(Exception):
+    """Ruff could not start: its words are why."""
 
 
 class _FloodError(Exception):
@@ -102,6 +112,8 @@ def diagnose(
             _run(ruff, texts, select, ignore, line_length),
             lambda base: _run(ruff, base, select, ignore, line_length),
         )
+    except _UnrunError as exc:
+        return f"ruff could not run ({exc})"
     except OSError as exc:  # a disk that refuses the write: full, or read-only
         return f"a changed file could not be written to lint ({exc.strerror})"
     except _FloodError:
@@ -272,11 +284,36 @@ def _ruffed(
         argv = [ruff, "check", "--no-fix", "--no-cache", "--isolated", "--exit-zero", "--ignore-noqa"]
         argv += ["--select", ",".join(select), *(["--ignore", ",".join(ignore)] if ignore else [])]
         argv += ["--line-length", str(line_length)] if line_length else []
-        argv += ["--output-format", "json-lines", *targets]
+        argv += ["--output-format", "json-lines"]
         # Closed before the folder goes, a reader that stopped early stopping ruff: measured on Windows, which deletes
         # no file a process holds open, the folder's removal failed under a ruff still running, and its error was named.
-        with closing(_ruff(argv, tmp)) as answer:
+        with closing(_answers(_batches(argv, targets), tmp)) as answer:
             return _parsed(answer, sources)
+
+
+def _batches(argv: list[str], targets: Sequence[str]) -> Iterator[list[str]]:
+    """`argv` with `targets` after it, as many command lines as `ARGV_CHARS` asks, each holding at least one. The
+    index each file's folder carries names it in any batch, so the answers read back as one."""
+    room, batch, used = ARGV_CHARS - len(" ".join(argv)), [], 0
+    for target in targets:
+        if batch and used + len(target) + 1 > room:
+            yield [*argv, *batch]
+            batch, used = [], 0
+        batch.append(target)
+        used += len(target) + 1
+    if batch:
+        yield [*argv, *batch]
+
+
+def _answers(lines: Iterable[list[str]], cwd: str) -> Generator[str]:
+    """Ruff's answer over each command line in turn, one ruff at a time, and `_UnrunError` for one that cannot
+    start, never a file that could not be written."""
+    for argv in lines:
+        try:
+            with closing(_ruff(argv, cwd)) as answer:
+                yield from answer
+        except OSError as exc:
+            raise _UnrunError(exc.strerror or type(exc).__name__) from exc
 
 
 def laid_out(folder: str, texts: dict[str, str]) -> tuple[list[str], dict[str, Rows]]:

@@ -110,8 +110,10 @@ def _run(
     """Pyrefly over each file's text, written into a temporary directory: its diagnostics of `kinds` by path, or it
     raises for `diagnose` to name. A folder that will not go is left to the system's own cleaning, as ruff's is."""
     with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as tmp:
-        targets, sources = laid_out(tmp, texts)
-        errors = _errors(pyrefly, tmp, (".",), targets)
+        # No path given: the folder holds the files alone, and read by an audit, every file's path on one command
+        # line failed past Windows' 32,767 characters, from about 2,230 Python files.
+        _, sources = laid_out(tmp, texts)
+        errors = _errors(pyrefly, tmp, (".",))
     return _parsed(errors, sources, added, kinds)
 
 

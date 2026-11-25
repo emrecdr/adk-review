@@ -1319,6 +1319,40 @@ class TestTheLintRule:
         said = ruff.diagnose({"files": [{"path": "m.py", "text": "import os, sys, re, json\n"}]}, ("F401",), ())
         assert said == "ruff named more than 3 findings, and those past them were not read", said
 
+    def test_ruff_and_pyrefly_get_a_command_line_windows_can_hold(self, monkeypatch) -> None:
+        """Read by an audit, and reproduced at macOS's own limit: every file's path went on one command line, past
+        Windows' 32,767 characters from about 2,230 Python files, and lint, pitfalls, simplify and types each failed,
+        named as a file that could not be written. Ruff runs in batches under `ARGV_CHARS`, every finding kept, and one
+        that cannot start is named so; pyrefly is given no path, its folder holding the files alone."""
+        from adk_review.collect import pyrefly, ruff
+
+        monkeypatch.setattr(ruff, "ARGV_CHARS", 900)
+        widths: list[int] = []
+        real = ruff._ruff
+
+        def recorded(argv: list[str], cwd: str) -> Generator[str]:
+            widths.append(len(" ".join(argv)))
+            return real(argv, cwd)
+
+        monkeypatch.setattr(ruff, "_ruff", recorded)
+        files = [{"path": f"pkg/m{n}.py", "text": "import os\n"} for n in range(60)]
+        found = ruff.diagnose({"files": files}, ("F401",), ())
+        assert isinstance(found, dict) and sorted(found) == sorted(f["path"] for f in files), found
+        assert len(widths) > 1 and max(widths) <= 900, widths
+
+        def unstarted(_argv: list[str], _cwd: str) -> Generator[str]:
+            raise OSError(7, "Argument list too long")
+            yield ""  # a generator, as ruff's own is
+
+        monkeypatch.setattr(ruff, "_ruff", unstarted)
+        said = ruff.diagnose({"files": files[:1]}, ("F401",), ())
+        assert isinstance(said, str) and said.startswith("ruff could not run") and "too long" in said, said
+
+        asked: list[list[str]] = []
+        monkeypatch.setattr(pyrefly, "_answer", lambda argv, _cwd: asked.append(argv) or ('{"errors": []}', ""))
+        pyrefly._run("pyrefly", {f["path"]: f["text"] for f in files}, {}, frozenset())
+        assert asked and not [arg for arg in asked[0] if arg.endswith(".py")], asked[0]
+
     def test_ruffs_answer_is_read_back_to_each_files_own_path_and_lines(self) -> None:
         """Read from ruff's JSON lines alone, no ruff run: each hit under the path its folder's index names, however
         ruff spells the root, the line it names as the file holds it, none past the file's end, and ruff 0.12's null
