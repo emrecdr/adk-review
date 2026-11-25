@@ -3315,6 +3315,175 @@ class TestAzureDevOpsOnTheScreen:
             footer = app.query_one("Footer").region
         assert footer.y - (detail.y + 1) >= 1, (detail, footer)  # a row of words under the detail's top border
 
+    @pytest.mark.asyncio
+    async def test_the_pull_request_tab_holds_only_the_chosen_pull_requests_reads(
+        self, tmp_path: Path, fake_ado, monkeypatch
+    ) -> None:
+        """Read by an audit, and reproduced: once no pull request, or another, was chosen, the tab still listed the
+        last one's comments and said the hand-off quoted them, which Ctrl+Y copied; and a read that ended after the
+        change took the screen over to the tab, showing the pull request no longer chosen."""
+        import threading
+
+        from conftest import FakeToken
+        from textual.widgets import RichLog, Static, TabbedContent
+        from textual.worker import WorkerCancelled
+
+        from tui.azure_client import Client
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app._credential = FakeToken()
+            app._pull_request = fake_ado.pr
+            comment = {"author": {"displayName": "Jane"}, "content": "Fix the rounding", "commentType": "text"}
+            fake_ado.answer("GET", "/threads", {"value": [{"id": 1, "status": "active", "comments": [comment]}]})
+            fake_ado.answer("GET", "/workitems", {"value": []})
+            app._read_from_pull_request()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            read = list(app._pr_text)
+            app._read_pull_request("", keep=False)  # the field emptied: no pull request chosen
+            await pilot.pause()
+            cleared = (list(app._pr_text), len(app.query_one("#read-log", RichLog).lines))
+            status = str(app.query_one("#read-status", Static).render())
+            # A read that ends after the choice changed.
+            app._pull_request = fake_ado.pr
+            tabs = app.query_one("#output-tabs", TabbedContent)
+            tabs.active = "tab-report"
+            gate, real = threading.Event(), Client.open_threads
+
+            def held(client: Client) -> list:
+                gate.wait(5)
+                return real(client)
+
+            monkeypatch.setattr(Client, "open_threads", held)
+            app._read_from_pull_request()
+            await pilot.pause()
+            app._read_pull_request("", keep=False)
+            gate.set()
+            with contextlib.suppress(WorkerCancelled):
+                await app.workers.wait_for_complete()
+            await pilot.pause()
+            late = (tabs.active, list(app._pr_text))
+        assert any("Jane" in line for line in read), read
+        assert cleared == ([], 0) and "quotes" not in status, (cleared, status)
+        assert late == ("tab-report", []), late
+
+    @pytest.mark.asyncio
+    async def test_a_slow_read_of_an_earlier_target_never_lists_its_folders(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by an audit, and reproduced: a read of the change started for one head, and slower, ended after the
+        read for the head picked next, and the folder lists showed the earlier head's folders, which a tick would pass
+        as a `--path` the reviewed branch lacks."""
+        import time
+
+        from textual.widgets import Select, SelectionList
+
+        import tui.app as screen
+
+        repo = _repository(tmp_path / "workspace" / "payments", ("main",), "main")
+        for name, folder in (("feature/one", "alpha"), ("feature/two", "beta")):
+            _git(repo, "switch", "-q", "-c", name, "main")
+            (repo / folder).mkdir()
+            (repo / folder / "x.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
+            _git(repo, "add", ".")
+            _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", name)
+        _git(repo, "switch", "-q", "feature/one")
+        real = screen.read_change
+
+        def slow_for_one(path: str, base: str | None, head: str, mode: str = "branch"):
+            if head == "feature/one":
+                time.sleep(1.0)  # a larger change, read slower
+            return real(path, base, head, mode)
+
+        monkeypatch.setattr(screen, "read_change", slow_for_one)
+        app = screen.AdkReviewTuiApp(config_path=_screen_config(tmp_path, "fetch_on_select = false"))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            app.query_one("#mode-select", Select).value = "all"  # reads feature/one, slowly
+            await pilot.pause(0.1)
+            app._sync_chosen_branch("head", "feature/two")  # reads feature/two, at once
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.3)
+            labels = {
+                str(option.value): str(option.prompt) for option in app.query_one("#path-list", SelectionList)._options
+            }
+            head = app.selected_head
+        # A folder on disk is offered too, as `(repo folder)`: the earlier head's own change must not be listed.
+        assert head == "feature/two" and "changed" in labels.get("beta", ""), (head, labels)
+        assert "changed" not in labels.get("alpha", ""), labels
+
+    @pytest.mark.asyncio
+    async def test_a_pick_of_another_repository_names_none_of_the_last_ones_branches(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by an audit, and reproduced: while a picked repository's fetch ran, the command line named the last
+        repository's branch, and a mode changed meanwhile read that branch in the new repository and said it does not
+        exist there."""
+        import threading
+
+        from textual.widgets import Select, Static
+
+        import tui.app as screen
+        from tui.git_sync import FetchResult
+
+        gate = threading.Event()
+
+        def held(_repo: str, _timeout_s: float = 15, *, prune: bool = False) -> FetchResult:  # noqa: ARG001
+            gate.wait(15)
+            return FetchResult(ok=True, message="Fetched")
+
+        monkeypatch.setattr(screen, "fetch_remote", held)
+        _repository(tmp_path / "workspace" / "anotes", ("main", "feature/notes-x"), "feature/notes-x")
+        _repository(tmp_path / "workspace" / "payments", ("main", "release/2", "feature/orders"), "feature/orders")
+        app = screen.AdkReviewTuiApp(config_path=_screen_config(tmp_path))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            payments = next(project for project in app.projects if project.name == "payments")
+            app._on_project_chosen(payments)  # the person's pick: fetches, held
+            await pilot.pause(0.3)
+            during = (app.selected_head, str(app.query_one("#cli-preview", Static).render()))
+            app.query_one("#mode-select", Select).value = "all"
+            await pilot.pause(0.8)
+            banner = str(app.query_one("#status-banner", Static).render())
+            gate.set()
+            await app.workers.wait_for_complete()
+        assert during[0] == "" and "notes-x" not in during[1], during
+        assert "does not exist" not in banner, banner
+
+    @pytest.mark.asyncio
+    async def test_a_review_that_kept_findings_opens_on_them(self, tmp_path: Path) -> None:
+        """Read by an audit, and counted: after a review that kept findings, the Report tab showed and the focus stayed
+        on the repository's chip, the findings table nine keys away. It opens on the table, the first finding chosen."""
+        import json
+
+        from textual.widgets import DataTable, TabbedContent
+
+        found = [
+            {"check": "rule.lint", "file": "a.py", "line": 1, "severity": "major", "title": "finding 1",
+             "evidence": "+ x = 1", "suggestion": "Mend it.", "fingerprint": "1" * 16}
+        ]  # fmt: skip
+        report = json.dumps({"schema": 2, "verdict": "REQUEST_CHANGES", "findings": found,
+                             "reviewed": {"head_sha": "b" * 40}})  # fmt: skip
+
+        async def reviewed(command: list[str]) -> tuple[int, str]:
+            await asyncio.to_thread(Path(command[command.index("--json") + 1]).write_text, report, "utf-8")
+            return 1, "## Verdict: REQUEST_CHANGES\n"
+
+        app = _payments_screen(tmp_path)
+        app._stream_subprocess = reviewed
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await pilot.press("ctrl+r")
+            await _until(pilot, lambda: not app._reviewing, "the review ended")
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            shown = app.query_one("#output-tabs", TabbedContent).active
+            focused = app.focused is app.query_one("#findings-table", DataTable)
+            where = getattr(app.focused, "id", None)
+        assert shown == "tab-findings" and focused, (shown, where)
+
     def test_two_pull_requests_of_one_name_and_number_keep_two_files(self, tmp_path: Path) -> None:
         """Read by review: the file was named by the repository and the number alone, and two organizations' pull
         requests of one name, or of names that differ in case or punctuation alone, wrote one file, so one's hand-off

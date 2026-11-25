@@ -726,6 +726,10 @@ class AdkReviewTuiApp(App[int]):
             # branches, a repository set every option back to its preset, a switch turned on among them.
             self._repo_loaded_path = ""
             self.branches = []
+            # None of the last one's branches named while this one's fetch runs: read by an audit, the command line
+            # named them, and a mode changed meanwhile read the last head in this repository.
+            self.selected_head = self.selected_base = ""
+            self._update_cli_preview()
             self._forget_pull_request()
             if prev_path:
                 self._reset_outputs()
@@ -1021,11 +1025,12 @@ class AdkReviewTuiApp(App[int]):
         excl_list = self.query_one("#exclude-list", SelectionList)
         path_list.loading = True
         excl_list.loading = True
+        target = self._target()  # read by an audit: a slower read of an earlier head ended last, its folders listed
         try:
             change = await asyncio.to_thread(read_change, repo, base, head, self.selected_mode)
         finally:
             self._set_loading(False, path_list, excl_list)
-        if self._left(project, "#path-list", "#exclude-list"):
+        if self._left(project, "#path-list", "#exclude-list") or self._target() != target:
             return
         listed = {folder for folder, _label in change.folders}
         chosen_paths, chosen_excludes = self._path_selection_sets(project, path_list, excl_list, listed)
@@ -1041,7 +1046,7 @@ class AdkReviewTuiApp(App[int]):
             self._syncing_paths = False
         prev_file = baseline_path(repo, self.selected_base, self.selected_head, self.selected_mode)
         has_prev = await asyncio.to_thread(prev_file.is_file)
-        if self._left(project, "#output-tabs"):
+        if self._left(project, "#output-tabs") or self._target() != target:
             return
         prev_badge = "prior baseline available" if has_prev else "no prior baseline yet"
         # Asked by the owner: what a review would read, told before it runs, as the review's own collector reads it.
@@ -1331,7 +1336,8 @@ class AdkReviewTuiApp(App[int]):
             self.query_one("#base-list", OptionList).disabled = val != "branch"
             self.query_one("#head-list", OptionList).disabled = val == "staged"
             self._update_cli_preview()
-            self._refresh_folders_worker()
+            if self._listing_for is None:  # a listing in flight reads the change for the mode itself
+                self._refresh_folders_worker()
 
     @on(Select.Changed, "#profile-select")
     def _on_profile_changed(self, event: Select.Changed) -> None:
@@ -1418,6 +1424,8 @@ class AdkReviewTuiApp(App[int]):
         threads = await self._fetched(pr, "threads", client.open_threads, lambda read: threads_data(read, pr.web))
         items = await self._fetched(pr, "work-items", lambda: _work_items_read(client.work_items()), lambda got: got[0])
         work = None if items is None else items[1]
+        if pr != self._pull_request:  # another chosen meanwhile: its files kept, the screen left to the one chosen
+            return
         self._list_pull_request(pr, threads, work)
         if threads or (work and (work.items or work.unread)):
             self._switch_handoff_on()
@@ -1607,6 +1615,16 @@ class AdkReviewTuiApp(App[int]):
         if self._pull_request != before:  # the threads posted are a pull request's own: read and drawn for another
             self._refresh_posted()
             self._render_findings_table(keep=self._selected_finding)
+            self._clear_pull_request_tab()
+
+    def _clear_pull_request_tab(self) -> None:
+        """The Pull Request tab emptied, and a read in flight stopped, as the pull request chosen changes: read by an
+        audit, the last one's comments stayed listed, said to be quoted, and Ctrl+Y copied them."""
+        self.workers.cancel_group(self, "pr_read")
+        self._pr_text = []
+        if self._has_dom("#read-log", "#read-status"):
+            self.query_one("#read-log", RichLog).clear()
+            self.query_one("#read-status", Static).update("")
 
     def _forget_pull_request(self) -> None:
         """The address field emptied, as another repository is picked: its own comes back with its branches. Read
@@ -2064,7 +2082,14 @@ class AdkReviewTuiApp(App[int]):
         if not self._has_dom("#output-tabs"):  # read by the third code review: the screen closed as the report was read
             return
         self._report_says(stdout_text)
-        self.query_one("#output-tabs", TabbedContent).active = "tab-report"
+        tabs, table = self.query_one("#output-tabs", TabbedContent), self.query_one("#findings-table", DataTable)
+        # A review that kept findings opens on them, the table focused: read by an audit, and counted, it opened on the
+        # report, the focus on the repository's chip and the table nine keys away.
+        if decided is not None and table.row_count:
+            tabs.active = "tab-findings"
+            table.focus()
+        else:
+            tabs.active = "tab-report"
         # Read by an audit: at 80 by 24 the results got one row while the panels stayed open. Ctrl+O brings them back.
         # Read by a code review: a review refused, or a dry run, minimized the step to mend: only a report read does.
         if decided is not None:
