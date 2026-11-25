@@ -174,7 +174,7 @@ up; `--explain ID` names which. The checks, as `--list-checks` prints them:
 | `rule.private-patch` | file rule | minor | rules-only, full, demo | a test patches a private name | `judge/rules/private_patch.py` |
 | `rule.radius-types` | tree rule | major | default, default-rules, rules-only, full, code-review, demo | code the change left alone no longer type-checks | `judge/rules/radius_types.py` |
 | `rule.reviewer-instructions` | file rule | major | default, default-rules, rules-only, full, code-review, demo | text that tries to instruct the reviewing model | `judge/rules/reviewer_instructions.py` |
-| `rule.script-injection` | file rule | major | default, default-rules, rules-only, full, code-review, demo | a workflow script expands a value an outsider writes, such as a pull request's title | `judge/rules/script_injection.py` |
+| `rule.script-injection` | file rule | major | default, default-rules, rules-only, full, code-review, demo | a CI script expands a value an outsider writes, such as a pull request's title | `judge/rules/script_injection.py` |
 | `rule.secrets` | line rule | blocker | default, default-rules, push-history, rules-only, full, code-review, demo | a hard-coded credential | `judge/rules/secrets.py` |
 | `rule.sensitive-logging` | file rule | major | default, default-rules, rules-only, full, code-review, demo | a credential written to a log | `judge/rules/sensitive_logging.py` |
 | `rule.simplify` | file rule | minor | rules-only, full, simplify, code-review, demo | code ruff can write more simply | `judge/rules/simplify.py` |
@@ -513,13 +513,17 @@ and keeps it as a major.
 The workflow rules, `pinned-actions` and `script-injection`, read a workflow line by line, as YAML is written: a key
 with its value on its line, or on the line under it, plain or as a block. A spelling written only to hide the value
 passes them: a quoted escape, a tag such as `!!str`, or an anchor. YAML reads each as the same value, and the workflow
-is still in the diff, for a person and the guidelines. `reviewer-instructions` reads an order wrapped over lines from
-the line the change added: an order the base began on a line the change kept, and the change ends, is not named.
-`cognitive-complexity` weighs a function against the one of its name its file held: a function moved in from another
-file reads as new, and so does one renamed or moved and edited in one change. Where a change adds or removes a
-function of a name the file holds more than one of, a property's setter, a hard one beside a hard one is not named. `sensitive-logging` names a value on a line the change added: one under a call whose first line alone
-changed is not named, nor one logged through `print` or passed through a call on its way, other than a string's
-own `format`. A sum of two counts named as credentials are, `max_token + used_token`, is named: `+` joins strings too.
+is still in the diff, for a person and the guidelines. In an Azure pipeline, `azure-pipelines*.yml` or a file in the
+`.azure-pipelines` folder, `script-injection` names a commit's message pasted into a script with macro syntax,
+`$(Build.SourceVersionMessage)`: a squash merge makes a pull request's title that message. A pipeline under another
+path, a branch's name, and a task's input other than a script are not read there. `reviewer-instructions` reads an order
+wrapped over lines from the line the change added: an order the base began on a line the change kept, and the change
+ends, is not named. `cognitive-complexity` weighs a function against the one of its name its file held: a function moved
+in from another file reads as new, and so does one renamed or moved and edited in one change. Where a change adds or
+removes a function of a name the file holds more than one of, a property's setter, a hard one beside a hard one is not
+named. `sensitive-logging` names a value on a line the change added: one under a call whose first line alone changed is
+not named, nor one logged through `print` or passed through a call on its way, other than a string's own `format`. A sum
+of two counts named as credentials are, `max_token + used_token`, is named: `+` joins strings too.
 
 ## Before a push
 

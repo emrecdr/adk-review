@@ -358,7 +358,8 @@ The rules shipped with the reviewer are written as a project writes its own:
   workflow or an action running another action at a tag, a branch or a short SHA, which can be moved to other code after
   review, not its full commit SHA), `script-injection` (a workflow's script expanding a value an outsider writes, a pull
   request's title or a branch's name, which GitHub writes into the code before it runs, and a `pull_request_target`
-  job that checks out the pull request's own code), `hidden-text` (tag characters,
+  job that checks out the pull request's own code; in an Azure pipeline, a commit's message pasted into a
+  script), `hidden-text` (tag characters,
   bidirectional controls, and text smuggled in variation selectors, invisible operators or Hangul fillers, in any file),
   `sensitive-logging` (a Python value whose own name says secret, handed whole to a logging call on a line the change
   added) and `steering-files` (a change to a file another tool or agent obeys: a coding agent's instructions or

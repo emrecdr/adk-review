@@ -4818,6 +4818,37 @@ class TestTheShippedRules:
         called = "      - run: echo ${{ toJSON (github . head_ref) }}\n"
         assert lines_hit(rule, path, head + called) == [7], "and before a bracket"
 
+    def test_an_azure_pipeline_script_that_pastes_a_commits_message_is_named(self) -> None:
+        """Measured on 40 public Azure pipelines that name the commit's message: 15 pasted it into a script with macro
+        syntax, each open to a message that holds shell syntax, as a squash merge makes a pull request's title the main
+        branch's message, on the build that holds its secrets. The rest passed it through `env:`, a condition or a
+        task's own input, and are left alone; so is a branch's name, since a pull request's build runs its own YAML,
+        and a script's comment, since Azure keeps the message's first line alone."""
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules.script_injection import ScriptInjection
+
+        rule, head = ScriptInjection(), "trigger:\n- main\nsteps:\n"
+        named = {
+            "azure-pipelines.yml": '- script: echo "$(Build.SourceVersionMessage)"\n',
+            "azure-pipelines.yaml": '- bash: |\n    if [[ "$(Build.SourceVersionMessage)" =~ "hotfix/" ]]; then\n',
+            ".azure-pipelines/deploy.yml": '- pwsh: $commitMessage = "$(build.sourceversionmessage)"\n',
+            "azure-pipelines-release.yml": (
+                "- task: AzureCLI@2\n  inputs:\n    inlineScript: |\n      git tag -m '$(Build.SourceVersionMessage)'\n"
+            ),
+        }
+        for path, step in named.items():
+            assert lines_hit(rule, path, head + step), path
+        left = (
+            '- script: echo "$MSG"\n  env:\n    MSG: $(Build.SourceVersionMessage)\n',
+            "- script: make\n  condition: contains(variables['Build.SourceVersionMessage'], '[deploy]')\n",
+            "- task: GitHubRelease@1\n  inputs:\n    releaseNotes: $(Build.SourceVersionMessage)\n",
+            '- script: echo "$(Build.SourceBranchName)"\n',
+            "- bash: |\n    # $(Build.SourceVersionMessage)\n    make\n",
+        )
+        for step in left:
+            assert lines_hit(rule, "azure-pipelines.yml", head + step) == [], step
+        assert lines_hit(rule, "ci/build.yml", head + named["azure-pipelines.yml"]) == [], "known by its path alone"
+
     def test_a_comment_as_far_left_as_a_step_ends_neither_the_step_nor_the_key_above_it(self) -> None:
         """Read by an audit, and reproduced: a comment at the step's column or left of it, valid YAML that keeps the
         step whole, ended the step where the rule read it, so a `pull_request_target` checkout of the head passed; and

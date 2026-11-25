@@ -11,6 +11,20 @@ from ..rule_helpers import USES_KEY, USES_OPEN, ChangedFile, FileRule, Hit, Unre
 
 #: Where GitHub runs a step's script: a workflow, and an action's own metadata, whose composite steps run them too.
 READ = (".github/workflows/*.yml", ".github/workflows/*.yaml", "action.yml", "action.yaml")
+#: Where Azure Pipelines reads a pipeline, as `steering-files` knows one: `azure-pipelines.yml` unless a pipeline
+#: names another file, and by habit its templates under `.azure-pipelines/`.
+AZURE = ("azure-pipelines*.yml", "azure-pipelines*.yaml", ".azure-pipelines/")
+#: What Azure pastes into a script's text before the script runs, from whoever writes a commit: its message, in macro
+#: syntax, the name read whatever its case, as Azure reads one. A squash merge makes a pull request's title that
+#: message, on the main branch's build, which holds its secrets. Measured on 40 public pipelines that name it: 15
+#: pasted it into a script, each open to shell syntax; the rest passed it through `env:`, a condition or a task's own
+#: input. A branch's name is not among them: a pull request's build runs the pull request's own YAML.
+AZURE_UNTRUSTED = re.compile(r"\$\(build\.sourceversionmessage\)", re.IGNORECASE)
+#: The keys whose value Azure runs as a script: a step's `script:`, `bash:`, `pwsh:` and `powershell:`, and a task's
+#: `script:`, `inlineScript:` and `Inline:` inputs, as `SCRIPT` captures a key.
+AZURE_SCRIPT = re.compile(
+    r"""^(\s*(?:-\s+)?)(["']?)(script|bash|pwsh|powershell|inlinescript|inline)\2\s*:""", re.IGNORECASE
+)
 #: An expression naming a value whoever opens an issue, a pull request, a comment, a commit, a branch or a wiki page
 #: writes, as GitHub's guide to script injection names them: a title, a body, a message, a branch's name, an author's
 #: name or email; or `toJSON` of the whole context, the whole event or any part of an object they write, which writes
@@ -105,28 +119,37 @@ class ScriptInjection(FileRule):
     its head or the merge GitHub makes of it, the "pwn request" GitHub's guide names: read by validation, no rule named
     it. Named where the change added the trigger, the checkout or its `ref:`, the value on its key's line or on the
     lines under it; not read in a workflow too large to read whole, nor a checkout whose ref an expression builds from
-    another value, nor a name split over two lines at one of its dots."""
+    another value, nor a name split over two lines at one of its dots.
+
+    In an Azure pipeline, a commit's message Azure pastes into a script's text, `$(Build.SourceVersionMessage)`: a
+    squash merge makes a pull request's title that message, on the main branch's build and its secrets. Read by a
+    measurement of public pipelines, the one value an outsider writes that a pipeline pastes into a script often.
+    Not read there: a pipeline under another path, a branch's name, and a task's input other than a script."""
 
     id = "script-injection"
     severity = "major"
     reads_tests = True  # a workflow named `test_*.yml` is a test by its name, and runs with the job's secrets
     security = True  # a verifier may dispute its finding, never drop it
-    title = "a workflow script expands a value an outsider writes, such as a pull request's title"
+    title = "a CI script expands a value an outsider writes, such as a pull request's title"
     fix = 'Pass the value through `env:`. Quote the variable in the script, as `"$TITLE"`.'
     why = "A title with shell syntax runs as a command in CI, with the workflow's token and secrets."
     bad = (
         (".github/workflows/ci.yml", '      - run: echo "${{ github.event.pull_request.title }}"\n'),
         (".github/workflows/ci.yml", "        run: |\n          git checkout ${{ github.head_ref }}\n"),
         ("action.yml", "      with:\n        script: |\n          const body = `${{ github.event.issue.body }}`\n"),
+        ("azure-pipelines.yml", 'steps:\n- script: echo "$(Build.SourceVersionMessage)"\n'),
     )
     good = (
         (".github/workflows/ci.yml", "        env:\n          TITLE: ${{ github.event.pull_request.title }}\n"),
         (".github/workflows/ci.yml", '      - run: echo "${{ github.event.repository.name }}"\n'),
         (".github/workflows/ci.yml", "    if: ${{ github.head_ref == 'main' }}\n"),
         ("docs/ci.md", '- run: echo "${{ github.head_ref }}"\n'),
+        ("azure-pipelines.yml", 'steps:\n- script: echo "$MSG"\n  env:\n    MSG: $(Build.SourceVersionMessage)\n'),
     )
 
     def check(self, file: ChangedFile) -> list[tuple[int | None, str] | Hit]:
+        if matches(file.path, *AZURE):
+            return _pasted(file)
         if not matches(file.path, *READ):
             return []
         found: list[tuple[int | None, str] | Hit] = []
@@ -327,7 +350,23 @@ def _string_at(text: str, start: int, end: int, held: str) -> str:
     return held
 
 
-def _script_of(file: ChangedFile, number: int, line: str, held: dict[int, str | None]) -> str | None:
+def _pasted(file: ChangedFile) -> list[tuple[int | None, str] | Hit]:
+    """Each line an Azure pipeline's change adds that pastes a commit's message into a script, once a line. A script's
+    own comment is left alone: Azure keeps the message's first line, so it never leaves the comment."""
+    found: list[tuple[int | None, str] | Hit] = []
+    held: dict[int, str | None] = {}
+    for number in file.new_lines(*AZURE):
+        line = file.near(number) or ""
+        if line.lstrip().startswith("#") or not (named := AZURE_UNTRUSTED.search(line)):
+            continue
+        if _script_of(file, number, line, held, AZURE_SCRIPT) is not None:
+            found.append((number, f"`{named[0]}` is written into the script before it runs"))
+    return found
+
+
+def _script_of(
+    file: ChangedFile, number: int, line: str, held: dict[int, str | None], script: re.Pattern[str] = SCRIPT
+) -> str | None:
     """The key whose script line `number` is part of, `run` or `script`, or None: its own line's key, or any key YAML
     indents it under, which holds a script and nothing else, `defaults:`'s `run:` aside. Each line less indented than
     the last holds it, up to the top, and holds it through its key only where the key's name starts left of it: measured
@@ -335,7 +374,7 @@ def _script_of(file: ChangedFile, number: int, line: str, held: dict[int, str | 
     and `env:` beside a step's `- run:` is that step's own key, less indented only by the dash. A line beside one asked
     already, or holding it, is held by the same keys, so its answer, kept in `held`, is this one's: measured, 20,000
     lines of one block took 40 s, each walking past every line above it. None too where the diff shows no key."""
-    if (own := SCRIPT.match(line)) and not _defaults(file, number, own):
+    if (own := script.match(line)) and not _defaults(file, number, own):
         return own[3]
     answer, depth = None, _indent(line)
     for above in range(number - 1, 0, -1):
@@ -344,7 +383,7 @@ def _script_of(file: ChangedFile, number: int, line: str, held: dict[int, str | 
             break
         if not text.strip() or (indent := _indent(text)) > depth:  # a blank line, or one this line does not touch
             continue
-        if indent < depth and (key := SCRIPT.match(text)) and len(key[1]) < depth:
+        if indent < depth and (key := script.match(text)) and len(key[1]) < depth:
             answer = None if _defaults(file, above, key) else key[3]
             break
         if above in held:
