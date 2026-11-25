@@ -10,8 +10,9 @@ import functools
 import re
 from collections import defaultdict
 from collections.abc import Callable, Collection, Mapping, Sequence
+from pathlib import PurePosixPath
 
-from ..core.blast import PASSED_ON, Blast, blast_radius
+from ..core.blast import PASSED_ON, Blast, blast_radius, parse
 from ..core.evidence import Entry, Failure, entry
 from ..core.paths import in_scope, matches, no_such_path
 from ..core.rules import Tree, UnreadError, is_python_text
@@ -460,8 +461,35 @@ def _calls_shown(tree: Tree, file: str, function: str, sites: list[tuple[str, in
     return "\n".join(shown)
 
 
-def _span(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[int]:
-    """Every line a function is written on, its decorators' among them."""
+def touched_names(files: list[Entry]) -> set[str]:
+    """The names a change touched in its Python files: each function and class whose lines it added or between whose
+    lines it removed one, each it removed, and each module it moved or removed. What the head is read for first where
+    it cannot be read whole: a file that names one may call into what changed."""
+    names: set[str] = set()
+    for item in files:
+        old = item.get("old", item["path"])
+        if not (item["path"].endswith(".py") or old.endswith(".py")):
+            continue
+        if item["status"] in ("D", "R"):
+            names.add(PurePosixPath(old).stem)
+        names |= {found[1] for line in (item["diff"] or "").splitlines() if (found := _DEFINED.match(line))}
+        if item["status"] == "D" or (module := parse(item["text"] or "")) is None:
+            continue
+        lines = item["added_at"] | {line for line, raw in hunk_lines(item["diff"] or "") if raw[:1] == "-"}
+        names |= {
+            node.name
+            for node in ast.walk(module)
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) and lines & _span(node)
+        }
+    return names
+
+
+#: A definition on a line the change removed: its name, after `def`, `async def` or `class`.
+_DEFINED = re.compile(r"^-\s*(?:async\s+def|def|class)\s+(\w+)")
+
+
+def _span(node: ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) -> set[int]:
+    """Every line a function or a class is written on, its decorators' among them."""
     first = min([decorator.lineno for decorator in node.decorator_list] + [node.lineno])
     return set(range(first, (node.end_lineno or node.lineno) + 1))
 

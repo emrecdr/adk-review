@@ -1162,7 +1162,10 @@ by itself; a review whose profile names a guideline does.
   graph is a floor of what a change reaches, since a module loaded by name, a subprocess, a web route or a plugin
   registry is invisible to it. Where the head was not read whole — a file the parser refused, one past a cap, a tree
   that could not be listed — every count says it is a floor, and only a rule that asks for an unread file by name is a
-  hole. The read takes the changed files first, within its budget, so a change past it is still measured. The head is
+  hole. The read takes the changed files first, within its budget, so a change past it is still measured, and where
+  the budget cannot hold every Python file, those that name what the change touched next, by one `git grep`: measured
+  on LiteLLM's 37.5 MB, path order named 46 of the 151 broken calls and type errors a signature change caused, this
+  order 150. The head is
   read whole only for what reads it, a tree rule that needs it for the change or a guideline; with neither, as under
   `default-rules` for a change that alters no function's parameters, the report shows no radius, which is neither a
   hole nor a leaf. For a guideline alone it is read only when a changed file is Python, all the radius measures:

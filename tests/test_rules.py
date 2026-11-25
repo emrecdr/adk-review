@@ -2797,6 +2797,29 @@ class TestTheCallersRule:
         ]
         assert self.found(files, {"pkg/repo.py": {2}}) == [], "a body changed, never the parameters: nothing to check"
 
+    def test_a_caller_past_the_tree_budget_is_read_first_when_it_names_the_function(
+        self, cli, tmp_path: Path, capsys, monkeypatch
+    ) -> None:
+        """Read by an audit, and measured on LiteLLM's 37.5 MB of Python: past the 20 MB budget the head was read in
+        path order after the changed files, and about 70% of the calls a changed signature broke, in files past it,
+        were never named, the review approving. A file that names a function the change touched is read next."""
+        from adk_review.collect import git
+
+        filler = {f"aa/m{n:03}.py": f"VALUE_{n} = {'x' * 400!r}\n" for n in range(30)}
+        before = {
+            "pkg/__init__.py": "",
+            "pkg/api.py": "def fetch(uid):\n    return uid\n",
+            "zz/uses.py": "from pkg.api import fetch\n\nfetch(3)\n# " + "y" * 1_000 + "\n",  # past what is left
+            **filler,
+        }
+        repo = branched(tmp_path, before, {"pkg/api.py": "def fetch(uid, region):\n    return uid, region\n"})
+        monkeypatch.setattr(git, "MAX_TREE_BYTES", 5_000)  # the filler alone is past it
+        code = cli.main(
+            [str(repo), "--head", "change", "--base", "main", "--check", "rule.callers", "--fail-on", "major"]
+        )
+        out = capsys.readouterr().out
+        assert code == 1 and "zz/uses.py" in out, out
+
     def test_a_call_in_a_notebook_that_holds_ipython_lines_is_named(self) -> None:
         """Reproduced by review: one `%pip` line made a notebook unparsed, and the tree rules skipped it in silence,
         so a call the change broke in it went unnamed while its could-not-look stayed empty. A line Python cannot

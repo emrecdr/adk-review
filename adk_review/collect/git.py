@@ -47,6 +47,7 @@ from .change import (
     pointer_text,
     radius,
     shown_to_guidelines,
+    touched_names,
     widens,
 )
 from .diff import (
@@ -880,6 +881,7 @@ def tree_at_head(
     listing: list[tuple[str, str, str, str, str]] | None,
     third_party: Sequence[str] = (),
     first: Collection[str] = (),
+    touched: Sequence[Entry] = (),
 ) -> Tree | None:
     """The head's tree: every path, every Python file read and parsed once, and the Python files not read; None when
     the tree could not be listed.
@@ -892,7 +894,9 @@ def tree_at_head(
     `head_listing`'s, taken once for the tree and the texts: a tree git could not list is None here too, never listed
     a second time. A module under a folder `third_party` names is another project's: listed, never read or parsed.
     The files the change touched, `first`, are read first, within the same budget: measured on litellm's 2,776 files,
-    read in path order a changed file fell past the budget, and the radius and the tree rules lost it.
+    read in path order a changed file fell past the budget, and the radius and the tree rules lost it. Where the
+    budget cannot hold every Python file, those that name what the `touched` files' change touched come next: read by
+    an audit on the same project, in path order about 70% of the calls a changed signature broke were never named.
     """
     if listing is None:
         return None
@@ -902,7 +906,29 @@ def tree_at_head(
         for path, sha, size in _plain(listing)
         if path.endswith(".py") and not matches(path, *third_party)
     ]
-    return Tree(paths, *_texts(resolved, sorted(python, key=lambda blob: blob[0] not in first)))
+    sized = sum(int(size) for _path, _sha, size in python if size.isdigit())
+    naming = _naming(resolved, touched_names(list(touched))) if sized > MAX_TREE_BYTES else set()
+    order = sorted(python, key=lambda blob: (blob[0] not in first, blob[0] not in naming))
+    return Tree(paths, *_texts(resolved, order))
+
+
+#: The most names one search for the files that name what a change touched asks for: past it, order helps no more.
+NAMES_ASKED = 200
+
+
+def _naming(resolved: dict, names: Collection[str]) -> set[str]:
+    """The Python files at the head that name one of `names` as a whole word, read next after the changed files where
+    the head is read in part; none where nothing is asked, under `--staged`, or where git cannot say, the order then
+    the path's, as before. One read-only search, whatever the tree's size: 0.3 s over 37.5 MB, measured."""
+    if not names or resolved.get("staged"):
+        return set()
+    asked = [arg for name in sorted(names)[:NAMES_ASKED] for arg in ("-e", name)]
+    try:
+        grep = ("grep", "-l", "-z", "-w", "-F", *asked, resolved["head_sha"], "--", "*.py")
+        _, said = _git(resolved["repo"], *grep, ok=(0, 1), strip=False)
+    except GitError:
+        return set()
+    return {found.split(":", 1)[1] for found in said.split("\0") if ":" in found}  # `<commit>:<path>`, NUL ended
 
 
 def _plain(listing: list[tuple[str, str, str, str, str]]) -> Iterator[tuple[str, str, str]]:
@@ -1268,7 +1294,8 @@ def gather(
     # changed Python files alone. The changed files' own texts are read either way, for the file rules.
     wanted = tree_rules(files) if callable(tree_rules) else tree_rules
     read = wanted or (guidelines and any(Radius(entry["path"]).measured for entry in files))
-    tree = tree_at_head(resolved, listing, third_party, {entry["path"] for entry in files}) if read else None
+    changed = {entry["path"] for entry in files}
+    tree = tree_at_head(resolved, listing, third_party, changed, files) if read else None
     if guidelines:
         _links_unread(files, excluded, lambda path: in_review(path, scan, third_party))
     return {
