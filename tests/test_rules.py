@@ -716,6 +716,24 @@ class TestTheSecretShapes:
         for path, line in quiet.items():
             assert lines_hit(NamedSecrets(), path, line) == [], path
 
+    def test_named_secrets_reads_a_files_path_once_whatever_its_lines(self, monkeypatch) -> None:
+        """Measured by an audit on an 8,843-file `--all` review: the rule asked of every added line whether its file is
+        a test's, three patterns each: 7.47M searches, 11.3 s of 55.6. Asked once a path: 2.8 s, the same findings."""
+        from adk_review.judge.rule_helpers import lines_hit
+        from adk_review.judge.rules import named_secrets
+
+        searched: list[str] = []
+        pattern = named_secrets._ENV_FILE
+
+        class Counted:
+            def search(self, text: str) -> re.Match[str] | None:
+                searched.append(text)
+                return pattern.search(text)
+
+        monkeypatch.setattr(named_secrets, "_ENV_FILE", Counted())
+        lines_hit(named_secrets.NamedSecrets(), "pkg/read_once_a_path.py", "x = 1\n" * 50)
+        assert len(searched) <= 1, len(searched)
+
     def test_named_secrets_reads_a_test_environments_config(self) -> None:
         """Read by review: any file in a folder named `test` read as a test's, so a password in `deploy/test/db.env`, an
         environment's config, passed `named-secrets`, in the review and in the pre-push hook's history alike. A test's

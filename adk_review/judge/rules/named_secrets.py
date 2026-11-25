@@ -24,6 +24,7 @@ flagged, for every format at once.
 
 from __future__ import annotations
 
+import functools
 import re
 
 from ..rule_helpers import (
@@ -58,6 +59,7 @@ _TEST_NAME = re.compile(
 WRITTEN_MAX_CHARS = 1_000
 
 
+@functools.lru_cache(maxsize=4_096)  # asked once a path: measured, once a line was 11.3 s of a large review's 55.6
 def _tests_own(path: str) -> bool:
     """Whether `path` is a test's own, its password a fixture's: a file under a suite's folder, or named as a test.
     Never an env file: an environment's config even in a folder named `test`."""
