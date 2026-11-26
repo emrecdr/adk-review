@@ -426,6 +426,7 @@ class AdkReviewTuiApp(App[int]):
         # The last lines the running review said on its error stream, its reason where it ends with no report.
         self._said: deque[str] = deque(maxlen=NO_REPORT_LINES)
         self._pull_request: PullRequest | None = None  # the address field's, where it reads as one
+        self._address_read = ""  # the address field's text as last read: a paste puts more than one character past it
         self._pull_request_of: tuple[str, str] | None = None  # the repository and branch the field was restored for
         self._kept_address: str = ""  # what the state holds for that pair, so it is written when it changes alone
         self._posted_threads: dict[str, int] = {}  # the pull request's posted findings, read when it changes
@@ -1339,7 +1340,9 @@ class AdkReviewTuiApp(App[int]):
             self.query_one("#base-list", OptionList).disabled = val != "branch"
             self.query_one("#head-list", OptionList).disabled = val == "staged"
             self._update_cli_preview()
-            if self._listing_for is None:  # a listing in flight reads the change for the mode itself
+            # A listing reads the change for the mode itself until its branch is chosen, and no later: read by an
+            # audit, a mode chosen after its read began was never read, that read being dropped as stale.
+            if self._listing_for is None or self.selected_head:
                 self._refresh_folders_worker()
 
     @on(Select.Changed, "#profile-select")
@@ -1387,7 +1390,11 @@ class AdkReviewTuiApp(App[int]):
 
     @on(Input.Changed, "#pr-url")
     def _on_pull_request_typed(self, event: Input.Changed) -> None:
-        self._read_pull_request(event.value, keep=True)
+        self._read_pull_request(event.value, keep=True, tell=len(event.value) - len(self._address_read) > 1)
+
+    @on(Input.Submitted, "#pr-url")
+    def _on_pull_request_entered(self, event: Input.Submitted) -> None:
+        self._read_pull_request(event.value, keep=True, tell=True)
 
     def get_system_commands(self, screen: Screen) -> Iterable[SystemCommand]:
         """Textual's own commands in its palette, Ctrl+P, and one to open a pull request, as the button does."""
@@ -1593,11 +1600,12 @@ class AdkReviewTuiApp(App[int]):
     def _on_findings_tab(self) -> bool:
         return self._has_dom("#output-tabs") and self.query_one("#output-tabs", TabbedContent).active == "tab-findings"
 
-    def _read_pull_request(self, text: str, *, keep: bool) -> None:
+    def _read_pull_request(self, text: str, *, keep: bool, tell: bool = False) -> None:
         """The address field read: the pull request it names, or the sentence that says what to paste. A whole
         address is kept for the repository and branch chosen, as Azure DevOps shows it and never as pasted, which can
-        hold a credential; an emptied field forgets it, and a wrong one keeps what was kept."""
-        before = self._pull_request
+        hold a credential; an emptied field forgets it, and a wrong one keeps what was kept. Where `tell`, as on a
+        paste or Enter, a refusal is told whole too: read by an audit, the one-row bar showed "This is not a pull"."""
+        before, self._address_read = self._pull_request, text
         pasted, said, self._pull_request = text.strip(), "", None
         if pasted:
             try:
@@ -1605,6 +1613,8 @@ class AdkReviewTuiApp(App[int]):
                 said = f"Pull request {self._pull_request.number} of {self._pull_request.repository}."
             except ValueError as refused:
                 said = str(refused)
+                if tell:
+                    self.notify(said, severity="warning", timeout=8, markup=False)
         self.query_one("#pr-status", Static).update(said)
         # Kept for the pair the field was put back for, and for no other. Reproduced by review: after a pick the
         # repository is the new one while the branch is still the last one's, for the whole fetch, and a paste then

@@ -246,16 +246,22 @@ ModalScreen > Vertical {
     text-style: bold;
     margin-bottom: 1;
 }
-#comment-replaced {
-    max-height: 14;
-    color: $text-muted;
+#comment-replaced-box {
+    height: auto;
+    max-height: 40%;
     border-left: solid $primary;
     padding: 0 1;
     margin-bottom: 1;
 }
+#comment-replaced {
+    color: $text-muted;
+}
 #comment-text {
     height: 1fr;
-    min-height: 6;
+    min-height: 3;
+}
+#comment-dialog > #modal-buttons {
+    dock: bottom;
 }
 #modal-buttons {
     height: 3;

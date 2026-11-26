@@ -6,7 +6,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import ClassVar
 
-from textual import on
+from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding, BindingType
 from textual.containers import Horizontal, Vertical, VerticalScroll
@@ -103,6 +103,15 @@ class OpenPullRequestModal(ModalScreen[str | PullRequest | None]):
         if choices and not self.query_one("#open-pr-url", Input).value.strip():
             options.highlighted = 0
             options.focus()
+
+    def on_paste(self, event: events.Paste) -> None:
+        """A paste anywhere in the dialog lands in its address field. Read by an audit, and reproduced: once the list
+        took the focus, a paste went to it and was dropped, and Enter opened the pull request listed first."""
+        field = self.query_one("#open-pr-url", Input)
+        if not field.has_focus:
+            event.stop()
+            field.focus()
+            field.insert_text_at_cursor(event.text)
 
     @on(OptionList.OptionSelected, "#open-pr-list")
     def _picked(self, event: OptionList.OptionSelected) -> None:
@@ -218,7 +227,10 @@ class CommentModal(ModalScreen[tuple[bool, str]]):
             shown = [*lines, *([f"({more} more lines)"] if more > 0 else [])]
             said = "Your comment stands on these lines. A suggestion block replaces them when its author applies it."
             yield Static(said, id="comment-replaces", markup=False)
-            yield Static("\n".join(shown), id="comment-replaced", markup=False)
+            # In a box that scrolls, so a small screen keeps the buttons and a large one cuts no line in silence:
+            # read by an audit, at 80 by 24 the lines pushed Post, Copy and Cancel out of the dialog.
+            with VerticalScroll(id="comment-replaced-box"):
+                yield Static("\n".join(shown), id="comment-replaced", markup=False)
             yield TextArea(self.text, id="comment-text")
             with Horizontal(id="modal-buttons"):
                 yield Button("Post", id="btn-comment-post", variant="primary")

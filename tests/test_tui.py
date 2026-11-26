@@ -3484,6 +3484,53 @@ class TestAzureDevOpsOnTheScreen:
             where = getattr(app.focused, "id", None)
         assert shown == "tab-findings" and focused, (shown, where)
 
+    @pytest.mark.asyncio
+    async def test_a_mode_chosen_while_a_repository_loads_lists_its_own_folders(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        """Read by an audit, and reproduced: a mode chosen while a picked repository's change was read was never read
+        again, that read being dropped as stale, and the last repository's folders stayed listed and ticked, the
+        review run with a `--path` the new repository lacks."""
+        import threading
+
+        from textual.widgets import Select, SelectionList
+
+        import tui.app as screen
+
+        for name, branch, folder in (("alpha", "feature/a", "olda"), ("beta", "feature/b", "newb")):
+            repo = _repository(tmp_path / "workspace" / name, ("main",), "main")
+            _git(repo, "switch", "-q", "-c", branch, "main")
+            (repo / folder).mkdir()
+            (repo / folder / "x.py").write_text("x = 1\n", encoding="utf-8", newline="\n")
+            _git(repo, "add", ".")
+            _git(repo, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "-m", name)
+        real, gate, entered = screen.read_change, threading.Event(), threading.Event()
+
+        def held_for_beta(path: str, base: str | None, head: str, mode: str = "branch"):
+            if Path(path).name == "beta" and not gate.is_set():
+                entered.set()
+                gate.wait(10)
+            return real(path, base, head, mode)
+
+        monkeypatch.setattr(screen, "read_change", held_for_beta)
+        app = screen.AdkReviewTuiApp(config_path=_screen_config(tmp_path, "fetch_on_select = false"))
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            await app.workers.wait_for_complete()
+            path_list = app.query_one("#path-list", SelectionList)
+            path_list.select("olda")
+            await pilot.pause()
+            app._on_project_chosen(next(project for project in app.projects if project.name == "beta"))
+            await _until(pilot, entered.is_set, "beta's change being read")
+            app.query_one("#mode-select", Select).value = "all"
+            await pilot.pause(0.3)
+            gate.set()
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.3)
+            listed = [str(option.value) for option in path_list._options]
+            chosen = app.current_selection(dry_run=False).paths
+        assert "newb" in listed and "olda" not in listed and chosen == (), (listed, chosen)
+
     def test_two_pull_requests_of_one_name_and_number_keep_two_files(self, tmp_path: Path) -> None:
         """Read by review: the file was named by the repository and the number alone, and two organizations' pull
         requests of one name, or of names that differ in case or punctuation alone, wrote one file, so one's hand-off
@@ -3561,6 +3608,39 @@ class TestAzureDevOpsOnTheScreen:
             banner = str(app.query_one("#status-banner", Static).render())
         assert one_at_a_time == [], len(one_at_a_time)
         assert "No repository matches 'zzz'" in banner, banner
+
+    @pytest.mark.asyncio
+    async def test_an_address_pasted_after_the_list_fills_is_the_one_opened(
+        self, tmp_path: Path, fake_ado, monkeypatch
+    ) -> None:
+        """Read by an audit, and reproduced: once the list took the focus, a paste went to it and was dropped, and
+        Enter opened the pull request listed first, never the one pasted."""
+        from conftest import FakeToken
+        from textual import events
+        from textual.widgets import Input
+
+        import tui.app as screen
+
+        monkeypatch.setattr(screen, "ORIGIN", fake_ado.pr.origin.rsplit("/", 1)[0] + "/{}")
+        app = screen.AdkReviewTuiApp(config_path=_two_clones(tmp_path))
+        opened: list = []
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app._credential = FakeToken()
+            monkeypatch.setattr(app, "_open_pull_request", opened.append)
+            item = {"pullRequestId": 999, "title": "Newest", "creationDate": "2026-11-20T00:00:00Z",
+                    "repository": {"name": "payments", "project": {"name": "Web"}},
+                    "createdBy": {"displayName": "Jane"}}  # fmt: skip
+            fake_ado.answer("GET", "/git/pullrequests", {"value": [item]}, under=fake_ado.project)
+            app._ask_for_pull_request()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            app.post_message(events.Paste("https://dev.azure.com/contoso/Web/_git/payments/pullrequest/57"))
+            await pilot.pause()
+            field = app.screen.query_one("#open-pr-url", Input).value
+            await pilot.press("enter")
+            await pilot.pause()
+        assert field.endswith("/pullrequest/57") and [pr.number for pr in opened] == [57], (field, opened)
 
     @pytest.mark.asyncio
     async def test_the_open_dialog_works_by_keys_alone(self, tmp_path: Path, fake_ado, monkeypatch) -> None:
@@ -3777,6 +3857,31 @@ class TestAzureDevOpsOnTheScreen:
             await _wait_for_branches(again, pilot)
             assert again.query_one("#pr-url", Input).value == PR_ADDRESS
             assert again._pull_request is not None and again._pull_request.number == 123
+
+    @pytest.mark.asyncio
+    async def test_a_wrong_address_pasted_is_told_whole_where_the_bar_cuts_it(self, tmp_path: Path) -> None:
+        """Read by an audit, and reproduced: the address bar is one row, and its answer to a wrong address showed as
+        "This is not a pull", the address to paste never in view. A paste, or Enter, tells it whole; a key typed
+        does not, so an address typed by hand raises no notice at each key."""
+        from textual import events
+        from textual.widgets import Input
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _wait_for_branches(app, pilot)
+            said: list[str] = []
+            app.notify = _plainly(said)
+            app.query_one("#pr-url", Input).focus()
+            await pilot.press("h")
+            typed = list(said)
+            app.post_message(events.Paste("https://github.com/contoso/payments/pull/1"))
+            await pilot.pause()
+            pasted = list(said)
+            await pilot.press("enter")
+            await pilot.pause()
+        assert typed == [], typed
+        assert len(pasted) == 1 and "pullrequest/<number>" in pasted[0], pasted
+        assert len(said) == 2 and said[1] == pasted[0], said
 
     @pytest.mark.asyncio
     async def test_a_wrong_address_shows_what_to_paste_and_keeps_nothing(self, tmp_path: Path) -> None:
@@ -4011,6 +4116,38 @@ def _billing(app):  # the second repository, as the screen lists it
 
 class TestACommentOnThePullRequest:
     """`c`: the draft, the person's edit, a confirmation, and one post, to the file's line in the pull request."""
+
+    @pytest.mark.parametrize(("size", "spans"), [((80, 24), 3), ((80, 24), 12), ((100, 30), 12), ((140, 45), 12)])
+    @pytest.mark.asyncio
+    async def test_the_editors_buttons_and_some_of_its_text_show_on_a_small_screen(
+        self, tmp_path: Path, size: tuple[int, int], spans: int
+    ) -> None:
+        """Read by an audit, and measured: at 80 by 24 the lines a finding replaces pushed Post, Copy and Cancel out
+        of the dialog, none of their rows in view for 12 lines, and at 100 by 30 too. The buttons stay at its foot,
+        the editor keeps rows to type in, and no replaced line is cut where it cannot be scrolled to."""
+        from textual.widgets import Button
+
+        from tui.modals import CommentModal
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=size) as pilot:
+            await _wait_for_branches(app, pilot)
+            lines = [f"    total = price * rate  # line {n}" for n in range(1, spans + 1)]
+            app.push_screen(CommentModal("**major**: Round the tax", f"src/app.py, lines 1 to {spans}", lines))
+            await _shown(app, pilot, CommentModal)
+            await pilot.pause()
+            inside = app.screen.query_one("#comment-dialog").region.shrink((1, 1, 1, 1))  # within its border
+            hidden = [
+                name
+                for name in ("#btn-comment-post", "#btn-comment-copy", "#btn-comment-cancel")
+                if inside.intersection(region := app.screen.query_one(name, Button).region) != region
+            ]
+            editor = app.screen.query_one("#comment-text").region.intersection(inside)
+            rows = min(editor.bottom, app.screen.query_one("#modal-buttons").region.y) - editor.y
+            text = app.screen.query_one("#comment-replaced")
+            replaced, scrolls = text.region.height, getattr(text.parent, "max_scroll_y", 0)
+        assert hidden == [] and rows >= 3, (hidden, rows)
+        assert replaced >= spans or scrolls > 0, (replaced, scrolls)
 
     @pytest.mark.asyncio
     async def test_c_opens_the_draft_and_cancel_sends_nothing(self, tmp_path: Path, fake_ado) -> None:
