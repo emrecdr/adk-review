@@ -4088,6 +4088,19 @@ async def _until(pilot, done, what: str):  # what `done()` gives once it holds
     raise AssertionError(what)
 
 
+async def _stop(app, pilot) -> None:
+    """Stop pressed, and waited for until the screen says its run stopped. Waiting for a worker Stop cancelled raises
+    `WorkerCancelled`: measured on a Windows runner, where the cancel had not ended as the wait began, three tests
+    failed that passed on macOS and Linux."""
+    from textual.worker import WorkerCancelled
+
+    await pilot.press("ctrl+x")
+    await _until(pilot, lambda: not app._reviewing, "the run stopped")
+    with contextlib.suppress(WorkerCancelled):
+        await app.workers.wait_for_complete()
+    await pilot.pause()
+
+
 async def _shown(app, pilot, kind):  # a dialog, ready for a click
     """Until a dialog of `kind` is the screen and built. Textual makes a dialog the screen before it builds its widgets:
     reproduced by reading a file's lines late, as a loaded machine does, a test that clicked in between found no
@@ -5466,10 +5479,7 @@ class TestWhatAReviewLeavesOnTheScreen:
             monkeypatch.setattr(app, "_stream_subprocess", real)
             await pilot.press("ctrl+r")
             await _until(pilot, lambda: app._said, "the run's first line")
-            await pilot.press("ctrl+x")
-            await pilot.pause()
-            await app.workers.wait_for_complete()
-            await pilot.pause()
+            await _stop(app, pilot)
             copied = app.last_report_md
             report = "\n".join(line.text for line in app.query_one("#report-log", RichLog).lines)
         assert "FIRST REPORT" not in copied and "stopped" in copied, copied
@@ -5502,9 +5512,7 @@ class TestWhatAReviewLeavesOnTheScreen:
             await pilot.press("ctrl+r")
             await _until(pilot, started.is_set, "the run started")
             app.selected_head = "feature/tax"  # another target, picked while the review runs
-            await pilot.press("ctrl+x")
-            await app.workers.wait_for_complete()
-            await pilot.pause()
+            await _stop(app, pilot)
             stopped = app.last_report_md, str(app.query_one("#status-banner", Static).render())
 
             async def fails(_cmd: list[str]) -> tuple[int, str]:
@@ -5901,10 +5909,7 @@ class TestWhatTheSecondCodeReviewFound:
             monkeypatch.setattr(screen, "save_repo_preset", slow)
             await pilot.press("ctrl+r")
             await _until(pilot, saving.is_set, "the choices being saved")
-            await pilot.press("ctrl+x")
-            await pilot.pause()
-            await app.workers.wait_for_complete()
-            await pilot.pause()
+            await _stop(app, pilot)
             copied = app.last_report_md
             released.set()  # read by the third simplify pass: the thread waited out its 2 s in every run
         assert "FIRST REPORT" not in copied and "stopped" in copied, copied

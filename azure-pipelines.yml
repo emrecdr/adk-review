@@ -20,8 +20,9 @@ jobs:
           vmImage: macos-latest
     pool:
       vmImage: $(vmImage)
-    # A hung git once hung a review, and the hosted agents' own limit is sixty minutes.
-    timeoutInMinutes: 20
+    # A hung git once hung a review, and the hosted agents' own limit is sixty minutes. Measured on GitHub's Windows
+    # runner, the suite took 13 to 19.5 minutes, and a job of 20 was cancelled after the tests ended.
+    timeoutInMinutes: 30
     steps:
       # Read-only: the pipeline checks, and writes nothing back; the checkout keeps no token, the default.
       - checkout: self
