@@ -4149,6 +4149,47 @@ class TestACommentOnThePullRequest:
         assert hidden == [] and rows >= 3, (hidden, rows)
         assert replaced >= spans or scrolls > 0, (replaced, scrolls)
 
+    @pytest.mark.parametrize("kind", ["sync", "open", "diverged", "explain", "comment", "confirm"])
+    @pytest.mark.asyncio
+    async def test_every_dialogs_buttons_show_on_an_80_by_24_screen(self, tmp_path: Path, kind: str) -> None:
+        """Read by two audits: on an 80 by 24 screen the findings detail, the comment editor's buttons and the address
+        bar's answer were each cut, and each was found by hand. Every dialog, given long content, keeps each of its
+        buttons whole inside it."""
+        from textual.widgets import Button
+
+        from tui import modals
+        from tui.azure import PullRequest
+        from tui.git_sync import SyncStatus
+
+        long_branch = "feature/" + "a-long-branch-name-" * 4
+        status = SyncStatus("behind", long_branch, "origin/" + long_branch, ahead=3, behind=7)
+        target = "src/payments/" + "deep/" * 12 + "tax.py, lines 10 to 40, pull request 12345 of payments"
+        built = {
+            "sync": lambda: modals.SyncBranchModal("head", status),
+            "open": modals.OpenPullRequestModal,
+            "diverged": lambda: modals.DivergedBranchModal("head", status),
+            "explain": lambda: modals.ExplainCheckModal("rule.lint"),
+            "comment": lambda: modals.CommentModal("**major**: " + "word " * 80, target, ["    x = 1"] * 30),
+            "confirm": lambda: modals.ConfirmPostModal(target),
+        }
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(80, 24)) as pilot:
+            await _wait_for_branches(app, pilot)
+            dialog = built[kind]()
+            app.push_screen(dialog)
+            await _shown(app, pilot, type(dialog))
+            if kind == "open":
+                pr = PullRequest("https://dev.azure.com/contoso", "Web", "payments", 7)
+                dialog.listed([("payments #7 " + "a long title " * 8, pr)] * 8, "Eight open pull requests.")
+            await pilot.pause()
+            frame = app.screen.children[0].region.shrink((1, 1, 1, 1))  # within the dialog's border
+            cut = [
+                str(button.label)
+                for button in app.screen.query(Button)
+                if frame.intersection(button.region) != button.region
+            ]
+        assert cut == [], (kind, cut)
+
     @pytest.mark.asyncio
     async def test_c_opens_the_draft_and_cancel_sends_nothing(self, tmp_path: Path, fake_ado) -> None:
         pytest.importorskip("textual")

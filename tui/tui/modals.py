@@ -156,9 +156,11 @@ class DivergedBranchModal(ModalScreen[str]):
         with Vertical(id="modal-dialog"):
             yield Label("Diverged Branch Detected", classes="chain-title")
             yield Static(msg, markup=False)
+            # The branches are named in full above, never on the buttons: read by a test of every dialog, two names
+            # of about 25 characters put the buttons past the dialog's edge, at any size of screen.
             with Horizontal(id="modal-buttons"):
-                yield Button(f"Local ({s.local_branch})", id="btn-div-local", variant="primary")
-                yield Button(f"Remote ({s.upstream_branch})", id="btn-div-remote", variant="warning")
+                yield Button("Use Local", id="btn-div-local", variant="primary")
+                yield Button("Use Remote", id="btn-div-remote", variant="warning")
 
     @on(Button.Pressed, "#btn-div-local")
     def action_pick_local(self) -> None:
