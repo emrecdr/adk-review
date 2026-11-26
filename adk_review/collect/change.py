@@ -463,15 +463,18 @@ def _calls_shown(tree: Tree, file: str, function: str, sites: list[tuple[str, in
 
 def touched_names(files: list[Entry]) -> set[str]:
     """The names a change touched in its Python files: each function and class whose lines it added or between whose
-    lines it removed one, each it removed, and each module it moved or removed. What the head is read for first where
-    it cannot be read whole: a file that names one may call into what changed."""
+    lines it removed one, each it removed, and each module it moved or removed, a package by its folder's name. What
+    the head is read for first where it cannot be read whole: a file that names one may call into what changed. A
+    special name, `__init__`, is left out: measured on LiteLLM, nearly every file defining a class names it, so a
+    constructor's change read those first, and 27 of 41 calls it broke went unnamed. The class's own name stays."""
     names: set[str] = set()
     for item in files:
         old = item.get("old", item["path"])
         if not (item["path"].endswith(".py") or old.endswith(".py")):
             continue
         if item["status"] in ("D", "R"):
-            names.add(PurePosixPath(old).stem)
+            gone = PurePosixPath(old)
+            names.add(gone.parent.name if gone.name == "__init__.py" else gone.stem)
         names |= {found[1] for line in (item["diff"] or "").splitlines() if (found := _DEFINED.match(line))}
         if item["status"] == "D" or (module := parse(item["text"] or "")) is None:
             continue
@@ -481,7 +484,7 @@ def touched_names(files: list[Entry]) -> set[str]:
             for node in ast.walk(module)
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) and lines & _span(node)
         }
-    return names
+    return {name for name in names if name and not (name.startswith("__") and name.endswith("__"))}
 
 
 #: A definition on a line the change removed: its name, after `def`, `async def` or `class`.

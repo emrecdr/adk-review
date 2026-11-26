@@ -1165,7 +1165,8 @@ by itself; a review whose profile names a guideline does.
   hole. The read takes the changed files first, within its budget, so a change past it is still measured, and where
   the budget cannot hold every Python file, those that name what the change touched next, by one `git grep`: measured
   on LiteLLM's 37.5 MB, path order named 46 of the 151 broken calls and type errors a signature change caused, this
-  order 150. The head is
+  order 150. A special name, `__init__`, is never searched for, since nearly every class names it: a constructor's
+  change searches its class's name, and a package moved or removed its folder's. The head is
   read whole only for what reads it, a tree rule that needs it for the change or a guideline; with neither, as under
   `default-rules` for a change that alters no function's parameters, the report shows no radius, which is neither a
   hole nor a leaf. For a guideline alone it is read only when a changed file is Python, all the radius measures:

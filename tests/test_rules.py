@@ -2838,6 +2838,44 @@ class TestTheCallersRule:
         out = capsys.readouterr().out
         assert code == 1 and "zz/uses.py" in out, out
 
+    def test_a_constructors_caller_past_the_tree_budget_is_read_first_too(
+        self, cli, tmp_path: Path, capsys, monkeypatch
+    ) -> None:
+        """Read by an audit, and measured on LiteLLM: a change to a class's `__init__` asked which files name
+        `__init__`, nearly every file that defines a class, so the budget filled in path order again and 27 of 41 calls
+        it broke went unnamed, the review approving. A name every class defines picks out no caller: the class's own
+        name does."""
+        from adk_review.collect import git
+
+        filler = {
+            f"aa/m{n:03}.py": f"class C{n}:\n    def __init__(self):\n        self.v = {'x' * 400!r}\n"
+            for n in range(30)
+        }
+        before = {
+            "pkg/__init__.py": "",
+            "pkg/api.py": "class Client:\n    def __init__(self, uid):\n        self.uid = uid\n",
+            "zz/uses.py": "from pkg.api import Client\n\nClient(3)\n# " + "y" * 1_000 + "\n",  # past what is left
+            **filler,
+        }
+        after = {"pkg/api.py": "class Client:\n    def __init__(self, uid, region):\n        self.uid = uid\n"}
+        repo = branched(tmp_path, before, after)
+        monkeypatch.setattr(git, "MAX_TREE_BYTES", 5_000)  # the filler alone is past it
+        code = cli.main(
+            [str(repo), "--head", "change", "--base", "main", "--check", "rule.callers", "--fail-on", "major"]
+        )
+        out = capsys.readouterr().out
+        assert code == 1 and "zz/uses.py" in out, out
+
+    def test_a_package_moved_or_removed_is_searched_by_its_folders_name(self) -> None:
+        """Read by an audit: a package's `__init__.py` moved or removed was searched as `__init__`, the name every
+        class's constructor has, never as the package an import names."""
+        from adk_review.collect.change import touched_names
+
+        removed = {"path": "pkg/__init__.py", "status": "D", "diff": "", "text": "", "added_at": set()}
+        moved = {"path": "new/__init__.py", "old": "old/__init__.py", "status": "R", "diff": "", "text": "",
+                 "added_at": set()}  # fmt: skip
+        assert touched_names([removed, moved]) == {"pkg", "old"}
+
     def test_a_call_in_a_notebook_that_holds_ipython_lines_is_named(self) -> None:
         """Reproduced by review: one `%pip` line made a notebook unparsed, and the tree rules skipped it in silence,
         so a call the change broke in it went unnamed while its could-not-look stayed empty. A line Python cannot
