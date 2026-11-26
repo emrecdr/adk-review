@@ -324,6 +324,39 @@ What a Copilot review can say, and what to do:
 - `CERTIFICATE_VERIFY_FAILED`: a proxy's root the machine does not trust; set `SSL_CERT_FILE` to a PEM bundle that holds
   it.
 
+## What leaves the machine
+
+Code leaves the machine only where a guideline runs, and only for the model of the arm the review uses. A review under
+`rules-only`, `default-rules` or `demo`, `--check rule.<name>`, `--dry-run`, `--list-checks`, `--explain` and `--try`
+send nothing anywhere, and so do the commit and push hooks.
+
+| Sent to the model | What |
+|---|---|
+| The change | Git's diff of each file a guideline reads, a Python file it modifies widened to the function or class around each hunk, up to `--diff-cap`, the files left out named |
+| Around the change | Each changed file's blast radius, the paths of the files that import it, and each call into a function the change touched, with a few lines around it |
+| Under `--verify` | Each finding, with its title, reason and quote, and the parts of the change in the files that hold findings |
+| In chat, `adk web` | What you type, and the review's findings, which its verdict writes up |
+
+Never sent: the lines of a file that holds a private key; the threads and work items given with `--threads` and
+`--work-items`, which only the hand-off quotes; the reviewer's own `.env`, its keys and the Copilot token; a file the
+change did not touch, but the lines around a call into it. Every request is scrubbed first: each credential shape the
+reviewer knows is replaced, and a request the scrub cannot read is never sent, its guideline failing as a hole.
+
+Where it goes: on Copilot, to GitHub's Copilot endpoint, or your GitHub Enterprise tenant's, `GITHUB_COPILOT_API_BASE`,
+billed to the seat that logged in, the one-time login talking to GitHub's device flow; on Gemini, to Google's Gemini
+API with `GOOGLE_API_KEY`, or to Vertex AI in your project. The report names the model and the arm, and Vertex AI or
+the tenant's host where the arm goes through one. What a provider keeps, and for how long, is set by its terms for
+your plan. Google's terms for the Gemini API's free tier let it use what is sent to improve its products, and let
+people read it, and say to send nothing confidential there; a Cloud project with billing, and any account in the EEA,
+Switzerland or the UK, fall under its paid terms, which use no prompt to improve its products.
+
+Nothing else is sent. Git runs locally and never fetches. LiteLLM reads the price list its pinned version ships, never
+the network's. The command sends no telemetry, and records ADK's spans only to the file `--trace` names, never to an
+`OTEL_EXPORTER_OTLP_*` endpoint the environment names; `adk web`, ADK's own server, exports its spans there where one
+is set. A run writes only the files its flags name, `--json`, `--comment`, `--handoff`, `--junit`, `--cache`,
+`--debug-log`, `--trace` and `--record`, and nothing into the repository under review. The front end adds calls of its
+own, a `git fetch` and Azure DevOps, which `tui/README.md` lists.
+
 ## The report
 
 The report prints, in order: the title; the verdict, with the findings at the bar beside it and what sits below the bar
