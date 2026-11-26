@@ -336,11 +336,12 @@ send nothing anywhere, and so do the commit and push hooks.
 |---|---|
 | The change | Git's diff of each file a guideline reads, a Python file it modifies widened to the function or class around each hunk, up to `--diff-cap`, the files left out named |
 | Around the change | Each changed file's blast radius, the paths of the files that import it, and each call into a function the change touched, with a few lines around it |
+| To `guideline.requirements` | The work items given with `--work-items`, as text, fenced as the change is; no other guideline and no verifier is shown them |
 | Under `--verify` | Each finding, with its title, reason and quote, and the parts of the change in the files that hold findings |
 | In chat, `adk web` | What you type, and the review's findings, which its verdict writes up |
 
-Never sent: the lines of a file that holds a private key; the threads and work items given with `--threads` and
-`--work-items`, which only the hand-off quotes; the reviewer's own `.env`, its keys and the Copilot token; a file the
+Never sent: the lines of a file that holds a private key; the threads given with `--threads`, which only the
+hand-off quotes; the reviewer's own `.env`, its keys and the Copilot token; a file the
 change did not touch, but the lines around a call into it. Every request is scrubbed first: each credential shape the
 reviewer knows is replaced, and a request the scrub cannot read is never sent, its guideline failing as a hole.
 

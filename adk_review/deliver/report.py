@@ -1350,7 +1350,7 @@ def _untracked(names: Sequence[str] | None) -> list[str]:
 
 def told_in_parts(
     evidence: Evidence,
-    guidelines: Sequence[tuple[str, str]],
+    guidelines: Sequence[tuple[str, ...]],
     added: Sequence[str] = (),
     rules: Sequence[tuple[str, str]] = (),
 ) -> list[str]:

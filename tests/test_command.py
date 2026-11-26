@@ -3286,6 +3286,31 @@ class TestTheRequirementsGuideline:
         path.write_text(json.dumps({"count": 1, "value": [item]}), encoding="utf-8")
         return path
 
+    def test_the_parts_of_a_change_too_large_carry_its_work_items(
+        self, cli, demo_repo: Path, tmp_path: Path, monkeypatch, capsys
+    ) -> None:
+        """Read by an audit, and reproduced: the parts printed for a change too large for one run named this guideline
+        but no --work-items, so each part stopped with exit 2; and a dry run, given none, planned it into every part.
+        Each part carries the file where one was read, and leaves the guideline out where none was."""
+        from adk_review.collect import change, git
+
+        first = git.collect_evidence(str(demo_repo), BASE, HEAD)["diff"].split("\n\n### ")[0]
+        monkeypatch.setattr(change, "BLOCK_CAP_CHARS", len(first))  # room for one file alone
+
+        def parts(said: str) -> list[str]:
+            return [line for line in said.replace('"', "").splitlines() if "adk-review " in line and "--path=" in line]
+
+        assert run_review(cli, demo_repo, "--profile", "full", "--dry-run") == 0
+        planned = parts(capsys.readouterr().out)
+        items = self._items(tmp_path / "items.json")
+        monkeypatch.setattr(sys.stderr, "isatty", lambda: True)
+        monkeypatch.setattr(sys, "stdin", _Terminal("n\n"))
+        assert run_review(cli, demo_repo, "--profile", "full", "--work-items", str(items)) == 2
+        given = parts(capsys.readouterr().err)
+        assert planned and all("guideline.requirements" not in part for part in planned), planned
+        assert given and all(f"--work-items={items}" in part for part in given), given
+        assert all("--check guideline.requirements" in part for part in given), given
+
     def test_it_is_shown_the_work_items_and_its_blocker_is_reported_as_a_major(
         self, cli, demo_repo: Path, tmp_path: Path, asked, fake_provider
     ) -> None:

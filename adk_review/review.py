@@ -887,6 +887,17 @@ def _given_work_items(chosen: Selection, args: argparse.Namespace) -> Selection:
     return left
 
 
+def _parted(chosen: Selection, args: argparse.Namespace) -> tuple[tuple[str, ...], ...]:
+    """The flags each part of a change too large for one run gives its guidelines: `--work-items=FILE` too where the
+    work items were read, and none of the guidelines that read them where none were, as a review given none leaves
+    them off. Read by an audit, and reproduced: the parts named `guideline.requirements` with no file, each one
+    stopping with exit 2, and a dry run, given none, planned it into every part."""
+    reads = {guideline.check_id for guideline in chosen.guidelines if guideline.reads_work_items}
+    if args.work_items_read.items:
+        return (*args.guidelines_alone, *([(f"--work-items={args.work_items}",)] if reads else []))
+    return tuple(flag for flag in args.guidelines_alone if flag[-1] not in reads)
+
+
 def _rules_alone(found: Catalog, profiles: dict, chosen: Selection) -> tuple[tuple[str, str], ...]:
     """The flags that run this review's rules and no guideline: a profile that runs them alone, where one does, as
     `default-rules` does `default`'s, else each by `--check`; none where it runs no rule. Read by review: the parts of a
@@ -991,8 +1002,8 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
     # arm that is not ready names no model either: `why` says why.
     shown = {"model": model, "profile": chosen.name, "off": chosen.off, "checks": chosen.ids()}
     # The runs that read a change the guidelines cannot read in one, which the dry run prints and a review asks about.
-    given = (*args.added, *args.capped)
-    told = told_in_parts(evidence, args.guidelines_alone, given, args.rules_alone) if guidelines else []
+    given, parted = (*args.added, *args.capped), _parted(chosen, args)
+    told = told_in_parts(evidence, parted, given, args.rules_alone) if guidelines and parted else []
     if args.dry_run:
         unread = not_read(evidence["files"], guidelines)
         print(
