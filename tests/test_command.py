@@ -3018,6 +3018,33 @@ class TestTheOpenComments:
         assert "2 more open threads are not quoted" in said, "past the most it quotes, the rest counted"
         assert "change nothing else but what an open comment below needs" in " ".join(said.split()), "no contradiction"
 
+    def test_a_thread_people_closed_as_decided_is_quoted_so_the_agent_leaves_what_it_declined(
+        self, cli, demo_repo: Path, tmp_path: Path
+    ) -> None:
+        """Borrowed from Google's elephant-goldfish-model, which never re-opens a thread its author closed as by
+        design: a thread closed as won't fix or by design was dropped, so the next hand-off's agent could undo what
+        a person had decided. It is quoted apart, with what to leave; a fixed or closed thread is still left out, and
+        the verdict reads none of it."""
+        decided = [
+            {"file": "src/payments.py", "line": 3, "status": "wontFix",
+             "comments": [{"author": "Jane", "text": "Keep the float here: the ledger rounds it."}]},
+            {"file": "", "line": None, "status": "byDesign", "comments": [{"author": "Ann", "text": "Two modules."}]},
+        ]  # fmt: skip
+        threads = self._threads(tmp_path / "decided.json", decided)
+        handoff = tmp_path / "handoff.md"
+        code = run_review(
+            cli, demo_repo, "--profile", "rules-only", "--handoff", str(handoff), "--threads", str(threads)
+        )
+        said = handoff.read_text(encoding="utf-8")
+        assert code == 1, "the verdict reads no thread"
+        assert "## Decided on the pull request" in said and "## Open comments on the pull request" not in said
+        assert "`src/payments.py:3`, wontFix" in said and "the whole pull request, byDesign" in said
+        assert "Do not make a change one of them declined" in said
+        assert "an open comment" not in said, "the opening names no comment that asks for a change"
+        for status in ("fixed", "closed"):
+            refused = self._threads(tmp_path / f"{status}.json", [{**decided[0], "status": status}])
+            assert run_review(cli, demo_repo, "--profile", "rules-only", "--threads", str(refused)) == 2, status
+
     def test_a_thread_is_quoted_up_to_its_cap_whatever_its_comments_and_its_place(self) -> None:
         """Read by review, and reproduced: each comment was cut, but neither how many a thread held nor its file's
         path, and 50 threads of 5,000 comments made a hand-off of 501 million characters. Each string a model reads

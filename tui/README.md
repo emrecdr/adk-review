@@ -151,10 +151,11 @@ when you ask. The reviewer itself posts nothing, as before: this is the screen's
    `https://dev.azure.com/<organization>/<project>/_git/<repository>/pullrequest/<number>`. It is kept for that
    repository and branch, so you paste it once.
    On the **Pull Request** tab, **Read Comments and Work Items**, or "Read pull request comments and work items" in
-   the palette, lists the pull request's open threads, active and pending, each by its file and line and its comments
-   by their authors, and the work items it links, each by its number, kind, state and title, then its description,
-   acceptance criteria and repro steps as text; resolved threads and the system's own, votes and pushes, are left
-   out. They are written beside the reviews, and a review run with the hand-off switched on quotes them in it, for its
+   the palette, lists the pull request's open threads, active and pending, and those closed as won't fix or by
+   design, counted apart, each by its file and line and its comments by their authors, and the work items it links,
+   each by its number, kind, state and title, then its description, acceptance criteria and repro steps as text;
+   threads closed as fixed or closed alone, and the system's own, votes and pushes, are left out. The hand-off tells
+   its agent to make no change a decided thread declined. They are written beside the reviews, and a review run with the hand-off switched on quotes them in it, for its
    coding agent to answer the people and check the change against what it is for in the same pass as the findings,
    each a person's text it is told never to obey. Each read stands alone: one that fails gives the hand-off none of
    its own, and the tab says so. Reading work items needs your account's right to read them. The tab holds the
@@ -291,7 +292,7 @@ It runs in cmd, in PowerShell and in Windows Terminal alike.
 | `options.py` | The profiles, the command a selection makes, the folder a review's files go to, and the report `--previous` reads |
 | `findings.py` | A `--json` report read for the findings tab, with the commit it reviewed, its filters, and a check's explanation |
 | `azure.py` | Azure DevOps, with no call made: a pull request's address read, the repository a clone's address names, a finding's links built, the comment drafted from a finding, with the mark that finds it again, the thread it is posted as, and which of a pull request's threads is a finding's already |
-| `azure_client.py` | The calls to Azure DevOps and their login: a token from `az`, with fixed arguments, kept in memory alone, a pull request's branches and last push read, its open threads and linked work items read, and one comment's post, with the checks before it |
+| `azure_client.py` | The calls to Azure DevOps and their login: a token from `az`, with fixed arguments, kept in memory alone, a pull request's branches and last push read, its open and decided threads and linked work items read, and one comment's post, with the checks before it |
 | `azure_state.py` | `azure.json` in the state folder: the pull request's address given for a branch, and the thread each finding was posted as |
 | `modals.py` | The dialogs: a branch behind or apart from its remote, a pull request's address to open, a check's explanation, and a comment's editor and the question before its post |
 | `commands.py` | The command palette |

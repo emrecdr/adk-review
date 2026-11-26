@@ -623,6 +623,22 @@ class TestTheClient:
             OpenThread("old.py", 4, "active", (("Cem", "Why remove this?"),)),
         ]
 
+    def test_a_thread_people_closed_as_decided_is_read_too(self, client: ModuleType, fake_ado: FakeAdo) -> None:
+        """A thread closed as won't fix or by design is a person's decision the next hand-off quotes; one closed as
+        fixed, or closed alone, still is not read."""
+        from adk_review.deliver.threads import OpenThread
+
+        def thread(n: int, status: str) -> dict:
+            text = {"author": {"displayName": "Jane"}, "content": f"t{n}", "commentType": "text"}
+            return {"id": n, "status": status, "comments": [text]}
+
+        value = [thread(1, "wontFix"), thread(2, "byDesign"), thread(3, "fixed"), thread(4, "closed")]
+        fake_ado.answer("GET", "/threads", {"value": value})
+        assert client.Client(fake_ado.pr, FakeToken()).open_threads() == [
+            OpenThread("", None, "wontFix", (("Jane", "t1"),)),
+            OpenThread("", None, "byDesign", (("Jane", "t2"),)),
+        ]
+
     def test_the_linked_work_items_are_read_with_the_fields_the_hand_off_quotes(
         self, client: ModuleType, fake_ado: FakeAdo
     ) -> None:

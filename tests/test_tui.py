@@ -3316,6 +3316,30 @@ class TestAzureDevOpsOnTheScreen:
         assert footer.y - (detail.y + 1) >= 1, (detail, footer)  # a row of words under the detail's top border
 
     @pytest.mark.asyncio
+    async def test_the_tab_counts_the_decided_threads_apart_from_the_open(self, tmp_path: Path, fake_ado) -> None:
+        """A thread people closed as won't fix or by design is read for the hand-off, which tells its agent to leave
+        what it declined: the tab counts it apart, never as an open comment."""
+        from conftest import FakeToken
+        from textual.widgets import Static
+
+        app = _payments_screen(tmp_path)
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            app._credential = FakeToken()
+            app._pull_request = fake_ado.pr
+            comment = {"author": {"displayName": "Jane"}, "content": "Keep it", "commentType": "text"}
+            threads = [
+                {"id": n, "status": status, "comments": [comment]} for n, status in ((1, "active"), (2, "wontFix"))
+            ]
+            fake_ado.answer("GET", "/threads", {"value": threads})
+            fake_ado.answer("GET", "/workitems", {"value": []})
+            app._read_from_pull_request()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+            status = str(app.query_one("#read-status", Static).render())
+        assert "1 open comment thread, 1 decided thread," in status, status
+
+    @pytest.mark.asyncio
     async def test_the_pull_request_tab_holds_only_the_chosen_pull_requests_reads(
         self, tmp_path: Path, fake_ado, monkeypatch
     ) -> None:

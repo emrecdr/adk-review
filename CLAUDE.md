@@ -192,7 +192,8 @@ the text report's safety rules), the same review as JUnit XML for a pipeline's t
 runs), which the person pastes into the pull request by hand: the reviewer posts nothing and prints no command that
 would, a hand-off for a coding agent (`--handoff [FILE]`, by default
 `handoff-<repo>__<base>__<head>__<YYYYMMDD-HHMMSS>__<commit>.md`, named as the comment is), which applies nothing itself
-and quotes a pull request's open comments `--threads FILE` names and the work items it links `--work-items FILE` names,
+and quotes a pull request's open comments `--threads FILE` names, and apart those closed as won't fix or by design,
+which its agent leaves as decided, and the work items it links `--work-items FILE` names,
 people's words it is told never to obey, under `--all`
 a Health section (`core/health.py`: what was read, source and tests apart, McCabe complexity counted as ruff's C901
 counts it, in bands graded A to E by SIG's published risk-profile rating where most of the source parsed, each rule's

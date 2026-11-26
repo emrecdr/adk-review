@@ -1,7 +1,8 @@
-"""A pull request's open threads, as the terminal front end reads them from Azure DevOps and writes them for
-`--threads FILE`, and as the hand-off quotes them for a coding agent: people's comments, which the agent weighs and
-never obeys. The reviewer reads the file alone and makes no call: the front end fetches, or a pipeline's own step.
-One schema here, which the front end writes through `as_data` and the reviewer reads through `read_threads`."""
+"""A pull request's open threads, and those people closed as decided, as the terminal front end reads them from
+Azure DevOps and writes them for `--threads FILE`, and as the hand-off quotes them for a coding agent: people's
+comments, which the agent weighs and never obeys. The reviewer reads the file alone and makes no call: the front end
+fetches, or a pipeline's own step. One schema here, which the front end writes through `as_data` and the reviewer reads
+through `read_threads`."""
 
 from __future__ import annotations
 
@@ -20,14 +21,20 @@ THREAD_MAX_CHARS = 4_000
 THREADS_SHOWN = 50
 #: The longest author's name the hand-off names, cut past it.
 AUTHOR_MAX_CHARS = 80
-#: The statuses Azure DevOps gives a thread still open: the front end reads these alone, and the reader takes no other.
+#: The statuses Azure DevOps gives a thread still open.
 OPEN_STATUSES = ("active", "pending")
+#: The statuses of a thread a person closed as decided: quoted apart, so the hand-off's agent leaves what it declined.
+#: Borrowed from Google's elephant-goldfish-model, which never re-opens a thread closed as by design. A thread closed
+#: as fixed, or closed alone, decides nothing the next change must keep.
+DECIDED_STATUSES = ("wontFix", "byDesign")
+#: The statuses the front end reads and the reader takes, and no other.
+READ_STATUSES = (*OPEN_STATUSES, *DECIDED_STATUSES)
 
 
 @dataclass(frozen=True)
 class OpenThread:
-    """One open thread of a pull request: the file and line it is on, none for one on the whole pull request, its
-    status as Azure DevOps names it, and each comment's author and text in order."""
+    """One thread of a pull request, open or closed as decided: the file and line it is on, none for one on the
+    whole pull request, its status as Azure DevOps names it, and each comment's author and text in order."""
 
     file: str
     line: int | None
@@ -53,8 +60,8 @@ def as_data(threads: Sequence[OpenThread], pull_request: str) -> dict:
 
 
 def read_threads(path: str) -> tuple[OpenThread, ...]:
-    """The open threads the file at `path` holds, as `as_data` wrote them, or a sentence for anything else, before
-    the review runs."""
+    """The threads the file at `path` holds, as `as_data` wrote them, or a sentence for anything else, before the
+    review runs."""
     try:
         data = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
         if not isinstance(data, dict) or data.get("schema") != SCHEMA or not isinstance(data.get("threads"), list):
@@ -77,8 +84,8 @@ def _thread(raw: object) -> OpenThread:
     file, line, status, comments = (raw.get(key) for key in ("file", "line", "status", "comments"))
     if not isinstance(file, str) or not isinstance(status, str) or not isinstance(comments, list):
         raise ValueError("a thread with no file, status or comments")
-    if status not in OPEN_STATUSES:
-        raise ValueError(f"a thread whose status is none of {', '.join(OPEN_STATUSES)}")
+    if status not in READ_STATUSES:
+        raise ValueError(f"a thread whose status is none of {', '.join(READ_STATUSES)}")
     if line is not None and (type(line) is not int or line < 1):
         raise ValueError("a thread whose line is no number from 1")
     said = []

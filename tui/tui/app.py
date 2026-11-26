@@ -51,7 +51,7 @@ from textual.widgets.selection_list import Selection
 
 from adk_review.core.text import kinds_of, squash
 from adk_review.deliver.report import one_line, unhidden
-from adk_review.deliver.threads import OpenThread
+from adk_review.deliver.threads import OPEN_STATUSES, OpenThread
 from adk_review.deliver.threads import as_data as threads_data
 from adk_review.deliver.work_items import WorkItems, work_items_of
 
@@ -259,7 +259,8 @@ def _told(count: int | None, kept: bool, what: str, noun: str) -> str:
 
 
 def _thread_lines(threads: Sequence[OpenThread]) -> list[str]:
-    """Each open thread as the tab draws it: its place and status, then each comment by its author, one line each."""
+    """Each thread as the tab draws it, open or decided: its place and status, then each comment by its author, one
+    line each."""
     lines = []
     for thread in threads:
         place = f"{thread.file}:{thread.line}" if thread.line else thread.file or "The whole pull request"
@@ -1477,9 +1478,10 @@ class AdkReviewTuiApp(App[int]):
             return
         self._pr_text = [*_thread_lines(threads or ()), *_work_item_lines(work or WorkItems())]
         kept = {kind for kind, web in self._for_handoff if web == pr.web}
-        comments = _told(
-            None if threads is None else len(threads), "threads" in kept, "comments", "open comment thread"
-        )
+        opened = None if threads is None else sum(thread.status in OPEN_STATUSES for thread in threads)
+        comments = _told(opened, "threads" in kept, "comments", "open comment thread")
+        if threads and opened is not None and "threads" in kept and (decided := len(threads) - opened):
+            comments += f", {_counted(decided, 'decided thread')}"  # closed as won't fix or by design, read apart
         items = _told(None if work is None else len(work.items), "work-items" in kept, "work items", "linked work item")
         then = "quotes what was kept" if kept else "quotes none of it"
         self.query_one("#read-status", Static).update(

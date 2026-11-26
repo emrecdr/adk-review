@@ -266,7 +266,8 @@ The order is the architecture: evidence and rules first, the guidelines' judgeme
    skip list names it, a dropped finding at the bar — is `DEGRADED`, exit 3. A hole never approves.
 7. **Deliver.** The report goes to stdout, and the JSON (`--json`), a hand-off for a coding agent (`--handoff`) and a
    comment for the branch's author (`--comment`) to their files, whenever a review is decided. The hand-off quotes a
-   pull request's open comments too, from the file `--threads` names, which `deliver/threads.py` reads, and the work
+   pull request's open comments too, from the file `--threads` names, which `deliver/threads.py` reads, and apart the
+   threads people closed as won't fix or by design, so its agent leaves what they declined, and the work
    items it links, from the file `--work-items` names, Azure DevOps' own answer, which `deliver/work_items.py` reads as
    text: the terminal front end writes both.
 

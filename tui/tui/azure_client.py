@@ -27,7 +27,7 @@ import truststore
 
 from adk_review.collect.git import on_path
 from adk_review.core.text import squash
-from adk_review.deliver.threads import OPEN_STATUSES, OpenThread
+from adk_review.deliver.threads import READ_STATUSES, OpenThread
 from adk_review.deliver.work_items import FIELDS
 
 from .azure import Listed, Place, PullRequest, posted_as, rooted, thread_payload
@@ -272,12 +272,13 @@ class Client:
         return live
 
     def open_threads(self) -> list[OpenThread]:
-        """The pull request's threads still open, active or pending, as people wrote them: each comment not deleted by
-        its author's name, and the file and line it is on, from either side of the diff, none for one on the whole pull
-        request. A resolved or deleted thread, and one of the system's own, a vote or a push, are left out."""
+        """The pull request's threads still open, active or pending, and those closed as won't fix or by design, as
+        people wrote them: each comment not deleted by its author's name, and the file and line it is on, from either
+        side of the diff, none for one on the whole pull request. A thread closed as fixed or closed alone, a deleted
+        one, and one of the system's own, a vote or a push, are left out."""
         found = []
         for thread in _dicts(self._call("GET", self._pr.api("threads"), reading=_COMMENTS).get("value")):
-            if thread.get("isDeleted") or thread.get("status") not in OPEN_STATUSES:
+            if thread.get("isDeleted") or thread.get("status") not in READ_STATUSES:
                 continue
             said = tuple(
                 (_author(comment), comment["content"])
