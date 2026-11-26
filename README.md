@@ -822,7 +822,7 @@ jobs:
           ref: <a commit of the reviewer> # pinned: the change under review never chooses it
           path: reviewer
           persist-credentials: false
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
         with:
           version: "0.13.6" # pinned, as the reviewer's own lock file is
       - name: Review
