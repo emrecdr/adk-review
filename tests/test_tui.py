@@ -4115,13 +4115,13 @@ async def _until(pilot, done, what: str):  # what `done()` gives once it holds
     raise AssertionError(what)
 
 
-async def _stop(app, pilot) -> None:
-    """Stop pressed, and waited for until the screen says its run stopped. Waiting for a worker Stop cancelled raises
-    `WorkerCancelled`: measured on a Windows runner, where the cancel had not ended as the wait began, three tests
-    failed that passed on macOS and Linux."""
+async def _stop(app, pilot, *, button: bool = False) -> None:
+    """Stop pressed, its key or its button, and waited for until the screen says its run stopped. Waiting for a worker
+    Stop cancelled raises `WorkerCancelled`: measured on a Windows runner, where the cancel had not ended as the wait
+    began, four tests failed that passed on macOS and Linux."""
     from textual.worker import WorkerCancelled
 
-    await pilot.press("ctrl+x")
+    await (pilot.click("#btn-stop") if button else pilot.press("ctrl+x"))
     await _until(pilot, lambda: not app._reviewing, "the run stopped")
     with contextlib.suppress(WorkerCancelled):
         await app.workers.wait_for_complete()
@@ -5886,10 +5886,7 @@ class TestWhatTheCodeReviewOfTheAuditFound:
             app.selected_base = "main"
             await pilot.press("ctrl+r")
             await _until(pilot, lambda: app._said, "the run's first line")
-            await pilot.click("#btn-stop")
-            await pilot.pause()
-            await app.workers.wait_for_complete()
-            await pilot.pause()
+            await _stop(app, pilot, button=True)
             stopped = app.last_report_md
         assert "stopped" in stopped, stopped
 
