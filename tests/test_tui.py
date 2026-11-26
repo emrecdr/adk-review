@@ -3096,8 +3096,9 @@ class TestAzureDevOpsOnTheScreen:
             assert app.query_one("#pr-url", Input).value == "", "none kept for it yet"
             _opened(fake_ado, _git(clone, "rev-parse", "feature/tax").strip())
             app._open_pull_request(fake_ado.pr)
-            await app.workers.wait_for_complete()
-            await pilot.pause()
+            # Until the listing it starts has ended, which waiting for the workers there were does not cover: measured
+            # on a Windows runner, and with the listing slowed on macOS, the field was read while it ran.
+            await _until(pilot, lambda: app._pull_request is not None, "the pull request shown")
             shown = app.query_one("#pr-url", Input).value, app._pull_request
         assert shown == (fake_ado.pr.web, fake_ado.pr), shown
 
