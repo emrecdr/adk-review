@@ -907,8 +907,12 @@ def tree_at_head(
         if path.endswith(".py") and not matches(path, *third_party)
     ]
     sized = sum(int(size) for _path, _sha, size in python if size.isdigit())
-    naming = _naming(resolved, touched_names(list(touched))) if sized > MAX_TREE_BYTES else set()
-    order = sorted(python, key=lambda blob: (blob[0] not in first, blob[0] not in naming))
+    firsts = set(first)
+    # Searched only where a Python file is not read first: measured by an audit, under `--all` every one is, and the
+    # search took 3.9 s on LiteLLM for an order it left as it was.
+    rest = sized > MAX_TREE_BYTES and any(path not in firsts for path, _sha, _size in python)
+    naming = _naming(resolved, touched_names(list(touched))) if rest else set()
+    order = sorted(python, key=lambda blob: (blob[0] not in firsts, blob[0] not in naming))
     return Tree(paths, *_texts(resolved, order))
 
 

@@ -1473,6 +1473,20 @@ class TestWhatTheBudgetReadsFirst:
         files = gathered(repo, "change")
         assert files["src/app.py"]["text"] == app, files["src/app.py"]["unread_text"]
 
+    def test_a_whole_project_runs_no_search_for_what_names_its_change(self, cli, tmp_path: Path, monkeypatch) -> None:
+        """Measured by an audit on LiteLLM: under `--all` every Python file is a changed one, read first already, yet
+        each was parsed for the names it holds, 18,733 of them in 3.9 s, and `git grep` run on 200, the order left as
+        it was. A search runs only where some Python file is not read first."""
+        git = importlib.import_module("adk_review.collect.git")
+        monkeypatch.setattr(git, "MAX_TREE_BYTES", 300)
+        searched: list[object] = []
+        monkeypatch.setattr(git, "touched_names", lambda files: searched.append(files) or set())
+        repo = _branch_off_empty(tmp_path / "repo", "change")
+        _committed(repo, "pkg/api.py", "def fetch(uid):\n    return uid\n# " + "a" * 200 + "\n")
+        _committed(repo, "pkg/uses.py", "from pkg.api import fetch\n\nfetch(3)\n# " + "a" * 200 + "\n")
+        cli.main([str(repo), "--head", "change", "--all", "--check", "rule.callers", "--quiet"])
+        assert searched == [], "every file is read first: nothing to search for"
+
 
 class TestWhatALargeFileStoreHides:
     """A file Git LFS stores is committed as a pointer: three lines naming content kept elsewhere, which no rule and no
