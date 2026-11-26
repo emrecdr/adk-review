@@ -120,6 +120,18 @@ def test_every_workflow_action_is_pinned_by_commit_and_to_one_commit_across_work
     assert [action for action, refs in pinned.items() if len(refs) > 1] == [], "an action pinned to two commits"
 
 
+def test_every_workflow_checkout_keeps_no_credential_on_disk() -> None:
+    """Read by an outside report on Google's elephant-goldfish-model, whose workflows hold to it: `ci.yml` checked out
+    with `persist-credentials: false`, the setup Copilot's agent works in did not, so the job's token stayed in
+    `.git/config` for every later step to read. GitHub gives Copilot's agent its own token, so the setup needs none."""
+    for path in sorted((GITHUB / "workflows").glob("*.yml")):
+        for job in yaml.safe_load(path.read_text(encoding="utf-8"))["jobs"].values():
+            for step in job.get("steps", []):
+                if str(step.get("uses", "")).startswith("actions/checkout@"):
+                    kept = (step.get("with") or {}).get("persist-credentials")
+                    assert kept is False, f"{path.name}: a checkout keeps the job's token on disk"
+
+
 def test_dependabot_proposes_a_release_only_after_the_locks_cooldown_and_no_package_skips_it() -> None:
     """A package three days old or less is the window LiteLLM 1.82.7 and 1.82.8 shipped a credential stealer in.
     Dependabot waits the span `[tool.uv]` gives the lock, for each ecosystem, with no package excluded from it."""
