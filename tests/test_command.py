@@ -1324,6 +1324,45 @@ class TestThePreviousReportAndTheHandoff:
             re.search(r", by `default`: \d+ rules, and \d+ guidelines read by \S", first) and "no model" not in first
         ), first
 
+    def test_an_earlier_finding_whose_code_still_stands_is_never_counted_fixed(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ) -> None:
+        """Asked by the owner, and reproduced: a re-review counted an earlier finding fixed wherever no check reported
+        it again, though its quoted lines stood in the file unchanged, as they do where a guideline passes over a
+        finding. Fixed now means its lines are gone; one whose lines still stand is named apart, in the report, the
+        JSON and the comment."""
+        from adk_review.collect.git import on_path
+
+        first, second, comment = tmp_path / "first.json", tmp_path / "second.json", tmp_path / "comment.md"
+        assert run_review(cli, demo_repo, "--profile", "default-rules", "--json", str(first)) == 1
+        capsys.readouterr()
+        earlier = json.loads(first.read_text(encoding="utf-8"))
+        show = [on_path("git"), "-C", str(demo_repo), "show", f"{HEAD}:src/payments/charge.py"]
+        shown = subprocess.run(show, capture_output=True, text=True, encoding="utf-8", check=True).stdout
+        standing = next(line for line in shown.splitlines() if line.strip())
+        found = {**earlier["findings"][0], "file": "src/payments/charge.py"}
+        gone = {**found, "fingerprint": "f" * 16, "title": "a finding fixed since", "evidence": "x = 'no longer here'"}
+        passed = {**found, "fingerprint": "e" * 16, "title": "a finding passed over", "evidence": standing}
+        first.write_text(json.dumps({**earlier, "findings": [*earlier["findings"], gone, passed]}), encoding="utf-8")
+        again = [
+            "--profile",
+            "default-rules",
+            "--previous",
+            str(first),
+            "--json",
+            str(second),
+            "--comment",
+            str(comment),
+        ]
+        assert run_review(cli, demo_repo, *again) == 1
+        out, data = capsys.readouterr().out, json.loads(second.read_text(encoding="utf-8"))
+        assert [f["fingerprint"] for f in data["resolved"]] == ["f" * 16], data["resolved"]
+        assert [f["fingerprint"] for f in data["unchanged"]] == ["e" * 16], data["unchanged"]
+        assert "- resolved since the previous review: 1\n  - a finding fixed since (" in out, out
+        assert "- not found again, the code unchanged: 1\n  - a finding passed over (" in out, out
+        said = comment.read_text(encoding="utf-8").split("### ", 1)[0]
+        assert "1 fixed, 0 new" in said and "1 not found again with the code unchanged" in said, said
+
     def test_a_comment_against_the_previous_review_says_what_was_fixed_and_what_is_new(
         self, cli, demo_repo: Path, tmp_path: Path, capsys
     ) -> None:
@@ -1598,17 +1637,17 @@ class TestThePreviousReportAndTheHandoff:
         and refuted, the rule still found it: never resolved either."""
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Outcome, Sourced
-        from adk_review.deliver.report import Earlier, _resolved, fingerprint
+        from adk_review.deliver.report import Earlier, _not_found, fingerprint
 
         found = Finding(file="a.py", line=2, severity="major", title="t", evidence="-x = 1", suggestion="s", code="y")
         item = Sourced("guideline.correctness", found, (2, 2), deleted=True)
         previous = Earlier({fingerprint(item): {"check": "guideline.correctness", "file": "a.py", "title": "t"}})
         refuted = Outcome(refuted=[(item, "no")], verified=True)
-        assert _resolved(refuted, [], "APPROVED", previous, ["guideline.correctness"], []) == []
+        assert _not_found(refuted, [], "APPROVED", previous, ["guideline.correctness"], []) == []
         ruled = Sourced("rule.lint", found.model_copy(update={"title": "lint: F401", "evidence": "+import os"}), (2, 2))
         previous = Earlier({fingerprint(ruled): {"check": "rule.lint", "file": "a.py", "title": "lint: F401"}})
         refuted = Outcome(refuted=[(ruled, "no")], verified=True)
-        assert _resolved(refuted, [], "APPROVED", previous, ["rule.lint"], []) == []
+        assert _not_found(refuted, [], "APPROVED", previous, ["rule.lint"], []) == []
 
     def test_the_json_names_each_disputed_finding_after_those_no_verifier_could_judge(self) -> None:
         """A security rule's finding a verifier refuted is kept, at the bar, and the JSON lists it apart under
@@ -1635,14 +1674,14 @@ class TestThePreviousReportAndTheHandoff:
         kept ones, whichever of the two a list holds."""
         from adk_review.core.findings import Finding
         from adk_review.core.verdict import Outcome, Sourced
-        from adk_review.deliver.report import Earlier, _identified, _resolved
+        from adk_review.deliver.report import Earlier, _identified, _not_found
 
         def twin() -> Sourced:
             found = Finding(file="app.py", line=3, severity="minor", title="t", evidence="+print(x)", suggestion="s")
             return Sourced("rule.no-print", found, (3, 3))
 
         def fixed(outcome: Outcome) -> int:
-            found = _resolved(outcome, _identified(outcome.kept), "APPROVED", previous, ["rule.no-print"], [])
+            found = _not_found(outcome, _identified(outcome.kept), "APPROVED", previous, ["rule.no-print"], [])
             return len(found or [])
 
         first, second, other = twin(), twin(), twin()

@@ -131,16 +131,20 @@ def load_report(json_path: Path) -> tuple[list[FindingRow], str | None, str | No
 
 
 def _rows(raw: dict) -> list[FindingRow]:
-    """A report's `findings`, `old_findings` and `resolved` entries, sorted by priority."""
+    """A report's `findings`, `old_findings`, `unchanged` and `resolved` entries, sorted by priority: an earlier
+    finding not found again whose lines still stand at the head is no resolved one, and comes before what was there
+    already."""
     rows: list[FindingRow] = []
     _extend_rows(rows, raw.get("findings"))
     _extend_rows(rows, raw.get("old_findings"), "Old")
+    _extend_rows(rows, raw.get("unchanged"), "Unchanged")
     _extend_rows(rows, raw.get("resolved"), "Resolved")
     return sorted(
         rows,
         key=lambda row: (
             row.tier == "Resolved",
             row.tier == "Old",
+            row.tier == "Unchanged",
             -RANK.get(row.severity, 0),
             row.file,
             row.line or 0,

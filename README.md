@@ -765,8 +765,10 @@ and last the next steps, by the verdict and what was kept. "The report" in `GUID
   read: its
   check, its file and its evidence — for a guideline's finding, the lines its quote stands on — never its line, so a
   finding keeps it when lines move. It lists what is no longer found, among what this review looked for, a check that
-  ran and a file in its scope, a finding folded under another still found, and the comment for the branch's author opens
-  with how many points are fixed, new and still open; a review with a hole resolves nothing.
+  ran and a file in its scope, a finding folded under another still found, and counts one fixed only where its quoted
+  lines are gone from the head: one whose lines still stand is listed apart, not found again with the code unchanged,
+  since a model can pass over a finding. The comment for the branch's author opens with how many points are fixed, new
+  and still open; a review with a hole resolves nothing.
 - `--cache DIR` keeps each decided review under a hash of everything its result depends on — the reviewer's own code,
   config and version, the Python it runs on, the commits or the index, what is covered and what of the tree went unread,
   the checks, every setting, a previous report as it was read, each model, and each outside tool a rule runs, ruff's and

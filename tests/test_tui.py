@@ -1096,12 +1096,24 @@ class TestFindingsExplorer:
                             "suggestion": "Use UTC.",
                         }
                     ],
+                    # Not found again, its lines unchanged at the head: never shown as resolved.
+                    "unchanged": [
+                        {
+                            "check": "guideline.correctness",
+                            "file": "e.py",
+                            "line": 2,
+                            "severity": "major",
+                            "title": "Passed over",
+                            "evidence": "total = int(price)",
+                            "suggestion": "Round it.",
+                        }
+                    ],
                 }
             ),
             encoding="utf-8",
         )
         rows = load_report(report)[0]
-        assert [r.tier for r in rows] == ["NEW", "Active", "Old", "Resolved"]
+        assert [r.tier for r in rows] == ["NEW", "Active", "Unchanged", "Old", "Resolved"]
         assert len(filter_findings(rows, severity="blocker")) == 1
         assert len(filter_findings(rows, tier="Old")) == 1
         assert len(filter_findings(rows, query="Hardcoded")) == 1

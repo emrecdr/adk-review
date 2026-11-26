@@ -77,8 +77,8 @@ that is not `true` or `false`, a number out of its range, a table or a setting t
 that is no TOML, stops the start with one sentence that says what to write, and exit 2. A file saved with a byte
 order mark, as Notepad and PowerShell 5 save one, is read.
 
-The state folder holds the last report of each target, which marks findings new or resolved, the review cache, and
-`azure.json`: the pull request's address you gave for each branch, and the thread each finding was posted as.
+The state folder holds the last report of each target, which marks findings new, resolved, or not found again with
+their code unchanged, the review cache, and `azure.json`: the pull request's address you gave for each branch, and the thread each finding was posted as.
 A target's last report moves on only where a review found other findings, so the same review run a third time is
 served from the cache with no model call.
 

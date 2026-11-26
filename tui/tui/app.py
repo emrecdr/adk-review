@@ -600,6 +600,7 @@ class AdkReviewTuiApp(App[int]):
             ("All tiers", "all"),
             ("NEW", "NEW"),
             ("Active", "Active"),
+            ("Unchanged", "Unchanged"),
             ("Old", "Old"),
             ("Resolved", "Resolved"),
         ]
@@ -1731,6 +1732,8 @@ class AdkReviewTuiApp(App[int]):
         number is other code."""
         if row.tier == "Resolved":
             return "This finding is resolved. Its lines are of an earlier commit."
+        if row.tier == "Unchanged":  # not found again, its lines still in the file, perhaps at other numbers
+            return "This finding was not found again, its code unchanged. Its lines are of an earlier commit."
         if self._reviewed is None or self.selected_project is None:
             return NO_COMMIT
         return NO_LINE if row.span() is None else ""
