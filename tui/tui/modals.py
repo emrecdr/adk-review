@@ -80,7 +80,13 @@ class OpenPullRequestModal(ModalScreen[str | PullRequest | None]):
             )
             yield Static("Reading the open pull requests of the repositories here...", id="open-pr-note", markup=False)
             yield OptionList(id="open-pr-list", markup=False)
-            yield Input(placeholder="https://dev.azure.com/org/project/_git/repo/pullrequest/123", id="open-pr-url")
+            # No selection as it takes the focus: read by review, a character typed with the list focused moved the
+            # focus here, and the next one replaced it.
+            yield Input(
+                placeholder="https://dev.azure.com/org/project/_git/repo/pullrequest/123",
+                id="open-pr-url",
+                select_on_focus=False,
+            )
             with Horizontal(id="modal-buttons"):
                 yield Button("Open", id="btn-open-pr-yes", variant="primary")
                 yield Button("Cancel", id="btn-open-pr-no", variant="default")
@@ -105,13 +111,24 @@ class OpenPullRequestModal(ModalScreen[str | PullRequest | None]):
             options.focus()
 
     def on_paste(self, event: events.Paste) -> None:
-        """A paste anywhere in the dialog lands in its address field. Read by an audit, and reproduced: once the list
-        took the focus, a paste went to it and was dropped, and Enter opened the pull request listed first."""
+        """A paste anywhere in the dialog lands in its address field, its first line alone, as the field's own paste
+        takes it. Read by an audit, and reproduced: once the list took the focus, a paste went to it and was dropped,
+        and Enter opened the pull request listed first; read by another, the paste then kept its newline and a second
+        line, and the address read as none."""
         field = self.query_one("#open-pr-url", Input)
         if not field.has_focus:
             event.stop()
             field.focus()
-            field.insert_text_at_cursor(event.text)
+            field.insert_text_at_cursor(event.text.splitlines()[0] if event.text else "")
+
+    def on_key(self, event: events.Key) -> None:
+        """A character typed while the list has the focus goes to the address field, as a paste does. Read by an
+        audit, and reproduced: the list took the focus as it filled, and an address typed by hand went nowhere."""
+        if event.is_printable and event.character and self.query_one("#open-pr-list", OptionList).has_focus:
+            event.stop()
+            field = self.query_one("#open-pr-url", Input)
+            field.focus()
+            field.insert_text_at_cursor(event.character)
 
     @on(OptionList.OptionSelected, "#open-pr-list")
     def _picked(self, event: OptionList.OptionSelected) -> None:

@@ -138,8 +138,9 @@ when you ask. The reviewer itself posts nothing, as before: this is the screen's
 2. Review the pull request's branch, as any branch. Or press **Open Pull Request**, under the repositories, or choose
    "Open pull request" in the palette, `Ctrl+P`. The dialog lists the open pull requests of the repositories cloned
    here, newest first, each by its repository, number, title and author, read as it opens: a call for each hundred
-   open in a project of theirs, ten at most, so a project with more than a thousand open lists the newest thousand.
-   The list takes the focus as it fills, unless you pasted first. Choose one with the arrow keys and `Enter`, or paste
+   open in a project of theirs, ten at most, so a project with more than a thousand open lists the newest thousand,
+   and the dialog names it. The list takes the focus as it fills, unless you pasted first; a paste or a key typed goes
+   to the address field, a paste's first line alone. Choose one with the arrow keys and `Enter`, or paste
    an address as the browser shows it: the screen reads the pull request, picks the repository under the workspace
    whose remote names its repository, the one chosen first, and chooses its source and target branches as that remote
    holds them, never a local copy, which can hold work not pushed. It fetches as a pick does, and keeps the address

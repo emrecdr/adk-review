@@ -307,9 +307,11 @@ class Client:
         asked = {"ids": ",".join(ids[:WORK_ITEMS_ASKED]), "fields": ",".join(FIELDS), "errorPolicy": "omit"}
         return self._call("GET", self._pr.project_api("wit", "workitems"), query=asked, reading=_WORK_ITEMS)
 
-    def active_pull_requests(self, repositories: Collection[str]) -> list[Listed]:
+    def active_pull_requests(self, repositories: Collection[str]) -> tuple[list[Listed], bool]:
         """The project's active pull requests into the repositories `repositories` names in lower case, newest first,
-        a page of `INBOX_PAGE` a call up to `INBOX_PAGES`: what the open dialog lists, the project the client's own."""
+        a page of `INBOX_PAGE` a call up to `INBOX_PAGES`: what the open dialog lists, the project the client's own;
+        and whether the last page was full, so more may be open. Read by an outside audit: the list stopped there and
+        said nothing."""
         found: list[Listed] = []
         for page in range(INBOX_PAGES):
             asked = {"searchCriteria.status": "active", "$top": str(INBOX_PAGE), "$skip": str(page * INBOX_PAGE)}
@@ -317,8 +319,8 @@ class Client:
             entries = _dicts(answer.get("value"))
             found += [listed for entry in entries if (listed := self._listed(entry, repositories)) is not None]
             if len(entries) < INBOX_PAGE:
-                break
-        return sorted(found, key=lambda listed: listed.created, reverse=True)
+                return sorted(found, key=lambda listed: listed.created, reverse=True), False
+        return sorted(found, key=lambda listed: listed.created, reverse=True), True
 
     def _listed(self, entry: dict, repositories: Collection[str]) -> Listed | None:
         """One entry of the list, or None where it is into a repository not named, or names no number."""

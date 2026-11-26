@@ -698,7 +698,7 @@ class TestTheClient:
         fake_ado.answer("GET", "/git/pullrequests", {"value": full}, under=fake_ado.project)
         fake_ado.answer("GET", "/git/pullrequests", {"value": last}, under=fake_ado.project)
         project = type(fake_ado.pr)(fake_ado.pr.origin, "Web", "", 0)  # a project's calls read its origin and name
-        found = client.Client(project, FakeToken()).active_pull_requests({"payments"})
+        found, _capped = client.Client(project, FakeToken()).active_pull_requests({"payments"})
         assert [(f.pr.repository, f.pr.number, f.title, f.draft, f.author) for f in found] == [
             ("Payments", 9, "Newer", True, "Jane"),
             ("payments", 7, "Older", False, "Jane"),
@@ -708,6 +708,19 @@ class TestTheClient:
             ("active", "100", "0"),
             ("active", "100", "100"),
         ]
+
+    def test_a_project_list_past_its_last_page_says_so(self, client: ModuleType, fake_ado: FakeAdo) -> None:
+        """Read by an outside audit: a project's list stopped at its tenth full page, a thousand pull requests, and
+        said nothing, so an older one was missing with no word. The call says it stopped there."""
+
+        def listed(number: int) -> dict:
+            where = {"name": "payments", "project": {"name": "Web"}}
+            return {"pullRequestId": number, "creationDate": "2026-11-20T00:00:00Z", "repository": where}
+
+        fake_ado.instead("GET", "/git/pullrequests", {"value": [listed(n) for n in range(100)]}, under=fake_ado.project)
+        project = type(fake_ado.pr)(fake_ado.pr.origin, "Web", "", 0)
+        found, capped = client.Client(project, FakeToken()).active_pull_requests({"payments"})
+        assert capped and len(found) == client.INBOX_PAGES * client.INBOX_PAGE == len(fake_ado.seen) * 100, capped
 
     def test_a_project_list_of_odd_shape_or_refused_names_what_to_do(
         self, client: ModuleType, fake_ado: FakeAdo
@@ -720,7 +733,7 @@ class TestTheClient:
         ]
         fake_ado.answer("GET", "/git/pullrequests", {"value": odd}, under=fake_ado.project)
         project = type(fake_ado.pr)(fake_ado.pr.origin, "Web", "", 0)
-        found = client.Client(project, FakeToken()).active_pull_requests({"payments"})
+        found, _capped = client.Client(project, FakeToken()).active_pull_requests({"payments"})
         assert [(f.pr.project, f.pr.number, f.author) for f in found] == [("Web", 2, "")]
         fake_ado.instead("GET", "/git/pullrequests", status=404, under=fake_ado.project)
         with pytest.raises(client.AzureError) as refused:

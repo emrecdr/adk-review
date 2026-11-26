@@ -3227,6 +3227,14 @@ class TestTheWorkItems:
         assert as_text("<dl><dt>Term</dt><dd>Meaning</dd></dl><hr>After<h5>Head</h5>Body").splitlines() == [
             "Term", "Meaning", "After", "Head", "Body"
         ]  # fmt: skip
+        # Read by an outside audit: a stylesheet Word or Outlook pastes into rich text came before the first criterion,
+        # its text spent on CSS. In rich text, where a tag typed is kept escaped, a paired one is markup: dropped. An
+        # unclosed one stays the text's own, as before, and a field with no HTML is quoted as written.
+        office = '<style>p.MsoNormal {margin:0; font-family:Calibri;}</style><p class="MsoNormal">AC 1: Return 404.</p>'
+        assert as_text(office) == "AC 1: Return 404."
+        assert "Escape <style> in names" in (unclosed := as_text("<p>Escape <style> in names</p><p>Next</p>"))
+        assert "Next" in unclosed, "no word after an unclosed one is lost"
+        assert as_text("Strip <style>x</style> from input") == "Strip <style>x</style> from input"
         assert as_text("<div>one<br/>two</div>") == "one\ntwo"
         assert as_text("<ul><li><p>x</p></li><li>y</li></ul>") == "- x\n- y"
         assert (

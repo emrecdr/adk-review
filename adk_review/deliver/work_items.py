@@ -6,6 +6,7 @@ fetches, or a pipeline's own step, with the fields `FIELDS` names. Their rich te
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
@@ -97,6 +98,10 @@ def as_text(html: str) -> str:
     reader.close()
     if not reader.html:
         return "\n".join(line.rstrip() for line in html.splitlines()).strip("\n")
+    if STYLESHEET.search(html):  # rich text, where a tag typed is kept escaped: a paired one is pasted markup
+        reader = _Reader()
+        reader.feed(STYLESHEET.sub("", html))
+        reader.close()
     lines = (" ".join(line.split()) for line in "".join(reader.said).splitlines())
     kept: list[str] = []
     for line in lines:
@@ -104,6 +109,11 @@ def as_text(html: str) -> str:
             kept.append(line)
     return "\n".join(kept).strip("\n")
 
+
+#: A stylesheet paired with its end tag, as Word and Outlook paste one into rich text: dropped there, never content.
+#: Read by an outside audit: one came before the first acceptance criterion and spent the text's room on CSS. An
+#: unclosed `<style>` stays the text's own, as a security story names one.
+STYLESHEET = re.compile(r"<style\b[^>]*>.*?</style\s*>", re.IGNORECASE | re.DOTALL)
 
 #: The tags HTML has, which rich text is written in: any other, `<Order>` in `Result<Order>`, is the text's own.
 HTML_TAGS = frozenset(

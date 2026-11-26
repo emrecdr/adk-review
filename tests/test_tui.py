@@ -3646,6 +3646,50 @@ class TestAzureDevOpsOnTheScreen:
         assert one_at_a_time == [], len(one_at_a_time)
         assert "No repository matches 'zzz'" in banner, banner
 
+    def test_the_open_dialog_says_where_a_project_holds_more_than_it_lists(self) -> None:
+        """Read by an outside audit: a project's list stopped at a thousand and said nothing. The note names it."""
+        from tui.app import _open_note
+
+        said = _open_note(3, True, [], ["acme/Web"])
+        assert said.endswith("More are open in acme/Web: only the newest 1,000 per project are listed."), said
+        assert "More are open" not in _open_note(3, True, []), "none capped, nothing said"
+
+    @pytest.mark.asyncio
+    async def test_a_paste_or_a_key_with_the_list_focused_reaches_the_address_field_as_one_line(
+        self, tmp_path: Path
+    ) -> None:
+        """Read by an outside audit, and reproduced: a paste reached the field whole, its newline and a second line
+        too, where Textual's own field keeps the first line alone; and a key typed with the list focused went nowhere.
+        The field takes a paste's first line, and each character typed."""
+        from textual import events
+        from textual.widgets import Input
+
+        from tui.azure import PullRequest
+        from tui.modals import OpenPullRequestModal
+
+        app = _payments_screen(tmp_path)
+        url = "https://dev.azure.com/acme/proj/_git/repo/pullrequest/999"
+        one = [("payments #7 a title", PullRequest("https://dev.azure.com/acme", "proj", "repo", 7))]
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            seen: list[object] = []
+            for act in (
+                lambda: app.post_message(events.Paste(url + "\nextra copied line")),
+                lambda: pilot.press("h", "t"),
+            ):
+                dialog = OpenPullRequestModal()
+                await app.push_screen(dialog)
+                await pilot.pause()
+                dialog.listed(one, "One.")
+                await pilot.pause()
+                if (done := act()) is not None and not isinstance(done, bool):
+                    await done
+                await pilot.pause()
+                seen.append((app.screen.query_one("#open-pr-url", Input).value, getattr(app.focused, "id", None)))
+                app.pop_screen()
+                await pilot.pause()
+        assert seen == [(url, "open-pr-url"), ("ht", "open-pr-url")], seen
+
     @pytest.mark.asyncio
     async def test_an_address_pasted_after_the_list_fills_is_the_one_opened(
         self, tmp_path: Path, fake_ado, monkeypatch

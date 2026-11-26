@@ -66,7 +66,16 @@ from .azure import (
     remote_names,
     thread_link,
 )
-from .azure_client import AzLogin, AzureError, Client, Credential, PullRequestHead, post_comment
+from .azure_client import (
+    INBOX_PAGE,
+    INBOX_PAGES,
+    AzLogin,
+    AzureError,
+    Client,
+    Credential,
+    PullRequestHead,
+    post_comment,
+)
 from .azure_state import forget_posted, keep_posted, keep_pull_request_url, posted_threads, pull_request_url
 from .clipboard import copy_text
 from .commands import ReviewCommandProvider
@@ -310,8 +319,9 @@ def _listed_line(listed: Listed) -> str:
     ]
 
 
-def _open_note(count: int, cloned: bool, failed: Sequence[str]) -> str:
-    """What the open dialog says of its list: how many, or why none, and each project it could not read."""
+def _open_note(count: int, cloned: bool, failed: Sequence[str], capped: Sequence[str] = ()) -> str:
+    """What the open dialog says of its list: how many, or why none, each project it could not read, and each whose
+    list stopped at its last page, so an older pull request is missing from it."""
     if count:
         said = (
             f"{count} open pull request{'' if count == 1 else 's'} here, newest first. Choose one, or paste an address."
@@ -322,6 +332,9 @@ def _open_note(count: int, cloned: bool, failed: Sequence[str]) -> str:
         said = "The repositories here have no open pull request. Paste an address."
     else:
         said = "No repository here has an Azure DevOps remote. Paste an address."
+    if capped:
+        listed = INBOX_PAGES * INBOX_PAGE
+        said += f" More are open in {', '.join(capped)}: only the newest {listed:,} per project are listed."
     return one_line(said + (f" Not read: {' '.join(failed)}" if failed else ""))[:BANNER_CHARS]
 
 
@@ -1514,16 +1527,23 @@ class AdkReviewTuiApp(App[int]):
                 return
         listed: list[Listed] = []
         failed: list[str] = []
+        capped: list[str] = []
         for (organization, project), repositories in wanted.items():
             client = self._client(PullRequest(ORIGIN.format(quote(organization, safe="")), project, "", 0))
             try:
-                listed += await asyncio.to_thread(client.active_pull_requests, repositories)
+                found, full = await asyncio.to_thread(client.active_pull_requests, repositories)
             except AzureError as exc:
                 failed.append(f"{organization}/{project}: {exc}")
+                continue
+            listed += found
+            if full:
+                capped.append(f"{organization}/{project}")
         if not dialog.is_attached:  # closed meanwhile
             return
         listed.sort(key=lambda one: one.created, reverse=True)
-        dialog.listed([(_listed_line(one), one.pr) for one in listed], _open_note(len(listed), bool(wanted), failed))
+        dialog.listed(
+            [(_listed_line(one), one.pr) for one in listed], _open_note(len(listed), bool(wanted), failed, capped)
+        )
 
     def _opened_address(self, text: str | PullRequest | None) -> None:
         """The pull request the dialog gave, chosen from its list, or the address pasted there: the pull request it
