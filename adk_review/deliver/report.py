@@ -192,10 +192,12 @@ TIDY_KEEPS = (
 )
 #: What a coding agent runs before it commits, ahead of the review that checks its work: the project's own tests,
 #: which the reviewer never runs, since it runs none of the reviewed code. What a tidy does when they fail is said
-#: where the tidies are, so a hand-off with none says nothing of them.
+#: where the tidies are, so a hand-off with none says nothing of them. Never by weakening a test, and never by retrying
+#: one fix without end: borrowed from Google's elephant-goldfish-model, which holds its agents to forward progress.
 TESTS_FIRST = (
     "Run the project's own tests before committing, as its Makefile, pyproject or CI runs them. A fix is done when",
-    "they pass.",
+    "they pass. Never weaken, skip or delete a test to make it pass. Where a fix breaks another test, or a failure",
+    "comes back after a second try, undo that fix. Report that finding as left, with the failure.",
 )
 #: What a coding agent does before it fixes a guideline's finding: a model's reading, which can be wrong, even where a
 #: verifier, a model too, agreed. Told only to fix each finding where it stands, an agent changes correct code for a

@@ -2212,6 +2212,28 @@ class TestThePreviousReportAndTheHandoff:
             assert _long([("the hand-off", prose)]) == []
             assert "--head refs/heads/feat$(id)" not in said and " --skip=*" not in said, said
 
+    def test_a_handoff_forbids_weakening_a_test_and_ends_a_fix_that_keeps_failing(self) -> None:
+        """Borrowed from Google's elephant-goldfish-model, whose resolution rules hold an agent to forward progress: the
+        hand-off said a fix is done when the tests pass, so an agent could weaken a test until it did, or retry one
+        fix without end. Its check of the work forbids the first, and has a fix that breaks another test, or fails
+        again after a second try, undone and reported."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+        from adk_review.deliver.report import render_handoff
+
+        found = Finding(file="a.py", line=3, severity="major", title="shell call", evidence="x", suggestion="s")
+        evidence = {
+            "preflight": {"repo": "/r", "head": "h", "base": "main", "head_sha": "0" * 40, "merge_base": "3" * 40},
+            "whole": False,
+            "scope": [],
+        }
+        said = render_handoff(evidence, Outcome(kept=[Sourced("rule.lint", found, (3, 3))]), verdict="REQUEST_CHANGES",
+                              fail_on="blocker")  # fmt: skip
+        check = " ".join(said.split("## Check your work", 1)[1].split())
+        assert "Never weaken, skip or delete a test to make it pass." in check, check
+        assert "or a failure comes back after a second try, undo that fix." in check, check
+        assert "Report that finding as left, with the failure." in check, check
+
     def test_a_handoff_lists_the_tidies_apart_and_holds_one_back_on_a_defects_lines(self) -> None:
         """A simplify pass keeps two lanes: a fix, and a tidy that changes how code reads and never what it does. A
         tidy is never given a fix's instruction: on lines a defect at major or above names, it waits for that defect,
