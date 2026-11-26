@@ -1353,7 +1353,9 @@ class TestTheLintRule:
             return real(argv, cwd)
 
         monkeypatch.setattr(ruff, "_ruff", recorded)
-        files = [{"path": f"pkg/m{n}.py", "text": "import os\n"} for n in range(60)]
+        # 200 paths, about 2,300 characters, past the cap wherever the virtual environment lies: measured on Linux, 60
+        # fitted in one line of 891 characters, its ruff's own path being shorter than macOS's.
+        files = [{"path": f"pkg/m{n}.py", "text": "import os\n"} for n in range(200)]
         found = ruff.diagnose({"files": files}, ("F401",), ())
         assert isinstance(found, dict) and sorted(found) == sorted(f["path"] for f in files), found
         assert len(widths) > 1 and max(widths) <= 900, widths
