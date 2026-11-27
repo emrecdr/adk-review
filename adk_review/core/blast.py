@@ -154,7 +154,10 @@ def is_test(path: str) -> bool:
 #: where ruff's W605, which `lint` selects, names it as a finding. `warnings.catch_warnings` would race: files are
 #: parsed on several threads.
 PARSED_AS = "<reviewed>"
-warnings.filterwarnings("ignore", category=SyntaxWarning, module=re.escape(PARSED_AS))
+#: Put first at every parse, never once: reproduced, a caller turning warnings into errors inside
+#: `warnings.catch_warnings()` put its filter before one installed at import, and a file holding an invalid escape read
+#: as one the parser refuses. Putting it first replaces the one already there, under the lock 3.14 holds for filters.
+_QUIET = re.escape(PARSED_AS)
 
 
 def parse(source: str) -> ast.Module | None:
@@ -166,6 +169,7 @@ def parse(source: str) -> ast.Module | None:
     rows: list[str] = []  # read once, at the first refusal, and only in a notebook: most modules parse at once
     while True:
         try:
+            warnings.filterwarnings("ignore", category=SyntaxWarning, module=_QUIET)
             return ast.parse(set_aside(source, aside) if aside else source, filename=PARSED_AS)
         except SyntaxError as exc:
             if not rows:
@@ -231,8 +235,13 @@ class _Tree:
             return found if own is None else found | self.exactly((*own, *key))
 
         found = _resolve(lookup, base, names)
-        if base and not lookup(base) and (above := self.above(importer, base)) is not None:
-            found |= _resolve(lambda key: self.exactly((*above, *key)), base, names)
+        if base and not lookup(base):
+            # The package's own name, else the first submodule it is asked for: read by cross-checking against
+            # codegraph, `from standards_audit import ledger` is a name of two parts though the package's is one.
+            reached = [(*base, name) for name in names if name and name != "*"]
+            above = next((at for parts in (base, *reached) if (at := self.above(importer, parts)) is not None), None)
+            if above is not None:
+                found |= _resolve(lambda key: self.exactly((*above, *key)), base, names)
         return found
 
     def above(self, importer: str, parts: tuple[str, ...]) -> tuple[str, ...] | None:

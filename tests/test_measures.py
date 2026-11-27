@@ -259,6 +259,35 @@ class TestTheBlastRadius:
         assert tree.one("pkg/llms/xyz/handler.py", 0, ("openai", "types")) is None
         assert tree.one("lib/tools/run/script.py", 0, ("office",)) is None
 
+    def test_a_test_reaches_a_submodule_it_imports_from_a_package_under_a_folder_above_it(self) -> None:
+        """Found by cross-checking against codegraph: `from standards_audit import ledger` in a test, the package under
+        a folder above it, was read as importing nothing: the rule read `standards_audit` alone, one part, where the
+        name the import reaches, `standards_audit.ledger`, has two (adk: 4 edges)."""
+        from adk_review.core.blast import index
+
+        tree = index(
+            [
+                "apps/__init__.py",
+                "apps/app_10/standards_audit/__init__.py",
+                "apps/app_10/standards_audit/ledger.py",
+                "apps/app_10/tests/test_audit.py",
+            ]
+        )
+        found = tree.absolute("apps/app_10/tests/test_audit.py", "standards_audit", ["ledger"])
+        assert {"apps/app_10/standards_audit/ledger.py", "apps/app_10/standards_audit/__init__.py"} <= found, found
+
+    def test_a_file_parses_whatever_filter_its_caller_puts_first(self) -> None:
+        """Reproduced: a caller that turns warnings into errors inside `warnings.catch_warnings()` put its filter before
+        the reviewer's, so a file holding an invalid escape such as `"\\d"` read as one the parser refuses. The
+        reviewer's filter is put first again at every parse, as codegraph's is."""
+        import warnings
+
+        from adk_review.core.blast import parse
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert parse('x = "\\d"\n') is not None
+
     def test_a_short_name_reaches_a_nested_module_only_from_an_import_root(self) -> None:
         """Measured on a 164-file tree against an exact resolver: `from types import` had landed on a nested
         `rules/types.py`. A folder holding `__init__.py` is a package, never a root Python imports a short name
