@@ -54,7 +54,9 @@ from __future__ import annotations
 
 import ast
 import functools
+import re
 import sys
+import warnings
 from collections import defaultdict
 from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
@@ -140,6 +142,15 @@ def is_test(path: str) -> bool:
     return in_a_tests_folder or p.name.startswith("test_") or p.stem.endswith("_test") or p.name == "conftest.py"
 
 
+#: The name the parser reads each reviewed file under. Python warns about a file's text, an invalid escape among it,
+#: under that name, and the filter below silences those warnings alone, from any thread: reproduced, one `"\\d"` in a
+#: reviewed file printed Python's own `<unknown>:5: SyntaxWarning` three times on the review's stderr, naming no file,
+#: where ruff's W605, which `lint` selects, names it as a finding. `warnings.catch_warnings` would race: files are
+#: parsed on several threads.
+PARSED_AS = "<reviewed>"
+warnings.filterwarnings("ignore", category=SyntaxWarning, module=re.escape(PARSED_AS))
+
+
 def parse(source: str) -> ast.Module | None:
     """The module's syntax tree, or None for one the parser refuses: a syntax error, a null byte, nesting too deep. In a
     notebook, each line Python refuses that opens as IPython's is set aside first, as lint sets it aside: reproduced by
@@ -149,7 +160,7 @@ def parse(source: str) -> ast.Module | None:
     rows: list[str] = []  # read once, at the first refusal, and only in a notebook: most modules parse at once
     while True:
         try:
-            return ast.parse(set_aside(source, aside) if aside else source)
+            return ast.parse(set_aside(source, aside) if aside else source, filename=PARSED_AS)
         except SyntaxError as exc:
             if not rows:
                 if not notebook(source):

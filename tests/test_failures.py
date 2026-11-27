@@ -15,6 +15,7 @@ from types import SimpleNamespace
 import litellm
 import pytest
 from conftest import (
+    BASE,
     CANNED_REVIEW,
     GUIDELINE_NAMES,
     INTAKE,
@@ -440,6 +441,40 @@ def test_a_dot_env_that_is_not_utf8_is_a_sentence_and_exit_2(monkeypatch, tmp_pa
     assert module.main(["--head", "x"]) == 2
     err = capsys.readouterr().err
     assert ".env is not UTF-8" in err and "Traceback" not in err, err
+
+
+def test_a_reviewed_file_python_warns_about_prints_none_of_python_s_own_warnings(tmp_path) -> None:
+    """Reproduced: one `"\\d"` in a reviewed file printed `<unknown>:5: SyntaxWarning: "\\d" is an invalid escape
+    sequence` three times on the review's stderr, Python's words naming no file, where ruff's W605, which `lint`
+    selects, already names it as a finding."""
+    repo = tmp_path / "escape"
+    repo.mkdir()
+    _git_in(repo, "init", "-q", "-b", BASE)
+    _committed(repo, "pkg/a.py", "def f():\n    return 1\n")
+    _git_in(repo, "checkout", "-q", "-b", "change")
+    _committed(repo, "pkg/a.py", 'import re\n\n\ndef f():\n    return re.match("\\d+", "12")\n')
+    done = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "adk_review.review",
+            str(repo),
+            "--head",
+            "change",
+            "--base",
+            BASE,
+            "--profile",
+            "rules-only",
+        ],
+        cwd=ROOT,
+        env={**os.environ, "LITELLM_LOCAL_MODEL_COST_MAP": "True"},
+        capture_output=True,
+        encoding="utf-8",
+        timeout=120,
+        check=False,
+    )
+    assert "W605 Invalid escape sequence" in done.stdout, done.stdout[-600:]
+    assert "SyntaxWarning" not in done.stderr, done.stderr[-600:]
 
 
 def test_a_misspelt_provider_is_a_sentence_and_exit_2_from_every_command() -> None:
