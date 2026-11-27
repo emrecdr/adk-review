@@ -842,6 +842,54 @@ class TestWhatTheChangeCalls:
         assert "## What the change calls" in verify.calls("", self.SHOWN)
 
 
+class TestCallsIntoAChangedMethod:
+    """Each call the change left alone into a method it changed, as into a module-level function: measured over 150
+    recent commits of three repositories, methods were 49% to 65% of the functions a change touched, and none of their
+    callers was shown. A call is followed where its object's class is known without running anything: `self` in the
+    class or a class deriving from it, the class itself, an object a project class's call made in the same function, or
+    a `self` attribute one made; a call on anything else is never guessed by its name."""
+
+    BILLING = (
+        "class Billing:\n    def __init__(self):\n        self.total = 0\n\n"
+        "    def charge(self, cents):\n        self.total += cents\n        return self.total\n\n"
+        "    def charge_twice(self, cents):\n        self.charge(cents)\n        return self.charge(cents)\n\n\n"
+        "class Store(Billing):\n    def sell(self):\n        return self.charge(100)\n"
+    )
+    CHECKOUT = (
+        "from shop.billing import Billing\n\n\n"
+        "def pay(cents):\n    bill = Billing()\n    return bill.charge(cents)\n\n\n"
+        "def quick(cents):\n    return Billing().charge(cents)\n\n\n"
+        "class Cart:\n    def __init__(self):\n        self.billing = Billing()\n\n"
+        "    def close(self, cents):\n        return self.billing.charge(cents)\n\n\n"
+        "def unknown(thing):\n    return thing.charge(1)\n"
+    )
+
+    def test_each_call_into_a_changed_method_whose_class_is_known_is_shown(self, tmp_path: Path, monkeypatch) -> None:
+        from adk_review.collect import change
+        from adk_review.collect.git import collect_evidence
+
+        repo = tmp_path / "shop"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "shop/__init__.py", "")
+        _committed(repo, "shop/billing.py", self.BILLING)
+        _committed(repo, "shop/checkout.py", self.CHECKOUT)
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "shop/billing.py", self.BILLING.replace("self.total += cents\n", "self.total += cents * 2\n"))
+        monkeypatch.setattr(change, "CALLS_SHOWN", 10)
+        callers = collect_evidence(str(repo), BASE, "change")["callers"]
+        assert callers.count("calls `Billing.charge()` from `shop/billing.py`") == 6, callers
+        for call in (
+            "self.charge(cents)",
+            "self.charge(100)",
+            "bill.charge(cents)",
+            "Billing().charge(cents)",
+            "self.billing.charge(cents)",
+        ):
+            assert call in callers, call
+        assert "thing.charge(1)" not in callers, "an object of a class no line names is never guessed"
+
+
 class TestTheHealthOfAWholeProject:
     """Under `--all` the files are the project, and the report measures it by code alone: what was read, the source
     and the tests apart, the source's function lines by McCabe complexity, and what each rule found. Numbers, never a

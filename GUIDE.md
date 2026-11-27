@@ -333,7 +333,7 @@ send nothing anywhere, and so do the commit and push hooks.
 | Sent to the model | What |
 |---|---|
 | The change | Git's diff of each file a guideline reads, a Python file it modifies widened to the function or class around each hunk, up to `--diff-cap`, the files left out named |
-| Around the change | Each changed file's blast radius, the paths of the files that import it, each call into a function the change touched, with a few lines around it, and the first lines of each project function, class or parent method an added line calls or overrides |
+| Around the change | Each changed file's blast radius, the paths of the files that import it, each call into a function or method the change touched, with a few lines around it, and the first lines of each project function, class or parent method an added line calls or overrides |
 | Under `--verify` | Each finding, with its title, reason and quote, and the parts of the change in the files that hold findings |
 | In chat, `adk web` | What you type, and the review's findings, which its verdict writes up |
 

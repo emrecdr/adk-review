@@ -56,8 +56,8 @@ BLAST_CAP_CHARS = 20_000
 CALLERS_CAP_CHARS = 12_000
 #: What a verifier reads above those calls, and a guideline too.
 CALLERS_SHOWN = (
-    "## Callers the change left alone\nEach call at the head to a function the change touched, from a line the change "
-    "did not add."
+    "## Callers the change left alone\nEach call at the head to a function or method the change touched, from a line "
+    "it did not add."
 )
 #: What a guideline reads above those calls: where a finding about one belongs.
 CALLERS_HEADING = f"{CALLERS_SHOWN} Where the change breaks one, report it on the changed lines.\n"

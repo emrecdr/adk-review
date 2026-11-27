@@ -9,7 +9,7 @@ import ast
 import functools
 import re
 from collections import defaultdict
-from collections.abc import Callable, Collection, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterator, Mapping, Sequence
 from pathlib import PurePosixPath
 
 from ..core.blast import PASSED_ON, Blast, blast_radius, is_test, parse
@@ -347,7 +347,8 @@ CALL_CONTEXT = 3
 
 
 def callers_of(tree: Tree | None, files: list[Entry]) -> str:
-    """Each call at the head into a module-level function whose lines the change added or removed, on no line the
+    """Each call at the head into a module-level function or a method whose lines the change added or removed, on
+    no line the
     change added, with the lines around it: what a guideline weighs a change of behaviour against, where no diff
     shows it, in a file the change left alone or elsewhere in its own. Asked by the owner, and measured live on both
     arms over five branches, each a behaviour change an unchanged caller relied on: the correctness guideline raised
@@ -379,6 +380,13 @@ def _touched(tree: Tree, files: list[Entry]) -> set[tuple[str, str]]:
             for node in module.body
             if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and lines & _span(node)
         }
+        touched |= {
+            (item["path"], f"{node.name}.{method.name}")
+            for node in module.body
+            if isinstance(node, ast.ClassDef)
+            for method in node.body
+            if isinstance(method, ast.FunctionDef | ast.AsyncFunctionDef) and lines & _span(method)
+        }
     return touched
 
 
@@ -407,7 +415,96 @@ def _sites(
                 and new.isdisjoint(range(node.lineno, (node.end_lineno or node.lineno) + 1))
             ):
                 sites[target].append((path, node.lineno))
+        for target, line in _method_calls(tree, path, module, touched, bound):
+            if new.isdisjoint(range(line[0], line[1] + 1)):
+                sites[target].append((path, line[0]))
     return sites
+
+
+def _method_calls(
+    tree: Tree, path: str, module: ast.Module, touched: set[tuple[str, str]], bound: Callable[[str], Mapping]
+) -> Iterator[tuple[tuple[str, str], tuple[int, int]]]:
+    """Each call in `module` into a touched method, by the method and the call's first and last lines, where the
+    object's class is known without running anything: `self` or `cls` through the class around the call and its
+    parents, the class itself, `Class(...)`, a local a project class's call made in the same function, or a `self`
+    attribute one made in the class. Measured over 150 recent commits of three repositories: methods were 49% to 65%
+    of the functions a change touched, and none of their callers was shown. Measured live on Copilot over four planted
+    method changes a caller left alone relied on and one that kept the behaviour, three runs each: with the calls the
+    correctness guideline named the callers that break, `pay()` and `Store.sell()`, where without them it guessed that
+    callers may break, and a required parameter added was found as the TypeError every caller meets, 3 of 3, where
+    without them it was read as an unused parameter, 3 of 3; the branch that kept the behaviour drew no finding either
+    way, on Copilot and on Gemini. A call on anything else is never guessed by its name."""
+    names = {function.rpartition(".")[2] for _owner, function in touched if "." in function}
+    calls = [
+        node
+        for node in ast.walk(module)
+        if names
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr in names
+    ]
+    if not calls:
+        return
+    parents = {child: node for node in ast.walk(module) for child in ast.iter_child_nodes(node)}
+    for node in calls:
+        assert isinstance(node.func, ast.Attribute)
+        for file, cls in _classes_of(tree, path, node.func.value, parents, bound):
+            if found := _method(tree, [(file, cls)], node.func.attr, bound):
+                if (key := (found[0], f"{found[2]}.{node.func.attr}")) in touched:
+                    yield key, (node.lineno, node.end_lineno or node.lineno)
+                break
+
+
+def _classes_of(
+    tree: Tree, path: str, value: ast.expr, parents: Mapping[ast.AST, ast.AST], bound: Callable[[str], Mapping]
+) -> list[tuple[str, ast.ClassDef]]:
+    """The project class an object is of, where a line says it: none where nothing does."""
+    if isinstance(value, ast.Name) and value.id in ("self", "cls"):
+        return [(path, cls)] if (cls := _class_around(value, parents)) else []
+    if isinstance(value, ast.Call):
+        return _project_class(tree, path, _dotted(value.func), bound)
+    if isinstance(value, ast.Name):
+        if classes := _project_class(tree, path, value.id, bound):
+            return classes
+        made = _made_in(
+            _scope_of(value, parents), lambda target: isinstance(target, ast.Name) and target.id == value.id
+        )
+        return _project_class(tree, path, made, bound)
+    if isinstance(value, ast.Attribute) and isinstance(value.value, ast.Name) and value.value.id == "self":
+        cls = _class_around(value, parents)
+        attribute = value.attr
+
+        def assigned(target: ast.expr) -> bool:
+            return (
+                isinstance(target, ast.Attribute)
+                and target.attr == attribute
+                and isinstance(target.value, ast.Name)
+                and target.value.id == "self"
+            )
+
+        return _project_class(tree, path, _made_in(cls, assigned), bound) if cls else []
+    return []
+
+
+def _project_class(tree: Tree, path: str, name: str, bound: Callable[[str], Mapping]) -> list[tuple[str, ast.ClassDef]]:
+    defined = _resolved(tree, path, name, bound) if name else None
+    return [(defined[0], defined[1])] if defined and isinstance(defined[1], ast.ClassDef) else []
+
+
+def _scope_of(node: ast.AST, parents: Mapping[ast.AST, ast.AST]) -> ast.AST | None:
+    """The function around `node`, else its module."""
+    up = parents.get(node)
+    while up is not None and not isinstance(up, ast.FunctionDef | ast.AsyncFunctionDef | ast.Module):
+        up = parents.get(up)
+    return up
+
+
+def _made_in(scope: ast.AST | None, target: Callable[[ast.expr], bool]) -> str:
+    """The callee's dotted name the last assignment in `scope` to a `target` calls: `bill = Billing()` gives
+    `Billing`; empty where none does, or where the value is no call."""
+    made = ""
+    for node in ast.walk(scope) if scope is not None else ():
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and target(node.targets[0]):
+            made = _dotted(node.value.func) if isinstance(node.value, ast.Call) else ""
+    return made
 
 
 def _bound(tree: Tree) -> Callable[[str], Mapping[str, tuple[str, str | None]]]:

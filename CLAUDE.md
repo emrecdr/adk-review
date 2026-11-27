@@ -201,7 +201,8 @@ a Health section (`core/health.py`: what was read, source and tests apart, McCab
 counts it, in bands graded A to E by SIG's published risk-profile rating where most of the source parsed, each rule's
 findings by severity, counted and never graded; never read by the verdict), each changed file's blast radius
 (`core/blast.py`: an import graph parsed from the head commit, shown to the guidelines as `{blast?}` with each call into
-a function the change touched that it did not add or edit (`collect/change.py`'s `callers_of`) and each definition an
+a function or method the change touched that it did not add or edit
+(`collect/change.py`'s `callers_of`) and each definition an
 added line calls or overrides (`callees_of`), and heading the report,
 never read by the verdict), and fences around every untrusted section the guidelines, the verifiers and the chat's
 verdict read (`judge/agents.py`: two marker lines carrying a nonce drawn once a process, a second one, no guideline

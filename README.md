@@ -1156,12 +1156,18 @@ by itself; a review whose profile names a guideline does.
 - **The blast radius says where to read.** What at the head depends on each changed Python file, directly or through
   another, tests counted apart: read from git in one batch and parsed with Python's own `ast`, never run. The guidelines
   read it beside the diff, told to weigh a change to shared behaviour by how far it reaches, as context and never as
-  evidence: a finding that quotes it is dropped. Beside it they read each call into a function the change touched, one
+  evidence: a finding that quotes it is dropped. Beside it they read each call into a function or method the change
+  touched, one
   it did not add or edit, with three lines each way and three calls a function at most, a call from each file
   before a second: a side effect no diff shows, which a finding reports on the changed lines. Measured live over five
   planted side effects, each a behaviour change a caller relied on: both arms raised each one with or without the calls,
   but without them as a guess that callers may break, and with them naming the caller and what it relied on; neither
-  raised anything on a branch that kept its behaviour. They read too the first twenty lines of each project function,
+  raised anything on a branch that kept its behaviour. A method's callers are followed where a line says the object's
+  class: `self`, the class, a local or a `self` attribute a project class's call made. Measured live on Copilot over
+  four planted method changes, three runs each: with them the callers that break were named, and a required
+  parameter added was found as the TypeError every caller meets, 3 of 3, where without them it read as an unused
+  parameter, 3 of 3; a branch that kept the behaviour drew nothing either way, on both arms. They read too the first
+  twenty lines of each project function,
   class or parent method an added line calls or overrides, eight at most, unless the diff shows its signature: the
   contract a call relies on, followed through an import, its own module or `self`. Measured live on Copilot over five
   planted misuses, each of a helper's contract no diff showed, and a branch using the same helpers correctly, three runs
