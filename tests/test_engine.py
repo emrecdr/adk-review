@@ -1496,14 +1496,17 @@ class TestTheChecksNode:
     @pytest.mark.asyncio
     async def test_the_commands_evidence_is_dropped_once_the_checks_have_read_it(self, demo_repo: Path) -> None:
         from adk_review.collect.git import collect_evidence
-        from adk_review.judge.agents import BLAST
+        from adk_review.judge.agents import BLAST, for_the_guidelines
 
         evidence = collect_evidence(str(demo_repo), BASE, HEAD)
-        run = await self._run(catalog().rules, {}, evidence)
+        # Seeded as the command seeds it, before its run: read by review, written by this node, the section reached
+        # ADK's debug log with a callee's key in the clear.
+        seeded = for_the_guidelines(evidence["blast"], evidence.get("callers", ""), evidence.get("callees", ""))
+        run = await self._run(catalog().rules, {BLAST: seeded}, evidence)
         assert self._answer(run, rule_id("demo-money-in-cents")).findings, "the rules read the tree and the texts first"
         assert evidence["tree"] is None
         assert all(e["text"] is None and e["added"] is None and e["diff"] is None for e in evidence["files"])
-        assert run.state[BLAST].startswith("## Blast radius"), "the radius, written before the tree went"
+        assert run.state[BLAST] == seeded and seeded.startswith("## Blast radius"), "the command's seed, kept whole"
 
     def test_chats_verdict_reads_each_check_decided_one_finding_a_line_and_capped(self, monkeypatch) -> None:
         """The verdict first, as code decided it; each check in the report's order, a finding it kept one line, one the

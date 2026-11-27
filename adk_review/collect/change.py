@@ -482,10 +482,11 @@ def callees_of(tree: Tree | None, files: list[Entry]) -> str:
     and the correct branch drew no finding either way. A call is
     followed through an import as `Tree.imports` binds it, on where a file only passes the name on, by its own
     name in its own module, and through `self` to the class around it and its parents; one through any other object is
-    not, nor a definition a test file holds, nor one in a file holding a private key, named there and never shown."""
+    not, nor a name the calling function binds itself, nor a definition a test file holds or whose signature and
+    docstring the diff shows, nor one in a file holding a private key, named there and never shown."""
     if tree is None:
         return ""
-    bound, diffed = _bound(tree), _diffed(files)
+    bound, seen = _bound(tree), _shown(files)
     relied: list[tuple[str, int, str, str, _Defined]] = []
     for item in files:
         try:
@@ -494,25 +495,38 @@ def callees_of(tree: Tree | None, files: list[Entry]) -> str:
             continue
         if isinstance(module, ast.Module):
             relied += _relied_on(tree, item["path"], module, item["added_at"], bound)
-    shown: dict[tuple[str, int], str] = {}
+    chosen: dict[tuple[str, int], tuple[str, str, str, str, ast.AST]] = {}
     # The source's calls first, which correctness and security judge, then the tests'.
     for path, _line, verb, label, (file, node) in sorted(relied, key=lambda site: (is_test(site[0]), *site[:2])):
-        if (file, node.lineno) in shown or _span(node) & diffed.get(file, set()) or is_test(file):
+        if (file, node.lineno) in chosen or _head(node) <= seen.get(file, set()) or is_test(file):
             continue
-        shown[file, node.lineno] = _definition_shown(tree, path, verb, label, file, node)
-    listed = list(shown.values())
-    if (more := len(listed) - CALLEES_SHOWN) > 0:
+        chosen[file, node.lineno] = (path, verb, label, file, node)
+    # Only those shown are rendered, each file read for a key once: read by review, 3,000 called were 13 s.
+    listed = [_definition_shown(tree, *picked) for picked in list(chosen.values())[:CALLEES_SHOWN]]
+    if (more := len(chosen) - CALLEES_SHOWN) > 0:
         noun = "definition" if more == 1 else "definitions"
-        listed = [*listed[:CALLEES_SHOWN], f"- {more:,} more {noun} the change calls or overrides, not shown"]
+        listed.append(f"- {more:,} more {noun} the change calls or overrides, not shown")
     return "\n".join(listed)
 
 
-def _diffed(files: list[Entry]) -> dict[str, set[int]]:
-    """Each changed file's lines the diff shows as changed, by the head's numbers: what a guideline reads already."""
+def _shown(files: list[Entry]) -> dict[str, set[int]]:
+    """Each changed file's lines its diff shows at the head, its context among them: what a guideline reads already.
+    Read by review: counting the changed lines alone, a definition whose one edited line the diff showed was skipped,
+    its signature unseen, and one the diff showed whole as context was shown again."""
     return {
-        item["path"]: set(item["added_at"]) | {line for line, raw in hunk_lines(item["diff"] or "") if raw[:1] == "-"}
-        for item in files
+        item["path"]: {line for line, raw in hunk_lines(item["diff"] or "") if raw[:1] in (" ", "+")} for item in files
     }
+
+
+def _head(node: ast.AST) -> set[int]:
+    """A definition's head: its decorators, signature and docstring, what a caller reads of its contract."""
+    assert isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+    first, body = min(_span(node)), node.body[0]
+    documented = (
+        isinstance(body, ast.Expr) and isinstance(body.value, ast.Constant) and isinstance(body.value.value, str)
+    )
+    last = (body.end_lineno or body.lineno) if documented else max(node.lineno, body.lineno - 1)
+    return set(range(first, last + 1))
 
 
 def _relied_on(
@@ -520,10 +534,15 @@ def _relied_on(
 ) -> list[tuple[str, int, str, str, _Defined]]:
     """What the lines `added` of `path` call or override, each as `(path, line, verb, label, definition)`."""
     parents = {child: node for node in ast.walk(module) for child in ast.iter_child_nodes(node)}
+    lines = set(added)
     found = []
     for node in ast.walk(module):
-        if isinstance(node, ast.Call) and set(range(node.lineno, (node.end_lineno or node.lineno) + 1)) & set(added):
+        if isinstance(node, ast.Call) and not lines.isdisjoint(
+            range(node.lineno, (node.end_lineno or node.lineno) + 1)
+        ):
             name = _dotted(node.func)
+            if name and "." not in name and name in _own_names(node, parents):
+                continue  # a parameter, a local or a nested definition: never the module's
             if name.startswith("self.") and name.count(".") == 1 and (cls := _class_around(node, parents)):
                 if method := _method(tree, [(path, cls)], name[5:], bound):
                     found.append((path, node.lineno, "calls", f"{method[2]}.{method[1].name}", method[:2]))
@@ -536,9 +555,28 @@ def _relied_on(
             found += [
                 (path, item.lineno, "overrides", f"{method[2]}.{item.name}", method[:2])
                 for item in methods
-                if classes and _span(item) & set(added) and (method := _method(tree, classes, item.name, bound))
+                if classes and _span(item) & lines and (method := _method(tree, classes, item.name, bound))
             ]
     return found
+
+
+def _own_names(node: ast.AST, parents: Mapping[ast.AST, ast.AST]) -> set[str]:
+    """The names the function around `node` binds itself: its parameters, what it assigns and what it defines. Read by
+    review: a parameter named as a module-level function was shown that function's contract."""
+    up = parents.get(node)
+    while up is not None and not isinstance(up, ast.FunctionDef | ast.AsyncFunctionDef | ast.Lambda):
+        up = parents.get(up)
+    if up is None:
+        return set()
+    arguments = up.args
+    names = {a.arg for a in (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs)}
+    names |= {a.arg for a in (arguments.vararg, arguments.kwarg) if a is not None}
+    for inner in ast.walk(up):
+        if isinstance(inner, ast.Name) and isinstance(inner.ctx, ast.Store):
+            names.add(inner.id)
+        elif inner is not up and isinstance(inner, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
+            names.add(inner.name)
+    return names
 
 
 def _class_around(node: ast.AST, parents: Mapping[ast.AST, ast.AST]) -> ast.ClassDef | None:
@@ -555,15 +593,20 @@ def _method(
 ) -> tuple[str, ast.FunctionDef | ast.AsyncFunctionDef, str] | None:
     """Method `name` as the first of `classes`, each by its file, that defines it does, then their parents',
     `PASSED_ON` levels up, with the class's name."""
-    level = classes
+    level, read = classes, {(file, cls.lineno) for file, cls in classes}
     for _ in range(PASSED_ON + 1):
-        upper = []
+        upper: list[tuple[str, ast.ClassDef]] = []
         for file, cls in level:
             for node in cls.body:
                 if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == name:
                     return file, node, cls.name
-            upper += [found for base in cls.bases if (found := _resolved(tree, file, _dotted(base), bound))]
-        level = [(file, cls) for file, cls in upper if isinstance(cls, ast.ClassDef)]
+            # Each base named once, and each class read once: read by review, `class A(A, A, ...)` multiplied them.
+            for base in dict.fromkeys(_dotted(base) for base in cls.bases):
+                where, parent = _resolved(tree, file, base, bound) or ("", None)
+                if isinstance(parent, ast.ClassDef) and (where, parent.lineno) not in read:
+                    read.add((where, parent.lineno))
+                    upper.append((where, parent))
+        level = upper
     return None
 
 

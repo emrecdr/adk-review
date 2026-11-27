@@ -1084,7 +1084,7 @@ def _judged(
 
     from google.adk.runners import InMemoryRunner
 
-    from .judge.agents import DIFF, IGNORED
+    from .judge.agents import BLAST, DIFF, IGNORED, for_the_guidelines
     from .judge.graph import build_app
     from .judge.plugins import ONE_TURN, Progress, accounted
     from .judge.run import read_checks, read_guidelines, run_seeded
@@ -1111,7 +1111,15 @@ def _judged(
                 run_seeded(
                     runner,
                     session_id="run",
-                    state={DIFF: evidence["diff"], IGNORED: evidence.get("ignored", [])},
+                    state={
+                        DIFF: evidence["diff"],
+                        IGNORED: evidence.get("ignored", []),
+                        # Seeded, as the diff is: read by review, written by the checks node, ADK's debug plugin
+                        # logged a callee's key in the clear with the change of state.
+                        BLAST: for_the_guidelines(
+                            evidence["blast"], evidence.get("callers", ""), evidence.get("callees", "")
+                        ),
+                    },
                     prompt=ONE_TURN,
                 )
             )

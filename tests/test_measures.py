@@ -656,6 +656,105 @@ class TestWhatTheChangeCalls:
             "- `zz/greet.py` calls `find_user()`, defined in `shop/users.py`:\n"
         )
 
+    def test_a_debug_log_holds_no_credential_from_what_the_change_calls(self, tmp_path: Path, cli) -> None:
+        """Read by review, and reproduced: the checks node wrote the section into the session's state, and ADK's debug
+        plugin logged that change of state with a helper's key in the clear, though the model was sent it redacted."""
+        key = "AKIA" + "IOSFODNN7" + "EXAMPLE"  # joined: the push check reads every commit
+        users = self.USERS.replace("    return USERS.get(uid)\n", f'    token = "{key}"\n    return USERS.get(uid)\n')
+        repo = tmp_path / "keyed"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "shop/__init__.py", "")
+        _committed(repo, "shop/users.py", users)
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "shop/greet.py", self.GREET)
+        log = tmp_path / "debug.yaml"
+        argv = [str(repo), "--head", "change", "--base", BASE, "--check", "guideline.correctness", "--no-verify"]
+        cli.main([*argv, "--debug-log", str(log)])
+        written = log.read_text(encoding="utf-8")
+        assert "find_user" in written and key not in written
+
+    def test_a_class_listing_a_parent_many_times_reads_each_class_once(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review, and reproduced: `class A(A, A, ...)` multiplied the classes read at every level, 177 s of
+        gathering at forty, before any model call."""
+        from adk_review.collect import change
+        from adk_review.collect.git import collect_evidence
+
+        bases = ", ".join(["A"] * 8)
+        looped = f"class A({bases}):\n    def run(self):\n        return self.missing()\n"
+        calls: list[int] = []
+        real = change._resolved
+        monkeypatch.setattr(change, "_resolved", lambda *args: calls.append(1) or real(*args))
+        collect_evidence(str(self.shop(tmp_path, {"shop/looped.py": looped})), BASE, "change")
+        assert len(calls) < 100, len(calls)
+
+    def test_a_definition_whose_signature_the_diff_does_not_show_is_shown(self, tmp_path: Path) -> None:
+        """Read by review, and reproduced: one method edited far below its class's first line put the class's span in
+        the diff, so a new call building the class was shown neither `class Account` nor its docstring."""
+        from adk_review.collect.git import collect_evidence
+
+        methods = "".join(f"    def m{i}(self):\n        return {i}\n\n" for i in range(12))
+        account = (
+            'class Account:\n    """An account; its balance in cents, an int."""\n\n'
+            f"{methods}    def total(self):\n        return self.balance\n"
+        )
+        repo = tmp_path / "account"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "shop/__init__.py", "")
+        _committed(repo, "shop/account.py", account)
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "shop/account.py", account.replace("return self.balance", "return self.balance * 1"))
+        _committed(
+            repo, "shop/open.py", "from shop.account import Account\n\n\ndef open_account():\n    return Account()\n"
+        )
+        callees = collect_evidence(str(repo), BASE, "change")["callees"]
+        assert "calls `Account()`, defined in `shop/account.py`" in callees, callees
+
+    def test_a_definition_the_diff_shows_whole_is_not_shown_again(self, tmp_path: Path) -> None:
+        """Read by review, and reproduced: a function added right below `find_user` and calling it showed
+        `find_user` whole as the diff's context, and the section took one of its places for it again."""
+        from adk_review.collect.git import collect_evidence
+
+        below = self.USERS + "\n\ndef greet(uid):\n    return find_user(uid)['name']\n"
+        repo = self.shop(tmp_path, {"shop/users.py": below})
+        assert collect_evidence(str(repo), BASE, "change")["callees"] == ""
+
+    def test_a_name_the_function_binds_itself_is_not_read_as_the_modules(self, tmp_path: Path) -> None:
+        """Read by review, and reproduced: a parameter named as a module-level function was shown that function's
+        contract, which the call never reaches."""
+        from adk_review.collect.git import collect_evidence
+
+        shadowed = (
+            "from shop.users import find_user\n\n\ndef greet(uid, find_user):\n    return find_user(uid)['name']\n"
+        )
+        repo = self.shop(tmp_path, {"shop/greet.py": shadowed})
+        assert collect_evidence(str(repo), BASE, "change")["callees"] == ""
+
+    def test_only_the_definitions_shown_are_read_for_a_private_key(self, tmp_path: Path, monkeypatch) -> None:
+        """Read by review, and measured: every distinct definition was rendered, its file read for a key, before the
+        list was cut to its eight: 13 s for a change calling 3,000 functions."""
+        from adk_review.collect import change
+        from adk_review.collect.git import collect_evidence
+
+        helpers = "".join(f"def f{i}():\n    return {i}\n\n\n" for i in range(10))
+        calls = "from shop.helpers import " + ", ".join(f"f{i}" for i in range(10)) + "\n\n\ndef run():\n"
+        calls += "".join(f"    f{i}()\n" for i in range(10))
+        repo = tmp_path / "many"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "shop/__init__.py", "")
+        _committed(repo, "shop/helpers.py", helpers)
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "shop/run.py", calls)
+        read: list[str] = []
+        real = change.holds_private_key
+        monkeypatch.setattr(change, "holds_private_key", lambda text: read.append(text) or real(text))
+        monkeypatch.setattr(change, "CALLEES_SHOWN", 2)
+        callees = collect_evidence(str(repo), BASE, "change")["callees"]
+        assert callees.endswith("- 8 more definitions the change calls or overrides, not shown"), callees
+        assert sum(text.startswith("def f0():") for text in read) <= 2, "the helpers' file, once a definition shown"
+
     def test_nothing_is_gathered_where_no_guideline_reads_it(self, tmp_path: Path) -> None:
         from adk_review.collect.git import collect_evidence
 
