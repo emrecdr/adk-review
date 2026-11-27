@@ -18,6 +18,11 @@ diff_cap = 90000     # characters of a file's diff a guideline reads; a file cut
 # And protoc's generated modules, stubs and gRPC services, each written whole and saying not to edit it: a guideline's
 # finding there names nothing to fix in it, and measured over 1,090 of them, 10 to 15 % of the services and the stubs
 # were past the cap of 16,000 characters then. The rules still read every line.
+# And the graph of a project's code codegraph keeps in `.codegraph/`, at the top or in a sub-project: a tool writes it
+# whole, and its folder ignores itself, but `git add -f` can still commit tens of megabytes of it. And the caches a
+# type checker, a test runner, a linter, a property tester, tox, nox or Jupyter keeps, which no person writes and only
+# a mistake commits. Never a dot-folder a tool or an agent obeys, nor CI's: those are read. The rules still read every
+# line.
 skip = [
     "*.png", "*.PNG", "*.jpg", "*.JPG", "*.jpeg", "*.JPEG", "*.gif", "*.GIF", "*.webp", "*.WEBP", "*.ico", "*.ICO",
     "*.bmp", "*.BMP", "*.tif", "*.TIF", "*.tiff", "*.TIFF", "*.avif", "*.AVIF", "*.heic", "*.HEIC", "*.heif", "*.HEIF",
@@ -26,6 +31,8 @@ skip = [
     "pnpm-lock.yaml", "bun.lock", "deno.lock", "Cargo.lock", "go.sum", "Gemfile.lock", "composer.lock", "mix.lock",
     "pubspec.lock", "Podfile.lock", "Package.resolved", "packages.lock.json", "gradle.lockfile", "flake.lock",
     "*_pb2.py", "*_pb2.pyi", "*_pb2_grpc.py", "*_pb2_grpc.pyi",
+    "**/.codegraph/**", "**/.mypy_cache/**", "**/.pytest_cache/**", "**/.ruff_cache/**", "**/.hypothesis/**",
+    "**/.tox/**", "**/.nox/**", "**/.ipynb_checkpoints/**",
 ]
 # Globs of the changed files a review reads, at any depth: Python's and notebooks, the configs beside them, a
 # credential's own files, keys and key stores, and what a coding agent or another tool obeys; --scan adds more for one

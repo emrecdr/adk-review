@@ -800,6 +800,26 @@ class TestWhatAReviewCovers:
         assert f"- skipped      {skipped}" in out, out
         assert "- not read" not in out
 
+    def test_a_code_graph_a_tool_keeps_is_left_to_the_rules_by_the_shipped_skip_list(
+        self, cli, tmp_path: Path, capsys
+    ) -> None:
+        """codegraph keeps a project's graph in `.codegraph/graph.json`, written whole by a tool, which ignores itself;
+        a branch can still commit one with `git add -f`, tens of megabytes of JSON a guideline would read as the
+        change. Asked by the owner: named as skipped at the top and in a sub-project, and the rules still read it."""
+        repo = _branch_off_empty(tmp_path / "repo", "feature", base="main")
+        graph = "{\n" + "".join(f'  "file{i}": "a/b{i}.py",\n' for i in range(150)) + '  "end": 0\n}\n'
+        _committed(repo, ".codegraph/graph.json", graph)
+        _committed(repo, "services/api/.codegraph/graph.json", graph)
+        _committed(repo, ".mypy_cache/3.14/app.data.json", graph)  # a tool's cache, the owner's list
+        _committed(repo, ".pytest_cache/v/cache/lastfailed", graph)
+        cli.main([str(repo), "--head", "feature", "--base", "main"])
+        out = capsys.readouterr().out
+        for path in (".codegraph/graph.json", "services/api/.codegraph/graph.json"):
+            assert f"`{path}`: left to the rules by the operator's `**/.codegraph/**`" in out, out
+        assert "`.mypy_cache/3.14/app.data.json`: left to the rules by the operator's `**/.mypy_cache/**`" in out
+        assert "`.pytest_cache/v/cache/lastfailed`: left to the rules by the operator's `**/.pytest_cache/**`" in out
+        assert "- not read" not in out
+
     def test_an_image_or_a_font_is_left_to_the_rules_by_the_shipped_skip_list(
         self, cli, tmp_path: Path, capsys
     ) -> None:

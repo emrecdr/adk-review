@@ -246,7 +246,9 @@ dropped. An installed command reads the copy it was installed with: installed fr
 reads the config of the commit it pins, so a policy of your own is a commit of your own fork, pinned instead. The
 shipped `skip` names images and fonts, in either case, which no rule or model reads, so a branch adding a logo is not a
 hole, lockfiles, which the rules read whole and no guideline judges, and protoc's generated modules (`*_pb2.py`,
-`*_pb2.pyi`, `*_pb2_grpc.py`, `*_pb2_grpc.pyi`), which say not to edit them. `rule.lockfile-sources` reads where npm's,
+`*_pb2.pyi`, `*_pb2_grpc.py`, `*_pb2_grpc.pyi`), which say not to edit them, and the code graph a tool keeps in a
+`.codegraph` folder and the caches mypy, pytest, ruff, Hypothesis, tox, nox and Jupyter keep, at any depth; a
+dot-folder a tool, an agent or CI obeys is still read. `rule.lockfile-sources` reads where npm's,
 Yarn's, pnpm's, bun's, uv's, Poetry's, PDM's, Pipenv's, Cargo's, Bundler's, Dart's, Mix's and CocoaPods' lockfiles fetch
 from, and names a source outside the package manager's public registry, in any spelling a URL's parser reads:
 `HTTPS://`, `https:/` and `https:\\` are sources as `https://` is. A line that writes a string as no package manager
