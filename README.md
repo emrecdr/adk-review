@@ -1167,7 +1167,8 @@ by itself; a review whose profile names a guideline does.
   planted misuses, each of a helper's contract no diff showed, and a branch using the same helpers correctly, three runs
   each: the correctness guideline named 12 of 15 with them and 3 without, the one it guessed, and the correct branch
   drew no finding with them and three false majors without; neither side named a parent's return contract an override
-  broke.
+  broke. On Gemini, one run each, it named 5 of 5 with them, the broken contract among them, and 1 without, and the
+  correct branch drew no finding either way.
   The report shows it under the verdict, widest first — the most
   modules importing a file directly, then the most reached — and the verdict never reads it: severity decides. An import
   graph is a floor of what a change reaches, since a module loaded by name, a subprocess, a web route or a plugin
