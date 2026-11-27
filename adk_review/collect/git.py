@@ -1139,6 +1139,23 @@ def _no_text(diff: str) -> bool:
     return BINARY.search(headers(diff)) is not None or lfs_pointer(diff)
 
 
+def texts_at_head(resolved: dict, paths: Collection[str]) -> dict[str, str]:
+    """Each of `paths` as the head holds it, in one batch, for what a report checks once the model calls are done: the
+    head's texts are let go before them. A path the head does not hold as a plain file, a blob git does not give back,
+    or a failed read is left out, never guessed: the report offers no suggestion on a Python file it was not given."""
+    try:
+        listing = head_listing(resolved)
+        blobs = {path: sha for path, sha, _size in _plain(listing or [])}
+        wanted = sorted(path for path in paths if path in blobs)
+        return {
+            path: text
+            for path, text in zip(wanted, _blobs(resolved, [blobs[p] for p in wanted]), strict=True)
+            if text is not None
+        }
+    except GitError:
+        return {}
+
+
 def read_texts(
     resolved: dict,
     files: list[Entry],

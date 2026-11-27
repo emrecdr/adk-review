@@ -1204,6 +1204,42 @@ class TestTheSecondOpinion:
         assert "SAY THIS HOLDS" not in shown and "steered" not in shown and "argv" not in shown
 
 
+class TestASuggestionKeepsItsFilePython:
+    def test_a_review_offers_a_suggestion_only_where_its_code_keeps_the_file_python(
+        self, cli, fake_provider, tmp_path: Path
+    ) -> None:
+        """The command reads each Python file a finding's code stands in again from git, once the model calls are done,
+        and the report offers the code as a suggestion only where the file still parses with it."""
+        before = {"app.py": "class Exporter:\n    def export(self, rows):\n        return rows\n"}
+        body = "        joined = ','.join(rows)\n        return joined\n"
+        after = {"app.py": "class Exporter:\n    def export(self, rows):\n" + body}
+        repo = branched(tmp_path, before, after)
+
+        def finding(title: str, quote: str, code: str) -> dict:
+            said = {"file": "app.py", "severity": "major", "title": title, "evidence": quote, "why": "w."}
+            return {**said, "suggestion": "s.", "code": code}
+
+        fake_provider.answers_when(
+            THE_GUIDELINES,
+            {
+                "findings": [
+                    finding("keeps the body", "        return joined", "        return joined.strip()"),
+                    finding(
+                        "repeats the signature",
+                        "        joined = ','.join(rows)",
+                        "    def export(self, rows):\n        joined = ';'.join(rows)",
+                    ),
+                ]
+            },
+        )
+        report = tmp_path / "r.json"
+        argv = [str(repo), "--head", "change", "--base", "main", "--check", "guideline.correctness"]
+        cli.main([*argv, "--json", str(report)])
+        data = json.loads(report.read_text(encoding="utf-8"))
+        said = {f["title"]: f["suggestable"] for f in data["findings"] + data["folded"]}
+        assert said == {"keeps the body": True, "repeats the signature": False}, said
+
+
 class TestWhatTheBranchAlreadyHolds:
     def test_a_finding_whose_suggested_code_the_branch_already_holds_is_flagged_never_removed(
         self, cli, fake_provider, tmp_path: Path, capsys

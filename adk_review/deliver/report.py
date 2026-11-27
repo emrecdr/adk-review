@@ -16,12 +16,13 @@ from dataclasses import dataclass
 from pathlib import Path, PurePath, PureWindowsPath
 from typing import Any
 
-from ..core.blast import Blast, describe
+from ..core.blast import Blast, describe, parse
 from ..core.evidence import Evidence
 from ..core.findings import RANK, Checked, Finding, at_or_above
 from ..core.health import Health, found_by_rule, grade
 from ..core.paths import in_scope, no_such_path
 from ..core.profiles import guideline_id, rule_id
+from ..core.rules import PYTHON_SUFFIXES
 from ..core.secrets import holds_private_key, scrub
 from ..core.text import CUT_MARK, EVIDENCE_MAX_CHARS, REASON_MAX_CHARS, backticks, cut_at, short_ref, squash
 from ..core.verdict import DELETED_QUOTED, Outcome, Sourced, at_bar, without_fences
@@ -2133,7 +2134,9 @@ def _identified(items: Sequence[Sourced]) -> list[str]:
     return found
 
 
-def _found(item: Sourced, added: Mapping[str, frozenset[int]], identity: str = "") -> dict:
+def _found(
+    item: Sourced, added: Mapping[str, frozenset[int]], identity: str = "", heads: Mapping[str, str] | None = None
+) -> dict:
     """One finding as data: its identity, its check, its line and the lines the diff places it on, whether the change
     added one of them, and what the report says."""
     f = item.finding
@@ -2157,25 +2160,43 @@ def _found(item: Sourced, added: Mapping[str, frozenset[int]], identity: str = "
         "code": (code := safe_code(f.code)),
         # Whether that code can stand as a suggestion on those lines, which a pull request's page applies with one
         # click by replacing them: asked by the front end, which could only guess it from what the code looked like.
-        "suggestable": _suggestable(item, code, placed, added.get(f.file, frozenset())),
+        "suggestable": _suggestable(item, code, placed, added.get(f.file, frozenset()), heads),
         # Whether its suggested code is what replaced the deleted lines it quotes: the change may have done it already.
         "already_held": item.done,
     }
 
 
-def _suggestable(item: Sourced, shown: str, placed: Sequence[int], added: frozenset[int]) -> bool:
+def _suggestable(
+    item: Sourced, shown: str, placed: Sequence[int], added: frozenset[int], heads: Mapping[str, str] | None = None
+) -> bool:
     """Whether a finding's corrected code can replace the lines it stands on, as a pull request's page does when its
     author applies a suggestion: every one of them a line the change added, none quoted as deleted, since such a
     quote stands on the line before it, the change not having done it already, and the code the model's own, with
     nothing of the report's in it. Reproduced by review of the front end: the JSON's code holds a placeholder where
     a credential stood, a space where a character no reader sees did, a broken opener where a pipeline's command
     began, and its cut where it ran long, and each was applied as written. `shown` is the code as the JSON holds it:
-    where it is the model's own, it is what the model wrote with its fence and its lines' trailing spaces gone."""
+    where it is the model's own, it is what the model wrote with its fence and its lines' trailing spaces gone.
+    Given `heads`, each file's text at the head, a Python file's code must also keep it Python once in place."""
     code = item.finding.code
     if not shown or CUT_MARK in code or item.deleted or item.done:
         return False
     written = "\n".join(line.rstrip() for line in _unwrapped(code).splitlines()).strip("\n")
-    return bool(placed) and all(line in added for line in placed) and shown == written
+    if not (placed and all(line in added for line in placed) and shown == written):
+        return False
+    return heads is None or _keeps_python(item.finding.file, heads.get(item.finding.file), written, placed)
+
+
+def _keeps_python(path: str, head: str | None, code: str, placed: Sequence[int]) -> bool:
+    """Whether `code`, put in place of the lines `placed` stands on, leaves the file at the head one Python parses; a
+    file that is no Python file is never asked, and a Python file whose text was not read back is offered no
+    suggestion. Measured on 41 suggestions three live measurements kept: 9 broke their file once applied, the model
+    having rewritten the line above its quote too, a function's first line among them."""
+    if not path.endswith(PYTHON_SUFFIXES):
+        return True
+    if head is None:
+        return False
+    lines = head.split("\n")
+    return parse("\n".join([*lines[: placed[0] - 1], *code.split("\n"), *lines[placed[-1] :]])) is not None
 
 
 def _reasoned(
@@ -2206,6 +2227,7 @@ def as_data(
     seconds: Mapping[str, float] | None = None,
     previous: Earlier | None = None,
     health: Health | None = None,
+    heads: Mapping[str, str] | None = None,
 ) -> dict:
     """`--json`: the review `render` prints, as data for a pipeline: the verdict and its exit code, every finding
     with its check and place, what could not look and what was not read, under the text report's safety rules."""
@@ -2245,13 +2267,13 @@ def as_data(
         "health": None if health is None else _health_data(health, outcome),
         "findings": [
             {
-                **_found(item, added, identity),
+                **_found(item, added, identity, heads),
                 "since_previous": _since(identity, item, previous, evidence["scope"], evidence.get("exclude", ())),
             }
             for item, identity in zip(outcome.kept, identities, strict=True)
         ],
         # Asked by the owner: what was already in the files the change touched, apart, and never at the bar.
-        "old_findings": [_found(item, added, held[id(item)]) for item in outcome.old],
+        "old_findings": [_found(item, added, held[id(item)], heads) for item in outcome.old],
         # The previous review's findings no longer found, as it wrote them; None with no previous review, or where
         # this one has a hole, which resolves nothing.
         "resolved": None if compared is None else compared[0],
@@ -2259,8 +2281,10 @@ def as_data(
         "unchanged": None if compared is None else compared[1],
         "could_not_look": {source: safe_line(why, REASON_MAX_CHARS) for source, why in outcome.errors.items()},
         "not_read": {safe_line(path): safe_line(why, REASON_MAX_CHARS) for path, why in outcome.unread.items()},
-        "folded": [{**_found(item, added, held[id(item)]), "into": into.source} for item, into in outcome.folded],
-        "dropped": [_found(item, added) for item in outcome.dropped],
+        "folded": [
+            {**_found(item, added, held[id(item)], heads), "into": into.source} for item, into in outcome.folded
+        ],
+        "dropped": [_found(item, added, heads=heads) for item in outcome.dropped],
         "dropped_at_fail_on": at_bar(outcome.dropped, fail_on),
         "verified": outcome.verified,
         "refuted": _reasoned(outcome.refuted, added, named),

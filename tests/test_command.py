@@ -2647,6 +2647,30 @@ class TestTheJsonReport:
         said = dict(zip(cases, (found["suggestable"] for found in data["findings"]), strict=True))
         assert said == {name: fits for name, (_item, fits) in cases.items()}
 
+    def test_a_suggestion_is_offered_only_where_its_code_keeps_the_file_python(self) -> None:
+        """Measured on 41 suggestions three live measurements kept: 9 broke their file once applied, the model having
+        rewritten the line above its quote too, a function's first line among them. Given the file at the head, the
+        report splices the code in and offers it as a suggestion only where the file still parses; a Python file it was
+        not given is offered none."""
+        from adk_review.core.findings import Finding
+        from adk_review.core.verdict import Outcome, Sourced
+
+        head = "class Exporter:\n    def export(self, rows):\n        return ','.join(rows)\n"
+
+        def at(code: str, file: str = "a.py") -> Sourced:
+            found = Finding(file=file, line=3, severity="major", title="t", evidence="e", suggestion="s", code=code)
+            return Sourced("guideline.correctness", found, (3, 3))
+
+        kept = [
+            at("        return ';'.join(rows)"),
+            at("    def export(self, rows):\n        return ';'.join(rows)"),
+            at("        return ';'.join(rows)", "b.py"),
+        ]
+        files = [{"path": "a.py", "added_at": frozenset({3})}, {"path": "b.py", "added_at": frozenset({3})}]
+        data = as_json(Outcome(kept=kept), files, checks=("guideline.correctness",), heads={"a.py": head})
+        said = {(f["file"], f["code"].count("def")): f["suggestable"] for f in data["findings"]}
+        assert said == {("a.py", 0): True, ("a.py", 1): False, ("b.py", 0): False}, said
+
     def test_a_real_review_says_which_findings_stand_on_an_added_line(self, cli, demo_repo, tmp_path) -> None:
         """Measured: the checks node let go of each file's added lines before the JSON read them, so no finding of a
         real review stood on an added line. Their numbers are kept apart; the planted key is on an added line."""

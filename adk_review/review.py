@@ -1213,6 +1213,13 @@ def _reported(
         if args.comment or keep
         else ""
     )
+    # The head's texts were let go before the model calls: read back only the Python files a finding's code stands in,
+    # so the report offers a suggestion only where its code keeps the file Python.
+    from .collect.git import texts_at_head
+
+    written = args.json or args.junit or keep
+    coded = {item.finding.file for item in outcome.kept if item.finding.code} if written else set()
+    heads = texts_at_head(evidence["preflight"], coded) if coded else {}
     data = (
         as_data(
             evidence,
@@ -1226,8 +1233,9 @@ def _reported(
             seconds=seconds,
             previous=seen,
             health=health,
+            heads=heads,
         )
-        if args.json or args.junit or keep
+        if written
         else {}
     )
     if keep:
