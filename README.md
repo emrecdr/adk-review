@@ -1163,7 +1163,11 @@ by itself; a review whose profile names a guideline does.
   but without them as a guess that callers may break, and with them naming the caller and what it relied on; neither
   raised anything on a branch that kept its behaviour. They read too the first twenty lines of each project function,
   class or parent method an added line calls or overrides, eight at most, as the head defines it outside the diff: the
-  contract a call relies on, followed through an import, its own module or `self`.
+  contract a call relies on, followed through an import, its own module or `self`. Measured live on Copilot over five
+  planted misuses, each of a helper's contract no diff showed, and a branch using the same helpers correctly, three runs
+  each: the correctness guideline named 12 of 15 with them and 3 without, the one it guessed, and the correct branch
+  drew no finding with them and three false majors without; neither side named a parent's return contract an override
+  broke.
   The report shows it under the verdict, widest first — the most
   modules importing a file directly, then the most reached — and the verdict never reads it: severity decides. An import
   graph is a floor of what a change reaches, since a module loaded by name, a subprocess, a web route or a plugin

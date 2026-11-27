@@ -474,8 +474,11 @@ def callees_of(tree: Tree | None, files: list[Entry]) -> str:
     """Each project function, class or parent method a line the change added calls or overrides, as the head defines
     it outside the lines the diff shows: the contract a guideline weighs a call against, the other way from
     `callers_of`. Read by an outside audit and reproduced: a branch indexed `find_user(uid)["name"]`, where `find_user`
-    returns None for an id it does not hold, and no model was shown `find_user`, whose file the change left alone. A
-    call is followed through an import as `Tree.imports` binds it, on where a file only passes the name on, by its own
+    returns None for an id it does not hold, and no model was shown `find_user`, whose file the change left alone.
+    Measured live on Copilot over five planted misuses and a branch using the same helpers correctly, three runs each:
+    the correctness guideline named 12 of 15 with them, 3 without, and the correct branch drew no finding with them,
+    three false majors without; neither side named a parent's return contract an override broke. A call is
+    followed through an import as `Tree.imports` binds it, on where a file only passes the name on, by its own
     name in its own module, and through `self` to the class around it and its parents; one through any other object is
     not, nor a definition a test file holds, nor one in a file holding a private key, named there and never shown."""
     if tree is None:
