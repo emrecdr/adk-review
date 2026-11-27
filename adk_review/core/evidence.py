@@ -141,3 +141,6 @@ class Evidence(Change):
     ignored: NotRequired[list[str]]
     untracked: list[str] | None  # under --staged, what git neither tracks nor ignores; None otherwise
     outside: int  # how many changed files lay outside the scope, for the report to count
+    # The previous review's findings whose quoted lines stood in the head's text as the change was read, by
+    # fingerprint: the command asks it before the rules let the texts go, and the report reads it.
+    standing: NotRequired[tuple[str, ...]]

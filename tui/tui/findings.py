@@ -174,6 +174,14 @@ def filter_findings(
     return kept
 
 
+#: What the detail says of an earlier review's finding: its line numbers are that review's, so it opens nothing.
+_EARLIER = {
+    "Unchanged": "Not found again by this review, but its code is unchanged, perhaps at other line numbers. Its "
+    "lines are of an earlier review, so it opens no line and takes no comment.",
+    "Resolved": "Its code is gone since the earlier review. Its lines are of that review, so it opens no line.",
+}
+
+
 def format_finding_detail(row: FindingRow) -> str:
     """One finding as plain text, drawn and copied as it is: its reason and its corrected code too, where the model gave
     them. Reported by the owner: a major read as one short line, with nothing to say what was wrong. Its title, fix and
@@ -189,6 +197,8 @@ def format_finding_detail(row: FindingRow) -> str:
         "Evidence:",
         *(f"    {line}" for line in (row.evidence or "(none)").splitlines()),
     ]
+    if row.tier in ("Unchanged", "Resolved"):  # read by an outside audit: these read as active findings
+        lines.extend(["", _EARLIER[row.tier]])
     if row.why:
         lines.extend(["", f"Why it matters: {row.why}"])
     if row.suggestion:

@@ -795,12 +795,12 @@ def _since_last(
         _since(identity, item, previous, scope, exclude)
         for identity, item in zip(identities, outcome.kept, strict=True)
     ]
-    fixed = _resolved(outcome, identities, verdict, previous, checks, evidence)
+    compared = _compared(outcome, identities, verdict, previous, checks, evidence)
+    fixed, passed = compared if compared is not None else (None, [])
     done = "" if fixed is None else f"{len(fixed)} fixed, "
     # Read by review: a finding the last review did not look for, its check not run or its file not read, was counted
     # new. It is counted apart.
     apart = f", {marks.count(None)} not compared: the last review did not look there" if None in marks else ""
-    passed = _unchanged(outcome, identities, verdict, previous, checks, evidence)
     over = f", {len(passed)} not found again with the code unchanged" if passed else ""
     said = f"Since the last review: {done}{marks.count('new')} new, {marks.count('seen')} still open{over}{apart}."
     return said + (
@@ -1542,49 +1542,58 @@ def _not_found(
     ]
 
 
-def _resolved(
+def _compared(
     outcome: Outcome,
     identities: Sequence[str],
     verdict: str,
     previous: Earlier | None,
     checks: Sequence[str],
     evidence: Evidence,
-) -> list[dict] | None:
-    """The previous review's findings this one no longer finds and whose code is gone: fixed. None as `_not_found`."""
+) -> tuple[list[dict], list[dict]] | None:
+    """The previous review's findings this one no longer finds, in two: those whose code is gone, fixed, and those
+    whose quoted lines still stand, which a check passed over, as a model can, and none is fixed. None as
+    `_not_found`. Which stood is read as the review began, `still_standing`: read by an outside audit, and
+    reproduced, a review that ran a guideline let each file's text go before its model calls, and none stood."""
     gone = _not_found(outcome, identities, verdict, previous, checks, evidence["scope"], _left_out(evidence))
-    return None if gone is None else [found for found in gone if not _stands(found, _head_texts(evidence))]
+    if gone is None:
+        return None
+    stood = evidence.get("standing")
+    standing = set(stood) if stood is not None else set(still_standing(previous, evidence))
+    return (
+        [found for found in gone if found.get("fingerprint") not in standing],
+        [found for found in gone if found.get("fingerprint") in standing],
+    )
 
 
-def _unchanged(
-    outcome: Outcome,
-    identities: Sequence[str],
-    verdict: str,
-    previous: Earlier | None,
-    checks: Sequence[str],
-    evidence: Evidence,
-) -> list[dict] | None:
-    """The previous review's findings this one no longer finds though their code still stands: a check passed over
-    them, as a model can, and none is fixed. None as `_not_found`."""
-    gone = _not_found(outcome, identities, verdict, previous, checks, evidence["scope"], _left_out(evidence))
-    return None if gone is None else [found for found in gone if _stands(found, _head_texts(evidence))]
-
-
-def _head_texts(evidence: Evidence) -> dict[str, str]:
-    """Each changed file's text at the head, by its path, where the review read it."""
-    return {entry["path"]: text for entry in evidence.get("files", ()) if isinstance(text := entry.get("text"), str)}
+def still_standing(previous: Earlier | None, evidence: Evidence) -> tuple[str, ...]:
+    """The fingerprints of the previous review's findings whose quoted lines all still stand in the head's text,
+    read while the texts are held: the command asks it as the change is read, before the rules let them go."""
+    if previous is None:
+        return ()
+    texts = {entry["path"]: text for entry in evidence.get("files", ()) if isinstance(text := entry.get("text"), str)}
+    return tuple(sorted(key for key, found in previous.findings.items() if _stands(found, texts)))
 
 
 def _stands(found: dict, texts: Mapping[str, str]) -> bool:
-    """Whether an earlier finding's quoted lines all still stand, in order, in its file at the head. Asked by the
-    owner, and reproduced: a finding no check reported again was counted fixed though its lines stood unchanged, as a
-    guideline that passes over a finding leaves them. A quote the head cannot hold whole, a line the change deleted,
-    a credential redacted, one cut, a linter's roll-up of codes, never stands, and is counted as before."""
+    """Whether an earlier finding's quoted lines all still stand, whole and in order, in its file at the head, each
+    side's spaces squashed: the report writes a quote on one line, its spaces made one, as the file never reads it.
+    Asked by the owner, and reproduced: a finding no check reported again was counted fixed though its lines stood
+    unchanged, as a guideline that passes over a finding leaves them. A quote the head cannot hold whole, a line the
+    change deleted, a credential redacted, one cut, a linter's roll-up of codes, never stands, and is counted as before;
+    nor does part of a line, `x = 1` in `max = 10`."""
     text = texts.get(str(found.get("file", "")))
-    quoted = [line.strip() for line in str(found.get("evidence", "")).splitlines() if line.strip()]
-    if text is None or not quoted:
+    quote = " ".join(str(found.get("evidence", "")).split())
+    if text is None or not quote:
         return False
-    head = [line.strip() for line in text.splitlines() if line.strip()]
-    return any(head[at : at + len(quoted)] == quoted for at in range(len(head) - len(quoted) + 1))
+    head = [squashed for line in text.splitlines() if (squashed := " ".join(line.split()))]
+    for at, line in enumerate(head):
+        joined, end = line, at
+        while len(joined) < len(quote) and end + 1 < len(head):
+            end += 1
+            joined = f"{joined} {head[end]}"
+        if joined == quote:
+            return True
+    return False
 
 
 def _spent(usage: dict) -> str:
@@ -1634,13 +1643,14 @@ def render(
     # Read against a previous review alone: with none, no finding is fingerprinted.
     identities = _identified(outcome.kept) if previous is not None else [""] * len(outcome.kept)
     lines += _sections(checks, outcome, identities, previous, evidence["scope"], evidence.get("exclude", ()))
-    resolved = _resolved(outcome, identities, verdict, previous, checks, evidence)
+    compared = _compared(outcome, identities, verdict, previous, checks, evidence)
+    resolved, passed = compared if compared is not None else (None, [])
     if previous is not None and resolved is None:
         lines.append("- resolved since the previous review: none counted, since this review could not look at all")
     elif resolved is not None:
         lines.append(f"- resolved since the previous review: {len(resolved)}")
         lines += [f"  - {prose(str(f.get('title', '')))} ({prose(str(f.get('file', '')))})" for f in resolved]
-    if passed := _unchanged(outcome, identities, verdict, previous, checks, evidence):
+    if passed:
         lines.append(f"- not found again, the code unchanged: {len(passed)}")
         lines += [f"  - {prose(str(f.get('title', '')))} ({prose(str(f.get('file', '')))})" for f in passed]
     lines.append(f"- findings dropped for evidence not in the diff: {len(outcome.dropped)}")
@@ -1991,7 +2001,10 @@ def read_previous(path: str) -> Previous:
         data = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
         if not isinstance(data, dict) or data.get("schema") != SCHEMA or not isinstance(data.get("findings"), list):
             raise ValueError(f"not a review's JSON report of schema {SCHEMA}, as --json writes one")
-        findings = [f for f in data["findings"] if isinstance(f, dict) and isinstance(f.get("fingerprint"), str)]
+        # Its findings not found again with the code unchanged are still open, as its kept ones are: read by an
+        # outside audit, a third round read the kept ones alone, and one of those was new when found again.
+        listed = [*data["findings"], *(data.get("unchanged") if isinstance(data.get("unchanged"), list) else [])]
+        findings = [f for f in listed if isinstance(f, dict) and isinstance(f.get("fingerprint"), str)]
         # Each finding made safe whole, keys and nested values too, where it comes in: `resolved` gives it back, and
         # a kept report can be edited. One a review wrote reads the same, a cut's run of spaces aside.
         kept = {f["fingerprint"]: f for f in map(_safe_finding, findings)}
@@ -2202,6 +2215,7 @@ def as_data(
     named = {**dict(zip(map(id, outcome.kept), identities, strict=True)), **held}
     # The added lines' numbers, kept when the rules let the lines go; a deleted or binary file has none.
     added = {f["path"]: f["added_at"] for f in (*evidence["files"], *evidence.get("unscanned", ()))}
+    compared = _compared(outcome, identities, verdict, previous, checks, evidence)
     return {
         "schema": SCHEMA,
         "verdict": verdict,
@@ -2240,9 +2254,9 @@ def as_data(
         "old_findings": [_found(item, added, held[id(item)]) for item in outcome.old],
         # The previous review's findings no longer found, as it wrote them; None with no previous review, or where
         # this one has a hole, which resolves nothing.
-        "resolved": _resolved(outcome, identities, verdict, previous, checks, evidence),
+        "resolved": None if compared is None else compared[0],
         # The previous review's findings no longer found whose quoted lines still stand at the head: none of them fixed.
-        "unchanged": _unchanged(outcome, identities, verdict, previous, checks, evidence),
+        "unchanged": None if compared is None else compared[1],
         "could_not_look": {source: safe_line(why, REASON_MAX_CHARS) for source, why in outcome.errors.items()},
         "not_read": {safe_line(path): safe_line(why, REASON_MAX_CHARS) for path, why in outcome.unread.items()},
         "folded": [{**_found(item, added, held[id(item)]), "into": into.source} for item, into in outcome.folded],

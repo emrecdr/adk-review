@@ -132,6 +132,7 @@ try:
         render_tried,
         reviewed_scope,
         safe_line,
+        still_standing,
         told_in_parts,
     )
     from .deliver.threads import read_threads
@@ -951,6 +952,9 @@ def _reviewed(args: argparse.Namespace, chosen: Selection, scope: tuple[str, ...
         _say(evidence["error_message"] + (narrowed if evidence.get("narrowed") else ""))
         return EXIT_USAGE
     _tell_started(say, evidence)
+    # Which of the previous review's findings still stand in the head's text, read now: where a guideline runs, the
+    # rules let the texts go before its model calls, and the report then reads none. Read by an outside audit.
+    evidence["standing"] = still_standing(previous[0], evidence)
     # What every report says of the review itself, a dry run's too: with no guideline there is no model to name; an
     # arm that is not ready names no model either: `why` says why.
     shown = {"model": model, "profile": chosen.name, "off": chosen.off, "checks": chosen.ids()}

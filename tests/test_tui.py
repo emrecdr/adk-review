@@ -1114,6 +1114,10 @@ class TestFindingsExplorer:
         )
         rows = load_report(report)[0]
         assert [r.tier for r in rows] == ["NEW", "Active", "Unchanged", "Old", "Resolved"]
+        # Read by an outside audit: its detail read as an active finding's, with no word on why its lines open nothing.
+        passed = next(r for r in rows if r.tier == "Unchanged")
+        detail = format_finding_detail(passed).lower()
+        assert "not found again" in detail and "earlier review" in detail, detail
         assert len(filter_findings(rows, severity="blocker")) == 1
         assert len(filter_findings(rows, tier="Old")) == 1
         assert len(filter_findings(rows, query="Hardcoded")) == 1
@@ -3645,6 +3649,37 @@ class TestAzureDevOpsOnTheScreen:
             banner = str(app.query_one("#status-banner", Static).render())
         assert one_at_a_time == [], len(one_at_a_time)
         assert "No repository matches 'zzz'" in banner, banner
+
+    @pytest.mark.asyncio
+    async def test_a_paste_opening_on_a_blank_line_and_a_space_keep_to_the_dialog(self, tmp_path: Path) -> None:
+        """Read by an outside audit, and reproduced: a paste opening on a blank line left the field empty, its first
+        line taken, and a space with the list focused moved the focus to the field. The field takes the first line
+        that holds text, and a space stays with the list."""
+        from textual import events
+        from textual.widgets import Input
+
+        from tui.azure import PullRequest
+        from tui.modals import OpenPullRequestModal
+
+        app = _payments_screen(tmp_path)
+        url = "https://dev.azure.com/acme/proj/_git/repo/pullrequest/42"
+        one = [("payments #7 a title", PullRequest("https://dev.azure.com/acme", "proj", "repo", 7))]
+        async with app.run_test(size=(140, 45)) as pilot:
+            await _wait_for_branches(app, pilot)
+            seen: list[object] = []
+            for act in (lambda: app.post_message(events.Paste(f"\n{url}\n")), lambda: pilot.press("space")):
+                dialog = OpenPullRequestModal()
+                await app.push_screen(dialog)
+                await pilot.pause()
+                dialog.listed(one, "One.")
+                await pilot.pause()
+                if (done := act()) is not None and not isinstance(done, bool):
+                    await done
+                await pilot.pause()
+                seen.append((app.screen.query_one("#open-pr-url", Input).value, getattr(app.focused, "id", None)))
+                app.pop_screen()
+                await pilot.pause()
+        assert seen == [(url, "open-pr-url"), ("", "open-pr-list")], seen
 
     def test_the_open_dialog_says_where_a_project_holds_more_than_it_lists(self) -> None:
         """Read by an outside audit: a project's list stopped at a thousand and said nothing. The note names it."""

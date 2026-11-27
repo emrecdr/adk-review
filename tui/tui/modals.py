@@ -119,16 +119,19 @@ class OpenPullRequestModal(ModalScreen[str | PullRequest | None]):
         if not field.has_focus:
             event.stop()
             field.focus()
-            field.insert_text_at_cursor(event.text.splitlines()[0] if event.text else "")
+            # The first line that holds text: read by an outside audit, a paste opening on a blank line left none.
+            field.insert_text_at_cursor(next((line.strip() for line in event.text.splitlines() if line.strip()), ""))
 
     def on_key(self, event: events.Key) -> None:
         """A character typed while the list has the focus goes to the address field, as a paste does. Read by an
         audit, and reproduced: the list took the focus as it filled, and an address typed by hand went nowhere."""
-        if event.is_printable and event.character and self.query_one("#open-pr-list", OptionList).has_focus:
+        # A space stays with the list: read by an outside audit, it moved the focus to the field.
+        typed = event.character if event.is_printable else None
+        if typed and typed.strip() and self.query_one("#open-pr-list", OptionList).has_focus:
             event.stop()
             field = self.query_one("#open-pr-url", Input)
             field.focus()
-            field.insert_text_at_cursor(event.character)
+            field.insert_text_at_cursor(typed)
 
     @on(OptionList.OptionSelected, "#open-pr-list")
     def _picked(self, event: OptionList.OptionSelected) -> None:

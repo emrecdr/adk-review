@@ -1363,6 +1363,56 @@ class TestThePreviousReportAndTheHandoff:
         said = comment.read_text(encoding="utf-8").split("### ", 1)[0]
         assert "1 fixed, 0 new" in said and "1 not found again with the code unchanged" in said, said
 
+    def test_a_guidelines_unchanged_finding_is_found_by_its_quote_however_the_report_wrote_it(
+        self, cli, demo_repo: Path, tmp_path: Path, capsys
+    ) -> None:
+        """Read by an outside audit, and reproduced: where a guideline ran, each file's text was let go before the
+        model calls and the report read none, so no finding ever stood; and the report writes a quote on one line, its
+        spaces squashed, so one of two lines never matched the file's. A guideline's finding passed over is the case
+        this exists for: one quoting two lines of the head is not found again with the code unchanged."""
+        from adk_review.collect.git import on_path
+        from adk_review.deliver.report import safe_line
+
+        first, second = tmp_path / "first.json", tmp_path / "second.json"
+        assert run_review(cli, demo_repo, "--profile", "default-rules", "--json", str(first)) == 1
+        earlier = json.loads(first.read_text(encoding="utf-8"))
+        show = [on_path("git"), "-C", str(demo_repo), "show", f"{HEAD}:src/payments/charge.py"]
+        shown = subprocess.run(show, capture_output=True, text=True, encoding="utf-8", check=True).stdout
+        two = "\n".join([line for line in shown.splitlines() if line.strip()][:2])
+        passed = {**earlier["findings"][0], "check": "guideline.security", "file": "src/payments/charge.py",
+                  "fingerprint": "e" * 16, "title": "a finding passed over", "evidence": safe_line(two)}  # fmt: skip
+        first.write_text(json.dumps({**earlier, "findings": [passed]}), encoding="utf-8")
+        capsys.readouterr()
+        again = ["--check", "guideline.security", "--previous", str(first), "--json", str(second)]
+        assert run_review(cli, demo_repo, *again) in (0, 1)
+        data = json.loads(second.read_text(encoding="utf-8"))
+        assert [f["fingerprint"] for f in data["unchanged"]] == ["e" * 16], (data["unchanged"], data["resolved"])
+
+    def test_a_quote_stands_on_whole_lines_whatever_their_spaces(self) -> None:
+        """The report writes a quote on one line, its spaces squashed, as the file never reads: held to the file's
+        lines squashed the same way, a quote of several lines, or of aligned code, still stands; one that is only part
+        of a line, `x = 1` in `max = 10`, does not."""
+        from adk_review.deliver.report import _stands, safe_line
+
+        texts = {"a.py": "max = 10\ndef f():\n    return  x  + 1\n"}
+        quote = {"file": "a.py", "evidence": safe_line("def f():\n    return  x  + 1")}
+        assert _stands(quote, texts)
+        assert not _stands({"file": "a.py", "evidence": "x = 1"}, texts)
+        assert not _stands({"file": "a.py", "evidence": "def g():"}, texts)
+
+    def test_a_previous_reports_unchanged_findings_are_still_open_to_the_next(self, tmp_path: Path) -> None:
+        """Read by an outside audit: a third round read the second's findings alone, so one the second listed as not
+        found again, its code unchanged, was new when found again, and forgotten when not. It is still open to the
+        next review, as a kept one is."""
+        from adk_review.deliver.report import read_previous
+
+        held = {"fingerprint": "e" * 16, "check": "guideline.security", "file": "a.py", "line": 1,
+                "severity": "major", "title": "passed over", "evidence": "x = 1", "suggestion": "s"}  # fmt: skip
+        report = tmp_path / "second.json"
+        report.write_text(json.dumps({"schema": 2, "findings": [], "unchanged": [held]}), encoding="utf-8")
+        earlier = read_previous(str(report))[0]
+        assert earlier is not None and "e" * 16 in earlier.findings, earlier
+
     def test_a_comment_against_the_previous_review_says_what_was_fixed_and_what_is_new(
         self, cli, demo_repo: Path, tmp_path: Path, capsys
     ) -> None:
