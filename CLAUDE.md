@@ -78,7 +78,8 @@ reached by no signal.
 A model call needs a configured arm and spends its quota: `adk web`, `adk run`, a review whose profile names a
 guideline, `--check guideline.<name>` and the three `live:` scripts make one, so run them only when the task says so. A
 review under `default` makes three calls, `simplify` three, `code-review` five and `full` six, at most three in flight
-(`CONCURRENCY`): Gemini's free tier allows five a minute and twenty a day, so a live script, three reviews of each
+(`CONCURRENCY`): Gemini's free tier allowed `gemini-2.5-flash` five a minute and twenty a day, AI Studio showing each
+model's own, so a live script, three reviews of each
 branch by default, needs `--pause` on it and more than a day, and on Copilot each call is billed to the seat that logged
 in, and GitHub rate-limits each user, unpublished: measured, `gpt-4.1`, which GitHub has deprecated, answered a 429 for
 its utility models after about 175 calls; a run that met a 429 names it under `could_not_look` and measures nothing
@@ -97,8 +98,8 @@ pin and the lock move together.
 ## Configuration
 
 One `.env` at the root (copy `.env.example`). `REVIEW_PROVIDER=copilot|gemini` picks the arm, `copilot` when unset;
-`REVIEW_MODEL` blank means `gpt-4.1` / `gemini-2.5-flash`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` are read
-too, and `REVIEW_<ID>_MODEL` gives one guideline its own model, over the `models` its file may name per arm.
+`REVIEW_MODEL` blank means `gpt-4.1` / `gemini-3.5-flash-lite`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL`
+are read too, and `REVIEW_<ID>_MODEL` gives one guideline its own model, over the `models` its file may name per arm.
 `REVIEW_REGISTRIES` names the operator's own package registries, addresses over TLS or domains, `*.example.com`, each
 domain with every host under it, a comma between two, which
 `judge/settings.py` reads, the catalog hands each rule as `own_registries` and `lockfile-sources` takes as known, the

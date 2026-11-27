@@ -305,7 +305,7 @@ repository under review, and `--dry-run` names the file read.
 
 The model comes from the shell, or from the `.env` at the root of the checkout, which never wins over the shell:
 `REVIEW_PROVIDER` picks the arm, `copilot` when unset or `gemini`, and `REVIEW_MODEL` the model, blank for `gpt-4.1` or
-`gemini-2.5-flash`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` give `--verify` and every role's fallback a
+`gemini-3.5-flash-lite`; `REVIEW_VERIFIER_MODEL` and `REVIEW_FALLBACK_MODEL` give `--verify` and every role's fallback a
 model of their own. `REVIEW_<ID>_MODEL` gives one guideline its own, over the `models` its file may name.
 `REVIEW_REGISTRIES` names the operator's own package registries, addresses over TLS or domains, `*.example.com`, which
 `lockfile-sources` takes as known: a company's host is a setting, never a line of this repository. Copilot is the arm
@@ -646,7 +646,7 @@ and the hand-off lists its findings as tidies, apart from the fixes. One it rate
 all the same: the scale every guideline is given calls a major a real bug.
 
 A guideline that needs a stronger or a cheaper model names one per arm, `models = Models(copilot="claude-sonnet-4",
-gemini="gemini-2.5-pro")`, with `Models` imported beside `Guideline`. An arm it leaves blank runs on `REVIEW_MODEL`.
+gemini="gemini-3.8-flash")`, with `Models` imported beside `Guideline`. An arm it leaves blank runs on `REVIEW_MODEL`.
 `REVIEW_<ID>_MODEL` on a machine overrides both: `REVIEW_NAMING_MODEL`. The review checks each model before any call,
 and the report names a guideline on a model of its own. Its id is never `verifier` or `fallback`: those roles are the
 reviewer's own, and their variables name other models.
@@ -1107,13 +1107,14 @@ by itself; a review whose profile names a guideline does.
   `retry_config` would re-run a whole guideline, and with the error plugin turning errors into answers it would never
   see one. A quota window outlasts any retry: `REVIEW_FALLBACK_MODEL` puts a second model behind every role's first,
   through ADK's `FallbackModel`, each model tried once on a 429, a 5xx or a timeout, since Gemini's free tier counts its
-  quota per model and Copilot's rate limits differ by model. Seen live on Gemini's free tier: five requests a minute per
-  model, and `--verify` made ten, so the last verifiers met a 429 asking for 39 seconds, and their findings were kept
-  and named with it; and twenty a day, so a key on that tier reviews about six changes a day under `default`, and a live
-  script, three reviews of each branch by default, needs a paid tier or `--pause` over several days. A 429 that no retry
-  and no fallback got past ends what the review spends: `StopAtRateLimit` sends no later call of it, the verifiers'
-  included, each named `RATE_LIMITED` and never counted as attempted, since Copilot's limit for utility models lasts
-  hours and a review with a hole is run again; a live script stops at the first run that met one.
+  quota per model and Copilot's rate limits differ by model. Seen live on Gemini's free tier, on `gemini-2.5-flash`:
+  five requests a minute per model, AI Studio showing each model's own, and `--verify` made ten, so the last verifiers
+  met a 429 asking for 39 seconds, and their findings were kept and named with it; and twenty a day, so a key on that
+  tier reviews about six changes a day under `default`, and a live script, three reviews of each branch by default,
+  needs a paid tier or `--pause` over several days. A 429 that no retry and no fallback got past ends what the review
+  spends: `StopAtRateLimit` sends no later call of it, the verifiers' included, each named `RATE_LIMITED` and never
+  counted as attempted, since Copilot's limit for utility models lasts hours and a review with a hole is run again; a
+  live script stops at the first run that met one.
 - **A ceiling reserves first.** The guidelines call at once, so a ceiling that counted only tokens already spent would
   let them all through and be passed by all of them. Each call reserves its cost before it is sent — its request's
   characters over four, room for an answer and the thinking its budget allows — and the call that would pass the ceiling

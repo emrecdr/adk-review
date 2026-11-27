@@ -570,6 +570,16 @@ class TestRetriesOnBothArms:
             and run.why("checks", "no answer") == "the run's session was gone when its answers were read"
         )
 
+    def test_the_gemini_arm_runs_the_flash_model_google_serves_a_new_key_when_none_is_named(self, monkeypatch) -> None:
+        """Measured live: Google answers `gemini-2.5-flash-lite` with a 404, no longer served to new users, and routes
+        every request for `gemini-2.5-flash` to `gemini-3.5-flash-lite`, so the report named a model that never ran.
+        `gemini-3.5-flash-lite` ran the demo's default profile at temperature 0, with no loop."""
+        from adk_review.judge.config import build_model
+
+        monkeypatch.setenv("REVIEW_PROVIDER", "gemini")
+        monkeypatch.delenv("REVIEW_MODEL", raising=False)
+        assert build_model() == "gemini-3.5-flash-lite"
+
     def test_a_role_may_choose_its_own_model(self, monkeypatch) -> None:
         from adk_review.judge.config import build_model
 

@@ -13,7 +13,7 @@ from pathlib import Path
 
 from ..core.guidelines import Models
 
-DEFAULTS = {"gemini": "gemini-2.5-flash", "copilot": "gpt-4.1"}
+DEFAULTS = {"gemini": "gemini-3.5-flash-lite", "copilot": "gpt-4.1"}
 #: An address a registry is given as: over TLS, a host, its port where it has one, and a path under it. No user's
 #: name, which a lookalike host hides behind, no query and no space.
 _REGISTRY = re.compile(r"https://[A-Za-z0-9._-]+(?::\d+)?(?:/[^\s?#@]*)?")
