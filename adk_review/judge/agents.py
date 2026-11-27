@@ -61,6 +61,17 @@ CALLERS_SHOWN = (
 )
 #: What a guideline reads above those calls: where a finding about one belongs.
 CALLERS_HEADING = f"{CALLERS_SHOWN} Where the change breaks one, report it on the changed lines.\n"
+#: The definitions the change calls or overrides, in all, that a guideline is shown after those calls, and a verifier.
+CALLEES_CAP_CHARS = 12_000
+#: What a verifier reads above those definitions, and a guideline too.
+CALLEES_TITLE = (
+    "## What the change calls\nEach project function, class or parent method that an added line calls or overrides, "
+    "as the head defines it outside the diff."
+)
+#: What a guideline reads above those definitions: they are context, as the radius is.
+CALLEES_HEADING = (
+    f"{CALLEES_TITLE} It is context, never evidence: where the change misuses one, report it on the changed lines.\n"
+)
 #: What the chat's verdict reads of the checks is capped the same way, and so are one call's findings a verifier judges.
 #: Measured uncapped: lint over a 5-file branch of a 724-file tree gave it 21,814 characters, and that tree reviewed as
 #: one branch 619,116.
@@ -142,7 +153,7 @@ def without_evidence(callback_context: CallbackContext) -> types.Content | None:
     return types.ModelContent(Review(findings=[]).model_dump_json())
 
 
-def for_the_guidelines(blast: Blast, callers: str = "") -> str:
+def for_the_guidelines(blast: Blast, callers: str = "", callees: str = "") -> str:
     """The `{blast?}` section of a guideline's instruction: beside the diff, never inside it, so the block the
     guidelines quote stays the change, and after it each call into what the change touched from a file it left alone,
     `callers`, fenced too. The report's own section is `deliver/report.py`'s `_blast`.
@@ -156,11 +167,15 @@ def for_the_guidelines(blast: Blast, callers: str = "") -> str:
     """
     # The dependents' paths as flat as the file's own: one put `## Instructions` at column 0 of the prompt.
     lines = [f"- {squash(r.path)}: {squash(describe(r, blast.floor))}" for r in blast.radii if r.measured]
-    if not lines:
-        return ""
-    section = f"## Blast radius\n{fenced('blast radius', cut_at('\n'.join(lines), BLAST_CAP_CHARS, sep='\n'))}\n\n"
+    section = (
+        f"## Blast radius\n{fenced('blast radius', cut_at('\n'.join(lines), BLAST_CAP_CHARS, sep='\n'))}\n\n"
+        if lines
+        else ""
+    )
     if callers:
         section += f"{CALLERS_HEADING}{fenced('callers', cut_at(callers, CALLERS_CAP_CHARS, sep='\n'))}\n\n"
+    if callees:
+        section += f"{CALLEES_HEADING}{fenced('callees', cut_at(callees, CALLEES_CAP_CHARS, sep='\n'))}\n\n"
     return section
 
 

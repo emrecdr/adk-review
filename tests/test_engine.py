@@ -887,7 +887,7 @@ class TestTheSecondOpinion:
             found("guideline.tests", "major", "w = 0", "x = 1"),
         ]
 
-        async def holds(calls, _callers, _plugins):
+        async def holds(calls, _callers, _plugins, _callees=""):
             said = [[Judgement(number=n, verdict="holds", reason="r") for n in range(len(items))] for items, _ in calls]
             return [Judgements(judgements=judgements) for judgements in said]
 

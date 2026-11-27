@@ -12,7 +12,7 @@ from collections import defaultdict
 from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import PurePosixPath
 
-from ..core.blast import PASSED_ON, Blast, blast_radius, parse
+from ..core.blast import PASSED_ON, Blast, blast_radius, is_test, parse
 from ..core.evidence import Entry, Failure, entry
 from ..core.paths import in_scope, matches, no_such_path
 from ..core.rules import Tree, UnreadError, is_python_text
@@ -459,6 +459,156 @@ def _calls_shown(tree: Tree, file: str, function: str, sites: list[tuple[str, in
         calls = "call" if more == 1 else "calls"
         shown.append(f"- {more:,} more {calls} into `{function}()` from `{squash(file)}`, not shown")
     return "\n".join(shown)
+
+
+#: At most how many definitions the change calls or overrides the guidelines are shown, in the order the change first
+#: calls or overrides each, the source's calls before the tests'.
+CALLEES_SHOWN = 8
+#: At most how many lines of each of those definitions the guidelines are shown, from its first.
+CALLEE_LINES = 20
+
+type _Defined = tuple[str, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef]
+
+
+def callees_of(tree: Tree | None, files: list[Entry]) -> str:
+    """Each project function, class or parent method a line the change added calls or overrides, as the head defines
+    it outside the lines the diff shows: the contract a guideline weighs a call against, the other way from
+    `callers_of`. Read by an outside audit and reproduced: a branch indexed `find_user(uid)["name"]`, where `find_user`
+    returns None for an id it does not hold, and no model was shown `find_user`, whose file the change left alone. A
+    call is followed through an import as `Tree.imports` binds it, on where a file only passes the name on, by its own
+    name in its own module, and through `self` to the class around it and its parents; one through any other object is
+    not, nor a definition a test file holds, nor one in a file holding a private key, named there and never shown."""
+    if tree is None:
+        return ""
+    bound, diffed = _bound(tree), _diffed(files)
+    relied: list[tuple[str, int, str, str, _Defined]] = []
+    for item in files:
+        try:
+            module = tree.module(item["path"]) if item["path"].endswith(".py") and item["added_at"] else None
+        except UnreadError:
+            continue
+        if isinstance(module, ast.Module):
+            relied += _relied_on(tree, item["path"], module, item["added_at"], bound)
+    shown: dict[tuple[str, int], str] = {}
+    # The source's calls first, which correctness and security judge, then the tests'.
+    for path, _line, verb, label, (file, node) in sorted(relied, key=lambda site: (is_test(site[0]), *site[:2])):
+        if (file, node.lineno) in shown or _span(node) & diffed.get(file, set()) or is_test(file):
+            continue
+        shown[file, node.lineno] = _definition_shown(tree, path, verb, label, file, node)
+    listed = list(shown.values())
+    if (more := len(listed) - CALLEES_SHOWN) > 0:
+        noun = "definition" if more == 1 else "definitions"
+        listed = [*listed[:CALLEES_SHOWN], f"- {more:,} more {noun} the change calls or overrides, not shown"]
+    return "\n".join(listed)
+
+
+def _diffed(files: list[Entry]) -> dict[str, set[int]]:
+    """Each changed file's lines the diff shows as changed, by the head's numbers: what a guideline reads already."""
+    return {
+        item["path"]: set(item["added_at"]) | {line for line, raw in hunk_lines(item["diff"] or "") if raw[:1] == "-"}
+        for item in files
+    }
+
+
+def _relied_on(
+    tree: Tree, path: str, module: ast.Module, added: Collection[int], bound: Callable[[str], Mapping]
+) -> list[tuple[str, int, str, str, _Defined]]:
+    """What the lines `added` of `path` call or override, each as `(path, line, verb, label, definition)`."""
+    parents = {child: node for node in ast.walk(module) for child in ast.iter_child_nodes(node)}
+    found = []
+    for node in ast.walk(module):
+        if isinstance(node, ast.Call) and set(range(node.lineno, (node.end_lineno or node.lineno) + 1)) & set(added):
+            name = _dotted(node.func)
+            if name.startswith("self.") and name.count(".") == 1 and (cls := _class_around(node, parents)):
+                if method := _method(tree, [(path, cls)], name[5:], bound):
+                    found.append((path, node.lineno, "calls", f"{method[2]}.{method[1].name}", method[:2]))
+            elif defined := _resolved(tree, path, name, bound):
+                found.append((path, node.lineno, "calls", defined[1].name, defined))
+        elif isinstance(node, ast.ClassDef):
+            parents_of = [found_ for base in node.bases if (found_ := _resolved(tree, path, _dotted(base), bound))]
+            classes = [(file, cls) for file, cls in parents_of if isinstance(cls, ast.ClassDef)]
+            methods = [item for item in node.body if isinstance(item, ast.FunctionDef | ast.AsyncFunctionDef)]
+            found += [
+                (path, item.lineno, "overrides", f"{method[2]}.{item.name}", method[:2])
+                for item in methods
+                if classes and _span(item) & set(added) and (method := _method(tree, classes, item.name, bound))
+            ]
+    return found
+
+
+def _class_around(node: ast.AST, parents: Mapping[ast.AST, ast.AST]) -> ast.ClassDef | None:
+    """The class whose method holds `node`, directly: `self` in a function nested in the method is another name."""
+    up = parents.get(node)
+    while up is not None and not isinstance(up, ast.FunctionDef | ast.AsyncFunctionDef):
+        up = parents.get(up)
+    around = parents.get(up) if up is not None else None
+    return around if isinstance(around, ast.ClassDef) else None
+
+
+def _method(
+    tree: Tree, classes: list[tuple[str, ast.ClassDef]], name: str, bound: Callable[[str], Mapping]
+) -> tuple[str, ast.FunctionDef | ast.AsyncFunctionDef, str] | None:
+    """Method `name` as the first of `classes`, each by its file, that defines it does, then their parents',
+    `PASSED_ON` levels up, with the class's name."""
+    level = classes
+    for _ in range(PASSED_ON + 1):
+        upper = []
+        for file, cls in level:
+            for node in cls.body:
+                if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == name:
+                    return file, node, cls.name
+            upper += [found for base in cls.bases if (found := _resolved(tree, file, _dotted(base), bound))]
+        level = [(file, cls) for file, cls in upper if isinstance(cls, ast.ClassDef)]
+    return None
+
+
+def _resolved(tree: Tree, path: str, name: str, bound: Callable[[str], Mapping]) -> _Defined | None:
+    """The module-level function or class `name`, as `path` spells it, defines: through an import, a module's name
+    and an attribute of it, or its own module."""
+    if not name:
+        return None
+    imports = bound(path)
+    if "." in name:
+        owner, _, attribute = name.rpartition(".")
+        target = imports.get(owner)
+        return _top_level(tree, (target[0], attribute), bound) if target and target[1] is None else None
+    if (target := imports.get(name)) is not None:
+        return _top_level(tree, target, bound) if target[1] is not None else None
+    return _top_level(tree, (path, name), bound)
+
+
+def _top_level(tree: Tree, target: tuple[str, str], bound: Callable[[str], Mapping]) -> _Defined | None:
+    """What `target`'s file defines at its top under its name, followed `PASSED_ON` files deep where it only passes
+    the name on, as `callers` follows it."""
+    for _ in range(PASSED_ON + 1):
+        try:
+            module = tree.module(target[0])
+        except UnreadError:
+            return None
+        if not isinstance(module, ast.Module):
+            return None
+        for node in module.body:
+            if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef) and node.name == target[1]:
+                return target[0], node
+        passed = bound(target[0]).get(target[1])
+        if passed is None or passed[1] is None:
+            return None
+        target = (passed[0], passed[1])
+    return None
+
+
+def _definition_shown(tree: Tree, path: str, verb: str, label: str, file: str, node: ast.AST) -> str:
+    """One definition as the guidelines read it: its first `CALLEE_LINES` lines, numbered as the head numbers them."""
+    named = f"- `{squash(path)}` {verb} `{label}()`, defined in `{squash(file)}`"
+    if holds_private_key(tree.sources[file]):
+        return f"{named}, a file that holds a private key: not shown"
+    assert isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef)
+    lines = lines_of(tree.sources[file])
+    span = range(min(_span(node)), min(len(lines), node.end_lineno or node.lineno) + 1)
+    numbered = [f"{number:>4} | {lines[number - 1]}".rstrip() for number in span[:CALLEE_LINES]]
+    if (more := len(span) - CALLEE_LINES) > 0:
+        numbered.append(f"{'':>4} | … {more:,} more {'line' if more == 1 else 'lines'}, not shown")
+    return "\n".join([f"{named}:", *numbered])
 
 
 def touched_names(files: list[Entry]) -> set[str]:

@@ -32,6 +32,8 @@ from ..core.rules import KEY_WITHHELD
 from ..core.text import backticks, cut_at, squash
 from ..core.verdict import Outcome, Sourced
 from .agents import (
+    CALLEES_CAP_CHARS,
+    CALLEES_TITLE,
     CALLERS_CAP_CHARS,
     CALLERS_SHOWN,
     DIFF_MARKS,
@@ -199,16 +201,24 @@ def chunks(items: Sequence[Sourced], diff: str) -> list[tuple[list[Sourced], str
     return packed
 
 
-def calls(callers: str) -> str:
-    """The `{verifier_callers}` section: the calls into what the change touched, as the guidelines read them, fenced
-    and capped; nothing where there are none, so no empty heading."""
-    if not callers:
-        return ""
-    return f"{CALLERS_SHOWN}\n{fenced('callers', cut_at(callers, CALLERS_CAP_CHARS, sep='\n'), JUDGED_BOUNDARY)}\n\n"
+def calls(callers: str, callees: str = "") -> str:
+    """The `{verifier_callers}` section: the calls into what the change touched, then the definitions it calls or
+    overrides, as the guidelines read them, each fenced and capped; nothing where there are none, so no empty
+    heading."""
+    section = ""
+    if callers:
+        section += (
+            f"{CALLERS_SHOWN}\n{fenced('callers', cut_at(callers, CALLERS_CAP_CHARS, sep='\n'), JUDGED_BOUNDARY)}\n\n"
+        )
+    if callees:
+        section += (
+            f"{CALLEES_TITLE}\n{fenced('callees', cut_at(callees, CALLEES_CAP_CHARS, sep='\n'), JUDGED_BOUNDARY)}\n\n"
+        )
+    return section
 
 
 async def judge_calls(
-    packed: Sequence[tuple[Sequence[Sourced], str]], callers: str, plugins: list[BasePlugin]
+    packed: Sequence[tuple[Sequence[Sourced], str]], callers: str, plugins: list[BasePlugin], callees: str = ""
 ) -> list[Judgements | str]:
     """Each call's findings, as `chunks` packs them, judged by one verifier, in order: its `Judgements`, or why it gave
     none.
@@ -225,7 +235,7 @@ async def judge_calls(
         max_concurrency=CONCURRENCY,
     )
     runner = InMemoryRunner(app=App(name=VERIFIER, root_agent=graph, plugins=plugins))
-    seed = {CALLERS: calls(callers)}
+    seed = {CALLERS: calls(callers, callees)}
     for number, (items, shown) in enumerate(packed):
         findings, change, _judgements = keys(number)
         seed |= {findings: numbered(items), change: shown}
@@ -255,13 +265,14 @@ def second_opinion(
     run: Callable[[Coroutine], Any],
     *,
     callers: str = "",
+    callees: str = "",
     security: frozenset[str] = frozenset(),
 ) -> None:
     """`--verify`: every finding of the change, a rule's and a guideline's, judged once more, in calls of whole files. A
     refuted one is dropped and named: a guideline's from `outcome.kept`, a rule's from `rules`, in place. A refuted
     finding of a rule in `security` is kept and named as disputed. One judged unsure, given no judgement or judged by no
     verifier is kept and named. `run` is the loop the review's run used, so both share it. `callers` are the calls into
-    what the change touched, shown to each verifier.
+    what the change touched, and `callees` the definitions it calls or overrides, shown to each verifier.
 
     Before the fold, so a refuted finding folds nothing. A guideline's finding that says again what a rule found is
     asked too, beside the rule's in its file's call: read by review, asked of no verifier, it outlived the rule's
@@ -277,7 +288,7 @@ def second_opinion(
     skipped = {id(item) for item in withheld}  # by identity: two checks can file the same finding
     asked = [*(item for item in rules if not item.old and id(item) not in skipped), *outcome.kept]
     packed = chunks(asked, diff)
-    judged = run(judge_calls(packed, callers, plugins))
+    judged = run(judge_calls(packed, callers, plugins, callees))
     refuted: set[int] = set()  # by identity: two checks can file the same finding
     for (items, _change), answer in zip(packed, judged, strict=True):
         for item, (verdict, why) in zip(items, _read(answer, len(items)), strict=True):

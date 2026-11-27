@@ -518,6 +518,161 @@ class TestTheBlastRadius:
         assert all("   7 |         name = find_user(uid)" in text for text in instructions)
 
 
+class TestWhatTheChangeCalls:
+    """Each project function, class or parent method a line the change added calls or overrides, shown as the head
+    defines it: the other way from the callers. Read by an outside audit and reproduced by a probe: a branch indexed
+    `find_user(uid)["name"]`, where `find_user` returns None for an id it does not hold, and no model was shown
+    `find_user`, whose file the change left alone."""
+
+    USERS = (
+        'USERS = {1: {"name": "ada"}}\n\n\ndef find_user(uid):\n    """The user, or None when no user has the id."""\n'
+        "    return USERS.get(uid)\n"
+    )
+    PARENT = (
+        "class Handler:\n    def handle(self, payload):\n"
+        '        """Return a dict: the caller reads its keys."""\n        raise NotImplementedError\n\n'
+        "    def parse(self, payload):\n"
+        '        """The payload as a list, or None when it is empty."""\n        return list(payload) or None\n'
+    )
+    GREET = 'from shop.users import find_user\n\n\ndef greet(uid):\n    return find_user(uid)["name"]\n'
+    SHOWN = (
+        "- `shop/greet.py` calls `find_user()`, defined in `shop/users.py`:\n"
+        "   4 | def find_user(uid):\n"
+        '   5 |     """The user, or None when no user has the id."""\n'
+        "   6 |     return USERS.get(uid)"
+    )
+
+    def shop(self, tmp_path: Path, changed: dict[str, str]) -> Path:
+        """A repository whose branch `change` writes `changed`, its other files left alone."""
+        repo = tmp_path / "shop"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "shop/__init__.py", "")
+        _committed(repo, "shop/users.py", self.USERS)
+        _committed(repo, "shop/base.py", self.PARENT)
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        for path, text in changed.items():
+            _committed(repo, path, text)
+        return repo
+
+    def test_the_guidelines_are_shown_the_function_an_added_line_calls_from_a_file_the_change_left_alone(
+        self, tmp_path: Path, monkeypatch
+    ) -> None:
+        from adk_review.collect.git import collect_evidence
+        from adk_review.judge import agents
+
+        evidence = collect_evidence(str(self.shop(tmp_path, {"shop/greet.py": self.GREET})), BASE, "change")
+        assert evidence["callees"] == self.SHOWN
+        section = agents.for_the_guidelines(evidence["blast"], evidence["callers"], evidence["callees"])
+        assert "\n## What the change calls\n" in section and "\n<<< callees " in section, section
+        assert "     return USERS.get(uid)" in section, "fenced, as the change is"
+        monkeypatch.setattr(agents, "CALLEES_CAP_CHARS", 60)
+        cut = agents.for_the_guidelines(evidence["blast"], evidence["callers"], evidence["callees"])
+        assert "[… cut at 60 characters]" in cut
+
+    def test_a_function_called_through_its_module_is_shown_once_however_often_it_is_called(
+        self, tmp_path: Path
+    ) -> None:
+        from adk_review.collect.git import collect_evidence
+
+        twice = self.GREET + (
+            "\n\ndef shout(uid):\n    from shop import users\n\n    return users.find_user(uid)['name'].upper()\n"
+        )
+        evidence = collect_evidence(str(self.shop(tmp_path, {"shop/greet.py": twice})), BASE, "change")
+        assert evidence["callees"] == self.SHOWN
+
+    def test_the_parent_method_a_change_overrides_and_one_it_calls_through_self_are_shown(self, tmp_path: Path) -> None:
+        from adk_review.collect.git import collect_evidence
+
+        orders = (
+            "from shop.base import Handler\n\n\nclass Orders(Handler):\n    def handle(self, payload):\n"
+            "        return len(self.parse(payload))\n"
+        )
+        evidence = collect_evidence(str(self.shop(tmp_path, {"shop/orders.py": orders})), BASE, "change")
+        assert evidence["callees"] == (
+            "- `shop/orders.py` overrides `Handler.handle()`, defined in `shop/base.py`:\n"
+            "   2 |     def handle(self, payload):\n"
+            '   3 |         """Return a dict: the caller reads its keys."""\n'
+            "   4 |         raise NotImplementedError\n"
+            "- `shop/orders.py` calls `Handler.parse()`, defined in `shop/base.py`:\n"
+            "   6 |     def parse(self, payload):\n"
+            '   7 |         """The payload as a list, or None when it is empty."""\n'
+            "   8 |         return list(payload) or None"
+        )
+
+    def test_a_function_whose_lines_the_change_edited_is_in_the_diff_and_not_shown(self, tmp_path: Path) -> None:
+        from adk_review.collect.git import collect_evidence
+
+        edited = self.USERS.replace("return USERS.get(uid)", "return USERS[uid]")
+        repo = self.shop(tmp_path, {"shop/users.py": edited, "shop/greet.py": self.GREET})
+        assert collect_evidence(str(repo), BASE, "change")["callees"] == ""
+
+    def test_a_definition_in_a_file_that_holds_a_private_key_is_named_and_never_shown(self, tmp_path: Path) -> None:
+        from adk_review.collect.git import collect_evidence
+
+        head, foot = "-----BEGIN RSA " + "PRIVATE KEY-----", "-----END RSA " + "PRIVATE KEY-----"
+        keyed = self.USERS + f'\n\nKEY = """\n{head}\n{"FAKEKEYBODY" + "A" * 53}\n{foot}\n"""\n'
+        repo = tmp_path / "keyed"
+        repo.mkdir()
+        _git_in(repo, "init", "-q", "-b", BASE)
+        _committed(repo, "shop/__init__.py", "")
+        _committed(repo, "shop/users.py", keyed)
+        _git_in(repo, "checkout", "-q", "-b", "change")
+        _committed(repo, "shop/greet.py", self.GREET)
+        callees = collect_evidence(str(repo), BASE, "change")["callees"]
+        assert callees == (
+            "- `shop/greet.py` calls `find_user()`, defined in `shop/users.py`, "
+            "a file that holds a private key: not shown"
+        )
+
+    def test_a_long_definition_and_many_definitions_are_cut_and_counted(self, tmp_path: Path, monkeypatch) -> None:
+        from adk_review.collect import change
+        from adk_review.collect.git import collect_evidence
+
+        both = self.GREET.replace("from shop.users", "from shop.base import Handler\nfrom shop.users") + (
+            "\n\nclass Orders(Handler):\n    def handle(self, payload):\n        return self.parse(payload)\n"
+        )
+        repo = self.shop(tmp_path, {"shop/greet.py": both})
+        monkeypatch.setattr(change, "CALLEES_SHOWN", 1)
+        monkeypatch.setattr(change, "CALLEE_LINES", 2)
+        assert collect_evidence(str(repo), BASE, "change")["callees"] == (
+            "- `shop/greet.py` calls `find_user()`, defined in `shop/users.py`:\n"
+            "   4 | def find_user(uid):\n"
+            '   5 |     """The user, or None when no user has the id."""\n'
+            "     | … 1 more line, not shown\n"
+            "- 2 more definitions the change calls or overrides, not shown"
+        )
+
+    def test_what_the_source_calls_comes_before_what_a_test_calls(self, tmp_path: Path, monkeypatch) -> None:
+        """Measured on this repository's own history: the tests' calls took three of the eight places, before calls
+        from the source the correctness and security guidelines judge, by path alone."""
+        from adk_review.collect import change
+        from adk_review.collect.git import collect_evidence
+
+        test = "from shop.base import Handler\n\n\ndef test_parse():\n    assert Handler().parse([1]) == [1]\n"
+        repo = self.shop(tmp_path, {"tests/test_a.py": test, "zz/greet.py": self.GREET})
+        monkeypatch.setattr(change, "CALLEES_SHOWN", 1)
+        assert collect_evidence(str(repo), BASE, "change")["callees"].startswith(
+            "- `zz/greet.py` calls `find_user()`, defined in `shop/users.py`:\n"
+        )
+
+    def test_nothing_is_gathered_where_no_guideline_reads_it(self, tmp_path: Path) -> None:
+        from adk_review.collect.git import collect_evidence
+
+        repo = self.shop(tmp_path, {"shop/greet.py": self.GREET})
+        assert collect_evidence(str(repo), BASE, "change", guidelines=False).get("callees", "") == ""
+
+    def test_a_guideline_and_a_verifier_are_sent_what_the_change_calls(self, tmp_path: Path, cli, asked) -> None:
+        from adk_review.judge import verify
+
+        repo = self.shop(tmp_path, {"shop/greet.py": self.GREET})
+        cli.main([str(repo), "--head", "change", "--base", BASE, "--check", "guideline.correctness", "--no-verify"])
+        instructions = [instruction for instruction, _turns in asked]
+        assert instructions and all("## What the change calls" in text for text in instructions), instructions
+        assert all("   6 |     return USERS.get(uid)" in text for text in instructions)
+        assert "## What the change calls" in verify.calls("", self.SHOWN)
+
+
 class TestTheHealthOfAWholeProject:
     """Under `--all` the files are the project, and the report measures it by code alone: what was read, the source
     and the tests apart, the source's function lines by McCabe complexity, and what each rule found. Numbers, never a

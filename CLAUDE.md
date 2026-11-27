@@ -184,7 +184,8 @@ Evidence is gathered in Python first, the rules run as one `FunctionNode` before
 guideline follows, and code decides the verdict. Around them: retries, a token ceiling, a `--verify` second opinion
 (`judge/verify.py`: before the fold, one verifier a call of whole files that hold findings, up to `CHUNK_FINDINGS_MAX`
 findings and `CHUNK_CAP_CHARS` of the block a call, asked of every finding of the change, a rule's and a guideline's,
-shown each of its files' parts of the block once or the whole block, and the calls into what the change touched; a
+shown each of its files' parts of the block once or the whole block, the calls into what the change touched and the
+definitions it calls or overrides; a
 refuted finding dropped and named, a security rule's kept as `Outcome.disputed`, an unsure or unjudged one kept as
 `Outcome.unverified`), a JSON report a pipeline reads (`--json FILE`, schema 2, written for every decided review, under
 the text report's safety rules), the same review as JUnit XML for a pipeline's test tab (`--junit FILE`,
@@ -200,7 +201,8 @@ a Health section (`core/health.py`: what was read, source and tests apart, McCab
 counts it, in bands graded A to E by SIG's published risk-profile rating where most of the source parsed, each rule's
 findings by severity, counted and never graded; never read by the verdict), each changed file's blast radius
 (`core/blast.py`: an import graph parsed from the head commit, shown to the guidelines as `{blast?}` with each call into
-a function the change touched that it did not add or edit (`collect/change.py`'s `callers_of`), and heading the report,
+a function the change touched that it did not add or edit (`collect/change.py`'s `callers_of`) and each definition an
+added line calls or overrides (`callees_of`), and heading the report,
 never read by the verdict), and fences around every untrusted section the guidelines, the verifiers and the chat's
 verdict read (`judge/agents.py`: two marker lines carrying a nonce drawn once a process, a second one, no guideline
 shown it, where a guideline's own words are read, a reminder after them, the content never escaped so a quote still

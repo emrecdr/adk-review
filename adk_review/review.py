@@ -1127,6 +1127,7 @@ def _judged(
                     app.plugins,
                     loop.run,
                     callers=evidence.get("callers", ""),
+                    callees=evidence.get("callees", ""),
                     security=security,
                 )
     outcome.redacted, usage, seconds = accounted(app.plugins)

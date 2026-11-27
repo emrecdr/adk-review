@@ -169,7 +169,9 @@ def build_checks(
         for check, answer in answers.items():
             ctx.state[state_key(check)] = answer.model_dump(mode="json")
         ctx.state[BLAST] = (
-            for_the_guidelines(found["blast"], found.get("callers", "")) if isinstance(found, dict) else ""
+            for_the_guidelines(found["blast"], found.get("callers", ""), found.get("callees", ""))
+            if isinstance(found, dict)
+            else ""
         )
         if evidence is None:
             ctx.state[DIFF], ctx.state[IGNORED], ctx.state[QUOTABLE] = _seen(found)

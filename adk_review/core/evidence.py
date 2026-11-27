@@ -127,6 +127,7 @@ class Evidence(Change):
     )
     blast: Blast  # what at the head depends on each changed file, read beside the block, never inside it
     callers: NotRequired[str]  # each call into a function the change touched, from a file it left alone, with its lines
+    callees: NotRequired[str]  # each definition an added line calls or overrides, outside the diff, with its lines
     whole: bool  # under --all: every file at the head is the change, diffed against the empty tree
     scope: list[str]  # the folders --path named, as git spells them; [] for the whole change
     exclude: NotRequired[list[str]]  # the folders and files --path-exclude named, as git spells them
