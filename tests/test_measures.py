@@ -189,6 +189,76 @@ class TestTheBlastRadius:
         blast_radius(parsed(sources), [{"path": "payload.py", "status": "A"}])
         assert not tripwire.exists(), "a module was executed to learn its imports"
 
+    def test_a_script_or_test_reaches_a_dotted_module_under_the_nearest_folder_above_it(self) -> None:
+        """Found by cross-checking against codegraph over six repositories: a script outside any package, or a test,
+        importing `src.hardware.csi` from a folder above it that a script or a test setup puts on the path, was read as
+        importing nothing (ruview: 326 such edges, adk: 284), since a folder holding `__init__.py` is never a root."""
+        from adk_review.core.blast import index
+
+        tree = index(
+            [
+                "archive/v1/__init__.py",
+                "archive/v1/src/__init__.py",
+                "archive/v1/src/hardware/__init__.py",
+                "archive/v1/src/hardware/csi.py",
+                "archive/v1/data/proof/verify.py",
+                "apps/__init__.py",
+                "apps/app_07/release/__init__.py",
+                "apps/app_07/release/agent.py",
+                "apps/app_07/demo.py",
+            ]
+        )
+        assert "archive/v1/src/hardware/csi.py" in tree.absolute(
+            "archive/v1/data/proof/verify.py", "src.hardware.csi", ["X"]
+        )
+        assert (
+            tree.one("archive/v1/data/proof/verify.py", 0, ("src", "hardware", "csi"))
+            == "archive/v1/src/hardware/csi.py"
+        )
+        assert tree.one("apps/app_07/demo.py", 0, ("app_07", "release", "agent")) == "apps/app_07/release/agent.py"
+
+    def test_a_test_reaches_a_dotted_module_one_file_alone_holds_anywhere(self) -> None:
+        """Found by the same cross-check: a test at the top importing `app_01.support.lookup`, which a project's own
+        configuration puts on the path from `apps/` (adk: 437 such edges); the reviewer reads no configuration, so a
+        dotted name of two parts or more that one file alone answers is that file. Two files answering it, none."""
+        from adk_review.core.blast import index
+
+        tree = index(
+            [
+                "apps/__init__.py",
+                "apps/app_01/support/__init__.py",
+                "apps/app_01/support/lookup.py",
+                "tests/test_app_01.py",
+            ]
+        )
+        assert tree.one("tests/test_app_01.py", 0, ("app_01", "support", "lookup")) == "apps/app_01/support/lookup.py"
+        assert "apps/app_01/support/lookup.py" in tree.absolute("tests/test_app_01.py", "app_01.support.lookup", ["x"])
+        twice = index([*tree.exact.values(), "old/__init__.py", "old/app_01/support/lookup.py"])
+        assert twice.one("tests/test_app_01.py", 0, ("app_01", "support", "lookup")) is None
+
+    def test_library_code_never_reaches_a_folder_above_it_nor_a_lone_file_by_an_absolute_name(self) -> None:
+        """The guard both rules keep, measured on LiteLLM before: inside a package an absolute import starts at a root,
+        so `from openai.types import X` in `pkg/llms/xyz/handler.py` is the installed openai's, never
+        `pkg/llms/openai/types.py` above it. A single name, `import office`, is never looked for above a folder."""
+        from adk_review.core.blast import index
+
+        tree = index(
+            [
+                "pkg/__init__.py",
+                "pkg/llms/__init__.py",
+                "pkg/llms/openai/__init__.py",
+                "pkg/llms/openai/types.py",
+                "pkg/llms/xyz/__init__.py",
+                "pkg/llms/xyz/handler.py",
+                "lib/__init__.py",
+                "lib/office.py",
+                "lib/tools/run/script.py",
+            ]
+        )
+        assert tree.absolute("pkg/llms/xyz/handler.py", "openai.types", ["X"]) == set()
+        assert tree.one("pkg/llms/xyz/handler.py", 0, ("openai", "types")) is None
+        assert tree.one("lib/tools/run/script.py", 0, ("office",)) is None
+
     def test_a_short_name_reaches_a_nested_module_only_from_an_import_root(self) -> None:
         """Measured on a 164-file tree against an exact resolver: `from types import` had landed on a nested
         `rules/types.py`. A folder holding `__init__.py` is a package, never a root Python imports a short name

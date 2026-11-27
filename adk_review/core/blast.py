@@ -24,7 +24,13 @@ never does. An import is resolved the way the tree spells it:
   holds (`typing`, `email.utils`) lands only on a file at the top: through a
   root or that folder, it was nearly always the standard library's import,
   so a script's rare shadow of one goes uncounted. Any other name two files
-  could answer counts for both: the radius errs wide there, never narrow;
+  could answer counts for both: the radius errs wide there, never narrow.
+  A dotted name of two parts or more that no root answers, imported by a
+  file whose own folder is no package or by a test, is read from the
+  nearest folder above that file holding its whole path, else from the
+  one file that alone answers it (`_Tree.above`): a script or a test whose
+  setup puts such a folder on the path, found by cross-checking against
+  codegraph; it added no edge in LiteLLM, google-adk, pydantic or httpx;
 - and either way an import depends on the module it names and on every
   package on the way to it, because Python runs each package's `__init__.py`
   first: `from pkg.x import y` reaches `pkg/__init__.py` as well as `pkg/x.py`,
@@ -186,6 +192,7 @@ class _Tree:
     def __init__(self, paths: set[str]) -> None:
         self.exact: dict[tuple[str, ...], str] = {}
         self.by_tail: dict[tuple[str, ...], set[str]] = defaultdict(set)
+        self.tails: dict[tuple[str, ...], set[str]] = defaultdict(set)
         self.packages = {PurePosixPath(p).parent for p in paths if PurePosixPath(p).name == "__init__.py"}
         trie: dict = {}  # the packages' folders, a part a level, `None` marking one that is a package
         for folder in self.packages:
@@ -207,6 +214,8 @@ class _Tree:
                     node = node.get(parts[start], {})
                 for start in range(max(0, len(parts) - _PARTS_READ), first):
                     self.by_tail[parts[start:]].add(path)
+                for start in range(max(0, len(parts) - _PARTS_READ), len(parts) - 1):  # each dotted tail, two parts up
+                    self.tails[parts[start:]].add(path)
 
     def absolute(self, importer: str, dotted: str | None, names: list[str]) -> set[str]:
         """What `import a.b` or `from a.b import c` names, by the last parts of a path, and from the importing file's
@@ -221,7 +230,31 @@ class _Tree:
             found = self.by_tail.get(key, set())
             return found if own is None else found | self.exactly((*own, *key))
 
-        return _resolve(lookup, base, names)
+        found = _resolve(lookup, base, names)
+        if base and not lookup(base) and (above := self.above(importer, base)) is not None:
+            found |= _resolve(lambda key: self.exactly((*above, *key)), base, names)
+        return found
+
+    def above(self, importer: str, parts: tuple[str, ...]) -> tuple[str, ...] | None:
+        """The folder a dotted name of two parts or more is read from, where no root answers it, for a file Python may
+        run with a folder above it on its path, one whose own folder is no package, or a test: the nearest folder above
+        the file that holds the name's whole path, else the one folder whose files alone answer it. Found by
+        cross-checking against codegraph over six repositories: a script importing `src.hardware.csi` from a folder
+        above it, which the script or a test's setup puts on the path, was read as importing nothing (ruview 326
+        edges, adk 284), and a test importing what a project's own configuration puts on the path (adk 437), which
+        the reviewer never reads. A single name is never looked for above: inside a package it is nearly always an
+        installed package's, as measured on LiteLLM."""
+        folder = PurePosixPath(importer).parent
+        if len(parts) < 2 or (folder in self.packages and not is_test(importer)):
+            return None
+        for parent in (folder, *folder.parents):
+            if self.exactly((*parent.parts, *parts)):
+                return parent.parts
+        alone = self.tails.get(parts, set())
+        if len(alone) == 1:
+            whole = _module(next(iter(alone)))
+            return whole[: len(whole) - len(parts)]
+        return None
 
     def relative(self, importer: str, level: int, dotted: str | None, names: list[str]) -> set[str]:
         """What `from .x import y` names, by the importing file's own folder: exact, never by a path's tail."""
@@ -253,6 +286,8 @@ class _Tree:
             below = not is_test(importer) and any(parent in self.packages for parent in folder.parents)
             inside = folder in self.packages or below
             found = self.by_tail.get(parts, set()) | (set() if inside else self.exactly((*folder.parts, *parts)))
+            if not found and (above := self.above(importer, parts)) is not None:
+                found = self.exactly((*above, *parts))
         return next(iter(found)) if len(found) == 1 else None
 
 
